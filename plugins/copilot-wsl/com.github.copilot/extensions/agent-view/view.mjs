@@ -17,7 +17,7 @@ const MESSAGES = {
   "invalid-path": "Choose an .agent.md file or a .squad/agents/<member>/charter.md file.",
   unavailable: "The kmx agent builder could not be read. Check that its MCP server is running.",
   "invalid-resource": "The kmx agent view was not in the supported format.",
-  "models-unavailable": "Model choices are unavailable. The file/default model can still be run.",
+  "models-unavailable": "Model choices are unavailable. Your model selection is unchanged.",
   "too-large": "The kmx agent view was too large to show.",
   "invalid-action": "This canvas action is not supported.",
   "read-only": "This file is available for inspection only. Editing and testing require a complete canonical charter.",

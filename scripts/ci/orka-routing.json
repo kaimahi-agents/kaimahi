@@ -37,43 +37,5 @@
   ],
   "safe_direct_markdown": [
     "changes/"
-  ],
-  "triggers": {
-    "prefixes": [
-      "internal/kmx/runtime/",
-      "internal/kmx/orkaschema/",
-      "internal/kmx/lift/",
-      "internal/kmx/lifecycle/",
-      "internal/kmx/portforward/",
-      "internal/kmx/toolchain/",
-      "scripts/ci/orka",
-      "scripts/ci/suite-",
-      "internal/kmx/app/testdata/live-eval-loop/",
-      "testdata/orka/",
-      "images/",
-      ".github/"
-    ],
-    "files": [
-      "go.mod",
-      "go.sum",
-      "Makefile",
-      "Dockerfile",
-      "k8s/ollama.yaml",
-      "k8s/orka-k8s-tool.yaml",
-      "scripts/ci/native-suite-model.yaml",
-      "scripts/ci/eval-loop-model.yaml",
-      "scripts/ci/eval-loop-warmup.json"
-    ],
-    "globs": [
-      "cmd/kmx/orka*",
-      "cmd/kmx/commands*",
-      "cmd/kmx/local*",
-      "cmd/kmx/quickstart*",
-      "scripts/*orka*",
-      "Dockerfile*"
-    ],
-    "exclude_files": [
-      "scripts/ci/orka-callers.json"
-    ]
-  }
+  ]
 }

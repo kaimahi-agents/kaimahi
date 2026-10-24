@@ -20,7 +20,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       kagent_changed: ${{ steps.changes.outputs.kagent_changed }}
-      orka_required: ${{ steps.changes.outputs.orka_required }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -265,7 +264,7 @@ jobs:
           python3 scripts/test_suite_native_lift.py
           python3 scripts/test_orka_native_reference.py
           python3 scripts/test_suite_kagent.py
-      - name: Orka routing and dependency boundaries
+      - name: Orka qualification and dependency boundaries
         run: |
           python3 scripts/test_orka_routing.py
           python3 scripts/test_orka_callers.py
@@ -477,7 +476,7 @@ jobs:
       - name: AX preview activity projection tests
         run: PYTHONDONTWRITEBYTECODE=1 PYTHONWARNINGS=error python3 -m unittest discover -s ax-harness -p 'test_activity.py' -v
       # The native Orka HTTP Tool's own allow/deny pair, proved keyless and
-      # clusterless: the e2e-orka-runtime shard proves the CLUSTER refuses
+      # clusterless: the nightly/manual Orka worker proves the CLUSTER refuses
       # (RBAC); this proves the SERVER refuses before a request is ever
       # made, over every pull request rather than only when that shard
       # runs. Mocked HTTP only — no live Kubernetes API is reached.
@@ -655,9 +654,9 @@ jobs:
           print("kmx-clone-free: bare `kmx local up` for Orka, its result account unmade by hand, "
                 "no retired command anywhere in the job")
           EOF
-      # Runtime routing invokes a fixed full Orka worker; other docs guards
-      # still protect steps that would otherwise run without their cluster.
-      # Validate both forms and reject delegation or conditional proof gaps.
+      # Nightly/manual qualification invokes the fixed full Orka worker.
+      # CI must not call it; retained shards keep their existing docs guards.
+      # Validate the full worker and reject conditional proof gaps.
       #
       # The required check aggregates the shards, so a shard that nothing needs would run,
       # fail, and still leave `e2e-hello-world` green. The aggregator must
@@ -699,31 +698,24 @@ jobs:
                     "failure() && steps.changes.outputs.docs_only != 'true'",
                     "always() && steps.changes.outputs.docs_only != 'true'"}
           total = 0
+          if ("e2e-orka-runtime" in jobs or any(
+                  j.get("uses", "").endswith("/orka-runtime.yml") for j in jobs.values())):
+              print("Orka runtime qualification belongs only in nightly and on-demand workflows"); sys.exit(1)
+          full = yaml.safe_load(open(".github/workflows/orka-runtime.yml"))
+          proof = full["jobs"]["qualify"]
+          steps = proof["steps"]
+          if ("workflow_call" not in full.get("on", full.get(True, {})) or "if" in proof or
+                  proof.get("permissions") != {"contents": "read"} or proof.get("timeout-minutes") != 45):
+              print("the reusable Orka worker must always execute the full read-only proof"); sys.exit(1)
+          if any(str(s.get("if", "")).strip() not in {"", "always()", "failure()"} for s in steps):
+              print("a reusable Orka step can skip required live proof"); sys.exit(1)
+          needed = {"Native suite — qualify evaluation, exact transfer and CLI lift",
+                    "Pinned update preconditions — fresh RV and pair reservation",
+                    "Orka — Agent and Task return an exact local-model answer",
+                    "Native Orka Tool — Task invokes read-only health Tool", "down"}
+          if not needed.issubset({s.get("name") for s in steps}):
+              print("the reusable Orka worker is missing required proof steps"); sys.exit(1)
           for job in shards + ["kmx-clone-free"]:
-              if job == "e2e-orka-runtime":
-                  caller = jobs[job]
-                  routed = "${" + "{ !cancelled() && github.event_name != 'schedule' && !(github.event_name == 'push' && github.ref == 'refs/heads/main') && (github.event_name != 'pull_request' || needs.classify-change.outputs.orka_required != 'false') }" + "}"
-                  if (caller.get("uses") != "./.github/workflows/orka-runtime.yml" or
-                          caller.get("needs") != ["classify-change"] or caller.get("if") != routed or
-                          caller.get("permissions") != {"contents": "read"} or "secrets" in caller):
-                      print("Orka must delegate read-only with fail-closed path routing"); sys.exit(1)
-                  full = yaml.safe_load(open(".github/workflows/orka-runtime.yml"))
-                  triggers = full.get("on", full.get(True, {}))
-                  proof = full["jobs"]["qualify"]
-                  steps = proof["steps"]
-                  if ("workflow_call" not in triggers or "if" in proof or
-                          proof.get("permissions") != {"contents": "read"} or proof.get("timeout-minutes") != 45):
-                      print("the reusable Orka worker must always execute the full read-only proof"); sys.exit(1)
-                  if any(str(s.get("if", "")).strip() not in {"", "always()", "failure()"} for s in steps):
-                      print("a reusable Orka step can skip required live proof"); sys.exit(1)
-                  needed = {"Native suite — qualify evaluation, exact transfer and CLI lift",
-                            "Pinned update preconditions — fresh RV and pair reservation",
-                            "Orka — Agent and Task return an exact local-model answer",
-                            "Native Orka Tool — Task invokes read-only health Tool", "down"}
-                  if not needed.issubset({s.get("name") for s in steps}):
-                      print("the reusable Orka worker is missing required proof steps"); sys.exit(1)
-                  total += len(steps)
-                  continue
               if job == "e2e-kagent-lift":
                   caller = jobs[job]
                   routed = "${" + "{ !cancelled() && github.event_name != 'pull_request' && !(github.event_name == 'push' && github.ref == 'refs/heads/main') }" + "}"
@@ -1362,19 +1354,6 @@ jobs:
         id: docs-only-summary
         if: steps.changes.outputs.docs_only == 'true'
         run: echo "every changed file is documentation; no cluster booted"
-  # Live proof for the deliberately narrow alternate-runtime boundary. The two
-  # official charts below are installed by CI as an external precondition;
-  # KMX receives a ready exact-v0.10.2 cluster and is tested only for create.
-  # Fail stubs plus KMX_TOOLCHAIN=off make any attempted Helm or kagent CLI use
-  # by the command fail. No hosted credential is used: the model is a hardened,
-  # deterministic in-cluster OpenAI chat-completions fixture.
-  e2e-orka-runtime:
-    needs: [classify-change]
-    if: ${{ !cancelled() && github.event_name != 'schedule' && !(github.event_name == 'push' && github.ref == 'refs/heads/main') && (github.event_name != 'pull_request' || needs.classify-change.outputs.orka_required != 'false') }}
-    permissions:
-      contents: read
-    uses: ./.github/workflows/orka-runtime.yml
-
   e2e-orka-helm:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
@@ -1531,7 +1510,7 @@ jobs:
 
   e2e-hello-world:
     runs-on: ubuntu-latest
-    needs: [classify-change, kagent-contract, e2e-kagent-lift, e2e-orka-runtime, e2e-orka-helm, e2e-quickstart]
+    needs: [classify-change, kagent-contract, e2e-kagent-lift, e2e-orka-helm, e2e-quickstart]
     if: always()
     steps:
       - name: Every e2e shard succeeded
@@ -1543,13 +1522,12 @@ jobs:
           python3 - <<'EOF'
           import json, os, sys
           needs = json.loads(os.environ["SHARDS"])
-          expected = {"kagent-contract", "e2e-kagent-lift", "e2e-orka-runtime", "e2e-orka-helm", "e2e-quickstart"}
+          expected = {"kagent-contract", "e2e-kagent-lift", "e2e-orka-helm", "e2e-quickstart"}
           classifier = needs.pop("classify-change", {})
           if classifier.get("result") != "success":
               print("classification did not succeed — refusing to report success"); sys.exit(1)
           if set(needs) != expected:
               print("missing or unexpected e2e shard dependencies — refusing success"); sys.exit(1)
-          orka_required = classifier.get("outputs", {}).get("orka_required", "")
           event = os.environ["EVENT"]
           ref = os.environ["REF"]
           bad = {}
@@ -1557,10 +1535,8 @@ jobs:
               result = outcome.get("result", "unknown")
               print(f"{job}: {result}")
               intended_skip = job == "e2e-kagent-lift" and (event == "pull_request" or (event == "push" and ref == "refs/heads/main"))
-              orka_skip = job == "e2e-orka-runtime" and event == "pull_request" and orka_required == "false"
-              main_skip = job == "e2e-orka-runtime" and event == "push" and ref == "refs/heads/main"
-              scheduled_skip = job in {"e2e-orka-runtime", "e2e-orka-helm", "e2e-quickstart"} and event == "schedule"
-              if result != "success" and not (result == "skipped" and (intended_skip or orka_skip or main_skip or scheduled_skip)):
+              scheduled_skip = job in {"e2e-orka-helm", "e2e-quickstart"} and event == "schedule"
+              if result != "success" and not (result == "skipped" and (intended_skip or scheduled_skip)):
                   bad[job] = result
           if bad:
               print("e2e shards did not succeed:", bad); sys.exit(1)

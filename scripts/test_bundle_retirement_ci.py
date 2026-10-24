@@ -22,12 +22,12 @@ class RetirementCITests(unittest.TestCase):
         self.jobs["e2e-kagent-lift"] = kagent_runtime_job(ROOT)
 
     def test_required_aggregator_retains_native_shards_not_removed_products(self):
-        expected = {"classify-change", "kagent-contract", "e2e-kagent-lift", "e2e-orka-runtime", "e2e-orka-helm", "e2e-quickstart"}
+        expected = {"classify-change", "kagent-contract", "e2e-kagent-lift", "e2e-orka-helm", "e2e-quickstart"}
         self.assertEqual(set(self.jobs["e2e-hello-world"]["needs"]), expected)
         self.assertNotIn("e2e-kagent-create", self.jobs)
         self.assertNotIn("e2e-eval-loop", self.jobs)
         check = "\n".join(s.get("run", "") for s in self.jobs["e2e-hello-world"]["steps"])
-        self.assertIn('expected = {"kagent-contract", "e2e-kagent-lift", "e2e-orka-runtime", "e2e-orka-helm", "e2e-quickstart"}', check)
+        self.assertIn('expected = {"kagent-contract", "e2e-kagent-lift", "e2e-orka-helm", "e2e-quickstart"}', check)
         self.assertIn('if result != "success" and not (result == "skipped"', check)
 
     def test_aggregator_executes_fail_closed(self):
@@ -38,7 +38,7 @@ class RetirementCITests(unittest.TestCase):
         for failure in (None, "failure", "cancelled", "unknown", "skipped"):
             sample = copy.deepcopy(good)
             if failure:
-                sample["e2e-orka-runtime"]["result"] = failure
+                sample["e2e-orka-helm"]["result"] = failure
             result = subprocess.run([sys.executable, "-c", program], capture_output=True,
                                     env={**os.environ, "SHARDS": json.dumps(sample), "EVENT": "pull_request", "REF": "refs/heads/main"})
             self.assertEqual(result.returncode, 0 if failure is None else 1)
