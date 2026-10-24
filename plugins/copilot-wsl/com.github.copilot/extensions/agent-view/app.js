@@ -1,7 +1,7 @@
 // Resource and authoring values are untrusted: render only inert DOM text.
 import { instructionSections, runtimeModelSelection, agentName, fileLocation, effectiveModel } from "./authoring.mjs";
 import { el, inlineText, editorValue, insertPlainText, fillEditor, purposeText, instructionsContent, runtimeModelControl, testNameControl, pathControls, icon, statusIcon,
-  checkKey, uniqueIndex, inspectCases, friendlyName, clone, same, operandKey, EDITABLE_TYPES, quoted, checkLabel, oneLine, failureFacts, testRow, coherentSelection, ambiguousPassSet, countText, plural, resultHistory, resultPill, modelLabel, modelPresentation, growTextarea, checkTypeControl } from "./editor.mjs";
+  checkKey, uniqueIndex, inspectCases, friendlyName, clone, same, operandKey, EDITABLE_TYPES, quoted, checkLabel, oneLine, failureFacts, testRow, coherentSelection, ambiguousPassSet, countText, plural, resultHistory, resultPill, modelLabel, modelPresentation, growTextarea, checkTypeControl, checkFields, checkComplete, convertCheck, inconclusiveJudge } from "./editor.mjs";
 export { provenActual } from "./editor.mjs";
 const CONFLICTS = ["revision_mismatch", "revision-mismatch"];
 const UNKNOWN = ["outcome-unknown", "uncertain-outcome", "uncertain_outcome"];
@@ -77,7 +77,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     if (intended.filter((e) => e.id === raw.id).length !== 1) return "Another test already has this name.";
     if (!raw.input.trim()) return "Say what the agent gets.";
     if (!raw.assertions.length) return "Keep at least one check.";
-    if (raw.assertions.some((a) => EDITABLE_TYPES.some(([t]) => t === a.type) && !String(a[operandKey(a.type)] ?? "").trim())) return "Fill in every check.";
+    if (raw.assertions.some(a => !checkComplete(a))) return "Fill in every check.";
   }
   function noteDraft(key, draft) {
     const origin = draft.origin && rawExamples().find((e) => `id:${e.id}` === key);
@@ -775,42 +775,40 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       const display = editableTest ? displayChecks.get(checkKey(a)) : a;
       const observed = display && c?.expected?.get(checkKey(display)) === display ? c.checks?.get(checkKey(display)) : undefined;
       const row = el(doc, "div", "check"), state = el(doc, "span", "check-state"), verdict = el(doc, "span", "check-verdict");
+      const judge = a.type === "llmJudge", reason = judge ? el(doc, "div", "judge-reason") : undefined;
+      const judgeResult = judge ? el(doc, "div", "judge-result") : undefined;
       updates.push(() => {
         let kind = "none", label = "No result";
         const completed = !ambiguousPassSet(base) && (c?.state === "pass" || c?.state === "fail");
         if (completed && !blocked && draft()?.origin !== null && observed?.verdict === "pass") [kind, label] = ["pass", "Passed"];
         else if (completed && !blocked && draft()?.origin !== null && observed?.verdict === "fail") [kind, label] = ["fail", "Failed"];
+        else if (judge && !ambiguousPassSet(base) && !blocked && draft()?.origin !== null && inconclusiveJudge(c, observed)) [kind, label] = ["error", "Inconclusive"];
+        const text = kind === "none" ? "" : label;
         if (kind !== "none" && local()) [kind, label] = [`old-${kind}`, `${label} last run`];
         state.replaceChildren(statusIcon(doc, kind, label));
-        verdict.textContent = kind === "none" ? "" : observed.verdict === "pass" ? "Passed" : "Failed";
+        verdict.textContent = text ? `${judge ? "Judge " : ""}${text}${judge && local() ? " · last run" : ""}` : "";
         verdict.setAttribute("data-tone", kind);
+        if (reason) { reason.textContent = kind === "none" ? "" : observed.reason; judgeResult.hidden = kind === "none"; judgeResult.className = local() ? "judge-result old" : "judge-result"; }
       });
       const known = editableTest && EDITABLE_TYPES.some(([t]) => t === a.type);
       if (known) {
         const editKey = `${key}/${a.id}`, edit = el(doc, "div", "check-edit");
-        let type = a.type;
-        const value = el(doc, "input", "field check-value"); value.type = "text"; value.value = a[operandKey(a.type)] ?? "";
-        value.setAttribute("aria-label", `Check ${index + 1} text`); value.setAttribute("spellcheck", "false");
-        const line = button("", () => { editingChecks.add(editKey); refresh(); value.focus(); }, "check-line");
-        line.append(state, el(doc, "span", "check-label", checkLabel({ type: a.type, fields: [[operandKey(a.type), value.value]] })));
-        const apply = () => {
-          editingChecks.add(editKey);
-          mutate(d => {
-            const target = d.raw.assertions[index], oldKey = operandKey(target.type), newKey = operandKey(type);
-            if (oldKey !== newKey) delete target[oldKey];
-            target.type = type; target[newKey] = value.value;
-          });
-        };
-        const choice = checkTypeControl(doc, type, chosen => { type = chosen; apply(); }, cancelDraft);
-        value.addEventListener("input", apply); fieldKeys(value);
+        const fields = checkFields(doc, a, index, (field, value) => {
+          editingChecks.add(editKey); mutate(d => { d.raw.assertions[index][field] = value; });
+        }, fieldKeys);
+        const line = button("", () => { editingChecks.add(editKey); refresh(); fields.focus(); }, "check-line");
+        line.append(state, el(doc, "span", "check-label", checkLabel({ type: a.type, fields: [[operandKey(a.type), a[operandKey(a.type)] ?? ""]] })));
+        const choice = checkTypeControl(doc, a.type, chosen => {
+          editingChecks.add(editKey); mutate(d => convertCheck(d.raw.assertions[index], chosen));
+          fields.show(current().assertions[index]); refresh();
+        }, cancelDraft);
         const remove = button("", () => { mutate(d => { d.raw.assertions.splice(index, 1); }); render(); }, "ib remove-check");
         remove.setAttribute("aria-label", `Remove check ${index + 1}`); remove.append(icon(doc, "none", 14, 2));
-        edit.append(remove, choice.node, value, verdict); row.append(line, edit);
+        edit.append(remove, choice.node, fields.node, ...(judge ? [] : [verdict])); row.append(line, edit);
         updates.push(() => {
           const editing = draft()?.origin === null || editingChecks.has(editKey);
           line.hidden = editing; edit.hidden = !editing;
-          value.disabled = busy || blocked; choice.update(busy || blocked);
-          value.setAttribute("placeholder", type === "contains" ? "Text the answer must contain" : type === "notContains" ? "Text the answer must not contain" : "Pattern the answer must match");
+          fields.update(busy || blocked); choice.update(busy || blocked);
         });
       } else {
         const body = el(doc, "div", "check-readonly");
@@ -831,6 +829,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
         remove.append(icon(doc, "trash", 14, 2)); row.append(remove);
       }
       checks.append(row);
+      if (judgeResult) { judgeResult.append(verdict, reason); checks.append(judgeResult); }
       const checkFacts = display && c && !blocked && draft()?.origin !== null ? failureFacts(c, display) : undefined;
       if (checkFacts) {
         // Repairs belong to the saved assertion they explain, not a later type

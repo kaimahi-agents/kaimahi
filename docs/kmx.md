@@ -526,6 +526,21 @@ revisions are labelled stale rather than silently rebasing the draft.
 Inspection can show a minimal titled agent as well as a canonical Squad charter;
 this display-only support does not change Run/Test parser acceptance.
 
+The canvas check chooser offers Contains, Not contains, Regex and Judge. Judge
+edits the existing `llmJudge` fields: a multiline rubric, integer minimum score
+from 0 through 100, judge model and judge version. All four are explicit; the
+canvas does not invent a score, model or version. Zero remains a valid threshold.
+Enter saves and runs the current test; Shift+Enter adds a rubric line break and
+Esc discards that test's draft. Changing check type keeps its ID and operand text,
+removing judge-only metadata when changing away from Judge.
+
+Judge results show the observed Passed, Failed or Inconclusive verdict and safe
+reason. The resource does not expose scores or raw judge reasoning, and the canvas
+does not infer them. Draft or model changes keep prior results stale until a new
+run confirms them. MCP judging uses the same effective model as the agent preview:
+the authored judge model must match it. Judge version is authored model identity,
+not a version obtained from the host SDK.
+
 The canvas Model picker is session-only: override → authored Model.Preferred →
 known chat model → `gpt-5.6-terra`. Selecting a model never edits the file or its
 saved-source history. A following default uses the chat model read when Run/Test

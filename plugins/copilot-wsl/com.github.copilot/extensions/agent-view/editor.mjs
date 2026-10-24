@@ -47,13 +47,13 @@ export const friendlyName = (id) => {
 export const clone = (value) => JSON.parse(JSON.stringify(value));
 export const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 export const operandKey = (type) => type === "regex" ? "pattern" : type === "llmJudge" ? "rubric" : "value";
-export const EDITABLE_TYPES = [["contains", "Contains"], ["notContains", "Not contains"], ["regex", "Regex"]];
+export const EDITABLE_TYPES = [["contains", "Contains"], ["notContains", "Not contains"], ["regex", "Regex"], ["llmJudge", "Judge"]];
 export const quoted = (text) => `“${text}”`;
 const fieldValue = (a) => new Map(a.fields).get(operandKey(a.type)) ?? "";
 export const checkLabel = (a) => {
   const value = fieldValue(a);
   return a.type === "contains" ? `Contains ${quoted(value)}` : a.type === "notContains" ? `Not contains ${quoted(value)}`
-    : a.type === "regex" ? `Matches regex ${quoted(value)}` : a.type === "llmJudge" ? friendlyName(a.id) : `Condition: ${a.type}`;
+    : a.type === "regex" ? `Matches regex ${quoted(value)}` : a.type === "llmJudge" ? `${value} · judge` : `Condition: ${a.type}`;
 };
 // Repair suggestions use only the actual excerpt. A differing reference is
 // named only when the answer holds exactly one same-anchored phrase, e.g. the
@@ -78,7 +78,7 @@ export function failureFacts(c, assertion) {
   if (c.state !== "fail") return;
   for (const a of assertion ? [assertion] : c.example.assertions) {
     const got = c.expected?.get(checkKey(a)) === a ? c.checks?.get(checkKey(a)) : undefined;
-    if (got?.verdict !== "fail") continue;
+    if (got?.verdict !== "fail" || a.type === "llmJudge") continue;
     const value = fieldValue(a), excerpt = c.row?.answerExcerpt;
     const actual = a.type === "contains" ? provenActual(value, excerpt) : undefined;
     const text = a.type === "contains" ? `Missing "${value}"` : a.type === "notContains" ? `Found "${value}"`
@@ -176,6 +176,51 @@ export function resultPill(doc, settings) {
 export function growTextarea(input) {
   input.style.height = "auto";
   input.style.height = `${input.scrollHeight + 2}px`;
+}
+// A check's fields own only their input values; source mutation and key actions stay caller-owned.
+export function checkFields(doc, initial, index, change, fieldKeys) {
+  const node = el(doc, "div", "check-fields");
+  let inputs = [], first;
+  const show = assertion => {
+    inputs = []; node.replaceChildren();
+    const judge = assertion.type === "llmJudge";
+    node.className = judge ? "check-fields judge-fields" : "check-fields";
+    const definitions = judge ? [["rubric", "Rubric"], ["minScore", "Minimum score"], ["judgeModel", "Judge model"], ["judgeVersion", "Judge version"]] : [[operandKey(assertion.type), "text"]];
+    for (const [key, label] of definitions) {
+      const input = el(doc, judge && key === "rubric" ? "textarea" : "input", `field check-value${key === "rubric" ? " judge-rubric" : ""}`);
+      input.value = assertion[key] ?? "";
+      input.setAttribute("aria-label", `Check ${index + 1} ${label.toLowerCase()}`); input.setAttribute("spellcheck", "false");
+      if (key === "minScore") { input.type = "number"; input.min = "0"; input.max = "100"; input.step = "1"; }
+      else if (input.tagName?.toLowerCase() !== "textarea" && key !== "rubric") input.type = "text";
+      if (!judge) input.setAttribute("placeholder", assertion.type === "contains" ? "Text the answer must contain" : assertion.type === "notContains" ? "Text the answer must not contain" : "Pattern the answer must match");
+      if (key === "rubric") input.rows = 2;
+      input.addEventListener("input", () => change(key, key === "minScore" && input.value !== "" ? Number(input.value) : input.value));
+      fieldKeys(input); inputs.push(input);
+      if (judge) { const wrap = el(doc, "label", `check-field ${key === "rubric" ? "rubric-field" : ""}`, label); wrap.append(input); node.append(wrap); }
+      else node.append(input);
+    }
+    first = inputs[0];
+  };
+  show(initial);
+  return { node, show, focus() { first.focus(); }, update(disabled) { for (const input of inputs) { input.disabled = disabled; if (input === first && first.rows) growTextarea(first); } } };
+}
+// Unknown is an observation, not a passing/failing check. Identity must still be unambiguous.
+export function inconclusiveJudge(c, observed) {
+  return observed?.verdict === "unknown" && c?.state === "unknown" && c.expected?.size === c.checks?.size
+    && [...c.expected.values(), ...c.checks.values()].every(value => value !== null)
+    && [...c.checks.keys()].every(key => c.expected.has(key));
+}
+export function checkComplete(a) {
+  if (!EDITABLE_TYPES.some(([type]) => type === a.type)) return true;
+  if (!String(a[operandKey(a.type)] ?? "").trim()) return false;
+  return a.type !== "llmJudge" || typeof a.minScore === "number" && Number.isInteger(a.minScore) && a.minScore >= 0 && a.minScore <= 100
+    && typeof a.judgeModel === "string" && !!a.judgeModel.trim() && typeof a.judgeVersion === "string" && !!a.judgeVersion.trim();
+}
+export function convertCheck(target, type) {
+  const oldKey = operandKey(target.type), newKey = operandKey(type), value = target[oldKey] ?? "";
+  if (oldKey !== newKey) delete target[oldKey];
+  if (target.type === "llmJudge" && type !== "llmJudge") for (const key of ["minScore", "judgeModel", "judgeVersion"]) delete target[key];
+  target.type = type; target[newKey] = value;
 }
 export function checkTypeControl(doc, initial, change, cancel) {
   const node = el(doc, "div", "check-type"), trigger = el(doc, "button", "check-type-button"), menu = el(doc, "div", "check-type-menu");

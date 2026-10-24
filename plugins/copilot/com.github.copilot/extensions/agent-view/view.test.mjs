@@ -1663,7 +1663,7 @@ test("pre-execution permission refusal retains the previous valid observation", 
   assert.equal(byClass(byClass(h.root, "message-line")[0], "tb")[0].hidden, true, "a refusal before execution is not an unknown outcome");
 });
 
-test("judge uses its semantic ID label while actual rubric retains safe inline formatting in details", async () => {
+test("readonly judge uses its actual rubric label and retains safe inline formatting in details", async () => {
   const f = savedFixture(), r = f.latest.result;
   f.examples[0].assertions = [
     { id: "literal", type: "contains", value: "`users`" },
@@ -1673,7 +1673,7 @@ test("judge uses its semantic ID label while actual rubric retains safe inline f
   r.examples[0].assertions = [{ id: "literal", type: "contains", verdict: "fail" }, { id: "says-why-it-matters-to-users", type: "llmJudge", verdict: "pass" }];
   const root = openTest(await rendered(f), "greeting"), labels = byClass(root, "check-label").map((e) => e.textContent);
   assert.equal(labels[0], "Contains “`users`”");
-  assert.equal(labels[1], "Says why it matters to users");
+  assert.equal(labels[1], "The notes say why it matters to `users`. · judge");
   assert.deepEqual(checkLabels(root), ["Failed", "Passed"]);
   const details = byClass(root, "check-details")[1];
   assert.match(details.textContent, /rubric: The notes say why it matters to users\./);
@@ -1936,6 +1936,124 @@ test("Board C passing answer is requested explicitly without a hidden checkbox",
   assert.doesNotMatch(h.root.textContent, /Untrusted excerpt/);
 });
 
+const judgeField = (root, index, label) => all(root).find(e => e.attrs?.["aria-label"] === `Check ${index} ${label}`);
+const judgeAssertion = () => ({ id: "why", type: "llmJudge", rubric: "Says why.", minScore: 0, judgeModel: "fake", judgeVersion: "v1" });
+
+test("Judge conversion authors four explicit fields and scoped Enter preserves raw source model absence", async () => {
+  const h = await editableCanvas("Reply briefly.", undefined, { omitModel: true }); openTest(h.root, "greeting");
+  click(byClass(h.root, "check-line")[0]); click(byClass(h.root, "check-type-option")[3]);
+  const rubric = judgeField(h.root, 1, "rubric");
+  assert.ok(rubric, "Judge has a rubric field"); assert.equal(rubric.tag, "textarea");
+  assert.equal(rubric.value, "Hello, Ada");
+  for (const field of ["minimum score", "judge model", "judge version"]) assert.equal(judgeField(h.root, 1, field).value, "");
+  const score = judgeField(h.root, 1, "minimum score");
+  assert.equal(score.type, "number"); assert.equal(String(score.min), "0"); assert.equal(String(score.max), "100"); assert.equal(String(score.step), "1");
+  edited(rubric, "Says why.\nKeeps detail.");
+  let prevented = false; rubric.listeners.keydown[0]({ key: "Enter", shiftKey: true, preventDefault() { prevented = true; } });
+  assert.equal(prevented, false); assert.equal(h.calls.length, 0);
+  edited(score, "0"); edited(judgeField(h.root, 1, "judge model"), "fake"); edited(judgeField(h.root, 1, "judge version"), "v1");
+  enterOn(rubric); await tick();
+  assert.equal(h.calls.length, 1); assert.equal(h.calls[0].operation, "save-and-test"); assert.equal(h.calls[0].caseId, "greeting");
+  assert.equal(Object.hasOwn(h.calls[0], "sourceModel"), false);
+  assert.deepEqual(h.calls[0].examples[0].assertions, [{ id: "greeting-text", type: "llmJudge", rubric: "Says why.\nKeeps detail.", minScore: 0, judgeModel: "fake", judgeVersion: "v1" }]);
+});
+
+for (const score of ["0", "100", "", "1.5", "101"]) test(`Judge minimum score ${JSON.stringify(score)} is validated before dispatch`, async () => {
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: [{ id: "a", input: "Name a", assertions: [judgeAssertion()] }] });
+  openTest(h.root, "a"); edited(judgeField(h.root, 1, "minimum score"), score); enterOn(judgeField(h.root, 1, "rubric")); await tick();
+  if (score === "0" || score === "100") { assert.equal(h.calls.length, 1); assert.equal(h.calls[0].examples?.[0]?.assertions[0].minScore ?? 0, Number(score)); }
+  else { assert.equal(h.calls.length, 0); assert.match(h.root.textContent, /Fill in every check\./); }
+});
+
+for (const field of ["judge model", "judge version"]) test(`Judge requires ${field} before dispatch`, async () => {
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: [{ id: "a", input: "Name a", assertions: [judgeAssertion()] }] });
+  openTest(h.root, "a"); edited(judgeField(h.root, 1, field), ""); enterOn(judgeField(h.root, 1, "rubric")); await tick();
+  assert.equal(h.calls.length, 0); assert.match(h.root.textContent, /Fill in every check\./);
+});
+
+for (const verdict of ["pass", "fail", "unknown"]) test(`Judge renders observed ${verdict} and safe reason without scores`, async () => {
+  const reason = '<img src=x onerror="bad()"> A short reason.';
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: [{ id: "a", input: "Name a", assertions: [judgeAssertion()] }], latest: (revision, examples) => {
+    const latest = bLatest({ a: verdict })(revision, examples);
+    latest.result.examples[0].assertions[0] = { id: "why", type: "llmJudge", verdict, reasonCode: "judge_verdict", reason };
+    return latest;
+  } });
+  openTest(h.root, "a");
+  assert.equal(byClass(h.root, "check-label")[0].textContent, "Says why. · judge");
+  assert.equal(byClass(h.root, "check-verdict")[0].textContent, `Judge ${verdict === "pass" ? "Passed" : verdict === "fail" ? "Failed" : "Inconclusive"}`);
+  assert.equal(byClass(h.root, "judge-reason")[0].textContent, reason);
+  assert.equal(all(h.root).some(e => e.tag === "img"), false);
+  assert.doesNotMatch(h.root.textContent, /score:|reasoning:|Not met:/i);
+  assert.equal(byClass(h.root, "why-actions").length, 0);
+  if (verdict === "unknown") { assert.doesNotMatch(byClass(h.root, "result-pill")[0]?.textContent ?? "", /1 of 1 passing/); assert.deepEqual(checkLabels(h.root), ["Inconclusive"]); }
+  edited(judgeField(h.root, 1, "judge version"), "v2");
+  assert.equal(byClass(h.root, "check-verdict")[0].attrs["data-tone"], verdict === "unknown" ? "old-error" : `old-${verdict}`);
+  assert.match(byClass(h.root, "check-verdict")[0].textContent, /last run/, "old judge results need visible text, not opacity alone");
+});
+
+for (const [label, key, value] of [["rubric", "rubric", "New\nRubric"], ["minimum score", "minScore", "100"], ["judge model", "judgeModel", "other"], ["judge version", "judgeVersion", "opaque-revision"]]) test(`Judge changing only ${label} preserves other raw fields and dims verdict`, async () => {
+  const original = judgeAssertion();
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: [{ id: "a", input: "Name a", assertions: [original] }], latest: bLatest({ a: "pass" }) });
+  openTest(h.root, "a"); edited(judgeField(h.root, 1, label), value);
+  assert.deepEqual(checkLabels(h.root), ["Passed last run"]);
+  enterOn(judgeField(h.root, 1, label)); await tick();
+  assert.deepEqual(h.calls[0].examples[0].assertions[0], { ...original, [key]: key === "minScore" ? Number(value) : value });
+});
+
+test("Judge conversion in both directions preserves ID and operand, drops only incompatible known fields; cancel restores", async () => {
+  const original = judgeAssertion();
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: [{ id: "a", input: "Name a", assertions: [original] }] });
+  openTest(h.root, "a"); click(byClass(h.root, "check-line")[0]);
+  click(byClass(h.root, "check-type-option")[2]);
+  assert.equal(byClass(h.root, "check-value")[0].value, "Says why.");
+  enterOn(byClass(h.root, "check-value")[0]); await tick();
+  assert.deepEqual(h.calls[0].examples[0].assertions[0], { id: "why", type: "regex", pattern: "Says why." });
+  click(byClass(h.root, "check-type-option")[3]);
+  assert.equal(judgeField(h.root, 1, "minimum score").value, "");
+  judgeField(h.root, 1, "rubric").listeners.keydown[0]({ key: "Escape", preventDefault() {} });
+  assert.equal(String(judgeField(h.root, 1, "minimum score").value), "0");
+  assert.equal(judgeField(h.root, 1, "judge model").value, "fake");
+});
+
+test("Judge duplicates and deletes without changing metadata", async () => {
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: [{ id: "a", input: "Name a", assertions: [judgeAssertion()] }] });
+  openTest(h.root, "a"); click(byClass(h.root, "more")[0]); click(btn(h.root, "Duplicate test"));
+  enterOn(judgeField(h.root, 1, "rubric")); await tick();
+  assert.deepEqual(h.calls[0].examples.map(e => e.assertions[0]), [judgeAssertion(), judgeAssertion()]);
+  click(byClass(h.root, "add-check")[0]); click(byClass(h.root, "remove-check")[0]);
+  edited(byClass(h.root, "check-value")[0], "remaining"); enterOn(byClass(h.root, "check-value")[0]); await tick();
+  assert.deepEqual(h.calls[1].examples[1].assertions, [{ id: "check-1", type: "contains", value: "remaining" }]);
+});
+
+for (const fence of ["stale", "wrong type", "duplicate observation"]) test(`Judge result respects ${fence} fence`, async () => {
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: [{ id: "a", input: "Name a", assertions: [judgeAssertion()] }], latest: (revision, examples) => {
+    if (fence === "stale") return { status: "stale" };
+    const latest = bLatest({ a: "pass" })(revision, examples), row = latest.result.examples[0];
+    row.assertions[0].reason = "Must not show";
+    if (fence === "wrong type") row.assertions[0].type = "contains";
+    else row.assertions.push({ ...row.assertions[0] });
+    return latest;
+  } });
+  openTest(h.root, "a");
+  assert.deepEqual(checkLabels(h.root), ["No result"]);
+  assert.equal(byClass(h.root, "judge-result")[0].hidden, true);
+  assert.doesNotMatch(h.root.textContent, /Must not show/);
+});
+
+test("readonly Judge keeps rubric and metadata inert without editable fields", async () => {
+  const fixture = savedFixture(), literal = '<img src=x onerror="bad()">';
+  fixture.examples[0].assertions = [{ ...judgeAssertion(), rubric: literal, judgeVersion: literal, future: literal }];
+  fixture.latest.result.examples[0].assertions = [{ id: "why", type: "llmJudge", verdict: "pass", reason: literal }];
+  const root = openTest(await rendered(fixture), "greeting");
+  assert.equal(byClass(root, "check-type-button").length, 0);
+  assert.equal(byClass(root, "check-value").length, 0);
+  assert.equal(byClass(root, "check-label")[0].textContent, literal + " · judge");
+  assert.match(byClass(root, "check-details")[0].textContent, /minScore: 0/);
+  assert.ok(byClass(root, "check-details")[0].textContent.includes("future: " + literal));
+  assert.equal(byClass(root, "judge-reason")[0].textContent, literal);
+  assert.equal(all(root).some(e => e.tag === "img"), false);
+});
+
 test("Judge is the fourth check type and opening its chooser does not dispatch", async () => {
   const h = await editableCanvas("Reply briefly."); openTest(h.root, "greeting");
   click(byClass(h.root, "check-line")[0]); click(byClass(h.root, "check-type-button")[0]);
@@ -1950,7 +2068,7 @@ test("check-type menu supports choice and Escape without dispatching", async () 
   const trigger = byClass(h.root, "check-type-button")[0];
   click(trigger); assert.equal(trigger.attrs["aria-expanded"], "true");
   const choices = byClass(h.root, "check-type-option");
-  assert.deepEqual(choices.map(e => e.textContent), ["Contains", "Not contains", "Regex"]);
+  assert.deepEqual(choices.map(e => e.textContent), ["Contains", "Not contains", "Regex", "Judge"]);
   click(choices[1]); assert.equal(trigger.textContent, "Not contains");
   assert.equal(trigger.attrs["aria-expanded"], "false"); assert.equal(h.doc.activeElement, trigger);
   click(trigger); trigger.listeners.keydown[0]({ key: "Escape", preventDefault() {} });
@@ -2422,15 +2540,15 @@ for (const eol of ["\n", "\r\n"]) test(`prompt paragraphs keep blank lines as th
   assert.equal(saved, h.source.replace(body.replaceAll("\n", eol), (body + "\nAdded.").replaceAll("\n", eol)));
 });
 
-test("editing a test keeps raw authored fields, including a judge's minScore 0; existing judges stay read-only", async () => {
+test("editing a plain check keeps raw authored fields, including an editable judge's minScore 0", async () => {
   const judge = { id: "why", type: "llmJudge", rubric: "Says why.", minScore: 0, judgeModel: "judge-x", judgeVersion: "v1" };
   const ex = [{ id: "a", input: "Name a", assertions: [{ id: "says-hello", type: "contains", value: "Hello, a" }, judge] }];
   const h = await editableCanvas("Reply briefly.", undefined, { examples: ex });
   openTest(h.root, "a");
-  assert.equal(byClass(h.root, "check-type-button").length, 1, "the judge has no editable type");
-  assert.deepEqual(byClass(h.root, "check-type-option").map(e => e.textContent), ["Contains", "Not contains", "Regex"]);
+  assert.equal(byClass(h.root, "check-type-button").length, 2, "the judge is editable too");
+  assert.deepEqual(byClass(h.root, "check-type-option").slice(0, 4).map(e => e.textContent), ["Contains", "Not contains", "Regex", "Judge"]);
   assert.doesNotMatch(h.root.textContent, /Model validated/);
-  assert.match(byClass(h.root, "check-details")[0].textContent, /minScore: 0/);
+  assert.equal(String(judgeField(h.root, 2, "minimum score").value), "0");
   assert.deepEqual(byClass(h.root, "remove-check").map((b) => b.attrs["aria-label"]), ["Remove check 1", "Remove check 2"]);
   edited(byClass(h.root, "check-value")[0], "Hello there, a");
   enterOn(byClass(h.root, "check-value")[0]); await tick();

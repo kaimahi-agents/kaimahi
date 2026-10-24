@@ -164,7 +164,15 @@ input[readonly]{color:var(--muted)}
 .check-line{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;padding:0;color:var(--text);font-size:15px;text-align:left;cursor:pointer}
 .check-line .check-label{overflow-wrap:anywhere;min-width:0}
 .check-edit{display:grid;grid-template-columns:24px auto minmax(0,1fr) auto;gap:10px;align-items:center;min-width:0}
-.check-edit>.check-value{height:38px;padding:0 14px;min-width:0;border-color:var(--line);border-radius:10px;font-size:15px}
+.judge-result{padding-left:34px;display:grid;gap:6px;overflow-wrap:anywhere}
+.judge-result.old{color:var(--muted)}
+.judge-reason{font-size:14px;color:var(--muted);white-space:pre-wrap}
+.check-fields{min-width:0}
+.check-fields .check-value{width:100%;height:38px;padding:0 14px;min-width:0;border-color:var(--line);border-radius:10px;font-size:15px}
+.judge-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.check-field{display:flex;flex-direction:column;gap:6px;min-width:0;font-size:13px;color:var(--muted)}
+.rubric-field{grid-column:1/-1}
+.check-fields .judge-rubric{height:auto;min-height:64px;padding:10px 14px;resize:vertical}
 .check-type{position:relative;min-width:0}
 .check-type-button{display:flex;align-items:center;gap:8px;min-height:38px;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font-size:15px;cursor:pointer;white-space:nowrap}
 .check-type-menu{position:absolute;top:calc(100% + 4px);left:0;z-index:10;min-width:160px;padding:4px;border:1px solid var(--menu-border);border-radius:10px;background:var(--menu-bg);box-shadow:0 8px 24px var(--shadow);display:flex;flex-direction:column}
@@ -230,4 +238,4 @@ input[readonly]{color:var(--muted)}
 .result-pill[data-tone='running'] .result-dot{background:none;border:2px solid currentColor;border-right-color:transparent;animation:kmx-spin .9s linear infinite}
 @media (prefers-reduced-motion:reduce){.spin{animation:none}.result-pill[data-tone='running'] .result-dot{animation:none}}
 @media (max-width:700px){.agent-header{grid-template-columns:minmax(0,1fr);gap:16px}.header-controls{padding-top:0;grid-template-columns:150px minmax(0,280px);justify-content:end}.canvas{padding:28px 16px}.canvas:has(.detail-view){padding-top:24px}.pinned-bar{padding:0 16px}.compare-cols{grid-template-columns:1fr}}
-@media (max-width:480px){.header-controls{grid-template-columns:minmax(0,1fr);justify-content:stretch}.test-row{grid-template-columns:minmax(0,1fr) auto}.test-input-summary{grid-column:1/-1;grid-row:2}.test-verdict{grid-column:2;grid-row:1}.check-edit{grid-template-columns:24px minmax(0,1fr) auto}.check-edit>.check-value{grid-column:2/-1;grid-row:2}.check-verdict{grid-column:3;grid-row:1}}
+@media (max-width:480px){.header-controls{grid-template-columns:minmax(0,1fr);justify-content:stretch}.test-row{grid-template-columns:minmax(0,1fr) auto}.test-input-summary{grid-column:1/-1;grid-row:2}.test-verdict{grid-column:2;grid-row:1}.check-edit{grid-template-columns:24px minmax(0,1fr) auto}.check-edit>.check-fields{grid-column:2/-1;grid-row:2}.judge-fields{grid-template-columns:minmax(0,1fr)}.check-verdict{grid-column:3;grid-row:1}}
