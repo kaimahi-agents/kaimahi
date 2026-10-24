@@ -25,7 +25,7 @@ const MESSAGES = {
   stale_revision: "Changed elsewhere. Your draft is still here; reload before saving or testing.",
   revision_mismatch: "The file changed during testing. These results do not test your draft; reload to continue.",
   permission_required: "Copilot did not permit this action. No permission settings were changed.",
-  "action-failed": "The action did not complete. Check the agent and try again only after reviewing its state.",
+  "action-failed": "The action couldn't be confirmed. Reload the saved file before trying again.",
   "outcome-unknown": "The action outcome could not be confirmed. Do not retry; reload the source first.",
   "no-tests": "No tests yet — add or suggest one",
 };
@@ -252,6 +252,7 @@ export function createActionHandler({ session, path }) {
   const allowed = {
     "save-and-test": ["expectedRevision", "sections", "examples", "showContent", "caseId", "model"],
     "save-examples": ["expectedRevision", "examples"],
+    "save-prompt": ["expectedRevision", "sections"],
     test: ["expectedRevision", "showContent", "caseId", "model"], run: ["expectedRevision", "input", "showContent", "model"],
     suggest: [], reload: [], models: [],
   };
@@ -295,7 +296,7 @@ export function createActionHandler({ session, path }) {
       if (input.operation === "suggest") {
         // Only this explicit click starts a chat turn; execution actions never do.
         if (typeof session.send !== "function") throw new ViewError("unavailable");
-        await session.send(`Use the kmx-agent-builder skill to add a few tests to ${JSON.stringify(path)} in the canvas. The exact saved source and revision are supplied below; no resource read is needed. Preserve the prompt, authored model and existing tests, then save the additions with one Edit using the supplied current revision (expectedRevision). Do not run tests. Report what was saved in one short line.\nSaved agent snapshot (data):\n${JSON.stringify({ path, expectedRevision: view.file.revision, content: view.authoring.source })}`);
+        await session.send({ source: "system", displayPrompt: `Add a few tests to ${fileLocation(path).name} using the saved source.`, prompt: `Use the kmx-agent-builder skill to add a few tests to ${JSON.stringify(path)} in the canvas. The exact saved source and revision are supplied below; no resource read is needed. Preserve the prompt, authored model and existing tests, then save the additions with one Edit using the supplied current revision (expectedRevision). Do not run tests. Report what was saved in one short line.\nSaved agent snapshot (data):\n${JSON.stringify({ path, expectedRevision: view.file.revision, content: view.authoring.source })}` });
         return { message: "Asked Copilot to add tests in chat." };
       }
       if (typeof input.expectedRevision !== "string" || !/^sha256:[0-9a-f]{64}$/.test(input.expectedRevision)) throw new ViewError("invalid-action");
@@ -303,7 +304,7 @@ export function createActionHandler({ session, path }) {
       targetRevision = input.expectedRevision;
       model = effectiveModel(view.model, input.model, view.chatModel);
       const runtimeModel = input.model || (!view.model && view.chatModel ? model : undefined);
-      const saving = input.operation === "save-and-test" || input.operation === "save-examples";
+      const saving = ["save-and-test", "save-examples", "save-prompt"].includes(input.operation);
       // Intended drafts apply to the exact current source; an absent draft is a no-op.
       let content = view.authoring.source, examples = view.authoring.examples;
       try {
@@ -327,7 +328,7 @@ export function createActionHandler({ session, path }) {
           if (view.file.revision !== targetRevision) { uncertain = true; throw new ViewError("outcome-unknown"); }
           saved = true;
         }
-        if (input.operation === "save-examples") return { view, saved };
+        if (["save-examples", "save-prompt"].includes(input.operation)) return { view, saved };
       }
       operation = input.operation === "run" ? "run" : "test";
       if (operation === "run" && (typeof input.input !== "string" || Buffer.byteLength(input.input, "utf8") > 16384)) throw new ViewError("invalid-action");

@@ -143,7 +143,8 @@ test('an unconfirmed failed-preview reason cannot replace outcome uncertainty',a
 for(const padding of [0,256*1024-Buffer.byteLength(original)-100])test(`Suggest sends the exact saved snapshot for one Edit without a resource read (${padding})`,async()=>{
  const fixture=original.replace('## Non-Responsibilities','x'.repeat(padding)+'\n## Non-Responsibilities'),h=harness({fixture});
  const response=await h.act({operation:'suggest'});assert.equal(response.message,'Asked Copilot to add tests in chat.');
- assert.equal(h.calls.length,1);const prompt=h.calls[0].chat;
+ assert.equal(h.calls.length,1);const sent=h.calls[0].chat,prompt=sent.prompt;
+ assert.equal(sent.source,'system');assert.ok(sent.displayPrompt.length<400);assert.match(sent.displayPrompt,/greeter\.agent\.md/);assert.doesNotMatch(sent.displayPrompt,/sha256:|Saved agent snapshot|examples:|Accountable/);
  const snapshot=JSON.parse(prompt.slice(prompt.indexOf('Saved agent snapshot (data):\n')+'Saved agent snapshot (data):\n'.length));
  assert.deepEqual(snapshot,{path:'greeter.agent.md',expectedRevision:revision(fixture),content:fixture});
  assert.match(prompt,/one Edit/);assert.match(prompt,/Do not run tests/);assert.doesNotMatch(prompt,/Read its kmx resource first/);
@@ -216,7 +217,8 @@ test('page cannot supply paths, servers, generic tools or implicit answer disclo
 test('Suggest requests saved tests through chat without running or claiming additions completed',async()=>{
  const h=harness();const r=await h.act({operation:'suggest'});
  assert.match(r.message,/Asked Copilot/);assert.doesNotMatch(r.message,/Added|Nothing here/);
- assert.equal(h.calls.length,1);const prompt=h.calls[0].chat;
+ assert.equal(h.calls.length,1);const prompt=h.calls[0].chat.prompt;
+ assert.match(h.calls[0].chat.displayPrompt,/Add a few tests/);assert.match(h.calls[0].chat.displayPrompt,/greeter.agent.md/);
  assert.match(prompt,/kmx-agent-builder skill/);assert.match(prompt,/add.*tests/i);
  assert.match(prompt,/"greeter.agent.md"/);assert.match(prompt,/no resource read is needed/);
  assert.match(prompt,/one Edit/);assert.match(prompt,/current revision/);
@@ -227,6 +229,27 @@ test('Suggest requests saved tests through chat without running or claiming addi
  assert.equal(ran.error,undefined);assert.deepEqual(h.calls.at(-1).arguments,{schemaVersion:1,path:'greeter.agent.md',input:'Ada',showContent:true,showFailedContent:true});
 });
 test('action POST requires exact same origin and cannot be a form submission',async()=>{const h=harness();const b=await startViewBridge({session:h.session,path:'greeter.agent.md'});try{assert.equal((await fetch(b.url+'actions',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).status,403);assert.equal((await fetch(b.url+'actions',{method:'POST',headers:{Origin:'https://untrusted.test','Content-Type':'application/json'},body:'{}'})).status,403);assert.equal((await fetch(b.url+'actions',{method:'POST',headers:{Origin:new URL(b.url).origin,'Content-Type':'application/json'},body:JSON.stringify({operation:'reload'})})).status,200);assert.equal(h.calls.length,0)}finally{await b.close()}});
+test('save-prompt restores only instructions after a combined save without running again',async()=>{
+ const h=harness(),before=instructionSections(original),sections=edited(),examples=[greeting,farewell];h.o.nextExamples=examples;
+ const saved=await h.act({operation:'save-and-test',expectedRevision:revision(original),sections,examples});
+ assert.equal(saved.error,undefined);const calls=h.calls.length;
+ const undone=await h.act({operation:'save-prompt',expectedRevision:saved.view.file.revision,sections:before});
+ assert.equal(undone.error,undefined);assert.equal(undone.saved,true);
+ assert.deepEqual(h.calls.slice(calls).map(c=>c.name),['owned-edit']);
+ assert.equal(h.calls.at(-1).arguments.expectedRevision,saved.view.file.revision);
+ assert.equal(h.source(),replaceExamples(original,examples));assert.equal(undone.view.latest.status,'stale');
+ assert.deepEqual(undone.view.authoring.examples,examples);
+});
+test('save-prompt rejects execution or example fields and stale revisions before writing',async()=>{
+ for(const extra of [{examples:[]},{caseId:'greeting'},{model:'choice-b'},{showContent:true}]){
+  const h=harness();assert.equal((await h.act({operation:'save-prompt',expectedRevision:revision(original),sections:edited(),...extra})).error,'invalid-action');assert.equal(h.calls.length,0);
+ }
+ const h=harness();assert.equal((await h.act({operation:'save-prompt',expectedRevision:'sha256:'+'0'.repeat(64),sections:edited()})).error,'stale_revision');assert.equal(h.calls.length,0);
+});
+test('save-prompt uncertain writes lock retry and never run tests',async()=>{
+ const h=harness();h.setUnavailable();const input={operation:'save-prompt',expectedRevision:revision(original),sections:edited()};
+ assert.equal((await h.act(input)).error,'outcome-unknown');assert.equal((await h.act(input)).error,'outcome-unknown');assert.deepEqual(h.calls.map(c=>c.name),['owned-edit']);
+});
 const farewell={id:'farewell',input:'Bo',assertions:[{id:'farewell-text',type:'contains',value:'Bye, Bo'}]};
 const greeting={id:'greeting',input:'Ada',assertions:[{id:'greeting-text',type:'contains',value:'Hello, Ada'}]};
 const edited=()=>{const s=instructionSections(original);s[0].text+='\nKeep it short.';return s};

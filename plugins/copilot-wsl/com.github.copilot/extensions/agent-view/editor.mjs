@@ -1,5 +1,5 @@
 // Inert DOM editing and exact source serialization. Loaders and actions are caller-owned.
-import { effectiveModel } from "./authoring.mjs";
+import { effectiveModel, DEFAULT_MODEL } from "./authoring.mjs";
 export const el = (doc, tag, className, text) => {
   const node = doc.createElement(tag);
   if (className) node.className = className;
@@ -87,23 +87,77 @@ export function failureFacts(c, assertion) {
   }
 }
 
+// Highlight only an observed literal, never a guessed regex span or an
+// ambiguous repeated occurrence. Attribution is the same exact check identity.
+export function matchedAnswer(c) {
+  const excerpt = c?.row?.answerExcerpt;
+  if (c?.state !== "pass" || c.row?.state !== "complete" || typeof excerpt !== "string") return;
+  for (const a of c.example.assertions) {
+    if (a.type !== "contains" || c.expected?.get(checkKey(a)) !== a || c.checks?.get(checkKey(a))?.verdict !== "pass") continue;
+    const value = fieldValue(a), start = excerpt.indexOf(value);
+    if (value && start >= 0 && excerpt.indexOf(value, start + 1) < 0) return value;
+  }
+}
+
+// Engine diagnostics are copy, never instructions or execution inputs. Unknown
+// codes cannot smuggle raw provider prose into the canvas.
+const PLAIN_REASONS = {
+  checks_passed: "All selected tests passed.", assertion_satisfied: "Check met.", completion_ready: "The answer is ready.",
+  assertion_failed: "Check not met.", judge_unknown: "The judge could not decide.", not_run: "This test did not run.",
+  cancelled: "The run was cancelled.", deadline_exceeded: "The run ran out of time.",
+  invalid_file: "This agent file needs fixing before it can run.", no_tests: "No tests yet — add or suggest one",
+  invalid_selection: "This test is no longer in the agent file.", invalid_options: "This run's settings are not supported.",
+  model_unavailable: "The selected model is not available for this run.", tools_unavailable: "This run cannot use the agent's tools.",
+  unsafe_tool_content: "Tool content was withheld before it could be saved.", credential_content: "Content containing credentials was withheld.",
+  runner_unavailable: "The agent could not start. No model was called.", execution_failed: "The agent could not finish this run.",
+  invalid_completion: "The answer could not be confirmed for this run.", diagnostics_failed: "Run details could not be saved.",
+  journal_failed: "The run could not be saved, so its result is unconfirmed.",
+  copilot_auth_required: "Sign in to GitHub Copilot before running this agent.", copilot_auth_revoked: "Sign in to GitHub Copilot again before running this agent.",
+  copilot_no_subscription: "An active GitHub Copilot subscription is needed for this run.", copilot_policy_denied: "Your Copilot policy does not allow this run.",
+  copilot_quota: "Copilot's usage limit was reached.", copilot_model_unavailable: "Choose an available Copilot model.",
+  copilot_malformed: "Copilot returned an answer that could not be used.", copilot_keychain_unavailable: "Copilot sign-in could not be read. Use an existing GitHub sign-in.",
+  copilot_unavailable: "Copilot could not complete this run.",
+};
+export function plainReason(row) {
+  if (row?.reasonCode === "copilot_model_unavailable" && row.reason?.startsWith("Available Copilot models: ")) {
+    const ids = row.reason.slice("Available Copilot models: ".length).split(", ");
+    if (ids.every(id => /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/.test(id) && !id.includes("://") && id.toLowerCase() !== "auto")) return row.reason;
+  }
+  return Object.hasOwn(PLAIN_REASONS, row?.reasonCode) ? PLAIN_REASONS[row.reasonCode] : "The result could not be confirmed.";
+}
+
+// Copilot's owned service refusals use state:error even before an answer exists.
+// Empty results alone say nothing about whether execution was attempted.
+export function isRefused(result) {
+  if (!result || result.verdict !== "unknown" || result.fullPass !== false || result.examples?.some(row => row.state === "complete") || result.adHoc?.state === "complete") return false;
+  return result.state === "refused" || result.state === "error" && [
+    "model_unavailable", "copilot_auth_required", "copilot_auth_revoked", "copilot_no_subscription",
+    "copilot_policy_denied", "copilot_quota", "copilot_model_unavailable", "copilot_keychain_unavailable",
+  ].includes(result.reasonCode);
+}
+
 // One line per authored test. A local edit keeps the known shape and count but
 // marks it old; missing, unselected or stale observations never become verdicts.
+export const resultTone = kind => ["pass", "fail", "error", "running"].includes(kind) ? kind : "none";
 export function testRow(c, local, blocked, malformed = false) {
-  if (malformed) return { kind: "none", base: "none", label: "Incomplete", note: "Incomplete result", count: "incomplete" };
-  if (blocked) return { kind: "none", base: "none", label: "Result unconfirmed", note: "" };
-  if (!c) return { kind: "none", base: "none", label: "Not run", note: "", count: "" };
+  if (malformed) return { kind: "none", tone: resultTone("none"), base: "none", label: "Incomplete", note: "Incomplete result", count: "incomplete" };
+  if (blocked) return { kind: "none", tone: resultTone("none"), base: "none", label: "Result unconfirmed", note: "" };
+  if (!c) return { kind: "none", tone: resultTone("none"), base: "none", label: "Not run", note: "", count: "" };
   let base = "none", label = c.label, note = "", count = "";
   if (c.state === "pass") [base, label, count] = ["pass", "Passed", "passing"];
-  else if (c.state === "fail") [base, label, note, count] = ["fail", "Failed", failureFacts(c)?.text || c.row?.reason || "Failed", "failing"];
+  else if (c.state === "fail") {
+    const judgeFailed = c.example.assertions.some(a => a.type === "llmJudge" && c.expected?.get(checkKey(a)) === a && c.checks?.get(checkKey(a))?.verdict === "fail");
+    [base, label, note, count] = ["fail", "Failed", failureFacts(c)?.text || (judgeFailed ? "Judge check not met" : "Check not met."), "failing"];
+  }
+  else if (c.state === "refused") [base, label, note, count] = ["error", "Refused", plainReason(c.row), "refused"];
   // Only an observed unfinished row earns the amber "!"; ambiguous or uncovered complete rows stay neutral.
   else if (c.state === "unknown" && c.row?.state !== undefined && c.row.state !== "complete") {
     [base, label, count] = ["error", "Didn't finish", "didn't finish"];
-    note = `Didn't finish${c.row.reason ? `: ${c.row.reason}` : ""}`;
+    note = plainReason(c.row);
   } else if (c.state === "unknown") [label, note, count] = ["Incomplete", "Incomplete result", "incomplete"];
-  else if (c.label === "Not in this run") [note, count] = [c.label, "not run"];
-  const old = local && base !== "none";
-  return { kind: old ? `old-${base}` : base, base, label: old ? `${label} last run` : label, note, count };
+  else if (c.label === "Not in this run") count = "not run";
+  const old = local && base !== "none", kind = old ? `old-${base}` : base;
+  return { kind, tone: resultTone(kind), base, label: old ? `${label} last run` : label, note, count };
 }
 export function coherentSelection(payload) {
   const result = payload.latest.result;
@@ -122,8 +176,8 @@ export function ambiguousPassSet(payload) {
 export function countText(rows) {
   const counts = new Map();
   for (const r of rows) counts.set(r.count, (counts.get(r.count) ?? 0) + 1);
-  return ["failing", "passing", "didn't finish", "incomplete", "not run"]
-    .filter((k) => counts.get(k)).map((k) => `${counts.get(k)} ${k}`).join(", ");
+  return ["failing", "passing", "refused", "didn't finish", "incomplete", "not run"]
+    .filter((k) => counts.get(k)).map((k) => `${counts.get(k)} ${k}`).join(" · ");
 }
 export const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 // Last-run display is controller-local, never a current resource or write input.
@@ -170,8 +224,26 @@ export const modelLabel = route => modelPresentation(route?.slice(route.indexOf(
 export function resultPill(doc, settings) {
   const node = el(doc, "span", "result-pill"), dot = el(doc, "span", "result-dot"), text = el(doc, "span");
   dot.setAttribute("aria-hidden", "true"); node.append(dot, text);
-  const update = () => { const state = settings(); node.setAttribute("data-tone", state.tone); text.textContent = state.text; };
+  const update = () => { const state = settings(); node.setAttribute("data-tone", resultTone(state.tone)); text.textContent = state.text; };
   update(); return { node, update };
+}
+// The controller supplies proven substrings; this renderer never rewrites answers.
+export function answerBlock(doc, row, local, actual, updates, passed = false) {
+  if (row.answerExcerpt === undefined) return el(doc, "p", "quiet", "Answer content not included.");
+  const box = el(doc, "div", "answer"), truncated = row.truncated || /…\s*\[truncated\]$/.test(row.answerExcerpt ?? "");
+  if (truncated) box.append(el(doc, "span", "label", "Answer truncated"));
+  const pre = el(doc, "pre", "answer-excerpt", actual === undefined ? row.answerExcerpt : undefined);
+  if (actual !== undefined) {
+    const [before, after] = row.answerExcerpt.split(actual), mark = el(doc, "mark", "", actual);
+    updates.push(() => { mark.className = local() ? "old" : passed ? "matched" : ""; });
+    pre.append(before, mark, after);
+  }
+  box.append(pre); return box;
+}
+export function refusalContext(view, selected) {
+  if (!["model_unavailable", "copilot_model_unavailable"].includes(view.latest.result?.reasonCode)) return "";
+  const pins = [...new Set((view.authoring?.examples ?? []).flatMap(e => e.assertions.filter(a => a.type === "llmJudge" && a.judgeModel).map(a => a.judgeModel)))];
+  return ` Run model: ${modelPresentation(effectiveModel(view.model, selected, view.chatModel)).name}.${pins.length ? ` Pinned Judge models: ${pins.join(", ")}.` : ""}`;
 }
 export function growTextarea(input) {
   input.style.height = "auto";
@@ -180,30 +252,52 @@ export function growTextarea(input) {
 // A check's fields own only their input values; source mutation and key actions stay caller-owned.
 export function checkFields(doc, initial, index, change, fieldKeys) {
   const node = el(doc, "div", "check-fields");
-  let inputs = [], first;
+  let inputs = [], first, targets = new Map(), advanced;
+  const markIssue = issue => {
+    for (const { input, hint } of targets.values()) {
+      input.setAttribute("aria-invalid", "false"); input.setAttribute("aria-describedby", "");
+      hint.hidden = true; hint.textContent = "";
+    }
+    const target = targets.get(issue?.field);
+    if (!target) return;
+    const { input, hint } = target;
+    hint.textContent = issue.message; hint.hidden = false;
+    input.setAttribute("aria-invalid", "true"); input.setAttribute("aria-describedby", hint.id);
+    if (advanced && ["judgeModel", "judgeVersion"].includes(issue.field)) advanced.open = true;
+    return input;
+  };
   const show = assertion => {
-    inputs = []; node.replaceChildren();
+    inputs = []; targets = new Map(); node.replaceChildren();
     const judge = assertion.type === "llmJudge";
     node.className = judge ? "check-fields judge-fields" : "check-fields";
-    const definitions = judge ? [["rubric", "Rubric"], ["minScore", "Minimum score"], ["judgeModel", "Judge model"], ["judgeVersion", "Judge version"]] : [[operandKey(assertion.type), "text"]];
+    advanced = judge ? el(doc, "details", "judge-advanced") : undefined;
+    if (advanced) { advanced.append(el(doc, "summary", "", "Advanced")); advanced.open = !String(assertion.judgeVersion ?? "").trim(); }
+    const definitions = judge ? [["rubric", "Rubric"], ["minScore", "Minimum score (0 to 100)"], ["judgeModel", "Judge model"], ["judgeVersion", "Judge version"]] : [[operandKey(assertion.type), "text"]];
     for (const [key, label] of definitions) {
       const input = el(doc, judge && key === "rubric" ? "textarea" : "input", `field check-value${key === "rubric" ? " judge-rubric" : ""}`);
       input.value = assertion[key] ?? "";
-      input.setAttribute("aria-label", `Check ${index + 1} ${label.toLowerCase()}`); input.setAttribute("spellcheck", "false");
+      input.setAttribute("aria-label", `Check ${index + 1} ${key === "minScore" ? "minimum score" : label.toLowerCase()}`); input.setAttribute("spellcheck", "false");
       if (key === "minScore") { input.type = "number"; input.min = "0"; input.max = "100"; input.step = "1"; }
       else if (input.tagName?.toLowerCase() !== "textarea" && key !== "rubric") input.type = "text";
       if (!judge) input.setAttribute("placeholder", assertion.type === "contains" ? "Text the answer must contain" : assertion.type === "notContains" ? "Text the answer must not contain" : "Pattern the answer must match");
       if (key === "rubric") input.rows = 2;
-      if (key === "judgeModel") input.setAttribute("placeholder", "Run model when blank");
-      input.addEventListener("input", () => change(key, key === "minScore" && input.value !== "" ? Number(input.value) : input.value));
+      input.addEventListener("input", () => {
+        if (key === "judgeVersion" && !input.value.trim()) advanced.open = true;
+        change(key, key === "minScore" && input.value !== "" ? Number(input.value) : input.value);
+      });
       fieldKeys(input); inputs.push(input);
-      if (judge) { const wrap = el(doc, "label", `check-field ${key === "rubric" ? "rubric-field" : ""}`, label); wrap.append(input); node.append(wrap); }
-      else node.append(input);
+      const hint = el(doc, "span", "field-hint"); hint.id = `check-${index + 1}-${key}-issue`; hint.hidden = true;
+      targets.set(key, { input, hint });
+      if (judge) {
+        const wrap = el(doc, "label", `check-field ${key === "rubric" ? "rubric-field" : ""}`, label); wrap.append(input, hint);
+        (key === "judgeModel" || key === "judgeVersion" ? advanced : node).append(wrap);
+      } else node.append(input, hint);
     }
+    if (advanced) node.append(advanced);
     first = inputs[0];
   };
   show(initial);
-  return { node, show, focus() { first.focus(); }, update(disabled) { for (const input of inputs) { input.disabled = disabled; if (input === first && first.rows) growTextarea(first); } } };
+  return { node, show, markIssue, focus() { first.focus(); }, update(disabled) { for (const input of inputs) { input.disabled = disabled; if (input === first && first.rows) growTextarea(first); } } };
 }
 // Unknown is an observation, not a passing/failing check. Identity must still be unambiguous.
 export function inconclusiveJudge(c, observed) {
@@ -217,20 +311,26 @@ export function judgeDetails(doc) {
   const score = el(doc, "div", "judge-score"), reason = el(doc, "div", "judge-reason");
   return { binding, node, score, reason, update(assertion, observed, visible, old) {
     const model = assertion?.judgeModel ?? assertion?.fields?.find(([key]) => key === "judgeModel")?.[1];
-    binding.textContent = model ? `Judge model: ${model} · pinned` : "Judge model: Run model · follows selection";
+    binding.textContent = model ? `Judge model: ${model} · pinned` : ""; binding.hidden = !model;
     const detail = visible ? observed?.judge : undefined;
-    score.textContent = detail ? `Scores: ${detail.scores.join(", ")} · minimum ${detail.minScore}` : "";
-    reason.textContent = visible ? detail?.reasons.length ? detail.reasons.join("\n\n") : observed?.reason ?? "" : "";
+    const reasons = [...new Set(detail?.reasons ?? [])];
+    const equalScores = detail?.scores.length === 2 && detail.scores[0] === detail.scores[1];
+    score.textContent = detail ? `${equalScores ? `Score ${detail.scores[0]}` : `Scores ${detail.scores.join(", ")}`} · needs ${detail.minScore}${equalScores ? " · 2 samples" : ""}` : "";
+    const fallback = observed && (!observed.reasonCode || observed.reasonCode === "judge_verdict") ? observed.reason ?? "" : plainReason(observed);
+    reason.textContent = visible ? reasons.length ? reasons.join("\n\n") : fallback : "";
     node.hidden = !visible; node.className = old ? "judge-result old" : "judge-result";
   } };
 }
-export function checkComplete(a) {
-  if (!EDITABLE_TYPES.some(([type]) => type === a.type)) return true;
-  if (!String(a[operandKey(a.type)] ?? "").trim()) return false;
-  return a.type !== "llmJudge" || typeof a.minScore === "number" && Number.isInteger(a.minScore) && a.minScore >= 0 && a.minScore <= 100
-    && (a.judgeModel === undefined || a.judgeModel === "" || typeof a.judgeModel === "string" && !!a.judgeModel.trim())
-    && typeof a.judgeVersion === "string" && !!a.judgeVersion.trim();
+export function checkIssue(a) {
+  if (!EDITABLE_TYPES.some(([type]) => type === a.type)) return;
+  const field = operandKey(a.type);
+  if (!String(a[field] ?? "").trim()) return { field, message: field === "rubric" ? "Needs a rubric" : field === "pattern" ? "Needs a pattern" : "Needs text to check" };
+  if (a.type !== "llmJudge") return;
+  if (typeof a.minScore !== "number" || !Number.isInteger(a.minScore) || a.minScore < 0 || a.minScore > 100) return { field: "minScore", message: "Needs a minimum score, 0 to 100" };
+  if (!(a.judgeModel === undefined || a.judgeModel === "" || typeof a.judgeModel === "string" && !!a.judgeModel.trim())) return { field: "judgeModel", message: "Clear the Judge model or name one" };
+  if (typeof a.judgeVersion !== "string" || !a.judgeVersion.trim()) return { field: "judgeVersion", message: "Needs a Judge version" };
 }
+export const checkComplete = a => !checkIssue(a);
 export function convertCheck(target, type) {
   const oldKey = operandKey(target.type), newKey = operandKey(type), value = target[oldKey] ?? "";
   if (oldKey !== newKey) delete target[oldKey];
@@ -278,10 +378,10 @@ export function runtimeModelControl(doc, settings, load, change) {
   const status = el(doc, "div", "quiet model-status"); status.setAttribute("role", "status");
   trigger.type = "button"; trigger.setAttribute("aria-haspopup", "menu");
   menu.setAttribute("role", "menu"); menu.setAttribute("aria-label", "Runtime models");
-  let models = [], state = "idle", choices = [], opened = false;
+  let models = [], defaultModel = DEFAULT_MODEL, state = "idle", choices = [], opened = false;
   const open = value => { opened = value; menu.hidden = !value; trigger.setAttribute("aria-expanded", String(value)); };
   const bind = (item, value) => {
-    item.addEventListener("click", () => { if (trigger.disabled) return; open(false); change(value); trigger.focus(); });
+    item.addEventListener("click", () => { if (trigger.disabled || item.disabled) return; open(false); change(value); trigger.focus(); });
     item.addEventListener("keydown", event => {
       const index = choices.indexOf(item);
       if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
@@ -289,17 +389,18 @@ export function runtimeModelControl(doc, settings, load, change) {
       } else if (event.key === "Escape") { event.preventDefault(); open(false); trigger.focus(); }
       else if (event.key === "Tab") open(false);
     });
-    choices.push(item);
+    if (!item.disabled) choices.push(item);
   };
   const update = () => {
     const { authored, selected, chatModel, disabled } = settings();
     const fallback = effectiveModel(authored, "", chatModel), current = selected || fallback;
-    const origin = selected ? "this canvas" : authored ? "from the agent file" : "default";
+    const origin = selected ? selected === defaultModel ? "default" : "this canvas" : authored ? "from the agent file" : "default";
     trigger.replaceChildren(el(doc, "span", "model-name", modelPresentation(current).name), el(doc, "span", "model-origin", ` · ${origin}`), icon(doc, "down", 12, 2));
     trigger.setAttribute("aria-label", `Runtime model: ${modelPresentation(current).name} · ${origin}`);
     trigger.setAttribute("title", `${current} · ${origin}`); trigger.disabled = !!disabled;
     const focused = choices.find(option => option === doc.activeElement)?.getAttribute("data-model"), wasOpen = opened;
-    const ids = [...new Set([fallback, chatModel, selected, ...models].filter(Boolean))];
+    const chatUnavailable = state === "ready" && chatModel && !models.includes(chatModel);
+    const ids = [...new Set([chatModel, fallback, selected, ...models].filter(Boolean))];
     const groups = new Map();
     for (const id of ids) {
       const group = modelPresentation(id).group;
@@ -307,23 +408,25 @@ export function runtimeModelControl(doc, settings, load, change) {
       groups.get(group).push(id);
     }
     choices = []; menu.replaceChildren();
+    // Following is a mode, not a duplicate entry for the fallback's model ID.
+    const follow = el(doc, "button", "model-default", authored ? "Use agent file model" : chatModel ? "Follow chat model" : "Use default model");
+    follow.type = "button"; follow.disabled = !!disabled || !!(!authored && chatUnavailable);
+    follow.setAttribute("role", "menuitem"); follow.setAttribute("data-model", "");
+    bind(follow, ""); menu.append(follow);
     for (const [name, ids] of groups) {
       const group = el(doc, "div", "model-options"); group.setAttribute("role", "group"); group.setAttribute("aria-label", name);
       group.append(el(doc, "div", "model-group", name));
       for (const id of ids) {
-        const option = el(doc, "button", "model-option", modelPresentation(id).name); option.type = "button";
+        const option = el(doc, "button", `model-option${name === "Other models" ? " model-id" : ""}`, modelPresentation(id).name); option.type = "button";
         option.setAttribute("role", "menuitemradio"); option.setAttribute("aria-checked", String(id === current));
-        option.setAttribute("data-model", id); option.setAttribute("title", id); option.disabled = !!disabled;
-        if (id === chatModel) option.append(el(doc, "span", "model-chat", "Current chat model"));
+        option.setAttribute("data-model", id); option.setAttribute("title", id); option.disabled = !!disabled || !!(id === chatModel && chatUnavailable);
+        if (id === chatModel) option.append(el(doc, "span", "model-chat", chatUnavailable ? "Chat model · not available here" : "Current chat model"));
         bind(option, id); group.append(option);
       }
       menu.append(group);
     }
     status.textContent = state === "loading" ? "Loading models…" : state === "failed" ? "Choices unavailable; model selection unchanged." : "";
-    // Following is a mode, not a duplicate entry for the fallback's model ID.
-    const follow = el(doc, "button", "model-default", authored ? "Use agent file model" : chatModel ? "Follow chat model" : "Use default model");
-    follow.type = "button"; follow.disabled = !!disabled; follow.setAttribute("role", "menuitem"); follow.setAttribute("data-model", "");
-    bind(follow, ""); menu.append(follow, status);
+    menu.append(status);
     if (disabled) open(false);
     if (focused !== undefined && !disabled) { open(wasOpen); choices.find(option => option.getAttribute("data-model") === focused)?.focus(); }
   };
@@ -333,7 +436,7 @@ export function runtimeModelControl(doc, settings, load, change) {
     try {
       const response = await load();
       if (response?.error || !Array.isArray(response?.models)) throw new Error("unavailable");
-      models = response.models; state = "ready";
+      models = response.models; defaultModel = response.defaultModel ?? DEFAULT_MODEL; state = "ready";
     } catch { state = "failed"; }
     update();
   };
@@ -390,7 +493,7 @@ export function statusIcon(doc, kind, label) {
 }
 
 export function testNameControl(doc, settings, change) {
-  const input = el(doc, "input", "test-title-input"), hint = el(doc, "p", "name-hint", "Name this test.");
+  const input = el(doc, "input", "test-title-input"), hint = el(doc, "p", "name-hint", "Add a name to save and run this test.");
   input.type = "text"; input.value = settings().name;
   input.setAttribute("aria-label", "Test name"); input.setAttribute("placeholder", "Name this test");
   input.setAttribute("spellcheck", "false"); input.setAttribute("aria-describedby", "test-name-hint");

@@ -40,11 +40,11 @@ button:disabled{cursor:default}
 .model-default{margin-top:6px;border-top:1px solid var(--line);border-radius:0;color:var(--muted)}
 .model-chat{font-size:12px;color:var(--muted)}
 .model-status{padding:8px 10px}.model-status:empty{display:none}
-h1{font-size:30px;line-height:1.2;font-weight:700;overflow-wrap:anywhere;min-width:0}
+h1{font-size:26px;line-height:1.2;font-weight:700;overflow-wrap:anywhere;min-width:0}
 .purpose{color:var(--muted);overflow-wrap:anywhere}
 .purpose:empty{display:none}
 .source-details{min-width:0;max-width:100%}
-.agent-meta{list-style:none;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;margin-top:4px}
+.agent-meta{list-style:none;display:block;overflow-wrap:anywhere;font-size:13px;margin-top:4px}
 .agent-meta::-webkit-details-marker{display:none}
 .agent-meta:hover{color:var(--text-2)}
 .source-info{position:absolute;right:0;top:calc(100% + 6px);z-index:3;width:min(560px,100%);max-height:70vh;overflow:auto;padding:14px 16px;border-radius:8px;border:1px solid var(--menu-border);background:var(--menu-bg);box-shadow:0 8px 24px var(--shadow);display:flex;flex-direction:column;gap:10px;font-size:13px}
@@ -73,7 +73,14 @@ h1{font-size:30px;line-height:1.2;font-weight:700;overflow-wrap:anywhere;min-wid
 .instruction-body{line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere;outline:none;min-height:3.2em}
 .instruction-body code{background:var(--raised);border-radius:3px;padding:0 3px}
 .instruction-body[contenteditable='false']{cursor:default}
-.prompt-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:28px}
+.prompt-foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;min-height:28px}
+.hosted-notice{flex-basis:100%;font-size:12px}
+.prompt-undo{margin-left:8px}
+.json-input,.model-id{font-family:var(--mono,ui-monospace,monospace)}
+.model-id{font-size:12px;color:var(--muted)}
+.judge-advanced{grid-column:1/-1}
+.judge-advanced summary{font-size:12px;color:var(--muted);cursor:pointer}
+.judge-advanced .check-field{margin-top:8px}
 .ib{width:28px;height:28px;flex-shrink:0;border-radius:6px;border:none;background:transparent;color:var(--muted);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
 .ib:hover:not(:disabled){background:var(--hover)}
 .save-run{color:var(--accent)}
@@ -82,7 +89,7 @@ h1{font-size:30px;line-height:1.2;font-weight:700;overflow-wrap:anywhere;min-wid
 .instruction-copy p,.instruction-copy ul,.instruction-copy pre{margin:0 0 10px}
 .instruction-heading{font-size:14px;font-weight:600;margin:12px 0 6px}
 .code-block{padding:10px 12px;background:var(--raised);border-radius:6px}
-.message-line{display:flex;align-items:baseline;gap:12px;margin-top:-20px}
+.message-line{display:flex;align-items:baseline;gap:12px}
 .message-line:has(.action-message:empty){display:none}
 .action-message{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
 
@@ -143,9 +150,12 @@ input[readonly]{color:var(--muted)}
 .detail-view .test-title{font-size:26px;line-height:1.2;font-weight:700}
 .detail-status{font-size:13px}
 .detail-status .result-word{font-weight:600}
-.detail-status[data-result='pass'] .result-word{color:var(--success)}
-.detail-status[data-result='fail'] .result-word{color:var(--danger)}
-.detail-status[data-tone='old'] .result-word{color:var(--muted)}
+.detail-status[data-tone='pass'] .result-word{color:var(--success)}
+.detail-status[data-tone='fail'] .result-word{color:var(--danger)}
+.detail-status[data-tone='none'] .result-word{color:var(--muted)}
+.test-verdict[data-tone='none']{color:var(--muted)}
+.field-hint{color:var(--danger);font-size:12px;grid-column:1/-1}
+.check-value[aria-invalid='true']{border-color:var(--danger)}
 .detail-head{display:flex;flex-direction:column;gap:6px}
 .detail-bar{position:relative;display:flex;align-items:center;justify-content:space-between;min-height:28px;margin-bottom:20px}
 .back{min-height:28px;margin-left:-6px;padding:0 6px 0 2px;border:none;border-radius:6px;background:transparent;display:flex;align-items:center;gap:2px;color:var(--muted);font-size:12px;cursor:pointer}
@@ -195,9 +205,10 @@ input[readonly]{color:var(--muted)}
 .answered .answer{border:1px solid var(--line);border-radius:12px;background:var(--surface);margin:0;padding:12px 14px;display:flex;flex-direction:column;gap:6px;font-size:15px}
 .answered .answer-excerpt{line-height:1.6;color:var(--text-2)}
 .answered mark{background:var(--danger-mark);color:var(--danger-mark-text);border-radius:3px;padding:0 3px}
+.answered mark.matched{background:var(--success-mark);color:var(--success-mark-text)}
 .answered mark.old{background:var(--raised);color:var(--text)}
 .answer-error{font-size:13px;color:var(--warn-text)}
-.detail-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:6px;border-top:1px solid var(--line)}
+.detail-foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding-top:6px;border-top:1px solid var(--line)}
 .detail-foot .foot-actions{gap:18px}
 
 /* Outside-change choices and execution errors are not test failures. */
