@@ -59,6 +59,7 @@ kmx
 │   ├── build <directory>
 │   ├── policy <file>
 │   ├── push <directory> <reference>
+│   ├── push-image <archive> <reference>
 │   └── pull <reference>
 ├── task
 │   └── result <task>
@@ -68,6 +69,10 @@ kmx
 
 `test` is an operational workspace command with offline diff and independent
 read-only reference extraction/export helpers. Cobra also supplies `help`.
+Experimental `suite push-image` publishes a verified OCI image graph, including
+attestations, independently of deployment admission. Replacing a different tag
+requires `--force`; same-digest publication is a no-op. `suite build --suite-ref`
+checks complete source content through the shared bounded materializer.
 
 Unreleased `model list` defaults to local discovery; explicit Copilot listing
 uses explicit `COPILOT_GITHUB_TOKEN`, then an existing gh sign-in without keychain

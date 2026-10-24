@@ -961,6 +961,55 @@ image must therefore currently be a complete AgentKit adapter image from the
 conformant AgentKit adapter or another builder can replace it without changing
 AgentSuite resolution.
 
+#### Experimental image contracts and publication
+
+`suite build --suite-ref <registry/repository@sha256:...>` compares every local
+packaged file, entry type, mode and link target with a bounded, digest-verified published
+snapshot, including cases and supplemental metadata, then builds from the fetched
+content. Loose directories use the shared portable packing policy: undeclared
+files default to non-executable, and ToolProvider inventory owns declared modes,
+independently of host execute bits. Published executable permissions are preserved;
+group/world write bits are masked
+when materializing build sources. Capability-based agents omit model build flags:
+selected inference is supplied through the `agentkit-v0-mounted-v1` configuration
+ABI. The AgentKit adapter supports only port 8080 and `/healthz`, and refuses
+unsupported serving declarations before building.
+The shared `localartifact` loader retains accepted confined symlink/hardlink
+semantics as well as files/directories; build materialization does not restore a
+separate registry parser. Mounted builds require declared non-secret
+`AGENTKIT_BIND` and secret `AGENTKIT_AUTH_TOKEN` inputs. Exact-model declarations
+must include the selected `--model-api-key-env` as a secret input. Unsupported
+input environments refuse before export rather than becoming misleading labels.
+
+`suite push-image <archive> <reference> [--platform linux/amd64] [--force]`
+publishes the complete verified OCI image graph, including flat or nested
+attestation layouts, and prints the runnable platform digest. Ordinary build
+output needs no deployment label to be published. Deployment consumers separately
+validate declarations. A different existing tag refuses unless `--force` is
+explicit; same-digest publication is a no-op. The existing non-atomic tag preflight
+and registry authentication policy below apply. `--platform` requires nonempty
+`os/architecture` components with exactly one slash; malformed values refuse
+before archive reads.
+Image manifest/index transport uses the inspector's 4-MiB metadata budget;
+suite provenance/referrer operations retain their separate 1-MiB budget.
+
+Image declarations bind the full suite OCI manifest digest (including cases and
+metadata), composition and exact build-profile digests, without embedding the
+source registry location. The public `http-v1` serving interface is target-neutral.
+`SandboxPlan.SuiteManifestHash` names the public root JSON identity; the materializing
+caller supplies the distinct full OCI source digest. The internal primitives sit
+beneath experimental `AgentSuites.Validate → Build → Push`, but do not implement
+the alpha `pkg/kmx.AgentSuites` service or a conformant sandbox binding.
+The KMX-owned image-declaration schema is checkout-only and self-contained, with
+explicit required/null and mounted-inference rules. Cross-field semantic checks
+(capacity comparison, input-key uniqueness and digest agreement) still require
+the Go validator, as documented in the schema.
+Full image inventory/base composition, image Deploy, evaluation and TUI workflows
+are separate work tracked under [#571](https://github.com/kaimahi-agents/kaimahi/issues/571),
+including the image-set association decisions from #356 and materialization
+handoff from #345. These commands do not add image execution to native workspace,
+flow or AgentSessions deployment paths.
+
 #### Registry authentication
 
 Registry push and pull do not add a Kaimahi login contract or accept credentials

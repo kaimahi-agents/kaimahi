@@ -50,7 +50,20 @@ type Fetcher interface {
 type Artifact struct {
 	descriptor ocispec.Descriptor
 	files      map[string][]byte
+	entries    map[string]entry
 	graph      *suiteflow.FlowV1Alpha1Graph
+}
+
+type entry struct {
+	Kind byte
+	Mode int64
+	Link string
+}
+
+// SameContent compares accepted filesystem semantics independently of OCI
+// envelope identity. It does not substitute for comparing an expected manifest.
+func (a *Artifact) SameContent(b *Artifact) bool {
+	return a != nil && b != nil && reflect.DeepEqual(a.files, b.files) && reflect.DeepEqual(a.entries, b.entries)
 }
 
 func (a *Artifact) Descriptor() ocispec.Descriptor { return cloneOCIDescriptor(a.descriptor) }
@@ -166,7 +179,8 @@ func read(ctx context.Context, source Fetcher, root ocispec.Descriptor, expected
 	if err != nil {
 		return nil, err
 	}
-	files, err := contentFiles(ctx, layerBytes, flowMode)
+	entries := map[string]entry{}
+	files, err := filesWithEntries(ctx, layerBytes, entries, flowMode)
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +188,7 @@ func read(ctx context.Context, source Fetcher, root ocispec.Descriptor, expected
 	if err != nil {
 		return nil, err
 	}
-	return &Artifact{descriptor: cloneOCIDescriptor(root), files: files, graph: graph}, ctx.Err()
+	return &Artifact{descriptor: cloneOCIDescriptor(root), files: files, entries: entries, graph: graph}, ctx.Err()
 }
 
 func validateSelectedGraph(ctx context.Context, root ocispec.Descriptor, manifestBytes []byte, config ocispec.Descriptor, configBytes []byte, layer ocispec.Descriptor, layerBytes []byte, flowMode bool) (graph *suiteflow.FlowV1Alpha1Graph, err error) {
@@ -234,6 +248,10 @@ func Files(ctx context.Context, compressed []byte) (map[string][]byte, error) {
 }
 
 func contentFiles(ctx context.Context, compressed []byte, flowMode bool) (map[string][]byte, error) {
+	return filesWithEntries(ctx, compressed, nil, flowMode)
+}
+
+func filesWithEntries(ctx context.Context, compressed []byte, metadata map[string]entry, flowMode bool) (map[string][]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -292,6 +310,13 @@ func contentFiles(ctx context.Context, compressed []byte, flowMode bool) (map[st
 			return nil, ErrArtifact
 		}
 		types[name] = header.Typeflag
+		if metadata != nil {
+			kind := header.Typeflag
+			if kind == 0 {
+				kind = tar.TypeReg
+			}
+			metadata[name] = entry{kind, header.Mode, header.Linkname}
+		}
 		switch header.Typeflag {
 		case tar.TypeDir:
 			if header.Size != 0 {

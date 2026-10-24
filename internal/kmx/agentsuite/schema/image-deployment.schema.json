@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kaimahi.dev/schemas/agentsuite/v1/image-deployment.schema.json",
+  "title": "Agent image deployment declaration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "mediaType", "suiteDigest", "agent", "platform", "compositionDigest", "buildProfile", "buildProfileDigest", "execution"],
+  "properties": {
+    "inference": {"$ref": "#/$defs/inference"},
+    "schemaVersion": {"const": "1.0.0-draft"},
+    "mediaType": {"const": "application/vnd.agentsuite.image.deployment.v1+json"},
+    "suiteReference": {"type": "string", "pattern": "^[^@]+@sha256:[a-f0-9]{64}$"},
+    "suiteDigest": {"$ref": "#/$defs/digest"},
+    "compositionDigest": {"$ref": "#/$defs/digest"},
+    "agent": {"$ref": "#/$defs/id"},
+    "buildProfile": {"$ref": "#/$defs/id"},
+    "buildProfileDigest": {"$ref": "#/$defs/digest"},
+    "platform": {
+      "type": "object", "additionalProperties": false,
+      "required": ["os", "architecture"],
+      "properties": {"os": {"const": "linux"}, "architecture": {"enum": ["amd64", "arm64"]}}
+    },
+    "execution": {"$ref": "#/$defs/execution"}
+  },
+  "$defs": {
+    "inference": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api", "contextTokens", "outputTokens", "streaming", "toolCalling"],
+      "properties": {
+        "api": {"const": "openai-chat-completions-v1"},
+        "contextTokens": {"type": "integer", "minimum": 1, "maximum": 10000000},
+        "outputTokens": {"type": "integer", "minimum": 1, "maximum": 10000000},
+        "streaming": {"type": "boolean"}, "toolCalling": {"type": "boolean"}
+      }
+    },
+    "execution": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "protocol", "port", "healthPath", "inputs"],
+      "properties": {
+        "configuration": {"const": "agentkit-v0-mounted-v1"},
+        "kind": {"const": "http-v1"}, "protocol": {"const": "openai-chat-v1"},
+        "port": {"type": "integer", "minimum": 1024, "maximum": 65535},
+        "healthPath": {"type": "string", "pattern": "^/([^/?#\\\\\\r\\n]+(/[^/?#\\\\\\r\\n]+)*)?$", "not": {"pattern": "(^|/)\\.{1,2}(/|$)"}},
+        "inputs": {"type": "array", "uniqueItems": true, "items": {
+          "type": "object", "additionalProperties": false, "required": ["name", "environment", "secret"],
+          "properties": {
+            "name": {"$ref": "#/$defs/id"},
+            "environment": {"type": "string", "pattern": "^[A-Z_][A-Z0-9_]*$", "not": {"anyOf": [{"pattern": "^LD_"}, {"enum": ["PYTHONPATH", "NODE_OPTIONS", "BASH_ENV", "PATH", "HOME", "AGENTKIT_PROTOCOL", "AGENTKIT_PORT"]}]}},
+            "secret": {"type": "boolean"}
+          }
+        }}
+      },
+      "if": {"required": ["configuration"]},
+      "then": {"properties": {"port": {"const": 8080}, "healthPath": {"const": "/healthz"}}}
+    },
+    "digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"}
+  },
+  "$comment": "KMX-owned self-contained projection of suite v0.5 serving/inference contracts. Semantic validation additionally checks output capacity <= context, uniqueness by input name/environment, and reference digest agreement.",
+  "if": {"required": ["inference"]},
+  "then": {"properties": {"execution": {"required": ["configuration"]}}},
+  "else": {"properties": {"execution": {"not": {"required": ["configuration"]}}}}
+}
