@@ -22,7 +22,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
-## v0.9.0 — 2026-10-23
+## v0.9.0 — 2026-10-24
 
 ### Added
 
@@ -171,8 +171,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   created, and an answer echoing the endpoint credential is refused. Each new
   run prunes to the newest 20 runs, never deleting one still executing, and
   journals can be cleared per run or all at once. On Windows the journal is
-  under `%AppData%` (roaming profile). Journal inspection replays a run with no
-  model call and gives no verdict. Results are labeled local preview, not
+  under `%LOCALAPPDATA%` (machine-local profile). Journal inspection replays a
+  run with no model call and gives no verdict. Results are labeled local preview, not
   deployment qualification. File Run/Test and MCP use it for fake/local routes;
   if either the agent or judge uses Copilot, the whole invocation instead remains
   direct and explicitly unjournaled. See
@@ -243,12 +243,9 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   journal, inference retries, provider/model fallback or deployment evidence;
   default fake/local behavior is unchanged.
 
-- A Copilot-default Release writer sample and a checksum-verified, user-confirmed
-  setup helper for macOS and Windows Copilot with WSL. The preview guide explains
-  the chat-based Run/Test loop, model changes, uninstall and safe setup logs.
+- Install the Windows Copilot plugin with `copilot plugin install kaimahi-agents/kaimahi:plugins/copilot-wsl` after installing kmx at `/usr/local/bin/kmx` in WSL. The plugin includes skills and the agent canvas; there is no folder or model to configure at install time.
 - Native Linux/macOS isolated plugin install checks on pull requests and on the
-  exact cross-built release archives before publication. The helper uses HTTPS
-  and checksums, not independent signature verification; older bundles refuse.
+  exact cross-built release archives before publication.
 
 - File `kmx run FILE` and `kmx test FILE` accept `--verbose` for content-free
   execution diagnostics and timings on stderr, including safe transport failure
@@ -256,6 +253,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   requires `--show-content`. Diagnostic write failures stop later execution.
 
 - Canonical file Run/Test can use the host-bound read-only GitHub MCP tool through an explicit local binding and environment credential reference. Reads are bounded, journaled and replayable without network or credentials; Copilot tools remain unsupported.
+
+- Agent edits keep a limited private source history, available through read-only resources and restorable through the revision-checked Edit tool. Clear a folder's history with `kmx mcp --root DIRECTORY --clear-history`; a history-storage failure is reported without blocking a valid save.
+
+- Copilot file previews support Responses models, including GPT, and can use an existing GitHub CLI sign-in before checking kmx's optional keychain login. Captured credentials stay in memory.
+
+- Choose a model in the Copilot canvas without changing the agent file; the choice overrides the file's model, and omitting both uses `gpt-5.6-terra`. Choices load when needed, and changing models marks old results stale until the next run.
 
 ### Changed
 
@@ -293,12 +296,6 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   that flag. The judge policy's local-diagnostics clarification preserves the
   historical v2 evidence fingerprint and existing receipts; no new receipt
   fields, diagnostic references, signatures or exports are introduced.
-- AgentSuite validation now uses `github.com/agent-primitives/suite v0.5.0`.
-  Editor and external-validator registries should select the complete v0.5.0
-  schema bundle with `/schema/v0.5/` IDs. Historical hosted v0.1.0 schemas
-  remain byte-for-byte unchanged, not aliases to the new contract. Wire versions,
-  media types and digests of unchanged suite documents are unchanged.
-
 - Credential-shaped suite instructions now add a fixed redacted warning before
   the existing source/package hard refusal. Instructions are non-confidential
   and must never contain secrets; clean lint is not a secret-free guarantee.
@@ -337,6 +334,16 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   diagnostic artifacts and both platforms required by the hygiene gate.
 
 - Move per-package behavior descriptions from the repository map into Go package comments, so feature PRs no longer conflict on the map.
+
+- `kmx mcp` opens agent files in any directory without `--root`, including links to supported agent files. The canvas shows full paths to distinguish agents with the same name, and creating an agent opens its canvas.
+
+- With no provider configured, agent previews use Copilot for real models and keep `fake` offline. Explicit provider settings and older plugins configured with `--root` keep their existing behavior.
+
+- Install kmx as a Linux binary and the WSL plugin from its repository. Native plugin archives still have their own packaging and isolated installation checks.
+
+- Add the repository's non-production ownership inventory at `.github/compliance/inventory.yml`.
+
+- Full Orka checks run for changes to Orka-owned files and selected build or CI files; shared CLI, application, configuration and packaging changes get that check nightly. Manual and release runs still check the exact commit, and the required hygiene and combined checks remain in place.
 
 ### Fixed
 
@@ -391,6 +398,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   explicitly supplied dry-run versions are unchanged; signing and log upload
   remain required.
 
+- Create agent files on Windows-backed WSL mounts without overwriting existing files. Where the mount cannot publish a file atomically, readers may see it while the exclusive copy is still being written.
+
 ### Breaking
 
 - Older preparation-cache entries refuse without a current packing-policy marker.
@@ -437,10 +446,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   on stderr; stdout, arguments, exit codes and state do not change. Do not rename
   case directories, receipts or configuration fields. No data migration is needed.
 
+For v0.9.0-rc.2, install the Linux kmx binary at `/usr/local/bin/kmx` in WSL, then run `copilot plugin install kaimahi-agents/kaimahi:plugins/copilot-wsl` in Windows. See the [pinned WSL install steps](plugins/copilot-wsl/README.md#install).
+
 Known gaps in this preview:
-- Copilot-model runs aren't saved to the preview journal or replayable yet. Fake and local models are.
+- Copilot-model runs aren't saved to the preview journal or replayable yet ([#693](https://github.com/kaimahi-agents/kaimahi/pull/693)). Fake and local models are.
 - Copilot-model previews can't call tools yet. Local file Run/Test can use the read-only GitHub tool when explicitly configured.
-- The canvas has no version history or revert yet.
+- The Copilot CLI marks direct plugin installs as deprecated, though this install still works. A marketplace install will come later.
 
 ## v0.8.1 — 2026-10-17
 
