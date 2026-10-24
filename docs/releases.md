@@ -134,8 +134,8 @@ The separate macOS plugin CI checks install and the offline fake-model loop;
 it does not exercise a Copilot model or the desktop app.
 
 Orka is qualified nightly on main by `orka-nightly.yml`; kagent is qualified by
-the scheduled CI workflow. Orka-related PRs retain their existing full-proof
-routing. Before a runtime-related tag, dispatch the separate read-only
+the scheduled CI workflow. Live Orka runtime qualification never runs on pull
+requests or pushes. Before a runtime-related tag, dispatch the separate read-only
 [runtime qualification workflow](../.github/workflows/runtime-qualification.yml)
 on the intended release ref:
 

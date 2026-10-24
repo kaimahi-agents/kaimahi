@@ -321,26 +321,20 @@ Cloud cleanup has different [ownership rules](aks.md#teardown).
 ### What CI proves
 
 The workflow emits `hygiene` and `e2e-hello-world` merge gates. The latter
-fail-closed aggregates four retained shards: `e2e-kagent-lift`,
-`e2e-orka-runtime`, `e2e-orka-helm` and `e2e-quickstart`, plus successful
-classification and the independent `kagent-contract` hermetic check. Only intentional skips are accepted, never failed/cancelled
-shards. Orka runtime proof runs for PRs matching the Orka-owned trigger list;
-valid paths outside it skip, as do ordinary main pushes. Unknown, empty or
-malformed diffs still run full proof. Main is re-verified nightly, not per merge. Required contexts remain
+fail-closed aggregates three retained shards: `e2e-kagent-lift`,
+`e2e-orka-helm` and `e2e-quickstart`, plus successful classification and the
+independent `kagent-contract` hermetic check. Only intentional skips are
+accepted, never failed/cancelled shards. Live Orka runtime qualification runs
+nightly and on demand, never on pull requests or pushes. Required contexts remain
 `hygiene` and `e2e-hello-world`, without a ruleset change.
 
 The read-only [Orka worker](../.github/workflows/orka-runtime.yml) runs the same
 complete proof when invoked, including native evaluation, transfer, promotion,
-and pinned-update checks. It has no internal Markdown shortcut. The independent
-`triggers` object in `scripts/ci/orka-routing.json` selects Orka-owned packages,
-command files, CI/build inputs and live fixtures; the generated caller manifest
-alone is exempt. Shared CLI/App/config/packaging and `pkg/kmx/` changes are
-verified by the nightly, not per PR. Its
-hygiene validation remains mandatory. The unchanged init/caller guard selections
-are narrower than all skipped paths, so other skipped changes rely on hygiene
-and nightly integration detection. Its raw check is `e2e-orka-runtime / qualify`.
-Quickstart, stock Helm and clone-free qualification keep their existing routing;
-not every Orka-bearing job is moved out of PR CI.
+and pinned-update checks. It has no internal Markdown shortcut. The init/caller
+source-boundary guards and their JSON policy/manifest remain mandatory hygiene
+checks; integration detection relies on the full nightly. Quickstart, stock Helm
+and clone-free qualification keep their existing routing; not every Orka-bearing
+job is moved out of PR CI.
 
 [Orka nightly](../.github/workflows/orka-nightly.yml) runs the full main proof
 at 03:23 UTC and supports manual qualification after the workflow lands. That
@@ -356,9 +350,9 @@ workers. Both full read-only runtime workers remain available together through
 [on-demand runtime qualification](../.github/workflows/runtime-qualification.yml),
 which checks the exact dispatched commit. Run it before a runtime-related tag;
 see [release qualification](releases.md#release-qualification). Nightly schedules
-and Orka-related PR routing are unchanged.
+are unchanged; PR and push CI never invoke the Orka runtime worker.
 
-Moving main-push runtime proof to nightly trades immediate post-merge detection
+Moving PR/push runtime proof to nightly trades immediate change detection
 for detection on the next nightly (normally within 24 hours) or an on-demand
 check before a runtime-related tag.
 Individually passing PRs can still interact after merging. Check Actions when the

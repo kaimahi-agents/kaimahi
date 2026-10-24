@@ -177,31 +177,17 @@ change classification is uncertain. It runs the harness in full on main pushes
 and in the nightly hygiene job. Its inexpensive runner/routing tests and other
 hygiene checks run regardless of that mutation gate.
 
-The classifier exposes an independent `orka_required` decision for the Orka
-runtime worker. PRs run it when their diff matches the Orka-owned trigger list;
-valid paths outside that list skip it. Ordinary main pushes skip it too: main is
-re-verified nightly, not per merge. On-demand runtime qualification remains full;
-the release workflow separately qualifies the shipped inner loop.
-Quickstart and stock Helm schedules and guards are unchanged; kagent uses the separate hermetic/live policy below. The checkout helper accepts
-full commit IDs as `python3 scripts/ci/orka-routing.py --base SHA --head SHA`.
-It prints only `true` or `false`; unknown, empty, malformed or failed diffs mean
-`true`. PR classification uses the synthetic merge commit's actual first parent,
-not the event's possibly stale base. NUL-delimited, no-renames Git output keeps
-deletions and both sides of moves visible.
+Live Orka runtime qualification runs only nightly and on demand through
+`orka-nightly.yml` and `runtime-qualification.yml`, never on pull requests or
+pushes. The release workflow separately qualifies the shipped inner loop.
+Quickstart and stock Helm schedules and guards are unchanged; kagent uses the
+separate hermetic/live policy below.
 
-The `triggers` object in `scripts/ci/orka-routing.json` selects package/file
-prefixes, exact files and slash-component filename globs. It includes the named
-Orka runtime/schema/lift/lifecycle/portforward/toolchain packages, Orka/local/
-quickstart command files, Orka CI drivers/fixtures/assets, build inputs and `.github/`.
-Shared CLI/App/config/packaging and `pkg/kmx/` changes are verified by the nightly,
-not per PR. The exact generated `scripts/ci/orka-callers.json` exception never hides
-another triggering path in the same diff. Hygiene still validates that manifest
-on every PR; it is a typed-reference record, not an execution graph.
-
-The separate `safe_*` fields retain the existing guard-only selections; they no
-longer decide routing. These static guards do not cover every newly skipped
-path or prove absence of arbitrary runtime effects. Other skipped changes rely
-on hygiene and the full main nightly for integration detection.
+The `safe_*` fields in `scripts/ci/orka-routing.json` retain the existing
+init/caller guard selections; they do not route runtime qualification. The JSON
+policy and generated `scripts/ci/orka-callers.json` manifest remain inputs to
+mandatory hygiene checks on every PR. These static guards do not prove absence
+of arbitrary runtime effects; integration detection relies on the full nightly.
 Hygiene checks the guard-selected production Go files and App test files for `init()`
 functions and active global initializers, across build tags. App test initializers
 also run in the live-test binary, even when `-run` selects another test. Only
@@ -232,9 +218,7 @@ proof of dynamic dispatch, value flow or arbitrary Go effects, and not a sandbox
 For an intentional boundary change, inspect the output of
 `go run scripts/ci/orka-callers.go --audit` and review the affected callers before
 updating the manifest;
-hygiene never refreshes it automatically. Remove obsolete entries too. Review the
-independent trigger list when runtime dependencies change. Boundary helper code
-still triggers full qualification; the generated caller manifest alone does not.
+hygiene never refreshes it automatically. Remove obsolete entries too.
 Both boundary helpers
 have dedicated negative/positive fixtures rather than top-level checker mutation
 discovery. Expanding the guard-only selections requires reviewed evidence and
@@ -325,12 +309,11 @@ they do not certify cluster runtimes.
 
 The read-only `orka-runtime.yml` worker runs the complete raw Orka Tool/Task,
 model-answer and native suite proof. Its CI check appears as
-`e2e-orka-runtime / qualify`; required contexts stay `hygiene` and
-`e2e-hello-world`. Routine main-push proof moves to the daily main nightly;
-manual CI and on-demand runtime qualification still require fresh full proof.
+`qualify / qualify` in the nightly; required contexts stay `hygiene` and
+`e2e-hello-world`. Use the nightly or on-demand runtime qualification workflow
+for fresh full proof; ordinary CI does not call the Orka worker.
 Release builds and dry runs do not invoke the cluster runtime workers.
-The worker has no internal path/Markdown shortcuts. Selected live fixtures and
-instructions trigger proof; other valid Markdown paths follow the same trigger policy. See [CI qualification](docs/development.md#what-ci-proves).
+The worker has no internal path/Markdown shortcuts. See [CI qualification](docs/development.md#what-ci-proves).
 
 Inside its two owned contexts the command is
 `python3 scripts/ci/suite-native.py kind-kmx-orka kind-kmx-orka-promote "$RUNNER_TEMP/kmx-suite-native"`.

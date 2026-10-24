@@ -85,11 +85,9 @@ class KagentWorkflows(unittest.TestCase):
     def gate(self, event='pull_request', ref='refs/heads/main', full='skipped', fast='success', classifier='success'):
         agg = workflow('ci.yml')['jobs']['e2e-hello-world']
         needs = {name: {'result': 'success'} for name in agg['needs']}
-        needs['classify-change'] = {'result': classifier, 'outputs': {'orka_required': 'true', 'kagent_changed': 'true'}}
+        needs['classify-change'] = {'result': classifier, 'outputs': {'kagent_changed': 'true'}}
         needs['e2e-kagent-lift'] = {'result': full}
         needs['kagent-contract'] = {'result': fast}
-        if event == 'push' and ref == 'refs/heads/main' or event == 'schedule':
-            needs['e2e-orka-runtime'] = {'result': 'skipped'}
         if event == 'schedule':
             for name in ('e2e-orka-helm', 'e2e-quickstart'):
                 needs[name] = {'result': 'skipped'}

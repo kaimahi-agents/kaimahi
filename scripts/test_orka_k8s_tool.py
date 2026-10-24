@@ -34,7 +34,7 @@ class ReaderTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 reader.resource_path(args)
 
-    # The exact pair the e2e-orka-runtime shard asserts against a live
+    # The exact pair the nightly/manual Orka worker asserts against a live
     # cluster. Asserting it here as well is not duplication: the shard proves
     # the CLUSTER refuses (RBAC), and this proves the SERVER refuses before a
     # request is ever made — so a widened ClusterRole cannot silently become

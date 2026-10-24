@@ -18,12 +18,12 @@ def workflow(name):
 
 
 class RequiredGate(unittest.TestCase):
-    def gate(self, event='pull_request', required='false', result='skipped', classifier='success', ref='refs/heads/main', overrides=None):
+    def gate(self, event='pull_request', classifier='success', ref='refs/heads/main', overrides=None):
         job = workflow('ci.yml')['jobs']['e2e-hello-world']
         needs = {name: {'result': 'success'} for name in job['needs']}
-        needs['classify-change'] = {'result': classifier, 'outputs': {
-            'orka_required': required, 'kagent_changed': 'true'}}
-        needs['e2e-orka-runtime']['result'] = result
+        needs['classify-change'] = {'result': classifier}
+        if event == 'pull_request' or event == 'push' and ref == 'refs/heads/main':
+            needs['e2e-kagent-lift']['result'] = 'skipped'
         if event == 'schedule':
             for name in ('e2e-quickstart', 'e2e-orka-helm'):
                 needs[name]['result'] = 'skipped'
@@ -32,58 +32,30 @@ class RequiredGate(unittest.TestCase):
                               env={**os.environ, 'EVENT': event, 'REF': ref, 'SHARDS': json.dumps(needs)},
                               text=True, capture_output=True, timeout=10)
 
-    def test_only_explicit_safe_pr_skip_reports_green(self):
-        self.assertEqual(self.gate().returncode, 0)
-        for required in ('true', '', 'unknown', 'False'):
-            with self.subTest(required=required):
-                self.assertNotEqual(self.gate(required=required).returncode, 0)
-        for classifier in ('failure', 'cancelled', 'skipped'):
-            self.assertNotEqual(self.gate(classifier=classifier).returncode, 0)
+    def test_retained_shards_report_without_runtime_qualification(self):
+        for event in ('pull_request', 'push', 'workflow_dispatch', 'schedule', 'unknown'):
+            with self.subTest(event=event):
+                self.assertEqual(self.gate(event=event).returncode, 0)
+                for classifier in ('failure', 'cancelled', 'skipped'):
+                    self.assertNotEqual(self.gate(event=event, classifier=classifier).returncode, 0)
 
-    def test_relevant_failure_cancellation_or_missing_proof_never_passes(self):
-        for result in ('failure', 'cancelled', 'unknown', 'skipped'):
-            self.assertNotEqual(self.gate(required='true', result=result).returncode, 0)
-        self.assertEqual(self.gate(required='true', result='success').returncode, 0)
-
-    def test_only_main_push_moves_to_the_new_nightly(self):
-        self.assertEqual(self.gate(event='push').returncode, 0)
-        self.assertNotEqual(self.gate(event='push', classifier='failure').returncode, 0)
-        self.assertNotEqual(self.gate(event='push', ref='refs/heads/other').returncode, 0)
-        self.assertNotEqual(self.gate(event='push', ref='').returncode, 0)
-        for result in ('failure', 'cancelled', 'unknown', ''):
-            self.assertNotEqual(self.gate(event='push', result=result).returncode, 0)
-        for other in ('kagent-contract', 'e2e-orka-helm', 'e2e-quickstart'):
-            self.assertNotEqual(self.gate(event='push', overrides={other: {'result': 'skipped'}}).returncode, 0)
-        for event in ('workflow_dispatch', 'unknown'):
-            self.assertNotEqual(self.gate(event=event).returncode, 0)
-            self.assertEqual(self.gate(event=event, result='success').returncode, 0)
-        self.assertEqual(self.gate(event='schedule').returncode, 0)
+    def test_retained_failures_and_unexpected_dependencies_never_pass(self):
+        for job in ('kagent-contract', 'e2e-orka-helm', 'e2e-quickstart'):
+            for result in ('failure', 'cancelled', 'unknown', 'skipped'):
+                with self.subTest(job=job, result=result):
+                    self.assertNotEqual(self.gate(overrides={job: {'result': result}}).returncode, 0)
+        self.assertNotEqual(self.gate(overrides={'e2e-orka-runtime': {'result': 'success'}}).returncode, 0)
 
 
 class QualificationCallers(unittest.TestCase):
-    def test_pr_worker_is_local_read_only_and_default_runs_unknown_paths(self):
-        job = workflow('ci.yml')['jobs']['e2e-orka-runtime']
-        self.assertEqual(job.get('uses'), './.github/workflows/orka-runtime.yml')
-        self.assertEqual(job['permissions'], {'contents': 'read'})
-        self.assertEqual(job['needs'], ['classify-change'])
-        self.assertNotIn('secrets', job)
-        expr = job['if'].strip().removeprefix('${{').removesuffix('}}')
-        for event, required, ref, expected in [
-                ('pull_request', 'false', 'refs/pull/1/merge', False),
-                ('pull_request', 'true', 'refs/pull/1/merge', True),
-                ('pull_request', '', 'refs/pull/1/merge', True),
-                ('pull_request', 'unknown', 'refs/pull/1/merge', True),
-                ('push', 'false', 'refs/heads/main', False),
-                ('push', 'false', 'refs/heads/other', True),
-                ('push', 'false', '', True),
-                ('workflow_dispatch', 'false', 'refs/heads/main', True),
-                ('unknown', 'false', 'refs/heads/main', True),
-                ('schedule', 'true', 'refs/heads/main', False)]:
-            expression = expr.replace('github.event_name', repr(event)).replace(
-                'needs.classify-change.outputs.orka_required', repr(required)).replace(
-                'github.ref', repr(ref)).replace(
-                '!cancelled()', 'True').replace('!(', 'not (').replace('&&', ' and ').replace('||', ' or ')
-            self.assertEqual(bool(eval(expression, {'__builtins__': {}}, {})), expected)
+    def test_pr_and_push_ci_never_call_the_runtime_worker(self):
+        jobs = workflow('ci.yml')['jobs']
+        self.assertNotIn('e2e-orka-runtime', jobs)
+        self.assertFalse(any(job.get('uses', '').endswith('/orka-runtime.yml') for job in jobs.values()))
+        self.assertNotIn('e2e-orka-runtime', jobs['e2e-hello-world']['needs'])
+        action = yaml.safe_load((ROOT / '.github/actions/classify-change/action.yml').read_text())
+        self.assertNotIn('orka_required', action['outputs'])
+        self.assertNotIn('orka_required', jobs['classify-change']['outputs'])
 
     def test_full_worker_has_no_path_or_schedule_shortcut(self):
         wf = workflow('orka-runtime.yml')

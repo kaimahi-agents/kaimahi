@@ -21,9 +21,6 @@ outputs:
   kagent_changed:
     description: "true when kagent/shared qualification paths changed or the diff is unknown"
     value: ${{ steps.classify.outputs.kagent_changed }}
-  orka_required:
-    description: "false only for a known nonempty diff of audited independent paths"
-    value: ${{ steps.classify.outputs.orka_required }}
 
 runs:
   using: composite
@@ -51,8 +48,6 @@ runs:
         docs_only=false
         scripts_changed=true
         kagent_changed=true
-        orka_required=true
-        diff_known=false
         reason=""
         files=""
         # A pull_request's base is the merge commit's FIRST parent: the
@@ -78,7 +73,6 @@ runs:
           # --no-renames: a pure rename lists only its destination, so a
           # file moved INTO docs/ would otherwise read as documentation.
           if files=$(git diff --name-only --no-renames "$BASE" "$HEAD") && [ -n "$files" ]; then
-            diff_known=true
             docs_only=true
             # Ask git about the scripts path independently. This includes
             # deletions/renames out and does not parse git-quoted filenames.
@@ -114,16 +108,6 @@ runs:
             reason="cannot diff $BASE..$HEAD, or the diff is empty"
           fi
         fi
-        # Independent decision: preserve the existing docs/scripts/kagent policy.
-        # A missing/broken helper or unexpected output must not fail this shared action.
-        if [ "$diff_known" = true ]; then
-          if decision=$(python3 scripts/ci/orka-routing.py --base "$BASE" --head "$HEAD" 2>/dev/null); then
-            case "$decision" in
-              false) orka_required=false ;;
-            esac
-          fi
-        fi
-        echo "orka_required=$orka_required" >> "$GITHUB_OUTPUT"
         echo "event=$EVENT base=$BASE head=$HEAD"
         echo "changed files:"
         echo "${files:-(undetermined)}" | sed 's/^/  /'
