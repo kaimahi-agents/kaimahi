@@ -157,6 +157,8 @@ class WorkflowTests(unittest.TestCase):
             root = pathlib.Path(directory)
             workflow = root / ".github/workflows/ci.yml"
             workflow.parent.mkdir(parents=True)
+            (workflow.parent / "runtime-qualification.yml").write_bytes(
+                (ROOT / ".github/workflows/runtime-qualification.yml").read_bytes())
             full_path = ROOT / ".github/workflows/orka-runtime.yml"
             full_workflow = yaml.safe_load(full_path.read_text())
             kagent_workflow = yaml.safe_load((ROOT / ".github/workflows/kagent-runtime.yml").read_text())
