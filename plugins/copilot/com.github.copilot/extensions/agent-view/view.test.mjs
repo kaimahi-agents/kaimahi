@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { instructionSections, replaceExamples, replaceInstructions } from "./authoring.mjs";
+import { instructionSections, replaceExamples, replaceInstructions } from "../../../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs";
 import { readFile } from "node:fs/promises";
 import http from "node:http";
 import test from "node:test";
@@ -16,10 +16,10 @@ import {
   readView,
   resourceUri,
   startViewBridge,
-} from "./view.mjs";
-import { renderView } from "./app.js";
+} from "../../../../copilot-wsl/com.github.copilot/extensions/agent-view/view.mjs";
+import { renderView } from "../../../../copilot-wsl/com.github.copilot/extensions/agent-view/app.js";
 
-const here = (name) => fileURLToPath(new URL(name, import.meta.url));
+const here = (name) => fileURLToPath(new URL("../../../../copilot-wsl/com.github.copilot/extensions/agent-view/" + name, import.meta.url));
 const MINIMAL = "greeter.agent.md";
 const SQUAD = ".squad/agents/greeter/charter.md";
 const REV = "sha256:" + "a".repeat(64);
@@ -114,16 +114,14 @@ function get(url, { headers = {}, method = "GET", host } = {}) {
   });
 }
 
-test("path grammar accepts only portable agent files and Squad charters", () => {
-  assert.equal(normalizePath(MINIMAL), MINIMAL);
-  assert.equal(normalizePath(SQUAD), SQUAD);
-  for (const bad of [
-    "", "Greeter.agent.md", "../x.agent.md", "/x.agent.md", "a/b.agent.md", "x.agent.md?q=1", "x.agent.md#f",
-    "x\\y.agent.md", "C:x.agent.md", "con.agent.md", "nul.agent.md", "com1.agent.md", "1x.agent.md", "x.agent.md ",
-    "x\n.agent.md", "x\0.agent.md", "x%2e.agent.md", "x.md", ".squad/agents/con/charter.md", ".squad/agents/x/Charter.md",
-    ".squad/agents/x/../y/charter.md", ".squad/agents/x/y/charter.md", ".squad/agent/x/charter.md", "x".repeat(64) + ".agent.md",
-    null, 4, {}, ["x.agent.md"],
-  ]) {
+test("agent paths preserve ordinary names in any directory", () => {
+  for (const path of [MINIMAL, SQUAD, "/repo one/agents/Release Notes.agent.md", "/repo Māori/.squad/agents/greeter/charter.md",
+    "../other/greeter.agent.md", "/Bob's (agents) + notes/@release=2026/report.agent.md", "a/b.agent.md", "con.agent.md", "x%2e.agent.md", "x#draft.agent.md", "x".repeat(64) + ".agent.md"]) {
+    assert.equal(normalizePath(path), path);
+    assert.equal(resourceUri(path), `kmx://agent/${encodeURIComponent(path)}`);
+  }
+  for (const bad of ["", ".agent.md", "x.agent.md?q=1", "x.agent.md#f", "x.agent.md ", "x\0.agent.md", "x.md",
+    ".squad/agents/x/Charter.md", ".squad/agents/x/y/charter.md", ".squad/agent/x/charter.md", null, 4, {}, ["x.agent.md"]]) {
     assert.throws(() => normalizePath(bad), (e) => e instanceof ViewError && e.code === "invalid-path", JSON.stringify(bad));
   }
 });
@@ -134,7 +132,7 @@ test("resource URI encodes the whole path as one component", () => {
   assert.equal(CANVAS_ID, "kmx-agent-view");
 });
 
-for (const path of [MINIMAL, SQUAD]) {
+for (const path of [MINIMAL, SQUAD, "/repo one/greeter.agent.md", "/repo Māori/.squad/agents/greeter/charter.md"]) {
   test(`readView reads the current kmx server resource for ${path}`, async () => {
     const session = stubSession(resource(path));
     const view = await readView(session, path);
@@ -152,7 +150,7 @@ for (const path of [MINIMAL, SQUAD]) {
 
 test("readView refuses invalid paths before any resource read", async () => {
   const session = stubSession(resource(MINIMAL));
-  await assert.rejects(readView(session, "../x.agent.md"), { code: "invalid-path" });
+  await assert.rejects(readView(session, "../README.md"), { code: "invalid-path" });
   assert.equal(session.calls.length, 0);
 });
 
@@ -221,6 +219,17 @@ test("hostile text is stripped of control and bidi characters and bounded", asyn
   assert.match(view.instructions, /\[truncated\]$/);
 });
 
+test("text fallback distinguishes authored model from the current override route", async () => {
+  for (const [authored, provider, model] of [["gpt-5.6-terra", "fake", "fake"], ["fake", "copilot", "gpt-5.6-terra"], ["", "copilot", "gpt-5.6-terra"]]) {
+    const raw = resource(MINIMAL, { model: authored, latest: { status: "current", result: result({ modelRoute: { provider, model } }) } });
+    const text = formatView(await readView(stubSession(raw), MINIMAL));
+    assert.ok(text.includes(`Authored model: ${authored || "(not set)"}`));
+    const summary = text.split("\n").find(line => line.startsWith("Latest:"));
+    assert.ok(summary.includes("current, PASS"));
+    assert.ok(summary.includes(`runtime model: ${provider}/${model}`));
+  }
+});
+
 test("formatView is compact, plain and visibly truncated", async () => {
   const withResult = resource(MINIMAL, { latest: { status: "current", result: result() } });
   const text = formatView(await readView(stubSession(withResult), MINIMAL));
@@ -262,7 +271,7 @@ test("text truncation never hides the latest-result summary", async () => {
 });
 
 test("status, error and quiet text tokens meet AA contrast in both themes", async () => {
-  const css = await readFile(new URL("./style.css", import.meta.url), "utf8");
+  const css = await readFile(new URL("../../../../copilot-wsl/com.github.copilot/extensions/agent-view/style.css", import.meta.url), "utf8");
   // oklch -> linear sRGB luminance (CSS Color 4), so the check follows the actual tokens.
   const lum = (value) => {
     const [L, C, H] = value.match(/oklch\(([\d.]+) ([\d.]+) ([\d.]+)/).slice(1).map(Number);
@@ -398,7 +407,7 @@ test("superseded concurrent opens cannot return an obsolete view", async () => {
 
 test("controller refuses invalid canvas input and opens no listener", async () => {
   const ctl = createViewController({ getSession: () => stubSession(resource(MINIMAL)) });
-  for (const input of [undefined, null, "x", [], {}, { path: "../x.agent.md" }, { path: MINIMAL, extra: 1 }, { path: MINIMAL, url: "http://x" }]) {
+  for (const input of [undefined, null, "x", [], {}, { path: "../README.md" }, { path: MINIMAL, extra: 1 }, { path: MINIMAL, url: "http://x" }]) {
     await assert.rejects(ctl.open({ instanceId: "bad", canvasId: CANVAS_ID, input }), (e) => e instanceof ViewError);
   }
   assert.equal(ctl.size, 0);
@@ -412,7 +421,7 @@ test("agent-view command logs the same view and never sends a prompt", async () 
   assert.match(session.logs[0].message, /Greeter/);
   assert.deepEqual(session.calls, [{ serverName: "kmx-agent-builder", uri: resourceUri(MINIMAL) }]);
 
-  for (const args of ["", "a b", "../x.agent.md", `${MINIMAL} extra`]) {
+  for (const args of ["", "a b", "../README.md", `${MINIMAL} extra`]) {
     await ctl.command({ args });
   }
   assert.equal(session.calls.length, 1);
@@ -1049,7 +1058,7 @@ test("UI labels root and Squad files friendly while keeping raw paths only in So
     assert.equal(byClass(details, "path-value")[0].tag, "code");
     assert.equal(byClass(details, "path-value")[0].textContent, path);
     assert.ok(details.textContent.includes(REV));
-    assert.match(details.textContent, /Path from selected root/); assertTrustedControls(root);
+    assert.match(details.textContent, /Agent file path/); assertTrustedControls(root);
   }
 });
 
@@ -1208,7 +1217,7 @@ test("frontend and provider sources avoid unsafe sinks and mutation surfaces", a
   assert.match(strip(app), /method: "POST"/);
   assert.match(strip(app), /fetch\("actions"/);
   const operations = strip(view).match(/const allowed = \{([\s\S]*?)\n  \};/)[1];
-  assert.deepEqual([...operations.matchAll(/(?:"([a-z-]+)"|\b([a-z]+))\s*:\s*\[/g)].map((m) => m[1] ?? m[2]).sort(), ["reload", "run", "save-and-test", "save-examples", "suggest", "test"]);
+  assert.deepEqual([...operations.matchAll(/(?:"([a-z-]+)"|\b([a-z]+))\s*:\s*\[/g)].map((m) => m[1] ?? m[2]).sort(), ["models", "reload", "run", "save-and-test", "save-examples", "suggest", "test"]);
   assert.doesNotMatch(strip(app), /createElement\(\s*["']button["']/);
   assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)[^>]*>|\son[a-z]+\s*=|style\s*=|<form|<button|<input|<textarea|http-equiv/i);
   assert.doesNotMatch(css, /@import|url\(/i);
@@ -1222,16 +1231,17 @@ test("frontend and provider sources avoid unsafe sinks and mutation surfaces", a
   assert.doesNotMatch(strip(ext), /actions\s*:/);
   assert.match(strip(ext), /name:\s*"agent-view"/);
 });
-async function viewFor(source, examples, latest = { status: "none" }) {
+async function viewFor(source, examples, latest = { status: "none" }, model = "fake") {
   const revision = "sha256:" + createHash("sha256").update(source).digest("hex");
   return readView(stubSession(resource(MINIMAL, {
-    file: { path: MINIMAL, revision }, instructions: source, model: "fake", examples,
+    file: { path: MINIMAL, revision }, instructions: source, model, examples,
     latest: typeof latest === "function" ? latest(revision, examples) : latest,
     authoring: { source, editable: true },
   })), MINIMAL);
 }
 async function editableCanvas(body, eol, options = {}) {
   let original = await readFile(new URL("../../../../../internal/kmx/agentfile/testdata/greeter.agent.md", import.meta.url), "utf8");
+  if (options.omitModel) original = original.replace(/## Model\r?\n- \*\*Preferred:\*\* fake\r?\n\r?\n/, "");
   if (eol) original = original.replace(/\r?\n/g, eol);
   const sections = instructionSections(original); sections[0].text = body;
   const source = replaceInstructions(original, sections);
@@ -1246,18 +1256,71 @@ async function editableCanvas(body, eol, options = {}) {
     result.examples = [{ id: "greeting", state: "complete", verdict: "pass", assertions: [{ id: "greeting-text", type: "contains", verdict: "pass" }] }];
     latest = { status: "current", result };
   }
-  const view = await viewFor(source, examples, latest);
+  const view = await viewFor(source, examples, latest, options.omitModel ? "" : "fake");
   const doc = fakeDoc(options.defaultView), root = doc.createElement("main"), calls = [];
   const app = renderView(doc, root, view, async (action) => {
     calls.push(action);
     return options.respond ? options.respond(action, calls) : options.response ?? { error: "refused", message: "Draft kept." };
-  }, { fetchView: options.fetchView });
+  }, { fetchView: options.fetchView, fetchModels: options.fetchModels });
   const clickTest = async () => {
     byClass(root, "save-run")[0].listeners.click[0]();
     await Promise.resolve(); await Promise.resolve();
   };
   return { doc, root, calls, source, view, app, examples, sections: instructionSections(source), clickTest };
 }
+
+test("omitted Model shows the default while remaining editable without source injection", async () => {
+  const h = await editableCanvas("Say hello.", undefined, { omitModel: true });
+  const picker = byClass(h.root, "model-picker")[0]; assert.ok(picker);
+  assert.match(picker.childNodes[0].textContent, /Default \(gpt-5\.6-terra\)/);
+  assert.doesNotMatch(h.source, /## Model|gpt-5/); await h.clickTest();
+  assert.equal(h.calls[0].operation, "test"); assert.equal(Object.hasOwn(h.calls[0], "model"), false);
+  assert.equal(Object.hasOwn(h.calls[0], "sections"), false); assert.equal(h.view.model, "");
+});
+test("catalog failure does not block prompt edits or fake/offline tests", async () => {
+  const h = await editableCanvas("Say hello.", undefined, { fetchModels: async () => ({ error: "models-unavailable" }) });
+  const picker = byClass(h.root, "model-picker")[0]; await picker.listeners.focus[0]();
+  assert.equal(picker.disabled, false); assert.match(c18Text(h.root, "model-status"), /unavailable/);
+  const prompt = c18Prompt(h.root); prompt.textContent = "Keep it short."; prompt.listeners.input[0]();
+  await h.clickTest(); assert.equal(h.calls[0].operation, "save-and-test");
+  assert.equal(Object.hasOwn(h.calls[0], "model"), false);
+});
+
+test("runtime model picker stays out of drafts and is sent through Enter", async () => {
+  let catalogs = 0;
+  const h = await editableCanvas("Say hello.", undefined, { fetchModels: async () => { catalogs++; return { defaultModel: "gpt-5.6-terra", models: ["choice-a", "choice-b"] }; } });
+  const picker = byClass(h.root, "model-picker")[0];
+  assert.ok(picker, "native runtime model select is missing"); assert.equal(picker.tag, "select");
+  assert.equal(picker.attrs["aria-label"], "Runtime model"); assert.equal(catalogs, 0);
+  await picker.listeners.focus[0]();
+  assert.equal(catalogs, 1); assert.deepEqual(picker.childNodes.map(o => o.value), ["", "choice-a", "choice-b"]);
+  picker.value = "choice-b"; picker.listeners.change[0]();
+  assert.equal(c18Text(h.root, "prompt-status"), "Saved · Enter runs 1 test");
+  assert.equal(h.calls.length, 0); await h.clickTest();
+  assert.equal(h.calls[0].model, "choice-b"); assert.equal(h.calls[0].operation, "test");
+  assert.equal(Object.hasOwn(h.calls[0], "sections"), false); assert.equal(h.view.model, "fake");
+});
+
+test("only a new result from the picked model restores current pass styling", async () => {
+  let response;
+  const h = await editableCanvas("Say hello.", undefined, { currentPass: true, fetchModels: async () => ({ models: ["choice-b"], defaultModel: "gpt-5.6-terra" }), respond: async () => response });
+  const picker = byClass(h.root, "model-picker")[0]; await picker.listeners.focus[0]();
+  picker.value = "choice-b"; picker.listeners.change[0](); assert.deepEqual(c18Status(h.root), ["none"]);
+  const view = structuredClone(h.view); view.latest.result.modelRoute = "copilot/choice-b"; response = { view };
+  await h.clickTest(); assert.deepEqual(c18Status(h.root), ["pass"]);
+  h.app.observe(h.view); assert.deepEqual(c18Status(h.root), ["none"], "another model's result became current");
+});
+
+test("A-B-A model changes fence old observations even when revision and model match again", async () => {
+  const h = await editableCanvas("Say hello.", undefined, { currentPass: true, fetchModels: async () => ({ models: ["fake", "choice-b"], defaultModel: "gpt-5.6-terra" }) });
+  assert.deepEqual(c18Status(h.root), ["pass"]);
+  const started = h.app.observation(); let picker = byClass(h.root, "model-picker")[0];
+  assert.ok(picker, "native runtime model select is missing"); await picker.listeners.focus[0]();
+  picker.value = "choice-b"; picker.listeners.change[0](); assert.deepEqual(c18Status(h.root), ["none"]);
+  picker = byClass(h.root, "model-picker")[0]; picker.value = ""; picker.listeners.change[0]();
+  assert.equal(h.app.observe(h.view, started), false); h.app.observe(h.view);
+  assert.deepEqual(c18Status(h.root), ["none"], "old green result was restored by a late A observation");
+});
 
 for (const eol of ["\n", "\r\n"]) test(`editable prose renders inline code and strong without a raw-mode focus swap; no-op tests do not save (${eol === "\n" ? "LF" : "CRLF"})`, async () => {
   const body = "Use `users` and **benefits**.\n\nKeep original lines.\n```text\n`literal` **fence**\n```\nLast line.";
@@ -1601,7 +1664,7 @@ test("zero tests: first-run teaching, local refusal, delete-all saves zero and a
   const zeroSource = replaceExamples(h.source, []);
   const noTests = (extra = {}) => (revision) => ({ status: "current", result: result({
     file: { path: MINIMAL, revision }, selection: { scope: "full", totalCases: 0, caseIds: [] }, examples: [],
-    state: "refused", verdict: "fail", fullPass: false, reasonCode: "no_tests", reason: "No tests yet — add or suggest one", ...extra,
+    state: "refused", verdict: "unknown", fullPass: false, modelRoute: {}, reasonCode: "no_tests", reason: "No tests yet — add or suggest one", ...extra,
   }) });
   reply = { error: "no-tests", message: "No tests yet — add or suggest one", saved: true, view: await viewFor(zeroSource, [], noTests()) };
   openTest(h.root, "a"); click(byClass(h.root, "more")[0]); click(btn(h.root, "Delete test"));
@@ -1613,8 +1676,9 @@ test("zero tests: first-run teaching, local refusal, delete-all saves zero and a
   assert.equal(c18Text(h.root, "prompt-status"), "Saved · add a test to run it");
   assert.equal(reloadButton(h.root).hidden, true, "a known no-tests refusal is not an unknown outcome");
   assert.equal(byClass(h.root, "empty-tests")[0].hidden, false);
+  assert.doesNotMatch(h.root.textContent, /Result out of date/);
   assert.equal(byClass(h.root, "pass").length, 0, "no green for zero tests");
-  reply = { view: await viewFor(zeroSource, [], noTests({ operation: "run", adHoc: { state: "complete", verdict: "pass", answerExcerpt: "Hi there" } })), saved: false };
+  reply = { view: await viewFor(zeroSource, [], noTests({ operation: "run", state: "complete", reasonCode: "completion_ready", modelRoute: { provider: "fake", model: "fake" }, adHoc: { state: "complete", verdict: "pass", answerExcerpt: "Hi there" } })), saved: false };
   click(btn(h.root, "Run")); await tick(); await tick();
   assert.equal(h.calls[1].operation, "run");
   assert.match(byClass(h.root, "ad-hoc-result")[0].textContent, /Hi there/);
@@ -1879,7 +1943,7 @@ test("ADVERSARIAL delayed idle poll cannot overwrite the rerun failure with an o
     return new Promise(resolve=>{release=()=>resolve({json:async()=>oldView});});
   };
   try {
-    await import(new URL("./app.js?delayed-poll-probe", import.meta.url));
+    await import(new URL("../../../../copilot-wsl/com.github.copilot/extensions/agent-view/app.js?delayed-poll-probe", import.meta.url));
     for(let i=0;i<8;i++)await tick();
     assert.equal(typeof poll,"function");
     assert.equal(summaryOf(root),"1 passing");
@@ -1919,7 +1983,7 @@ test("an accepted same-revision observation rebuilds result DOM without losing d
   assert.doesNotMatch(c18Text(h.root,"detail-status"),/just now/);
 });
 test("ADVERSARIAL two canvas controllers cannot silently overwrite the first saved revision", async () => {
-  const {createActionHandler}=await import("./view.mjs");
+  const {createActionHandler}=await import("../../../../copilot-wsl/com.github.copilot/extensions/agent-view/view.mjs");
   const seed=await editableCanvas("Original prompt.",undefined,{examples:c18Examples(["a"])});
   let source=seed.source,latest={status:"none"};const calls=[];
   const rev=()=>"sha256:"+createHash("sha256").update(source).digest("hex");

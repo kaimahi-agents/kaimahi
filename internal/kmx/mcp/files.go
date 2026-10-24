@@ -1,5 +1,7 @@
 // Package mcp adapts local agent-file operations to stdio MCP.
-// File access requires an explicit root; execution uses shared App snapshots.
+// File access is agent-only, optionally root-bound; execution uses shared App snapshots.
+// Unbound non-fake previews default to Copilot's fixed endpoint and the authored
+// model; explicit routes, fake previews and legacy root-bound behavior are unchanged.
 // Tool requests must not choose model endpoints or substitute a runner.
 // The canonical resource includes an exact, revision-bound authoring snapshot.
 // Optional failure-only excerpts exclude passing and unknown answers from safe
@@ -9,6 +11,11 @@
 // Reopened member operations revalidate native casting state, never infer origin
 // or persist kmx mapping. Preview shares App snapshots, not native dispatch.
 // Native partial effects remain explicit; no extra tool, downloader or canvas actions.
+// Canonical Edit optionally retains bounded private source preimages. Retention
+// failure never blocks a valid save and is explicit in its successful result.
+// Source-only versions are read-only resources; restore uses the same Edit CAS.
+// Linux creation uses no-replace rename, then hard-link publication when needed.
+// Mounts lacking both use exclusive creation and synced copy without atomic visibility.
 package mcp
 
 import (
@@ -52,11 +59,13 @@ func (e *Error) Error() string {
 	case "io_failed":
 		return "io_failed: could not read or stage the selected source; check access and available space"
 	case "publication_failed":
-		return "publication_failed: same-directory atomic rename failed; target was not published"
+		return "publication_failed: file publication failed"
 	case "cancelled":
 		return "cancelled: operation stopped before publication"
 	case "deadline_exceeded":
 		return "deadline_exceeded: operation deadline elapsed"
+	case "history_unavailable":
+		return "history_unavailable: history is busy or unsafe; stop MCP for this root and retry, or remove its private versions directory manually; no current files were changed"
 	case "squad_setup_failed":
 		return "squad_setup_failed: native setup failed; inspect retained files before reconciliation; no automatic retry or rollback"
 	case "squad_not_setup":
@@ -73,22 +82,29 @@ func refusal(code string) error { return &Error{Code: code} }
 
 // File identifies exact saved bytes without returning their content.
 type File struct {
-	Path     string `json:"path"`
-	Revision string `json:"revision"`
+	Path     string             `json:"path"`
+	Revision string             `json:"revision"`
+	History  *FileHistoryStatus `json:"history,omitempty"`
 }
 
-// Files holds one explicitly selected root with a caller-selected validator.
+// Files holds an optional selected root with a caller-selected validator.
+// A nil root resolves agent paths against cwd; explicit roots retain legacy policy.
 // v1 uses canonical parsing; native cast operations bind their explicit profile.
 type Files struct {
-	root     *os.Root
-	validate func(string, []byte) error
-	viewMu   sync.Mutex
-	latest   previewObservation
+	root        *os.Root
+	validate    func(string, []byte) error
+	viewMu      sync.Mutex
+	latest      previewObservation
+	historyDir  func() (string, error)
+	historyGate chan struct{}
 }
 
 func OpenFiles(root string, validate func(string, []byte) error) (*Files, error) {
 	if validate == nil {
 		return nil, refusal("invalid_options")
+	}
+	if root == "" {
+		return &Files{validate: validate}, nil
 	}
 	if !filepath.IsAbs(root) {
 		return nil, refusal("invalid_root")
@@ -103,13 +119,43 @@ func OpenFiles(root string, validate func(string, []byte) error) (*Files, error)
 	}
 	return &Files{root: r, validate: validate}, nil
 }
-func (f *Files) Close() error  { return f.root.Close() }
+
+// OpenFilesWithHistory enables best-effort canonical Edit retention. The trusted
+// directory resolver is lazy: startup and help never create history or read config.
+func OpenFilesWithHistory(root string, validate func(string, []byte) error, directory func() (string, error)) (*Files, error) {
+	if directory == nil {
+		return nil, refusal("invalid_options")
+	}
+	f, err := OpenFiles(root, validate)
+	if err != nil {
+		return nil, err
+	}
+	f.historyDir, f.historyGate = directory, make(chan struct{}, 1)
+	return f, nil
+}
+
+func (f *Files) Close() error {
+	if f.root == nil {
+		return nil
+	}
+	return f.root.Close()
+}
 func revision(b []byte) string { return fmt.Sprintf("sha256:%x", sha256.Sum256(b)) }
 
-// rootRelative resolves absolute aliases before applying the portable path policy.
-// Missing suffixes support Create; an existing dangling link never becomes one.
-// File IO still uses the pinned root, not the resolved absolute pathname.
+// rootRelative resolves aliases to a canonical target, relative to an explicit
+// root or absolute when unbound. Missing suffixes support Create; an existing
+// dangling link never becomes one. IO uses the retained root/parent descriptor.
 func (f *Files) rootRelative(p string) (string, error) {
+	if f.root == nil {
+		if !agentPath(p) {
+			return "", refusal("unsafe_path")
+		}
+		var err error
+		p, err = filepath.Abs(p)
+		if err != nil {
+			return "", refusal("unsafe_path")
+		}
+	}
 	if !filepath.IsAbs(p) {
 		return p, nil
 	}
@@ -136,6 +182,12 @@ func (f *Files) rootRelative(p string) (string, error) {
 			return "", refusal("unsafe_path")
 		}
 		resolved = filepath.Join(resolved, suffix)
+	}
+	if f.root == nil {
+		if !agentPath(resolved) {
+			return "", refusal("unsafe_path")
+		}
+		return resolved, nil
 	}
 	// A replaced root pathname must not authorize a different directory from
 	// the one retained by the descriptor. This is not a concurrent FS sandbox.
@@ -176,6 +228,26 @@ func safePath(p string) bool {
 	parts := strings.Split(p, "/")
 	return len(parts) == 4 && parts[0] == ".squad" && parts[1] == "agents" && safeID(parts[2]) && parts[3] == "charter.md"
 }
+
+// Both the requested name and resolved target must identify an agent file.
+// Directory/member names are not authored agent IDs and need no portable-ID rule.
+func agentPath(p string) bool {
+	name := filepath.Base(p)
+	if strings.HasSuffix(name, ".agent.md") && name != ".agent.md" {
+		return true
+	}
+	parts := strings.Split(filepath.ToSlash(filepath.Clean(p)), "/")
+	n := len(parts)
+	return n >= 4 && parts[n-4] == ".squad" && parts[n-3] == "agents" && parts[n-2] != "" && parts[n-1] == "charter.md"
+}
+
+func (f *Files) allowedPath(p string) bool {
+	if f.root == nil {
+		return agentPath(p)
+	}
+	return safePath(p)
+}
+
 func cancelled(ctx context.Context) error {
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return refusal("deadline_exceeded")
@@ -186,7 +258,7 @@ func cancelled(ctx context.Context) error {
 	return nil
 }
 func (f *Files) valid(p string, b []byte) error {
-	if !safePath(p) {
+	if !f.allowedPath(p) {
 		return refusal("unsafe_path")
 	}
 	if len(b) == 0 || len(b) > maxFileBytes || f.validate(p, b) != nil {
@@ -195,6 +267,22 @@ func (f *Files) valid(p string, b []byte) error {
 	return nil
 }
 func (f *Files) parent(p string, create bool) (*os.Root, error) {
+	if f.root == nil {
+		dir := filepath.Dir(p)
+		if create {
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				return nil, refusal("io_failed")
+			}
+		}
+		r, err := os.OpenRoot(dir)
+		if os.IsNotExist(err) {
+			return nil, refusal("not_found")
+		}
+		if err != nil {
+			return nil, refusal("unsafe_path")
+		}
+		return r, nil
+	}
 	dir := path.Dir(p)
 	if dir != "." {
 		parts := strings.Split(dir, "/")
@@ -280,6 +368,7 @@ func (f *Files) Create(ctx context.Context, p string, b []byte) (File, error) {
 	if err := cancelled(ctx); err != nil {
 		return File{}, err
 	}
+	requested := p
 	p, err := f.rootRelative(p)
 	if err != nil {
 		return File{}, err
@@ -303,11 +392,14 @@ func (f *Files) Create(ctx context.Context, p string, b []byte) (File, error) {
 	if err := cancelled(ctx); err != nil {
 		return File{}, err
 	}
-	if err := renameExclusive(parent, name, path.Base(p)); err != nil {
+	if err := renameExclusive(parent, name, filepath.Base(p)); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return File{}, refusal("already_exists")
 		}
 		return File{}, refusal("publication_failed")
+	}
+	if f.root == nil {
+		p = requested
 	}
 	return File{Path: p, Revision: revision(b)}, nil
 }
@@ -319,6 +411,7 @@ func (f *Files) editObserved(ctx context.Context, p, expected string, b []byte, 
 	if err := cancelled(ctx); err != nil {
 		return File{}, err
 	}
+	requested := p
 	p, err := f.rootRelative(p)
 	if err != nil {
 		return File{}, err
@@ -334,7 +427,7 @@ func (f *Files) editObserved(ctx context.Context, p, expected string, b []byte, 
 	if observed != nil && !f.observedParent(p, parent, observed) {
 		return File{}, refusal("stale_revision")
 	}
-	target, old, info, err := readTarget(parent, path.Base(p))
+	target, old, info, err := readTarget(parent, filepath.Base(p))
 	if err != nil {
 		return File{}, err
 	}
@@ -363,26 +456,48 @@ func (f *Files) editObserved(ctx context.Context, p, expected string, b []byte, 
 	defer unlock()
 	// Locks follow inodes across replacement. A waiter on the replaced inode
 	// must refuse rather than treating that obsolete lock as current authority.
-	current, err := parent.Lstat(path.Base(p))
-	if err != nil || !os.SameFile(info, current) || current.Mode() != info.Mode() || !singleLink(target) ||
-		(observed != nil && !f.observedParent(p, parent, observed)) {
-		return File{}, refusal("stale_revision")
+	check := func() ([]byte, error) {
+		current, err := parent.Lstat(filepath.Base(p))
+		if err != nil || !os.SameFile(info, current) || current.Mode() != info.Mode() || !singleLink(target) ||
+			(observed != nil && !f.observedParent(p, parent, observed)) {
+			return nil, refusal("stale_revision")
+		}
+		if _, err := target.Seek(0, io.SeekStart); err != nil {
+			return nil, refusal("io_failed")
+		}
+		now, err := io.ReadAll(io.LimitReader(target, maxFileBytes+1))
+		if err != nil {
+			return nil, refusal("io_failed")
+		}
+		if revision(now) != expected {
+			return nil, refusal("stale_revision")
+		}
+		return now, nil
 	}
-	if _, err := target.Seek(0, io.SeekStart); err != nil {
-		return File{}, refusal("io_failed")
-	}
-	now, err := io.ReadAll(io.LimitReader(target, maxFileBytes+1))
+	now, err := check()
 	if err != nil {
-		return File{}, refusal("io_failed")
+		return File{}, err
 	}
-	if revision(now) != expected {
-		return File{}, refusal("stale_revision")
+	var history *FileHistoryStatus
+	if f.historyDir != nil {
+		store, status := f.retainHistory(ctx, p, now)
+		if store != nil {
+			defer store.close()
+		}
+		history = status
+		// History IO grants no authority to overwrite a newly changed source.
+		if _, err := check(); err != nil {
+			return File{}, err
+		}
 	}
 	if err := cancelled(ctx); err != nil {
 		return File{}, err
 	}
-	if err := parent.Rename(name, path.Base(p)); err != nil {
+	if err := parent.Rename(name, filepath.Base(p)); err != nil {
 		return File{}, refusal("publication_failed")
 	}
-	return File{Path: p, Revision: revision(b)}, nil
+	if f.root == nil {
+		p = requested
+	}
+	return File{Path: p, Revision: revision(b), History: history}, nil
 }

@@ -21,7 +21,13 @@ NATIVE_DIRECTORY = "com.github.copilot/extensions/agent-view"
 NATIVE_FILES = tuple(f"{NATIVE_DIRECTORY}/{name}" for name in
                      ("extension.mjs", "view.mjs", "open.mjs", "index.html", "app.js", "style.css", "authoring.mjs", "editor.mjs"))
 SKILL_FILES = ("skills/kmx-agent-builder/SKILL.md", "skills/kmx/SKILL.md")
-SAMPLE_FILES = ("samples/release-writer.agent.md", "try-it.json")
+SAMPLE_FILES = ("samples/release-writer.agent.md",)
+
+
+def asset_source(name: str) -> Path:
+    """Shared skills/runtime live in the installable WSL tree; samples stay local."""
+    root = HERE.with_name("copilot-wsl") if name in (*SKILL_FILES, *NATIVE_FILES) else HERE
+    return root / name
 
 
 def _quarantine(path: Path) -> None:
@@ -154,7 +160,7 @@ def build(*, binary: Path, sha256: str, target: str, root: Path | None,
                 "purpose": "development-fixture; not a signed release",
             })
             for name in (*SKILL_FILES, *NATIVE_FILES, *SAMPLE_FILES):
-                source = HERE / name
+                source = asset_source(name)
                 maximum = 256 << 10 if name in SAMPLE_FILES else 65536
                 if source.is_symlink() or not source.is_file() or not 0 < source.stat().st_size <= maximum:
                     raise ValueError("bundled assets must be bounded regular files")

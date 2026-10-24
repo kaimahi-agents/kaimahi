@@ -13,7 +13,7 @@ import (
 func newModelCommand(state *commandState) *cobra.Command {
 	group := &cobra.Command{Use: "model", Short: "Inspect model access and manage explicit Copilot sign-in", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
 	format, provider := "table", "local"
-	list := &cobra.Command{Use: "list", Short: "List local models or available Copilot Chat models", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+	list := &cobra.Command{Use: "list", Short: "List local models or available Copilot models", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		if format != "table" && format != "json" {
 			return fmt.Errorf("unsupported output format; use table or json")
 		}
@@ -73,7 +73,7 @@ func newModelCommand(state *commandState) *cobra.Command {
 	}}
 	list.Flags().StringVarP(&format, "output", "o", "table", "report format: table or json")
 	_ = list.RegisterFlagCompletionFunc("output", staticCompletion([]string{"table", "json"}))
-	list.Flags().StringVar(&provider, "provider", "local", "model source: local or copilot (requires explicit model login)")
+	list.Flags().StringVar(&provider, "provider", "local", "model source: local or copilot (uses an existing gh sign-in)")
 	_ = list.RegisterFlagCompletionFunc("provider", staticCompletion([]string{"local", "copilot"}))
 	group.AddCommand(list)
 	addCopilotCommands(group, state)

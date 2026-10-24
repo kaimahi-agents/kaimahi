@@ -54,12 +54,20 @@ The independent model-access package has native Windows/macOS/Linux tests.
 The installed Windows CLI remains blocked until native CLI support lands; these
 package tests do not qualify the full Windows executable.
 
+## Canvas model choice
+
+The canvas uses a session-only picker override, then the authored model, then
+`gpt-5.6-terra`. Omitting Model does not rewrite the agent file. The picker reads
+`kmx://models` on focus; a catalog failure does not block editing or offline tests.
+Unknown models report the available choices without falling back. Trusted startup
+provider/endpoint/auth selection is unchanged. See [MCP](kmx.md#local-stdio-mcp).
+
 ## Explicit Copilot model access
 
 ```bash
-kmx model login                     # GitHub device code; URI/code on stderr
-kmx model login --gh                # explicitly copy existing github.com gh auth
-kmx model list --provider copilot -o json
+kmx model list --provider copilot -o json  # uses an existing gh sign-in
+kmx model login                     # optional, without gh: GitHub device code
+kmx model login --gh                 # optional explicit copy into kmx's keychain
 kmx model logout                    # only kmx's credential; not gh/editor logout
 ```
 
@@ -91,13 +99,15 @@ or selects a model.
 
 At runtime, an explicit `COPILOT_GITHUB_TOKEN` takes precedence without opening
 kmx's keychain. An empty or malformed value is an error, not a reason to switch
-accounts. Otherwise kmx reads its owned keychain item. Only when that facility
-is unavailable does it try an existing github.com GitHub CLI login through
+accounts. Otherwise kmx uses an existing github.com GitHub CLI sign-in through
 `gh auth token --hostname github.com`, bounded to five seconds and 16 KiB of
-private stdout. This runtime child excludes `GH_TOKEN` and `GITHUB_TOKEN`, so
+private stdout, without opening kmx's keychain. If gh is unavailable, an existing
+kmx keychain credential remains usable. No sign-in is started automatically. This runtime child excludes `GH_TOKEN` and `GITHUB_TOKEN`, so
 those variables cannot override the stored login; explicit `login --gh` retains
-normal gh environment precedence. Missing owned credentials and authentication, subscription,
-policy or quota refusals never trigger another credential source. Neither
+normal gh environment precedence. A malformed gh capture or caller cancellation
+is an error; gh's own capture timeout can use the existing keychain fallback.
+Authentication, subscription, policy or quota service refusals never trigger
+another credential source. Neither
 runtime source is copied into kmx storage or a token file.
 
 With an unavailable keychain, `kmx model login` (including `--gh`) prints these
@@ -112,17 +122,23 @@ but gh may write a plaintext token file when its credential store is unavailable
 kmx never invokes that login command automatically.
 
 Copilot JSON output is an array of non-secret shared routes: provider `copilot`,
-exact available Chat model, endpoint `https://api.githubcopilot.com`, auth
-selector `copilot`. Only enabled Chat models supporting `/chat/completions` are
-listed. The default local list and its report shape are unchanged. There is no
+exact available model, endpoint `https://api.githubcopilot.com`, auth
+selector `copilot`. Enabled Chat-type models supporting `/chat/completions` or
+`/responses` are listed. Protocol selection follows that catalog metadata;
+Responses-only models are translated behind the existing Chat-shaped caller,
+while models offering both protocols keep Chat. Actual upstream model identity
+and incomplete/refusal/tool outcomes are preserved. The default local list and its report shape are unchanged. There is no
 persisted/global selection, automatic model substitution or proxy.
 Markdown-file `kmx run FILE --provider copilot` and
 `kmx test FILE --provider copilot` consume this route through the temporary
 tool-free preview runner; set the file's `Model.Preferred` to an exact listed
 model first. The endpoint defaults to the fixed Copilot endpoint, and execution
 never initiates login. Instructions and inputs are sent to the hosted service.
-The same route can be selected at trusted MCP startup. This is not a new
-harness or native workspace/deployment integration. See
+Unbound MCP uses the same route by default for the effective non-fake model,
+resolved from the runtime override, then the authored model, then the
+`gpt-5.6-terra` fallback. Trusted startup provider overrides still take precedence. Legacy root-bound MCP
+requires an explicit route for real models. This is not a new harness or native
+workspace/deployment integration. See
 [file preview](kmx.md#agent-file-local-preview-unreleased-integration) and
 [direct Copilot transport](copilot-inference.md#direct-model-access)
 for usage, refusal codes and authentication behavior.

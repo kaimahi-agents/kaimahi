@@ -54,7 +54,7 @@ func TestRuntimeCredentialsAuthenticateWithoutPersistence(t *testing.T) {
 			p.source, p.bearer, p.legacy = "previous-source", "previous-bearer", true
 			p.expires = time.Now().Add(time.Hour)
 			routes, err := p.List(t.Context())
-			if err != nil || len(routes) != 1 || routes[0] != selected() {
+			if err != nil || len(routes) != 2 || routes[0] != selected() || routes[1].Model != "responses-only" {
 				t.Fatalf("runtime catalog: %v", err)
 			}
 			safe(t, routes)
@@ -95,10 +95,7 @@ func TestRuntimeCredentialsFailClosed(t *testing.T) {
 	})
 	t.Setenv("COPILOT_GITHUB_TOKEN", "")
 	os.Unsetenv("COPILOT_GITHUB_TOKEN")
-	p.runStoredGH = func(context.Context) ([]byte, error) {
-		t.Fatal("missing credential or refusal switched to gh")
-		return nil, nil
-	}
+	p.runStoredGH = func(context.Context) ([]byte, error) { return nil, ErrUnavailable }
 	if _, err := p.List(t.Context()); !errors.Is(err, ErrAuthRequired) {
 		t.Fatalf("missing item: %v", err)
 	}
@@ -110,9 +107,9 @@ func TestRuntimeCredentialsFailClosed(t *testing.T) {
 
 func TestRuntimeGHFailureClearsCachedCredentials(t *testing.T) {
 	for _, failure := range []struct{ cause, want error }{
-		{errors.New(canary), ErrKeychain},
+		{errors.New(canary), ErrAuthRequired},
 		{context.Canceled, context.Canceled},
-		{context.DeadlineExceeded, context.DeadlineExceeded},
+		{context.DeadlineExceeded, ErrAuthRequired},
 	} {
 		p, store := fixture(t, func(http.ResponseWriter, *http.Request) { t.Error("failed credential capture reached network") })
 		store.fail = ErrKeychain

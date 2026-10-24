@@ -64,6 +64,20 @@ class CallerTests(unittest.TestCase):
         self.put("internal/kmx/app/core.go", "package app\nfunc Orka() { _ = 12 + 3 }\n")
         self.assertEqual(self.invoke().returncode, 0)
 
+    def test_trigger_schema_does_not_change_guard_selection_or_authorize_edges(self):
+        self.policy["triggers"] = {"prefixes": ["internal/kmx/app/"], "files": [],
+                                   "globs": [], "exclude_files": ["scripts/ci/orka-callers.json"]}
+        self.put("scripts/ci/orka-routing.json", json.dumps(self.policy))
+        self.assertEqual(self.invoke().returncode, 0)
+        self.put("internal/kmx/app/unrelated.go", "package app\nfunc Preview() { Orka() }\n")
+        self.assertEqual(self.invoke().returncode, 1)
+
+    def test_trigger_schema_unknown_fields_and_wrong_types_refuse(self):
+        for value in ({"prefixes": "not-an-array"}, {"unknown": []}):
+            with self.subTest(value=value):
+                self.put("scripts/ci/orka-routing.json", json.dumps(dict(self.policy, triggers=value)))
+                self.assertEqual(self.invoke().returncode, 1)
+
     def test_new_unrelated_caller_of_relevant_code_fails_even_unimported_package(self):
         self.put("internal/kmx/unrelated/leaf.go", f'package unrelated\nimport alias "{MODULE}/internal/kmx/app"\nfunc Leaf() {{ alias.Orka() }}\n')
         self.manifest([], imports=[{"file": "internal/kmx/unrelated/leaf.go", "path": MODULE + "/internal/kmx/app"}])

@@ -137,13 +137,22 @@ class AppShardWorkflowTests(unittest.TestCase):
         self.assertIn("app-tests", self.jobs)
         job = self.jobs["app-tests"]
         self.assertNotIn("if", job)
-        self.assertEqual(job["strategy"]["matrix"], {"shard": [0, 1, 2, 3]})
+        self.assertEqual(job["runs-on"], "${{ matrix.os }}")
+        self.assertEqual(job["strategy"]["matrix"], {
+            "os": ["ubuntu-latest", "macos-latest"], "shard": [0, 1, 2, 3]})
         self.assertIs(job["strategy"]["fail-fast"], False)
         body = "\n".join(s.get("run", "") for s in job["steps"])
         self.assertIn("python3 scripts/ci/app-tests.py --shard", body)
         self.assertIn("--shards 4", body)
         self.assertEqual(self.jobs["hygiene"]["needs"], ["app-tests", "windows-read-foundation"])
         self.assertEqual(self.jobs["hygiene"]["if"], "always()")
+        windows = self.jobs["windows-read-foundation"]
+        windows_body = "\n".join(step.get("run", "") for step in windows["steps"])
+        self.assertIn("./scripts/ci/windows-tests ./internal/kmx/fileaccess", windows_body)
+        self.assertIn("TestWindowsStateAccessUsesLocalAppDataAndSeparatesCreation", windows_body)
+        self.assertIn("./internal/kmx/config", windows_body)
+        self.assertIn("config-arm64.test.exe", windows_body)
+        self.assertIn("go vet ./internal/kmx/fileaccess ./internal/kmx/config", windows_body)
 
     def test_final_gate_rejects_every_non_success_and_wrong_dependency_set(self):
         steps = self.jobs["hygiene"]["steps"]
@@ -177,6 +186,7 @@ class AppShardWorkflowTests(unittest.TestCase):
         self.assertEqual(failure["with"]["path"], "kmx-app-test.json")
         for artifact in artifacts:
             self.assertIn("${{ matrix.shard }}", artifact["with"]["name"])
+            self.assertIn("${{ matrix.os }}", artifact["with"]["name"])
 
     def test_general_suite_excludes_only_app_and_discovery_fails_closed(self):
         step = next(s for s in self.jobs["hygiene"]["steps"] if s.get("id") == "kmx_tests")
@@ -184,6 +194,8 @@ class AppShardWorkflowTests(unittest.TestCase):
         self.assertIn('grep -vx "' + PACKAGE + '"', body)
         self.assertNotIn('"internal/kmx/app":', body)
         self.assertIn('"internal/kmx/guard":', body)
+        self.assertIn('"internal/kmx/fileaccess":', body)
+        self.assertIn('"internal/kmx/config":', body)
         self.assertIn('go test "${packages[@]}" -json', body)
         prelude = body.split("go_status=0", 1)[0]
         for stdout, status in (("", 0), (PACKAGE + "\n", 0), ("other/package\n", 1)):

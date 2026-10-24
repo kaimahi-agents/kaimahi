@@ -17,6 +17,12 @@
       "replace": "            if len(set(m.group(0).replace(\"-\", \"\"))) <= 15:"
     },
     {
+      "name": "the inventory exemption admits the reviewed id on any path",
+      "breaks": "The Service Tree id is allowed at one governed path. Dropping the path condition would let that id, and any file that quotes it, pass anywhere in the tree.",
+      "find": "            if tuple(parts) == INVENTORY_PATH and m.group(0).lower() in INVENTORY_SERVICE_IDS:",
+      "replace": "            if m.group(0).lower() in INVENTORY_SERVICE_IDS:"
+    },
+    {
       "name": "an empty file list is reported as a clean tree",
       "breaks": "An enumeration that failed — a bad path, a git command that errored — becomes a pass. \"Nothing to check\" answers as \"checked, found nothing\".",
       "find": "if [ ! -s \"$workdir/files\" ]; then",

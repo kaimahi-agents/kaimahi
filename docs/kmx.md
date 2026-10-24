@@ -45,14 +45,15 @@ existing `gh auth token --hostname github.com` credential through private bounde
 stdout capture. If the OS keychain is unavailable, login prints runtime options
 instead of starting device sign-in or failing. No editor credentials are read.
 
-`kmx model list --provider copilot [-o table|json]` lists enabled Chat-compatible
+`kmx model list --provider copilot [-o table|json]` lists enabled Chat/Responses
 models as non-secret routes at `https://api.githubcopilot.com`; it never starts
 sign-in and fails clearly without auth. Local discovery remains the default.
 `kmx model logout` deletes only kmx's reusable credential and clears its memory;
 gh/editor sign-in and caller environment are unchanged. Runtime authentication
-prefers explicit `COPILOT_GITHUB_TOKEN`, otherwise kmx's native keychain item.
-Only if the keychain is unavailable does it read an existing github.com gh login
-through bounded private `gh auth token` capture. These runtime sources are never
+prefers explicit `COPILOT_GITHUB_TOKEN`, then an existing github.com gh sign-in
+through bounded private `gh auth token` capture. A working gh sign-in does not
+require kmx login or keychain setup; the owned keychain remains a fallback when
+gh is unavailable. These runtime sources are never
 saved by kmx; an invalid explicit token or service refusal does not switch
 credentials. Remove the variable or end the gh session separately to disable
 external credentials. There is no plaintext token-file fallback. macOS release builds work without CGO; explicit access uses
@@ -176,9 +177,13 @@ snapshot without reopening its filename; the CLI path is a thin load-and-delegat
 wrapper.
 Neither operation changes source or produces native evaluation/deploy evidence.
 An optional canonical Tools declaration and explicit `--tool-bindings FILE` select
-only the [host-tool foundation](local-preview.md#host-tool-foundation). The real
-MCP provider is not yet available, so CLI tool execution refuses safely. Hermetic
-embedding tests qualify the bounded host executor/journal path, not live MCP.
+one [host-owned read-only GitHub MCP operation](local-preview.md#host-tool-foundation).
+The operator binds one repository and an explicit environment credential name;
+no endpoint/credential comes from the agent or model. Only a selected call reads
+up to 20 merged PRs through the fixed Streamable-HTTP endpoint. Missing authority,
+foreign/unmerged results and transport/schema failures refuse, without retries.
+Copilot agent or judge plus tools remains unsupported. The opt-in hosted smoke
+uses a scripted model; it is not real-LLM qualification.
 
 File mode uses embedded Sessions for fake/local and explicit Copilot routes,
 with one fresh Session per ad-hoc input, example and judge sample, and one private
@@ -189,7 +194,8 @@ overall budget. Execution errors stop later sends. Journal close failure prevent
 a full pass. [Journal content, retention and clearing](local-preview.md#journal-retention-and-clearing)
 are disclosed separately: instructions, inputs and answers are retained in cleartext.
 
-**Tool-free Copilot is journaled:** the provider checks content against its source
+**Tool-free Copilot is journaled**, for both Chat Completions and Responses:
+the provider checks content against its source
 token and exchanged bearer before any Session starts, without exposing either
 to the runner or harness. Its invocation-local credentials are pinned before
 journaling; there is no mid-run refresh or inference retry. Expiry, logout through
@@ -214,7 +220,7 @@ Agent completions require an exact model-ID echo, with no automatic aliasing.
 Explicit `--provider copilot` uses the existing authenticated model-access
 transport at the fixed `https://api.githubcopilot.com` endpoint. Other remote
 endpoints still refuse. Copilot requires prior explicit sign-in and an exact
-enabled Chat model from `kmx model list --provider copilot`; it never falls back
+enabled Chat/Responses model from `kmx model list --provider copilot`; it never falls back
 to another model or starts login during execution.
 
 File judging uses the shared native two-sample evaluator, including Copilot: both
@@ -232,19 +238,14 @@ kmx test ./greeter.agent.md
 ```
 
 Add `--verbose` to file Run or Test for content-free diagnostics on stderr.
-Journaled fake/local execution reports completion and judge start/end. The direct
-Copilot exception also reports selected endpoints, received HTTP status,
-per-request timings and total elapsed time. Revision, model, runner label,
-assertion verdicts and final outcome remain in the normal report, not repeated
-in verbose diagnostics.
+Journaled fake/local and Copilot execution reports completion and judge
+start/end. Revision, model, runner label, assertion verdicts and final outcome
+remain in the normal report, not repeated in verbose diagnostics.
 Local endpoint origins and standard `/v1` paths are shown; custom paths are
-withheld. The direct exception distinguishes connection refusal, response timeout,
-HTTP errors and malformed or mismatched completions with safe diagnostic
-categories, never raw provider errors. Journaled execution uses fixed-text
-refusals without HTTP-status or network-subclass diagnostics; neither path
-invents a status for requests without a response.
-Both paths refuse absent, null, empty or different returned model identities.
-The direct exception distinguishes a different nonempty model as a model mismatch.
+withheld. Journaled execution uses fixed-text refusals without per-request
+HTTP-status/timing or network-subclass diagnostics; it never forwards raw
+provider errors or invents a status for requests without a response.
+Absent, null, empty or different returned model identities refuse.
 Verbose is off by default and does not imply `--show-content`: instructions,
 inputs, answers, assertion operands, judge rationale and response bodies stay
 private. JSON stdout and exit contracts are unchanged. A failed diagnostic
@@ -257,11 +258,11 @@ kmx run ./greeter.agent.md --provider ollama --endpoint http://127.0.0.1:11434/v
 For this Ollama example, first set `Model.Preferred` in your own copy of the
 charter to an exact installed Ollama model, rather than the sample's `fake`.
 
-To use Copilot, sign in explicitly, list available models, then set the file's
-`Model.Preferred` to an exact listed model ID:
+To use Copilot with an existing gh sign-in, list available models and set the
+file's `Model.Preferred` to an exact listed model ID. `kmx model login` is optional
+for users without gh:
 
 ```bash
-kmx model login
 kmx model list --provider copilot
 kmx run ./greeter.agent.md --provider copilot --prompt Ada --show-content
 kmx test ./greeter.agent.md --provider copilot
@@ -281,7 +282,8 @@ if the file contains only that example. Unknown/blank IDs refuse before inferenc
 An explicit `examples: []` can be saved and loaded while authoring. Ad-hoc Run
 with an input still works; Test refuses with “No tests yet — add or suggest one”.
 Missing/empty examples cannot pass, export a run profile or supply the evidence
-required for packaging/deployment. The exact model comes from `Model.Preferred`;
+required for packaging/deployment. The exact CLI model comes from `Model.Preferred`
+or `gpt-5.6-terra` when the Model section is omitted;
 `fake` selects only the built-in fake route. A real model additionally requires
 an explicit trusted `--provider` and, for local routes, `--endpoint`, validated by model access;
 there is no discovery, installation, sign-in or fallback inside Run/Test. The
@@ -343,12 +345,13 @@ See the [wire format and hash rules](agent-file.md#frozen-run-profile-export-unr
 
 ### Local stdio MCP
 
-`kmx mcp --root /absolute/project` serves exactly `create`, `edit`, `run` and
-`test`, using the canonical parser and the same App snapshot operation as file
-Run/Test. It does not listen on a network socket or load cluster/workspace
-configuration. The root must already exist; missing, relative or invalid roots
-refuse startup. There is no cwd, plugin-cache or client-roots fallback, and no
-tool can change the root. Host shell authority remains outside this boundary.
+`kmx mcp` serves exactly `create`, `edit`, `run` and `test`, using the canonical
+parser and the same App snapshot operation as file Run/Test. One server accepts
+agent files in any directory. Prefer an absolute WSL path when calling it from
+Windows; relative paths resolve against the server's working directory. It does
+not listen on a network socket or load cluster/workspace configuration.
+Optional `--root /absolute/project` retains the old bound mode for existing
+plugins and separately configured native Squad operations; the default is unbound.
 
 Canonical tool input requires integer `schemaVersion: 1`. MCP initialization also
 negotiates its protocol version and advertises the engine build version.
@@ -357,10 +360,10 @@ frames are bounded to 2 MiB and source files to 256 KiB.
 
 | Tool | Input in addition to schemaVersion | Result |
 |---|---|---|
-| `create` | `path`, `content` | Saved root-relative path and exact-byte revision |
+| `create` | `path`, `content` | Saved path and exact-byte revision |
 | `edit` | `path`, `content`, `expectedRevision` | Saved path and new revision |
-| `run` | `path`; optional `input`, `caseId`, `showContent`, `showFailedContent` | Shared `kmx.agent-file-preview` v1 result |
-| `test` | `path`; optional `caseId`, `showContent`, `showFailedContent` | Same shared result, no ad-hoc input |
+| `run` | `path`; optional `model`, `input`, `caseId`, `showContent`, `showFailedContent` | Shared `kmx.agent-file-preview` v1 result |
+| `test` | `path`; optional `model`, `caseId`, `showContent`, `showFailedContent` | Same shared result, no ad-hoc input |
 
 #### Optional native Squad chat flow
 
@@ -410,18 +413,18 @@ exact source revision, not a package digest, team dispatch or deployment.
 
 #### Canonical v1 file paths and publication
 
-Relative paths are portable root-level `<name>.agent.md` or
-`.squad/agents/<id>/charter.md`, without traversal or symlink components. Native
-absolute paths are cleaned and symlink-resolved, then accepted only if their
-canonical target has one of those layouts beneath the configured root. Absolute
-aliases resolving inside the root are allowed; outside targets, dangling links,
-and changed root-directory identity refuse as `unsafe_path`. Special files refuse.
-Create may append missing file/parent components beneath an existing resolved
-directory; it never treats a dangling link as a missing component. Saved paths
-are canonical root-relative names. All file IO uses the pinned root;
-normalization is not a hostile concurrent-filesystem sandbox. Necessary Squad
-parent directories may be created, but no roster or other team metadata is
-touched. Create validates before publishing a same-directory staged file with
+Without `--root`, paths can name `*.agent.md` files or
+`.squad/agents/<member>/charter.md` files anywhere, including nested directories
+with spaces or Unicode names. Both the requested and resolved target must be
+agent files. Links to agent files and symlinked parent directories work; an
+agent-looking link to a non-agent target does not. Saved paths retain the
+requested spelling, while latest-preview matching uses the resolved target.
+The resource and canvas can use the same full path as Create/Edit.
+
+Create makes missing parent directories. No roster or other team metadata is
+touched. Existing explicit-root installations retain their relative-path and
+confinement behavior during the plugin transition. Filesystem resolution is not
+a hostile concurrent-filesystem sandbox. Create validates before publishing a same-directory staged file with
 no-replace rename. Edit validates old/new source,
 checks the expected `sha256:…` revision under an OS-held writer lock, then renames
 the staged replacement. Busy/unavailable locks and failed renames report safe
@@ -434,7 +437,7 @@ inheritance. This is intended for the user's own files. Invalid existing charter
 must be repaired manually. Crash leftovers may include this operation's non-agent
 temp file or empty parent directories; no stale-file sweeping is performed.
 
-Run/Test parse a bounded rooted snapshot once and never reopen the source through
+Run/Test parse the selected snapshot once and never reopen the source through
 its display path. Structured results preserve revision, route, full/subset, state,
 verdict, diagnostics and retention status even when the App returns an error.
 Completed assertion failures and inconclusive assertions are normal MCP results
@@ -468,8 +471,9 @@ remains exit 130. Deadline and non-cancellation error behavior is unchanged.
 
 The SDK's cancelled call returns before server finalization and does not deliver
 the partial result. Read the existing `kmx://agent/{path}` resource with a fresh,
-uncancelled context to recover `latest.result`. Encode the whole root-relative
-path as one URI component: `kmx://agent/greeter.agent.md`, or
+uncancelled context to recover `latest.result`. Encode the whole requested
+path as one URI component, including an absolute path's leading slash:
+`kmx://agent/%2Fhome%2Fme%2Fproject%2Fgreeter.agent.md`, or
 `kmx://agent/.squad%2Fagents%2Fgreeter%2Fcharter.md` for a nested charter. Until the
 handler finishes, the resource may show `latest.status: none`. A UI can perform
 bounded repeat reads while waiting for a cancelled result for the expected
@@ -493,16 +497,16 @@ false and includes only validated failing saved-example answers, not passing,
 unknown or ad-hoc answers. Existing clients keep their current behavior. The
 canvas requests failure-only excerpts and keeps passing answers opt-in. These
 controls do not change existing runner journal retention. Excerpts are bounded and
-labeled untrusted data, never tool instructions. The result's display basename
-is not target authority.
+labeled untrusted data, never tool instructions. Use Create's returned path to
+open the agent; legacy preview results can carry only a display basename.
 
 The read-only resource template `kmx://agent/{path}` returns a typed
 `kmx.agent-view` v1 projection: original revision, title, instructions, model,
 examples/expected checks and the process's latest safe preview observation.
-Encode the whole root-relative path as one component, including slashes.
-Only supported agent paths under the fixed root are readable; there is no
-fifth tool, generic file read or directory listing. After root confirmation,
-authored content is visible without an extra consent mechanism; answer excerpts
+Encode the whole requested path as one component, including slashes.
+Only supported agent files are readable; there is no fifth tool, generic file
+read or directory listing. Authored content is visible without folder
+confirmation; answer excerpts
 require an explicit Run/Test disclosure option: `showContent` or failure-only
 `showFailedContent`. The optional authoring snapshot carries exact source from
 the same descriptor read as its revision; strict canonical parsing controls
@@ -510,7 +514,7 @@ editability. A restart has no current result;
 a revision change marks the old observation stale and withholds its details.
 Reads perform no inference, mutation or journal retrieval.
 
-The [Copilot plugin](../plugins/copilot/README.md#read-only-agent-view) adds a
+The [WSL Copilot plugin](../plugins/copilot-wsl/README.md) adds a
 native authoring canvas and read-only `/agent-view PATH` text fallback over this
 resource. Canvas Edit/Test/Run use existing same-session MCP tools; only explicit
 Suggest more starts chat. Saves require the original revision; changed result
@@ -518,18 +522,128 @@ revisions are labelled stale rather than silently rebasing the draft.
 Inspection can show a minimal titled agent as well as a canonical Squad charter;
 this display-only support does not change Run/Test parser acceptance.
 
-A real model route must be selected at process startup with trusted
-`--provider` and, for local routes, `--endpoint`; the exact model still comes from
-the parsed file. For Copilot, use `kmx mcp --root /absolute/root --provider copilot`
-after explicit sign-in. The same fixed endpoint and hosted-content disclosure
-apply; startup itself performs no sign-in, credential access or model request.
-Tools accept no endpoint, credential or arbitrary-command fields. With no route,
-only exact `fake` is selectable. Run/Test use the same
+The canvas Model picker is session-only: override → authored Model.Preferred →
+`gpt-5.6-terra`. Selecting a model never edits the file or its saved-source history.
+Changing the effective model makes old results stale; another run must confirm the
+selected model, including after an A → B → A switch. Missing Model is valid for
+canonical authoring; a present blank/invalid Model remains invalid. Run/Test v1
+accept the same optional exact `model` override, not a provider or endpoint.
+An unknown catalog model fails in one line listing the available choices.
+
+Unbound/default-Copilot servers expose read-only `kmx://models` with
+`schemaVersion: 1`, `kind: "kmx.models"`, `defaultModel` and `models` (exact IDs).
+Discovery is lazy, adds no tool and starts neither sign-in nor inference. The
+picker loads it on focus; discovery failure leaves editing and fake/offline
+execution available. Explicit non-Copilot and legacy bound routes stay unchanged.
+
+Unbound `kmx mcp` uses Copilot for the effective non-fake model when no startup
+route is selected. Effective `fake` remains offline. Explicit trusted `--provider`
+and, for local routes, `--endpoint` override that provider default, not the runtime
+model choice. Legacy `--root` mode retains its existing fake-only behavior
+without an explicit route. Copilot uses the fixed endpoint and existing runtime
+credentials, without an installation-time model or login step. Hosted-content
+disclosure still applies; startup itself performs no sign-in, credential access
+or model request. Tools accept no endpoint, credential or arbitrary-command fields.
+Run/Test use the same
 [file preview runner](#agent-file-local-preview-unreleased-integration) as the
 CLI: fake/local and explicit Copilot routes use embedded Sessions and one private
 journal, with one Session per agent turn and per judge sample. A nil runner still returns `runner_unavailable`, never
 a fallback. Hermetic checks do not qualify real models or native Windows.
 There is no fifth Explain/model/install tool; offline Explain stays a CLI action.
+
+#### Saved source versions and restore
+
+Canonical MCP Edit keeps best-effort, source-only history on Linux and macOS.
+It captures the valid saved content being replaced, not drafts or the proposed
+new content. The first Edit captures the file's initial contents; Create needs
+no redundant history copy. A snapshot's `capturedAt` is when its content was
+captured for replacement, not its original save time or proof that replacement
+succeeded. External-editor saves are captured only
+when a later MCP Edit replaces them. Native Squad v2 edits are not captured;
+canonical v1 charters at `.squad/agents/ID/charter.md` are eligible.
+
+A history problem **never refuses an otherwise valid save**. Successful Edit
+results add `file.history.status`: `retained` or `unavailable`, with a safe
+`reasonCode` and `reason`. The MCP text includes the same fields. Clients must
+show an unavailable warning separately from save success, for example:
+“Saved, but the previous version could not be confirmed in history.” Do not
+infer successful retention from `isError: false`. Source validation, stale
+revision, cancellation and publication failures still fail normally; they never
+return a Saved confirmation. Normal history growth evicts oldest snapshots,
+not saves. Busy, unsafe or inaccessible history produces the explicit warning.
+
+The existing `kmx://agent/{path}` view adds optional `history`, containing
+`status: available|unavailable` and `versions`, newest first. Each metadata entry
+has `versionId`, exact source `revision`, `capturedAt`, `sourceBytes` and `uri`;
+old source is not included in this list. Missing history is an empty available
+list. Damaged snapshot payloads are omitted from lists and refuse individual
+reads; they still count toward root entry/byte bounds and can be evicted normally.
+Unsafe filesystem objects and oversized state still refuse history access. A
+history error does not prevent reading the current authored view. History-free
+library embeddings omit this optional field.
+
+To restore, without a new tool or alternate filesystem writer:
+
+1. Read the current agent view and keep its current `file.revision`.
+2. Read the selected entry's `uri`, a read-only
+   `kmx://agent-version/{path}/{versionId}` resource. Its `kmx.agent-version` v1
+   JSON contains `file`, version metadata in `version`, and exact `source`.
+   Encode the entire requested absolute or relative path as one component,
+   including slashes. Relative paths use the server cwd or legacy `--root`.
+3. Call the existing `edit` with `schemaVersion: 1`, the same `path`,
+   `content` set to that old source, and `expectedRevision` set to the **current**
+   view's revision, not the old version's revision.
+
+Restore is a new Edit: it retains the displaced current source for undo, subject
+to the same best-effort warning. Existing snapshots are never rewritten. Source
+SHA values can repeat after restore; a `versionId` identifies a captured
+occurrence, not a new kind of source revision. Consecutive identical preimages
+are deduplicated. Failed publication may leave a snapshot of unchanged existing
+source, never a claim that the proposed content was saved. Restoring neither
+runs tests nor creates an execution result; per-version test results are not
+retained here.
+
+History lives outside the project by default, under
+`<kmx state>/local-preview/versions/<hash-of-canonical-root>/`, beside but separate
+from `journals/`. History matches the canonical target, not a requested alias:
+ordinary agent files use their canonical directory as the history root; canonical
+`.squad/agents/ID/charter.md` files share the directory above `.squad`. This keeps
+legacy history readable and aliases consistent without repository discovery.
+Requested paths stay unchanged in responses. `KMX_HOME` selects the state directory; use an absolute path
+outside version control. Records contain original authored source in cleartext,
+not resolved model credentials or run answers. Keep that directory private:
+0700 directories, 0600 regular single-link files. Existing unsafe state is
+refused rather than chmod-repaired. The operator-selected state directory may
+be a symlink, but owned history components may not. No native Windows history
+qualification is implied. Filesystem IO is bounded but synchronous.
+
+Retention is at most 20 snapshots per file, 200 per operation root and 32 MiB of
+encoded records per root; source is bounded to 256 KiB. The oldest eligible
+snapshots are evicted to make room. Roots have independent locks and budgets;
+there is no global cap across arbitrarily many roots. Root/file moves do not
+migrate history, and reusing the same canonical root/file path reuses its history
+namespace. A restart preserves source history, not preview observations.
+
+Clear one existing root's retained source history without starting MCP:
+
+```bash
+kmx mcp --root /absolute/root --clear-history
+```
+
+Clear needs no model route, credentials or protocol stdin; provider/endpoint and
+native-Squad flags cannot be combined with it. It changes no current source,
+preview journals or other root's history. Missing history is a no-op. Unsafe or
+busy state refuses clear rather than deleting broadly. With MCP processes
+stopped, damaged or orphaned history can instead be removed from the private
+`versions` tree; do not remove current agent files or the sibling `journals` tree.
+Unlike normal `kmx mcp` startup, clear requires an explicit existing history
+root via `--root`, so moved/deleted roots need that manual cleanup. List/get also
+require current agent-file inspection: deleting the
+current file disables historical reads through this API. There is no alternate
+Create-based recovery. Pruned, cleared, foreign or unavailable version reads use
+the existing generic MCP `protocol_failed` error. Old source rejected by the
+current validator, or an invalid current file, cannot bypass Edit validation.
+These APIs have hermetic filesystem/MCP coverage, not canvas UI qualification.
 
 ### Deploy compatibility (unreleased)
 

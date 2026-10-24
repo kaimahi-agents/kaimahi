@@ -30,6 +30,13 @@ type policy struct {
 	Prefixes []string `json:"safe_prefixes"`
 	Files    []string `json:"safe_files"`
 	Markdown []string `json:"safe_direct_markdown"`
+	// Routing is independent of the fixed guard partition; accept its schema only.
+	Triggers *struct {
+		Prefixes     []string `json:"prefixes"`
+		Files        []string `json:"files"`
+		Globs        []string `json:"globs"`
+		ExcludeFiles []string `json:"exclude_files"`
+	} `json:"triggers"`
 }
 
 type edge struct {

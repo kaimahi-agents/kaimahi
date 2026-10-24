@@ -122,13 +122,14 @@ Copilot plugin assets. Inspect the failure and rerun the failed workflow jobs
 after addressing it; there is no automatic qualification retry or timeout increase.
 Both full live proofs must finish before release building begins. The hermetic
 kagent PR check is not live qualification and cannot replace either release gate.
-After signing, native Linux and macOS workers exercise the try-it script and
-install/uninstall/reinstall the exact cross-built plugin archive in a fresh
-Copilot CLI profile. Publication waits for both workers. These checks do not
-exercise interactive desktop rendering or hosted inference. Dry-run artifacts
-contain `release-assets/` and `release-notes.md` under their common root.
-For the user-confirmed Copilot setup and its HTTPS/checksum trust model, see
-[Try kmx in Copilot](../TRY-IT.md).
+After signing, native Linux and macOS workers verify and configure the exact
+cross-built native plugin archive in an owned temporary directory, then
+install/uninstall/reinstall it in a fresh Copilot CLI profile. Publication waits
+for both workers. These checks do not exercise interactive desktop rendering or
+hosted inference. Dry-run artifacts contain `release-assets/` and
+`release-notes.md` under their common root.
+For Windows Copilot, use the [plain WSL plugin](../plugins/copilot-wsl/README.md):
+install the Linux binary in WSL, then install the plugin from the repository.
 
 ## Install
 

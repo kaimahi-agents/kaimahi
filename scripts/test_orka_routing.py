@@ -37,40 +37,59 @@ class RoutingTests(unittest.TestCase):
         self.assertIn(result.stdout, ("true\n", "false\n"))
         return result.stdout.strip()
 
-    def test_exact_safe_paths_and_default_run(self):
-        safe = [
-            "internal/kmx/agentfile/new.go", "internal/kmx/agentpreview/new.go",
-            "internal/kmx/mcp/new.go", "internal/kmx/modelaccess/local.go",
-            "internal/kmx/modelaccess/local_test.go", "internal/kmx/modelaccess/install.go",
-            "internal/kmx/modelaccess/route.go",
-            "docs/new.md", "brand/logo.svg", "README.md", "AGENTS.md", "CONTRIBUTING.md",
-            "CHANGELOG.md", "LICENSE", "NOTICE", "changes/ci-note.md",
-            "cmd/kmx/model_commands_test.go", "cmd/kmx/mcp_commands_test.go",
-            "cmd/kmx/agent_file_commands_test.go", "internal/kmx/app/agent_file.go",
-            "internal/kmx/app/agent_file_output.go", "internal/kmx/app/agent_file_test.go",
-            "internal/kmx/app/agent_file_safety_test.go", "internal/kmx/app/agent_file_direct_test.go",
-            ".github/copilot-instructions.md", ".github/workflows/agent-file.yml",
-            ".github/workflows/model-access.yml", ".github/workflows/docs-pages.yml",
-            ".github/workflows/copilot-plugin.yml",
+    def test_trigger_paths_run_and_valid_outside_paths_skip(self):
+        skipped = [
+            "plugins/copilot/view.mjs", "internal/kmx/agentfile/new.go",
+            "internal/kmx/agentpreview/new.go", "internal/kmx/mcp/new.go",
+            "internal/kmx/localtools/http.go", "internal/kmx/localpreview/new.go",
+            "internal/kmx/modelaccess/local.go", "internal/kmx/modelaccess/new.go",
+            "cmd/kmx/model_commands.go", "cmd/kmx/mcp_commands.go",
+            "cmd/kmx/agent_file_commands.go", "internal/kmx/app/agent_file.go",
+            "internal/kmx/app/agent_file_extra.go", "internal/kmx/app/testdata/instructions.md",
+            "testdata/sharedfixture.md", "internal/kmx/runtime-other/new.go",
+            "internal/kmx/new/new.go", "pkg/new.go",
+            "go.work", ".goreleaser.yaml",
+            "install.sh", "embed_test.go",
+            "k8s/asset.yaml", "docs/new.md",
+            "brand/logo.svg", "README.md",
+            "AGENTS.md", "CONTRIBUTING.md",
+            "CHANGELOG.md", "LICENSE",
+            "NOTICE", "changes/code.py",
+            "changes/nested/note.md", "scripts/docs.md",
+            "charts/new.yaml", "scripts/other/test_orka.py",
+            "unknown.md", "readme.md",
+            "scripts/ci/orka-callers.json", "internal/kmx/run/new.go",
+            "internal/kmx/scaffold/new.go", "internal/kmx/config/new.go",
+            "internal/kmx/agentsuite/new.go", "pkg/kmx/new.go",
+            "pkg/suiteview/new.go", "internal/kmx/modelaccess/copilot/auth.go",
+            "internal/kmx/localpreview/runner.go", "internal/kmx/app/agent_file_direct.go",
+            "internal/kmx/app/agent_file_local.go", "internal/kmx/app/app.go",
+            "internal/kmx/app/evaluation_judge.go", "internal/kmx/app/suite_native.go",
+            "internal/kmx/app/release_lift.go", "internal/kmx/app/local_models.go",
+            "cmd/kmx/root.go", "cmd/kmx/main.go",
+            "cmd/kmx/agent_run_commands.go", "cmd/kmx/agent_eval_commands.go",
+            "cmd/kmx/destination_status_commands.go", "embed.go",
+            "scripts/ci/registry-mirrors.py", "internal/kmx/app/orka.go",
+            "internal/kmx/scaffold/orka.go", "pkg/kmx/operation.go",
         ]
-        unsafe = [
-            "internal/kmx/modelaccess/copilot/auth.go", "internal/kmx/modelaccess/copilot/errors.go",
-            "internal/kmx/modelaccess/copilot/store.go", "internal/kmx/modelaccess/copilot/transport.go",
-            "internal/kmx/modelaccess/new.go",
-            "cmd/kmx/model_commands.go", "cmd/kmx/mcp_commands.go", "cmd/kmx/agent_file_commands.go",
-            "internal/kmx/app/agent_file_direct.go", "cmd/kmx/root.go", "cmd/kmx/main.go",
-            "cmd/kmx/commands.go", "cmd/kmx/agent_run_commands.go", "cmd/kmx/agent_eval_commands.go",
-            "internal/kmx/app/app.go", "internal/kmx/app/agent_file_extra.go",
-            "internal/kmx/app/local_models.go", "internal/kmx/runtime/evaluation.go",
-            "internal/kmx/app/testdata/instructions.md", "internal/kmx/orkaschema/fixtures/prompt.md",
-            "testdata/sharedfixture.md", "sharedfixture.md", "pkg/new.go", "internal/kmx/new/new.go",
-            "internal/kmx/agentfile-other/new.go", "go.mod", "go.sum", "go.work", "Makefile",
-            ".goreleaser.yaml", "install.sh", "embed.go", "embed_test.go", "k8s/asset.yaml",
-            "scripts/docs.md", "scripts/ci/orka-routing.py", ".github/workflows/ci.yml",
-            ".github/actions/new/action.yml", "changes/code.py", "changes/nested/note.md",
-            "charts/new.yaml", "unknown.md", "readme.md",
+        triggered = [
+            "internal/kmx/runtime/evaluation.go", "internal/kmx/orkaschema/fixtures/prompt.md",
+            "internal/kmx/lift/new.go", "internal/kmx/lifecycle/new.go",
+            "internal/kmx/portforward/new.go", "internal/kmx/toolchain/new.go",
+            "internal/kmx/app/testdata/live-eval-loop/instructions.md", "cmd/kmx/commands.go",
+            "cmd/kmx/orka_commands.go", "cmd/kmx/local_commands.go",
+            "cmd/kmx/quickstart_commands.go", "go.mod",
+            "go.sum", "Makefile",
+            "Dockerfile", "k8s/ollama.yaml",
+            "scripts/ci/native-suite-model.yaml", "scripts/ci/orka-routing.py",
+            "scripts/ci/orka-routing.json", "scripts/ci/orka-callers.go",
+            "scripts/test_orka_callers.py", "scripts/ci/suite-native.py",
+            ".github/workflows/ci.yml", ".github/workflows/orka-nightly.yml",
+            ".github/workflows/kagent-runtime.yml", ".github/actions/new/action.yml",
+            ".github/workflows/copilot-plugin.yml", ".github/copilot-instructions.md",
+            ".github/compliance/inventory.yml",
         ]
-        for path, expected in [(p, "false") for p in safe] + [(p, "true") for p in unsafe]:
+        for path, expected in [(p, "false") for p in skipped] + [(p, "true") for p in triggered]:
             with self.subTest(path=path):
                 self.git("reset", "--hard", self.base)
                 self.change(path, "changed")
@@ -81,11 +100,58 @@ class RoutingTests(unittest.TestCase):
         self.commit()
         self.assertEqual(self.route(), "true")
 
+    def test_manifest_exception_does_not_hide_another_trigger(self):
+        self.change("scripts/ci/orka-callers.json", "generated")
+        self.commit()
+        self.assertEqual(self.route(), "false")
+        self.change("scripts/ci/orka-callers.go", "checker")
+        self.commit()
+        self.assertEqual(self.route(), "true")
+
+    def test_policy_edit_cannot_exempt_its_own_qualification(self):
+        target = self.root / "scripts/ci"
+        target.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROUTER, target / ROUTER.name)
+        policy = {"triggers": {"prefixes": ["scripts/ci/orka"], "files": [], "globs": [],
+                               "exclude_files": ["scripts/ci/orka-callers.json"]}}
+        (target / POLICY.name).write_text(json.dumps(policy))
+        base = self.commit()
+        policy["triggers"]["exclude_files"].append("scripts/ci/orka-routing.json")
+        (target / POLICY.name).write_text(json.dumps(policy))
+        head = self.commit()
+        result = subprocess.run([sys.executable, str(target / ROUTER.name), "--base", base,
+                                 "--head", head], cwd=self.root, capture_output=True, text=True, timeout=10)
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "true\n", ""))
+
+    def test_missing_or_malformed_trigger_policy_defaults_run(self):
+        self.change("plugins/copilot/view.mjs", "unrelated")
+        self.commit()
+        target = self.root / "scripts/ci"
+        target.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROUTER, target / ROUTER.name)
+        valid = {"prefixes": ["internal/kmx/runtime/"], "files": [], "globs": [], "exclude_files": []}
+        policies = [({}, "true"), ({"triggers": valid}, "false"),
+                    ({"triggers": None}, "true"), ({"triggers": {}}, "true"),
+                    ({"triggers": dict(valid, prefixes=[])}, "true"),
+                    ({"triggers": dict(valid, files="go.mod")}, "true"),
+                    ({"triggers": dict(valid, exclude_files=[None])}, "true"),
+                    ({"triggers": dict(valid, exclude_files=["go.mod"])}, "true"),
+                    ({"triggers": dict(valid, exclude_files=["scripts/ci/orka-routing.py"])}, "true")]
+        for policy, expected in policies:
+            with self.subTest(policy=policy):
+                (target / POLICY.name).write_text(json.dumps(policy))
+                result = subprocess.run([sys.executable, str(target / ROUTER.name), "--base", self.base,
+                                         "--head", self.git("rev-parse", "HEAD")], cwd=self.root,
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual((result.returncode, result.stdout, result.stderr), (0, expected + "\n", ""))
+
     def test_real_deletions_and_both_sides_of_renames(self):
         for old, new, expected in [
                 ("internal/kmx/runtime/old.go", "docs/moved.md", "true"),
                 ("docs/old.md", "internal/kmx/runtime/moved.go", "true"),
-                ("docs/old.md", "docs/moved.md", "false")]:
+                ("docs/old.md", "docs/moved.md", "false"),
+                ("scripts/ci/orka-callers.json", "scripts/ci/orka-callers.go", "true"),
+                ("scripts/ci/orka-callers.go", "scripts/ci/orka-callers.json", "true")]:
             self.git("reset", "--hard", self.base)
             self.change(old, "same")
             source = self.commit()
@@ -100,13 +166,13 @@ class RoutingTests(unittest.TestCase):
                         (self.root / old).unlink()
                     self.commit()
                     self.assertEqual(self.route(base=source), expected if rename else
-                                     ("false" if old.startswith("docs/") else "true"))
+                                     ("false" if old.startswith("docs/") or old == "scripts/ci/orka-callers.json" else "true"))
 
     def test_nul_diff_does_not_split_or_unquote_filenames(self):
         for path, expected in [
                 ('docs/space name.md', "false"), ('docs/quote-\"é.md', "false"),
                 ('docs/new\nline.md', "true"), ('docs/tab\tname.md', "true"),
-                ('docs/back\\slash.md', "true"), ('scripts/quote-\"é.md', "true"),
+                ('docs/back\\slash.md', "true"), ('scripts/quote-\"é.md', "false"),
                 ('internal/kmx/runtime/new\nline.md', "true")]:
             with self.subTest(path=path):
                 self.git("reset", "--hard", self.base)

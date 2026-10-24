@@ -90,8 +90,7 @@ def verify_archive(path: Path, digest: str, target: str, version: str, revision:
                           "args": ["mcp", "--root", "__SELECTED_ROOT__"]}
             or json.loads(files["selected-root.json"]) != {"root": "__SELECTED_ROOT__"}
             or files["SETUP.md"] != SETUP.encode()
-            or json.loads(files["try-it.json"]) != {"schemaVersion": 1}
-            or any(files[name] != (package.HERE / name).read_bytes()
+            or any(files[name] != package.asset_source(name).read_bytes()
                    for name in (*package.SKILL_FILES, *package.NATIVE_FILES, *package.SAMPLE_FILES))):
         raise ValueError("archive contract metadata mismatch")
 

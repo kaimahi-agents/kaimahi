@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -20,7 +20,9 @@ import (
 )
 
 // Operations binds the four tools directly to canonical parsing and the shared
-// snapshot operation. The route is trusted startup configuration, never tool input.
+// snapshot operation. An explicit route is trusted startup configuration, never
+// tool input. Without one, unbound real-model previews use Copilot; fake and
+// legacy root-bound previews retain their existing route behavior.
 // A nil runner retains the application's honest runner_unavailable result.
 func Operations(files *Files, application *app.App, route *modelaccess.Route) map[string]Operation {
 	ops := AuthoringOperations(files)
@@ -31,14 +33,18 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 	}
 	for _, name := range []string{"run", "test"} {
 		schema := &jsonschema.Schema{Type: "object", Required: []string{"path"}, Properties: map[string]*jsonschema.Schema{
-			"path": {Type: "string", MaxLength: new(256)}, "caseId": {Type: "string", MinLength: new(1), MaxLength: new(agentfile.MaxInputBytes)}, "showContent": {Type: "boolean"}, "showFailedContent": {Type: "boolean"},
+			"path": {Type: "string"}, "model": {Type: "string"}, "caseId": {Type: "string", MinLength: new(1), MaxLength: new(agentfile.MaxInputBytes)}, "showContent": {Type: "boolean"}, "showFailedContent": {Type: "boolean"},
 		}, AdditionalProperties: &jsonschema.Schema{Not: &jsonschema.Schema{}}}
+		if files != nil && files.root != nil {
+			schema.Properties["path"].MaxLength = new(256)
+		}
 		if name == "run" {
 			schema.Properties["input"] = &jsonschema.Schema{Type: "string", MaxLength: new(agentfile.MaxInputBytes)}
 		}
 		ops[name] = Operation{Schema: schema, Description: "kmx local preview of this charter; saved examples, optionally one case (always partial). Returns the shared revision, route, state and verdict; never deployment evidence.", Handler: func(ctx context.Context, req *sdk.CallToolRequest) (*sdk.CallToolResult, error) {
 			var input struct {
 				Path              string  `json:"path"`
+				Model             string  `json:"model"`
 				CaseID            string  `json:"caseId"`
 				Input             *string `json:"input"`
 				ShowContent       bool    `json:"showContent"`
@@ -59,7 +65,17 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 			if parseErr != nil && !errors.As(parseErr, &detail) {
 				return nil, parseErr
 			}
-			result, err := application.PreviewAgentSnapshot(ctx, parsed, app.FilePreviewOptions{File: input.Path, Operation: name, CaseID: input.CaseID, Input: input.Input, ShowContent: input.ShowContent, ShowFailedContent: input.ShowFailedContent, Route: selected})
+			executionRoute := selected
+			if executionRoute == nil && files.root == nil && parsed != nil {
+				model := parsed.Model
+				if input.Model != "" {
+					model = input.Model
+				}
+				if model != "fake" {
+					executionRoute = &modelaccess.Route{Provider: "copilot", Model: model, Endpoint: modelaccess.CopilotEndpoint, Auth: "copilot"}
+				}
+			}
+			result, err := application.PreviewAgentSnapshot(ctx, parsed, app.FilePreviewOptions{File: input.Path, FullPath: files.root == nil, Operation: name, CaseID: input.CaseID, Input: input.Input, ShowContent: input.ShowContent, ShowFailedContent: input.ShowFailedContent, Model: input.Model, Route: executionRoute})
 			if detail != nil && result.ReasonCode == "invalid_file" {
 				result.Diagnostic = &app.FilePreviewDiagnostic{Field: detail.Field, Line: detail.Location.Line, Column: detail.Location.Column, Repair: detail.Problem}
 			}
@@ -140,7 +156,7 @@ func (f *Files) readSnapshot(ctx context.Context, p string, inspection bool) (*a
 	if err != nil {
 		return nil, nil, err
 	}
-	if !safePath(p) {
+	if !f.allowedPath(p) {
 		return nil, nil, refusal("unsafe_path")
 	}
 	parent, err := f.parent(p, false)
@@ -148,7 +164,7 @@ func (f *Files) readSnapshot(ctx context.Context, p string, inspection bool) (*a
 		return nil, nil, err
 	}
 	defer parent.Close()
-	file, b, _, err := readTarget(parent, path.Base(p))
+	file, b, _, err := readTarget(parent, filepath.Base(p))
 	if err != nil {
 		return nil, nil, err
 	}

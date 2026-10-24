@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { instructionSections, replaceInstructions, replaceExamples } from "./authoring.mjs";
+import { instructionSections, replaceInstructions, replaceExamples, effectiveModel, runtimeModelSelection } from "../../../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs";
 
 const KEYS = ["Accountable Responsibilities", "Non-Responsibilities", "Collaboration and Review Authority"];
 const SOURCE = `# Greeter — Greeting 🌱
@@ -24,6 +24,29 @@ Return the greeting.
 ## Examples
 
 ` + "```yaml\n# Keep this comment verbatim on instruction saves.\nexamples:\n  - id: greeting\n    input: Ada\n    assertions: [{id: greeting-text, type: contains, value: Hello}]\n```\n";
+test("omitted authored Model stays omitted through instruction and example edits", () => {
+  const source = SOURCE.replace("## Model\n- **Preferred:** fake\n\n", "");
+  assert.equal(instructionSections(source).length, 3);
+  assert.equal(replaceInstructions(source, []), source);
+  assert.doesNotMatch(replaceExamples(source, []), /## Model|gpt-5/);
+});
+
+test("effective runtime model preserves legacy display metadata and fixed precedence", () => {
+  assert.equal(effectiveModel("provider: fake\nmodel: fake", ""), "fake");
+  assert.equal(effectiveModel("authored", "picked"), "picked");
+  assert.equal(effectiveModel("authored", ""), "authored");
+  assert.equal(effectiveModel("", ""), "gpt-5.6-terra");
+});
+
+test("an attested pre-route refusal is current but never restores an old model pass", () => {
+  const selection = runtimeModelSelection();
+  const view = { model: "fake", latest: { status: "current", result: { state: "refused", verdict: "unknown", fullPass: false, reasonCode: "no_tests", modelRoute: "/" } } };
+  assert.equal(selection.view(view).latest.status, "current");
+  selection.choose("other", view); assert.equal(selection.view(view).latest.status, "stale");
+  selection.confirm(view); assert.equal(selection.view(view).latest.status, "current");
+  selection.choose("", view); assert.equal(selection.view(view).latest.status, "stale");
+});
+
 const BODY = "Reply with exactly Hello.";
 const examples = () => [{ id: "hello", input: "Ada", assertions: [{ id: "text", type: "contains", value: "Hello" }] }];
 const clone = (value) => JSON.parse(JSON.stringify(value));

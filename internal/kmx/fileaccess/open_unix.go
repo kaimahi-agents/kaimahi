@@ -81,6 +81,10 @@ func OpenRegularAt(ctx context.Context, parent *Directory, name string) (*File, 
 }
 
 func openAt(ctx context.Context, parent *os.File, name string, flags int) (*os.File, error) {
+	return openAtMode(ctx, parent, name, flags, 0)
+}
+
+func openAtMode(ctx context.Context, parent *os.File, name string, flags int, mode uint32) (*os.File, error) {
 	if err := checkContext(ctx); err != nil {
 		return nil, err
 	}
@@ -97,7 +101,7 @@ func openAt(ctx context.Context, parent *os.File, name string, flags int) (*os.F
 	fd := -1
 	var openErr error
 	if err := conn.Control(func(dirfd uintptr) {
-		fd, openErr = unix.Openat(int(dirfd), name, flags, 0)
+		fd, openErr = unix.Openat(int(dirfd), name, flags, mode)
 	}); err != nil {
 		return nil, err
 	}

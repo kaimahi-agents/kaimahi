@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -29,7 +30,7 @@ func TestOrdinaryListRetainsItsExpiryPolicy(t *testing.T) {
 	p.source, p.bearer, p.legacy, p.expires = canary, previewBearer, true, now.Add(31*time.Second)
 	// A catalog completing inside the ordinary 30-second refresh margin has
 	// always remained usable. Only preview setup requires a full-run lifetime.
-	if routes, err := p.List(t.Context()); err != nil || len(routes) != 1 {
+	if routes, err := p.List(t.Context()); err != nil || !slices.Contains(routes, selected()) {
 		t.Fatalf("ordinary listing policy changed: %v / %v", routes, err)
 	}
 }

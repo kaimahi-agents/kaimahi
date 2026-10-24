@@ -139,11 +139,15 @@ config location, while macOS uses `~/Library/Application Support`. `KMX_HOME`
 is the repository's explicit cross-platform isolation contract.
 
 `internal/kmx/fileaccess` has native Linux and Windows amd64 package tests for
-checked read-only opens, security inspection and physical identity. Windows
-arm64 is compiled and vetted, not executed. The package is deliberately unwired
-from operation adapters and has no writer, lock, flush, state or publication
-API. These tests do not build or qualify the guarded Windows CLI; use WSL for
-the installed command until the later enablement phase lands.
+checked reads, security/identity inspection, protected private first creation,
+process-held locks and no-replace file/directory-flush publication. The package
+keeps opaque handles, repairs/adopts nothing and is unwired from operation
+adapters. `internal/kmx/config` separately exposes explicit creating and
+non-creating private state-root resolution; `StateDir` itself remains a pure
+locator. Windows defaults to machine-local `%LOCALAPPDATA%\kmx`. Windows arm64
+is compiled and vetted, not executed. These tests qualify only low-level local
+NTFS primitives, not the guarded Windows CLI; use WSL for the installed command
+until the later enablement phase lands.
 
 The hosted Windows test context is established by the test-only
 [`windows-tests` launcher](../scripts/ci/windows-tests/main_windows.go), whose
@@ -317,15 +321,21 @@ The workflow emits `hygiene` and `e2e-hello-world` merge gates. The latter
 fail-closed aggregates four retained shards: `e2e-kagent-lift`,
 `e2e-orka-runtime`, `e2e-orka-helm` and `e2e-quickstart`, plus successful
 classification and the independent `kagent-contract` hermetic check. Only intentional skips are accepted, never failed/cancelled
-shards. Orka runtime proof may skip only an explicitly safe PR or a main push;
-unknown changes and events default to full proof. Required contexts remain
+shards. Orka runtime proof runs for PRs matching the Orka-owned trigger list;
+valid paths outside it skip, as do ordinary main pushes. Unknown, empty or
+malformed diffs still run full proof. Main is re-verified nightly, not per merge. Required contexts remain
 `hygiene` and `e2e-hello-world`, without a ruleset change.
 
 The read-only [Orka worker](../.github/workflows/orka-runtime.yml) runs the same
 complete proof when invoked, including native evaluation, transfer, promotion,
-and pinned-update checks. It has no internal Markdown shortcut. Unrecognized
-Markdown and live instruction fixtures require qualification; root policy docs
-not explicitly listed also run. Its raw check is `e2e-orka-runtime / qualify`.
+and pinned-update checks. It has no internal Markdown shortcut. The independent
+`triggers` object in `scripts/ci/orka-routing.json` selects Orka-owned packages,
+command files, CI/build inputs and live fixtures; the generated caller manifest
+alone is exempt. Shared CLI/App/config/packaging and `pkg/kmx/` changes are
+verified by the nightly, not per PR. Its
+hygiene validation remains mandatory. The unchanged init/caller guard selections
+are narrower than all skipped paths, so other skipped changes rely on hygiene
+and nightly integration detection. Its raw check is `e2e-orka-runtime / qualify`.
 Quickstart, stock Helm and clone-free qualification keep their existing routing;
 not every Orka-bearing job is moved out of PR CI.
 

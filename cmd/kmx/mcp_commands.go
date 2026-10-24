@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	kmxmcp "github.com/kaimahi-agents/kaimahi/internal/kmx/mcp"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
@@ -24,7 +26,8 @@ func (mcpOutput) Close() error { return nil }
 
 func newMCPCommand(state *commandState) *cobra.Command {
 	var root, provider, endpoint, squadProgram, squadRelease string
-	cmd := &cobra.Command{Use: "mcp --root DIRECTORY", Short: "Serve Create/Edit/Run/Test over local stdio MCP", Args: cobra.NoArgs,
+	var clearHistory bool
+	cmd := &cobra.Command{Use: "mcp [--root DIRECTORY]", Short: "Serve Create/Edit/Run/Test over local stdio MCP", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if state.contextFlag != "" || cmd.Flag("container-engine").Changed {
 				return fmt.Errorf("MCP refuses cluster/container selectors")
@@ -34,6 +37,13 @@ func newMCPCommand(state *commandState) *cobra.Command {
 				if flag.Changed && strings.TrimSpace(flag.Value.String()) == "" {
 					return fmt.Errorf("MCP requires nonempty --%s", name)
 				}
+			}
+			if root == "" && (clearHistory || squadProgram != "" || squadRelease != "") {
+				return fmt.Errorf("required flag(s) \"root\" not set")
+			}
+			if clearHistory {
+				// Maintenance only: no route, Squad setup, stdin or server.
+				return clearMCPHistory(cmd, root)
 			}
 			var route *modelaccess.Route
 			if provider != "" || endpoint != "" {
@@ -45,7 +55,7 @@ func newMCPCommand(state *commandState) *cobra.Command {
 				selected.Model = ""
 				route = &selected
 			}
-			files, err := kmxmcp.OpenFiles(root, func(p string, b []byte) error { _, err := agentfile.Parse(p, b); return err })
+			files, err := openMCPFiles(root)
 			if err != nil {
 				return err
 			}
@@ -73,6 +83,12 @@ func newMCPCommand(state *commandState) *cobra.Command {
 				return err
 			}
 			kmxmcp.AddAgentResource(server, files)
+			if route == nil && root == "" || route != nil && route.Provider == "copilot" {
+				kmxmcp.AddModelResource(server, func(ctx context.Context) ([]modelaccess.Route, error) {
+					return state.copilot().List(ctx)
+				})
+			}
+			kmxmcp.AddAgentVersionResource(server, files)
 			if squad != nil {
 				kmxmcp.AddSquadResource(server, squad)
 			}
@@ -86,11 +102,39 @@ func newMCPCommand(state *commandState) *cobra.Command {
 			}
 			return nil
 		}}
-	cmd.Flags().StringVar(&root, "root", "", "absolute existing operation root; required, never defaults to cwd")
-	cmd.Flags().StringVar(&provider, "provider", "", "trusted startup model provider, including copilot (not selectable through tools)")
+	cmd.Flags().StringVar(&root, "root", "", "optional absolute existing operation root for legacy clients; otherwise agent paths resolve against cwd")
+	cmd.Flags().StringVar(&provider, "provider", "", "trusted startup model provider; unbound non-fake agents default to copilot (not selectable through tools)")
 	cmd.Flags().StringVar(&endpoint, "endpoint", "", "trusted startup model endpoint (fixed for Copilot; never read from charter text)")
 	cmd.Flags().StringVar(&squadProgram, "squad-program", "", "trusted absolute qualified standalone Squad launcher; enables native targets, never installs")
 	cmd.Flags().StringVar(&squadRelease, "squad-release", "", "explicit qualified native Squad release (1.1.0); requires --squad-program")
-	_ = cmd.MarkFlagRequired("root")
+	cmd.Flags().BoolVar(&clearHistory, "clear-history", false, "clear retained source history for --root, then exit; does not start MCP or touch current files")
+	for _, name := range []string{"provider", "endpoint", "squad-program", "squad-release"} {
+		cmd.MarkFlagsMutuallyExclusive("clear-history", name)
+	}
 	return cmd
+}
+
+// openMCPFiles resolves the history directory lazily, so startup and help
+// never read config or create state.
+func openMCPFiles(root string) (*kmxmcp.Files, error) {
+	return kmxmcp.OpenFilesWithHistory(root, func(p string, b []byte) error { _, err := agentfile.Parse(p, b); return err }, config.LocalAgentVersionDir)
+}
+
+func clearMCPHistory(cmd *cobra.Command, root string) error {
+	files, err := openMCPFiles(root)
+	if err != nil {
+		return err
+	}
+	defer files.Close()
+	if err := files.ClearHistory(cmd.Context()); err != nil {
+		var refused *kmxmcp.Error
+		if errors.As(err, &refused) {
+			return err
+		}
+		return fmt.Errorf("cannot clear history safely; no current files were changed")
+	}
+	if _, err := fmt.Fprintln(cmd.OutOrStdout(), "Cleared retained source history for the selected root."); err != nil {
+		return fmt.Errorf("source history was cleared, but its confirmation could not be written")
+	}
+	return nil
 }

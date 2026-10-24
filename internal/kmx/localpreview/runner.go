@@ -114,7 +114,7 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 	}
 	if len(providerRoutes) > 0 {
 		if len(agent.Tools) > 0 || request.ToolBindings != "" {
-			return abort(agentpreview.ErrModelUnavailable)
+			return abort(agentpreview.ErrToolsUnavailable)
 		}
 		if r.options.Access == nil {
 			return abort(agentpreview.ErrModelUnavailable)
@@ -122,6 +122,7 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 		var setupErr error
 		access, setupErr = r.options.Access(ctx, providerRoutes)
 		if access != nil {
+			// Marshal failure leaves nil content, which the pre-journal check refuses.
 			content, _ := json.Marshal(struct {
 				Agent        agentfile.Agent
 				Label        string

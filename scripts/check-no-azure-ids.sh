@@ -77,6 +77,13 @@ SKIP_SUFFIX = {".png", ".jpg", ".gif", ".pdf", ".sha256", ".sum"}
 
 GUID = re.compile(r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
                   r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")
+# The repository inventory names the accountable Service Tree service by its
+# GUID, and governance requires that file at this exact path. A Service Tree
+# id identifies an engineering service, not a subscription or tenant, so the
+# reviewed id is admitted at that one path and nowhere else. The literal is
+# split so this script does not carry a GUID-shaped token itself.
+INVENTORY_PATH = (".github", "compliance", "inventory.yml")
+INVENTORY_SERVICE_IDS = {"862eb319-3b2d-4450-98eb-" + "bd2c41aff06a"}
 AKS_FQDN = re.compile(r"[A-Za-z0-9-]+\.[a-z0-9-]+\.azmk8s\.io")
 # Anything ending in .azurecr.io. A registry reference is only acceptable
 # when the name part is a shell/make variable or a visible placeholder.
@@ -173,6 +180,8 @@ for raw in open(sys.argv[1], "rb").read().split(b"\0"):
             # subscription/tenant id is random, so it never has this
             # little entropy. Keep the exemption tight.
             if len(set(m.group(0).replace("-", ""))) <= 4:
+                continue
+            if tuple(parts) == INVENTORY_PATH and m.group(0).lower() in INVENTORY_SERVICE_IDS:
                 continue
             findings.append((p, n, "GUID (subscription/tenant id?)", m.group(0)))
         for m in AKS_FQDN.finditer(line):

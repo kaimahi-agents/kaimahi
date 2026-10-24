@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Independent, default-RUN Orka path decision. No paths or Git errors are logged."""
 import argparse
+import fnmatch
 import json
 import pathlib
 import re
@@ -9,16 +10,19 @@ import subprocess
 POLICY = pathlib.Path(__file__).with_suffix(".json")
 
 
-def safe_path(path, policy):
-    # Refuse malformed/ambiguous records rather than normalizing away a boundary.
+def trigger_path(path, triggers):
+    # Bad records always run, even when an exception could otherwise match.
     if (any(ord(c) < 32 or ord(c) == 127 or c == "\\" for c in path)
             or any(part in ("", ".", "..") for part in path.split("/"))):
+        return True
+    if path in triggers["exclude_files"]:
         return False
-    return (path in policy["safe_files"]
-            or any(path.startswith(prefix) for prefix in policy["safe_prefixes"])
-            or any(path.startswith(prefix) and "/" not in path[len(prefix):]
-                   and path[len(prefix):].endswith(".md")
-                   for prefix in policy["safe_direct_markdown"]))
+    parts = path.split("/")
+    return (path in triggers["files"]
+            or any(path.startswith(prefix) for prefix in triggers["prefixes"])
+            or any(len(parts) == len(pattern.split("/"))
+                   and all(fnmatch.fnmatchcase(part, glob) for part, glob in zip(parts, pattern.split("/")))
+                   for pattern in triggers["globs"]))
 
 
 def orka_required(base, head):
@@ -35,8 +39,17 @@ def orka_required(base, head):
         if not diff or not diff.endswith(b"\0"):
             return True
         paths = diff[:-1].decode("utf-8").split("\0")
-        policy = json.loads(POLICY.read_text())
-        return not all(safe_path(path, policy) for path in paths)
+        triggers = json.loads(POLICY.read_text())["triggers"]
+        for name in ("prefixes", "files", "globs", "exclude_files"):
+            values = triggers[name]
+            if not isinstance(values, list) or not all(isinstance(value, str) and value for value in values):
+                return True
+        # Only the generated manifest is exempt; policy edits cannot exempt themselves.
+        if any(path != "scripts/ci/orka-callers.json" for path in triggers["exclude_files"]):
+            return True
+        if not any(triggers[name] for name in ("prefixes", "files", "globs")):
+            return True
+        return any(trigger_path(path, triggers) for path in paths)
     except Exception:
         # Unknown history, tool/policy failure, or malformed bytes never grant a skip.
         return True

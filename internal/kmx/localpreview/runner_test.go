@@ -57,6 +57,38 @@ func injectedRunner(e *runnerExecutor, timeout time.Duration) agentpreview.Runne
 	return r
 }
 
+func TestRunnerCopilotToolsRefusesBeforeAccessOrJournal(t *testing.T) {
+	for _, judge := range []bool{false, true} {
+		for _, bindings := range []bool{false, true} {
+			t.Run(fmt.Sprintf("judge=%t/bindings=%t", judge, bindings), func(t *testing.T) {
+				req := runnerRequest(t)
+				cp := modelaccess.Route{Provider: "copilot", Model: "gpt-test", Endpoint: modelaccess.CopilotEndpoint, Auth: "copilot"}
+				if judge {
+					req.JudgeRoute = &cp
+				} else {
+					req.Route = cp
+					req.Agent.Model = cp.Model
+				}
+				if bindings {
+					req.ToolBindings = "/must-not-open.json"
+				} else {
+					req.Agent.Tools = []string{"github.listMergedPullRequests"}
+				}
+				runner := NewRunner(RunnerOptions{
+					JournalDir: func() (string, error) { t.Error("tool refusal accessed journal"); return "", nil },
+					Access: func(context.Context, []modelaccess.Route) (modelaccess.PreviewAccess, error) {
+						t.Error("tool refusal accessed credentials")
+						return nil, agentpreview.ErrModelUnavailable
+					},
+				})
+				if _, err := runner.Run(t.Context(), req); !errors.Is(err, agentpreview.ErrToolsUnavailable) {
+					t.Fatalf("wrong unsupported-tools reason: %v", err)
+				}
+			})
+		}
+	}
+}
+
 func TestRunnerCredentialFreeNestedJSONAnswers(t *testing.T) {
 	for _, provider := range []string{"fake", "compatible"} {
 		t.Run(provider, func(t *testing.T) {

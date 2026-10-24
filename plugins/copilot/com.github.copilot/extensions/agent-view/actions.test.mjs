@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
-import {createActionHandler,readView,startViewBridge} from './view.mjs';
-import {instructionSections,replaceInstructions,replaceExamples} from './authoring.mjs';
+import {createActionHandler,readView,startViewBridge} from '../../../../copilot-wsl/com.github.copilot/extensions/agent-view/view.mjs';
+import {instructionSections,replaceInstructions,replaceExamples} from '../../../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs';
 const original=await readFile(new URL('../../../../../internal/kmx/agentfile/testdata/greeter.agent.md',import.meta.url),'utf8');
 const revision=s=>'sha256:'+createHash('sha256').update(s).digest('hex');
 function harness(){
@@ -30,6 +30,48 @@ function harness(){
  }}},send:async prompt=>{calls.push({chat:prompt})}};
  return{o,session,calls,raw,source:()=>source,setRace:()=>{race=true},setDenied:()=>{denied=true},setUnavailable:()=>{unavailable=true},hold:()=>{release={};return()=>release.resolve()},act:createActionHandler({session,path:'greeter.agent.md'})};
 }
+test('runtime model override reaches Run/Test and save-and-test without changing the source model', async()=>{
+ for(const operation of ['run','test','save-and-test']){
+  const h=harness();h.o.shape=r=>({...r,modelRoute:{provider:'copilot',model:h.calls.at(-1).arguments.model}});
+  const r=await h.act({operation,expectedRevision:revision(original),model:'choice-b',...(operation==='run'?{input:'Ada'}:{})});
+  assert.equal(r.error,undefined);assert.equal(h.calls.at(-1).arguments.model,'choice-b');
+  assert.equal(h.source(),original);assert.equal(r.view.model,'fake');assert.equal(r.view.latest.result.modelRoute,'copilot/choice-b');
+ }
+});
+test('same-revision observation from a different model cannot confirm this invocation',async()=>{
+ const h=harness();const r=await h.act({operation:'test',expectedRevision:revision(original),model:'choice-b'});
+ assert.equal(r.error,'outcome-unknown');assert.equal(r.view,undefined);
+});
+test('model catalog reads only its owned resource, with no tool or chat invocation',async()=>{
+ const h=harness(),reads=[];
+ h.session.rpc.mcp.resources.read=async args=>{reads.push(args);return{contents:[{text:JSON.stringify({schemaVersion:1,kind:'kmx.models',defaultModel:'gpt-5.6-terra',models:['choice-a','choice-b']})}]}};
+ const r=await h.act({operation:'models'});assert.equal(r.error,undefined);assert.deepEqual(r.models,['choice-a','choice-b']);
+ assert.deepEqual(reads,[{serverName:'kmx-agent-builder',uri:'kmx://models'}]);assert.equal(h.calls.length,0);
+});
+test('unknown model exposes the attested one-line choice list, not raw SDK text',async()=>{
+ const h=harness(),reason='Available Copilot models: '+Array.from({length:40},(_,i)=>'available-model-'+i).join(', ');
+ h.o.failTest=true;h.o.shape=r=>({...r,modelRoute:{provider:'copilot',model:'missing-model'},reasonCode:'copilot_model_unavailable',reason});
+ const r=await h.act({operation:'test',expectedRevision:revision(original),model:'missing-model'});
+ assert.equal(r.error,'action-failed');assert.equal(r.message,reason);assert.doesNotMatch(JSON.stringify(r),/private detail/);
+});
+test('pre-route no-tests refusal remains known without fabricating a model identity',async()=>{
+ const h=harness();h.o.nextExamples=[];h.o.shape=r=>({...r,modelRoute:{}});
+ const r=await h.act({operation:'save-and-test',expectedRevision:revision(original),examples:[]});
+ assert.equal(r.error,'no-tests');assert.ok(r.view);assert.equal(r.saved,true);
+});
+test('known pre-route model refusal does not invent identity or lock the next action',async()=>{
+ const h=harness();h.o.failTest=true;h.o.shape=r=>({...r,state:'refused',modelRoute:{}});
+ const input={operation:'test',expectedRevision:revision(original)};
+ const first=await h.act(input);assert.equal(first.error,'action-failed');assert.ok(first.view);
+ assert.equal((await h.act(input)).error,'action-failed');assert.equal(h.calls.length,2);
+});
+test('malformed catalog data stays nonblocking and never exposes provider text',async()=>{
+ for(const id of ['https://private.invalid','auto','bad\nmodel']){
+  const h=harness(),read=h.session.rpc.mcp.resources.read;
+  h.session.rpc.mcp.resources.read=async a=>a.uri==='kmx://models'?{contents:[{text:JSON.stringify({schemaVersion:1,kind:'kmx.models',defaultModel:'gpt-5.6-terra',models:[id]})}]}:read(a);
+  const r=await h.act({operation:'models'});assert.equal(r.error,'models-unavailable');assert.equal((await h.act({operation:'test',expectedRevision:revision(original)})).error,undefined);
+ }
+});
 test('full authoring snapshot is hash-bound while display values remain bounded',async()=>{const h=harness();const view=await readView(h.session,'greeter.agent.md');assert.equal(view.authoring.source,original);assert.equal(view.authoring.editable,true);assert.equal(view.authoring.examples[0].assertions[0].value,'Hello, Ada')});
 test('save-and-test uses original Edit revision, schemaVersion and explicit answer opt-in',async()=>{const h=harness();const sections=instructionSections(original);sections[0].text+='\nKeep it short.';const r=await h.act({operation:'save-and-test',expectedRevision:revision(original),sections});assert.equal(r.error,undefined);assert.equal(r.saved,true);assert.deepEqual(h.calls.map(c=>c.name),['owned-edit','owned-test']);assert.equal(h.calls[0].arguments.expectedRevision,revision(original));assert.deepEqual(h.calls[1].arguments,{schemaVersion:1,path:'greeter.agent.md',showContent:false,showFailedContent:true});assert.equal(h.calls.some(c=>c.chat),false);assert.equal(r.view.file.revision,revision(h.source()))});
 test('Test and Run default to failure-only arguments without a public revision parameter',async()=>{for(const operation of ['test','run']){const h=harness();const r=await h.act({operation,expectedRevision:revision(original),...(operation==='run'?{input:'Ada'}:{})});assert.equal(r.error,undefined);assert.deepEqual(h.calls[0].arguments,{schemaVersion:1,path:'greeter.agent.md',...(operation==='run'?{input:'Ada'}:{}),showContent:false,showFailedContent:true});assert.equal(h.calls.length,1)}});

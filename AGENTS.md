@@ -10,22 +10,29 @@ changes in the package's Go doc comment.
 ## Command consistency
 
 - `model list [-o table|json]` defaults to config-free bounded local discovery.
-  Explicit `--provider copilot` lists available Chat-compatible routes without
+  Explicit `--provider copilot` lists available Chat/Responses routes without
   starting sign-in. `model login` uses GitHub device flow; `--gh` explicitly
   copies a bounded private gh token into kmx's OS keychain. Runtime credentials
-  prefer explicit `COPILOT_GITHUB_TOKEN`, then kmx's keychain item; only an
-  unavailable keychain permits bounded `gh auth token --hostname github.com`
-  capture without persistence. Invalid explicit tokens, missing owned items and
-  service refusals do not switch credentials. No token file fallback; exchange
+  prefer explicit `COPILOT_GITHUB_TOKEN`, then bounded private
+  `gh auth token --hostname github.com` capture of an existing sign-in, then
+  kmx's keychain item when gh is unavailable. Runtime gh access is memory-only
+  and does not require a keychain. Invalid explicit tokens and service refusals
+  do not switch credentials. No token file fallback; exchange
   bearers stay in memory. Login explains runtime options if the keychain is
   unavailable. Logout clears only kmx's item/memory, not gh or environment auth.
   `internal/kmx/modelaccess/copilot` returns a selected-route RoundTripper for
-  direct JSON/SSE Chat Completions, not a proxy or CLI-chat replacement.
-  File Run/Test and shared MCP execution consume it only with explicit
-  `--provider copilot`, exact authored model and prior sign-in. Default only
-  the pinned Copilot endpoint; refuse other endpoints before credential access.
-  Never inject tokens in the runner. Keep known Copilot errors static and safe,
-  stop later sends on them (including judging), and preserve cancellation.
+  Chat-shaped JSON/SSE access, privately adapting catalog-selected Responses
+  models. Prefer Chat when both protocols are advertised. Preserve the actual
+  upstream model and incomplete/refusal/tool outcomes, not a fabricated pass.
+  This is not a proxy or CLI-chat replacement.
+  File CLI Run/Test consume it with explicit `--provider copilot`; unbound MCP
+  defaults effective non-fake models to Copilot when no startup route is selected.
+  Both use the exact runtime-selected model and existing available credentials.
+  Trusted route provider/endpoint/auth and legacy root-bound MCP behavior remain unchanged.
+  Default only the pinned Copilot endpoint; refuse other endpoints before credential access.
+  Never inject tokens in the runner. Keep known Copilot errors safe; owned catalog
+  selection failures may list validated model IDs, never raw provider errors.
+  Stop later sends on them (including judging), and preserve cancellation.
   Establish auth through the catalog; exchange only after credential refusal,
   never subscription/policy/quota refusal. Never replay inference or substitute
   a model. Keep modelaccess independent of App and Unix-only helpers. Foundry
@@ -33,12 +40,16 @@ changes in the package's Go doc comment.
   service start or silent model selection. Native model-access package tests
   remain separate from Windows CLI qualification.
 
-- `internal/kmx/fileaccess` is a package-independent checked-read foundation:
-  existing-file/directory opens, security inspection and physical identity only.
-  It grants no create/write/lock/rename/link/delete/sync/state/publication or
-  repair authority and remains unwired from phase-1 operation adapters. Native
-  Windows package tests qualify local-NTFS reads only, not the guarded Windows
-  CLI, native arm64 execution, an operation, release artifact or user support.
+- `internal/kmx/fileaccess` is a package-independent checked filesystem
+  foundation: existing-object reads, security/identity inspection, private first
+  creation, process-held locks and no-replace file/directory-flush publication.
+  Its handles stay opaque; it repairs/adopts nothing, retries no ambiguous effect
+  and remains unwired from operation adapters. `internal/kmx/config` alone uses
+  it for explicit creating/non-creating state-root resolution; ordinary
+  `StateDir` remains location-only. Native Windows package tests qualify these
+  local-NTFS primitives only, not the guarded CLI, native arm64 execution, an
+  operation, release artifact or user support. App/OCI/workspace adapters remain
+  inert until later phases.
 
 - Follow the [command conventions](docs/command-conventions.md), the implemented
   interface in [docs/kmx.md](docs/kmx.md) and the
@@ -359,8 +370,14 @@ changes in the package's Go doc comment.
   native judge wiring does not enable recorded candidate execution.
   The checkout-only native qualifier runs in the full read-only reusable Orka
   worker after raw model proof, with private captures and metadata-only artifacts.
-  Relevant/unknown PRs, manual qualification, daily main nightly and every release
-  retain that proof. Only explicitly safe PRs and routine main pushes skip it.
+  Trigger-matching or uncertain-diff PRs, manual qualification, daily main nightly
+  and every release retain that proof. Valid paths outside the Orka-owned trigger
+  list skip it, as do routine main pushes: main is re-verified nightly, not per merge.
+  Shared CLI/App/config/packaging and pkg/kmx changes rely on nightly integration
+  proof, not per-PR Orka proof; do not silently broaden the owned trigger list.
+  The generated caller manifest alone does not trigger proof. Its hygiene guard
+  and the init guard keep their old selections, not every newly skipped path;
+  other skipped effects rely on hygiene and nightly integration detection.
   Keep required `hygiene` and `e2e-hello-world` checks intact and fail closed on
   unintended skips/failures. No path/docs shortcuts belong inside the full worker.
   Its second exclusively owned kind cluster has one pinned Orka in
@@ -439,10 +456,17 @@ changes in the package's Go doc comment.
 ## Agent-file preview boundary
 
 Canonical `run FILE` / `test FILE` accept explicit `--tool-bindings FILE` as
-host-only input; no discovery or inbound-MCP binding selection. The current
-production runner has no MCP provider factory and refuses tool execution.
-Trusted embedding can supply a frozen binding/host executor; fixture qualification
-is not real MCP proof. Declared tools with either a Copilot agent or judge refuse
+host-only input; no discovery or inbound-MCP binding selection. The production
+runner installs localtools.NewMCPHost: explicit env snapshot, no constructor
+network, lazy read-owned Streamable-HTTP session and one fixed GitHub search.
+Require exact repository_url and explicit merged_at, complete search and <=20
+bounded number/title rows. Protocol2025-11-25 is pinned; no server/discover,
+OAuth/callbacks/standalone SSE/redirects/proxy credentials/retries/input-required
+resends. Read context bounds SDK-detached cleanup. Exact credential echoes
+refuse in protocol data; known-shape checks also cover every model/journal-bound
+projection. Discard remote metadata/descriptions and SDK logs. Test bridges stay
+in _test.go; scripted-model hosted smoke is not real-LLM qualification.
+Trusted embedding can still supply a frozen binding/host executor. Declared tools with either a Copilot agent or judge refuse
 before credentials or journaling; tool-free Copilot uses journaled Sessions.
 Copilot tool execution remains unsupported. No silent tool dropping.
 
@@ -473,25 +497,46 @@ See [file preview](docs/kmx.md#agent-file-local-preview-unreleased-integration).
 
 ## Agent-file MCP boundary
 
-`mcp --root DIRECTORY` is stdio-only and config-free at startup. Require an
-absolute existing root, never cwd/client-root fallback. Normalize native absolute
-tool paths through cleaning and symlink resolution to an allowed root-relative
-layout; outside targets, dangling links and changed root identity refuse. Keep
-relative-path restrictions and descriptor-bound file IO unchanged. Expose exactly
+`kmx mcp` is stdio-only and config-free at startup. It accepts agent paths in any
+directory; relative paths resolve against the server's working directory. Prefer
+absolute WSL paths from a Windows host. Read/write only `*.agent.md` and
+`.squad/agents/<member>/charter.md`, checking both the requested and resolved
+path. Ordinary folder names and links to agent files are supported; never use an
+agent-looking link to access a non-agent file. Keep descriptor-bound file IO and
+revision-checked edits. Optional `--root DIRECTORY` remains only for legacy
+plugins and the separately configured native Squad flow. Expose exactly
 Create/Edit/Run/Test; call canonical parsing and `App.PreviewAgentSnapshot`,
 never the path wrapper or shell CLI strings. Optional native v2 targets use
 explicit `App.PreviewSquadSnapshot` and revalidated native state, not auto-detection.
-Model routes are trusted startup
-configuration, not tool/charter fields. Keep complete safe App results on errors;
-fixture runners are not production execution. Edit preserves mode bits, not
+Provider/endpoint selection comes from trusted startup configuration or the
+fixed unbound Copilot default, never from tool/charter endpoint fields; the exact
+model resolves once as runtime override → authored model → `gpt-5.6-terra`.
+Omitted Model stays absent in source; present invalid Model still fails parsing.
+Use an execution copy, preserving original instructions/revision, in both runners.
+Keep complete safe App results on errors;
+App owns full-path projection and credential redaction; MCP must not restore raw
+paths after it returns. Fixture runners are not production execution. Edit preserves mode bits, not
 ownership/ACLs/xattrs; normal directory inheritance is the day-0 own-file contract.
 No new runner, Explain tool or MCP network listener. The read-only
-`kmx://agent/{path}` resource projects supported agent files within that root;
-it is not a fifth tool or generic file reader. Root confirmation suffices for
-charter content; safe model excerpts still require existing showContent opt-in.
+`kmx://agent/{path}` resource projects the requested supported agent file;
+it is not a fifth tool or generic file reader. Read-only `kmx://models` lazily
+projects validated Copilot IDs/default for the picker, without startup auth or
+inference. Model selection is memory-only, never source/history. Fence model
+changes as well as revisions; never attribute another model's result as current. No folder confirmation is needed
+for charter content. After successful Create, open its returned file.path in the
+existing canvas. Give one plain notice before the first hosted-model send;
+ordinary agent-file creation stays confirmation-free, without path-character
+restrictions. Native Squad retains its existing proposal/setup-effects approval.
+Safe model excerpts retain the existing showContent opt-in.
 Latest preview state is process-local, revision-bound and never inferred on read.
 The separate native Copilot view uses the host SDK and a private loopback asset
 bridge, without mutations or direct agent-file reads.
+The repository-installable WSL plugin lives in `plugins/copilot-wsl`, including
+shared skills and canvas runtime assets. Legacy native packaging copies these
+same sources; do not maintain a second canvas/skill implementation. Keep its MCP
+command exactly `wsl.exe -e /usr/local/bin/kmx mcp`, without a bundled engine,
+root/model configuration or installation helper. Node tests stay outside the
+installable tree under `plugins/copilot`.
 See [MCP](docs/kmx.md#local-stdio-mcp).
 
 ## Internal native Squad authoring boundary
@@ -549,9 +594,9 @@ Keep payload-bearing parsed values out of default logs/results. Explicit offline
 stdout, preserving authored models and ordered examples/hashes with every target
 status `not_run`. It is not evaluation evidence, a package, an AgentSuite runtime
 profile or deployment authority; never resolve routes or credentials for export.
-The loader
-refuses static special files and symlink/reparse path components; it is not a hostile
-concurrent filesystem sandbox.
+Agent-file access is not a hostile concurrent filesystem sandbox; preserve
+credentials and restrict MCP access to agent files rather than adding folder or
+symlink refusals.
 
 ## Local preview boundary
 
@@ -581,10 +626,11 @@ bounded to 20 runs at each start, owner-only, clearable by run or all;
 executing runs hold an OS lock and are never pruned or cleared (on Windows this
 rests on unverified share-mode behavior), and overlapping starts can leave
 extra finished runs until the next start or clear. Journals stay under
-`config.StateDir` on every OS (`%AppData%` on Windows, disclosed as roaming)
-until native Windows support
-([#578](https://github.com/kaimahi-agents/kaimahi/issues/578)) decides Windows
-state. The additive `kmx-local-tools-v1` host-bound harness has a separate bounded
+`config.StateDir` on every OS (`%LOCALAPPDATA%` on Windows). Phase-3 state-root
+qualification does not wire local preview on Windows; that remains later
+integration work under
+[#578](https://github.com/kaimahi-agents/kaimahi/issues/578). The additive
+`kmx-local-tools-v1` host-bound harness has a separate bounded
 converter and complete-invocation replay proof, never a relaxed suite/chat check.
 Its optional single no-args read is host-enforced; at most two agent model calls,
 with unchanged separate tool-free judging inside the case deadline. Safe call
@@ -757,6 +803,9 @@ current exact alpha framework pin is a draft choice, not approval to publish;
 custom-domain and versioned-site changes require a separate review.
 
 Run checks appropriate to the changed paths as described in CONTRIBUTING.md.
+App CI runs all four process-isolated shards on Linux and macOS; both platforms
+gate hygiene and artifact names include OS/shard. The App test harness resolves
+the macOS temporary root before fixtures; retain production symlink refusals.
 Command changes normally require `go test ./cmd/kmx`, affected operation-package
 tests, documentation links, repository-map and legacy-runtime checks. These
 checkers use tracked files, so include intended additions in the index

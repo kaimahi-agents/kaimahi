@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
@@ -17,11 +18,14 @@ import (
 type FilePreviewOptions struct {
 	File, Operation, CaseID string
 	ToolBindings            string
+	Model                   string
 	Route, JudgeRoute       *modelaccess.Route
 	Input                   *string
 	ShowContent             bool
 	ShowFailedContent       bool
-	Progress                func(string) error
+	// FullPath keeps MCP's requested identity inside the shared redaction boundary.
+	FullPath bool
+	Progress func(string) error
 }
 
 type FilePreviewResult struct {
@@ -87,13 +91,19 @@ type FilePreviewAssertion struct {
 	Reason     string                    `json:"reason"`
 }
 
-// FilePreviewError contains fixed safe text, never provider or authored content.
+// FilePreviewError contains fixed safe text or validated catalog choices, never raw provider content.
 type FilePreviewError struct {
-	code string
-	exit int
+	code    string
+	exit    int
+	message string
 }
 
-func (e *FilePreviewError) Error() string { return previewReason(e.code) }
+func (e *FilePreviewError) Error() string {
+	if e.message != "" {
+		return e.message
+	}
+	return previewReason(e.code)
+}
 func (e *FilePreviewError) ExitCode() int { return e.exit }
 
 var previewCopilotFailures = []struct {
@@ -135,7 +145,7 @@ func previewReason(code string) string {
 		"no_tests":          "No tests yet — add or suggest one",
 		"invalid_selection": "Unknown example ID; select an authored example ID.", "invalid_options": "Invalid file preview options.",
 		"model_unavailable":   "Selected model route is unavailable or does not match the file model; select an exact trusted route.",
-		"tools_unavailable":   "Host-bound local tools are unavailable; Copilot tool support depends on #662.",
+		"tools_unavailable":   "Host-bound local tools are unavailable; Copilot tool execution is unsupported.",
 		"unsafe_tool_content": "Unsafe tool preview content was withheld; nothing was journaled.",
 		"credential_content":  "Credential-bearing preview content was withheld.",
 		"runner_unavailable":  "Embedded preview runner is not available; no inference was performed.",
@@ -153,7 +163,7 @@ func (a *App) PreviewAgentFile(ctx context.Context, opt FilePreviewOptions) (Fil
 }
 
 // PreviewAgentSnapshot executes a caller-owned parsed snapshot without reopening
-// source files. File is a display label only; rooted callers retain target authority.
+// source files. File is a display label only; callers retain target authority.
 // The caller must obtain parsed from agentfile.Parse/Load and not mutate it while
 // the operation runs. Preview results grant no native evidence/deploy authority.
 func (a *App) PreviewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent, opt FilePreviewOptions) (FilePreviewResult, error) {
@@ -161,15 +171,23 @@ func (a *App) PreviewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 }
 
 func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent, opt FilePreviewOptions, parseErr error) (FilePreviewResult, error) {
+	filePath := suiteDiagnosticIdentity(filepath.Base(opt.File), nil)
+	if opt.FullPath {
+		var safe bool
+		filePath, safe = suiteDiagnosticText(opt.File, len(opt.File), nil)
+		if !safe {
+			filePath = "withheld"
+		}
+	}
 	r := FilePreviewResult{SchemaVersion: 1, Kind: "kmx.agent-file-preview", Operation: opt.Operation,
-		File: FilePreviewIdentity{Path: suiteDiagnosticIdentity(filepath.Base(opt.File), nil)}, Selection: FilePreviewSelection{Scope: "full", CaseIDs: []string{}},
+		File: FilePreviewIdentity{Path: filePath}, Selection: FilePreviewSelection{Scope: "full", CaseIDs: []string{}},
 		State: "refused", Verdict: runtime.EvaluationUnknown, Examples: []FilePreviewExample{}, Retention: FilePreviewRetention{Status: "not_requested"}}
-	fail := func(code string, exit int) (FilePreviewResult, error) {
+	fail := func(code string, exit int) (FilePreviewResult, *FilePreviewError) {
 		r.FullPass = false
 		r.Verdict = runtime.EvaluationUnknown
 		r.ReasonCode = code
 		r.Reason = previewReason(code)
-		return r, &FilePreviewError{code, exit}
+		return r, &FilePreviewError{code: code, exit: exit}
 	}
 	if opt.Operation != "run" && opt.Operation != "test" || opt.Operation == "test" && opt.Input != nil || opt.Input != nil && (len(*opt.Input) > agentfile.MaxInputBytes || !utf8.ValidString(*opt.Input)) {
 		return fail("invalid_options", 1)
@@ -182,6 +200,9 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		return fail("invalid_file", 1)
 	}
 	// Metadata is printable but can still be shaped like a credential. Do not echo it.
+	if opt.Model != "" && (!agentfile.ValidModel(opt.Model) || secretshapes.Match(opt.Model) != nil) {
+		return fail("invalid_options", 1)
+	}
 	metadata := []string{r.File.Path, parsed.Model}
 	for _, ex := range parsed.Examples {
 		metadata = append(metadata, ex.ID)
@@ -195,6 +216,14 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 			return fail("invalid_file", 1)
 		}
 	}
+	missingModel := parsed.Model == ""
+	execution := *parsed
+	if opt.Model != "" {
+		execution.Model = opt.Model
+	} else if missingModel {
+		execution.Model = modelaccess.CopilotDefaultModel
+	}
+	parsed = &execution
 	r.File.Revision = parsed.Revision
 	r.Selection.TotalCases = len(parsed.Examples)
 	// Zero authored examples permit only an explicit ad-hoc Run, never a Test.
@@ -217,7 +246,7 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	route := modelaccess.Route{Provider: "fake", Model: "fake", Auth: "none"}
 	if opt.Route != nil {
 		route = *opt.Route
-		if route.Model == "" {
+		if route.Model == "" || opt.Model != "" || missingModel {
 			route.Model = parsed.Model
 		}
 	} else if parsed.Model != "fake" {
@@ -362,6 +391,16 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	}
 	if cause != nil {
 		if code := previewCopilotFailure(cause); code != "" {
+			if choices, known := copilot.ModelChoices(cause); known {
+				result, previewErr := fail(code, 1)
+				names := strings.Join(choices, ", ")
+				if names == "" {
+					names = "none"
+				}
+				result.Reason = "Available Copilot models: " + names
+				previewErr.message = result.Reason
+				return result, previewErr
+			}
 			return fail(code, 1)
 		}
 		return fail("execution_failed", 1)
@@ -395,7 +434,7 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	r.Reason = previewReason(r.ReasonCode)
 	r.FullPass = r.Selection.Scope == "full" && r.Verdict == runtime.EvaluationPass
 	if r.Verdict != runtime.EvaluationPass {
-		return r, &FilePreviewError{r.ReasonCode, 2}
+		return r, &FilePreviewError{code: r.ReasonCode, exit: 2}
 	}
 	return r, nil
 }

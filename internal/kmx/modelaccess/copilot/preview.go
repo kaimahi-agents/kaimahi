@@ -37,13 +37,19 @@ func (p *Provider) PreviewClient(ctx context.Context, routes []modelaccess.Route
 	if p.source == "" {
 		return nil, err
 	}
-	s := &preview{owner: p, generation: p.generation, ctx: ctx, until: p.now().Add(previewLifetime), source: p.source, bearer: p.bearer, expires: p.expires, api: p.api, http: p.http, now: p.now, routes: slices.Clone(routes)}
+	s := &preview{owner: p, generation: p.generation, ctx: ctx, until: p.now().Add(previewLifetime), source: p.source, bearer: p.bearer, expires: p.expires, api: p.api, http: p.http, now: p.now}
 	if err == nil {
 		for _, r := range routes {
-			if !slices.Contains(available, r) {
-				err = ErrModelUnavailable
+			index := slices.IndexFunc(available, func(m catalogModel) bool { return m.route == r })
+			if index < 0 {
+				choices := make([]modelaccess.Route, 0, len(available))
+				for _, model := range available {
+					choices = append(choices, model.route)
+				}
+				err = unavailableWithChoices(choices)
 				break
 			}
+			s.models = append(s.models, available[index])
 		}
 	}
 	s.failed = err
@@ -60,7 +66,7 @@ type preview struct {
 	source, bearer, api string
 	http                *http.Client
 	now                 func() time.Time
-	routes              []modelaccess.Route
+	models              []catalogModel
 }
 
 // Formatting must not accidentally export the private snapshot fields.
@@ -113,20 +119,25 @@ func (s *preview) Client(r modelaccess.Route) (http.RoundTripper, error) {
 	if err := s.Validate(s.ctx); err != nil {
 		return nil, err
 	}
-	if !slices.Contains(s.routes, r) {
+	index := slices.IndexFunc(s.models, func(m catalogModel) bool { return m.route == r })
+	if index < 0 {
 		return nil, s.stop(ErrModelUnavailable)
 	}
-	return &previewTransport{access: s, route: r}, nil
+	return &previewTransport{access: s, route: r, path: s.models[index].path}, nil
 }
 
 type previewTransport struct {
 	access *preview
 	route  modelaccess.Route
+	path   string
 }
 
 func (s *preview) checkJSON(b []byte) error {
 	if !json.Valid(b) {
 		return ErrMalformed
+	}
+	if err := s.CheckContent(string(b)); err != nil {
+		return err
 	}
 	d := json.NewDecoder(bytes.NewReader(b))
 	d.UseNumber()
@@ -209,7 +220,7 @@ func (t *previewTransport) RoundTrip(req *http.Request) (resp *http.Response, er
 	ctx, cancel := context.WithDeadline(req.Context(), s.until)
 	stop := context.AfterFunc(s.ctx, cancel)
 	defer func() { stop(); cancel() }()
-	// A private catalog owner has no store or refresh path. Both catalog and Chat
+	// A private catalog owner has no store or refresh path. Catalog and inference
 	// use only the pinned bearer, regardless of ordinary List activity.
 	pinned := &Provider{http: s.http, api: s.api, bearer: s.bearer}
 	cb, status, err := pinned.catalog(ctx)
@@ -226,14 +237,28 @@ func (t *previewTransport) RoundTrip(req *http.Request) (resp *http.Response, er
 	if err != nil {
 		return nil, err
 	}
-	if !slices.Contains(available, t.route) {
+	if !slices.ContainsFunc(available, func(m catalogModel) bool { return m.route == t.route && slices.Contains(m.paths, t.path) }) {
 		return nil, ErrModelUnavailable
 	}
 	if err = s.Validate(ctx); err != nil {
 		return nil, err
 	}
+	if t.path == "/responses" {
+		var stream bool
+		b, stream, err = encodeResponsesRequest(b)
+		if err != nil {
+			return nil, err
+		}
+		if stream {
+			return nil, ErrMalformed
+		}
+		// Translation introduces keys/constants; none bypass the provider check.
+		if err = s.checkJSON(b); err != nil {
+			return nil, err
+		}
+	}
 	next := req.Clone(ctx)
-	next.URL, err = url.Parse(s.api + "/chat/completions")
+	next.URL, err = url.Parse(s.api + t.path)
 	if err != nil {
 		return nil, ErrUnavailable
 	}
@@ -244,6 +269,10 @@ func (t *previewTransport) RoundTrip(req *http.Request) (resp *http.Response, er
 	next.Header.Del("Idempotency-Key")
 	next.Header.Del("X-Idempotency-Key")
 	next.Header.Del("Proxy-Authorization")
+	if t.path == "/responses" {
+		next.Header.Del("Accept-Encoding")
+		next.Header.Del("Content-Encoding")
+	}
 	headers(next, s.bearer)
 	next.Header.Set("Content-Type", "application/json")
 	next.Header.Set("Accept", "application/json")
@@ -257,7 +286,11 @@ func (t *previewTransport) RoundTrip(req *http.Request) (resp *http.Response, er
 		return nil, safeError(err)
 	}
 	defer resp.Body.Close()
-	reply, err := readBounded(resp.Body, 4<<20)
+	limit := 4 << 20
+	if t.path == "/responses" {
+		limit = responseLimit
+	}
+	reply, err := readBounded(resp.Body, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -266,6 +299,21 @@ func (t *previewTransport) RoundTrip(req *http.Request) (resp *http.Response, er
 	}
 	if err = s.checkJSON(reply); err != nil {
 		return nil, err
+	}
+	if t.path == "/responses" {
+		// Inspect discarded fields before adapting, then inspect joined fragments.
+		checked := &http.Response{Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(reply))}
+		defer func() { _ = checked.Body.Close() }()
+		if err = adaptResponsesResponse(checked, false); err != nil {
+			return nil, err
+		}
+		reply, err = readBounded(checked.Body, responseLimit)
+		if err != nil {
+			return nil, err
+		}
+		if err = s.checkJSON(reply); err != nil {
+			return nil, err
+		}
 	}
 	if err = s.Validate(ctx); err != nil {
 		return nil, err

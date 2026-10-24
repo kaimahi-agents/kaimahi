@@ -78,7 +78,7 @@ func TestParseRefusals(t *testing.T) {
 		{"unsafe id", replace("**ID:** greeter", "**ID:** ../greeter"), "Identity.ID"},
 		{"missing title", replace("# Greeter — Greeting specialist", ""), "Title"},
 		{"frontmatter", "---\nname: greeter\nmodel: fake\n---\n" + original, "Title"},
-		{"missing model", replace("## Model\n- **Preferred:** fake\n", ""), "Model.Preferred"},
+		{"missing preferred", replace("- **Preferred:** fake", ""), "Model.Preferred"},
 		{"blank model", replace("**Preferred:** fake", "**Preferred:** "), "Model.Preferred"},
 		{"auto model", replace("**Preferred:** fake", "**Preferred:** auto"), "Model.Preferred"},
 		{"wildcard model", replace("**Preferred:** fake", "**Preferred:** gpt-*"), "Model.Preferred"},
@@ -145,7 +145,7 @@ func TestParseRefusals(t *testing.T) {
 	if a != nil || err == nil {
 		t.Fatal("legacy accepted")
 	}
-	for _, field := range []string{"Identity.ID", "Identity.Purpose", "Model.Preferred", "Examples"} {
+	for _, field := range []string{"Identity.ID", "Identity.Purpose", "Examples"} {
 		if !strings.Contains(err.Error(), field) {
 			t.Fatalf("missing field not named: %s: %v", field, err)
 		}

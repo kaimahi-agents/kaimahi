@@ -68,7 +68,9 @@ Logos and other repository and organization artwork.
 
 ## `plugins/` — host integrations
 
-Plugin source and packaging tools; see [the package guide](../plugins/copilot/README.md).
+The [WSL plugin](../plugins/copilot-wsl/README.md) owns shared skills and canvas
+runtime assets. [Native packaging tools](../plugins/copilot/README.md) copy those
+same assets into platform bundles; their tests stay outside the installable tree.
 
 ## `.github/` — repository automation
 

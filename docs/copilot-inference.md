@@ -21,18 +21,25 @@ Copilot route, not this existing CLI-chat adapter. The
 [dated access decision](copilot-access.md) distinguishes the selected experimental
 compatibility route from official OAuth/SDK documentation and unqualified
 hosted modes. See [sign-in and storage](models.md#explicit-copilot-model-access).
-Runtime auth prefers explicit `COPILOT_GITHUB_TOKEN`, otherwise the owned OS
-keychain item. Only an unavailable keychain permits reading an existing gh login;
-a missing item or service refusal does not. Runtime tokens are never copied to
+Runtime auth prefers explicit `COPILOT_GITHUB_TOKEN`, then an existing github.com
+gh sign-in, then the owned OS keychain item if gh is unavailable. A working gh
+sign-in requires no kmx login or keychain setup; a service refusal never switches
+credentials. Runtime tokens are never copied to
 storage, exported in argv/environment, or returned in routes. There are no token
 flags or plaintext-cache fallback.
 
-Markdown-file Run/Test and their shared MCP path consume this transport with
-explicit `--provider copilot`, an exact authored model and the pinned endpoint.
-They remain temporary tool-free, no-journal preview execution, not the CLI-chat
-tool adapter below or an embedded Sessions harness. Selecting this route sends
-instructions and inputs to Copilot; judging also sends answers and rubrics.
-Known Copilot refusals stop later sends and expose only static safe reasons.
+Markdown-file Run/Test and their shared MCP path run selected Copilot models on
+embedded Sessions, not the CLI-chat tool adapter below. They establish a
+provider-owned credential and API-path snapshot before journaling; unlike
+ordinary `Client` access, previews never refresh credentials or switch protocols
+mid-run. Chat Completions and Responses share the same Chat-shaped harness
+contract. The provider checks Responses envelopes before translation and checks
+the joined completion afterward, without exposing tokens to Sessions.
+Selecting this route sends instructions and inputs to Copilot; judging also sends
+answers and rubrics. The private journal retains this content, including judge
+reasoning, in cleartext under the existing retention/clearing rules. Known
+Copilot refusals stop later sends and expose only safe reasons. Copilot tool
+execution remains unsupported.
 See [file preview usage](kmx.md#agent-file-local-preview-unreleased-integration).
 
 Internal callers use `copilot.New(store)` (`nil` selects the native keychain),
@@ -40,12 +47,18 @@ then `Client(ctx, route)` to obtain an `http.RoundTripper` for a validated exact
 `modelaccess.Route`. Use a standard request with POST
 `https://api.githubcopilot.com/chat/completions`, a JSON body naming that same
 model, and a caller-owned context/deadline. The transport preserves the caller's
-Chat `Accept` header and successful JSON/SSE bytes; callers own closing the
-response body. Non-2xx Chat responses return a classified error, not a raw
+Chat `Accept` header and successful JSON/SSE bytes for Chat routes. For enabled
+Responses-only models it translates the owned text request/result privately,
+including JSON and streaming completion/refusal/tool outcomes. Models offering
+both endpoints retain Chat. Actual model identity is not replaced by the requested
+name, and incomplete or failed output is not a successful completion. Callers own
+closing the response body. Non-2xx responses return a classified error, not a raw
 upstream response or error body. Request bodies are
 bounded to 4 MiB, auth/catalog/error responses to 1 MiB, and credential/process
 output to 16 KiB. Ambiguous top-level JSON keys and changed models or destinations
-refuse before inference. No Responses API, agent loop, tool execution, listener
+refuse before inference. Responses uses the existing direct caller's 1 MiB JSON
+response budget and the same completion-token budget; streaming does not add a
+line-size limit or a background reader. No agent loop, tool execution, listener
 or OpenAI proxy is added.
 
 Auth is established through GET `/models` before inference. The original GitHub
@@ -56,7 +69,7 @@ not authorize exchange, even with 401. Exchanged bearers remain in memory,
 honor `expires_at` and refresh 30 seconds before expiry; the reusable keychain
 credential is not replaced. Subscription, policy and quota refusals never select
 another model or credential source. Catalog checks can be repeated; inference
-is never automatically resent, including after a Chat credential refusal or
+is never automatically resent, including after an inference credential refusal or
 connection failure. The next explicit request resolves auth independently.
 Logout clears memory and deletes only kmx's item, not upstream account tokens;
 it cannot retract requests already in flight or disable gh/environment credentials.

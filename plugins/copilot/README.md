@@ -1,29 +1,22 @@
-# Copilot agent-builder plugin
+# Native Copilot plugin bundles
 
-This Copilot app/CLI plugin contains a skill, declarative MCP config and a
-native Copilot agent authoring canvas with a read-only text fallback. It is not a VS Code
-extension. The source tree is not an installable package; native bundles are
-generated and signed by the release workflow, not committed here. Canvas actions
-use the existing MCP operations, not an in-plugin downloader, file writer or second runner.
+For Windows Copilot, use the [plain WSL plugin](../copilot-wsl/README.md).
+It installs from the repository and uses `/usr/local/bin/kmx` without a bundled
+engine or folder/model configuration.
 
-For the Copilot-default Release writer setup, see [TRY-IT.md](../../TRY-IT.md).
-The external [try-it.sh](try-it.sh) helper downloads a complete platform archive,
-checks its release checksum over HTTPS, asks the user to confirm a root, copies
-one bundled sample without overwrite, configures the Copilot route and installs
-from a fresh local directory. This is checksum verification, not independent
-signature verification. It needs no extra macOS packages. `--dry-run` stages and
-configures only; it does not sign in, install, invoke models or open the app.
-Older archives without the exact try-it schema/inventory refuse. The sample
-uses real Copilot with judge checks; fake remains an offline/CI route, not a
-release-writing simulation.
+This directory contains the legacy root-bound native bundle tooling and tests.
+Shared skills and canvas runtime assets live in `plugins/copilot-wsl`; the native
+packager copies that same source, not a second implementation. Native bundles
+are generated and signed by the release workflow, not committed here. Canvas
+actions use existing MCP operations, not a downloader, file writer or second runner.
 The source directory deliberately has no `bin/kmx`; do not install it directly.
 
 ## Package contract
 
 The package uses [Agent Plugins 1.0](https://agent-plugins.org/plugin-authors/build-an-agent-plugin.md):
 root [plugin.json](plugin.json), root [mcp.json](mcp.json) and
-[skills/kmx-agent-builder/SKILL.md](skills/kmx-agent-builder/SKILL.md) and
-[skills/kmx/SKILL.md](skills/kmx/SKILL.md).
+[skills/kmx-agent-builder/SKILL.md](../copilot-wsl/skills/kmx-agent-builder/SKILL.md) and
+[skills/kmx/SKILL.md](../copilot-wsl/skills/kmx/SKILL.md).
 The [MCP specification for plugins](https://agent-plugins.org/plugin-authors/mcp-servers.md)
 resolves `./bin/kmx` against the plugin root; Windows templates use
 `./bin/kmx.exe`. It is one executable token, not a shell command or PATH lookup.
@@ -53,20 +46,22 @@ readable engine digest metadata. Existing output, source links/special files,
 missing root, filesystem-root selection, invalid metadata and digest mismatch
 refuse. The helper does not fetch, archive, install or write host settings.
 
-## Repository binding and real tools
+## Agent paths and real tools
 
-The developer binds an absolute, filesystem-resolved root before installation.
-It is encoded in startup argv as `kmx mcp --root ABSOLUTE_DIR`, not an
-assistant-controlled tool argument. [selected-root.json](selected-root.json)
-contains the same root for user confirmation. Never infer root from cwd,
-plugin-cache location, MCP client roots or an invented host variable.
-Resolved roots containing literal `${PLUGIN_ROOT}` or `${PLUGIN_DATA}` tokens
-refuse: a plugin host would expand them in startup arguments.
-Changing repositories requires deliberate reconfiguration/reinstallation and
-a server restart, not an implicit rebind during a tool call.
+`kmx mcp` accepts agent files in any directory without a bound folder. Use full
+WSL filesystem paths when calling it from Windows; relative paths resolve against
+the MCP server's working directory. Agent files are `*.agent.md` and
+`.squad/agents/<member>/charter.md`. Ordinary folder names and symlinks to agent
+files work; a link to a non-agent file does not.
+
+The existing native bundle builder below still produces the legacy
+`kmx mcp --root ABSOLUTE_DIR` configuration and matching
+[selected-root.json](selected-root.json). That compatibility mode remains bound
+to its configured directory; the new unbound server needs neither file nor a
+folder confirmation. Plugin installation is replaced separately.
 
 The bundled engine exposes exactly lowercase `create`, `edit`, `run` and
-`test`. Canonical branches require `schemaVersion: 1` and root-relative `path`; Create
+`test`. Canonical branches require `schemaVersion: 1` and an agent `path`; Create
 also needs canonical `content`, Edit needs `content` and `expectedRevision`.
 Run/Test accept `caseId`, `showContent` and `showFailedContent`; Run also accepts `input`.
 Use discovered schemas as authority. See the
@@ -84,7 +79,7 @@ removing journal files there to clear retained content. See
 [journal retention](../../docs/local-preview.md#journal-retention-and-clearing).
 Real-model route setup is not automated by this packager.
 For manually configured trusted startup, `kmx mcp --root ABSOLUTE_DIR --provider copilot`
-uses prior explicit `kmx model login` credentials and an exact listed
+uses existing runtime credentials and an exact listed
 `Model.Preferred`, with a fixed endpoint. This sends instructions/inputs and
 any judge answers/rubrics to Copilot. Startup does not sign in or access credentials;
 If either agent or judge uses Copilot, the whole invocation uses the same direct,
@@ -132,20 +127,19 @@ or cross-compilation do not qualify Squad on Windows/macOS.
 
 ## Agent authoring canvas
 
-After setup confirms the selected root, select the **kmx** skill in the app's slash
-menu and enter `/kmx open greeter.agent.md`. Canonical Squad paths such as
-`/kmx open .squad/agents/greeter/charter.md` work too. `/kmx` or `/kmx help` shows
-usage without opening anything.
+Ask Copilot to make an agent. The builder skill creates it through kmx and then
+opens the successful Create result's exact path in the canvas. To open an
+existing agent, select **kmx** in the app's slash menu and enter
+`/kmx open /home/me/project/greeter.agent.md`. Nested agent and canonical Squad
+paths work too. `/kmx` or `/kmx help` shows usage without opening anything.
 
 This is a host-model skill turn, not a model-free native slash command. The skill
 asks for one built-in `open_canvas` call with the installed provider and a stable
-instance ID. The provider checks the path and reads the existing root-confined
-resource before every open, including reopening an existing instance. An
-unreadable resource refuses that open; it does not close an already-running
-view. It never infers a root from the app folder, changes the
-binding, or asks for another root confirmation. Opening does not create, edit,
-run or test an agent; the existing authoring controls and their checks remain
-unchanged.
+instance ID. The provider checks the agent resource before every open, including
+reopening an existing instance. Full paths distinguish same-named agents in
+different repositories. An unreadable resource does not close an already-running
+view. Opening does not edit, run or test the agent; the existing authoring
+controls and their checks remain unchanged. No folder confirmation is required.
 
 Without the built-in canvas opener, the skill uses the native opener's text
 fallback. The manual native command `/agent-view greeter.agent.md` also displays
@@ -288,7 +282,7 @@ four-binary `checksums.txt` consumed by the installer/Homebrew. Both use the
 existing keyless release workflow identity and OIDC issuer; checks performed
 by the same job are not independent publisher authentication. Dry runs sign and
 upload artifacts but publish no release. Archives have an exact file
-inventory including the Release writer sample and try-it schema marker, fixed
+inventory including the Release writer sample, fixed
 tar ownership/timestamps/modes and the pinned engine digest.
 
 1. Obtain the archive through the trusted GitHub release. Compare its SHA256
@@ -355,42 +349,12 @@ The qualified CLI warns that local-directory installation is deprecated but
 still works; this does not authorize creating/publishing a marketplace. A future host
 removing that route is a compatibility blocker, not a reason to bypass approval.
 
-## Try-it model routes
+## Native archive CI qualification
 
-The helper checks the Copilot catalog before installing, after explicit device
-sign-in if necessary. The chosen exact model is written to Preferred and every
-judgeModel. An unavailable suggested model stops until the user chooses a
-listed ID; there is no automatic model or credential fallback in setup.
-`judgeVersion: default` is a declaration, not a pinned hosted model revision.
-The exact echoed model ID remains checked by kmx.
-
-For a local model you already operate, choose its exact model ID for Preferred
-and each judgeModel, and its declared version for judgeVersion. In the **staged**
-plugin's mcp.json, preserve the confirmed root and replace the startup suffix
-`["--provider", "copilot"]` with, for example,
-`["--provider", "ollama", "--endpoint", "http://127.0.0.1:11434/v1"]`.
-The endpoint must support kmx's OpenAI-compatible request contract, including
-judging; local fake/compatible runs retain cleartext private journals as described
-above. Do not install a model, guess its identity or configure secrets through
-charter instructions. Reinstall the staged directory and start a new session.
-On Windows, keep the `wsl.exe -d DISTRO -e ENGINE mcp --root ROOT` prefix;
-localhost is inside that WSL distro.
-
-The Windows try-it route is a separate operator-reviewed startup configuration:
-Windows plugin assets are copied to a fresh Windows-profile staging directory,
-but `wsl.exe` invokes the checksum-verified ELF at its printed private WSL path.
-Keep that WSL directory while installed. The cached Windows ELF copy is not
-executed. Root/distro/engine are argv elements, never a shell command. Setup
-checks the model catalog through that same non-login WSL invocation to catch
-unavailable credentials before installation. No Windows native binary claim is
-made. Reconfiguration changes local startup files, not the pristine archive
-signature; neither this helper nor checksum verification grants OS trust.
-
-CI runs script refusal/dry-run contracts on macOS and Linux, then installs,
-uninstalls and reinstalls the configured bundle with pinned Copilot CLI 1.0.102
-in a fresh COPILOT_HOME. Disabled host built-ins are permitted; pre-existing user
-plugins refuse. The release workflow repeats this against the exact cross-built
-Linux/macOS archives before publication. Offline checks exercise real MCP
-Create and discovery without model sends; they do not prove hosted model quality
-or interactive Mac desktop rendering. No separate human Mac acceptance gate is
-required for this preview.
+After signing, Linux and macOS release workers verify the exact cross-built
+archive, configure an owned temporary root and exercise install, uninstall and
+reinstall with pinned Copilot CLI 1.0.102 in a fresh COPILOT_HOME. Publication
+waits for both workers. Offline checks exercise real MCP discovery and sample
+creation without model sends; they do not prove hosted model quality or
+interactive desktop rendering. The WSL source plugin has separate metadata and
+asset-inventory checks and does not use the native archive setup path.
