@@ -122,7 +122,7 @@ kmx test
 
 kmx push [--evaluation RECEIPT] REF
   -> exact prepared OCI graph copied to layout or registry
-  -> optional receipt coherence check
+  -> required passing-proof coherence check unless --unevaluated
   -> optional unsigned provenance on registry publication
 
 kmx deploy REF@sha256:DIGEST --to-context CTX \

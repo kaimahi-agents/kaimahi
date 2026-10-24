@@ -21,7 +21,7 @@ runtime contract when extending or comparing implementations.
 | Inspect compiled runtime support and qualification evidence with `kmx targets`; understand runtime and inference boundaries | [Runtime contract and support matrix](runtime-adapters.md) |
 | Install Orka, inspect before applying, or see the version actually running | [Orka](orka.md) |
 | Read the offline single-file charter format and parser boundary (no execution command) | [Agent file](agent-file.md) |
-| Run a single-file agent in process as a local preview (library; no CLI yet) | [Local preview](local-preview.md) |
+| Run a single-file agent in process as a local preview (`kmx run FILE`, `kmx test FILE` and MCP) | [Local preview](local-preview.md) |
 | Define or validate a portable OCI AgentSuite with bundled or remote ToolProviders and standalone provider sandbox images | [AgentSuite Artifact Specification](https://github.com/agent-primitives/suite/blob/main/spec.md) |
 | Resolve canonical deny-write policy bytes and a digest offline, without enforcement | [Portable policy](portable-policy.md) |
 | Author one native suite member offline, evaluate the Orka or exact kagent profile, publish the exact OCI graph, and deploy that packaged digest | [Suite workspace](suite-workspace.md) |
