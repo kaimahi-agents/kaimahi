@@ -97,7 +97,7 @@ button.test-row:hover:not(:disabled){background:var(--hover)}
 .test-verdict.pass,.test-verdict.old-pass{color:var(--success)}
 .test-verdict.fail,.test-verdict.old-fail,.test-item[data-status='fail'] .test-note,.test-item[data-status='old-fail'] .test-note{color:var(--danger)}
 .test-verdict.error,.test-verdict.old-error{color:var(--warn)}
-.test-verdict[class*='old-'],.test-item[data-status='old-fail'] .test-note{opacity:.45}
+.test-verdict[class*='old-'],.test-item[data-status='old-fail'] .test-note{color:var(--muted)}
 .status-icon{display:inline-flex;width:14px;height:14px;flex-shrink:0;color:var(--muted)}
 .status-icon.fail{color:var(--danger)}
 .status-icon.pass{color:var(--success)}
@@ -129,7 +129,7 @@ input[readonly]{color:var(--muted)}
 .detail-status .result-word{font-weight:600}
 .detail-status[data-result='pass'] .result-word{color:var(--success)}
 .detail-status[data-result='fail'] .result-word{color:var(--danger)}
-.detail-status[data-tone='old'] .result-word{opacity:.45}
+.detail-status[data-tone='old'] .result-word{color:var(--muted)}
 .detail-head{display:flex;flex-direction:column;gap:6px}
 .detail-bar{position:relative;display:flex;align-items:center;justify-content:space-between;min-height:28px;margin-bottom:20px}
 .back{min-height:28px;margin-left:-6px;padding:0 6px 0 2px;border:none;border-radius:6px;background:transparent;display:flex;align-items:center;gap:2px;color:var(--muted);font-size:12px;cursor:pointer}
@@ -157,14 +157,14 @@ input[readonly]{color:var(--muted)}
 .check-verdict{font-size:13px;font-weight:600;white-space:nowrap}
 .check-verdict[data-tone='pass'],.check-verdict[data-tone='old-pass']{color:var(--success)}
 .check-verdict[data-tone='fail'],.check-verdict[data-tone='old-fail']{color:var(--danger)}
-.check-verdict[data-tone^='old-']{opacity:.45}
+.check-verdict[data-tone^='old-']{color:var(--muted)}
 .check-readonly{min-width:0;overflow-wrap:anywhere;font-size:15px}
 .check-details{margin-top:4px}
 .check-details summary{font-size:12px;color:var(--muted)}
 .check-details pre{font-size:12px;margin-top:4px}
 .remove-check{width:24px}
 .why{margin-left:24px;display:flex;flex-direction:column;gap:8px;font-size:13px;color:var(--danger)}
-.why.old{opacity:.45}
+.why.old{color:var(--muted)}
 .why-actions{display:flex;align-items:center;flex-wrap:wrap;column-gap:16px;row-gap:6px}
 .add-check{align-self:flex-start;margin-left:24px}
 .answered .answer{border:1px solid var(--line);border-radius:12px;background:var(--surface);margin:0;padding:12px 14px;display:flex;flex-direction:column;gap:6px;font-size:15px}
