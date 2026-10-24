@@ -40,6 +40,9 @@ func TestCanonicalUnpinnedJudge(t *testing.T) {
 	if string(after) != source {
 		t.Fatal("export changed authored source")
 	}
+	if _, err := Parse("greeter.agent.md", []byte(strings.Replace(source, "minScore: 80", "minScore: 101", 1))); err == nil || !strings.Contains(err.Error(), "judgeModel is optional") {
+		t.Fatalf("canonical validation did not explain optional model: %v", err)
+	}
 }
 
 func TestNativeSquadJudgeRemainsPinned(t *testing.T) {
@@ -47,6 +50,8 @@ func TestNativeSquadJudgeRemainsPinned(t *testing.T) {
 	source := strings.Replace(string(enrichedSquad(raw)), "type: contains\n        value: Hello, Ada", "type: llmJudge\n        rubric: Greets the user.\n        minScore: 80\n        judgeVersion: v1", 1)
 	if doc, err := ParseSquad(filename, []byte(source), profile); err == nil || doc != nil {
 		t.Fatal("native parser accepted unpinned judge")
+	} else if strings.Contains(err.Error(), "judgeModel is optional") || !strings.Contains(err.Error(), "judgeModel and judgeVersion") {
+		t.Fatalf("native validation did not explain required model: %v", err)
 	}
 }
 

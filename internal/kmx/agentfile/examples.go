@@ -190,7 +190,11 @@ func parseExamples(file string, lines []string, firstLine int, allowUnpinnedJudg
 				validation.JudgeModel = "validation-only"
 			}
 			if err := runtime.ValidateEvaluationAssertions([]runtime.EvaluationAssertion{validation}); err != nil {
-				return nil, errAt(n, "provide a valid assertion ID and operand; llmJudge requires rubric, minScore (0–100) and judgeVersion; judgeModel is optional")
+				problem := "provide a valid assertion ID and operand; llmJudge requires rubric, minScore (0–100), judgeModel and judgeVersion"
+				if allowUnpinnedJudge {
+					problem = "provide a valid assertion ID and operand; llmJudge requires rubric, minScore (0–100) and judgeVersion; judgeModel is optional"
+				}
+				return nil, errAt(n, problem)
 			}
 			validationAssertions = append(validationAssertions, validation)
 			assertionIDs[assertion.ID] = true
