@@ -154,7 +154,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       } else if (unknown || response.saved === true || (response.error === "action-failed" && ["test", "run"].includes(operation))) {
         blocked = true; savedUntested = response.saved === true;
         message = CONFLICTS.includes(response.error) ? "Changed elsewhere during the run. Your draft is still here. Reload and discard draft to continue."
-          : response.saved ? "Saved, but not tested for this revision. Your draft is still here. Reload before continuing."
+          : response.saved ? "Saved; test result unconfirmed. Your draft is still here. Reload before continuing."
           : response.message || "Outcome not confirmed. Reload deliberately to inspect the saved file.";
       } else if (response.error === "permission_required" && tested) {
         runAlert = { text: response.message || "", saved: false, one: values.caseId };
@@ -440,7 +440,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       const what = pending.one ? "this test" : tests;
       return pending.operation === "save-and-test" ? `Saving and running ${what}…` : `Saved · running ${what}`;
     }
-    if (blocked) return savedUntested ? "Saved · tests didn't run" : "Reload required · result unconfirmed";
+    if (blocked) return savedUntested ? "Saved · test result unconfirmed" : "Reload required · result unconfirmed";
     if (invalidEditors.size) return "Edited · unsupported formatting, reload before saving";
     if (candidate) return "Edited · settle the outside change before saving";
     if (scope === "one") return sectionDrafts.size || testDrafts.has(route.key)

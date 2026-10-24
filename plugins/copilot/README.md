@@ -129,10 +129,11 @@ Real-model route setup is not automated by this packager.
 For manually configured trusted startup, `kmx mcp --root ABSOLUTE_DIR --provider copilot`
 uses existing runtime credentials and an exact listed
 `Model.Preferred`, with a fixed endpoint. This sends instructions/inputs and
-any judge answers/rubrics to Copilot. Startup does not sign in or access credentials;
-If either agent or judge uses Copilot, the whole invocation uses the same direct,
-unjournaled runner as the file CLI and reports `NoJournal`, not an SDK harness.
-Fully journaled Copilot remains follow-up work.
+any judge answers/rubrics to Copilot. Startup does not sign in or access credentials.
+In v0.9.0-rc.2 native bundles, Copilot previews use a direct, unjournaled runner.
+Current main journals tool-free Copilot agent and judge turns on embedded Sessions
+under `<kmx state>/local-preview/journals`, using the cleartext-content retention
+policy above. Neither path uses the Copilot SDK harness.
 
 A public archive cannot contain a user's absolute root. Release archives start
 unconfigured and refuse MCP startup until an operator chooses a root as below.
