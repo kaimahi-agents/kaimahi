@@ -3,12 +3,8 @@
   "mcpServers": {
     "kmx-agent-builder": {
       "type": "stdio",
-      "command": "./bin/kmx",
-      "args": [
-        "mcp",
-        "--root",
-        "__SELECTED_ROOT__"
-      ]
+      "command": "kmx",
+      "args": ["mcp"]
     }
   }
 }

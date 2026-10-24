@@ -69,8 +69,10 @@ Logos and other repository and organization artwork.
 ## `plugins/` — host integrations
 
 The [WSL plugin](../plugins/copilot-wsl/README.md) owns shared skills and canvas
-runtime assets. [Native packaging tools](../plugins/copilot/README.md) copy those
-same assets into platform bundles; their tests stay outside the installable tree.
+runtime assets. The [macOS/PATH plugin](../plugins/copilot/README.md) links to
+those same sources; Copilot copies them into its installed cache. Legacy native
+packaging also copies those assets into platform bundles. Node tests live in
+`plugins/tests/copilot`; Python packaging tools and tests remain in `plugins/copilot`.
 
 ## `.github/` — repository automation
 

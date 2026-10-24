@@ -1,15 +1,63 @@
-# Native Copilot plugin bundles
+# kmx in macOS Copilot
 
-For Windows Copilot, use the [plain WSL plugin](../copilot-wsl/README.md).
-It installs from the repository and uses `/usr/local/bin/kmx` without a bundled
-engine or folder/model configuration.
+Use this plugin on **macOS** (also usable with a Linux kmx on PATH). On
+**Windows**, use the [WSL plugin](../copilot-wsl/README.md) instead. Both contain
+skills, a canvas and MCP configuration, not an engine or a fixed working folder.
 
-This directory contains the legacy root-bound native bundle tooling and tests.
-Shared skills and canvas runtime assets live in `plugins/copilot-wsl`; the native
-packager copies that same source, not a second implementation. Native bundles
-are generated and signed by the release workflow, not committed here. Canvas
-actions use existing MCP operations, not a downloader, file writer or second runner.
-The source directory deliberately has no `bin/kmx`; do not install it directly.
+## Install on macOS
+
+With Copilot installed, run these two commands in a Mac terminal:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.2/install.sh | sudo sh -s -- --version=v0.9.0-rc.2 --bin-dir=/usr/local/bin
+copilot plugin install kaimahi-agents/kaimahi:plugins/copilot
+```
+
+The first command selects `kmx-darwin-arm64` on Apple Silicon and
+`kmx-darwin-amd64` on Intel, downloads it over HTTPS, checks its published SHA256
+and installs it at `/usr/local/bin/kmx`. It uses the same binary installer as WSL,
+not a plugin setup script. It does not verify the separate signature bundle.
+The Homebrew tap tracks final releases, not release candidates; use this binary
+for rc.2. Homebrew is the install path for final v0.9.0.
+
+The plugin starts `kmx mcp` from PATH; `/usr/local/bin` must be on Copilot's PATH.
+No root, model or binary is configured inside the plugin. The MCP schema has no
+per-OS command selector, so Windows keeps its separate WSL manifest. Both
+plugins have the name `kmx-agent-builder`; installing one replaces the other.
+Direct repository installs currently work but Copilot warns that they are
+deprecated; a marketplace install will come later.
+
+Ask Copilot to create an agent through kmx and open its canvas. Give it a full
+Mac path when the file is outside the current directory. Add or edit tests;
+Enter saves and runs them. Change the prompt and press Enter again to see the
+results change. The runtime model is picker override → authored model → current
+chat model (when available) → `gpt-5.6-terra`; existing `gh` sign-in supplies credentials without an install-time
+login step. An unknown model fails without silently switching models.
+
+## Shared assets and verification
+
+The skills and canvas have one source in `plugins/copilot-wsl`. This directory
+links to those sources; Copilot copies them into a self-contained installed
+cache. No second canvas implementation or bundled kmx is maintained here.
+The existing Python developer tools and legacy templates below are inert files
+in the source plugin, not additional extensions or installation steps. Node
+tests live separately under `plugins/tests/copilot`.
+
+The `macos-install` CI job installs the published rc.2 darwin binary, checks its
+SHA256 and exercises the public plugin install command. On PRs, it additionally
+installs the PR's local plugin to verify the new bytes before merge; on main it
+checks the public source's installed contents. It verifies cached assets and
+Create → Test pass → prompt-only Edit → Test fail → restore → Test pass with
+`fake`. **CI does not exercise a Copilot model or the Copilot app.** An
+authenticated app walk on a Mac is still needed before claiming that path works.
+
+## Legacy native bundles
+
+The remaining sections describe the separate root-bound native archive tooling,
+not the two-command repository install above. Native bundles are generated and
+signed by the release workflow. The legacy builder uses
+[native-mcp.json](native-mcp.json); the repository plugin uses [mcp.json](mcp.json).
+Canvas actions use existing MCP operations, not a second runner.
 
 ## Package contract
 

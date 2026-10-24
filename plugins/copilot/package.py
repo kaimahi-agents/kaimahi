@@ -112,7 +112,7 @@ def build(*, binary: Path, sha256: str, target: str, root: Path | None,
         raise ValueError("engine must be nonempty and at most 512 MiB")
     _quarantine(binary)
     manifest = json.loads((HERE / "plugin.json").read_text(encoding="utf-8"))
-    config = json.loads((HERE / "mcp.json").read_text(encoding="utf-8"))
+    config = json.loads((HERE / "native-mcp.json").read_text(encoding="utf-8"))
     server = config["mcpServers"]["kmx-agent-builder"]
     if server != {"type": "stdio", "command": "./bin/kmx",
                   "args": ["mcp", "--root", "__SELECTED_ROOT__"]}:
