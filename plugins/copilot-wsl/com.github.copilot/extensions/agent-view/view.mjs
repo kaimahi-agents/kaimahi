@@ -196,12 +196,18 @@ async function readChatModel(session) {
   let state = chatModels.get(session);
   if (!state) { state = { generation: 0, resolved: 0 }; chatModels.set(session, state); }
   const generation = ++state.generation;
+  let timer;
   try {
-    const current = typeof session.rpc?.model?.getCurrent === "function" ? await session.rpc.model.getCurrent() : undefined;
+    // Optional metadata must not stall file reads or leave an action locked.
+    const current = typeof session.rpc?.model?.getCurrent === "function" ? await Promise.race([
+      session.rpc.model.getCurrent(),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Model metadata timed out.")), 2000); }),
+    ]) : undefined;
     if (generation > state.resolved) {
       state.model = validModel(current?.modelId) ? current.modelId : undefined; state.resolved = generation;
     }
   } catch { /* Transient metadata failures keep the last known valid model. */ }
+  finally { clearTimeout(timer); }
   return state.model;
 }
 

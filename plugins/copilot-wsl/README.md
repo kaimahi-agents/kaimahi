@@ -43,7 +43,8 @@ family groups; unknown IDs remain literal and execution always uses the exact ID
 Selecting a model pins it, including the current default; use the following action
 to return to the agent file or automatic default.
 Older hosts without the optional current-model getter use the established default.
-Transient getter failures retain the last valid model; explicit unknown/auto
+Transient getter failures or metadata deadlines retain the last valid model;
+explicit unknown/auto
 responses clear it.
 Unbound real-model runs use Copilot by default; effective `fake` is deterministic
 and offline.

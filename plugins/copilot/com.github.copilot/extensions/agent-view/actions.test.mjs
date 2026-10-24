@@ -62,6 +62,23 @@ test('known uncatalogued chat default is sent exactly without eager catalog or s
  assert.equal((await h.act({operation:'test',expectedRevision:revision(source)})).error,'action-failed');
  assert.equal(h.calls.at(-1).arguments.model,'known-unlisted');
 });
+test('optional metadata deadline preserves the known model and ignores late replies',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});
+ for(const known of [undefined,'chat-a']){
+  const h=harness({omitModel:true});let release;
+  if(known){h.session.rpc.model={getCurrent:async()=>({modelId:known})};await readView(h.session,'greeter.agent.md')}
+  h.session.rpc.model={getCurrent:()=>new Promise(resolve=>{release=resolve})};
+  let settled=false;const pending=readView(h.session,'greeter.agent.md').then(view=>{settled=true;return view});
+  t.mock.timers.tick(2000);await new Promise(setImmediate);
+  assert.equal(settled,true,'optional host metadata must not stall an otherwise valid resource');
+  const view=await pending;assert.equal(view.chatModel,known);assert.equal(view.authoring.source,h.source());
+  h.session.rpc.model.getCurrent=async()=>({modelId:'chat-b'});
+  assert.equal((await readView(h.session,'greeter.agent.md')).chatModel,'chat-b');
+  release({modelId:'late-chat'});await new Promise(setImmediate);
+  assert.equal((await readView(h.session,'greeter.agent.md')).chatModel,'chat-b');assert.equal(h.calls.length,0);
+ }
+});
+
 test('explicit auto/invalid host metadata clears known chat forwarding, while throws retain it',async()=>{
  for(const next of [undefined,'auto','bad\nID',42,'throw']){
   const h=harness({omitModel:true});let current='chat-a';

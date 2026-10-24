@@ -533,7 +533,8 @@ starts and freezes it through any save and execution; the displayed observation
 can lag a chat change until the next idle refresh. Explicit choices still win.
 The optional joined-session SDK `model.getCurrent()` getter
 supplies the exact chat `modelId`; unavailable getters use the established default.
-Transient getter failures retain the last valid observation, while successful
+Transient getter failures or metadata deadlines retain the last valid observation,
+while successful
 unknown/auto/invalid responses clear it. A known ID is sent exactly even if absent
 from the catalog; execution refusal never silently substitutes another model.
 Canvas tab titles use the agent name and folder at instance creation;
