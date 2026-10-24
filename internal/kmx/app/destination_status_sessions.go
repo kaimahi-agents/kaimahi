@@ -27,7 +27,11 @@ func (o *destinationStatusObserver) sessionsAgent(doc map[string]any, api destin
 	meta := statusMap(doc, "metadata")
 	generation, _ := statusInteger(meta["generation"])
 	provenance := destinationStatusProvenance{State: "provenance not recorded", Reason: "Agent contract is a controller observation, not kmx evaluation or ownership proof"}
-	primary := destinationStatusResource{Kind: "Agent", Name: statusString(meta, "name"), UID: statusString(meta, "uid"), Generation: generation, Readiness: statusSessionsReadiness(doc), Provenance: provenance, SpecDrift: "not recorded"}
+	uid := statusString(meta, "uid")
+	if !statusOpaque(uid) {
+		uid = ""
+	}
+	primary := destinationStatusResource{Kind: "Agent", Name: statusString(meta, "name"), UID: uid, Generation: generation, Readiness: statusSessionsReadiness(doc), Provenance: provenance, SpecDrift: "not recorded"}
 	row := destinationStatusAgent{Kind: "Agent", Name: primary.Name, Runtime: "agentsessions", Readiness: primary.Readiness, Provenance: provenance, Resources: []destinationStatusResource{primary}, Workloads: []destinationStatusWorkload{}}
 	raw, _ := json.Marshal(doc)
 	agent, err := agentsessions.DecodeAgent(raw)
