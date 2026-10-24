@@ -1653,6 +1653,20 @@ for (const operation of ["test", "run"]) test(`${operation} execution failure in
   assert.equal(byClass(byClass(h.root, "message-line")[0], "tb")[0].hidden, false, "only a deliberate reload clears the lock");
 });
 
+test("saved preview with an unknown test outcome keeps drafts and requires reload", async () => {
+  const h = await editableCanvas("Reply briefly.", undefined, { response: { error: "outcome-unknown", saved: true } });
+  const prompt = c18Prompt(h.root); prompt.textContent = "Draft prompt."; prompt.listeners.input[0]();
+  await h.clickTest();
+  assert.equal(h.calls[0].operation, "save-and-test");
+  assert.equal(summaryOf(h.root), "Result unconfirmed");
+  assert.equal(byClass(h.root, "action-message")[0].textContent, "Saved; test result unconfirmed. Your draft is still here. Reload before continuing.");
+  assert.equal(c18Text(h.root, "prompt-status"), "Saved · test result unconfirmed");
+  assert.equal(c18Prompt(h.root).textContent, "Draft prompt.");
+  assert.equal(reloadButton(h.root).hidden, false);
+  assert.equal(byClass(h.root, "save-run")[0].disabled, true);
+  await h.clickTest(); assert.equal(h.calls.length, 1, "an unknown outcome must not resend inference");
+});
+
 test("pre-execution permission refusal retains the previous valid observation", async () => {
   const h = await editableCanvas("Reply briefly.", undefined, { currentPass: true, response: { error: "permission_required", message: "Not permitted before execution." } });
   await h.clickTest();
