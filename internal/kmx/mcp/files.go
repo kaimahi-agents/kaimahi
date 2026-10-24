@@ -1,5 +1,7 @@
 // Package mcp adapts local agent-file operations to stdio MCP.
 // File access is agent-only, optionally root-bound; execution uses shared App snapshots.
+// WSL resolves Windows drive-absolute inputs through existing /mnt drives before
+// ordinary absolute-path handling; responses retain the requested path identity.
 // Unbound non-fake previews default to Copilot's fixed endpoint and the authored
 // model; explicit routes, fake previews and legacy root-bound behavior are unchanged.
 // Tool requests must not choose model endpoints or substitute a runner.
@@ -147,6 +149,10 @@ func revision(b []byte) string { return fmt.Sprintf("sha256:%x", sha256.Sum256(b
 // root or absolute when unbound. Missing suffixes support Create; an existing
 // dangling link never becomes one. IO uses the retained root/parent descriptor.
 func (f *Files) rootRelative(p string) (string, error) {
+	p, err := hostAgentPath(p)
+	if err != nil {
+		return "", err
+	}
 	if f.root == nil {
 		if !agentPath(p) {
 			return "", refusal("unsafe_path")

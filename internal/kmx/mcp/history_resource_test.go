@@ -130,6 +130,24 @@ func TestHistoryUnboundCanonicalTargetsAndRestore(t *testing.T) {
 	}
 }
 
+func TestHistoryVersionResourceReservedPathCharacters(t *testing.T) {
+	_, _, source := canonicalFiles(t)
+	base, _ := historyPaths(t)
+	cs := historyClient(t, historyFiles(t, "", base))
+	requested := filepath.Join(t.TempDir(), "team@x.agent.md")
+	saved := authoringCall(t, cs, "create", requested, source, "")
+	authoringCall(t, cs, "edit", requested, source+"\n", saved.Revision)
+	view := readView(t, cs, requested)
+	old, err := cs.ReadResource(t.Context(), &sdk.ReadResourceParams{URI: view.History.Versions[0].URI})
+	if err != nil {
+		t.Fatal("reserved path character must match the version resource template", err)
+	}
+	var document struct{ Source string }
+	if json.Unmarshal([]byte(old.Contents[0].Text), &document) != nil || document.Source != source {
+		t.Fatal("version source bytes changed")
+	}
+}
+
 func TestHistoryMCPRestoreUndoAndRestart(t *testing.T) {
 	_, root, source := canonicalFiles(t)
 	base, _ := historyPaths(t)

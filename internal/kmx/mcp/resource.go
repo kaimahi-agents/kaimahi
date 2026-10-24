@@ -52,7 +52,11 @@ func agentResourcePath(uri string) (string, error) {
 		return "", refusal("unsafe_path")
 	}
 	p, err := url.PathUnescape(strings.TrimPrefix(uri, prefix))
-	if err != nil || !agentPath(p) {
+	if err != nil {
+		return "", refusal("unsafe_path")
+	}
+	target, err := hostAgentPath(p)
+	if err != nil || !agentPath(target) {
 		return "", refusal("unsafe_path")
 	}
 	return p, nil

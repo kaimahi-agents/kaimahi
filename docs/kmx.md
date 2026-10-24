@@ -348,8 +348,13 @@ See the [wire format and hash rules](agent-file.md#frozen-run-profile-export-unr
 `kmx mcp` serves exactly `create`, `edit`, `run` and `test`, using the canonical
 parser and the same App snapshot operation as file Run/Test. One server accepts
 agent files in any directory. Prefer an absolute WSL path when calling it from
-Windows; relative paths resolve against the server's working directory. It does
-not listen on a network socket or load cluster/workspace configuration.
+Windows; relative paths resolve against the server's working directory. In WSL,
+Windows drive-absolute paths such as `C:\work\repo\agent.agent.md` resolve to
+`/mnt/c/work/repo/agent.agent.md` when that drive directory exists. Missing drives
+and Windows UNC/device or drive-relative paths (`C:agent.agent.md`) return the
+existing `unsafe_path` error; use a full WSL path for a custom automount root.
+Other Unix hosts refuse Windows drive paths. Requested paths stay unchanged in responses.
+The server does not listen on a network socket or load cluster/workspace configuration.
 Optional `--root /absolute/project` retains the old bound mode for existing
 plugins and separately configured native Squad operations; the default is unbound.
 

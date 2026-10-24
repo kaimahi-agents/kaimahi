@@ -1,0 +1,38 @@
+package mcp
+
+import (
+	"os"
+	"path"
+	"path/filepath"
+	"runtime"
+	"strings"
+)
+
+func hostAgentPath(p string) (string, error) {
+	return normalizeAgentPath(p, runtime.GOOS, "/mnt")
+}
+
+// Translate host Windows names before Unix Abs can mistake them for cwd-relative
+// filenames. The mount base is internal; callers cannot select a different mapping.
+func normalizeAgentPath(p, goos, mountBase string) (string, error) {
+	if goos == "windows" {
+		return p, nil
+	}
+	if strings.HasPrefix(p, `\\`) {
+		return "", refusal("unsafe_path")
+	}
+	if len(p) < 2 || p[1] != ':' || !(p[0] >= 'A' && p[0] <= 'Z' || p[0] >= 'a' && p[0] <= 'z') {
+		return p, nil
+	}
+	if goos != "linux" || len(p) < 3 || p[2] != '\\' && p[2] != '/' {
+		return "", refusal("unsafe_path")
+	}
+	mount := filepath.Join(mountBase, strings.ToLower(p[:1]))
+	info, err := os.Stat(mount)
+	if err != nil || !info.IsDir() {
+		return "", refusal("unsafe_path")
+	}
+	// Clean within the Windows volume: C:\..\x remains C:\x, not /mnt/x.
+	suffix := path.Clean("/" + strings.ReplaceAll(p[2:], `\`, "/"))
+	return filepath.Join(mount, filepath.FromSlash(strings.TrimPrefix(suffix, "/"))), nil
+}

@@ -9,9 +9,11 @@ Use the MCP server `kmx-agent-builder` advertised by this plugin for `create`,
 `edit`, `run` and `test`, not shell or host file-write tools. Follow its discovered
 schemas. Use that same server throughout: the canvas reads its resources and
 results. An unrelated demo server's name does not identify this plugin's WSL route.
-Use the repository path from the request or session. Prefer a full WSL path when
-kmx runs in WSL; agent files can live in any directory. Do not ask for a folder
-confirmation or read the plugin's installation folder as the target repository.
+Use the actual folder from the request or session, not the plugin's installation
+folder. Send the full agent path in that folder. When kmx runs in WSL, translate a
+Windows folder such as `C:\work\repo` to `/mnt/c/work/repo` before appending the
+agent filename. Agent files can live in any directory; do not ask for a folder
+confirmation.
 Older explicitly rooted installations also support their root-relative paths.
 
 kmx reads and writes agent files only: `*.agent.md` and Squad charters at
