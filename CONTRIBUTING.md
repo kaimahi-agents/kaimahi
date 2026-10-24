@@ -180,7 +180,8 @@ hygiene checks run regardless of that mutation gate.
 The classifier exposes an independent `orka_required` decision for the Orka
 runtime worker. PRs run it when their diff matches the Orka-owned trigger list;
 valid paths outside that list skip it. Ordinary main pushes skip it too: main is
-re-verified nightly, not per merge. Manual and release qualification remain full.
+re-verified nightly, not per merge. On-demand runtime qualification remains full;
+the release workflow separately qualifies the shipped inner loop.
 Quickstart and stock Helm schedules and guards are unchanged; kagent uses the separate hermetic/live policy below. The checkout helper accepts
 full commit IDs as `python3 scripts/ci/orka-routing.py --base SHA --head SHA`.
 It prints only `true` or `false`; unknown, empty, malformed or failed diffs mean
@@ -307,8 +308,8 @@ ownership/refusal tests. It creates no live cluster and proves no live A2A, imag
 pull, controller rollout or real suite execution. Existing hygiene and all App
 shards remain; their overlapping tests are not removed.
 
-Full `e2e-kagent-lift / qualify` moves to the existing 03:23 UTC scheduled CI,
-manual CI and fresh exact-commit pre-release/dry-run qualification. Its unchanged
+Full `e2e-kagent-lift / qualify` runs in the existing 03:23 UTC scheduled CI,
+manual CI and the on-demand `runtime-qualification.yml` workflow. Its unchanged
 worker retains live one-shot A2A, packaged two-case evaluation, evaluated push,
 source-free digest lift and private helper proof. `e2e-hello-world` always
 evaluates the fast check and full-worker outcome; it permits full-proof skips
@@ -316,13 +317,18 @@ only on PRs or ordinary main pushes, never a failed, cancelled or missing proof.
 The legacy classifier `kagent_changed` output no longer controls qualification.
 Tom monitors scheduled CI failures; no kagent issue reporter is added. Integration
 failures not caught by hermetic PR coverage may wait until nightly (normally up
-to 24 hours), or block the next release. Use manual CI for immediate live proof.
+to 24 hours). Before a runtime-related tag, run `runtime-qualification.yml` on
+that exact ref and inspect both workers' `Qualify the exact caller commit` steps.
+See [release qualification](docs/releases.md#release-qualification) for commands.
+Release tags check the binary, plugin and local previews on embedded Sessions;
+they do not certify cluster runtimes.
 
 The read-only `orka-runtime.yml` worker runs the complete raw Orka Tool/Task,
 model-answer and native suite proof. Its CI check appears as
 `e2e-orka-runtime / qualify`; required contexts stay `hygiene` and
 `e2e-hello-world`. Routine main-push proof moves to the daily main nightly;
-manual CI and every release/dry run still require fresh full qualification.
+manual CI and on-demand runtime qualification still require fresh full proof.
+Release builds and dry runs do not invoke the cluster runtime workers.
 The worker has no internal path/Markdown shortcuts. Selected live fixtures and
 instructions trigger proof; other valid Markdown paths follow the same trigger policy. See [CI qualification](docs/development.md#what-ci-proves).
 

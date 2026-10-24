@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 """Pin the hermetic/live kagent boundary and execute required-check policies."""
-import copy
 import json
 import os
-from pathlib import Path
 import subprocess
-import tempfile
 import unittest
+from pathlib import Path
 
-import yaml
 import test_orka_workflows as orka_tests
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 FAST_GO = "go test ./internal/kmx/app -run '^(TestKagent|TestSuiteKagent|TestSuiteFailureKagent|TestReleaseLiftKagent|TestDestinationStatusKagent)' -skip '^TestLive' -count=1 -timeout=300s"
@@ -121,20 +119,20 @@ class KagentWorkflows(unittest.TestCase):
             self.assertNotEqual(self.gate(event=event, ref=ref).returncode, 0)
             self.assertEqual(self.gate(event=event, ref=ref, full='success').returncode, 0)
 
-    def test_every_release_requires_fresh_exact_commit_kagent_and_orka(self):
+    def test_kagent_qualification_is_on_demand_not_a_release_gate(self):
         jobs = workflow('release.yml')['jobs']
-        worker = jobs.get('kagent-qualification', {})
-        self.assertEqual(worker.get('uses'), './.github/workflows/kagent-runtime.yml')
-        self.assertEqual(worker['permissions'], {'contents': 'read'})
-        self.assertNotIn('if', worker)
-        self.assertNotIn('secrets', worker)
-        self.assertEqual(jobs['release']['needs'], ['orka-qualification', 'kagent-qualification'])
-        check = next(s for s in jobs['release']['steps'] if s.get('name') == 'Release commit has fresh kagent qualification')
-        self.assertEqual(check['env']['QUALIFIED_SHA'], '${{ needs.kagent-qualification.outputs.qualified_sha }}')
-        orka_tests.QualificationCallers().check_sha_script(check['run'])
+        self.assertNotIn('kagent-qualification', jobs)
+        self.assertNotIn('orka-qualification', jobs)
+        self.assertNotIn('needs', jobs['release'])
+        worker = workflow('runtime-qualification.yml')['jobs']['kagent-qualification']
+        self.assertEqual(worker, {'permissions': {'contents': 'read'},
+                                  'uses': './.github/workflows/kagent-runtime.yml'})
+        proof = workflow('kagent-runtime.yml')['jobs']['qualify']
+        check = next(s for s in proof['steps'] if s.get('id') == 'provenance')
+        orka_tests.QualificationCallers().check_sha_script(check['run'], worker=True)
         for value in ('', 'x' * 40, 'a' * 39):
             result = subprocess.run(['bash', '-e', '-c', check['run']],
-                                    env={**os.environ, 'EVENT_SHA': 'a'*40, 'QUALIFIED_SHA': value},
+                                    env={**os.environ, 'EVENT_SHA': value},
                                     cwd=ROOT, capture_output=True)
             self.assertNotEqual(result.returncode, 0)
 

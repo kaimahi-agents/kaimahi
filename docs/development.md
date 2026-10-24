@@ -347,8 +347,17 @@ maintain one workflow-owned issue assigned to `gambtho`, containing only run lin
 commit and safe status. Current success closes it; older success cannot close a
 newer failure. Manual branch qualification does not alter main health.
 
+Release tags qualify the shipped inner loop: binary artifacts, the WSL plugin
+and local previews on embedded Sessions. They do not invoke the cluster runtime
+workers. Both full read-only runtime workers remain available together through
+[on-demand runtime qualification](../.github/workflows/runtime-qualification.yml),
+which checks the exact dispatched commit. Run it before a runtime-related tag;
+see [release qualification](releases.md#release-qualification). Nightly schedules
+and Orka-related PR routing are unchanged.
+
 Moving main-push runtime proof to nightly trades immediate post-merge detection
-for detection on the next nightly (normally within 24 hours) or before release.
+for detection on the next nightly (normally within 24 hours) or an on-demand
+check before a runtime-related tag.
 Individually passing PRs can still interact after merging. Check Actions when the
 last completed main nightly is older than 30 hours: an issue reporter cannot
 report a schedule that never started. The first scheduled run remains an
@@ -368,7 +377,8 @@ Live upstream MCP/A2A (one tool call, two model calls and one terminal answer),
 full packaged evaluation, evaluated push, source-free digest lift and private
 placement helpers run through the unchanged read-only
 [kagent worker](../.github/workflows/kagent-runtime.yml). It runs once in the
-existing 03:23 UTC scheduled CI, on manual CI and before every release/dry run.
+existing 03:23 UTC scheduled CI, on manual CI and through
+`runtime-qualification.yml` before runtime-related tags.
 PRs and routine main pushes intentionally skip only that full worker, regardless
 of `kagent_changed`; the fast check must still pass. `e2e-hello-world` always
 evaluates both outcomes and refuses fast-check skips, failures, cancellations,
@@ -376,14 +386,15 @@ missing results or unintended full-worker skips. Required contexts stay the same
 
 The fast check does **not** qualify live A2A execution, upstream image/bootstrap
 compatibility, readiness, actual suite execution or cluster cleanup. Moving these
-checks delays detection until nightly (normally within 24 hours) or before release.
-Tom watches scheduled CI in Actions; there is no new kagent issue reporter or
-promise that an undispatched schedule can report itself. Manual CI remains the
-way to request immediate full qualification. Nothing changes runtime pins,
+checks delays detection until nightly (normally within 24 hours) or an on-demand
+check before a runtime-related tag. Tom watches scheduled CI in Actions; there is
+no new kagent issue reporter or promise that an undispatched schedule can report
+itself. Use `runtime-qualification.yml` for immediate full qualification. Nothing changes runtime pins,
 assertions, retries or budgets, and no Helm/Quickstart cluster or image cache is shared.
 
-Every release/dry run requires fresh full **Orka and kagent** worker success at
-the exact built commit; no earlier nightly success is reused. The worker is read-only; only the
+A release/dry run qualifies the inner loop, not **Orka and kagent**. On-demand
+runtime qualification checks the exact dispatched commit; no earlier nightly
+success is reused as proof of another SHA. Both workers are read-only; only the
 scheduled-main issue reporter has issue-write permission. Reporter errors remain
 visible as workflow failures. Use `gh pr checks --required` for required contexts;
 a green gate does not establish human approval or resolved review threads.

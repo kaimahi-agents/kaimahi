@@ -25,18 +25,31 @@ permissions:
   contents: read
 
 jobs:
-  orka-qualification:
+  release-contracts:
     permissions:
       contents: read
-    uses: ./.github/workflows/orka-runtime.yml
-
-  kagent-qualification:
-    permissions:
-      contents: read
-    uses: ./.github/workflows/kagent-runtime.yml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Agent canvas, authoring and text fallback contracts
+        run: node --test plugins/copilot/com.github.copilot/extensions/agent-view/view.test.mjs plugins/copilot/com.github.copilot/extensions/agent-view/authoring.test.mjs plugins/copilot/com.github.copilot/extensions/agent-view/actions.test.mjs plugins/copilot/com.github.copilot/extensions/agent-view/open.test.mjs
+      - name: Package, WSL plugin and real MCP loop contracts
+        run: python -m unittest discover -s plugins/copilot -p 'test_*.py' -v
+      - name: Local previews on embedded Sessions (hermetic)
+        run: go test ./internal/kmx/localpreview -count=1
 
   release:
-    needs: [orka-qualification, kagent-qualification]
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.what.outputs.version }}
@@ -55,32 +68,6 @@ jobs:
           # GoReleaser needs tags and clean VCS stamping.
           fetch-depth: 0
           persist-credentials: false
-
-      - name: Release commit has fresh Orka qualification
-        env:
-          QUALIFIED_SHA: ${{ needs.orka-qualification.outputs.qualified_sha }}
-          EVENT_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          [[ "$QUALIFIED_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$EVENT_SHA" =~ ^[0-9a-f]{40}$ ]]
-          actual=$(git rev-parse HEAD)
-          expected=$(git rev-parse "$EVENT_SHA^{commit}")
-          test "$actual" = "$expected"
-          test "$actual" = "$QUALIFIED_SHA"
-
-      - name: Release commit has fresh kagent qualification
-        env:
-          QUALIFIED_SHA: ${{ needs.kagent-qualification.outputs.qualified_sha }}
-          EVENT_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          [[ "$QUALIFIED_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$EVENT_SHA" =~ ^[0-9a-f]{40}$ ]]
-          actual=$(git rev-parse HEAD)
-          expected=$(git rev-parse "$EVENT_SHA^{commit}")
-          test "$actual" = "$expected"
-          test "$actual" = "$QUALIFIED_SHA"
 
       - name: Decide what is being built
         id: what
@@ -188,6 +175,7 @@ jobs:
             esac
           fi
           test -s "$NOTES"
+          printf '\nRuntime qualification: this release checks the inner loop; Orka and kagent are qualified nightly on main and on demand before runtime-related tags.\n' >> "$NOTES"
 
       # A release is a provenance claim. The tree it is built from must be
       # the tagged tree and nothing else — an untracked file here becomes
@@ -472,7 +460,7 @@ jobs:
           python3 -m unittest discover -s plugins/copilot -p test_native_install.py -v
 
   publish:
-    needs: [release, plugin-install]
+    needs: [release, plugin-install, release-contracts]
     if: needs.release.outputs.dry_run == 'false'
     runs-on: ubuntu-latest
     permissions:

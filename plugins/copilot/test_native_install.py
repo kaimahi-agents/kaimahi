@@ -92,7 +92,7 @@ class NativeWorkflowTests(unittest.TestCase):
         self.assertIn("@github/copilot@1.0.102", install)
         self.assertNotIn("KMX_TRY_IT", install)
         publish = text.split("  publish:", 1)[1]
-        self.assertIn("needs: [release, plugin-install]", publish)
+        self.assertIn("needs: [release, plugin-install, release-contracts]", publish)
         self.assertIn("contents: write", publish)
         self.assertIn("needs.release.outputs.dry_run == 'false'", publish)
         self.assertIn("gh release create", publish)

@@ -370,9 +370,11 @@ changes in the package's Go doc comment.
   native judge wiring does not enable recorded candidate execution.
   The checkout-only native qualifier runs in the full read-only reusable Orka
   worker after raw model proof, with private captures and metadata-only artifacts.
-  Trigger-matching or uncertain-diff PRs, manual qualification, daily main nightly
-  and every release retain that proof. Valid paths outside the Orka-owned trigger
-  list skip it, as do routine main pushes: main is re-verified nightly, not per merge.
+  Trigger-matching or uncertain-diff PRs, manual qualification and daily main nightly
+  retain that proof. Releases qualify the shipped inner loop, not cluster runtimes;
+  run runtime-qualification.yml on the exact ref before a runtime-related tag.
+  Valid paths outside the Orka-owned trigger list skip it, as do routine main
+  pushes: main is re-verified nightly, not per merge.
   Shared CLI/App/config/packaging and pkg/kmx changes rely on nightly integration
   proof, not per-PR Orka proof; do not silently broaden the owned trigger list.
   The generated caller manifest alone does not trigger proof. Its hygiene guard
@@ -758,8 +760,9 @@ Do not infer enforcement from authoring, transfer, readiness, labels or annotati
   status or judge claim. Final build/live execution are needed for qualification.
 - Every PR/main push gets hermetic kagent contract/fixture and focused offline Go
   checks, labelled not live qualification. Full live A2A, packaged evaluation,
-  evaluated push, digest lift and helpers run nightly/manual and on the exact
-  release commit. Preserve the full worker's pins, commands, retries and budget.
+  evaluated push, digest lift and helpers run nightly/manual; runtime-related tags
+  require on-demand exact-ref proof via runtime-qualification.yml, not release.yml.
+  Preserve the full worker's pins, commands, retries and budget.
   `e2e-hello-world` must always evaluate fast success and intentional full skips;
   failed/cancelled/missing proof is never an intentional skip. Tom monitors nightly
   CI; no new issue-reporting authority is implied.

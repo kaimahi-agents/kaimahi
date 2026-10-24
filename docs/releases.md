@@ -114,22 +114,40 @@ to publish a binary that does not report its own tag.
 Releases use the root `vX.Y.Z` tag for the repository and CLI. The root is the
 only Go module; no paired module release tag is needed.
 
-Every tag and manual dry run first requires the full read-only Orka and kagent
-workers, in parallel. Each qualified commit must equal the release checkout,
-including an annotated tag's resolved commit. Passing nightly evidence at another SHA is not reused.
-A failed qualification blocks build, signing and publication, including native
-Copilot plugin assets. Inspect the failure and rerun the failed workflow jobs
-after addressing it; there is no automatic qualification retry or timeout increase.
-Both full live proofs must finish before release building begins. The hermetic
-kagent PR check is not live qualification and cannot replace either release gate.
-After signing, native Linux and macOS workers verify and configure the exact
-cross-built native plugin archive in an owned temporary directory, then
-install/uninstall/reinstall it in a fresh Copilot CLI profile. Publication waits
-for both workers. These checks do not exercise interactive desktop rendering or
-hosted inference. Dry-run artifacts contain `release-assets/` and
-`release-notes.md` under their common root.
+### Release qualification
+
+A tag qualifies the shipped inner loop: the kmx binary, the WSL plugin and local
+previews on embedded Sessions. The release workflow builds, signs and packages
+immediately, alongside the existing hermetic canvas, plugin/WSL/MCP and Sessions
+preview contracts. After signing, native Linux and macOS workers verify and
+configure the exact cross-built native plugin archive in an owned temporary
+directory, then install/uninstall/reinstall it in a fresh Copilot CLI profile.
+Publication requires the build, hermetic contracts and both native install jobs.
+These checks do not exercise interactive desktop rendering, a real Windows/WSL
+app session, hosted inference or cluster runtimes. Dry-run artifacts contain
+`release-assets/` and `release-notes.md` under their common root.
 For Windows Copilot, use the [plain WSL plugin](../plugins/copilot-wsl/README.md):
 install the Linux binary in WSL, then install the plugin from the repository.
+
+Orka is qualified nightly on main by `orka-nightly.yml`; kagent is qualified by
+the scheduled CI workflow. Orka-related PRs retain their existing full-proof
+routing. Before a runtime-related tag, dispatch the separate read-only
+[runtime qualification workflow](../.github/workflows/runtime-qualification.yml)
+on the intended release ref:
+
+```bash
+gh workflow run runtime-qualification.yml --repo kaimahi-agents/kaimahi --ref main
+gh run list --repo kaimahi-agents/kaimahi --workflow runtime-qualification.yml --limit 3
+```
+
+Replace `main` with the intended branch or existing tag when appropriate. Both
+workers check out the dispatch SHA and verify its resolved commit, including
+annotated tags. Inspect each worker's `Qualify the exact caller commit` step and
+require both full proofs to pass at the intended tag commit. A green nightly at
+another SHA does not qualify that commit. If main advances, dispatch again for
+the new intended commit before tagging. This is an operator step for
+runtime-related tags, not a release-workflow dependency or a new skip flag.
+Nightly schedules and runtime proof commands, pins and budgets are unchanged.
 
 ## Install
 
@@ -463,7 +481,9 @@ than the first.
    Release dry runs still read `Unreleased` only, not pending fragments. An empty
    section is the existing tolerated no-section result; this does not change tag
    publication or the release-notes extractor's exit codes.
-2. Merge that to `main`. Releases are cut from `main`.
+2. Merge that to `main`. Releases are cut from `main`. For a runtime-related tag,
+   first run [on-demand runtime qualification](#release-qualification) on that exact
+   commit and require both workers to pass.
 3. Tag the root CLI release and push:
 
    ```bash
@@ -476,7 +496,7 @@ than the first.
    publishes those same files together as one GitHub release. It refuses to
    publish if: the version is not semantic, the changelog has no section,
    the built binary does not report the tag, the checksums do not verify, or
-   either native plugin install check fails. The
+   the hermetic inner-loop contracts or either native plugin install check fails. The
    release also carries `kmx.rb`, GoReleaser's rendered formula for those exact checksums
    (`brews.skip_upload: true` keeps it from being pushed to the tap on its own
    — that stays a human's job, next). A failed asset upload can leave a GitHub

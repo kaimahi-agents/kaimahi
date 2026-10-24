@@ -1,0 +1,19 @@
+name: Runtime qualification
+
+# Cluster runtime proof is independent of building and publishing the CLI.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  orka-qualification:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/orka-runtime.yml
+
+  kagent-qualification:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/kagent-runtime.yml

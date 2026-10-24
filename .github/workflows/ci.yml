@@ -352,9 +352,13 @@ jobs:
               print("release.yml must upload the same checked assets for dry runs and native qualification")
               sys.exit(1)
           publish = wf["jobs"].get("publish", {})
-          if (set(publish.get("needs", [])) != {"release", "plugin-install"}
+          if (set(wf["jobs"]) != {"release", "release-contracts", "plugin-install", "publish"}
+                  or "needs" in wf["jobs"]["release"] or "if" in wf["jobs"]["release"]):
+              print("release.yml must build immediately without cluster runtime qualification")
+              sys.exit(1)
+          if (set(publish.get("needs", [])) != {"release", "plugin-install", "release-contracts"}
                   or publish.get("if") != "needs.release.outputs.dry_run == 'false'"):
-              print("release.yml must wait for native install checks and publish only outside dry runs")
+              print("release.yml must wait for native install checks and hermetic contracts and publish only outside dry runs")
               sys.exit(1)
           if 'scripts/homebrew-formula.py "$VERSION" dist/checksums.txt' not in release_text:
               print("release.yml must reject an incomplete or unexpected checksum manifest before publication")
@@ -642,6 +646,21 @@ jobs:
           import sys, yaml
           wf = yaml.safe_load(open(".github/workflows/ci.yml"))
           jobs = wf["jobs"]
+          manual = yaml.safe_load(open(".github/workflows/runtime-qualification.yml"))
+          runtime_jobs = {runtime + "-qualification": {
+              "permissions": {"contents": "read"},
+              "uses": "./.github/workflows/" + runtime + "-runtime.yml"}
+              for runtime in ("orka", "kagent")}
+          if (manual.get("on", manual.get(True)) != {"workflow_dispatch": None}
+                  or manual.get("permissions") != {"contents": "read"}
+                  or manual.get("jobs") != runtime_jobs):
+              print("on-demand runtime qualification must keep both unchanged read-only callers"); sys.exit(1)
+          for runtime in ("orka", "kagent"):
+              worker = yaml.safe_load(open(".github/workflows/" + runtime + "-runtime.yml"))
+              checkout = next(s for s in worker["jobs"]["qualify"]["steps"]
+                              if str(s.get("uses", "")).startswith("actions/checkout@"))
+              if checkout.get("with", {}).get("ref") != "${" + "{ github.sha }" + "}":
+                  print("runtime qualification must check out the exact dispatched commit"); sys.exit(1)
           required = "e2e-hello-world"
           shards = sorted(j for j in jobs if j.startswith("e2e-") and j != required)
           if not shards:
@@ -1483,7 +1502,7 @@ jobs:
       - name: Offline kagent Go contracts — not live qualification
         run: go test ./internal/kmx/app -run '^(TestKagent|TestSuiteKagent|TestSuiteFailureKagent|TestReleaseLiftKagent|TestDestinationStatusKagent)' -skip '^TestLive' -count=1 -timeout=300s
       - name: State the coverage boundary
-        run: echo "Hermetic kagent contracts passed; not live qualification. Live A2A, full evaluation, evaluated push and suite lift run nightly, manually and before release."
+        run: echo "Hermetic kagent contracts passed; not live qualification. Live A2A, full evaluation, evaluated push and suite lift run nightly and on demand before runtime-related tags."
 
   e2e-kagent-lift:
     needs: [classify-change]
