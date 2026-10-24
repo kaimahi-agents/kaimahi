@@ -98,7 +98,7 @@ func TestSessionsAgentCreateAndNoop(t *testing.T) {
 }
 
 func TestSessionsAgentPartialOutcomesNeverRetry(t *testing.T) {
-	for _, scenario := range []string{"create-lost", "pending", "recreated", "mutated-create", "unacknowledged"} {
+	for _, scenario := range []string{"create-lost", "pending", "recreated", "mutated-create", "unknown-spec", "changed-binding", "unacknowledged"} {
 		t.Run(scenario, func(t *testing.T) {
 			a, opt, dir := sessionsAgentFixture(t)
 			t.Setenv("KMX_SESSIONS_TEST_SCENARIO", scenario)

@@ -245,7 +245,7 @@ func ValidateReleaseLiftOptions(opt ReleaseLiftOptions) error {
 		return ErrReleaseLift
 	}
 	if opt.ExpectedRuntime == "agentsessions" && opt.HarnessImage == "" {
-		if _, err := agentsessions.HarnessImageDigest(opt.Reference); err != nil || !statusSafeText(opt.ToContext) || scaffold.ValidateNamespace(opt.ToNamespace) != nil || opt.Inference != "" || opt.Bindings != "" || opt.Update || opt.EvaluationName != "" || strings.TrimSpace(opt.Evidence) == "" || opt.FromLayout != "" && opt.PlainHTTP {
+		if _, err := agentsessions.HarnessImageDigest(opt.Reference); err != nil || !statusSafeText(opt.ToContext) || scaffold.ValidateNamespace(opt.ToNamespace) != nil || opt.Inference != "" || opt.Bindings != "" || opt.Promote || opt.Update || opt.EvaluationName != "" || strings.TrimSpace(opt.Evidence) == "" || opt.FromLayout != "" && opt.PlainHTTP {
 			return ErrReleaseLift
 		}
 		return nil

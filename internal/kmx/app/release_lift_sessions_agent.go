@@ -175,10 +175,11 @@ func (a *App) applySessionsAgent(ctx context.Context, p *PreparedReleaseLift, di
 	}
 	created, decodeErr := agentsessions.DecodeAgent(raw)
 	// Preserve a safely acknowledged identity even if admission changed the spec.
-	if decodeErr == nil && created.Metadata.Name == row.Name && created.Metadata.Namespace == target.Namespace && statusOpaque(created.Metadata.UID) {
+	identity, identityErr := agentsessions.DecodeAgentIdentity(raw)
+	if identityErr == nil && identity.Metadata.Name == row.Name && identity.Metadata.Namespace == target.Namespace && statusOpaque(identity.Metadata.UID) {
 		row.Outcome = "created"
-		row.UID = created.Metadata.UID
-		row.Generation = created.Metadata.Generation
+		row.UID = identity.Metadata.UID
+		row.Generation = identity.Metadata.Generation
 	}
 	if decodeErr != nil || row.Outcome != "created" || created.Spec != p.sessionsAgent.spec {
 		return result, errors.New("created Agent identity or spec does not match plan")

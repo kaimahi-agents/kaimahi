@@ -293,7 +293,11 @@ func newReleaseCommand(state *commandState, verb string) *cobra.Command {
 // and machine results never pass through human presentation formatting.
 func reportReleaseLiftResult(cmd *cobra.Command, output string, summary app.ReleaseLiftSummary, result app.ReleaseLiftResult, applyErr error) error {
 	if output == "json" {
-		return errors.Join(applyErr, json.NewEncoder(cmd.OutOrStdout()).Encode(result))
+		writeErr := json.NewEncoder(cmd.OutOrStdout()).Encode(result)
+		if writeErr != nil && summary.Runtime == "agentsessions" {
+			return writeErr
+		}
+		return errors.Join(applyErr, writeErr)
 	}
 	if summary.Runtime == "agentsessions" && summary.SessionsAgent != nil {
 		_, writeErr := fmt.Fprintf(cmd.OutOrStdout(), "Agent: %s\nPackage: %s\nMember: %s\nTarget: %q/%q\n", result.State, summary.SuiteDigest, summary.Member, summary.Target.Context, summary.Target.Namespace)
@@ -302,7 +306,10 @@ func reportReleaseLiftResult(cmd *cobra.Command, output string, summary app.Rele
 				_, writeErr = fmt.Fprintf(cmd.OutOrStdout(), "Agent/%s: %s (UID=%q)\n", r.Name, r.Outcome, r.UID)
 			}
 		}
-		return errors.Join(applyErr, writeErr)
+		if writeErr != nil {
+			return writeErr
+		}
+		return applyErr
 	}
 	label := "Lift"
 	if cmd.Name() == "deploy" {

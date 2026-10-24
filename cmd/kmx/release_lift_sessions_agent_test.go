@@ -15,7 +15,7 @@ func TestSessionsAgentDeploySelectors(t *testing.T) {
 		flags []string
 		loads int
 	}{
-		{nil, 1}, {[]string{"--plan", "--name", "new-agent"}, 1}, {[]string{"--update"}, 0}, {[]string{"--name", "INVALID"}, 0}, {[]string{"--name="}, 0}, {[]string{"--bindings", "missing.yaml"}, 0}, {[]string{"--inference", "provider:x"}, 0},
+		{nil, 1}, {[]string{"--plan", "--name", "new-agent"}, 1}, {[]string{"--update"}, 0}, {[]string{"--promote"}, 0}, {[]string{"--name", "INVALID"}, 0}, {[]string{"--name="}, 0}, {[]string{"--bindings", "missing.yaml"}, 0}, {[]string{"--inference", "provider:x"}, 0},
 	} {
 		t.Run(strings.Join(tc.flags, "_"), func(t *testing.T) {
 			var out, diag bytes.Buffer

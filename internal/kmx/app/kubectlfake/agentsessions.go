@@ -123,6 +123,12 @@ func AgentSessions(r Request) error {
 			status["agentUID"] = "old"
 			status["conditions"] = []any{}
 		}
+		if scenario == "unknown-spec" {
+			spec["admissionExtra"] = true
+		}
+		if scenario == "changed-binding" {
+			spec["modelBindingRef"] = map[string]any{"name": "other"}
+		}
 		if scenario == "mutated-create" {
 			spec["member"] = "other"
 		}

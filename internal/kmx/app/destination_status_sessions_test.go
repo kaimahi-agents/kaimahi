@@ -9,7 +9,7 @@ import (
 )
 
 func TestDestinationStatusSessionsExactRegistration(t *testing.T) {
-	for _, scenario := range []string{"registered", "pending", "stale-uid", "stale-generation", "served-mismatch", "deleting", "replacement", "absent-api", "unreadable-discovery"} {
+	for _, scenario := range []string{"registered", "pending", "stale-uid", "stale-generation", "served-mismatch", "deleting", "replacement", "absent-api", "unreadable-discovery", "duplicate-condition", "null-condition"} {
 		t.Run(scenario, func(t *testing.T) {
 			a, responses, out, _, paths := statusTestFixture(t)
 			api := "/apis/" + agentsessions.AgentAPIVersion
@@ -27,6 +27,10 @@ func TestDestinationStatusSessionsExactRegistration(t *testing.T) {
 				status["observedGeneration"] = 0
 			case "served-mismatch":
 				status["servedDigest"] = "sha256:" + strings.Repeat("b", 64)
+			case "duplicate-condition":
+				status["conditions"] = append(status["conditions"].([]any), status["conditions"].([]any)[0])
+			case "null-condition":
+				status["conditions"] = []any{nil}
 			case "deleting":
 				d["metadata"].(map[string]any)["deletionTimestamp"] = "2026-10-24T00:00:00Z"
 			}
@@ -69,6 +73,9 @@ func TestDestinationStatusSessionsExactRegistration(t *testing.T) {
 				t.Fatalf("missing Agent: %+v %v", report, err)
 			}
 			row := report.Agents[0]
+			if (scenario == "duplicate-condition" || scenario == "null-condition") && (row.Readiness.State != "unknown" || report.Complete) {
+				t.Fatalf("malformed condition became known pending: %+v", report)
+			}
 			if (row.Readiness.State == "registered") != (scenario == "registered") {
 				t.Fatalf("false registration %+v", row)
 			}

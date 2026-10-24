@@ -62,6 +62,9 @@ func DecodeAgent(raw []byte) (Agent, error) {
 	if len(raw) > 4<<20 || suitecore.Unmarshal(raw, &doc) != nil || doc == nil {
 		return a, bad
 	}
+	if _, err := agentIdentity(doc); err != nil {
+		return a, bad
+	}
 	// encoding/json accepts case-folded aliases. Project exact API keys before
 	// typed decoding so an alias cannot acknowledge a missing contract field.
 	projected := agentKeys(doc, "apiVersion", "kind", "metadata", "spec", "status").(map[string]any)
@@ -87,17 +90,44 @@ func DecodeAgent(raw []byte) (Agent, error) {
 	}
 	dec := json.NewDecoder(strings.NewReader(string(spec)))
 	dec.DisallowUnknownFields()
-	if dec.Decode(&a.Spec) != nil || a.APIVersion != AgentAPIVersion || a.Kind != "Agent" || scaffold.ValidateObjectName(a.Metadata.Name) != nil || scaffold.ValidateNamespace(a.Metadata.Namespace) != nil || a.Metadata.Generation < 1 || !agentSafeText(a.Metadata.UID) {
+	if dec.Decode(&a.Spec) != nil {
 		return a, bad
 	}
 	if _, err := HarnessImageDigest(a.Spec.Package.Reference); err != nil || !agentSafeText(a.Spec.Member) || a.Spec.ModelBindingRef.Name != "default" {
 		return a, bad
+	}
+	seen := map[string]bool{}
+	for _, c := range a.Status.Conditions {
+		if (c.Type != "PackageVerified" && c.Type != "Registered") || seen[c.Type] || (c.Status != "True" && c.Status != "False" && c.Status != "Unknown") || c.ObservedGeneration < 0 {
+			return a, bad
+		}
+		seen[c.Type] = true
 	}
 	canonical, _ := json.Marshal(a.Spec)
 	var specMap map[string]any
 	_ = json.Unmarshal(canonical, &specMap)
 	if !reflect.DeepEqual(doc["spec"], specMap) {
 		return a, bad
+	}
+	return a, nil
+}
+
+// DecodeAgentIdentity retains an acknowledged create identity independently of
+// admission's spec/status. It grants no spec, registration or reuse authority.
+func DecodeAgentIdentity(raw []byte) (Agent, error) {
+	var doc map[string]any
+	if len(raw) > 4<<20 || suitecore.Unmarshal(raw, &doc) != nil || doc == nil {
+		return Agent{}, errors.New("invalid Agent identity")
+	}
+	return agentIdentity(doc)
+}
+func agentIdentity(doc map[string]any) (Agent, error) {
+	var a Agent
+	projection := agentKeys(doc, "apiVersion", "kind", "metadata").(map[string]any)
+	projection["metadata"] = agentKeys(doc["metadata"], "name", "namespace", "uid", "generation", "resourceVersion", "deletionTimestamp")
+	encoded, _ := json.Marshal(projection)
+	if json.Unmarshal(encoded, &a) != nil || a.APIVersion != AgentAPIVersion || a.Kind != "Agent" || scaffold.ValidateObjectName(a.Metadata.Name) != nil || scaffold.ValidateNamespace(a.Metadata.Namespace) != nil || a.Metadata.Generation < 1 || !agentSafeText(a.Metadata.UID) {
+		return a, errors.New("invalid Agent identity")
 	}
 	return a, nil
 }

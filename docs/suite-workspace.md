@@ -990,7 +990,7 @@ spec:
 
 The controller/operator owns the `default` model binding; kmx reads no model
 credentials or host internals. No `--bindings`, `--inference`, `--harness-image` or
-`--update` is accepted on this path. Explicit `--to-context`/`--to-namespace` can
+`--promote` or `--update` is accepted on this path. Explicit `--to-context`/`--to-namespace` can
 override the named selectors, but `--to` must declare the runtime. `--from-layout`
 can supply local package verification; the controller must still be able to pull
 the digest-pinned registry reference. `--plan` performs GETs only and JSON includes

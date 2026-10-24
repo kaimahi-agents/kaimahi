@@ -38,6 +38,10 @@ func TestAgentRegisteredExactContract(t *testing.T) {
 			delete(c, "status")
 		},
 		"condition-missing": func(d map[string]any) { d["status"].(map[string]any)["conditions"] = []any{} },
+		"condition-null":    func(d map[string]any) { d["status"].(map[string]any)["conditions"] = []any{nil} },
+		"condition-invalid-status": func(d map[string]any) {
+			d["status"].(map[string]any)["conditions"].([]any)[0].(map[string]any)["status"] = "bogus"
+		},
 		"condition-duplicate": func(d map[string]any) {
 			s := d["status"].(map[string]any)
 			s["conditions"] = append(s["conditions"].([]any), s["conditions"].([]any)[1])
@@ -49,6 +53,12 @@ func TestAgentRegisteredExactContract(t *testing.T) {
 			change(d)
 			raw, _ := json.Marshal(d)
 			a, err := DecodeAgent(raw)
+			if name == "condition-duplicate" || name == "case-folded-condition" || name == "condition-null" || name == "condition-invalid-status" {
+				if err == nil {
+					t.Fatal("accepted malformed conditions")
+				}
+				return
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
