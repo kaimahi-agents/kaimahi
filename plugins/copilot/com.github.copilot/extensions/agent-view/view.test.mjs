@@ -1936,6 +1936,14 @@ test("Board C passing answer is requested explicitly without a hidden checkbox",
   assert.doesNotMatch(h.root.textContent, /Untrusted excerpt/);
 });
 
+test("Judge is the fourth check type and opening its chooser does not dispatch", async () => {
+  const h = await editableCanvas("Reply briefly."); openTest(h.root, "greeting");
+  click(byClass(h.root, "check-line")[0]); click(byClass(h.root, "check-type-button")[0]);
+  assert.equal(h.calls.length, 0);
+  assert.deepEqual(byClass(h.root, "check-type-option").map(option => option.textContent),
+    ["Contains", "Not contains", "Regex", "Judge"]);
+});
+
 test("check-type menu supports choice and Escape without dispatching", async () => {
   const h = await editableCanvas("Reply briefly."); openTest(h.root, "greeting");
   click(byClass(h.root, "check-line")[0]);
