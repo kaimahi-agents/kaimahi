@@ -550,7 +550,10 @@ Discovery is lazy, adds no tool and starts neither sign-in nor inference. The
 picker loads and caches it when opened, not on startup or focus. Familiar model
 IDs have presentation-only display names and family groups; unknown IDs stay
 literal. The button distinguishes this canvas, the agent file and the default,
-and the menu marks the known current chat model. Discovery failure leaves editing
+and the menu marks the known current chat model. Selecting any model ID pins it,
+even when it equals the current default. The separate following action returns to
+the agent-file/default choice without adding a duplicate model entry.
+Discovery failure leaves editing
 and fake/offline execution available. Explicit non-Copilot and legacy provider,
 endpoint and credential bindings stay unchanged; model selection does not switch
 those bindings.

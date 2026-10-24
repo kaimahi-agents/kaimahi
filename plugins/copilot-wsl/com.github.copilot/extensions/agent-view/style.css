@@ -35,8 +35,9 @@ button:disabled{cursor:default}
 .model-picker svg{flex-shrink:0;margin-left:auto}
 .model-menu{position:absolute;top:calc(100% + 6px);right:0;z-index:10;width:max(100%,300px);max-width:calc(100vw - 32px);max-height:60vh;overflow:auto;padding:6px;border:1px solid var(--menu-border);border-radius:10px;background:var(--menu-bg);box-shadow:0 8px 24px var(--shadow)}
 .model-group{font-size:12px;font-weight:600;color:var(--muted);padding:8px 10px 4px}
-.model-option{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;width:100%;border:0;border-radius:6px;padding:8px 10px;background:none;text-align:left;font-size:13px;cursor:pointer;overflow-wrap:anywhere}
-.model-option:hover,.model-option[aria-checked='true']{background:var(--hover)}
+.model-option,.model-default{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;width:100%;border:0;border-radius:6px;padding:8px 10px;background:none;text-align:left;font-size:13px;cursor:pointer;overflow-wrap:anywhere}
+.model-option:hover,.model-default:hover,.model-option[aria-checked='true']{background:var(--hover)}
+.model-default{margin-top:6px;border-top:1px solid var(--line);border-radius:0;color:var(--muted)}
 .model-chat{font-size:12px;color:var(--muted)}
 .model-status{padding:8px 10px}.model-status:empty{display:none}
 h1{font-size:30px;line-height:1.2;font-weight:700;overflow-wrap:anywhere;min-width:0}

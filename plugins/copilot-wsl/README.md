@@ -40,6 +40,8 @@ freezes it through save/execution; the displayed model can lag until idle refres
 Choices load when the menu opens and are cached; catalog failure
 does not block editing or offline tests. Familiar IDs get display names and
 family groups; unknown IDs remain literal and execution always uses the exact ID.
+Selecting a model pins it, including the current default; use the following action
+to return to the agent file or automatic default.
 Older hosts without the optional current-model getter use the established default.
 Transient getter failures retain the last valid model; explicit unknown/auto
 responses clear it.

@@ -220,6 +220,17 @@ export function runtimeModelControl(doc, settings, load, change) {
   menu.setAttribute("role", "menu"); menu.setAttribute("aria-label", "Runtime models");
   let models = [], state = "idle", choices = [], opened = false;
   const open = value => { opened = value; menu.hidden = !value; trigger.setAttribute("aria-expanded", String(value)); };
+  const bind = (item, value) => {
+    item.addEventListener("click", () => { if (trigger.disabled) return; open(false); change(value); trigger.focus(); });
+    item.addEventListener("keydown", event => {
+      const index = choices.indexOf(item);
+      if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+        event.preventDefault(); choices[event.key === "Home" ? 0 : event.key === "End" ? choices.length - 1 : (index + (event.key === "ArrowDown" ? 1 : choices.length - 1)) % choices.length].focus();
+      } else if (event.key === "Escape") { event.preventDefault(); open(false); trigger.focus(); }
+      else if (event.key === "Tab") open(false);
+    });
+    choices.push(item);
+  };
   const update = () => {
     const { authored, selected, chatModel, disabled } = settings();
     const fallback = effectiveModel(authored, "", chatModel), current = selected || fallback;
@@ -244,22 +255,17 @@ export function runtimeModelControl(doc, settings, load, change) {
         option.setAttribute("role", "menuitemradio"); option.setAttribute("aria-checked", String(id === current));
         option.setAttribute("data-model", id); option.setAttribute("title", id); option.disabled = !!disabled;
         if (id === chatModel) option.append(el(doc, "span", "model-chat", "Current chat model"));
-        option.addEventListener("click", () => { if (trigger.disabled) return; open(false); change(id === fallback ? "" : id); trigger.focus(); });
-        option.addEventListener("keydown", event => {
-          const index = choices.indexOf(option);
-          if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-            event.preventDefault(); choices[event.key === "Home" ? 0 : event.key === "End" ? choices.length - 1 : (index + (event.key === "ArrowDown" ? 1 : choices.length - 1)) % choices.length].focus();
-          } else if (event.key === "Escape") { event.preventDefault(); open(false); trigger.focus(); }
-          else if (event.key === "Tab") open(false);
-        });
-        choices.push(option); group.append(option);
+        bind(option, id); group.append(option);
       }
       menu.append(group);
     }
     status.textContent = state === "loading" ? "Loading models…" : state === "failed" ? "Choices unavailable; file/default still works." : "";
-    menu.append(status);
+    // Following is a mode, not a duplicate entry for the fallback's model ID.
+    const follow = el(doc, "button", "model-default", authored ? "Use agent file model" : chatModel ? "Follow chat model" : "Use default model");
+    follow.type = "button"; follow.disabled = !!disabled; follow.setAttribute("role", "menuitem"); follow.setAttribute("data-model", "");
+    bind(follow, ""); menu.append(follow, status);
     if (disabled) open(false);
-    if (focused && !disabled) { open(wasOpen); choices.find(option => option.getAttribute("data-model") === focused)?.focus(); }
+    if (focused !== undefined && !disabled) { open(wasOpen); choices.find(option => option.getAttribute("data-model") === focused)?.focus(); }
   };
   const discover = async () => {
     if (state === "ready" || state === "loading") return;

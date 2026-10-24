@@ -1382,12 +1382,39 @@ test("grouped model menu deduplicates raw IDs, marks chat and restores trigger f
   assert.equal(choices[2].textContent, "unknown/raw-id");
   const key = (node,key) => node.listeners.keydown[0]({key,preventDefault(){}});
   key(trigger,"ArrowDown"); assert.equal(h.doc.activeElement,choices[0]);
-  key(choices[0],"ArrowUp"); assert.equal(h.doc.activeElement,choices[2]);
+  key(choices[0],"ArrowUp"); assert.equal(h.doc.activeElement,byClass(h.root,"model-default")[0]);
+  key(h.doc.activeElement,"ArrowUp"); assert.equal(h.doc.activeElement,choices[2]);
   key(choices[2],"Escape"); assert.equal(h.doc.activeElement,trigger); assert.equal(trigger.attrs["aria-expanded"],"false");
   await chooseModel(h,"claude-sonnet-5.5");
   assert.equal(h.doc.activeElement, trigger); assert.equal(trigger.textContent,"Claude Sonnet 5.5 · this canvas");
-  await chooseModel(h,"gpt-5.6-terra"); assert.equal(trigger.textContent,"GPT-5.6 Terra · default");
+  await chooseModel(h,"gpt-5.6-terra"); assert.equal(trigger.textContent,"GPT-5.6 Terra · this canvas");
+  await trigger.listeners.click[0](); click(byClass(h.root,"model-default")[0]);
+  assert.equal(trigger.textContent,"GPT-5.6 Terra · default");
   assert.equal(catalogs,1); assert.equal(h.calls.length,0); await h.clickTest(); assert.equal(Object.hasOwn(h.calls[0],"model"),false);
+});
+
+test("choosing the current default model pins its exact ID across chat changes", async () => {
+  let changed;
+  const h = await editableCanvas("Say hello.", undefined, { omitModel: true, chatModel: "fake", currentPass: true,
+    fetchModels: async () => ({ models: [] }), respond: async () => ({ view: changed }) });
+  await chooseModel(h, "fake");
+  assert.equal(byClass(h.root, "model-picker")[0].textContent, "fake · this canvas");
+  changed = structuredClone(h.view); changed.chatModel = "chat-b"; h.app.observe(changed);
+  assert.deepEqual(c18Status(h.root), ["pass"]);
+  await h.clickTest(); assert.equal(h.calls[0].model, "fake");
+  await byClass(h.root, "model-picker")[0].listeners.click[0]();
+  const follow = byClass(h.root, "model-default")[0]; assert.ok(follow); click(follow);
+  assert.equal(byClass(h.root, "model-picker")[0].textContent, "chat-b · default");
+  assert.deepEqual(c18Status(h.root), ["old-pass"]);
+});
+
+test("the following action keeps keyboard focus through a late catalog response", async () => {
+  const doc = fakeDoc(); let release;
+  const control = runtimeModelControl(doc, () => ({ authored: "fake", selected: "" }), () => new Promise(resolve => { release = resolve; }), () => {});
+  const opened = control.trigger.listeners.click[0](); byClass(control.node, "model-default")[0].focus();
+  release({ models: ["other-model"] }); await opened;
+  assert.equal(doc.activeElement, byClass(control.node, "model-default")[0]);
+  assert.equal(control.trigger.attrs["aria-expanded"], "true");
 });
 
 test("chat metadata changes preserve prompt and test drafts and never revive A-B-A results", async () => {
