@@ -50,7 +50,7 @@ Use one verb per meaning. Do not add a synonym for an existing verb.
 | `chat` | Open an interactive session. | `kmx chat <name>` |
 | `test` | Place and evaluate the full packaged native workspace inventory. | Orka: `kmx test --to-context <ctx> --inference provider:NAME --out <private.json>`; kagent: replace `--inference` with `--bindings FILE` |
 | `export` | Write a portable offline artifact without execution: evaluation evidence from completed exact-suite proof, or a frozen source-file run profile. | `kmx test export --member greeter --out ../evidence.json`; `kmx run-profile export FILE` |
-| `explain` | Inspect private local evaluation failures offline; content opt-in. `--clear` deletes one ID, or all only with explicit workspace selection. | `kmx test explain [failure-id] [--workspace DIR] [--show-content\|--clear]` |
+| `explain` | Inspect private local evaluation failures offline; content opt-in. `--clear` deletes one ID, or all only with explicit workspace or agent-file selection. | `kmx test explain [failure-id] [--workspace DIR\|--file FILE] [--show-content\|--clear]` |
 | `verify` | Check public evidence against a local suite and independent accepted subject/policy, offline. | `kmx test verify --suite ./layout --evidence evidence.json --expect expected.json` |
 | `mcp` | Serve exactly four local agent-file tools over stdio, bound to one explicit root; no network listener | `kmx mcp --root DIRECTORY` |
 | `cleanup` | Inspect candidate runs; delete one explicitly selected run after confirmation. | `kmx test cleanup [run-id] --to dev` |
@@ -100,7 +100,7 @@ Keep these distinctions:
 | `--runtime-profile` | Exact public runtime profile ID for offline v3 workspace push or suite build planning, never an execution override. Profiled push requires --unevaluated; AgentKit refuses profiled builds. |
 | `--platform` | Exact OS/ARCH for offline profile/build selection; v3 push may infer it only for one candidate in the explicitly selected profile. Legacy workspace push rejects it. |
 | `--plan` | Read the target and print what would change. No writes. |
-| `--show-content` | Opt into sanitized bounded failure excerpts, expected values and rationale: stderr for test/executing workspace Deploy, stdout for offline test explain. Not evidence; never implied by --verbose; conflicts with explain --clear. |
+| `--show-content` | Opt into sanitized bounded failure excerpts and expected values: stderr for test/executing workspace Deploy, stdout for offline test explain. Workspace records may include retained rationale; file records do not retain judge rationale. Not evidence; never implied by --verbose; conflicts with explain --clear. |
 | `--verbose` | Where supported, add content-free diagnostics and timings on stderr. File Run/Test includes request progress, endpoints, HTTP status, timings and safe failures, without repeating the final report; never implies --show-content. |
 | `--no-apply` | Where supported by runtime setup, render without cluster writes; removed from workspace create. |
 | `--dry-run` | Where supported by runtime setup, check server admission without persistent writes; removed from workspace create. |

@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 )
 
 func TestSuiteFailureExplainCommand(t *testing.T) {
@@ -108,6 +111,52 @@ func TestSuiteFailureExplainHelpAndCompletion(t *testing.T) {
 		}
 		if _, err := os.Lstat(home); !os.IsNotExist(err) {
 			t.Fatal("help/completion created state", err)
+		}
+	}
+}
+
+func TestFileFailureExplainCommand(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KMX_HOME", filepath.Join(root, "private-state"))
+	file := cliPreviewFile(t)
+	var out, diagnostics bytes.Buffer
+	deps, loads := testDependencies(&out, &diagnostics)
+	deps.fileRunner = &cliPreviewFake{verdict: "fail"}
+	err = execute([]string{"test", file, "-o", "json"}, deps)
+	var previewErr *app.FilePreviewError
+	if !errors.As(err, &previewErr) || previewErr.ExitCode() != 2 || *loads != 0 {
+		t.Fatalf("file test = %v loads=%d", err, *loads)
+	}
+	var result app.FilePreviewResult
+	if json.Unmarshal(out.Bytes(), &result) != nil || result.Retention.Status != "retained" || len(result.Retention.Diagnostics) != 1 {
+		t.Fatalf("retention result = %s", out.String())
+	}
+	id := result.Retention.Diagnostics[0].ID
+	loadsBefore := *loads
+	for _, verb := range []string{"test", "eval"} {
+		out.Reset()
+		diagnostics.Reset()
+		args := []string{verb, "explain", id, "--file", file}
+		if err := execute(args, deps); err != nil || *loads != loadsBefore || !strings.Contains(out.String(), id) || !strings.Contains(out.String(), result.File.Revision) || strings.Contains(out.String(), "PRIVATE ANSWER") {
+			t.Fatalf("%s file explain = %q, %v loads=%d", verb, out.String(), err, *loads)
+		}
+		if verb == "eval" && diagnostics.String() != legacyEvalNotice {
+			t.Fatalf("legacy notice = %q", diagnostics.String())
+		}
+	}
+	for _, tc := range []struct {
+		args   []string
+		reason string
+	}{
+		{[]string{"test", "explain", "--workspace", root, "--file", file}, "mutually exclusive"},
+		{[]string{"test", "explain", "--file", ""}, "--file requires"},
+		{[]string{"test", "explain", "--clear"}, "requires explicit --workspace DIR or --file FILE"},
+	} {
+		if err := execute(tc.args, deps); err == nil || !strings.Contains(err.Error(), tc.reason) || *loads != loadsBefore {
+			t.Fatalf("file explain refusal = %v want %q", err, tc.reason)
 		}
 	}
 }

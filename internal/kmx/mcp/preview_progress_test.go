@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -69,8 +72,65 @@ func connectProgressFixture(t *testing.T, ops map[string]Operation, setup ...fun
 	return cs, notifications
 }
 
-func TestPreviewCaseProgressProtocol(t *testing.T) {
+func TestPreviewCaseProgressPreservesFailureRetention(t *testing.T) {
 	t.Setenv("KMX_HOME", previewStateHome(t))
+	files, _, source := canonicalFiles(t)
+	source = strings.Replace(source, "value: Hello, Ada", "value: absent", 1)
+	saved, err := files.Create(t.Context(), "greeter.agent.md", []byte(source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs, notifications := connectProgressFixture(t, Operations(files, &app.App{FileRunner: app.NewLocalFileRunner()}, nil))
+	for _, progress := range []bool{false, true} {
+		params := &sdk.CallToolParams{Name: "test", Arguments: map[string]any{"schemaVersion": 1, "path": saved.Path}}
+		if progress {
+			params.SetProgressToken("retained")
+		}
+		result, err := cs.CallTool(t.Context(), params)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var preview app.FilePreviewResult
+		encoded, _ := json.Marshal(result.StructuredContent)
+		if err := json.Unmarshal(encoded, &preview); err != nil {
+			t.Fatal(err)
+		}
+		if result.IsError || preview.ReasonCode != "assertion_failed" || preview.Retention.Status != "retained" || len(preview.Retention.Diagnostics) != 1 || preview.Retention.Diagnostics[0].CaseID != "greeting" || !strings.HasPrefix(preview.Retention.Diagnostics[0].ID, "f-") {
+			t.Fatalf("progress changed retention: %+v", preview)
+		}
+		if progress {
+			select {
+			case n := <-notifications:
+				if n.Progress != 1 || n.Message != `{"caseId":"greeting","verdict":"fail","reason":"Assertion not satisfied."}` {
+					t.Fatalf("retained case progress: %+v", n)
+				}
+			default:
+				t.Fatal("missing retained-case progress")
+			}
+		}
+		select {
+		case n := <-notifications:
+			t.Fatalf("unexpected retained-case progress: %+v", n)
+		default:
+		}
+	}
+}
+
+func TestPreviewCaseProgressProtocol(t *testing.T) {
+	home := previewStateHome(t)
+	t.Setenv("KMX_HOME", home)
+	// Make failure retention unavailable so per-run opaque diagnostic IDs do
+	// not obscure byte parity. Journal storage and case execution remain real.
+	directory, err := fileaccess.EnsurePrivateDirectory(t.Context(), home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := directory.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "eval-failures"), []byte("unavailable"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	files, _, source := canonicalFiles(t)
 	source = strings.Split(source, "## Examples")[0] + `## Examples
 ` + "```yaml\n" + `examples:

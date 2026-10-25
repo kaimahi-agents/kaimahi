@@ -180,6 +180,7 @@ func TestFileCommandsCopilotFailures(t *testing.T) {
 }
 
 func TestFileCommandExitCodes(t *testing.T) {
+	t.Setenv("KMX_HOME", privateCommandHome(t))
 	for _, tc := range []struct {
 		verdict runtime.EvaluationVerdict
 		cause   error
@@ -422,6 +423,13 @@ func TestFileHelpIsCanonicalOnly(t *testing.T) {
 				for _, disclosure := range []string{"cleartext SQLite journals", "local-preview/journals", "newest 20 runs", "active runs", "Stop previews", "fake, local and Copilot models", "embedded Agent Sessions", "judge payloads and reasoning", "provider-owned", "before journaling", "Replay makes zero model calls"} {
 					if !strings.Contains(out.String(), disclosure) {
 						t.Errorf("%s help omits retention disclosure %q", verb, disclosure)
+					}
+				}
+				if verb == "test" {
+					for _, disclosure := range []string{"eval-failures", "last 10 per resolved file subject", "test explain --file FILE", "deleting journals does not clear failure diagnostics"} {
+						if !strings.Contains(out.String(), disclosure) {
+							t.Errorf("test help omits file-failure disclosure %q", disclosure)
+						}
 					}
 				}
 				for _, stale := range []string{"NoJournal", "preview runner (no journal)", "whole invocation is direct"} {

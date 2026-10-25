@@ -4,8 +4,9 @@
 // App coordinates consent, side effects and runtime-specific evidence.
 // Placement observations are distinct from evaluation proof; successful
 // placement alone must not be treated as proof of agent behavior. Retained
-// evaluation failures use the checked private filesystem on supported local
-// filesystems; visible-but-unconfirmed records remain diagnostics only.
+// workspace and completed non-pass file-Test failures use the checked private
+// filesystem on supported local filesystems; visible-but-unconfirmed records
+// remain diagnostics only and file records never become evaluation evidence.
 // File previews bind omitted judge models on execution copies and expose valid
 // two-sample scores and sanitized transient reasons only with content disclosure.
 package app

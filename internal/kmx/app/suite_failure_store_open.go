@@ -38,10 +38,57 @@ func openSuiteFailureStore(workspaceRoot string, create bool) (_ *suiteFailureSt
 	}
 	base := filepath.Join(state, "eval-failures")
 	key := suiteFailureWorkspaceKey(workspaceRoot, workspaceIdentity)
-	path := filepath.Join(base, key)
 	if suiteReceiptInside(base, workspaceRoot) {
 		return nil, errSuiteFailureStore
 	}
+	return openFailureStore(base, key, create, workspaceFailureCodec{})
+}
+
+func openFileFailureStore(filename string, create bool, codec retainedFileFailureCodec) (_ *suiteFailureStore, err error) {
+	scope, err := resolveFileFailureScope(filename)
+	if err != nil || codec.subject != "" && codec.subject != scope.subject {
+		return nil, errSuiteFailureStore
+	}
+	codec.subject = scope.subject
+	return openFileFailureStoreScope(scope, create, codec)
+}
+
+func openFileFailureStoreScope(scope fileFailureScope, create bool, codec retainedFileFailureCodec) (_ *suiteFailureStore, err error) {
+	if !suitePrefixedDigest(scope.subject) || scope.key != "file-"+scope.subject[len("sha256:"):] || !filepath.IsAbs(scope.filename) {
+		return nil, errSuiteFailureStore
+	}
+	if codec.subject != "" && codec.subject != scope.subject {
+		return nil, errSuiteFailureStore
+	}
+	codec.subject = scope.subject
+	state, err := suiteFailureStateDir(create)
+	if !create && (errors.Is(err, fileaccess.ErrMissing) || errors.Is(err, os.ErrNotExist)) {
+		return nil, errSuiteFailureMissing
+	}
+	if err != nil {
+		return nil, errSuiteFailureStore
+	}
+	base := filepath.Join(state, "eval-failures")
+	return openFailureStore(base, scope.key, create, codec)
+}
+
+func openFileFailureStoreBySubject(subject string) (_ *suiteFailureStore, err error) {
+	if !suitePrefixedDigest(subject) {
+		return nil, errSuiteFailureStore
+	}
+	state, err := suiteFailureStateDir(false)
+	if errors.Is(err, fileaccess.ErrMissing) || errors.Is(err, os.ErrNotExist) {
+		return nil, errSuiteFailureMissing
+	}
+	if err != nil {
+		return nil, errSuiteFailureStore
+	}
+	key := "file-" + subject[len("sha256:"):]
+	return openFailureStore(filepath.Join(state, "eval-failures"), key, false, retainedFileFailureCodec{subject: subject})
+}
+
+func openFailureStore(base, key string, create bool, codec suiteFailureCodec) (_ *suiteFailureStore, err error) {
+	path := filepath.Join(base, key)
 	if create {
 		for _, directory := range []string{base, path} {
 			opened, openErr := fileaccess.EnsurePrivateDirectory(context.Background(), directory)
@@ -60,7 +107,7 @@ func openSuiteFailureStore(workspaceRoot string, create bool) (_ *suiteFailureSt
 	if err != nil {
 		return nil, errSuiteFailureStore
 	}
-	s := &suiteFailureStore{directory: directory, path: path, publish: fileaccess.PublishPrivateNamed, syncDir: fileaccess.SyncDirectory}
+	s := &suiteFailureStore{directory: directory, path: path, codec: codec, publish: fileaccess.PublishPrivateNamed, syncDir: fileaccess.SyncDirectory}
 	defer func() {
 		if err != nil {
 			_ = s.Close()

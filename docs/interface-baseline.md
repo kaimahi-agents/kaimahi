@@ -20,7 +20,7 @@ Visible product commands:
 ```text
 kmx
 ├── create <name>
-├── test
+├── test [FILE]
 │   ├── cleanup [<run-id>]
 │   ├── diff <before.json> <after.json>
 │   ├── explain [failure-id]
@@ -29,7 +29,7 @@ kmx
 │   └── from-sessions <session-uid>...
 ├── push [reference]
 ├── deploy [<ref>@<digest>]
-├── run --agent <name>
+├── run [FILE] | --agent <name>
 ├── run-profile
 │   └── export FILE
 ├── chat <name> [message...]
@@ -66,7 +66,10 @@ kmx
 ```
 
 `test` is an operational workspace command with offline diff and independent
-read-only reference extraction/export helpers. Cobra also supplies `help`.
+read-only reference extraction/export helpers; explicit `test FILE` is a local
+preview whose completed non-pass diagnostics can be explained offline with
+`test explain --file FILE`. Explicit `run FILE` is the corresponding preview Run.
+Cobra also supplies `help`.
 
 Unreleased `model list` defaults to local discovery; explicit Copilot listing
 uses explicit `COPILOT_GITHUB_TOKEN`, then an existing gh sign-in without keychain
@@ -83,7 +86,8 @@ File preview model precedence is runtime picker/tool override, authored model,
 then `gpt-5.6-terra`; the source is never rewritten. Run/Test v1 accept optional
 `model`; read-only `kmx://models` discovers choices without a fifth tool. Both
 use the exact selected model and existing runtime credentials, with no login
-step for a working gh sign-in. The Copilot endpoint is fixed. This remains tool-free, no-journal preview, not a new harness.
+step for a working gh sign-in. The Copilot endpoint is fixed. This remains a
+tool-free journaled embedded-Sessions preview, not a new harness.
 No inference replay, model substitution or persisted selection. See
 [direct model access](copilot-inference.md#direct-model-access). Native package
 tests do not qualify the full Windows CLI.

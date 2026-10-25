@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -77,6 +78,39 @@ func canonicalFiles(t *testing.T) (*Files, string, string) {
 	t.Cleanup(func() { f.Close() })
 	return f, root, string(b)
 }
+
+func TestMCPFileFailureRetentionUsesResolvedTarget(t *testing.T) {
+	state, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KMX_HOME", filepath.Join(state, "state"))
+	files, root, source := canonicalFiles(t)
+	saved, err := files.Create(t.Context(), "greeter.agent.md", []byte(source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs := connectFixture(t, Operations(files, &app.App{FileRunner: &previewFixture{verdict: runtime.EvaluationFail}}, nil))
+	got, result := previewCall(t, cs, "test", map[string]any{"schemaVersion": 1, "path": saved.Path})
+	if result.IsError || got.Retention.Status != "retained" || len(got.Retention.Diagnostics) == 0 {
+		t.Fatalf("MCP retention = %+v", got.Retention)
+	}
+	id := got.Retention.Diagnostics[0].ID
+	var out strings.Builder
+	if err := (&app.App{Out: &out}).ExplainSuiteEvaluation(t.Context(), app.SuiteEvaluationExplainOptions{File: filepath.Join(root, saved.Path), ID: id}); err != nil || !strings.Contains(out.String(), id) {
+		t.Fatalf("resolved-target explain = %q, %v", out.String(), err)
+	}
+	if goruntime.GOOS != "windows" {
+		alias := filepath.Join(t.TempDir(), "alias.agent.md")
+		if err := os.Symlink(filepath.Join(root, saved.Path), alias); err != nil {
+			t.Fatal(err)
+		}
+		out.Reset()
+		if err := (&app.App{Out: &out}).ExplainSuiteEvaluation(t.Context(), app.SuiteEvaluationExplainOptions{File: alias, ID: id}); err != nil || !strings.Contains(out.String(), id) {
+			t.Fatalf("alias split file subject = %q, %v", out.String(), err)
+		}
+	}
+}
 func previewCall(t *testing.T, cs *sdk.ClientSession, name string, args map[string]any) (app.FilePreviewResult, *sdk.CallToolResult) {
 	t.Helper()
 	res, err := cs.CallTool(t.Context(), &sdk.CallToolParams{Name: name, Arguments: args})
@@ -97,6 +131,7 @@ func previewCall(t *testing.T, cs *sdk.ClientSession, name string, args map[stri
 	return r, res
 }
 func TestPreviewFailureOnlyContentProjection(t *testing.T) {
+	t.Setenv("KMX_HOME", filepath.Join(t.TempDir(), "state"))
 	f, _, source := canonicalFiles(t)
 	source = strings.Split(source, "## Examples")[0] + "## Examples\n```yaml\nexamples:\n"
 	for _, id := range []string{"passing", "failing", "unknown"} {
@@ -150,6 +185,7 @@ func TestPreviewFailureOnlyContentProjection(t *testing.T) {
 }
 
 func TestPreviewCompletedFailureIsNormalResult(t *testing.T) {
+	t.Setenv("KMX_HOME", filepath.Join(t.TempDir(), "state"))
 	f, _, source := canonicalFiles(t)
 	saved, err := f.Create(t.Context(), "greeter.agent.md", []byte(source))
 	if err != nil {
@@ -175,6 +211,7 @@ func TestPreviewCompletedFailureIsNormalResult(t *testing.T) {
 }
 
 func TestPreviewToolsSharedResults(t *testing.T) {
+	t.Setenv("KMX_HOME", filepath.Join(t.TempDir(), "state"))
 	f, root, source := canonicalFiles(t)
 	saved, err := f.Create(t.Context(), "greeter.agent.md", []byte(source))
 	if err != nil {
@@ -212,7 +249,19 @@ func TestPreviewToolsSharedResults(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want, _ := a.PreviewAgentSnapshot(t.Context(), parsed, app.FilePreviewOptions{File: saved.Path, Operation: tc.op, CaseID: tc.caseID})
+			retentionFile := ""
+			if tc.op == "test" {
+				retentionFile = filepath.Join(root, saved.Path)
+			}
+			options := app.FilePreviewOptions{File: saved.Path, Operation: tc.op, CaseID: tc.caseID}
+			if retentionFile != "" {
+				options = app.WithFilePreviewRetention(options, retentionFile, parsed.Revision)
+			}
+			want, _ := a.PreviewAgentSnapshot(t.Context(), parsed, options)
+			if got.Retention.Status == "retained" && want.Retention.Status == "retained" {
+				got.Retention.Diagnostics = nil
+				want.Retention.Diagnostics = nil
+			}
 			b1, _ := json.Marshal(got)
 			b2, _ := json.Marshal(want)
 			if string(b1) != string(b2) || res.IsError != (tc.cause != nil) {
@@ -250,6 +299,7 @@ func TestPreviewToolsSharedResults(t *testing.T) {
 	}
 }
 func TestPreviewSummaryBoundsAndContent(t *testing.T) {
+	t.Setenv("KMX_HOME", filepath.Join(t.TempDir(), "state"))
 	f, _, source := canonicalFiles(t)
 	// This test constructs a new fixture; native checkout bytes may use CRLF.
 	prefix, _, found := strings.Cut(strings.ReplaceAll(source, "\r\n", "\n"), "examples:\n")

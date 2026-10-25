@@ -21,6 +21,8 @@
 // Source-only versions are read-only resources; restore uses the same Edit CAS.
 // Linux creation uses no-replace rename, then hard-link publication when needed.
 // Mounts lacking both use exclusive creation and synced copy without atomic visibility.
+// Canonical Test passes its resolved target to App for subject-scoped failure
+// retention; requested display paths never grant storage authority.
 package mcp
 
 import (

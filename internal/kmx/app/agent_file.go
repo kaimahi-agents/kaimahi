@@ -17,15 +17,19 @@ import (
 
 type FilePreviewOptions struct {
 	File, Operation, CaseID string
-	ToolBindings            string
-	Model                   string
-	Route, JudgeRoute       *modelaccess.Route
-	Input                   *string
-	ShowContent             bool
-	ShowFailedContent       bool
+	// RetentionFile requests checked retention for a target separate from File's
+	// display label. Snapshot callers must use WithFilePreviewRetention.
+	RetentionFile     string
+	ToolBindings      string
+	Model             string
+	Route, JudgeRoute *modelaccess.Route
+	Input             *string
+	ShowContent       bool
+	ShowFailedContent bool
 	// FullPath keeps MCP's requested identity inside the shared redaction boundary.
-	FullPath bool
-	Progress func(string) error
+	FullPath       bool
+	Progress       func(string) error
+	retentionScope *fileFailureScope
 	// CaseFinished receives a safe provisional row, never answer or judge content.
 	CaseFinished func(FilePreviewCaseProgress)
 }
@@ -69,8 +73,27 @@ type FilePreviewSelection struct {
 	TotalCases int      `json:"totalCases"`
 }
 type FilePreviewRetention struct {
-	Status string `json:"status"`
+	Status      string                          `json:"status"`
+	Diagnostics []FilePreviewRetainedDiagnostic `json:"diagnostics,omitempty"`
 }
+type FilePreviewRetainedDiagnostic struct {
+	ID     string `json:"id"`
+	CaseID string `json:"caseId"`
+}
+
+// WithFilePreviewRetention freezes a trusted resolved target before execution
+// only when its checked current bytes match the parsed snapshot revision.
+// Failure leaves retention requested but unavailable without changing Test.
+func WithFilePreviewRetention(opt FilePreviewOptions, filename, revision string) FilePreviewOptions {
+	opt.RetentionFile = filename
+	scope, current, err := currentFileFailureScopeRevision(filename)
+	if err == nil && current == revision {
+		opt.RetentionFile = scope.filename
+		opt.retentionScope = &scope
+	}
+	return opt
+}
+
 type FilePreviewCompletion struct {
 	State         string `json:"state"`
 	ReasonCode    string `json:"reasonCode"`
@@ -162,6 +185,9 @@ func previewReason(code string) string {
 // PreviewAgentFile is the CLI path wrapper: load once, then execute that snapshot.
 func (a *App) PreviewAgentFile(ctx context.Context, opt FilePreviewOptions) (FilePreviewResult, error) {
 	parsed, err := agentfile.Load(opt.File)
+	if err == nil && opt.RetentionFile != "" && opt.retentionScope == nil {
+		opt = WithFilePreviewRetention(opt, opt.RetentionFile, parsed.Revision)
+	}
 	return a.previewAgentSnapshot(ctx, parsed, opt, err)
 }
 
@@ -304,6 +330,9 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	if a.FileRunner == nil {
 		return fail("runner_unavailable", 1)
 	}
+	if opt.retentionScope != nil && opt.retentionScope.filename != opt.RetentionFile {
+		return fail("invalid_options", 1)
+	}
 	request := agentpreview.Request{Agent: parsed, Examples: selected, Route: route, JudgeRoute: opt.JudgeRoute, Input: opt.Input, Progress: opt.Progress, ToolBindings: opt.ToolBindings, FileLabel: r.File.Path}
 	request.ExampleFinished = previewCaseObserver(ctx, selected, parsed, route, opt.CaseFinished)
 	judgeCtx, judgeNotes := newFileJudgeContext(ctx)
@@ -433,6 +462,11 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	if r.AdHoc != nil && r.AdHoc.State != "complete" {
 		return fail("invalid_completion", 1)
 	}
+	if opt.Operation == "test" && opt.retentionScope != nil {
+		retainFilePreviewFailures(ctx, *opt.retentionScope, parsed, selected, route, judge, r.Selection.Scope, outcome.Examples, &r)
+	} else if opt.Operation == "test" && opt.RetentionFile != "" && runtime.EvaluationAssertionsVerdict(all) != runtime.EvaluationPass {
+		r.Retention.Status = "unavailable"
+	}
 	r.State = "complete"
 	if len(selected) == 0 {
 		// An ad-hoc answer is not evidence: no verdict and never a vacuous full pass.
@@ -453,6 +487,70 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		return r, &FilePreviewError{code: r.ReasonCode, exit: 2}
 	}
 	return r, nil
+}
+
+func retainFilePreviewFailures(ctx context.Context, scope fileFailureScope, agent *agentfile.Agent, selected []agentfile.Example, route, judge modelaccess.Route, selection string, outcomes []agentpreview.ExampleOutcome, result *FilePreviewResult) {
+	nonpass := make([]int, 0, len(outcomes))
+	for i, outcome := range outcomes {
+		if runtime.EvaluationAssertionsVerdict(outcome.Assertions) != runtime.EvaluationPass {
+			nonpass = append(nonpass, i)
+		}
+	}
+	if len(nonpass) == 0 {
+		return
+	}
+	if len(nonpass) > maxSuiteFailureRecords {
+		result.Retention.Status = "unavailable"
+		return
+	}
+	result.Retention.Status = "retained"
+	operationID, err := randomHex(16)
+	if err != nil {
+		result.Retention.Status = "unavailable"
+		return
+	}
+	judgeRoute := FilePreviewRoute{Provider: judge.Provider, Model: judge.Model}
+	for _, i := range nonpass {
+		outcome := outcomes[i]
+		verdict := runtime.EvaluationAssertionsVerdict(outcome.Assertions)
+		definition := selected[i]
+		frame := suitePassingInventoryCase{
+			Case:     runtime.EvaluationCase{ID: definition.ID, Input: definition.Input, Assertions: definition.Assertions},
+			Metadata: suitePassingCase{Run: 1, Assertions: make([]suitePassingAssertion, len(definition.Assertions))},
+		}
+		observation := suitePassingObservation{EvaluationReceipt: runtime.EvaluationReceipt{
+			CaseID: definition.ID, AnswerSHA256: runtime.EvaluationAnswerDigest(outcome.Completion.Answer),
+			Verdict: verdict, Assertions: outcome.Assertions,
+		}}
+		detail := captureSuiteFailureWithReasons(frame, observation, outcome.Completion.Answer, nil, false, nil)
+		if detail == nil {
+			continue
+		}
+		// File preview aggregation gives a known failed assertion precedence over
+		// an inconclusive sibling; keep that validated operation contract rather
+		// than applying workspace repeat-policy unknown precedence here.
+		detail.Verdict = string(verdict)
+		detail.OperationID = "op-" + operationID
+		assertions := make([]fileFailureAssertionRecord, len(outcome.Assertions))
+		for j, assertion := range outcome.Assertions {
+			assertions[j] = fileFailureAssertionRecord{
+				ID: assertion.ID, Type: assertion.Type, Digest: assertion.DefinitionDigest,
+				Verdict: assertion.Verdict, ReasonCode: previewAssertion(assertion.ID, assertion.Type, assertion.Verdict).ReasonCode,
+			}
+		}
+		codec := retainedFileFailureCodec{
+			revision: agent.Revision, agentID: agent.Identity.ID, operation: "test", selection: selection,
+			model: FilePreviewRoute{Provider: route.Provider, Model: route.Model}, judge: judgeRoute, assertions: assertions,
+		}
+		id, saveErr := saveFileFailure(context.WithoutCancel(ctx), scope, codec, *detail)
+		if id != "" {
+			result.Retention.Diagnostics = append(result.Retention.Diagnostics, FilePreviewRetainedDiagnostic{ID: id, CaseID: detail.CaseID})
+		}
+		if saveErr != nil {
+			result.Retention.Status = "unavailable"
+			return
+		}
+	}
 }
 
 func previewCompletion(state, code string) FilePreviewCompletion {
