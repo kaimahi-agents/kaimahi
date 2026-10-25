@@ -1,4 +1,4 @@
-import { readSnapshot, portableId } from "./authoring.mjs";
+import { readSnapshot, portableId, effectiveModel, preRouteRefusal } from "./authoring.mjs";
 import { same, uniqueIndex, quoted } from "./editor.mjs";
 
 export function createObservationController(state, { path, options, drafts, clearUndo, render, refresh }) {
@@ -12,13 +12,19 @@ export function createObservationController(state, { path, options, drafts, clea
     if (started.generation !== state.observationGeneration || started.revision !== state.base.file.revision
       || !matches(view) || state.busy || state.blocked || invalidEditors.size) return false;
     const observed = view;
-    view = modelChoice.view(view);
-    if (same(view, state.base) || (state.candidate && same(view, state.candidate))) return false;
+    const selected = effectiveModel(view.model, modelChoice.override, view.chatModel);
+    const route = view.latest.result?.modelRoute, incomingModel = route?.slice(route.indexOf("/") + 1);
+    const adoptable = view.file.revision === state.base.file.revision || !hasDrafts();
+    const stopped = history.attempt(incomingModel)?.run?.revision === view.file.revision;
+    const previousHistory = [history.pair(), history.attempt(incomingModel)];
+    if (adoptable) { history.focus(selected); if (!stopped) history.remember(observed); }
+    const changedHistory = adoptable && !same(previousHistory, [history.pair(), history.attempt(incomingModel)]);
+    view = modelChoice.view(view, view.latest.status !== "current" || preRouteRefusal(view.latest.result) || incomingModel === selected ? undefined : history.selected(view, selected));
+    if (!changedHistory && (same(view, state.base) || (state.candidate && same(view, state.candidate)))) return false;
     clearUndo(); displayNames.clear(); state.runAlert = undefined;
     state.observationGeneration++;
     state.lastRun = undefined;
     if (view.file.revision === state.base.file.revision || !hasDrafts()) {
-      history.remember(observed);
       state.base = view; state.snap = readSnapshot(view); state.candidate = undefined; state.compareOpen = false;
       // New results need new DOM; local edits refresh styling without losing focus.
       pruneDrafts(); render();

@@ -1,7 +1,7 @@
 // Resource and authoring values are untrusted: render only inert DOM text.
-import { runtimeModelSelection, effectiveModel, readSnapshot, portableId, compareDrafts } from "./authoring.mjs";
+import { runtimeModelSelection, effectiveModel, readSnapshot, portableId, compareDrafts, same } from "./authoring.mjs";
 import { el, inlineText, editorValue, instructionsContent, runtimeModelControl, testNameControl, icon, statusIcon,
-  checkKey, uniqueIndex, clone, operandKey, EDITABLE_TYPES, quoted, checkLabel, oneLine, failureFacts, testRow, coherentSelection, ambiguousPassSet, countText, plural, resultHistory, resultPill, modelLabel, growTextarea, checkTypeControl, checkFields, convertCheck, inconclusiveJudge, judgeDetails, plainReason, isRefused, matchedAnswer, answerBlock, refusalContext,
+  inspectCases, compareLabels, checkKey, uniqueIndex, clone, operandKey, EDITABLE_TYPES, quoted, checkLabel, oneLine, failureFacts, testRow, coherentSelection, ambiguousPassSet, countText, plural, resultHistory, resultPill, modelLabel, growTextarea, checkTypeControl, checkFields, convertCheck, inconclusiveJudge, judgeDetails, plainReason, isRefused, matchedAnswer, answerBlock, refusalContext,
   canvasResultSummary, canvasFooterText, canvasHeader, runNotice, instructionEditor, conflictNotice, saveButton } from "./editor.mjs";
 import { createDraftController } from "./draft-controller.mjs";
 import { createActionController } from "./action-controller.mjs";
@@ -41,12 +41,13 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   let filter = "all", menuOpen = false, cleanups = [], controls = [];
   let refresh = () => {}, activeTestName, issueInput;
   state.base = modelChoice.view(state.base);
+  history.focus(effectiveModel(state.base.model, modelChoice.override, state.base.chatModel));
   let actions;
   const drafts = createDraftController(state, { clearUndo: () => actions.clearUndo(), navigate, render, refresh: () => refresh() });
   const { hasDrafts, sectionText, entries, localExamples, draftName, noteDraft, addTest } = drafts;
   const { observation, matches, observe, checkNow, useTheirs, keepMine } = createObservationController(state,
     { path: payload.file.path, options, drafts, clearUndo: () => actions.clearUndo(), render, refresh: () => refresh() });
-  actions = createActionController(state, { execute, drafts, matches, checkNow, render, refresh: () => refresh(), focusName: () => activeTestName?.focus() });
+  actions = createActionController(state, { execute, fetchProgress: options.fetchProgress, drafts, matches, checkNow, render, refresh: () => refresh(), focusName: () => activeTestName?.focus() });
   const { act, submitAll, submitOne, testing, clearUndo } = actions;
 
   function navigate(next) { state.route = next; state.invalidCheck = undefined; if (!state.blocked && !state.savedUntested) { state.message = ""; state.runAlert = undefined; } }
@@ -69,7 +70,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       messageNode.textContent = state.message;
       for (const u of updates) u();
       for (const { node, guard } of controls) {
-        node.disabled = guard === "reload" ? state.busy : invalidEditors.size > 0 || (guard === "nav" ? false
+        node.disabled = guard === "stop" ? currentRun()?.state !== "running" : guard === "reload" ? state.busy : invalidEditors.size > 0 || (guard === "nav" ? false
           : state.busy || state.blocked || (guard === "save" && !!state.candidate) || (guard === "clean" && hasDrafts()));
       }
     };
@@ -94,7 +95,44 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     if (state.focusIssue) { issueInput?.focus(); state.focusIssue = false; }
   }
 
+  const selectedModel = () => effectiveModel(state.base.model, modelChoice.override, state.base.chatModel);
+  const currentRun = () => testing() ? state.run : history.attempt(selectedModel())?.run;
+  function runSummary(run) {
+    if (run.state === "stopping") return { tone: "running", text: "Stopping…" };
+    const n = run.caseIds.length, done = run.cases.length;
+    if (run.state !== "stopped") return { tone: "running", text: `Running · ${done} of ${n} done` };
+    const passing = run.cases.filter(c => c.verdict === "pass").length, failing = run.cases.filter(c => c.verdict === "fail").length;
+    const unknown = done - passing - failing;
+    const counts = [`${passing} passing`, ...(failing ? [`${failing} failing`] : []), ...(unknown ? [`${unknown} didn't finish`] : [])];
+    return { tone: failing ? "fail" : unknown ? "error" : "none", text: `${done ? counts.join(", ") + " · " : ""}${done} of ${n} ran` };
+  }
+  function runRow(id, fallback, run = currentRun(), partner = false) {
+    if (!run || !run.caseIds.includes(id)) return fallback;
+    const attempt = history.attempt(run.model);
+    if ((!testing() || partner) && !same(attempt?.view.authoring?.examples.find(e => e.id === id), state.base.authoring?.examples.find(e => e.id === id))) return fallback;
+    const old = partner || !testing() && (hasDrafts() || run.revision !== state.base.file.revision);
+    const c = run.cases.find(c => c.caseId === id);
+    let base = c?.verdict === "pass" ? "pass" : c?.verdict === "fail" ? "fail" : c ? "error" : "none";
+    let label = c?.verdict === "pass" ? "Passed" : c?.verdict === "fail" ? "Failed" : c ? "Didn't finish" : "Not run";
+    if (!c && run.state !== "stopped") {
+      const next = !run.cases.some(c => c.verdict === "unknown") && run.caseIds.find(id => !run.cases.some(c => c.caseId === id));
+      if (next === id && run.state !== "stopping") { base = "running"; label = "Running"; }
+      else if (fallback.base !== "none") return { ...fallback, kind: `old-${fallback.base}`, tone: "none" };
+      else label = "Waiting";
+    }
+    const kind = old && base !== "none" ? `old-${base}` : base;
+    return { base, kind, tone: old ? "none" : base, label, note: c?.verdict !== "pass" ? c?.reason ?? "" : "", count: c?.verdict === "pass" ? "passing" : c?.verdict === "fail" ? "failing" : "" };
+  }
+  function stopButton(button, updates) {
+    const node = button("■ Stop Copilot turn", () => actions.stop(), "tb stop-run", "stop");
+    node.setAttribute("aria-label", "Stop Copilot turn"); node.setAttribute("title", "Stop Copilot turn");
+    updates.push(() => { node.hidden = !testing() || !state.run; });
+    return node;
+  }
   function resultSummary() {
+    const run = currentRun();
+    if (run && !state.blocked && state.route.name !== "detail") return !testing() && (hasDrafts() || run.revision !== state.base.file.revision)
+      ? { tone: "none", text: "Out of date" } : runSummary(run);
     return canvasResultSummary(state.base, { n: entries().filter(e => !e.draft?.deleted).length, testing: testing(), one: state.pending?.one,
       blocked: state.blocked, dirty: hasDrafts(), last: history.last });
   }
@@ -131,6 +169,8 @@ export function renderView(doc, root, payload, execute = postAction, options = {
 
   const total = () => localExamples().length;
   function footText(scope) {
+    if (testing() && state.run) return state.run.state === "stopping" ? "Saved · stopping Copilot turn…"
+      : `Saved · running ${state.pending.one ? "this test" : plural(total(), "test")}`;
     return canvasFooterText({ editable: !!state.snap, n: state.snap ? total() : 0, busy: state.busy, pending: state.pending, blocked: state.blocked, savedUntested: state.savedUntested,
       invalid: invalidEditors.size, candidate: state.candidate, scope, promptDirty: sectionDrafts.size, testDirty: testDrafts.has(state.route.key), dirty: hasDrafts(), runAlert: state.runAlert });
   }
@@ -169,7 +209,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     } else promptBox.append(instructionsContent(doc, state.base));
     foot.append(spinnerStatus(status, "all", updates));
     const saveRun = state.snap ? saveButton(doc, button, "Save and run all tests", submitAll) : undefined;
-    if (saveRun) foot.append(saveRun);
+    if (saveRun) { foot.append(saveRun, stopButton(button, updates)); updates.push(() => { saveRun.hidden = testing() && !!state.run; }); }
     if (state.snap) foot.append(hostedNotice(updates));
     promptBox.append(foot); promptSection.append(promptLabel, promptBox);
 
@@ -246,7 +286,8 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     const draw = () => {
       for (const node of rowControls.splice(0)) if (controls.includes(node)) controls.splice(controls.indexOf(node), 1);
       const all = entries(), anyDraft = hasDrafts(), oldResults = anyDraft || testing() || state.base.latest.status !== "current";
-      const shown = all.map((e) => ({ e, r: e.draft?.origin === null ? { kind: "none", base: "none", label: "Not run", note: "", count: "" } : testRow(e.c, oldResults || e.c?.previous, state.blocked, ambiguousPassSet(state.base)) }));
+      const shown = all.map((e) => ({ e, r: e.draft?.origin === null ? { kind: "none", base: "none", label: "Not run", note: "", count: "" }
+        : state.blocked ? testRow(e.c, oldResults, true) : runRow(e.raw?.id ?? e.c?.example.id, testRow(e.c, oldResults || e.c?.previous, false, ambiguousPassSet(state.base))) }));
       const counted = shown.filter(({ e }) => !e.draft?.deleted);
       const currentPass = ({ e, r }) => r.base === "pass" && !e.c?.previous;
       const notPassing = counted.filter(row => !currentPass(row)).length;
@@ -270,13 +311,36 @@ export function renderView(doc, root, payload, execute = postAction, options = {
         }
         const open = e.openable ? button("", () => { navigate({ name: "detail", key: e.key ?? `view:${id}` }); menuOpen = false; render(); }, "test-row", "nav") : el(doc, "div", "test-row");
         if (e.openable) rowControls.push(controls[controls.length - 1]);
-        const rowNote = e.c?.state === "refused" ? "" : e.c?.previous && state.base.latest.status === "current" ? "Not in this run" : r.note;
+        const rowNote = currentRun() ? r.note : e.c?.state === "refused" ? "" : e.c?.previous && state.base.latest.status === "current" ? "Not in this run" : r.note;
         const noteText = e.draft ? "Unsaved" + (rowNote ? ` · ${rowNote}` : "") : rowNote;
         const example = e.c?.example, summary = example ? `${oneLine(example.input, 64)} → ${example.assertions.map(checkLabel).join(" · ")}` : "";
         const word = !state.blocked && e.c?.state === "refused" ? "Refused" : r.base === "pass" ? "Passed" : r.base === "fail" ? "Failed" : r.base === "error" ? "Didn't finish" : r.label === "No current result" || r.label === "Out of date" && history.last ? "Not run yet" : r.label;
         const verdict = el(doc, "span", `test-verdict ${r.kind}`); verdict.setAttribute("data-tone", r.tone ?? "none");
-        verdict.append(el(doc, "span", "verdict-word", word));
-        if (r.kind.startsWith("old-")) verdict.append(el(doc, "span", "sr-only verdict-context", " last run"));
+        const pair = history.pair(), labels = compareLabels(pair.map(v => v.latest.result.modelRoute));
+        const selectedInPair = pair.some(v => v.latest.result.modelRoute.slice(v.latest.result.modelRoute.indexOf("/") + 1) === selectedModel());
+        if (pair.length === 2 && !state.blocked && (selectedInPair || !testing() && !currentRun() && state.base.latest.status !== "current")) {
+          verdict.className += " verdict-pair";
+          pair.forEach((view, index) => {
+            const route = view.latest.result.modelRoute, selected = route.slice(route.indexOf("/") + 1) === selectedModel();
+            const attempt = history.attempt(route.slice(route.indexOf("/") + 1)), latestView = !attempt?.run && attempt?.view || view;
+            const c = inspectCases(latestView).find(c => c.example.id === id);
+            const definition = latestView.authoring?.examples.find(c => c.id === id), current = state.base.authoring?.examples.find(c => c.id === id);
+            const old = !selected || testing() || hasDrafts() || view.file.revision !== state.base.file.revision;
+            const prior = definition && same(definition, current) ? testRow(c, old, false) : { kind: "none", label: "Not run yet" };
+            const foreign = selected && e.c?.previous && e.c.previousModel !== route && !currentRun();
+            const own = selected && (currentRun() || state.base.latest.result?.modelRoute === route);
+            const slot = own ? foreign ? { kind: "none", label: "Not run" } : r : attempt?.run ? runRow(id, prior, attempt.run, !selected) : prior;
+            const text = own && !foreign ? word : slot.label.replace(/ last run$/, "");
+            if (index) verdict.append(" · ");
+            const phrase = el(doc, "span", `verdict-slot ${slot.kind}`, `${labels[index]} ${text}`);
+            phrase.setAttribute("title", modelLabel(route)); phrase.setAttribute("aria-label", `${modelLabel(route)}: ${text}`);
+            verdict.append(phrase);
+          });
+        } else {
+          if (r.kind === "running") verdict.append(statusIcon(doc, "running", "Running"));
+          verdict.append(el(doc, "span", "verdict-word", word));
+          if (r.kind.startsWith("old-")) verdict.append(el(doc, "span", "sr-only verdict-context", " last run"));
+        }
         open.append(el(doc, "span", "test-name", draftName(e)), el(doc, "span", "test-input-summary", summary), verdict);
         const line = el(doc, "span", e.draft ? "test-note unsaved" : "test-note", noteText); line.hidden = !noteText;
         open.append(line);
@@ -293,13 +357,27 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       const malformed = !!state.base.latest.result && !coherentSelection(state.base);
       const stale = state.base.latest.status === "stale" || (anyDraft || state.base.latest.status !== "current") && !!history.last;
       const previous = modelLabel(history.last?.latest.result.modelRoute);
-      const accessible = state.blocked ? "Result unconfirmed" : !shown.length ? "" : testing() ? "Running…"
+      const run = currentRun(), pair = history.pair();
+      const selected = pair.find(v => v.latest.result.modelRoute.slice(v.latest.result.modelRoute.indexOf("/") + 1) === selectedModel());
+      const partner = selected && pair.find(v => v !== selected);
+      const elapsed = history.elapsed(state.base), duration = Number.isFinite(elapsed) ? ` · ${Math.round(elapsed / 1000)} s` : "";
+      const partnerAttempt = partner && history.attempt(partner.latest.result.modelRoute.slice(partner.latest.result.modelRoute.indexOf("/") + 1));
+      const partnerRun = partnerAttempt?.run, partnerView = !partnerRun && partnerAttempt?.view || partner;
+      const partnerResult = partnerView?.latest.result;
+      const partnerSummary = !partner ? "" : partnerRun ? `Stopped · ${partnerRun.cases.length} of ${partnerRun.caseIds.length} ran` : isRefused(partnerResult) ? "Refused" : partnerResult.state !== "complete" ? "Didn't finish"
+        : partnerResult.selection.scope === "subset" ? `${partnerResult.selection.caseIds.length} of ${partner.examples.length} tests ran`
+        : inspectCases(partnerView).some(c => c.state === "unknown") ? "Incomplete run" : `${inspectCases(partnerView).filter(c => c.state === "pass").length} of ${partner.examples.length} passing`;
+      const partnerText = partner ? ` · ${modelLabel(partner.latest.result.modelRoute)} ${(partnerRun?.revision ?? partnerView.file.revision) === state.base.file.revision && !anyDraft ? "earlier" : "before your edit"}, ${partnerSummary}` : "";
+      const runText = run ? run.state === "stopping" ? "Stopping Copilot turn…" : run.state === "stopped" ? `Stopped · ${run.cases.length} of ${run.caseIds.length} ran` : "Running" : "";
+      const accessible = state.blocked ? "Result unconfirmed" : run && (testing() || !anyDraft && run.revision === state.base.file.revision) ? runText + partnerText : !shown.length ? "" : testing() ? "Running…"
         : stale && state.base.latest.status !== "current" ? `Out of date${previous ? ` · last run on ${previous}` : ""}` : state.base.latest.status !== "current" || !text ? "Not run yet"
         : (state.base.latest.result.state !== "complete" || malformed) && !isRefused(state.base.latest.result) && !anyDraft && !/didn't finish|incomplete/.test(text) ? `Incomplete run: ${text}`
         : anyDraft ? `Last run, before your edit: ${text}` : state.lastRun && !state.lastRun.one && !state.runAlert ? `${text} · just now` : text;
       // Update live-region text for screen readers.
       if (summaryNode.textContent !== accessible) summaryNode.textContent = accessible;
-      meta.textContent = !oldResults && !state.busy && !state.blocked && isRefused(state.base.latest.result) ? text : stale ? `Out of date${previous ? ` · last run on ${previous}` : ""}` : !state.busy && state.lastRun && !state.runAlert ? "· just now" : "";
+      meta.textContent = !state.blocked && run ? (anyDraft && !testing() || run.revision !== state.base.file.revision && !testing() ? "Out of date · " : "") + runText + partnerText
+        : !state.blocked && partner ? (stale ? `Out of date · ${modelLabel(selected.latest.result.modelRoute)} before your edit, ${inspectCases(selected).filter(c => c.state === "pass").length} of ${selected.examples.length} passing` : `Ran ${state.lastRun ? "just now" : "earlier"} on ${modelLabel(state.base.latest.result?.modelRoute) || selectedModel()}${duration}`) + partnerText
+        : !oldResults && !state.busy && !state.blocked && isRefused(state.base.latest.result) ? text : stale ? `Out of date${previous ? ` · last run on ${previous}` : ""}` : !state.busy && state.lastRun && !state.runAlert ? duration ? `Ran just now${duration}` : "· just now" : "";
       if (firstRun) {
         firstRun.hidden = !counted.length || state.blocked || state.busy || !!history.last && !stale;
         firstRun.textContent = `${anyDraft ? "Save and run" : "Run"} ${plural(counted.length, "test")}`;
@@ -327,7 +405,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     const status = el(doc, "span", "meta"); status.setAttribute("aria-hidden", "true");
     const jump = button("", () => tests.scrollIntoView?.({ block: "start" }), "tb tb-quiet pinned-tests", "nav");
     const right = el(doc, "div", "pinned-actions");
-    right.append(jump, saveButton(doc, button, "Save and run all tests", submitAll));
+    right.append(jump, saveButton(doc, button, "Save and run all tests", submitAll), stopButton(button, updates));
     inner.append(status, right); bar.append(inner); bar.hidden = true;
     updates.push(() => {
       status.textContent = footText("all");
@@ -564,7 +642,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       cancel.setAttribute("aria-label", "Cancel"); cancel.append(icon(doc, "close", 16, 2.2));
       cancel.setAttribute("title", "Discard this test's edits (Esc)");
       updates.push(() => { cancel.hidden = !draft(); });
-      right.append(cancel, saveButton(doc, button, "Save and run this test", () => submitOne(key)));
+      right.append(cancel, saveButton(doc, button, "Save and run this test", () => submitOne(key)), stopButton(button, updates));
       foot.append(right, hostedNotice(updates)); out.push(foot);
     } else {
       const foot = el(doc, "div", "detail-foot"); foot.append(status); out.push(foot);
@@ -620,8 +698,10 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       if (state.busy || state.blocked) return;
       clearUndo();
       state.observationGeneration++;
+      history.prefer(selectedModel());
       if (modelChoice.choose(value, state.base)) {
-        state.base = modelChoice.view(state.base); state.lastRun = undefined; state.runAlert = undefined;
+        history.focus(selectedModel());
+        state.base = modelChoice.view(state.base, history.selected(state.base, selectedModel())); state.lastRun = undefined; state.runAlert = undefined;
       }
       render(); modelControl.trigger.focus();
     });
@@ -630,7 +710,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     observe,
     observation,
     idle: () => !state.busy && !state.blocked && invalidEditors.size === 0,
-    dispose() { clearUndo(); state.observationGeneration++; for (const cleanup of cleanups.splice(0)) cleanup(); },
+    dispose() { clearUndo(); actions.dispose(); state.observationGeneration++; for (const cleanup of cleanups.splice(0)) cleanup(); },
   };
 }
 
@@ -638,7 +718,7 @@ async function main() {
   const root = document.getElementById("root");
   let app;
   try {
-    app = renderView(document, root, await fetchView(), postAction, { fetchView });
+    app = renderView(document, root, await fetchView(), postAction, { fetchView, fetchProgress: runId => postAction({ operation: "progress", runId }) });
   } catch {
     renderView(document, root, { error: true, message: "The agent view could not be loaded." });
     return;

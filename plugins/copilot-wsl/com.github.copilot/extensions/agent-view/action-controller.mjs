@@ -3,7 +3,8 @@ import { isRefused, plainReason, quoted, clone } from "./editor.mjs";
 const CONFLICTS = ["revision_mismatch", "revision-mismatch"];
 const UNKNOWN = ["outcome-unknown", "uncertain-outcome", "uncertain_outcome"];
 
-export function createActionController(state, { execute, drafts, matches, checkNow, render, refresh, focusName }) {
+let runSequence = 0;
+export function createActionController(state, { execute, fetchProgress, drafts, matches, checkNow, render, refresh, focusName }) {
   const { sectionDrafts, testDrafts, invalidEditors, displayNames, modelChoice } = state;
   const { hasDrafts, rawExamples, entries, localExamples, draftName, checkProblem, adopt } = drafts;
   function clearUndo() { state.promptUndo = undefined; clearTimeout(state.undoTimer); }
@@ -13,12 +14,34 @@ export function createActionController(state, { execute, drafts, matches, checkN
     state.undoTimer.unref?.();
   }
   const testing = () => state.busy && ["test", "save-and-test"].includes(state.pending?.operation);
+  let progressTimer, activeRun, disposed = false;
+  const stopWatching = () => { clearTimeout(progressTimer); activeRun = undefined; };
+  function watch(id) {
+    if (!fetchProgress) return;
+    const poll = async () => {
+      try {
+        const response = await fetchProgress(id);
+        if (!disposed && activeRun === id && response?.run?.id === id) {
+          state.run = { ...response.run, ...(state.run?.state === "stopping" ? { state: "stopping" } : {}) }; refresh();
+        }
+      } catch { /* Final Test reply remains authoritative when progress is unavailable. */ }
+      if (!disposed && activeRun === id) { progressTimer = setTimeout(poll, 200); progressTimer.unref?.(); }
+    };
+    progressTimer = setTimeout(poll, 200); progressTimer.unref?.();
+  }
+  async function stop() {
+    if (!activeRun || state.run?.id !== activeRun || state.run.state !== "running") return;
+    const runId = activeRun;
+    state.run = { ...state.run, state: "stopping" }; refresh();
+    try { await execute({ operation: "stop", runId }); } catch { /* The long action owns the final outcome. */ }
+  }
 
   async function act(operation, values = {}, submitted = { sections: [], tests: [] }) {
     if (state.busy || ((state.blocked || invalidEditors.size) && operation !== "reload")) return;
     const previousPrompt = submitted.sections.map(key => ({ key, text: state.snap.sections.find(s => s.key === key).text }));
     clearUndo();
-    state.observationGeneration++;
+    if (["test", "save-and-test"].includes(operation)) state.history.started(effectiveModel(state.base.model, modelChoice.override, state.base.chatModel));
+    state.observationGeneration++; state.run = undefined;
     state.busy = true; state.pending = { operation, one: values.caseId !== undefined }; state.message = operation === "run" ? "Running…" : ""; state.runAlert = undefined; refresh();
     const action = { operation, ...values };
     if (!["reload", "suggest"].includes(operation)) action.expectedRevision = state.base.file.revision;
@@ -28,20 +51,35 @@ export function createActionController(state, { execute, drafts, matches, checkN
       action.showContent = true;
       if (modelChoice.override) action.model = modelChoice.override;
     }
+    if (["test", "save-and-test"].includes(operation)) {
+      action.runId = `canvas-${Date.now().toString(36)}-${++runSequence}`; activeRun = action.runId; watch(activeRun);
+    }
     let response;
     try { response = await execute(action); } catch {
       if (hostedAttempt) state.hostedSent = true;
+      stopWatching();
+      if (disposed) return;
       state.busy = false; state.pending = undefined; state.blocked = true;
       state.message = "Connection lost. The action may have completed. Do not resubmit. Your draft is still here; reload to inspect the saved file.";
       render(); return;
     }
+    stopWatching();
+    if (disposed) return;
     state.busy = false; state.pending = undefined; state.message = "";
     const latest = response?.view?.latest;
     if (hostedAttempt && (UNKNOWN.includes(response?.error) || CONFLICTS.includes(response?.error) || latest?.status === "current" && latest.result && !isRefused(latest.result))) state.hostedSent = true;
-    if (executing && matches(response?.view)) modelChoice.confirm(response.view);
+    if (executing && matches(response?.view) && !response.stopped) {
+      state.history.remember(response.view, true, response.run?.elapsedMs, executing ? effectiveModel(state.base.model, modelChoice.override, state.base.chatModel) : undefined);
+      modelChoice.confirm(response.view);
+    }
     const tested = ["test", "save-and-test"].includes(operation);
-    if (operation === "reload") {
+    if (response?.stopped && response.run?.id === action.runId && matches(response.view)) {
+      adopt(response.view, response.saved ? submitted : { sections: [], tests: [] });
+      state.history.stop(response.run, response.view); state.run = response.run; state.lastRun = undefined;
+      if (hostedAttempt) state.hostedSent = true;
+    } else if (operation === "reload") {
       if (matches(response?.view)) {
+        state.history.reset(); state.history.remember(response.view); state.run = undefined;
         sectionDrafts.clear(); testDrafts.clear(); displayNames.clear(); state.blocked = false; state.savedUntested = false; state.lastRun = undefined;
         adopt(response.view, { sections: [], tests: [] }); state.message = "Reloaded the saved agent. Drafts were discarded.";
       } else state.message = response?.message || "Reload did not complete. Your draft is still here.";
@@ -116,5 +154,5 @@ export function createActionController(state, { execute, drafts, matches, checkN
     act(sectionDrafts.size || entry.draft ? "save-and-test" : "test", values, submitted);
   }
 
-  return { act, submitAll, submitOne, testing, clearUndo };
+  return { act, submitAll, submitOne, testing, clearUndo, stop, dispose() { disposed = true; stopWatching(); } };
 }

@@ -1,5 +1,5 @@
 // Inert DOM editing and exact source serialization. Loaders and actions are caller-owned.
-import { effectiveModel, DEFAULT_MODEL, agentName, fileLocation, same, uniqueIndex, operandKey, EDITABLE_TYPES, quoted } from "./authoring.mjs";
+import { effectiveModel, preRouteRefusal, DEFAULT_MODEL, agentName, fileLocation, same, uniqueIndex, operandKey, EDITABLE_TYPES, quoted } from "./authoring.mjs";
 export { clone, same, uniqueIndex, operandKey, EDITABLE_TYPES, quoted, checkIssue, checkComplete, convertCheck } from "./authoring.mjs";
 export const el = (doc, tag, className, text) => {
   const node = doc.createElement(tag);
@@ -170,28 +170,77 @@ export function countText(rows) {
 export const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 // Last-run display is controller-local, never a current resource or write input.
 export function resultHistory(initial) {
-  let last;
-  const records = new Map();
-  const remember = view => {
+  let last, preferred, focused;
+  const records = new Map(), models = new Map(), attempts = new Map(), timings = new Map(), modelCases = new Map();
+  const modelId = view => view.latest.result?.modelRoute.slice(view.latest.result.modelRoute.indexOf("/") + 1);
+  const pruneAttempts = () => {
+    // Keep newer attempts for both full-result slots, plus one transient model.
+    const retained = new Set([...models.values()].map(modelId));
+    while (attempts.size > 3) attempts.delete([...attempts.keys()].find(id => !retained.has(id)));
+  };
+  const remember = (view, executed = false, elapsedMs, attemptedModel) => {
     const definitions = uniqueIndex(view.authoring?.examples ?? [], e => e.id);
     // Bound memory to this file's remaining case IDs, not every past revision.
     for (const id of records.keys()) if (!definitions.get(id)) records.delete(id);
-    if (view.latest.status !== "current" || view.latest.result.modelRoute === "/" || !coherentSelection(view)) return;
+    for (const [route, prior] of models) if (prior.authoring?.examples.some(e => !same(definitions.get(e.id), e))) models.delete(route);
+    if (view.latest.status !== "current" || !coherentSelection(view)) return;
+    if (view.latest.result.modelRoute === "/") {
+      if (executed && attemptedModel && preRouteRefusal(view.latest.result)) { attempts.set(attemptedModel, { view }); pruneAttempts(); }
+      return;
+    }
+    const id = modelId(view), stopped = attempts.get(id);
+    if (executed || stopped?.view && !stopped.run && !same(stopped.view.latest.result, view.latest.result)) attempts.delete(id);
+    else if (stopped?.run?.revision === view.file.revision) return;
+    const route = view.latest.result.modelRoute, changed = !same(models.get(route)?.latest.result, view.latest.result);
+    if (!models.has(route) && models.size === 2 && (view.latest.result.selection.scope !== "full" || view.latest.result.state !== "complete")) {
+      attempts.set(id, { view });
+      pruneAttempts();
+    } else {
+      models.set(route, view);
+      if (models.size > 2) models.delete([...models.keys()].find(key => key !== route && modelId(models.get(key)) !== (focused === undefined || id === focused ? preferred : focused))
+        ?? [...models.keys()].find(key => key !== route));
+    }
+    if (executed && Number.isFinite(elapsedMs)) timings.set(route, elapsedMs);
+    else if (executed || changed) timings.delete(route);
+    for (const key of timings.keys()) if (!models.has(key)) timings.delete(key);
     for (const c of inspectCases(view)) {
       const definition = definitions.get(c.example.id);
-      if (definition && c.row) records.set(c.example.id, { definition, c, model: view.latest.result.modelRoute });
+      if (definition && c.row) {
+        const record = { definition, c, model: route };
+        records.set(c.example.id, record); modelCases.set(`${route}\0${c.example.id}`, record);
+      }
     }
+    for (const [key, record] of modelCases) if (!definitions.get(record.c.example.id) || !models.has(record.model) && ![...attempts.values()].some(a => a.view.latest.result?.modelRoute === record.model)) modelCases.delete(key);
     if (view.latest.result.examples.length) last = view;
   };
   remember(initial);
   return {
     get last() { return last; }, remember,
-    cases(view) {
+    selected(view, model) {
+      const attempt = attempts.get(model);
+      if (attempt?.run?.revision === view.file.revision) return;
+      if (attempt?.view.file.revision === view.file.revision) return { ...view, latest: attempt.view.latest };
+      const matches = [...models.values()].filter(v => modelId(v) === model && v.file.revision === view.file.revision);
+      return matches.length === 1 ? { ...view, latest: matches[0].latest } : undefined;
+    },
+    pair: () => [...models.values()],
+    prefer: model => { preferred = model; },
+    focus: model => { focused = model; },
+    started: model => { attempts.delete(model); },
+    elapsed: view => timings.get(view.latest.result?.modelRoute),
+    attempt: model => attempts.get(model),
+    stop(run, view) {
+      attempts.set(run.model, { run, view });
+      pruneAttempts();
+    },
+    reset() { attempts.clear(); models.clear(); records.clear(); modelCases.clear(); timings.clear(); last = undefined; },
+    cases(view, selected) {
       const current = view.latest.status === "current", coherent = coherentSelection(view);
       const definitions = uniqueIndex(view.authoring?.examples ?? [], e => e.id), identities = uniqueIndex(view.examples, e => e.id);
       return inspectCases(view).map(c => {
         if (identities.get(c.example.id) !== c.example || current && (!coherent || c.label !== "Not in this run")) return c;
-        const prior = records.get(c.example.id), definition = definitions.get(c.example.id);
+        const route = [...models.keys()].find(route => route.slice(route.indexOf("/") + 1) === selected);
+        const prior = modelCases.get(`${route}\0${c.example.id}`) ?? records.get(c.example.id), definition = definitions.get(c.example.id);
         return prior && definition && same(prior.definition, definition)
           ? { ...prior.c, example: c.example, expected: uniqueIndex(c.example.assertions, checkKey), previous: true, previousModel: prior.model } : c;
       });
@@ -209,6 +258,16 @@ export function modelPresentation(id) {
   return match ? { name: `Gemini ${match[1]} ${friendlyName(match[2])}`, group: "Gemini" } : { name: id, group: "Other models" };
 }
 export const modelLabel = route => modelPresentation(route?.slice(route.indexOf("/") + 1) ?? "").name;
+export function compareLabels(routes) {
+  const names = routes.map(modelLabel);
+  const labels = names.map((name, i) => {
+    if (modelPresentation(routes[i].slice(routes[i].indexOf("/") + 1)).group === "Other models") return name;
+    const other = names[1 - i] ?? "", family = /\b(Terra|Sol|Mini|Nano|Codex|Sonnet|Haiku|Opus|Pro|Flash)\b/.exec(name)?.[0];
+    if (family) return other.includes(family) ? name.replace(/^Claude /, "") : family;
+    return name;
+  });
+  return labels[0] === labels[1] ? names[0] === names[1] ? routes : names : labels;
+}
 export function resultPill(doc, settings) {
   const node = el(doc, "span", "result-pill"), dot = el(doc, "span", "result-dot"), text = el(doc, "span");
   dot.setAttribute("aria-hidden", "true"); node.append(dot, text);

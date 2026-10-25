@@ -130,8 +130,9 @@ Compare the verdicts and answers from these separate runs yourself. Main does
 not yet provide a side-by-side model comparison or a durable canvas run history.
 Record any comparison you need to keep before closing the canvas. A model
 picker choice is not a test result, and a preview pass is not deployment evidence.
-The canvas tool-binding path is not wired yet; start with an agent that needs no
-tools. See the [CLI reference](kmx.md#agent-file-local-preview-unreleased-integration)
+Declared tools bind to the app's current MCP servers when the host supports the
+binding path. An unbound tool gives one plain reason; judges remain tool-free.
+See the [CLI reference](kmx.md#agent-file-local-preview-unreleased-integration)
 for supported file-preview routes and limits.
 
 *Screenshot to add: the model picker and a rerun on a second model.*

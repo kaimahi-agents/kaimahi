@@ -1378,7 +1378,7 @@ test("frontend and provider sources avoid unsafe sinks and mutation surfaces", a
   assert.match(strip(app), /method: "POST"/);
   assert.match(strip(app), /fetch\("actions"/);
   const operations = strip(view).match(/const allowed = \{([\s\S]*?)\n  \};/)[1];
-  assert.deepEqual([...operations.matchAll(/(?:"([a-z-]+)"|\b([a-z]+))\s*:\s*\[/g)].map((m) => m[1] ?? m[2]).sort(), ["models", "reload", "run", "save-and-test", "save-examples", "save-prompt", "suggest", "test"]);
+  assert.deepEqual([...operations.matchAll(/(?:"([a-z-]+)"|\b([a-z]+))\s*:\s*\[/g)].map((m) => m[1] ?? m[2]).sort(), ["models", "progress", "reload", "run", "save-and-test", "save-examples", "save-prompt", "stop", "suggest", "test"]);
   assert.doesNotMatch(strip(app), /createElement\(\s*["']button["']/);
   assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)[^>]*>|\son[a-z]+\s*=|style\s*=|<form|<button|<input|<textarea|http-equiv/i);
   assert.doesNotMatch(css, /@import|url\(/i);
@@ -1423,7 +1423,7 @@ async function editableCanvas(body, eol, options = {}) {
   const app = renderView(doc, root, view, async (action) => {
     calls.push(action);
     return options.respond ? options.respond(action, calls) : options.response ?? { error: "refused", message: "Draft kept." };
-  }, { fetchView: options.fetchView, fetchModels: options.fetchModels });
+  }, { fetchView: options.fetchView, fetchModels: options.fetchModels, fetchProgress: options.fetchProgress });
   const clickTest = async () => {
     byClass(root, "save-run")[0].listeners.click[0]();
     await Promise.resolve(); await Promise.resolve();
@@ -1817,23 +1817,23 @@ test("runtime model picker stays out of drafts and is sent through Enter", async
   assert.equal(Object.hasOwn(h.calls[0], "sections"), false); assert.equal(h.view.model, "fake");
 });
 
-test("only a new result from the picked model restores current pass styling", async () => {
+test("a picked model needs its own result and another model's poll preserves that retained result", async () => {
   let response;
   const h = await editableCanvas("Say hello.", undefined, { currentPass: true, fetchModels: async () => ({ models: ["choice-b"], defaultModel: "gpt-5.6-terra" }), respond: async () => response });
   await chooseModel(h, "choice-b"); assert.deepEqual(c18Status(h.root), ["old-pass"]);
   const view = structuredClone(h.view); view.latest.result.modelRoute = "copilot/choice-b"; response = { view };
   await h.clickTest(); assert.deepEqual(c18Status(h.root), ["pass"]);
-  h.app.observe(h.view); assert.deepEqual(c18Status(h.root), ["old-pass"], "another model's result must remain historical");
+  h.app.observe(h.view); assert.deepEqual(c18Status(h.root), ["pass"], "another model's poll cannot discard the picked model's own confirmed result");
 });
 
-test("A-B-A model changes fence old observations even when revision and model match again", async () => {
+test("B5 picker return restores retained A while A-B-A still fences in-flight observations", async () => {
   const h = await editableCanvas("Say hello.", undefined, { currentPass: true, fetchModels: async () => ({ models: ["fake", "choice-b"], defaultModel: "gpt-5.6-terra" }) });
   assert.deepEqual(c18Status(h.root), ["pass"]);
   const started = h.app.observation();
   await chooseModel(h, "choice-b"); assert.deepEqual(c18Status(h.root), ["old-pass"]);
   await chooseModel(h, "fake");
   assert.equal(h.app.observe(h.view, started), false); h.app.observe(h.view);
-  assert.deepEqual(c18Status(h.root), ["old-pass"], "a late A observation must not make the old result current");
+  assert.deepEqual(c18Status(h.root), ["pass"], "explicit picker return restores A; the pre-switch observation was rejected");
 });
 
 for (const eol of ["\n", "\r\n"]) test(`editable prose renders inline code and strong without a raw-mode focus swap; no-op tests do not save (${eol === "\n" ? "LF" : "CRLF"})`, async () => {
@@ -2832,6 +2832,288 @@ test("Suggest does not claim that tests are running or dim their valid result", 
   finish({ message: "Asked in chat." }); await tick(); await tick();
 });
 
+test("compare history restores a retained model only at its exact revision and keeps distinct labels", async () => {
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: c18Examples(["a", "b"]), latest: bLatest({ a: "pass", b: "fail" }) });
+  const history = editor.resultHistory(h.view);
+  const other = await viewFor(h.source, h.examples, (rev, examples) => {
+    const latest = bLatest({ a: "fail", b: "pass" })(rev, examples);
+    latest.result.modelRoute = { provider: "copilot", model: "claude-sonnet-5.5" }; return latest;
+  });
+  history.remember(other);
+  const selected = history.selected(other, "fake");
+  assert.equal(selected.latest.result.modelRoute, "fake/fake");
+  assert.deepEqual(history.pair(other).map(r => r.latest.result.modelRoute), ["fake/fake", "copilot/claude-sonnet-5.5"]);
+  const changed = { ...other, file: { ...other.file, revision: REV } };
+  assert.equal(history.selected(changed, "fake"), undefined);
+  assert.deepEqual(editor.compareLabels(["copilot/claude-sonnet-5.5", "copilot/claude-sonnet-4.5"]), ["Sonnet 5.5", "Sonnet 4.5"]);
+  assert.deepEqual(editor.compareLabels(["copilot/gpt-5.6-terra", "copilot/claude-sonnet-5.5"]), ["Terra", "Sonnet"]);
+});
+
+test("a stopped attempt masks its old full run after picker return and ignores cancelled polls", async () => {
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: c18Examples(["a", "b"]), latest: bLatest({ a: "pass", b: "pass" }) });
+  const history = editor.resultHistory(h.view);
+  const run = { id: "one", model: "fake", revision: h.view.file.revision, caseIds: ["a", "b"], totalCases: 2,
+    state: "stopped", cases: [{ caseId: "a", verdict: "fail", reason: "Check not met." }], elapsedMs: 1400 };
+  history.stop(run, h.view);
+  assert.equal(history.selected(h.view, "fake"), undefined);
+  const cancelled = structuredClone(h.view); cancelled.latest.result.state = "cancelled";
+  history.remember(cancelled);
+  assert.equal(history.attempt("fake").run, run);
+  assert.equal(history.selected(cancelled, "fake"), undefined);
+  history.remember(h.view, true);
+  assert.equal(history.attempt("fake"), undefined);
+  assert.ok(history.selected(h.view, "fake"));
+});
+
+test("third-model partial does not evict a full pair and a later full run keeps the previously selected partner", async () => {
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: c18Examples(["a", "b"]), latest: bLatest({ a: "pass", b: "pass" }) });
+  const history = editor.resultHistory(h.view);
+  const make = async (model, scope = "full") => viewFor(h.source, h.examples, (rev, examples) => {
+    const latest = c18Latest({ a: "fail", b: "pass" }, { scope, selected: scope === "subset" ? ["a"] : undefined })(rev, examples);
+    latest.result.modelRoute = { provider: "copilot", model }; return latest;
+  });
+  const second = await make("second"), third = await make("third", "subset");
+  history.remember(second); history.prefer("fake"); history.remember(third, true);
+  assert.deepEqual(history.pair().map(v => v.latest.result.modelRoute), ["fake/fake", "copilot/second"]);
+  assert.equal(history.selected(third, "third").latest.result.selection.scope, "subset");
+  const completed = await make("third"); history.remember(completed);
+  assert.deepEqual(history.pair().map(v => v.latest.result.modelRoute), ["fake/fake", "copilot/third"]);
+  assert.equal(history.selected(completed, "third").latest.result.selection.scope, "full", "a newer outside full run supersedes the transient subset");
+});
+
+test("B1 progress lands rows and B2 survives polls and picker return without reviving a full pass", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let finish, run, lateProgress, delayProgress = false;
+  const h = await editableCanvas("Reply briefly.", undefined, {
+    examples: c18Examples(["a", "b", "c"]), latest: bLatest({ a: "pass", b: "pass", c: "pass" }),
+    fetchModels: async () => ({ models: ["fake", "other"] }),
+    fetchProgress: async id => delayProgress ? new Promise(resolve => { lateProgress = () => resolve({ run: { ...run, id } }); }) : { run: { ...run, id } },
+    respond: action => action.operation === "stop" ? { stopping: true } : new Promise(resolve => { finish = resolve; }),
+  });
+  t.after(() => h.app.dispose());
+  run = { revision: h.view.file.revision, model: "fake", caseIds: ["a", "b", "c"], totalCases: 3,
+    cases: [{ caseId: "a", verdict: "fail", reason: "Check not met." }], state: "running", elapsedMs: 1100 };
+  promptEnter(h.root); t.mock.timers.tick(250); await tick(); await tick();
+  assert.equal(c18Text(h.root, "result-pill"), "Running · 1 of 3 done");
+  assert.deepEqual(c18Status(h.root), ["fail", "running", "old-pass"]);
+  const stop = byClass(h.root, "stop-run")[0]; assert.equal(stop.hidden, false); assert.equal(stop.disabled, false);
+  delayProgress = true; t.mock.timers.tick(250); await tick();
+  assert.match(stop.textContent, /Stop Copilot turn/); click(stop); await tick();
+  lateProgress(); await tick();
+  assert.equal(stop.disabled, true, "late running snapshot must not re-enable Stop");
+  assert.equal(c18Text(h.root, "result-pill"), "Stopping…");
+  const id = h.calls[0].runId;
+  assert.deepEqual(h.calls[1], { operation: "stop", runId: id });
+  const stopped = { ...run, id, state: "stopped" };
+  finish({ stopped: true, run: stopped, view: { ...h.view, latest: { status: "none", badge: "none" } }, saved: false });
+  await tick(); await tick();
+  assert.equal(c18Text(h.root, "result-pill"), "0 passing, 1 failing · 1 of 3 ran");
+  assert.deepEqual(c18Status(h.root), ["fail", "none", "none"]);
+  assert.deepEqual(rowLabels(h.root), ["Failed", "Not run", "Not run"]);
+  const cancelled = structuredClone(h.view); cancelled.latest.result.state = "cancelled";
+  h.app.observe(cancelled);
+  assert.deepEqual(rowLabels(h.root), ["Failed", "Not run", "Not run"]);
+  await chooseModel(h, "other"); await chooseModel(h, "fake");
+  assert.equal(c18Text(h.root, "result-pill"), "0 passing, 1 failing · 1 of 3 ran");
+  assert.deepEqual(rowLabels(h.root), ["Failed", "Not run", "Not run"]);
+});
+
+test("B3 and B5 retain two models and picker return uses no inference", async () => {
+  let reply;
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: c18Examples(["a", "b"]),
+    latest: bLatest({ a: "pass", b: "pass" }), fetchModels: async () => ({ models: ["fake", "claude-sonnet-5.5"] }),
+    respond: () => reply });
+  await chooseModel(h, "claude-sonnet-5.5");
+  const next = await viewFor(h.source, h.examples, (rev, examples) => {
+    const latest = bLatest({ a: "fail", b: "pass" })(rev, examples);
+    latest.result.modelRoute = { provider: "copilot", model: "claude-sonnet-5.5" }; return latest;
+  });
+  reply = { view: next, saved: false, run: { elapsedMs: 11000 } }; promptEnter(h.root); await tick(); await tick();
+  assert.equal(c18Text(h.root, "result-pill"), "1 of 2 passing");
+  assert.match(c18Text(h.root, "tests-meta"), /11 s/);
+  assert.match(byClass(h.root, "test-verdict")[0].textContent, /fake Passed.*Sonnet Failed/);
+  await chooseModel(h, "fake");
+  assert.equal(c18Text(h.root, "result-pill"), "2 of 2 passing");
+  assert.equal(h.calls.length, 1); assert.deepEqual(c18Status(h.root), ["pass", "pass"]);
+  assert.match(c18Text(h.root, "tests-meta"), /Claude Sonnet 5.5 earlier, 1 of 2 passing/);
+});
+
+test("third model's active and stopped attempts are visible without evicting the retained pair", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let reply, finish, run;
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: c18Examples(["a", "b"]), latest: bLatest({ a: "pass", b: "pass" }),
+    fetchModels: async () => ({ models: ["fake", "claude-sonnet-5.5", "third"] }),
+    fetchProgress: async id => ({ run: { ...run, id } }),
+    respond: action => action.operation === "stop" ? { stopping: true } : action.model === "third" ? new Promise(resolve => { finish = resolve; }) : reply });
+  t.after(() => h.app.dispose());
+  await chooseModel(h, "claude-sonnet-5.5");
+  reply = { view: await viewFor(h.source, h.examples, (rev, examples) => {
+    const latest = bLatest({ a: "fail", b: "pass" })(rev, examples);
+    latest.result.modelRoute = { provider: "copilot", model: "claude-sonnet-5.5" }; return latest;
+  }) };
+  promptEnter(h.root); await tick(); await tick();
+  await chooseModel(h, "third");
+  run = { revision: h.view.file.revision, model: "third", caseIds: ["a", "b"], totalCases: 2, state: "running", elapsedMs: 1000,
+    cases: [{ caseId: "a", verdict: "fail", reason: "Check not met." }] };
+  promptEnter(h.root); t.mock.timers.tick(250); await tick(); await tick();
+  assert.deepEqual(rowLabels(h.root), ["Failed", "Running"]);
+  const id = h.calls.at(-1).runId;
+  click(byClass(h.root, "stop-run")[0]); await tick();
+  finish({ stopped: true, saved: false, run: { ...run, id, state: "stopped" }, view: { ...h.view, latest: { status: "none", badge: "none" } } });
+  await tick(); await tick(); assert.deepEqual(rowLabels(h.root), ["Failed", "Not run"]);
+  await chooseModel(h, "fake"); assert.equal(c18Text(h.root, "result-pill"), "2 of 2 passing");
+});
+
+test("outside replacement clears an earlier measured duration and cannot evict the selected model", async () => {
+  const h = await editableCanvas("Before.", undefined, { examples: c18Examples(["a"]), latest: bLatest({ a: "pass" }) });
+  const history = editor.resultHistory(h.view); history.remember(h.view, true, 14000);
+  assert.equal(history.elapsed(h.view), 14000);
+  const next = structuredClone(h.view); next.latest.result.reason = "New result.";
+  history.remember(next); assert.equal(history.elapsed(next), undefined);
+  const second = structuredClone(next); second.latest.result.modelRoute = "copilot/second"; history.remember(second);
+  history.prefer("second"); history.focus("fake");
+  const third = structuredClone(next); third.latest.result.modelRoute = "copilot/third"; history.remember(third);
+  assert.ok(history.selected(next, "fake"), "a third-model poll must preserve the currently selected model");
+});
+
+test("single-case progress uses selected count and a subset partner never looks like a full run", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let reply, finish, run;
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: c18Examples(["a", "b"]), latest: bLatest({ a: "pass", b: "pass" }),
+    fetchModels: async () => ({ models: ["fake", "claude-sonnet-5.5"] }),
+    fetchProgress: async id => ({ run: { ...run, id } }),
+    respond: action => action.caseId ? new Promise(resolve => { finish = resolve; }) : reply });
+  t.after(() => h.app.dispose());
+  const onSonnet = (scope = "full") => (rev, examples) => {
+    const latest = c18Latest({ a: "pass", b: "pass" }, { scope, selected: scope === "subset" ? ["a"] : undefined })(rev, examples);
+    latest.result.modelRoute = { provider: "copilot", model: "claude-sonnet-5.5" }; return latest;
+  };
+  await chooseModel(h, "claude-sonnet-5.5"); reply = { view: await viewFor(h.source, h.examples, onSonnet()) };
+  promptEnter(h.root); await tick(); await tick();
+  openTest(h.root, "a"); click(byClass(h.root, "save-run")[0]); goBack(h.root);
+  run = { revision: h.view.file.revision, model: "claude-sonnet-5.5", caseIds: ["a"], totalCases: 2, cases: [], state: "running", elapsedMs: 200 };
+  t.mock.timers.tick(250); await tick(); await tick();
+  assert.equal(c18Text(h.root, "result-pill"), "Running · 0 of 1 done");
+  finish({ view: await viewFor(h.source, h.examples, onSonnet("subset")) }); await tick(); await tick();
+  await chooseModel(h, "fake");
+  assert.match(c18Text(h.root, "tests-meta"), /Claude Sonnet 5.5 earlier, 1 of 2 tests ran/);
+});
+
+test("a rerun awaiting dispatch keeps the selected model's older full slot grey after Stop", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let reply, finish, run, block = false;
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: c18Examples(["a", "b"]), latest: bLatest({ a: "pass", b: "pass" }),
+    fetchModels: async () => ({ models: ["fake", "claude-sonnet-5.5"] }), fetchProgress: async id => ({ run: { ...run, id } }),
+    respond: action => action.operation === "stop" ? { stopping: true } : block ? new Promise(resolve => { finish = resolve; }) : reply });
+  t.after(() => h.app.dispose());
+  await chooseModel(h, "claude-sonnet-5.5");
+  reply = { view: await viewFor(h.source, h.examples, (rev, examples) => {
+    const latest = bLatest({ a: "fail", b: "pass" })(rev, examples); latest.result.modelRoute = { provider: "copilot", model: "claude-sonnet-5.5" }; return latest;
+  }) }; promptEnter(h.root); await tick(); await tick();
+  await chooseModel(h, "fake"); block = true;
+  run = { revision: h.view.file.revision, model: "fake", caseIds: ["a", "b"], totalCases: 2, state: "running", cases: [], elapsedMs: 200 };
+  promptEnter(h.root); t.mock.timers.tick(250); await tick(); await tick();
+  const id = h.calls.at(-1).runId; click(byClass(h.root, "stop-run")[0]);
+  finish({ stopped: true, saved: false, run: { ...run, id, state: "stopped" }, view: { ...h.view, latest: { status: "none", badge: "none" } } });
+  await tick(); await tick(); promptEnter(h.root);
+  openTest(h.root, "a"); goBack(h.root);
+  assert.match(byClass(items(h.root)[0], "verdict-slot")[0].className, /old-pass/);
+});
+
+test("a partner's newer stopped verdicts and summary replace its old full pass", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let reply, finish, run, block = false;
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: c18Examples(["a", "b"]), latest: bLatest({ a: "pass", b: "pass" }),
+    fetchModels: async () => ({ models: ["fake", "claude-sonnet-5.5"] }), fetchProgress: async id => ({ run: { ...run, id } }),
+    respond: action => action.operation === "stop" ? { stopping: true } : block ? new Promise(resolve => { finish = resolve; }) : reply });
+  t.after(() => h.app.dispose());
+  await chooseModel(h, "claude-sonnet-5.5");
+  const full = await viewFor(h.source, h.examples, (rev, examples) => {
+    const latest = bLatest({ a: "pass", b: "pass" })(rev, examples); latest.result.modelRoute = { provider: "copilot", model: "claude-sonnet-5.5" }; return latest;
+  }); reply = { view: full }; promptEnter(h.root); await tick(); await tick(); block = true;
+  run = { revision: h.view.file.revision, model: "claude-sonnet-5.5", caseIds: ["a", "b"], totalCases: 2, state: "running", elapsedMs: 200,
+    cases: [{ caseId: "a", verdict: "fail", reason: "Check not met." }] };
+  promptEnter(h.root); t.mock.timers.tick(250); await tick(); await tick();
+  const id = h.calls.at(-1).runId; click(byClass(h.root, "stop-run")[0]);
+  finish({ stopped: true, saved: false, run: { ...run, id, state: "stopped" }, view: { ...h.view, latest: { status: "none", badge: "none" } } });
+  await tick(); await tick(); await chooseModel(h, "fake");
+  assert.deepEqual(rowLabels(h.root), ["fake Passed · Sonnet Failed", "fake Passed · Sonnet Not run"]);
+  assert.match(c18Text(h.root, "tests-meta"), /Claude Sonnet 5.5 earlier, Stopped · 1 of 2 ran/);
+  h.app.observe({ ...full, latest: { ...full.latest, result: { ...full.latest.result, state: "cancelled", fullPass: false } } });
+  assert.deepEqual(rowLabels(h.root), ["fake Passed · Sonnet Failed", "fake Passed · Sonnet Not run"]);
+});
+
+test("a route-less refusal survives the next idle poll instead of restoring an earlier green pass", async t => {
+  let reply;
+  const h = await editableCanvas("Reply briefly.", undefined, { latest: bLatest({ greeting: "pass" }), respond: () => reply,
+    fetchModels: async () => ({ models: ["fake", "other"] }) });
+  t.after(() => h.app.dispose());
+  const refused = await viewFor(h.source, h.examples, (revision, examples) => ({ status: "current", result: result({
+    file: { path: MINIMAL, revision }, operation: "test", state: "refused", verdict: "unknown", fullPass: false, reasonCode: "model_unavailable", modelRoute: {},
+    selection: { scope: "full", totalCases: examples.length, caseIds: examples.map(e => e.id) }, examples: examples.map(e => ({ id: e.id, state: "not_run", verdict: "unknown", assertions: [] }))
+  }) }));
+  reply = { view: refused }; promptEnter(h.root); await tick(); await tick();
+  assert.equal(c18Text(h.root, "result-pill"), "Refused");
+  h.app.observe(refused); assert.equal(c18Text(h.root, "result-pill"), "Refused"); assert.deepEqual(rowLabels(h.root), ["Refused"]);
+  await chooseModel(h, "other"); await chooseModel(h, "fake"); assert.equal(c18Text(h.root, "result-pill"), "Refused");
+});
+
+test("an incoming other-model result is recorded even when the selected projection stays identical", async t => {
+  let reply;
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: c18Examples(["a", "b"]), latest: bLatest({ a: "pass", b: "pass" }),
+    fetchModels: async () => ({ models: ["fake", "claude-sonnet-5.5"] }), respond: () => reply });
+  t.after(() => h.app.dispose());
+  const onSonnet = outcomes => (rev, examples) => {
+    const latest = bLatest(outcomes)(rev, examples); latest.result.modelRoute = { provider: "copilot", model: "claude-sonnet-5.5" }; return latest;
+  };
+  await chooseModel(h, "claude-sonnet-5.5"); reply = { view: await viewFor(h.source, h.examples, onSonnet({ a: "pass", b: "pass" })) };
+  promptEnter(h.root); await tick(); await tick(); await chooseModel(h, "fake");
+  const failure = await viewFor(h.source, h.examples, onSonnet({ a: "fail", b: "fail" }));
+  assert.equal(h.app.observe(failure), true, "changed partner history must refresh despite identical selected view");
+  assert.deepEqual(rowLabels(h.root), ["fake Passed · Sonnet Failed", "fake Passed · Sonnet Failed"]);
+  assert.equal(h.app.observe(failure), false, "an identical raw result does not cause repeated refreshes");
+  await chooseModel(h, "claude-sonnet-5.5"); assert.equal(c18Text(h.root, "result-pill"), "0 of 2 passing");
+});
+
+test("identical polls do not redraw for duplicate model IDs under different routes", async t => {
+  const latest = provider => (rev, examples) => {
+    const value = bLatest({ a: "pass" })(rev, examples); value.result.modelRoute = { provider, model: "shared" }; return value;
+  };
+  const h = await editableCanvas("Reply briefly.", undefined, { omitModel: true, chatModel: "shared", examples: c18Examples(["a"]), latest: latest("first") });
+  t.after(() => h.app.dispose());
+  const outside = await viewFor(h.source, h.examples, latest("second"), ""); outside.chatModel = "shared";
+  assert.equal(h.app.observe(outside), true); assert.equal(h.app.observe(outside), false);
+});
+
+test("identical incoherent result polls do not redraw or clear local undo", async t => {
+  const h = await editableCanvas("Reply briefly.", undefined, { latest: bLatest({ greeting: "pass" }) });
+  t.after(() => h.app.dispose());
+  const outside = structuredClone(h.view); outside.latest.result.selection.caseIds = [];
+  assert.equal(h.app.observe(outside), true); assert.equal(h.app.observe(outside), false);
+});
+
+test("mixed-revision compare keeps each model's own verdict and marks the older selection out of date", async () => {
+  let reply;
+  const h = await editableCanvas("Before.", undefined, { examples: c18Examples(["a", "b"]), latest: bLatest({ a: "pass", b: "pass" }),
+    fetchModels: async () => ({ models: ["fake", "claude-sonnet-5.5"] }), respond: () => reply });
+  await chooseModel(h, "claude-sonnet-5.5");
+  const sonnet = await viewFor(h.source, h.examples, (rev, examples) => {
+    const latest = bLatest({ a: "fail", b: "pass" })(rev, examples);
+    latest.result.modelRoute = { provider: "copilot", model: "claude-sonnet-5.5" }; return latest;
+  });
+  reply = { view: sonnet }; promptEnter(h.root); await tick(); await tick();
+  const source = replaceInstructions(h.source, [{ key: h.sections[0].key, text: "After." }]);
+  h.app.observe(await viewFor(source, h.examples, bLatest({ a: "pass", b: "fail" })));
+  await chooseModel(h, "fake");
+  assert.equal(c18Text(h.root, "result-pill"), "1 of 2 passing");
+  assert.match(c18Text(h.root, "tests-meta"), /Claude Sonnet 5.5 before your edit/);
+  assert.match(rowLabels(h.root)[0], /fake Passed.*Sonnet Failed/);
+  await chooseModel(h, "claude-sonnet-5.5");
+  assert.equal(c18Text(h.root, "result-pill"), "Out of date");
+  assert.deepEqual(c18Status(h.root), ["old-fail", "old-pass"]);
+  assert.match(rowLabels(h.root)[0], /Sonnet Failed/);
+});
+
 test("last-run model labels leave unknown IDs literal, including inherited property names", async () => {
   for (const id of ["constructor", "__proto__", "unknown-model"]) assert.equal(modelLabel(`provider/${id}`), id);
   assert.equal(modelLabel("copilot/gpt-5.6-terra"), "GPT-5.6 Terra");
@@ -2855,7 +3137,7 @@ test("a new scoped run keeps unchanged earlier cases dimmed, with their own mode
   const latest = c18Latest({ c: "pass" }, { scope: "subset", selected: ["c"] });
   h.app.observe(await viewFor(source, examples, latest));
   assert.deepEqual(c18Status(h.root), ["old-pass", "old-fail", "pass"]);
-  assert.deepEqual(rowLabels(h.root), ["Passed last run", "Failed last run", "Passed"]);
+  assert.deepEqual(rowLabels(h.root), ["old-model Passed · fake Not run", "old-model Failed · fake Not run", "old-model Not run yet · fake Passed"]);
   assert.equal(c18Text(h.root, "result-pill"), "1 passing · 2 not run");
   assert.notEqual(byClass(h.root, "result-pill")[0].attrs["data-tone"], "pass");
   assert.equal(summaryOf(h.root), "1 passing · 2 not run", "past verdicts do not count as this run's results");
