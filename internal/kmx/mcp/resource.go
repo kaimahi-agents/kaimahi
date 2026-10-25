@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/url"
 	"strings"
 
@@ -79,6 +80,12 @@ func AddAgentResource(server *sdk.Server, files *Files) {
 		}
 		agent, source, err := files.inspect(ctx, target)
 		if err != nil {
+			var invalid *agentfile.Error
+			if errors.As(err, &invalid) {
+				// The native host discards MCP error data. Keep this fixed parse
+				// classification in the resource, never parser text or source paths.
+				return &sdk.ReadResourceResult{Contents: []*sdk.ResourceContents{{URI: req.Params.URI, MIMEType: "application/json", Text: `{"schemaVersion":1,"kind":"kmx.agent-view-error","reasonCode":"invalid_file"}`}}}, nil
+			}
 			return nil, refusal("invalid_file")
 		}
 		view := AgentView{SchemaVersion: 1, Kind: "kmx.agent-view", File: File{Path: p, Revision: agent.Revision}, Title: agent.Title, Instructions: agent.Instructions, Model: agent.Model, Tools: agent.Tools, Latest: AgentViewLatest{Status: "none"}}

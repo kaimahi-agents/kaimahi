@@ -563,6 +563,9 @@ open the agent; legacy preview results can carry only a display basename.
 The read-only resource template `kmx://agent/{path}` returns a typed
 `kmx.agent-view` v1 projection: original revision, title, instructions, model,
 examples/expected checks and the process's latest safe preview observation.
+A source parse failure instead returns a `kmx.agent-view-error` v1 envelope with
+`reasonCode: "invalid_file"`, without parser text or source. Resource consumers
+must check the kind before using a view. Path and transport refusals remain errors.
 Encode the whole requested path as one component, including slashes.
 Only supported agent files are readable; there is no fifth tool, generic file
 read or directory listing. Authored content is visible without folder

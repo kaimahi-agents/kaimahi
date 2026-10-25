@@ -4,7 +4,7 @@ import { randomBytes, timingSafeEqual, createHash } from "node:crypto";
 import { instructionSections, replaceInstructions, replaceExamples, effectiveModel, preRouteRefusal, agentName, fileLocation } from "./authoring.mjs";
 import { readFile } from "node:fs/promises";
 import http from "node:http";
-import { ensureHostRuntime, previewServer, beginPreview, closeHostRuntime, HostRuntimeUnavailable } from "./host-relay.mjs";
+import { ensureHostRuntime, previewServer, beginPreview, closeHostRuntime, observePreview, HostRuntimeUnavailable } from "./host-relay.mjs";
 
 export const CANVAS_ID = "kmx-agent-view";
 export const SERVER_NAME = "kmx-agent-builder";
@@ -18,6 +18,7 @@ const MESSAGES = {
   "invalid-path": "Choose an .agent.md file or a .squad/agents/<member>/charter.md file.",
   unavailable: "The kmx agent builder could not be read. Check that its MCP server is running.",
   "invalid-resource": "The kmx agent view was not in the supported format.",
+  "invalid-file": "This agent file needs fixing before it can open. Check its format and test fields.",
   "models-unavailable": "Model choices are unavailable. Your model selection is unchanged.",
   "too-large": "The kmx agent view was too large to show.",
   "invalid-action": "This canvas action is not supported.",
@@ -131,6 +132,7 @@ function parseView(json, path) {
   } catch {
     invalid();
   }
+  if (raw?.schemaVersion === 1 && raw.kind === "kmx.agent-view-error" && raw.reasonCode === "invalid_file") throw new ViewError("invalid-file");
   if (!isObj(raw) || raw.schemaVersion !== 1 || raw.kind !== KIND) invalid();
   const file = raw.file;
   if (!isObj(file) || file.path !== path || typeof file.revision !== "string" || !/^sha256:[0-9a-f]{64}$/.test(file.revision)) invalid();
@@ -267,12 +269,13 @@ export function createActionHandler({ session, path }) {
     caseIds: [...current.caseIds], totalCases: current.totalCases,
     cases: current.caseIds.filter(id => current.rows.has(id)).map(id => ({ ...current.rows.get(id) })),
     state: current.state, elapsedMs: current.elapsedMs ?? Math.max(0, Date.now() - current.started),
+    ...(current.approval?.waiting() ? { approvalWaiting: true } : {}),
   });
   const finish = (run) => {
     if (!run) return;
     run.pending = false;
     run.elapsedMs ??= Math.max(0, Date.now() - run.started);
-    run.unsubscribe?.(); run.unsubscribe = undefined;
+    run.unsubscribe?.(); run.unsubscribe = undefined; run.approval?.clear();
   };
   function progress(run, event) {
     if (disposed || current !== run || !run.pending || run.state !== "running" || event?.data?.toolCallId !== run.toolCallId) return;
@@ -284,9 +287,12 @@ export function createActionHandler({ session, path }) {
     if (!envelope) return;
     let row;
     try { row = JSON.parse(envelope[1]); } catch { return; }
+    if (row?.kind === "kmx.host-progress") { run.approval.progress(row); return; }
     if (!isObj(row) || !run.caseIds.includes(row.caseId) || run.rows.has(row.caseId) ||
         !["pass", "fail", "unknown"].includes(row.verdict) || typeof row.reason !== "string") return;
-    run.rows.set(row.caseId, { caseId: row.caseId, verdict: row.verdict, reason: clean(row.reason, 500) });
+    const checks = run.examples.find(e => e.id === row.caseId)?.assertions.filter(a => a.id === row.failedAssertionId);
+    const failedAssertionId = row.verdict === "fail" && checks?.length === 1 && checks[0].type !== "llmJudge" ? row.failedAssertionId : undefined;
+    run.rows.set(row.caseId, { caseId: row.caseId, verdict: row.verdict, reason: clean(row.reason, 500), ...(failedAssertionId ? { failedAssertionId } : {}) });
   }
   function stop(id) {
     const run = current;
@@ -294,7 +300,7 @@ export function createActionHandler({ session, path }) {
     if (!run.stopRequested) {
       // Mark locally before abort: acknowledgement and execute rejection may
       // arrive in either order. Abort is session-wide, never a per-tool API.
-      run.stopRequested = true; run.state = "stopping";
+      run.stopRequested = true; run.state = "stopping"; run.approval?.clear();
       run.abortAck = new Promise(resolve => { run.releaseAbort = resolve; });
       try {
         Promise.resolve(session.rpc.abort({ reason: "remote_abort" })).then(
@@ -314,16 +320,27 @@ export function createActionHandler({ session, path }) {
     let result, run;
     if (operation === "test") {
       run = { ...scope, toolCallId: randomBytes(24).toString("base64url"), rows: new Map(), state: "running", started: Date.now(), pending: true };
-      current = run;
+      current = run; run.approval = observePreview(session, run.toolCallId);
       if (typeof session.on === "function") run.unsubscribe = session.on("tool.execution_progress", event => progress(run, event));
     }
+    const unconfirmed = () => {
+      const approvalTimeout = run?.approval?.timedOut() === true;
+      const error = new ViewError("outcome-unknown", approvalTimeout
+        ? "This test timed out waiting for Copilot approval. The tool may still execute if approval is granted in chat. Reload to inspect the saved file before continuing."
+        : MESSAGES["outcome-unknown"]);
+      if (approvalTimeout) error.approvalTimeout = true;
+      return error;
+    };
     try {
       result = await session.rpc.tools.execute({ name: tools[0].name, arguments: { schemaVersion: 1, path, ...args }, ...(run ? { toolCallId: run.toolCallId } : {}) });
     } catch {
       finish(run);
       if (run?.stopRequested && await run.abortAck && !disposed) return { stopped: true };
-      uncertain = true; throw new ViewError("outcome-unknown");
+      uncertain = true; throw unconfirmed();
     } finally { finish(run); run?.releaseAbort?.(false); }
+    if ((run?.approval?.pendingTool() || run?.approval?.timedOut()) && result?.resultType !== "success") {
+      uncertain = true; throw unconfirmed();
+    }
     if (result?.resultType === "timeout") { uncertain = true; throw new ViewError("outcome-unknown"); }
     if (result?.resultType !== "success") {
       const detail = typeof result === "string" ? result : [result?.textResultForLlm, result?.error].filter((s) => typeof s === "string").join("\n");
@@ -343,7 +360,12 @@ export function createActionHandler({ session, path }) {
     if ((Object.hasOwn(input, "runId") || ["progress", "stop"].includes(input.operation)) && !validRunId(input.runId)) return { error: "invalid-action", message: MESSAGES["invalid-action"] };
     // These fixed operations share the POST's security checks, but must remain
     // available during Test and cannot clear an existing uncertainty lock.
-    if (input.operation === "progress") return { run: current?.id === input.runId ? snapshot() : undefined };
+    if (input.operation === "progress") {
+      const run = current;
+      if (run?.id !== input.runId) return { run: undefined };
+      await run.approval?.refresh();
+      return { run: current === run && !disposed ? snapshot() : undefined };
+    }
     if (input.operation === "stop") return stop(input.runId);
     // Read-only discovery must not block or unlock an execution action.
     if (input.operation === "models") {
@@ -406,7 +428,7 @@ export function createActionHandler({ session, path }) {
       }
       tested = true;
       const outcome = await invoke(operation, { ...(runtimeModel ? { model: runtimeModel } : {}), ...(operation === "run" ? { input: input.input } : {}), ...(input.caseId !== undefined ? { caseId: input.caseId } : {}), showContent: input.showContent === true, showFailedContent: true },
-        { id: input.runId, revision: targetRevision, model, caseIds: input.caseId === undefined ? ids : [input.caseId], totalCases: ids.length });
+        { id: input.runId, revision: targetRevision, model, examples, caseIds: input.caseId === undefined ? ids : [input.caseId], totalCases: ids.length });
       try { view = await readView(session, path); }
       catch { uncertain = true; throw new ViewError("outcome-unknown"); }
       if (outcome.stopped) {
@@ -419,7 +441,7 @@ export function createActionHandler({ session, path }) {
       return { view, saved, ...(snapshot() ? { run: snapshot() } : {}) };
     } catch (e) {
       const err = safeError(e);
-      const response = { error: err.code, message: err.message, saved };
+      const response = { error: err.code, message: err.message, saved, ...(err.approvalTimeout ? { approvalTimeout: true } : {}) };
       const failedPreview = tested && err.code === "action-failed";
       if ((saved || failedPreview) && err.code !== "revision_mismatch" && err.code !== "outcome-unknown") {
         try {

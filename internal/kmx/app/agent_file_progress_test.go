@@ -9,7 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
@@ -95,6 +97,35 @@ func TestFileCaseProgressFirstFailingReasonInAuthoredOrder(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestFileCaseProgressIdentifiesFirstFailedTextCheck(t *testing.T) {
+	agent, err := agentfile.Load(previewFile(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	checks := agent.Examples[0].Assertions
+	judge := checks[0]
+	judge.ID, judge.Type = "judge", "llmJudge"
+	agent.Examples[0].Assertions = append([]runtime.EvaluationAssertion{judge}, checks...)
+	selected := agent.Examples[:1]
+	route := modelaccess.Route{Provider: "fake", Model: "fake"}
+	runner := &scriptedPreview{verdict: runtime.EvaluationFail}
+	out, err := runner.Run(t.Context(), agentpreview.Request{Agent: agent, Examples: selected, Route: route})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rows []FilePreviewCaseProgress
+	observe := previewCaseObserver(t.Context(), selected, agent, route, func(row FilePreviewCaseProgress) { rows = append(rows, row) })
+	observe(out.Examples[0])
+	encoded, _ := json.Marshal(rows)
+	var got []map[string]any
+	if err := json.Unmarshal(encoded, &got); err != nil || len(got) != 1 || got[0]["failedAssertionId"] != "text" {
+		t.Fatalf("live reason cannot identify the first failed text check: %s", encoded)
+	}
+	if strings.Contains(string(encoded), "PRIVATE") {
+		t.Fatalf("progress leaked source or answer: %s", encoded)
 	}
 }
 

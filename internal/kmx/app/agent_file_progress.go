@@ -14,9 +14,10 @@ import (
 // FilePreviewCaseProgress is provisional, content-free case metadata. A later
 // journal/finalization failure can still veto the full run's verdict.
 type FilePreviewCaseProgress struct {
-	CaseID  string                    `json:"caseId"`
-	Verdict runtime.EvaluationVerdict `json:"verdict"`
-	Reason  string                    `json:"reason"`
+	CaseID            string                    `json:"caseId"`
+	Verdict           runtime.EvaluationVerdict `json:"verdict"`
+	Reason            string                    `json:"reason"`
+	FailedAssertionID string                    `json:"failedAssertionId,omitempty"`
 }
 
 func previewCaseObserver(ctx context.Context, selected []agentfile.Example, agent *agentfile.Agent, route modelaccess.Route, notify func(FilePreviewCaseProgress)) func(agentpreview.ExampleOutcome) {
@@ -61,6 +62,16 @@ func previewCaseObserver(ctx context.Context, selected []agentfile.Example, agen
 			if progress.Verdict != runtime.EvaluationPass && as.Verdict == progress.Verdict {
 				progress.Reason = previewAssertion(as.ID, as.Type, as.Verdict).Reason
 				break
+			}
+		}
+		// The canvas can explain this authored check without sending operands or
+		// answers in progress. Match its final text-check policy (judges are separate).
+		if progress.Verdict == runtime.EvaluationFail {
+			for _, as := range row.Assertions {
+				if as.Verdict == runtime.EvaluationFail && as.Type != "llmJudge" {
+					progress.FailedAssertionID = as.ID
+					break
+				}
 			}
 		}
 		notify(progress)
