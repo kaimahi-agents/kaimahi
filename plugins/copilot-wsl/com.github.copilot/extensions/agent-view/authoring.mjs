@@ -219,3 +219,81 @@ export function replaceExamples(source, examples) {
   lines.push("```", "");
   return bounded(source.slice(0, sections.get("Examples").heading) + lines.join(eol));
 }
+
+export function uniqueIndex(items, key) {
+  const map = new Map();
+  for (const item of items) {
+    const id = key(item);
+    map.set(id, map.has(id) ? null : item);
+  }
+  return map;
+}
+export const clone = (value) => JSON.parse(JSON.stringify(value));
+export const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+export const operandKey = (type) => type === "regex" ? "pattern" : type === "llmJudge" ? "rubric" : "value";
+export const EDITABLE_TYPES = [["contains", "Contains"], ["notContains", "Not contains"], ["regex", "Regex"], ["llmJudge", "Judge"]];
+export const quoted = (text) => `“${text}”`;
+
+export function checkIssue(a) {
+  if (!EDITABLE_TYPES.some(([type]) => type === a.type)) return;
+  const field = operandKey(a.type);
+  if (!String(a[field] ?? "").trim()) return { field, message: field === "rubric" ? "Needs a rubric" : field === "pattern" ? "Needs a pattern" : "Needs text to check" };
+  if (a.type !== "llmJudge") return;
+  if (typeof a.minScore !== "number" || !Number.isInteger(a.minScore) || a.minScore < 0 || a.minScore > 100) return { field: "minScore", message: "Needs a minimum score, 0 to 100" };
+  if (!(a.judgeModel === undefined || a.judgeModel === "" || typeof a.judgeModel === "string" && !!a.judgeModel.trim())) return { field: "judgeModel", message: "Choose a Judge model" };
+  if (typeof a.judgeVersion !== "string" || !a.judgeVersion.trim()) return { field: "judgeVersion", message: "Needs a Judge version" };
+}
+export const checkComplete = a => !checkIssue(a);
+export function convertCheck(target, type) {
+  const oldKey = operandKey(target.type), newKey = operandKey(type), value = target[oldKey] ?? "";
+  if (oldKey !== newKey) delete target[oldKey];
+  if (target.type === "llmJudge" && type !== "llmJudge") for (const key of ["minScore", "judgeModel", "judgeVersion"]) delete target[key];
+  target.type = type; target[newKey] = value;
+}
+
+export const readSnapshot = (view) => {
+  try {
+    if (view.authoring?.editable === true && typeof view.authoring.source === "string" && Array.isArray(view.authoring.examples)) {
+      const sections = instructionSections(view.authoring.source);
+      const main = sections.find((s) => /accountable/i.test(s.key));
+      if (main && sections.length === 3) return { sections, main };
+    }
+  } catch { /* Old or noncanonical resources remain inspection-only. */ }
+};
+
+const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/;
+export const portableId = (name) => name.trim().toLowerCase().replace(/\s+/g, "-");
+
+export function validateDraft(draft, intended) {
+  const raw = draft.raw;
+  if (draft.origin === null && !draft.fixedId) {
+    raw.id = portableId(draft.name);
+    if (!/^[a-z][a-z0-9-]{0,62}$/.test(raw.id) || RESERVED.test(raw.id)) return "Use a name that starts with a letter, then letters, numbers, spaces or hyphens.";
+  }
+  if (intended.filter((e) => e.id === raw.id).length !== 1) return "Another test already has this name.";
+  if (!raw.input.trim()) return "Say what the agent gets.";
+  if (!raw.assertions.length) return "Keep at least one check.";
+  if (raw.assertions.some(a => !checkComplete(a))) return { check: true };
+}
+
+export function compareDrafts(base, candidate, snap, sectionDrafts, testDrafts) {
+  const sectionText = (key) => sectionDrafts.get(key) ?? snap.sections.find((s) => s.key === key).text;
+  const rawExamples = () => snap ? base.authoring.examples : [];
+  const items = [], next = readSnapshot(candidate);
+  if (snap) for (const s of snap.sections) {
+    const mine = sectionText(s.key), theirs = next?.sections.find((t) => t.key === s.key)?.text;
+    if (mine !== s.text || theirs !== s.text) items.push([s.key === snap.main.key ? "Prompt" : s.key, s.text, mine, theirs]);
+  }
+  const show = (raw) => raw === undefined ? undefined : JSON.stringify(raw, null, 2);
+  const theirsRaw = uniqueIndex(candidate.authoring?.examples ?? [], (e) => e.id), baseRaw = uniqueIndex(rawExamples(), (e) => e.id);
+  const ids = new Set([...baseRaw.keys(), ...theirsRaw.keys()]);
+  for (const d of testDrafts.values()) if (d.origin === null) ids.add(`\u0000${d.name}`);
+  for (const id of ids) {
+    const draft = id.startsWith("\u0000") ? [...testDrafts.values()].find((d) => d.origin === null && `\u0000${d.name}` === id) : testDrafts.get(`id:${id}`);
+    const b = baseRaw.get(id) ?? undefined, t = theirsRaw.get(id) ?? undefined, m = draft ? (draft.deleted ? undefined : draft.raw) : b;
+    if (!same(b, m) || !same(b, t)) items.push([`Test ${quoted(draft?.origin === null ? draft.name : id)}`, show(b), show(m), show(t)]);
+  }
+  if (candidate.model !== base.model) items.push(["Model", base.model, base.model, candidate.model]);
+  if (candidate.title !== base.title) items.push(["Title", base.title, base.title, candidate.title]);
+  return items;
+}

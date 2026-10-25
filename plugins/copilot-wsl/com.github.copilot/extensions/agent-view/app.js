@@ -1,12 +1,11 @@
 // Resource and authoring values are untrusted: render only inert DOM text.
-import { instructionSections, runtimeModelSelection, agentName, fileLocation, effectiveModel } from "./authoring.mjs";
-import { el, inlineText, editorValue, insertPlainText, fillEditor, purposeText, instructionsContent, runtimeModelControl, testNameControl, pathControls, icon, statusIcon,
-  checkKey, uniqueIndex, inspectCases, friendlyName, clone, same, operandKey, EDITABLE_TYPES, quoted, checkLabel, oneLine, failureFacts, testRow, coherentSelection, ambiguousPassSet, countText, plural, resultHistory, resultPill, modelLabel, modelPresentation, growTextarea, checkTypeControl, checkFields, checkComplete, convertCheck, inconclusiveJudge, judgeDetails, plainReason, isRefused, matchedAnswer, checkIssue, answerBlock, refusalContext } from "./editor.mjs";
+import { runtimeModelSelection, effectiveModel, readSnapshot, portableId, validateDraft as validate, compareDrafts } from "./authoring.mjs";
+import { el, inlineText, editorValue, instructionsContent, runtimeModelControl, testNameControl, icon, statusIcon,
+  checkKey, uniqueIndex, friendlyName, clone, same, operandKey, EDITABLE_TYPES, quoted, checkLabel, oneLine, failureFacts, testRow, coherentSelection, ambiguousPassSet, countText, plural, resultHistory, resultPill, modelLabel, growTextarea, checkTypeControl, checkFields, convertCheck, inconclusiveJudge, judgeDetails, plainReason, isRefused, matchedAnswer, checkIssue, answerBlock, refusalContext,
+  canvasResultSummary, canvasFooterText, canvasHeader, runNotice, instructionEditor, conflictNotice, saveButton } from "./editor.mjs";
 export { provenActual } from "./editor.mjs";
 const CONFLICTS = ["revision_mismatch", "revision-mismatch"];
 const UNKNOWN = ["outcome-unknown", "uncertain-outcome", "uncertain_outcome"];
-const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/;
-const portableId = (name) => name.trim().toLowerCase().replace(/\s+/g, "-");
 
 async function postAction(action) {
   const response = await fetch("actions", {
@@ -25,15 +24,6 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     root.replaceChildren(el(doc, "p", "error", payload?.message || "The agent view could not be loaded."));
     return NO_HANDLE;
   }
-  const readSnapshot = (view) => {
-    try {
-      if (view.authoring?.editable === true && typeof view.authoring.source === "string" && Array.isArray(view.authoring.examples)) {
-        const sections = instructionSections(view.authoring.source);
-        const main = sections.find((s) => /accountable/i.test(s.key));
-        if (main && sections.length === 3) return { sections, main };
-      }
-    } catch { /* Old or noncanonical resources remain inspection-only. */ }
-  };
   // Navigation neither saves nor drops these controller-owned drafts.
   let base = payload, snap = readSnapshot(payload), candidate, compareOpen = false;
   const sectionDrafts = new Map(), testDrafts = new Map(), invalidEditors = new Set();
@@ -76,17 +66,6 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   const localExamples = () => entries().filter((e) => e.raw && !e.draft?.deleted).map((e) => clone(e.raw));
   const draftName = (e) => e.draft?.origin === null ? (e.draft.name.trim() || "New test") : displayNames.get(e.raw?.id ?? e.c.example.id)?.name ?? friendlyName(e.raw?.id ?? e.c.example.id);
 
-  function validate(draft, intended) {
-    const raw = draft.raw;
-    if (draft.origin === null && !draft.fixedId) {
-      raw.id = portableId(draft.name);
-      if (!/^[a-z][a-z0-9-]{0,62}$/.test(raw.id) || RESERVED.test(raw.id)) return "Use a name that starts with a letter, then letters, numbers, spaces or hyphens.";
-    }
-    if (intended.filter((e) => e.id === raw.id).length !== 1) return "Another test already has this name.";
-    if (!raw.input.trim()) return "Say what the agent gets.";
-    if (!raw.assertions.length) return "Keep at least one check.";
-    if (raw.assertions.some(a => !checkComplete(a))) return { check: true };
-  }
   let invalidCheck, issueInput, focusIssue;
   function navigate(next) { route = next; invalidCheck = undefined; if (!blocked && !savedUntested) { message = ""; runAlert = undefined; } }
   function checkProblem(key, raw) {
@@ -289,26 +268,6 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     base = candidate; snap = next; candidate = undefined; compareOpen = false; lastRun = undefined;
     pruneDrafts(); message = "Kept your edits on top of the new version. Enter saves them."; render();
   }
-  function comparison() {
-    const items = [], next = readSnapshot(candidate);
-    if (snap) for (const s of snap.sections) {
-      const mine = sectionText(s.key), theirs = next?.sections.find((t) => t.key === s.key)?.text;
-      if (mine !== s.text || theirs !== s.text) items.push([s.key === snap.main.key ? "Prompt" : s.key, s.text, mine, theirs]);
-    }
-    const show = (raw) => raw === undefined ? undefined : JSON.stringify(raw, null, 2);
-    const theirsRaw = uniqueIndex(candidate.authoring?.examples ?? [], (e) => e.id), baseRaw = uniqueIndex(rawExamples(), (e) => e.id);
-    const ids = new Set([...baseRaw.keys(), ...theirsRaw.keys()]);
-    for (const d of testDrafts.values()) if (d.origin === null) ids.add(`\u0000${d.name}`);
-    for (const id of ids) {
-      const draft = id.startsWith("\u0000") ? [...testDrafts.values()].find((d) => d.origin === null && `\u0000${d.name}` === id) : testDrafts.get(`id:${id}`);
-      const b = baseRaw.get(id) ?? undefined, t = theirsRaw.get(id) ?? undefined, m = draft ? (draft.deleted ? undefined : draft.raw) : b;
-      if (!same(b, m) || !same(b, t)) items.push([`Test ${quoted(draft?.origin === null ? draft.name : id)}`, show(b), show(m), show(t)]);
-    }
-    if (candidate.model !== base.model) items.push(["Model", base.model, base.model, candidate.model]);
-    if (candidate.title !== base.title) items.push(["Title", base.title, base.title, candidate.title]);
-    return items;
-  }
-
   // DOM
   function render() {
     for (const cleanup of cleanups.splice(0)) cleanup();
@@ -343,7 +302,8 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     // Keep Suggest feedback with Tests.
     if (!detail && message === "Asked Copilot to add tests in chat.") parts[2].append(line);
     else parts.splice(detail ? 1 : Math.min(2, parts.length), 0, line);
-    if (candidate) parts.splice(detail ? 1 : 1, 0, conflictNotice(button));
+    if (candidate) parts.splice(detail ? 1 : 1, 0, conflictNotice(doc, button, compareDrafts(base, candidate, snap, sectionDrafts, testDrafts), compareOpen,
+      () => { compareOpen = !compareOpen; render(); }, keepMine, useTheirs));
     content.append(...parts);
     root.replaceChildren(content);
     refresh();
@@ -351,144 +311,45 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     if (focusIssue) { issueInput?.focus(); focusIssue = false; }
   }
 
-  function conflictNotice(button) {
-    const box = el(doc, "div", "notice notice-info"); box.setAttribute("role", "alert");
-    const items = comparison(), parts = [];
-    if (items.some(([name]) => name === "Prompt")) parts.push("the prompt");
-    const tests = items.filter(([name]) => name.startsWith("Test ")).length;
-    if (tests) parts.push(plural(tests, "test"));
-    const others = items.length - tests - (parts[0] === "the prompt" ? 1 : 0);
-    if (others) parts.push(plural(others, "other part"));
-    const head = el(doc, "span", "notice-text"); head.append(icon(doc, "sync", 15, 2),
-      el(doc, "span", "", `This agent changed outside the panel${parts.length ? `: ${parts.join(", ")}` : ""}. You have unsaved edits.`));
-    const actions = el(doc, "div", "notice-actions");
-    const compare = button("Compare", () => { compareOpen = !compareOpen; render(); }, "sb", "nav");
-    compare.setAttribute("aria-expanded", String(compareOpen));
-    actions.append(compare, button("Keep my edits", keepMine, "sb"), button("Use the new version", useTheirs, "sb"));
-    box.append(head, actions);
-    if (compareOpen) {
-      const list = el(doc, "div", "compare");
-      for (const [name, b, m, t] of items) {
-        const item = el(doc, "section", "compare-item");
-        item.append(el(doc, "h3", "lbl", name));
-        const cols = el(doc, "div", "compare-cols");
-        for (const [label, text] of [["Before your edits", b], ["Your edits", m], ["New version", t]]) {
-          const col = el(doc, "div", "compare-col");
-          col.append(el(doc, "span", "meta", label), el(doc, "pre", "compare-text", text === undefined ? "(not present)" : text));
-          cols.append(col);
-        }
-        item.append(cols); list.append(item);
-      }
-      if (!items.length) list.append(el(doc, "p", "quiet", "No differences in the prompt or tests."));
-      box.append(list);
-    }
-    return box;
-  }
-
   function resultSummary() {
-    const n = entries().filter(e => !e.draft?.deleted).length, result = base.latest.result;
-    if (testing()) return { tone: "running", text: `Running ${pending.one ? "1 test" : plural(n, "test")}…` };
-    if (blocked) return { tone: "none", text: "Result unconfirmed" };
-    if (base.latest.status === "stale" || (hasDrafts() || base.latest.status !== "current") && history.last) return { tone: "none", text: "Out of date" };
-    if (!n || !result || result.reasonCode === "no_tests") return { tone: "none", text: "Not run yet" };
-    if (isRefused(result)) return { tone: "error", text: "Refused" };
-    if (result.state !== "complete" || !coherentSelection(base)) return { tone: "error", text: result.state === "complete" ? "Incomplete run" : "Didn't finish" };
-    const cases = inspectCases(base), passing = cases.filter(c => c.state === "pass").length;
-    const full = result.fullPass && result.verdict === "pass" && result.selection.scope === "full" && passing === n;
-    if (!full && (passing === n || cases.some(c => c.state === "unknown"))) return { tone: "error", text: "Incomplete run" };
-    return { tone: full ? "pass" : cases.some(c => c.state === "fail") ? "fail" : "none", text: result.selection.scope === "subset" ? countText(cases.map(c => testRow(c, false, false))) : `${passing} of ${n} passing` };
+    return canvasResultSummary(base, { n: entries().filter(e => !e.draft?.deleted).length, testing: testing(), one: pending?.one,
+      blocked, dirty: hasDrafts(), last: history.last });
   }
 
   function header(updates) {
-    const displayName = agentName(base.title), file = fileLocation(base.file.path);
-    const source = el(doc, "details", "source-details"), info = el(doc, "div", "source-info");
-    const sourceSummary = el(doc, "summary", "meta agent-meta", `${file.name}${file.folder ? ` · in ${file.folder}` : ""}`);
-    sourceSummary.setAttribute("title", "Source details"); source.append(sourceSummary, info);
-    info.append(el(doc, "p", "source-title", base.title), pathControls(doc, base.file.path), el(doc, "code", "revision", base.file.revision));
-    const head = el(doc, "header", "agent-header"), identity = el(doc, "div", "agent-identity"), actions = el(doc, "div", "header-controls");
-    identity.append(el(doc, "span", "agent-eyebrow", "Your agent"), el(doc, "h1", "", displayName));
-    const pill = resultPill(doc, resultSummary); actions.append(pill.node); updates.push(pill.update);
+    const pill = resultPill(doc, resultSummary), actions = [pill.node]; updates.push(pill.update);
     if (snap) {
-      updates.push(modelControl.update); controls.push({ node: modelControl.trigger, guard: "idle" }); actions.append(modelControl.node);
-    } else {
-      const id = effectiveModel(base.model, "", base.chatModel);
-      const model = el(doc, "span", "model-readonly", `${modelPresentation(id).name} · ${base.model ? "from the agent file" : "default"}`);
-      model.setAttribute("title", id); actions.append(model);
+      updates.push(modelControl.update); controls.push({ node: modelControl.trigger, guard: "idle" }); actions.push(modelControl.node);
     }
-    const purpose = purposeText(base), summary = el(doc, "p", "purpose");
-    const chars = Array.from(purpose); summary.textContent = chars.length > 160 ? chars.slice(0, 159).join("") + "…" : purpose;
-    identity.append(summary, source); head.append(identity, actions);
-    if (chars.length > 160) info.append(el(doc, "p", "", purpose));
-    return { head, info };
+    return canvasHeader(doc, base, actions, !snap);
   }
 
   function makeEditor(section, label, updates) {
-    const node = el(doc, "div", "instruction-body");
-    fillEditor(doc, node, sectionText(section.key));
-    node.setAttribute("role", "textbox"); node.setAttribute("aria-multiline", "true");
-    node.setAttribute("aria-label", label); node.setAttribute("contenteditable", "plaintext-only");
-    node.setAttribute("spellcheck", "false");
-    const changed = () => {
-      clearUndo();
-      try {
-        const value = editorValue(node); invalidEditors.delete(section.key);
-        if (value === section.text) sectionDrafts.delete(section.key); else sectionDrafts.set(section.key, value);
-      } catch {
-        invalidEditors.add(section.key);
-        message = "Unsupported editor formatting. Your draft is kept; reload before saving.";
-      }
-      refresh();
-    };
-    const lineBreak = () => { if (!busy && !blocked) { insertPlainText(doc, node, "\n"); changed(); } };
-    node.addEventListener("input", changed);
-    node.addEventListener("beforeinput", event => {
-      if (event.inputType === "insertLineBreak" && event.cancelable && !event.isComposing) { event.preventDefault(); lineBreak(); }
+    const control = instructionEditor(doc, label, sectionText(section.key), {
+      disabled: () => busy || blocked,
+      hasDraft: () => sectionDrafts.has(section.key),
+      change(node) {
+        clearUndo();
+        try {
+          const value = editorValue(node); invalidEditors.delete(section.key);
+          if (value === section.text) sectionDrafts.delete(section.key); else sectionDrafts.set(section.key, value);
+        } catch {
+          invalidEditors.add(section.key);
+          message = "Unsupported editor formatting. Your draft is kept; reload before saving.";
+        }
+        refresh();
+      },
+      submit: () => route.name === "detail" ? submitOne(route.key) : submitAll(),
+      cancel() { sectionDrafts.delete(section.key); invalidEditors.delete(section.key); render(); },
     });
-    node.addEventListener("keydown", (event) => {
-      if (event.isComposing) return;
-      if (event.key === "Enter" && !event.ctrlKey && !event.altKey && !event.metaKey) {
-        event.preventDefault();
-        if (event.shiftKey) lineBreak(); else route.name === "detail" ? submitOne(route.key) : submitAll();
-      } else if (event.key === "Escape" && sectionDrafts.has(section.key)) {
-        event.preventDefault(); sectionDrafts.delete(section.key); invalidEditors.delete(section.key); render();
-      }
-    });
-    for (const kind of ["paste", "drop"]) node.addEventListener(kind, (event) => {
-      event.preventDefault(); if (busy || blocked) return;
-      const transfer = kind === "paste" ? event.clipboardData : event.dataTransfer;
-      insertPlainText(doc, node, transfer?.getData("text/plain") ?? ""); changed();
-    });
-    updates.push(() => {
-      node.setAttribute("contenteditable", busy || blocked ? "false" : "plaintext-only");
-      node.setAttribute("aria-readonly", String(busy || blocked));
-    });
-    return node;
+    updates.push(control.update);
+    return control.node;
   }
 
   const total = () => localExamples().length;
   function footText(scope) {
-    if (!snap) return "Read-only inspection. This engine or agent file does not provide a complete editable snapshot.";
-    const n = total(), tests = plural(n, "test");
-    if (busy) {
-      if (!pending?.operation || !["save-and-test", "test"].includes(pending.operation)) return "Working…";
-      const what = pending.one ? "this test" : tests;
-      return pending.operation === "save-and-test" ? `Saving and running ${what}…` : `Saved · running ${what}`;
-    }
-    if (blocked) return savedUntested ? "Saved · test result unconfirmed" : "Reload required · result unconfirmed";
-    if (invalidEditors.size) return "Edited · unsupported formatting, reload before saving";
-    if (candidate) return "Edited · settle the outside change before saving";
-    if (scope === "one") return sectionDrafts.size || testDrafts.has(route.key)
-      ? "Enter saves and runs this test" : "Saved · Enter runs this test";
-    if (!n) return hasDrafts() ? `${sectionDrafts.size ? "Edited" : "Prompt saved"} · Enter saves` : "Saved · add a test to run it";
-    if (hasDrafts()) return `${sectionDrafts.size ? "Edited" : "Prompt saved"} · Enter saves and runs ${tests}`;
-    if (runAlert?.saved && !runAlert.finished) return "Saved · tests didn't run";
-    return `Saved · Enter runs ${tests}`;
-  }
-  function saveButton(button, label, action, className = "ib save-run") {
-    const node = button("", action, className, "save");
-    node.setAttribute("aria-label", label); node.setAttribute("title", `${label} (Enter)`);
-    node.append(icon(doc, "enter", 16, 2.2));
-    return node;
+    return canvasFooterText({ editable: !!snap, n: snap ? total() : 0, busy, pending, blocked, savedUntested,
+      invalid: invalidEditors.size, candidate, scope, promptDirty: sectionDrafts.size, testDirty: testDrafts.has(route.key), dirty: hasDrafts(), runAlert });
   }
   function spinnerStatus(status, scope, updates) {
     const spin = el(doc, "span", "busy-spinner"); spin.append(icon(doc, "running", 12, 2.6, "spin"));
@@ -524,7 +385,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       info.append(additional);
     } else promptBox.append(instructionsContent(doc, base));
     foot.append(spinnerStatus(status, "all", updates));
-    const saveRun = snap ? saveButton(button, "Save and run all tests", submitAll) : undefined;
+    const saveRun = snap ? saveButton(doc, button, "Save and run all tests", submitAll) : undefined;
     if (saveRun) foot.append(saveRun);
     if (snap) foot.append(hostedNotice(updates));
     promptBox.append(foot); promptSection.append(promptLabel, promptBox);
@@ -558,14 +419,8 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     return isRefused(result) ? { text: plainReason(result), refused: true } : undefined;
   }
   function runAlertNode(button, scope, alert = runAlert) {
-    const box = el(doc, "div", "notice notice-warn run-alert"); box.setAttribute("role", "alert");
-    const reason = alert.text.replace(/\.\s*$/, "");
-    const text = alert.refused ? `Refused: ${reason}.` : alert.finished ? `The run didn't finish: ${reason}.` : `The run didn't start: ${reason}.`;
-    const tail = alert.saved ? " Your changes are saved." : hasDrafts() ? " Your edits are kept." : "";
-    const line = el(doc, "span", "notice-text"); line.append(icon(doc, "warn", 15, 2), el(doc, "span", "", text + tail + (alert.refused ? refusalContext(base, modelChoice.override) : "")));
-    box.append(line);
-    if (!alert.refused) box.append(button("Try again", () => scope === "one" ? submitOne(route.key) : submitAll(), "sb", "save"));
-    return box;
+    return runNotice(doc, button, alert, hasDrafts(), alert.refused ? refusalContext(base, modelChoice.override) : "",
+      () => scope === "one" ? submitOne(route.key) : submitAll());
   }
 
   function testsSection(button, updates) {
@@ -689,7 +544,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     const status = el(doc, "span", "meta"); status.setAttribute("aria-hidden", "true");
     const jump = button("", () => tests.scrollIntoView?.({ block: "start" }), "tb tb-quiet pinned-tests", "nav");
     const right = el(doc, "div", "pinned-actions");
-    right.append(jump, saveButton(button, "Save and run all tests", submitAll));
+    right.append(jump, saveButton(doc, button, "Save and run all tests", submitAll));
     inner.append(status, right); bar.append(inner); bar.hidden = true;
     updates.push(() => {
       status.textContent = footText("all");
@@ -934,7 +789,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       cancel.setAttribute("aria-label", "Cancel"); cancel.append(icon(doc, "close", 16, 2.2));
       cancel.setAttribute("title", "Discard this test's edits (Esc)");
       updates.push(() => { cancel.hidden = !draft(); });
-      right.append(cancel, saveButton(button, "Save and run this test", () => submitOne(key)));
+      right.append(cancel, saveButton(doc, button, "Save and run this test", () => submitOne(key)));
       foot.append(right, hostedNotice(updates)); out.push(foot);
     } else {
       const foot = el(doc, "div", "detail-foot"); foot.append(status); out.push(foot);
