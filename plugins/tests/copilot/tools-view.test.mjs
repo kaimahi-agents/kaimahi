@@ -178,6 +178,11 @@ test("server page counts only names this server uniquely owns", () => {
   assert.match(t2({ servers: [many, other] }).root.textContent, /MCP server · 1 of 12 tools/);
 });
 
+test("an open server page keeps its declared count after catalog objects are refreshed", () => {
+  const refreshed = structuredClone(many);
+  assert.match(t2({ servers: [refreshed] }).root.textContent, /MCP server · 2 of 12 tools/);
+});
+
 test("footer discard only when dirty; busy disables inputs", () => {
   const clean = t2();
   assert.equal(byClass(clean.root, "tools-discard").length, 0);

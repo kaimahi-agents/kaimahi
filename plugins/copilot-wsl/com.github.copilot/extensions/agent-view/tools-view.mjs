@@ -16,9 +16,9 @@ function ownership(servers, names) {
   let unmatched = 0;
   for (const name of new Set(names)) {
     const owners = seen.get(name) ?? [];
-    if (owners.length === 1) counts.set(owners[0], (counts.get(owners[0]) ?? 0) + 1); else unmatched++;
+    if (owners.length === 1) counts.set(owners[0].name, (counts.get(owners[0].name) ?? 0) + 1); else unmatched++;
   }
-  return { count: server => counts.get(server) ?? 0, unmatched };
+  return { count: server => counts.get(server.name) ?? 0, unmatched };
 }
 const countText = (n, server) => `${n} of ${plural(server.tools.length, "tool")}`;
 

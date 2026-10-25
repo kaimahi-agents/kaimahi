@@ -56,6 +56,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
 
   // DOM
   function render() {
+    const focusedTool = state.route.name === "tools" && root.contains(doc.activeElement) ? doc.activeElement?.getAttribute?.("data-tool-name") : undefined;
     for (const cleanup of cleanups.splice(0)) cleanup();
     invalidEditors.clear();
     const content = el(doc, "div", state.route.name === "detail" ? "content detail-view" : "content");
@@ -103,6 +104,10 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     refresh();
     if (state.focusTestName) { activeTestName?.focus(); state.focusTestName = false; }
     if (state.focusIssue) { issueInput?.focus(); state.focusIssue = false; }
+    if (focusedTool) {
+      const replacement = Array.from(root.querySelectorAll(".tool-choice")).find(node => node.getAttribute("data-tool-name") === focusedTool);
+      (replacement && !replacement.disabled ? replacement : root.querySelector(".tool-filter"))?.focus();
+    }
     if ((state.base.tools ?? []).length && !toolsLoaded && !toolsLoading && !toolsError) loadTools();
   }
 

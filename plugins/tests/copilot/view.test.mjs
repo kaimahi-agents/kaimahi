@@ -1559,6 +1559,18 @@ test("outside additions load the previously unread catalog before claiming tools
   await settleTools();assert.equal(reads,1);
   assert.equal(byClass(h.root,"tool-source").length,1);assert.match(byClass(h.root,"tool-source")[0].textContent,/GitHub.*1 of 2 tools/);
 });
+test("tool ticks retain keyboard focus, falling back to the filter when the replacement is disabled",async t=>{
+  const h=await editableCanvas("Before.",undefined,{fetchTools:async()=>toolsCatalog()});t.after(()=>h.app.dispose());
+  await openServer(h);
+  let box=byClass(h.root,"tool-choice").find(n=>n.attrs["data-tool-name"]==="search");box.focus();
+  chooseTool(h,"search",true);
+  assert.ok(h.root.contains(h.doc.activeElement));assert.equal(h.doc.activeElement.attrs["data-tool-name"],"search");
+  const catalog=toolsCatalog();catalog.servers[0].tools[0].selectable=false;
+  const unavailable=await editableCanvas("Before.",undefined,{tools:["search"],fetchTools:async()=>catalog});t.after(()=>unavailable.app.dispose());
+  await settleTools();byClass(unavailable.root,"tool-source")[0].listeners.click[0]();
+  box=byClass(unavailable.root,"tool-choice").find(n=>n.attrs["data-tool-name"]==="search");box.focus();chooseTool(unavailable,"search",false);
+  assert.equal(unavailable.doc.activeElement,byClass(unavailable.root,"tool-filter")[0]);
+});
 test("inspection-only agents can inspect a server but cannot change tool declarations",async t=>{
   const doc=fakeDoc(),root=doc.createElement("main");
   const view=await readView(stubSession(resource(MINIMAL,{tools:["search"]})),MINIMAL);
@@ -1571,7 +1583,9 @@ test("inspection-only agents can inspect a server but cannot change tool declara
 test("a 33rd tick leaves the existing 32 names intact and reports the canonical limit",async t=>{
   const names=Array.from({length:32},(_,i)=>"tool"+i);
   const h=await editableCanvas("Before.",undefined,{tools:names,fetchTools:async()=>({servers:[{name:"many",label:"Many",tools:[...names,"extra"].map(name=>({name,description:"",selectable:true}))}]})});t.after(()=>h.app.dispose());
-  await settleTools();byClass(h.root,"tool-source")[0].listeners.click[0]();chooseTool(h,"extra",true);
+  await settleTools();byClass(h.root,"tool-source")[0].listeners.click[0]();
+  byClass(h.root,"tool-choice").find(n=>n.attrs["data-tool-name"]==="extra").focus();chooseTool(h,"extra",true);
+  assert.ok(h.root.contains(h.doc.activeElement));assert.equal(h.doc.activeElement.attrs["data-tool-name"],"extra");
   assert.match(h.root.textContent,/Keep at most 32 tools/);
   assert.equal(byClass(h.root,"tool-choice").filter(n=>n.checked).length,32);
   assert.equal(h.calls.length,0);
