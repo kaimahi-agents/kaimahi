@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { resultHistory } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/editor.mjs";
 import { instructionSections, replaceInstructions, replaceExamples, effectiveModel, runtimeModelSelection } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs";
 
 const KEYS = ["Accountable Responsibilities", "Non-Responsibilities", "Collaboration and Review Authority"];
@@ -67,6 +68,83 @@ test("an attested pre-route refusal is current but never restores an old model p
 const BODY = "Reply with exactly Hello.";
 const examples = () => [{ id: "hello", input: "Ada", assertions: [{ id: "text", type: "contains", value: "Hello" }] }];
 const clone = (value) => JSON.parse(JSON.stringify(value));
+
+function historyView(model, scope = "full") {
+  return {
+    file: { revision: "same-revision" }, authoring: { examples: examples() }, examples: examples(),
+    latest: { status: "current", result: {
+      modelRoute: `copilot/${model}`, state: "complete", fullPass: scope === "full",
+      selection: { scope, caseIds: ["hello"], totalCases: 1 },
+      examples: [{ id: "hello", state: "complete", verdict: "pass",
+        assertions: [{ id: "text", type: "contains", verdict: "pass" }] }],
+    } },
+  };
+}
+function stoppedAttempt(history, model) {
+  const view = historyView(model);
+  const run = { id: `stop-${model}`, model, revision: view.file.revision, state: "stopped",
+    caseIds: ["hello"], totalCases: 1, cases: [], elapsedMs: 100 };
+  history.stop(run, view);
+  return run;
+}
+
+test("stopped attempts for both retained models survive transient stop eviction", () => {
+  const a = historyView("A"), b = historyView("B"), history = resultHistory(a);
+  history.remember(b);
+  const stoppedA = stoppedAttempt(history, "A"), stoppedB = stoppedAttempt(history, "B");
+  stoppedAttempt(history, "C");
+  assert.equal(history.selected(a, "A"), undefined, "a newer stop must mask the old full pass");
+  assert.equal(history.attempt("A").run, stoppedA);
+  assert.equal(history.attempt("B").run, stoppedB);
+  assert.ok(history.attempt("C"));
+
+  stoppedAttempt(history, "D");
+  assert.equal(history.attempt("C"), undefined, "evict the unretained transient, not a retained model's stop");
+  assert.ok(history.attempt("D"));
+  assert.equal(history.attempt("A").run, stoppedA);
+  assert.equal(history.attempt("B").run, stoppedB);
+  assert.equal(history.selected(a, "A"), undefined);
+  assert.equal(history.selected(b, "B"), undefined);
+  assert.deepEqual(history.pair(), [a, b]);
+  assert.equal(["A", "B", "C", "D"].filter(model => history.attempt(model)).length, 3);
+});
+
+test("remembering transient partial results preserves retained models' stopped markers", () => {
+  const a = historyView("A"), b = historyView("B"), history = resultHistory(a);
+  history.remember(b);
+  const stoppedA = stoppedAttempt(history, "A"), stoppedB = stoppedAttempt(history, "B");
+  history.remember(historyView("C", "subset"), true);
+  history.remember(historyView("D", "subset"), true);
+  assert.equal(history.attempt("A")?.run, stoppedA);
+  assert.equal(history.attempt("B")?.run, stoppedB);
+  assert.equal(history.selected(a, "A"), undefined);
+  assert.equal(history.selected(b, "B"), undefined);
+  assert.equal(history.attempt("C"), undefined);
+  assert.equal(history.selected(a, "D").latest.result.selection.scope, "subset");
+  assert.deepEqual(history.pair(), [a, b]);
+});
+
+test("a third full result stays bounded when both retained routes share the focused model ID", () => {
+  const first = historyView("shared"), second = historyView("shared"), third = historyView("C");
+  first.latest.result.modelRoute = "first/shared";
+  second.latest.result.modelRoute = "second/shared";
+  const history = resultHistory(first);
+  history.remember(second); history.prefer("shared"); history.focus("shared");
+  history.remember(third);
+  assert.deepEqual(history.pair(), [second, third]);
+});
+
+test("a new full completion clears the retained model's stopped marker", () => {
+  const a = historyView("A"), history = resultHistory(a);
+  history.remember(historyView("B"));
+  stoppedAttempt(history, "A"); stoppedAttempt(history, "B"); stoppedAttempt(history, "C");
+  assert.ok(history.attempt("A"));
+  const completion = historyView("A");
+  history.remember(completion, true);
+  assert.equal(history.attempt("A"), undefined);
+  assert.equal(history.selected(completion, "A").latest.result, completion.latest.result);
+  assert.ok(history.attempt("B"), "completing A must not clear B's stop");
+});
 
 // Wrong offsets, stripping untouched whitespace, or reserializing YAML must fail.
 test("instructions extract only canonical bodies and preserve an unchanged save byte-for-byte", () => {

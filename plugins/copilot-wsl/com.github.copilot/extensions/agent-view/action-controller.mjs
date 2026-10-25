@@ -40,6 +40,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     if (state.busy || ((state.blocked || invalidEditors.size) && operation !== "reload")) return;
     const previousPrompt = submitted.sections.map(key => ({ key, text: state.snap.sections.find(s => s.key === key).text }));
     clearUndo();
+    if (["test", "save-and-test"].includes(operation)) state.history.started(effectiveModel(state.base.model, modelChoice.override, state.base.chatModel));
     state.observationGeneration++; state.run = undefined;
     state.busy = true; state.pending = { operation, one: values.caseId !== undefined }; state.message = operation === "run" ? "Running…" : ""; state.runAlert = undefined; refresh();
     const action = { operation, ...values };
@@ -68,7 +69,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     const latest = response?.view?.latest;
     if (hostedAttempt && (UNKNOWN.includes(response?.error) || CONFLICTS.includes(response?.error) || latest?.status === "current" && latest.result && !isRefused(latest.result))) state.hostedSent = true;
     if (executing && matches(response?.view) && !response.stopped) {
-      state.history.remember(response.view, true, response.run?.elapsedMs);
+      state.history.remember(response.view, true, response.run?.elapsedMs, executing ? effectiveModel(state.base.model, modelChoice.override, state.base.chatModel) : undefined);
       modelChoice.confirm(response.view);
     }
     const tested = ["test", "save-and-test"].includes(operation);

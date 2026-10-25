@@ -106,12 +106,11 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     const counts = [`${passing} passing`, ...(failing ? [`${failing} failing`] : []), ...(unknown ? [`${unknown} didn't finish`] : [])];
     return { tone: failing ? "fail" : unknown ? "error" : "none", text: `${done ? counts.join(", ") + " · " : ""}${done} of ${n} ran` };
   }
-  function runRow(id, fallback) {
-    const run = currentRun();
+  function runRow(id, fallback, run = currentRun(), partner = false) {
     if (!run || !run.caseIds.includes(id)) return fallback;
     const attempt = history.attempt(run.model);
-    if (!testing() && !same(attempt?.view.authoring?.examples.find(e => e.id === id), state.base.authoring?.examples.find(e => e.id === id))) return fallback;
-    const old = !testing() && (hasDrafts() || run.revision !== state.base.file.revision);
+    if ((!testing() || partner) && !same(attempt?.view.authoring?.examples.find(e => e.id === id), state.base.authoring?.examples.find(e => e.id === id))) return fallback;
+    const old = partner || !testing() && (hasDrafts() || run.revision !== state.base.file.revision);
     const c = run.cases.find(c => c.caseId === id);
     let base = c?.verdict === "pass" ? "pass" : c?.verdict === "fail" ? "fail" : c ? "error" : "none";
     let label = c?.verdict === "pass" ? "Passed" : c?.verdict === "fail" ? "Failed" : c ? "Didn't finish" : "Not run";
@@ -323,13 +322,14 @@ export function renderView(doc, root, payload, execute = postAction, options = {
           verdict.className += " verdict-pair";
           pair.forEach((view, index) => {
             const route = view.latest.result.modelRoute, selected = route.slice(route.indexOf("/") + 1) === selectedModel();
-            const c = inspectCases(view).find(c => c.example.id === id);
-            const definition = view.authoring?.examples.find(c => c.id === id), current = state.base.authoring?.examples.find(c => c.id === id);
+            const attempt = history.attempt(route.slice(route.indexOf("/") + 1)), latestView = !attempt?.run && attempt?.view || view;
+            const c = inspectCases(latestView).find(c => c.example.id === id);
+            const definition = latestView.authoring?.examples.find(c => c.id === id), current = state.base.authoring?.examples.find(c => c.id === id);
             const old = !selected || testing() || hasDrafts() || view.file.revision !== state.base.file.revision;
             const prior = definition && same(definition, current) ? testRow(c, old, false) : { kind: "none", label: "Not run yet" };
             const foreign = selected && e.c?.previous && e.c.previousModel !== route && !currentRun();
             const own = selected && (currentRun() || state.base.latest.result?.modelRoute === route);
-            const slot = own ? foreign ? { kind: "none", label: "Not run" } : r : prior;
+            const slot = own ? foreign ? { kind: "none", label: "Not run" } : r : attempt?.run ? runRow(id, prior, attempt.run, !selected) : prior;
             const text = own && !foreign ? word : slot.label.replace(/ last run$/, "");
             if (index) verdict.append(" · ");
             const phrase = el(doc, "span", `verdict-slot ${slot.kind}`, `${labels[index]} ${text}`);
@@ -361,11 +361,13 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       const selected = pair.find(v => v.latest.result.modelRoute.slice(v.latest.result.modelRoute.indexOf("/") + 1) === selectedModel());
       const partner = selected && pair.find(v => v !== selected);
       const elapsed = history.elapsed(state.base), duration = Number.isFinite(elapsed) ? ` · ${Math.round(elapsed / 1000)} s` : "";
-      const partnerResult = partner?.latest.result;
-      const partnerSummary = !partner ? "" : isRefused(partnerResult) ? "Refused" : partnerResult.state !== "complete" ? "Didn't finish"
+      const partnerAttempt = partner && history.attempt(partner.latest.result.modelRoute.slice(partner.latest.result.modelRoute.indexOf("/") + 1));
+      const partnerRun = partnerAttempt?.run, partnerView = !partnerRun && partnerAttempt?.view || partner;
+      const partnerResult = partnerView?.latest.result;
+      const partnerSummary = !partner ? "" : partnerRun ? `Stopped · ${partnerRun.cases.length} of ${partnerRun.caseIds.length} ran` : isRefused(partnerResult) ? "Refused" : partnerResult.state !== "complete" ? "Didn't finish"
         : partnerResult.selection.scope === "subset" ? `${partnerResult.selection.caseIds.length} of ${partner.examples.length} tests ran`
-        : inspectCases(partner).some(c => c.state === "unknown") ? "Incomplete run" : `${inspectCases(partner).filter(c => c.state === "pass").length} of ${partner.examples.length} passing`;
-      const partnerText = partner ? ` · ${modelLabel(partnerResult.modelRoute)} ${partner.file.revision === state.base.file.revision && !anyDraft ? "earlier" : "before your edit"}, ${partnerSummary}` : "";
+        : inspectCases(partnerView).some(c => c.state === "unknown") ? "Incomplete run" : `${inspectCases(partnerView).filter(c => c.state === "pass").length} of ${partner.examples.length} passing`;
+      const partnerText = partner ? ` · ${modelLabel(partner.latest.result.modelRoute)} ${(partnerRun?.revision ?? partnerView.file.revision) === state.base.file.revision && !anyDraft ? "earlier" : "before your edit"}, ${partnerSummary}` : "";
       const runText = run ? run.state === "stopping" ? "Stopping Copilot turn…" : run.state === "stopped" ? `Stopped · ${run.cases.length} of ${run.caseIds.length} ran` : "Running" : "";
       const accessible = state.blocked ? "Result unconfirmed" : run && (testing() || !anyDraft && run.revision === state.base.file.revision) ? runText + partnerText : !shown.length ? "" : testing() ? "Running…"
         : stale && state.base.latest.status !== "current" ? `Out of date${previous ? ` · last run on ${previous}` : ""}` : state.base.latest.status !== "current" || !text ? "Not run yet"

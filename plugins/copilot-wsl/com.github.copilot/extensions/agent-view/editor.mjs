@@ -1,5 +1,5 @@
 // Inert DOM editing and exact source serialization. Loaders and actions are caller-owned.
-import { effectiveModel, DEFAULT_MODEL, agentName, fileLocation, same, uniqueIndex, operandKey, EDITABLE_TYPES, quoted } from "./authoring.mjs";
+import { effectiveModel, preRouteRefusal, DEFAULT_MODEL, agentName, fileLocation, same, uniqueIndex, operandKey, EDITABLE_TYPES, quoted } from "./authoring.mjs";
 export { clone, same, uniqueIndex, operandKey, EDITABLE_TYPES, quoted, checkIssue, checkComplete, convertCheck } from "./authoring.mjs";
 export const el = (doc, tag, className, text) => {
   const node = doc.createElement(tag);
@@ -173,22 +173,32 @@ export function resultHistory(initial) {
   let last, preferred, focused;
   const records = new Map(), models = new Map(), attempts = new Map(), timings = new Map(), modelCases = new Map();
   const modelId = view => view.latest.result?.modelRoute.slice(view.latest.result.modelRoute.indexOf("/") + 1);
-  const remember = (view, executed = false, elapsedMs) => {
+  const pruneAttempts = () => {
+    // Keep newer attempts for both full-result slots, plus one transient model.
+    const retained = new Set([...models.values()].map(modelId));
+    while (attempts.size > 3) attempts.delete([...attempts.keys()].find(id => !retained.has(id)));
+  };
+  const remember = (view, executed = false, elapsedMs, attemptedModel) => {
     const definitions = uniqueIndex(view.authoring?.examples ?? [], e => e.id);
     // Bound memory to this file's remaining case IDs, not every past revision.
     for (const id of records.keys()) if (!definitions.get(id)) records.delete(id);
     for (const [route, prior] of models) if (prior.authoring?.examples.some(e => !same(definitions.get(e.id), e))) models.delete(route);
-    if (view.latest.status !== "current" || view.latest.result.modelRoute === "/" || !coherentSelection(view)) return;
+    if (view.latest.status !== "current" || !coherentSelection(view)) return;
+    if (view.latest.result.modelRoute === "/") {
+      if (executed && attemptedModel && preRouteRefusal(view.latest.result)) { attempts.set(attemptedModel, { view }); pruneAttempts(); }
+      return;
+    }
     const id = modelId(view), stopped = attempts.get(id);
-    if (executed) attempts.delete(id);
+    if (executed || stopped?.view && !stopped.run && !same(stopped.view.latest.result, view.latest.result)) attempts.delete(id);
     else if (stopped?.run?.revision === view.file.revision) return;
     const route = view.latest.result.modelRoute, changed = !same(models.get(route)?.latest.result, view.latest.result);
     if (!models.has(route) && models.size === 2 && (view.latest.result.selection.scope !== "full" || view.latest.result.state !== "complete")) {
       attempts.set(id, { view });
-      while (attempts.size > 3) attempts.delete(attempts.keys().next().value);
+      pruneAttempts();
     } else {
       models.set(route, view);
-      if (models.size > 2) models.delete([...models.keys()].find(key => key !== route && modelId(models.get(key)) !== (focused === undefined || id === focused ? preferred : focused)));
+      if (models.size > 2) models.delete([...models.keys()].find(key => key !== route && modelId(models.get(key)) !== (focused === undefined || id === focused ? preferred : focused))
+        ?? [...models.keys()].find(key => key !== route));
     }
     if (executed && Number.isFinite(elapsedMs)) timings.set(route, elapsedMs);
     else if (executed || changed) timings.delete(route);
@@ -216,11 +226,12 @@ export function resultHistory(initial) {
     pair: () => [...models.values()],
     prefer: model => { preferred = model; },
     focus: model => { focused = model; },
+    started: model => { attempts.delete(model); },
     elapsed: view => timings.get(view.latest.result?.modelRoute),
     attempt: model => attempts.get(model),
     stop(run, view) {
       attempts.set(run.model, { run, view });
-      while (attempts.size > 2) attempts.delete(attempts.keys().next().value);
+      pruneAttempts();
     },
     reset() { attempts.clear(); models.clear(); records.clear(); modelCases.clear(); timings.clear(); last = undefined; },
     cases(view, selected) {
