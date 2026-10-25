@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { readView, createActionHandler } from '../../copilot-wsl/com.github.copilot/extensions/agent-view/view.mjs';
@@ -31,7 +31,7 @@ async function connect(command, args, options) {
 
 const binary = process.env.KMX_HOST_BRIDGE_TEST_BINARY;
 for (const denied of [false, true]) test(`Go MCP plus Node runtime fixture: native tool ${denied ? 'denial' : 'round trip'}`, { skip: !binary, timeout: 60000 }, async t => {
-  const root = await mkdtemp(path.join(tmpdir(), 'kmx-host-fixture-'));
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), 'kmx-host-fixture-')));
   const state = path.join(root, 'state'); await mkdir(state, { mode: 0o700 });
   const env = { ...process.env, KMX_HOME: state };
   const source = '# Host fixture\n\n## Identity\n- **ID:** fixture\n- **Purpose:** One host read.\n\n## Accountable Responsibilities\nCall the tool `ping`. Reply with exactly `done`.\n\n## Non-Responsibilities\nNo other calls.\n\n## Collaboration and Review Authority\nReturn the answer.\n\n## Model\n- **Preferred:** fake\n\n## Tools\n- ping\n\n## Examples\n```yaml\nexamples:\n  - id: read\n    input: read\n    assertions:\n      - id: complete\n        type: contains\n        value: done\n```\n';

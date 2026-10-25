@@ -42,7 +42,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Build Go runtime fixture
+        run: go build -o "$RUNNER_TEMP/kmx-host-fixture" ./cmd/kmx
       - name: Agent canvas, authoring and text fallback contracts
+        env:
+          KMX_HOST_BRIDGE_TEST_BINARY: ${{ runner.temp }}/kmx-host-fixture
         run: node --test plugins/tests/copilot/*.test.mjs
       - name: Package, WSL plugin and real MCP loop contracts
         run: python -m unittest discover -s plugins/copilot -p 'test_*.py' -v
