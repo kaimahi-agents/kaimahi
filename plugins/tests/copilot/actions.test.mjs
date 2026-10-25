@@ -30,6 +30,207 @@ function harness({omitModel=false,fixture=original}={}){
  }}},send:async prompt=>{calls.push({chat:prompt})}};
  return{o,session,calls,raw,source:()=>source,setRace:()=>{race=true},setDenied:()=>{denied=true},setUnavailable:()=>{unavailable=true},hold:()=>{release={};return()=>release.resolve()},act:createActionHandler({session,path:'greeter.agent.md'})};
 }
+function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no});return{promise,resolve,reject}}
+function nativeHarness(){
+ const h=harness(),listeners=new Set(),retired=[],requests=[],gate=deferred(),ack=deferred(),aborts=[],dispatched=deferred();
+ h.session.on=(name,listener)=>{assert.equal(name,'tool.execution_progress');listeners.add(listener);return()=>{listeners.delete(listener);retired.push(listener)}};
+ const execute=h.session.rpc.tools.execute;
+ h.session.rpc.tools.execute=async request=>{
+  if(request.name!=='owned-test')return execute(request);
+  assert.equal(listeners.size,1,'subscribe before dispatch');requests.push(request);dispatched.resolve();
+  await gate.promise;return execute(request);
+ };
+ h.session.rpc.abort=args=>{aborts.push(args);return ack.promise};
+ const emit=(row,toolCallId=requests.at(-1)?.toolCallId)=>{for(const listener of listeners)listener({data:{toolCallId,progressMessage:typeof row==='string'?row:'1.0: '+JSON.stringify(row)}})};
+ const start=async(input={})=>{
+  const pending=h.act({operation:'test',expectedRevision:revision(h.source()),runId:'run-1',...input});
+  await new Promise(setImmediate);assert.equal(requests.length,1,'Test must dispatch once');
+  return{pending};
+ };
+ return{...h,listeners,retired,requests,gate,ack,aborts,emit,start,dispatched};
+}
+test('native progress is correlated, bounded, ordered and provisional until the final Test reply',async()=>{
+ const n=nativeHarness();n.o.nextExamples=[greeting,farewell];
+ const {pending}=await n.start({operation:'save-and-test',sections:edited(),examples:[greeting,farewell]});
+ const request=n.requests[0];assert.equal(typeof request.toolCallId,'string');assert.notEqual(request.toolCallId,'run-1');
+ assert.deepEqual(request.arguments,{schemaVersion:1,path:'greeter.agent.md',showContent:false,showFailedContent:true});
+ assert.deepEqual(await n.act({operation:'progress',runId:'foreign'}),{run:undefined});
+ n.emit({caseId:'greeting',verdict:'pass',reason:''},'foreign-tool');
+ for(const message of ['raw host secret','1.0: not JSON','1.0: []','1.0: null','{"caseId":"greeting","verdict":"pass","reason":""}',
+  '1.0: '+JSON.stringify({caseId:'greeting',verdict:'pass',reason:'x'.repeat(20000)}),
+  ...[{caseId:'foreign',verdict:'pass',reason:''},{caseId:'greeting',verdict:'passed',reason:''},{caseId:'greeting',verdict:'pass',reason:42}].map(r=>'1.0: '+JSON.stringify(r))])n.emit(message);
+ assert.deepEqual((await n.act({operation:'progress',runId:'run-1'})).run.cases,[]);
+ n.emit({caseId:'farewell',verdict:'fail',reason:'No\u0000\u202e\n\tmatch '+ 'x'.repeat(600)});
+ n.emit({caseId:'greeting',verdict:'unknown',reason:'Judge unavailable'});
+ n.emit({caseId:'greeting',verdict:'pass',reason:'duplicate'});
+ const run=(await n.act({operation:'progress',runId:'run-1'})).run;
+ assert.deepEqual(Object.keys(run).sort(),['id','revision','model','caseIds','totalCases','cases','state','elapsedMs'].sort());
+ assert.deepEqual([run.id,run.revision,run.model,run.caseIds,run.totalCases,run.state],['run-1',revision(n.source()),'fake',['greeting','farewell'],2,'running']);
+ assert.ok(Number.isFinite(run.elapsedMs)&&run.elapsedMs>=0);
+ assert.deepEqual(run.cases.map(r=>[r.caseId,r.verdict]),[['greeting','unknown'],['farewell','fail']]);
+ assert.match(run.cases[1].reason,/^No match /);assert.doesNotMatch(run.cases[1].reason,/[\u0000\u202e\n\t]/);assert.ok(run.cases[1].reason.length<550);
+ run.cases[0].verdict='pass';assert.equal((await n.act({operation:'progress',runId:'run-1'})).run.cases[0].verdict,'unknown');
+ n.gate.resolve();const result=await pending;
+ assert.equal(result.error,undefined);assert.equal(result.view.latest.badge,'pass','final result overrides provisional unknown/fail');
+ assert.equal(result.saved,true);assert.equal(result.run.cases[0].verdict,'unknown');assert.equal(n.listeners.size,0);
+ n.retired[0]({data:{toolCallId:request.toolCallId,progressMessage:'1.0: {"caseId":"farewell","verdict":"pass","reason":"late"}'}});
+ assert.equal((await n.act({operation:'progress',runId:'run-1'})).run.cases[1].verdict,'fail');
+ await n.act({operation:'reload'});assert.deepEqual(await n.act({operation:'progress',runId:'run-1'}),{run:undefined});
+});
+test('run IDs validate before writes and fixed progress/Stop accept no execution selectors',async()=>{
+ for(const runId of ['',null,42,'x'.repeat(129),'bad\nID']){
+  const h=harness();const r=await h.act({operation:'save-and-test',expectedRevision:revision(original),sections:edited(),runId});
+  assert.equal(r.error,'invalid-action');assert.equal(h.calls.length,0);
+ }
+ const h=harness();
+ for(const operation of ['progress','stop']){
+  assert.deepEqual(await h.act({operation,runId:'absent'}),{run:undefined});
+  for(const extra of [{path:'else.agent.md'},{model:'fake'},{expectedRevision:revision(original)},{caseId:'greeting'}])assert.equal((await h.act({operation,runId:'absent',...extra})).error,'invalid-action');
+  assert.equal((await h.act({operation})).error,'invalid-action');
+ }
+ assert.equal(h.calls.length,0);
+});
+for(const first of ['ack','reject'])test('deliberate Stop requires local marker, success acknowledgement and execute rejection: '+first+' first',async()=>{
+ const m=nativeHarness();const {pending:stopping}=await m.start({operation:'save-and-test',sections:edited()});
+ m.emit({caseId:'greeting',verdict:'fail',reason:'Mismatch'});
+ assert.deepEqual(await m.act({operation:'stop',runId:'foreign'}),{run:undefined});assert.equal(m.aborts.length,0);
+ assert.deepEqual(await m.act({operation:'stop',runId:'run-1'}),{stopping:true});
+ assert.deepEqual(await m.act({operation:'stop',runId:'run-1'}),{stopping:true});
+ assert.deepEqual(m.aborts,[{reason:'remote_abort'}]);
+ m.emit({caseId:'greeting',verdict:'pass',reason:'late'});
+ assert.equal((await m.act({operation:'progress',runId:'run-1'})).run.state,'stopping');
+ let settled=false;stopping.then(()=>{settled=true});
+ if(first==='ack')m.ack.resolve({success:true});else m.gate.reject(Error('arbitrary private failure'));
+ await new Promise(setImmediate);assert.equal(settled,false,'both acknowledgement and rejection are required');
+ if(first==='ack')m.gate.reject(Error('not message-matched'));else m.ack.resolve({success:true});
+ const result=await stopping;
+ assert.equal(result.error,undefined);assert.equal(result.stopped,true);assert.equal(result.saved,true);
+ assert.equal(result.view.file.revision,revision(m.source()));assert.equal(result.view.authoring.source,m.source());
+ assert.deepEqual(result.view.latest,{status:'none',badge:'none'});
+ assert.equal(result.run.state,'stopped');assert.deepEqual(result.run.cases,[{caseId:'greeting',verdict:'fail',reason:'Mismatch'}]);assert.equal(m.listeners.size,0);
+ const before=m.aborts.length;assert.deepEqual(await m.act({operation:'stop',runId:'run-1'}),{run:undefined});assert.equal(m.aborts.length,before);
+ m.session.rpc.tools.execute=async request=>({resultType:'rejected'});
+ assert.equal((await m.act({operation:'test',runId:'next-run',expectedRevision:revision(m.source())})).error,'permission_required','confirmed Stop unlocks the next invocation');
+ assert.deepEqual(await m.act({operation:'progress',runId:'run-1'}),{run:undefined});
+});
+for(const failure of ['false','throw','external'])test('unconfirmed or external Stop retains the uncertainty lock: '+failure,async()=>{
+ const n=nativeHarness();const {pending}=await n.start();
+ if(failure!=='external'){
+  await n.act({operation:'stop',runId:'run-1'});
+  if(failure==='false')n.ack.resolve({success:false});else n.ack.reject(Error('private abort secret'));
+ }
+ n.gate.reject(Error('Tool execution was aborted.'));
+ const result=await pending;assert.equal(result.error,'outcome-unknown');assert.equal(result.stopped,undefined);assert.equal(result.view,undefined);assert.equal(n.listeners.size,0);
+ assert.doesNotMatch(JSON.stringify(result),/private abort secret|Tool execution was aborted/);
+ assert.equal((await n.act({operation:'test',expectedRevision:revision(original)})).error,'outcome-unknown');assert.equal(n.requests.length,1);
+ assert.deepEqual(await n.act({operation:'progress',runId:'run-1'}),{run:undefined});
+});
+for(const refresh of ['failed-read','changed-revision'])test('Stop cannot confirm an unreadable or changed saved source: '+refresh,async()=>{
+ const n=nativeHarness(),read=n.session.rpc.mcp.resources.read;const {pending}=await n.start({operation:'save-and-test',sections:edited()});
+ await n.act({operation:'stop',runId:'run-1'});
+ n.session.rpc.mcp.resources.read=async args=>{if(refresh==='failed-read')throw Error('private');const response=await read(args),body=JSON.parse(response.contents[0].text);body.file.revision='sha256:'+'0'.repeat(64);response.contents[0].text=JSON.stringify(body);return response};
+ n.ack.resolve({success:true});n.gate.reject(Error('aborted'));
+ const result=await pending;assert.equal(result.error,'outcome-unknown');assert.equal(result.saved,true);assert.equal(result.stopped,undefined);assert.equal(result.view,undefined);
+ assert.equal((await n.act({operation:'test',expectedRevision:revision(n.source())})).error,'outcome-unknown');
+});
+for(const ack of ['success','hanging'])test('authoritative completion wins a Stop race even with '+ack+' abort acknowledgement',async()=>{
+ const n=nativeHarness();const {pending}=await n.start();await n.act({operation:'stop',runId:'run-1'});
+ if(ack==='success')n.ack.resolve({success:true});
+ n.gate.resolve();const result=await pending;
+ assert.equal(result.stopped,undefined);assert.equal(result.view.latest.badge,'pass');assert.equal(n.listeners.size,0);
+ assert.deepEqual(await n.act({operation:'stop',runId:'run-1'}),{run:undefined});assert.equal(n.aborts.length,1);
+ n.act.dispose();
+});
+test('late Stop after native settlement never aborts while final observation is pending',async()=>{
+ const n=nativeHarness(),read=n.session.rpc.mcp.resources.read,reading=deferred();let finalRead=false;
+ n.session.rpc.mcp.resources.read=async args=>{if(n.calls.length){finalRead=true;await reading.promise}return read(args)};
+ const {pending}=await n.start();n.gate.resolve();await new Promise(setImmediate);assert.equal(finalRead,true);
+ assert.deepEqual(await n.act({operation:'stop',runId:'run-1'}),{run:undefined});assert.equal(n.aborts.length,0);
+ reading.resolve();assert.equal((await pending).view.latest.badge,'pass');
+});
+test('single-case snapshots accept only the selected expected case and native IDs never repeat',async()=>{
+ const n=nativeHarness();n.o.nextExamples=[greeting,farewell];
+ const {pending}=await n.start({operation:'save-and-test',examples:[greeting,farewell],caseId:'farewell'});
+ n.emit({caseId:'greeting',verdict:'pass',reason:''});n.emit({caseId:'farewell',verdict:'pass',reason:''});
+ const run=(await n.act({operation:'progress',runId:'run-1'})).run;
+ assert.deepEqual(run.caseIds,['farewell']);assert.equal(run.totalCases,2);assert.deepEqual(run.cases,[{caseId:'farewell',verdict:'pass',reason:''}]);
+ n.gate.resolve();await pending;
+ await n.act({operation:'test',runId:'run-2',expectedRevision:revision(n.source())});
+ assert.notEqual(n.requests[0].toolCallId,n.requests[1].toolCallId);assert.deepEqual(await n.act({operation:'progress',runId:'run-1'}),{run:undefined});
+});
+test('Run and Edit never subscribe or allow Stop to abort them',async()=>{
+ const h=harness();h.session.on=()=>assert.fail('only Test subscribes');h.session.rpc.abort=()=>assert.fail('only pending Test aborts');
+ const release=h.hold(),pending=h.act({operation:'run',expectedRevision:revision(original),input:'Ada'});await new Promise(setImmediate);
+ assert.deepEqual(await h.act({operation:'stop',runId:'missing'}),{run:undefined});release();assert.equal((await pending).error,undefined);
+ assert.equal(h.calls[0].toolCallId,undefined);
+ const saved=harness();saved.session.on=()=>assert.fail('Edit never subscribes');
+ assert.equal((await saved.act({operation:'save-prompt',expectedRevision:revision(original),sections:edited()})).error,undefined);
+});
+test('dispose releases a rejected Test awaiting hanging abort and unsubscribes without another abort',async()=>{
+ const n=nativeHarness();const {pending}=await n.start();await n.act({operation:'stop',runId:'run-1'});n.gate.reject(Error('aborted'));
+ await new Promise(setImmediate);n.act.dispose();n.act.dispose();
+ assert.equal((await pending).error,'outcome-unknown');assert.equal(n.listeners.size,0);assert.equal(n.aborts.length,1);
+ assert.deepEqual(await n.act({operation:'progress',runId:'run-1'}),{run:undefined});
+});
+test('bridge close releases progress subscriptions and never aborts an active Test',async()=>{
+ const n=nativeHarness(),bridge=await startViewBridge({session:n.session,path:'greeter.agent.md'});
+ const pending=fetch(bridge.url+'actions',{method:'POST',headers:{Origin:new URL(bridge.url).origin,'Content-Type':'application/json'},body:JSON.stringify({operation:'test',runId:'bridge-run',expectedRevision:revision(original)})}).catch(()=>{});
+ try{
+  await n.dispatched.promise;
+  assert.equal(n.requests.length,1);assert.equal(n.listeners.size,1);
+  await bridge.close();assert.equal(n.listeners.size,0);assert.equal(n.aborts.length,0);
+ }finally{n.gate.resolve();await bridge.close();await pending}
+});
+test('progress and Stop have no active snapshot before native dispatch, including saving and metadata',async()=>{
+ const h=harness(),saving=deferred(),metadata=deferred(),get=h.session.rpc.tools.getCurrentMetadata;
+ h.session.rpc.tools.getCurrentMetadata=async()=>{await metadata.promise;return get()};
+ const execute=h.session.rpc.tools.execute;h.session.rpc.tools.execute=async request=>{if(request.name==='owned-edit')await saving.promise;return execute(request)};
+ const pending=h.act({operation:'save-and-test',runId:'saving-run',expectedRevision:revision(original),sections:edited()});
+ for(const phase of ['metadata','saving']){
+  await new Promise(setImmediate);
+  assert.deepEqual(await h.act({operation:'progress',runId:'saving-run'}),{run:undefined});
+  assert.deepEqual(await h.act({operation:'stop',runId:'saving-run'}),{run:undefined});
+  if(phase==='metadata')metadata.resolve();else saving.resolve();
+ }
+ assert.equal((await pending).view.latest.badge,'pass');
+});
+test('disposing before Test metadata settles prevents a new native subscription or dispatch',async()=>{
+ const n=nativeHarness(),metadata=deferred(),get=n.session.rpc.tools.getCurrentMetadata;
+ n.session.rpc.tools.getCurrentMetadata=async()=>{await metadata.promise;return get()};
+ const pending=n.act({operation:'test',runId:'closing-run',expectedRevision:revision(original)});
+ await new Promise(setImmediate);n.act.dispose();metadata.resolve();
+ await new Promise(setImmediate);assert.equal(n.requests.length,0,'closed bridge must not dispatch a Test');assert.equal(n.listeners.size,0);
+ assert.equal((await pending).error,'unavailable');
+});
+test('an old matching cancelled resource cannot confirm an unacknowledged Stop',async()=>{
+ const h=harness();h.o.failTest=true;h.o.shape=r=>({...r,state:'cancelled',reasonCode:'cancelled'});
+ assert.equal((await h.act({operation:'test',expectedRevision:revision(original)})).error,'action-failed');
+ const gate=deferred();h.session.rpc.tools.execute=()=>gate.promise;h.session.rpc.abort=async()=>({success:false});
+ const pending=h.act({operation:'test',runId:'cancel-run',expectedRevision:revision(original)});await new Promise(setImmediate);
+ await h.act({operation:'stop',runId:'cancel-run'});gate.reject(Error('Tool execution was aborted.'));
+ const result=await pending;assert.equal(result.error,'outcome-unknown');assert.equal(result.view,undefined);assert.equal(result.stopped,undefined);
+});
+test('confirmed Stop clears an older pass from its fresh view without requiring cancelled-resource proof',async()=>{
+ const h=harness();assert.equal((await h.act({operation:'test',expectedRevision:revision(original)})).view.latest.badge,'pass');
+ const gate=deferred();h.session.rpc.tools.execute=()=>gate.promise;h.session.rpc.abort=async()=>({success:true});
+ const pending=h.act({operation:'test',runId:'cancel-run',expectedRevision:revision(original)});await new Promise(setImmediate);
+ await h.act({operation:'stop',runId:'cancel-run'});gate.reject(Error('not a cancellation message'));
+ const result=await pending;assert.equal(result.stopped,true);assert.equal(result.saved,false);assert.deepEqual(result.view.latest,{status:'none',badge:'none'});
+ assert.deepEqual(result.run.cases,[]);assert.equal(result.view.file.revision,revision(original));
+});
+test('bridge close releases a local Stop waiter even when native abort never acknowledges',async()=>{
+ const n=nativeHarness(),bridge=await startViewBridge({session:n.session,path:'greeter.agent.md'});
+ const post=body=>fetch(bridge.url+'actions',{method:'POST',headers:{Origin:new URL(bridge.url).origin,'Content-Type':'application/json'},body:JSON.stringify(body)});
+ const pending=post({operation:'test',runId:'bridge-run',expectedRevision:revision(original)}).catch(()=>{});
+ try{
+  await n.dispatched.promise;
+  const {elapsedMs,...run}=(await (await post({operation:'progress',runId:'bridge-run'})).json()).run;
+  assert.ok(elapsedMs>=0);assert.deepEqual(run,{id:'bridge-run',revision:revision(original),model:'fake',caseIds:['greeting'],totalCases:1,cases:[],state:'running'});
+  assert.deepEqual(await (await post({operation:'stop',runId:'bridge-run'})).json(),{stopping:true});
+  n.gate.reject(Error('aborted'));await new Promise(setImmediate);
+  await bridge.close();assert.equal(n.listeners.size,0);assert.equal(n.aborts.length,1);
+ }finally{await bridge.close();await pending}
+});
 test('runtime model override reaches Run/Test and save-and-test without changing the source model', async()=>{
  for(const operation of ['run','test','save-and-test']){
   const h=harness();h.o.shape=r=>({...r,modelRoute:{provider:'copilot',model:h.calls.at(-1).arguments.model}});

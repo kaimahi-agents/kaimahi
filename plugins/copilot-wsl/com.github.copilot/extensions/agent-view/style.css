@@ -26,7 +26,7 @@ button:disabled{cursor:default}
 .agent-identity{display:flex;flex-direction:column;gap:6px;min-width:0}
 .agent-eyebrow{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .header-controls{display:grid;grid-template-columns:150px minmax(0,1fr);gap:10px;align-items:start;padding-top:26px}
-.header-controls>.result-pill{justify-self:start;max-width:100%;font-size:13px;padding:5px 10px;overflow:hidden;text-overflow:ellipsis}
+.header-controls>.result-pill{justify-self:start;max-width:100%;font-size:13px;padding:5px 10px;white-space:normal;overflow-wrap:anywhere}
 .runtime-model{position:relative;min-width:0}
 .model-readonly{font-size:13px;color:var(--muted);padding:5px 0;overflow-wrap:anywhere}
 .model-picker{display:flex;align-items:center;gap:4px;width:100%;min-height:30px;padding:4px 10px;border:1px solid var(--line);border-radius:999px;background:var(--surface);font-size:13px;cursor:pointer}
@@ -121,6 +121,11 @@ button.test-row:hover:not(:disabled){background:var(--hover)}
 .test-verdict.fail,.test-verdict.old-fail,.test-item[data-status='fail'] .test-note,.test-item[data-status='old-fail'] .test-note{color:var(--danger)}
 .test-verdict.error,.test-verdict.old-error{color:var(--warn)}
 .test-verdict[class*='old-'],.test-item[data-status='old-fail'] .test-note{color:var(--muted)}
+.verdict-pair{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px;max-width:260px}
+.verdict-slot{color:var(--muted);white-space:normal;overflow-wrap:anywhere;min-width:0}.verdict-slot.pass{color:var(--success)}.verdict-slot.fail{color:var(--danger)}.verdict-slot.error{color:var(--warn)}
+.test-verdict.running{color:var(--muted)}
+.stop-run{color:var(--text);white-space:nowrap}
+@media (max-width:700px){.verdict-pair{flex-direction:column;align-items:flex-end;gap:0}.tests-meta{overflow-wrap:anywhere}}
 .status-icon{display:inline-flex;width:14px;height:14px;flex-shrink:0;color:var(--muted)}
 .status-icon.fail{color:var(--danger)}
 .status-icon.pass{color:var(--success)}

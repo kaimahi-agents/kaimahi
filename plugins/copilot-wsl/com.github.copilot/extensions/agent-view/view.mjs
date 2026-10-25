@@ -249,23 +249,76 @@ function observed(view, operation, ids, caseId, complete, model) {
 // The page can choose a declared interaction, never a tool, path or server.
 export function createActionHandler({ session, path }) {
   path = normalizePath(path);
-  let busy = false, uncertain = false;
+  let busy = false, uncertain = false, current, disposed = false;
   const allowed = {
-    "save-and-test": ["expectedRevision", "sections", "examples", "showContent", "caseId", "model"],
+    "save-and-test": ["expectedRevision", "sections", "examples", "showContent", "caseId", "model", "runId"],
     "save-examples": ["expectedRevision", "examples"],
     "save-prompt": ["expectedRevision", "sections"],
-    test: ["expectedRevision", "showContent", "caseId", "model"], run: ["expectedRevision", "input", "showContent", "model"],
-    suggest: [], reload: [], models: [],
+    test: ["expectedRevision", "showContent", "caseId", "model", "runId"], run: ["expectedRevision", "input", "showContent", "model"],
+    suggest: [], reload: [], models: [], progress: ["runId"], stop: ["runId"],
   };
-  async function invoke(operation, args) {
+  const validRunId = (id) => typeof id === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(id);
+  const snapshot = () => current?.id === undefined ? undefined : ({
+    id: current.id, revision: current.revision, model: current.model,
+    caseIds: [...current.caseIds], totalCases: current.totalCases,
+    cases: current.caseIds.filter(id => current.rows.has(id)).map(id => ({ ...current.rows.get(id) })),
+    state: current.state, elapsedMs: current.elapsedMs ?? Math.max(0, Date.now() - current.started),
+  });
+  const finish = (run) => {
+    if (!run) return;
+    run.pending = false;
+    run.elapsedMs ??= Math.max(0, Date.now() - run.started);
+    run.unsubscribe?.(); run.unsubscribe = undefined;
+  };
+  function progress(run, event) {
+    if (disposed || current !== run || !run.pending || run.state !== "running" || event?.data?.toolCallId !== run.toolCallId) return;
+    const message = event.data.progressMessage;
+    if (typeof message !== "string" || message.length > 16384) return;
+    // Qualified native hosts wrap the MCP case JSON in a numeric prefix, not
+    // structuredContent. Never expose the host's surrounding text to the page.
+    const envelope = message.match(/^\d+(?:\.\d+)?: (\{[^]*\})$/);
+    if (!envelope) return;
+    let row;
+    try { row = JSON.parse(envelope[1]); } catch { return; }
+    if (!isObj(row) || !run.caseIds.includes(row.caseId) || run.rows.has(row.caseId) ||
+        !["pass", "fail", "unknown"].includes(row.verdict) || typeof row.reason !== "string") return;
+    run.rows.set(row.caseId, { caseId: row.caseId, verdict: row.verdict, reason: clean(row.reason, 500) });
+  }
+  function stop(id) {
+    const run = current;
+    if (!run || run.id !== id || !run.pending || disposed) return { run: undefined };
+    if (!run.stopRequested) {
+      // Mark locally before abort: acknowledgement and execute rejection may
+      // arrive in either order. Abort is session-wide, never a per-tool API.
+      run.stopRequested = true; run.state = "stopping";
+      run.abortAck = new Promise(resolve => { run.releaseAbort = resolve; });
+      try {
+        Promise.resolve(session.rpc.abort({ reason: "remote_abort" })).then(
+          ack => run.releaseAbort(ack?.success === true), () => run.releaseAbort(false));
+      } catch { run.releaseAbort(false); }
+    }
+    return { stopping: true };
+  }
+  async function invoke(operation, args, scope) {
     let metadata;
     try { metadata = await session.rpc.tools.getCurrentMetadata(); }
     catch { throw new ViewError("unavailable"); }
+    if (disposed) throw new ViewError("unavailable");
     const tools = metadata.tools?.filter((t) => t.mcpServerName === SERVER_NAME && t.mcpToolName === operation);
     if (tools?.length !== 1) throw new ViewError("unavailable");
-    let result;
-    try { result = await session.rpc.tools.execute({ name: tools[0].name, arguments: { schemaVersion: 1, path, ...args } }); }
-    catch { uncertain = true; throw new ViewError("outcome-unknown"); }
+    let result, run;
+    if (operation === "test") {
+      run = { ...scope, toolCallId: randomBytes(24).toString("base64url"), rows: new Map(), state: "running", started: Date.now(), pending: true };
+      current = run;
+      if (typeof session.on === "function") run.unsubscribe = session.on("tool.execution_progress", event => progress(run, event));
+    }
+    try {
+      result = await session.rpc.tools.execute({ name: tools[0].name, arguments: { schemaVersion: 1, path, ...args }, ...(run ? { toolCallId: run.toolCallId } : {}) });
+    } catch {
+      finish(run);
+      if (run?.stopRequested && await run.abortAck && !disposed) return { stopped: true };
+      uncertain = true; throw new ViewError("outcome-unknown");
+    } finally { finish(run); run?.releaseAbort?.(false); }
     if (result?.resultType === "timeout") { uncertain = true; throw new ViewError("outcome-unknown"); }
     if (result?.resultType !== "success") {
       const detail = typeof result === "string" ? result : [result?.textResultForLlm, result?.error].filter((s) => typeof s === "string").join("\n");
@@ -278,18 +331,25 @@ export function createActionHandler({ session, path }) {
     }
     return result;
   }
-  return async (input) => {
+  const act = async (input) => {
     if (!isObj(input) || !Object.hasOwn(allowed, input.operation) || Object.keys(input).some((k) => k !== "operation" && !allowed[input.operation].includes(k))) return { error: "invalid-action", message: MESSAGES["invalid-action"] };
     if (input.showContent !== undefined && typeof input.showContent !== "boolean") return { error: "invalid-action", message: MESSAGES["invalid-action"] };
     if (input.model !== undefined && input.model !== "" && !validModel(input.model)) return { error: "invalid-action", message: MESSAGES["invalid-action"] };
+    if ((Object.hasOwn(input, "runId") || ["progress", "stop"].includes(input.operation)) && !validRunId(input.runId)) return { error: "invalid-action", message: MESSAGES["invalid-action"] };
+    // These fixed operations share the POST's security checks, but must remain
+    // available during Test and cannot clear an existing uncertainty lock.
+    if (input.operation === "progress") return { run: current?.id === input.runId ? snapshot() : undefined };
+    if (input.operation === "stop") return stop(input.runId);
     // Read-only discovery must not block or unlock an execution action.
     if (input.operation === "models") {
       try { return await readModels(session); } catch (e) { const error = safeError(e); return { error: error.code, message: error.message }; }
     }
     if (busy) return { error: "busy", message: MESSAGES.busy };
     busy = true;
+    current = undefined; // Never replay the previous invocation's snapshot.
     let saved = false, tested = false, targetRevision, ids, operation, model;
     try {
+      if (disposed) throw new ViewError("unavailable");
       if (uncertain && input.operation !== "reload") throw new ViewError("outcome-unknown");
       let view = await readView(session, path);
       if (input.operation === "reload") { uncertain = false; return { view }; }
@@ -336,12 +396,18 @@ export function createActionHandler({ session, path }) {
       // Test/Run have no revision parameter. Check the actual result afterward,
       // not a fabricated precondition or a refreshed draft revision.
       tested = true;
-      await invoke(operation, { ...(runtimeModel ? { model: runtimeModel } : {}), ...(operation === "run" ? { input: input.input } : {}), ...(input.caseId !== undefined ? { caseId: input.caseId } : {}), showContent: input.showContent === true, showFailedContent: true });
+      const outcome = await invoke(operation, { ...(runtimeModel ? { model: runtimeModel } : {}), ...(operation === "run" ? { input: input.input } : {}), ...(input.caseId !== undefined ? { caseId: input.caseId } : {}), showContent: input.showContent === true, showFailedContent: true },
+        { id: input.runId, revision: targetRevision, model, caseIds: input.caseId === undefined ? ids : [input.caseId], totalCases: ids.length });
       try { view = await readView(session, path); }
       catch { uncertain = true; throw new ViewError("outcome-unknown"); }
+      if (outcome.stopped) {
+        if (view.file.revision !== targetRevision) { uncertain = true; throw new ViewError("outcome-unknown"); }
+        current.state = "stopped";
+        return { stopped: true, run: snapshot(), saved, view: { ...view, latest: { status: "none", badge: "none" } } };
+      }
       if (view.file.revision !== targetRevision) throw new ViewError("revision_mismatch");
       if (!observed(view, operation, ids, input.caseId, true, model)) { uncertain = true; throw new ViewError("outcome-unknown"); }
-      return { view, saved };
+      return { view, saved, ...(snapshot() ? { run: snapshot() } : {}) };
     } catch (e) {
       const err = safeError(e);
       const response = { error: err.code, message: err.message, saved };
@@ -367,6 +433,11 @@ export function createActionHandler({ session, path }) {
       return response;
     } finally { busy = false; }
   };
+  act.dispose = () => {
+    disposed = true;
+    finish(current); current?.releaseAbort?.(false); current = undefined;
+  };
+  return act;
 }
 
 // --- plain-text fallback ---------------------------------------------------
@@ -482,6 +553,7 @@ export async function startViewBridge({ session, path }) {
   let closing;
   const close = () =>
     (closing ??= new Promise((resolve) => {
+      act.dispose();
       server.close(() => resolve());
       server.closeAllConnections();
     }));

@@ -38,8 +38,13 @@ export function runtimeModelSelection() {
       return changed;
     },
     confirm(view) { if (actual(view) === selected(view) || preRouteRefusal(view.latest.result)) needsRun = false; },
-    view(view) {
+    view(view, retained) {
       const next = selected(view);
+      // Only controller-owned, revision-matched history can restore a picker result.
+      // Callers still fence the observation generation before projecting it.
+      if (retained && retained.file.revision === view.file.revision && retained.latest.status === "current" && actual(retained) === next) {
+        view = { ...view, latest: retained.latest }; needsRun = false;
+      }
       // Late metadata matching the actual run is not a model change. Once a
       // different model is seen, A-B-A needs an explicit run, never a poll.
       if (previous !== undefined && previous !== next && actual(view) !== next) needsRun = true;

@@ -1,4 +1,4 @@
-import { readSnapshot } from "./authoring.mjs";
+import { readSnapshot, effectiveModel } from "./authoring.mjs";
 import { uniqueIndex, isRefused, clone, same, friendlyName, checkIssue } from "./editor.mjs";
 
 export function createDraftController(state, { clearUndo, navigate, render, refresh }) {
@@ -8,7 +8,7 @@ export function createDraftController(state, { clearUndo, navigate, render, refr
   const sectionText = (key) => sectionDrafts.get(key) ?? state.snap.sections.find((s) => s.key === key).text;
   // Ambiguous IDs stay visible but cannot be edited.
   function entries() {
-    const cases = history.cases(state.base), raws = uniqueIndex(rawExamples(), (e) => e.id), ids = uniqueIndex(state.base.examples, (e) => e.id);
+    const cases = history.cases(state.base, effectiveModel(state.base.model, modelChoice.override, state.base.chatModel)), raws = uniqueIndex(rawExamples(), (e) => e.id), ids = uniqueIndex(state.base.examples, (e) => e.id);
     const result = !state.blocked && state.base.latest.status === "current" ? state.base.latest.result : undefined;
     const list = cases.map((c) => {
       if (isRefused(result) && result.selection.caseIds.includes(c.example.id)) c = { ...c, state: "refused", label: "Refused", row: result, previous: false };

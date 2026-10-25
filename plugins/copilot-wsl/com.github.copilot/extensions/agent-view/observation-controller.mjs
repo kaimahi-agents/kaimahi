@@ -1,4 +1,4 @@
-import { readSnapshot, portableId } from "./authoring.mjs";
+import { readSnapshot, portableId, effectiveModel } from "./authoring.mjs";
 import { same, uniqueIndex, quoted } from "./editor.mjs";
 
 export function createObservationController(state, { path, options, drafts, clearUndo, render, refresh }) {
@@ -12,13 +12,15 @@ export function createObservationController(state, { path, options, drafts, clea
     if (started.generation !== state.observationGeneration || started.revision !== state.base.file.revision
       || !matches(view) || state.busy || state.blocked || invalidEditors.size) return false;
     const observed = view;
-    view = modelChoice.view(view);
+    const selected = effectiveModel(view.model, modelChoice.override, view.chatModel);
+    const route = view.latest.result?.modelRoute;
+    view = modelChoice.view(view, view.latest.status !== "current" || route?.slice(route.indexOf("/") + 1) === selected ? undefined : history.selected(view, selected));
     if (same(view, state.base) || (state.candidate && same(view, state.candidate))) return false;
     clearUndo(); displayNames.clear(); state.runAlert = undefined;
     state.observationGeneration++;
     state.lastRun = undefined;
     if (view.file.revision === state.base.file.revision || !hasDrafts()) {
-      history.remember(observed);
+      history.focus(selected); history.remember(observed);
       state.base = view; state.snap = readSnapshot(view); state.candidate = undefined; state.compareOpen = false;
       // New results need new DOM; local edits refresh styling without losing focus.
       pruneDrafts(); render();
