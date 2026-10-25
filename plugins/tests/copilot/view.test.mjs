@@ -1496,17 +1496,53 @@ test("JSON input uses monospace while ordinary text remains prose", async () => 
   input.value = '{"merged":2}'; input.listeners.input[0](); assert.match(input.className, /json-input/);
   input.value = 'Two merged PRs'; input.listeners.input[0](); assert.doesNotMatch(input.className, /json-input/);
 });
-test("hosted notice is passive footer copy and disappears after the first hosted execution", async () => {
-  const h = await editableCanvas("Say hello.", undefined, { omitModel: true });
-  const notice = byClass(h.root, "hosted-notice")[0]; assert.ok(notice); assert.equal(notice.hidden, false);
+for (const error of [undefined, "action-failed"]) test(`hosted notice disappears after confirmed execution: ${error ?? "success"}`, async t => {
+  let h;
+  h = await editableCanvas("Say hello.", undefined, { omitModel: true, respond: async (action, calls) => {
+    if (calls.length > 1) return { error: "unavailable" };
+    const view = await viewFor(h.source, h.examples, (revision, examples) => {
+      const latest = bLatest({ greeting: error ? "fail" : "pass" })(revision, examples);
+      latest.result.modelRoute = { provider: "copilot", model: "gpt-5.6-terra" }; return latest;
+    }, "");
+    return { ...(error ? { error } : {}), view };
+  } });
+  t.after(() => h.app.dispose());
+  const notice = byClass(h.root, "hosted-notice")[0]; assert.equal(notice.hidden, false);
   assert.equal(notice.textContent, "Testing sends the agent prompt and test inputs to the selected hosted model.");
-  await h.clickTest(); assert.equal(byClass(h.root, "hosted-notice")[0].hidden, true); assert.equal(h.calls.length, 1);
+  await h.clickTest(); await new Promise(setImmediate);
+  assert.equal(byClass(h.root, "hosted-notice")[0].hidden, true); assert.equal(h.calls.length, 1);
+  await h.clickTest(); assert.equal(byClass(h.root, "hosted-notice")[0].hidden, true, "later local failures cannot undo a confirmed attempt");
 });
-test("a local refusal keeps the hosted notice for the first actual run", async () => {
-  for (const error of ["invalid-action", "stale_revision", "permission_required", "no-tests"]) {
-    const h = await editableCanvas("Say hello.", undefined, { omitModel: true, response: { error, message: "Not started." } });
-    await h.clickTest(); assert.equal(byClass(h.root, "hosted-notice")[0].hidden, false, error);
-  }
+for (const error of ["invalid-action", "stale_revision", "permission_required", "no-tests", "unavailable", "too-large", "action-failed"]) test(`local ${error} keeps the notice for the first hosted execution`, async t => {
+  const h = await editableCanvas("Say hello.", undefined, { omitModel: true, response: { error, message: "Not started." } });
+  t.after(() => h.app.dispose());
+  await h.clickTest(); assert.equal(byClass(h.root, "hosted-notice")[0].hidden, false);
+});
+for (const error of [undefined, "action-failed"]) test(`pre-route refusal keeps the hosted notice: ${error ?? "success reply"}`, async t => {
+  let h;
+  h = await editableCanvas("Say hello.", undefined, { omitModel: true, respond: async () => ({ ...(error ? { error } : {}), view: await viewFor(h.source, h.examples, (revision, examples) => ({ status: "current", result: result({
+    file: { path: MINIMAL, revision }, operation: "test", state: "refused", verdict: "unknown", fullPass: false, reasonCode: "model_unavailable", modelRoute: {},
+    selection: { scope: "full", totalCases: 1, caseIds: ["greeting"] }, examples: [{ id: "greeting", state: "not_run", verdict: "unknown", assertions: [] }]
+  }) }), "") }) });
+  t.after(() => h.app.dispose());
+  await h.clickTest(); await new Promise(setImmediate);
+  assert.equal(rowLabels(h.root)[0], "Refused"); assert.equal(byClass(h.root, "hosted-notice")[0].hidden, false);
+});
+for (const failure of ["outcome-unknown", "revision_mismatch", "connection loss"]) test(`uncertain hosted attempt dismisses the notice: ${failure}`, async t => {
+  const h = await editableCanvas("Say hello.", undefined, { omitModel: true, respond: async () => {
+    if (failure === "connection loss") throw new Error("Disconnected"); return { error: failure };
+  } });
+  t.after(() => h.app.dispose());
+  await h.clickTest(); assert.equal(byClass(h.root, "hosted-notice")[0].hidden, true);
+});
+test("a confirmed edit followed by unavailable model metadata keeps the hosted notice", async t => {
+  let h;
+  h = await editableCanvas("Before.", undefined, { omitModel: true, respond: async action => ({ error: "unavailable", saved: true,
+    view: await viewFor(replaceInstructions(h.source, action.sections), h.examples, { status: "stale" }, "") }) });
+  t.after(() => h.app.dispose());
+  c18Prompt(h.root).textContent = "After."; c18Prompt(h.root).listeners.input[0]();
+  await h.clickTest(); await new Promise(setImmediate);
+  assert.equal(c18Prompt(h.root).textContent, "After."); assert.equal(byClass(h.root, "hosted-notice")[0].hidden, false);
 });
 test("a refused preview has one plain cause and Refused instead of unfinished verdicts", async () => {
   const h = await editableCanvas("Say hello.", undefined, { latest: (revision, examples) => ({ status: "current", result: {

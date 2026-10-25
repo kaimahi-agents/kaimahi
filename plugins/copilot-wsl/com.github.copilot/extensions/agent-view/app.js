@@ -157,8 +157,8 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       render(); return;
     }
     busy = false; pending = undefined; message = "";
-    const localRefusal = ["invalid-action", "stale_revision", "stale-revision", "read-only", "busy", "permission_required", "no-tests"].includes(response?.error);
-    if (hostedAttempt && !localRefusal && !isRefused(response?.view?.latest.result)) hostedSent = true;
+    const latest = response?.view?.latest;
+    if (hostedAttempt && (UNKNOWN.includes(response?.error) || CONFLICTS.includes(response?.error) || latest?.status === "current" && latest.result && !isRefused(latest.result))) hostedSent = true;
     if (executing && matches(response?.view)) modelChoice.confirm(response.view);
     const tested = ["test", "save-and-test"].includes(operation);
     if (operation === "reload") {
