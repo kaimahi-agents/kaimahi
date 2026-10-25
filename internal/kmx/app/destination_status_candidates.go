@@ -3,6 +3,9 @@ package app
 type destinationStatusCandidateKind struct{ plural, kind string }
 
 func statusCandidateKinds(runtime string) []destinationStatusCandidateKind {
+	if runtime == "agentsessions" {
+		return nil
+	}
 	if runtime == "orka" {
 		return []destinationStatusCandidateKind{{"providers", "Provider"}, {"tasks", "Task"}}
 	}

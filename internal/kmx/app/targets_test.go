@@ -61,15 +61,15 @@ func TestTargetsAgentSessionsEvalNamesBindings(t *testing.T) {
 	t.Fatal("agentsessions eval capability missing")
 }
 
-// A plan-only render is not placement, so the lift row stays unsupported.
-func TestTargetsAgentSessionsLiftIsPlanOnly(t *testing.T) {
+// Digest Deploy creates the Agent resource; it does not qualify live inference.
+func TestTargetsAgentSessionsLiftCreatesAgent(t *testing.T) {
 	for _, target := range compiledTargets() {
 		if target.ID != "agentsessions" {
 			continue
 		}
 		for _, capability := range target.Capabilities {
 			if capability.Operation == "lift" {
-				if capability.Supported || !strings.Contains(capability.Reason, "plan-only") || !strings.Contains(capability.Reason, "--bindings") || !strings.Contains(capability.Reason, "apply refuses") {
+				if !capability.Supported || !strings.Contains(capability.Reason, "immutable Agent") || !strings.Contains(capability.Reason, "--to") || !strings.Contains(capability.Reason, "not live availability") {
 					t.Fatalf("stale AgentSessions lift reason: %+v", capability)
 				}
 				return

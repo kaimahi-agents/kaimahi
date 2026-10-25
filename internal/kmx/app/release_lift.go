@@ -32,6 +32,8 @@ type ReleaseLiftOptions struct {
 	HarnessImage string
 	// EvaluationName is an optional frozen display alias, never target authority.
 	EvaluationName string
+	// AgentName optionally names a create-only AgentSessions Agent resource.
+	AgentName string
 }
 
 type ReleaseLiftTarget struct {
@@ -72,27 +74,32 @@ type ReleaseLiftSummary struct {
 	// AgentSessions carries the rendered plan for the packaged AgentSessions
 	// runtime only; Orka and kagent summaries omit it.
 	AgentSessions *ReleaseLiftSessionsPlan `json:"agentsessions,omitempty"`
+	SessionsAgent map[string]any           `json:"sessionsAgent,omitempty"`
 	PlanDigest    string                   `json:"planDigest"`
 }
 
 // PreparedReleaseLift retains its verified subject/evidence and GET-only review.
 // It confers no write authority. Guarded apply and explicit promotion are separate.
 type PreparedReleaseLift struct {
-	options  ReleaseLiftOptions
-	artifact *suiteoras.Artifact
-	native   *suiteNativePrepared
-	kagent   *releaseLiftKagent
-	sessions *releaseLiftSessions
-	update   *preparedReleaseUpdate
-	receipt  *suitePassingReceipt
-	summary  ReleaseLiftSummary
-	started  atomic.Bool
+	options       ReleaseLiftOptions
+	artifact      *suiteoras.Artifact
+	native        *suiteNativePrepared
+	kagent        *releaseLiftKagent
+	sessions      *releaseLiftSessions
+	sessionsAgent *releaseLiftSessionsAgent
+	update        *preparedReleaseUpdate
+	receipt       *suitePassingReceipt
+	summary       ReleaseLiftSummary
+	started       atomic.Bool
 }
 
 func (p *PreparedReleaseLift) Summary() ReleaseLiftSummary {
 	out := p.summary
 	out.Resources = slices.Clone(out.Resources)
 	out.AgentSessions = p.sessions.summary()
+	if p.sessionsAgent != nil {
+		out.SessionsAgent, _ = cloneOrkaDoc(p.sessionsAgent.document)
+	}
 	return out
 }
 
@@ -109,6 +116,9 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 		return prepared.lift, nil
 	}
 	defer func() {
+		if _, occupied := err.(*sessionsAgentOccupied); occupied {
+			return
+		}
 		if err != nil {
 			cause := ctx.Err()
 			if cause == nil {
@@ -162,7 +172,10 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 		return nil, ErrReleaseLift
 	}
 	if suite.Runtime.ID == "agentsessions" {
-		return nil, &releaseLiftSessionsRefusal{errAgentSessionsLiftSelectors}
+		if opt.ExpectedRuntime != "agentsessions" {
+			return nil, &releaseLiftSessionsRefusal{errAgentSessionsLiftSelectors}
+		}
+		return a.releaseLiftWorker(ctx, opt).prepareSessionsAgent(ctx, opt, inputs)
 	}
 	// Closed packaged runtime and canonical E select the only allowed selector
 	// before any cluster observation. Evidence never supplies an Orka alias.
@@ -227,6 +240,15 @@ func ValidateReleaseLiftOptions(opt ReleaseLiftOptions) error {
 	provider := strings.TrimPrefix(opt.Inference, "provider:")
 	if opt.EvaluationName != "" && (len(opt.EvaluationName) > 63 || !verificationIdentity(opt.EvaluationName) || scaffold.RefuseKeyShapes(opt.EvaluationName) != nil) {
 		return ErrReleaseLift
+	}
+	if opt.AgentName != "" && (opt.ExpectedRuntime != "agentsessions" || opt.HarnessImage != "" || scaffold.ValidateObjectName(opt.AgentName) != nil || !statusSafeText(opt.AgentName)) {
+		return ErrReleaseLift
+	}
+	if opt.ExpectedRuntime == "agentsessions" && opt.HarnessImage == "" {
+		if _, err := agentsessions.HarnessImageDigest(opt.Reference); err != nil || !statusSafeText(opt.ToContext) || scaffold.ValidateNamespace(opt.ToNamespace) != nil || opt.Inference != "" || opt.Bindings != "" || opt.Promote || opt.Update || opt.EvaluationName != "" || strings.TrimSpace(opt.Evidence) == "" || opt.FromLayout != "" && opt.PlainHTTP {
+			return ErrReleaseLift
+		}
+		return nil
 	}
 	if opt.HarnessImage != "" {
 		// AgentSessions plan: binding and image only; no cluster, inference,

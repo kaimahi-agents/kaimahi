@@ -88,7 +88,7 @@ changes in the package's Go doc comment.
   GET-only skips, never Apply/reuse/adoption/repair. Keep kagent out of composed
   Deploy until its candidate-scoped placement and ownership-safe cleanup are qualified.
   AgentSessions workspaces and --harness-image also refuse composed Deploy before
-  evaluation or publication; their Deploy is the explicit-reference plan-only render.
+  evaluation or publication. Explicit-reference AgentSessions --to creates an immutable Agent under the approved v1.1 contract; --harness-image retains the offline render. See the Agent deployment exception below.
 - Create-only deployment stamps only newly created primaries with versioned non-secret
   `kaimahi.dev/lift-record` JSON: exact consumed canonical receipt identity,
   source/destination, actual gate, attempt time and expected specs. Actor is omitted
@@ -450,6 +450,21 @@ changes in the package's Go doc comment.
   updating current examples. Do not bulk-rename historical text or serialized
   state. Generated recovery commands must preserve the invoking executable,
   selectors and shell quoting.
+
+## AgentSessions Agent deployment exception
+
+Named `runtime: agentsessions` destinations support explicit-reference Deploy and
+GET-only destination status via `agents.aks-durable-agents.io/v1alpha1` Agent.
+This supersedes the plan-only/no-status statements above and below only for this
+Agent resource path; the old `--harness-image --bindings --plan` render is unchanged.
+Require exact-S full-passing development evidence; label it development-source, not
+target evaluation. Freeze context/namespace and retain existing scoped consent.
+Spec package.reference/member/modelBindingRef.name=default is immutable. --name
+defaults to the member. Exact spec with current UID acknowledgment is GET-only;
+changed inputs need a new name. No update/adoption/host calls or new config schema.
+Registered requires current UID, all three generations, both True conditions,
+matching member and servedDigest=packageDigest=reference digest, and no deletion.
+It is last controller-observed admission, not live availability or qualification.
 
 ## Agent-file preview boundary
 

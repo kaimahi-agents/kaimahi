@@ -40,8 +40,11 @@ chat explicitly. AgentSessions prepare/load/ordinary push and explicit private
 literal-loopback `test --development-host FILE` remain independent of deleted
 bundle Sessions evaluation/replay: one fresh Session/config/Exec per declared run of each ordered
 case, a required `AgentSessionsBinding` serving the packaged model, full-pass
-private proof and exact-S evaluated push, a plan-only offline Deploy render, no
-cluster settings, tools, auth, apply, chat/status or remote lifecycle. Receipt diff refuses
+private proof and exact-S evaluated push. Development evaluation reads no cluster
+settings and supports no tools, auth, chat or remote-host evaluation. Separate
+explicit-reference AgentSessions Deploy creates an immutable Agent at a named
+destination and status reads exact registration, not live availability or target
+evaluation. The offline --harness-image --bindings --plan render remains available. Receipt diff refuses
 AgentSessions proof. Runtime-core assertions/llmJudge and all their test groups
 remain retained; native Orka/kagent and development AgentSessions eval supports authored llmJudge with an
 explicit endpoint, two threshold-side samples and payload-free declared identity

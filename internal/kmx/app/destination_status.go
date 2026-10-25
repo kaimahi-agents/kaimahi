@@ -84,7 +84,7 @@ type destinationStatusObserver struct {
 }
 type destinationStatusAPI struct{ runtime, version, prefix string }
 
-var destinationStatusAPIs = []destinationStatusAPI{{"orka", "core.orka.ai/v1alpha1", "/apis/core.orka.ai/v1alpha1"}, {"kagent", "kagent.dev/v1alpha2", "/apis/kagent.dev/v1alpha2"}}
+var destinationStatusAPIs = []destinationStatusAPI{{"orka", "core.orka.ai/v1alpha1", "/apis/core.orka.ai/v1alpha1"}, {"kagent", "kagent.dev/v1alpha2", "/apis/kagent.dev/v1alpha2"}, {"agentsessions", "agents.aks-durable-agents.io/v1alpha1", "/apis/agents.aks-durable-agents.io/v1alpha1"}}
 
 // DestinationStatus observes a namespace without setup, private history, retries,
 // admission or evaluation. Every subprocess is an explicitly targeted GET.
@@ -92,14 +92,14 @@ func (a *App) DestinationStatus(opt DestinationStatusOptions) error {
 	if opt.Output != "" && opt.Output != "table" && opt.Output != "json" {
 		return fmt.Errorf("status output must be table or json")
 	}
-	if a == nil || a.Cfg == nil || a.Run == nil || !statusSafeText(opt.Destination) || !statusSafeText(a.Cfg.KubeContext) || scaffold.ValidateNamespace(opt.Namespace) != nil || opt.ExpectedRuntime != "" && opt.ExpectedRuntime != "orka" && opt.ExpectedRuntime != "kagent" {
+	if a == nil || a.Cfg == nil || a.Run == nil || !statusSafeText(opt.Destination) || !statusSafeText(a.Cfg.KubeContext) || scaffold.ValidateNamespace(opt.Namespace) != nil || opt.ExpectedRuntime != "" && opt.ExpectedRuntime != "orka" && opt.ExpectedRuntime != "kagent" && opt.ExpectedRuntime != "agentsessions" {
 		return fmt.Errorf("status requires an explicit destination, context and namespace with a supported runtime expectation")
 	}
 	ctx, cancel := context.WithTimeout(a.operationContext(), 90*time.Second)
 	defer cancel()
 	worker, cfg := *a, *a.Cfg
 	worker.Cfg = &cfg
-	o := &destinationStatusObserver{a: &worker, ctx: ctx, report: destinationStatusReport{Version: 1, Destination: opt.Destination, Target: ReleaseLiftTarget{Context: a.Cfg.KubeContext, Namespace: opt.Namespace}, Complete: true, Observation: "Unsigned cluster observations; original resource UID continuity is unverified. Ready is placement, not answered or evaluated. No local history enrichment.", Runtimes: []destinationStatusRuntime{}, Agents: []destinationStatusAgent{}, Candidates: []destinationStatusAgent{}, Errors: []string{}}}
+	o := &destinationStatusObserver{a: &worker, ctx: ctx, report: destinationStatusReport{Version: 1, Destination: opt.Destination, Target: ReleaseLiftTarget{Context: a.Cfg.KubeContext, Namespace: opt.Namespace}, Complete: true, Observation: "Unsigned cluster observations; original resource UID continuity is unverified. Ready is placement, not answered or evaluated. AgentSessions Registered means last controller-observed admission, not live availability. No local history enrichment.", Runtimes: []destinationStatusRuntime{}, Agents: []destinationStatusAgent{}, Candidates: []destinationStatusAgent{}, Errors: []string{}}}
 	o.report.Target.ClusterUID = o.namespaceUID("kube-system")
 	o.report.Target.NamespaceUID = o.namespaceUID(opt.Namespace)
 	served := o.discover()
@@ -118,7 +118,9 @@ func (a *App) DestinationStatus(opt DestinationStatusOptions) error {
 			if opt.ExpectedRuntime != "" && opt.ExpectedRuntime != api.runtime {
 				o.problem("observed Agent runtime differs from destination expectation")
 			}
-			if statusIsCandidate(doc) {
+			if api.runtime == "agentsessions" {
+				o.report.Agents = append(o.report.Agents, o.sessionsAgent(doc, api))
+			} else if statusIsCandidate(doc) {
 				o.report.Candidates = append(o.report.Candidates, o.candidate(api, doc))
 			} else {
 				row := o.agent(api, doc)

@@ -63,7 +63,7 @@ func TestDestinationStatusSelectionBeforeConfiguration(t *testing.T) {
 		{"saved", "{context: kind-saved, namespace: agents, runtime: orka}", "", "kind-saved", ""},
 		{"global override", "{context: kind-saved, namespace: agents, runtime: kagent, bindings: missing.yaml}", "kind-explicit", "kind-explicit", ""},
 		{"no namespace", "{context: kind-saved, runtime: kagent, bindings: missing.yaml}", "", "", "namespace"},
-		{"agentsessions", "{context: kind-saved, namespace: agents, runtime: agentsessions}", "", "", "agentsessions"},
+		{"agentsessions", "{context: kind-saved, namespace: agents, runtime: agentsessions}", "", "kind-saved", ""},
 		{"no context", "{namespace: agents}", "", "", "kmx.yaml"},
 		{"blank context", "{context: ' ', namespace: agents}", "", "", "kmx.yaml"},
 	} {
