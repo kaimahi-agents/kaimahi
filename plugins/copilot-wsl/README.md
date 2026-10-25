@@ -36,8 +36,8 @@ Choose a runtime model in the canvas: picker override → authored `Model.Prefer
 → known chat model → `gpt-5.6-terra`. Model may be omitted; a picker choice never
 rewrites the agent file. The open canvas keeps results for two models: picking a
 model with a result for the same file revision restores it without rerunning.
-Older results stay grey, with their model and revision context. A newer stopped
-or single-test attempt takes precedence over an older full-run summary.
+Older results stay grey, with their model and revision context. A newer
+single-test attempt takes precedence over an older full-run summary.
 A following default reads the chat model when Run/Test starts and
 freezes it through save/execution; the displayed model can lag until idle refresh.
 Choices load when the menu opens and are cached; catalog failure
@@ -58,11 +58,8 @@ one line break. Long prompts scroll inside their box, with the save/run footer
 outside the scroll area. Saved agent files remain ordinary Markdown. Tests send
 prompts and inputs to the selected model. On hosts that forward native tool
 progress, test rows update as cases finish. The final full Test result remains
-authoritative. **Stop Copilot turn** stops the whole turn in this chat, including
-concurrent chat work, not only the canvas Test. Completed rows stay; the rest say
-Not run. Stopped rows survive refresh polls, but local compare/stopped memory is
-lost when the canvas is closed and reopened. An unconfirmed cancellation requires
-reload rather than silently retrying.
+authoritative. Local model comparison is lost when the canvas is closed and
+reopened. An unconfirmed execution requires reload rather than silently retrying.
 If the host has no canvas renderer, the same kmx tools remain available in text.
 
 See the [agent-file guide](../../docs/agent-file.md) for authoring and checks,

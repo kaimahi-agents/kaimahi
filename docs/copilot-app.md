@@ -110,6 +110,8 @@ the approval: granting it later may still execute the tool. The result is unconf
 reload before continuing to inspect the saved file.
 Test verdicts appear as each case finishes. They remain provisional until the
 full Test reply confirms the run. A running indicator does not mean a test has passed.
+Known issue: Copilot may keep showing “Working” after a canvas run until the next
+chat turn, even when the run has finished.
 
 *Screenshot to add: a completed test and its check explanations.*
 

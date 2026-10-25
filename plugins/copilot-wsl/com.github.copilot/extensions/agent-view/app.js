@@ -70,7 +70,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       messageNode.textContent = state.message;
       for (const u of updates) u();
       for (const { node, guard } of controls) {
-        node.disabled = guard === "stop" ? currentRun()?.state !== "running" : guard === "reload" ? state.busy : invalidEditors.size > 0 || (guard === "nav" ? false
+        node.disabled = guard === "reload" ? state.busy : invalidEditors.size > 0 || (guard === "nav" ? false
           : state.busy || state.blocked || (guard === "save" && !!state.candidate) || (guard === "clean" && hasDrafts()));
       }
     };
@@ -131,12 +131,6 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     }
     const kind = old && base !== "none" ? `old-${base}` : base;
     return { base, kind, tone: old ? "none" : base, label, note, count: c?.verdict === "pass" ? "passing" : c?.verdict === "fail" ? "failing" : "" };
-  }
-  function stopButton(button, updates) {
-    const node = button("■ Stop Copilot turn", () => actions.stop(), "tb stop-run", "stop");
-    node.setAttribute("aria-label", "Stop Copilot turn"); node.setAttribute("title", "Stop Copilot turn");
-    updates.push(() => { node.hidden = !testing() || !state.run; });
-    return node;
   }
   function resultSummary() {
     const run = currentRun();
@@ -218,7 +212,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     } else promptBox.append(instructionsContent(doc, state.base));
     foot.append(spinnerStatus(status, "all", updates));
     const saveRun = state.snap ? saveButton(doc, button, "Save and run all tests", submitAll) : undefined;
-    if (saveRun) { foot.append(saveRun, stopButton(button, updates)); updates.push(() => { saveRun.hidden = testing() && !!state.run; }); }
+    if (saveRun) { foot.append(saveRun); updates.push(() => { saveRun.hidden = testing() && !!state.run; }); }
     if (state.snap) foot.append(hostedNotice(updates));
     promptBox.append(foot); promptSection.append(promptLabel, promptBox);
 
@@ -414,7 +408,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     const status = el(doc, "span", "meta"); status.setAttribute("aria-hidden", "true");
     const jump = button("", () => tests.scrollIntoView?.({ block: "start" }), "tb tb-quiet pinned-tests", "nav");
     const right = el(doc, "div", "pinned-actions");
-    right.append(jump, saveButton(doc, button, "Save and run all tests", submitAll), stopButton(button, updates));
+    right.append(jump, saveButton(doc, button, "Save and run all tests", submitAll));
     inner.append(status, right); bar.append(inner); bar.hidden = true;
     updates.push(() => {
       status.textContent = footText("all");
@@ -651,7 +645,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       cancel.setAttribute("aria-label", "Cancel"); cancel.append(icon(doc, "close", 16, 2.2));
       cancel.setAttribute("title", "Discard this test's edits (Esc)");
       updates.push(() => { cancel.hidden = !draft(); });
-      right.append(cancel, saveButton(doc, button, "Save and run this test", () => submitOne(key)), stopButton(button, updates));
+      right.append(cancel, saveButton(doc, button, "Save and run this test", () => submitOne(key)));
       foot.append(right, hostedNotice(updates)); out.push(foot);
     } else {
       const foot = el(doc, "div", "detail-foot"); foot.append(status); out.push(foot);
