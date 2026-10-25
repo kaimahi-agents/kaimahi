@@ -453,6 +453,22 @@ Completed assertion failures and inconclusive assertions are normal MCP results
 journal-finalization errors still set `isError: true`. A successful subset still
 has `fullPass: false`; App results and CLI exit codes are unchanged.
 
+Test requests with `_meta.progressToken` receive one `notifications/progress`
+per fully checked selected case, sent in authored order before the final response
+on the wire (client SDK progress handlers may run after the call resolves).
+`params.progressToken` echoes the token as decoded by the SDK; `progress` counts
+notified cases from 1. `message` is a JSON string containing exactly
+`{"caseId":"greeting","verdict":"pass","reason":""}`: verdict is the existing
+case aggregate (`pass`, `fail`, `unknown`); reason is empty on pass, otherwise
+the first failing assertion's safe fixed reason in authored assertion order
+(or the first unknown assertion if none failed), never raw judge rationale,
+checks or answer content. Incomplete or malformed
+cases emit nothing; cancellation stops later notifications. These rows are
+provisional: journal finalization can still fail, and the unchanged revision-bound
+final result and `fullPass` remain authoritative. Notification delivery errors do
+not change evaluation. Requests without a token and Run requests emit none;
+no new tool, retained state or final-result fields are introduced.
+
 #### Stopping an in-flight preview
 
 Stop the existing `run` or `test` call using MCP request cancellation, not a

@@ -75,7 +75,7 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 					executionRoute = &modelaccess.Route{Provider: "copilot", Model: model, Endpoint: modelaccess.CopilotEndpoint, Auth: "copilot"}
 				}
 			}
-			result, err := application.PreviewAgentSnapshot(ctx, parsed, app.FilePreviewOptions{File: input.Path, FullPath: files.root == nil, Operation: name, CaseID: input.CaseID, Input: input.Input, ShowContent: input.ShowContent, ShowFailedContent: input.ShowFailedContent, Model: input.Model, Route: executionRoute})
+			result, err := application.PreviewAgentSnapshot(ctx, parsed, app.FilePreviewOptions{File: input.Path, FullPath: files.root == nil, Operation: name, CaseID: input.CaseID, Input: input.Input, ShowContent: input.ShowContent, ShowFailedContent: input.ShowFailedContent, Model: input.Model, Route: executionRoute, CaseFinished: caseProgressNotifier(ctx, name, req)})
 			if detail != nil && result.ReasonCode == "invalid_file" {
 				result.Diagnostic = &app.FilePreviewDiagnostic{Field: detail.Field, Line: detail.Location.Line, Column: detail.Location.Column, Repair: detail.Problem}
 			}

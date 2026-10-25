@@ -26,6 +26,8 @@ type FilePreviewOptions struct {
 	// FullPath keeps MCP's requested identity inside the shared redaction boundary.
 	FullPath bool
 	Progress func(string) error
+	// CaseFinished receives a safe provisional row, never answer or judge content.
+	CaseFinished func(FilePreviewCaseProgress)
 }
 
 type FilePreviewResult struct {
@@ -303,6 +305,7 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		return fail("runner_unavailable", 1)
 	}
 	request := agentpreview.Request{Agent: parsed, Examples: selected, Route: route, JudgeRoute: opt.JudgeRoute, Input: opt.Input, Progress: opt.Progress, ToolBindings: opt.ToolBindings, FileLabel: r.File.Path}
+	request.ExampleFinished = previewCaseObserver(ctx, selected, parsed, route, opt.CaseFinished)
 	judgeCtx, judgeNotes := newFileJudgeContext(ctx)
 	outcome, cause := a.FileRunner.Run(judgeCtx, request)
 	if errors.Is(cause, agentpreview.ErrUnsafeToolContent) || errors.Is(cause, agentpreview.ErrCredentialContent) || errors.Is(cause, copilot.ErrCredentialContent) {
