@@ -9,6 +9,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess/copilot"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
@@ -362,7 +363,7 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	// judge evidence and raw reasons), answers or journal handles directly.
 	seen := map[string]bool{}
 	validCompletion := func(c agentpreview.Completion) bool {
-		if c.ToolCalls < 0 || c.ToolCalls > 1 || len(parsed.Tools) == 0 && c.ToolCalls != 0 || c.State != agentpreview.Complete || c.ID == "" || seen[c.ID] || c.FileRevision != parsed.Revision || c.Provider != route.Provider || c.Model != route.Model || len(c.Answer) > 256*1024 || !utf8.ValidString(c.Answer) {
+		if c.ToolCalls < 0 || c.ToolCalls > localtools.MaxCalls || len(parsed.Tools) == 0 && c.ToolCalls != 0 || c.State != agentpreview.Complete || c.ID == "" || seen[c.ID] || c.FileRevision != parsed.Revision || c.Provider != route.Provider || c.Model != route.Model || len(c.Answer) > 256*1024 || !utf8.ValidString(c.Answer) {
 			return false
 		}
 		seen[c.ID] = true

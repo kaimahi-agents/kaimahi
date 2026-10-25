@@ -18,7 +18,10 @@ import (
 var errTrace = errors.New("local tools: unsupported or incomplete preview trace")
 var callID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
-// Harness is the versioned, secret-free one-call preview contract. Bindings and
+// MaxCalls bounds the first-response batch; the final agent send is text-only.
+const MaxCalls = 5
+
+// Harness is the versioned, secret-free bounded preview contract. Bindings and
 // credentials belong exclusively to the host's executor, never this config.
 type Harness struct {
 	Model       string
@@ -79,34 +82,40 @@ func (h Harness) Run(ctx context.Context, s *api.Start, sink api.EventSink) erro
 		if textMessage(&m, "assistant") {
 			return nil
 		}
-		if round != 0 || m.Role != "assistant" || len(m.Parts) != 1 {
+		if round != 0 || m.Role != "assistant" || len(m.Parts) == 0 || len(m.Parts) > MaxCalls {
 			return errTrace
 		}
-		p := m.Parts[0]
-		c := p.ToolCall
-		if c == nil || p.Text != nil || p.Data != nil || p.File != nil || p.Reasoning != nil || p.ToolResult != nil || !callID.MatchString(c.ID) || ValidateArguments(defs, c.Tool, c.Args) != nil || c.Mediation != "" || c.IdempotencyKey != "" {
-			return errTrace
+		// Validate the entire batch before starting its first operation.
+		seen := map[string]bool{}
+		for _, p := range m.Parts {
+			c := p.ToolCall
+			if c == nil || p.Text != nil || p.Data != nil || p.File != nil || p.Reasoning != nil || p.ToolResult != nil || !callID.MatchString(c.ID) || seen[c.ID] || ValidateArguments(defs, c.Tool, c.Args) != nil || c.Mediation != "" || c.IdempotencyKey != "" {
+				return errTrace
+			}
+			seen[c.ID] = true
 		}
-		// Copy: the model response is journaled and must not be mutated. On redrive,
-		// replay supplies the recorded model ID, preserving this execution-scoped key.
-		call := *c
-		call.Mediation = api.MediationControllerMediated
-		call.IdempotencyKey = s.ExecutionID + ":" + c.ID
-		if err := ctx.Err(); err != nil {
-			return err
+		messages = append(messages, m)
+		for _, p := range m.Parts {
+			// Copy: never mutate the journaled response or its replay hash.
+			call := *p.ToolCall
+			call.Mediation = api.MediationControllerMediated
+			call.IdempotencyKey = s.ExecutionID + ":" + call.ID
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			result, err := sink.ToolCall(ctx, call)
+			if err != nil {
+				return err
+			}
+			if result.ID != call.ID || result.IsError || result.Error != "" || result.OutputURI != "" || result.OutputDigest != "" || result.Content != nil || result.Output == nil {
+				return errTrace
+			}
+			raw, err := json.Marshal(result.Output)
+			if err != nil || len(raw) > 32*1024 {
+				return errTrace
+			}
+			messages = append(messages, api.Message{Role: "tool", Parts: []api.Part{{ToolResult: &result}}})
 		}
-		result, err := sink.ToolCall(ctx, call)
-		if err != nil {
-			return err
-		}
-		if result.ID != call.ID || result.IsError || result.Error != "" || result.OutputURI != "" || result.OutputDigest != "" || result.Content != nil || result.Output == nil {
-			return errTrace
-		}
-		raw, err := json.Marshal(result.Output)
-		if err != nil || len(raw) > 32*1024 {
-			return errTrace
-		}
-		messages = append(messages, m, api.Message{Role: "tool", Parts: []api.Part{{ToolResult: &result}}})
 	}
 	return errTrace
 }
@@ -121,9 +130,9 @@ func textMessage(m *api.Message, role string) bool {
 
 // Trace is preview-only content and safe counts, not portable suite evidence.
 type Trace struct {
-	Answer    string
-	ToolCalls int
-	ToolName  string
+	Answer      string
+	ToolCalls   int
+	CallsByName map[string]int
 }
 
 // VerifyTrace accepts only one complete bounded invocation, then reconstructs
@@ -131,13 +140,21 @@ type Trace struct {
 func VerifyTrace(ctx context.Context, records []eventlog.Record, model string) (Trace, error) {
 	var out Trace
 	kinds := []api.EventKind{api.EventExecutionStart, api.EventInput, api.EventModelCall, api.EventOutput, api.EventEnd}
-	if len(records) == 9 {
-		kinds = []api.EventKind{api.EventExecutionStart, api.EventInput, api.EventModelCall, api.EventOutput, api.EventToolCall, api.EventToolResult, api.EventModelCall, api.EventOutput, api.EventEnd}
-		out.ToolCalls = 1
-		if records[4].Event.ToolCall == nil {
-			return Trace{}, errTrace
+	if len(records) >= 9 && len(records) <= 7+2*MaxCalls && len(records)%2 == 1 {
+		out.ToolCalls = (len(records) - 7) / 2
+		out.CallsByName = map[string]int{}
+		kinds = kinds[:4]
+		seen := map[string]bool{}
+		for i := 0; i < out.ToolCalls; i++ {
+			call, result := records[4+2*i].Event.ToolCall, records[5+2*i].Event.Result
+			if call == nil || result == nil || !callID.MatchString(call.ID) || seen[call.ID] || result.ID != call.ID {
+				return Trace{}, errTrace
+			}
+			seen[call.ID] = true
+			out.CallsByName[call.Tool]++
+			kinds = append(kinds, api.EventToolCall, api.EventToolResult)
 		}
-		out.ToolName = records[4].Event.ToolCall.Tool
+		kinds = append(kinds, api.EventModelCall, api.EventOutput, api.EventEnd)
 	}
 	if len(records) != len(kinds) {
 		return Trace{}, errTrace
@@ -184,7 +201,11 @@ func VerifyTrace(ctx context.Context, records []eventlog.Record, model string) (
 	if ctx.Err() != nil {
 		return Trace{}, ctx.Err()
 	}
-	if err != nil || calls != 0 || replay.ModelInvocations() != 0 || len(outputs) != out.ToolCalls+1 || outputs[len(outputs)-1] != final.Text() {
+	wantOutputs := 1
+	if out.ToolCalls > 0 {
+		wantOutputs = 2
+	}
+	if err != nil || calls != 0 || replay.ModelInvocations() != 0 || len(outputs) != wantOutputs || outputs[len(outputs)-1] != final.Text() {
 		return Trace{}, errTrace
 	}
 	out.Answer = final.Text()

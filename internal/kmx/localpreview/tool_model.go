@@ -37,17 +37,17 @@ type toolWireMessage struct {
 var modelCallID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 // ToolModel is separate from the strict text-only converter. It accepts only
-// one bounded call using host-owned definitions, never arbitrary histories.
+// one bounded batch using host-owned definitions, never arbitrary histories.
 func (c *modelClient) ToolModel(ctx context.Context, r api.ModelRequest) (api.ModelResponse, error) {
 	fail := func() (api.ModelResponse, error) { return api.ModelResponse{}, errRunnerExecution }
 	defs, defsErr := localtools.CopyDefinitions(r.Tools)
-	if r.Model != c.route.model || len(r.Params) != 0 || r.ToolChoice != nil || defsErr != nil || (len(r.Messages) != 2 && len(r.Messages) != 4) {
+	if r.Model != c.route.model || len(r.Params) != 0 || r.ToolChoice != nil || defsErr != nil || (len(r.Messages) != 2 && (len(r.Messages) < 4 || len(r.Messages) > 3+localtools.MaxCalls)) {
 		return fail()
 	}
 	messages := make([]toolWireMessage, 0, len(r.Messages))
 	for i, m := range r.Messages {
 		w := toolWireMessage{Role: m.Role}
-		if len(m.Parts) != 1 {
+		if len(m.Parts) == 0 || i != 2 && len(m.Parts) != 1 {
 			return fail()
 		}
 		p := m.Parts[0]
@@ -62,18 +62,25 @@ func (c *modelClient) ToolModel(ctx context.Context, r api.ModelRequest) (api.Mo
 			}
 			w.Content = p.Text.Text
 		case 2:
-			if m.Role != "assistant" || p.ToolCall == nil || p.Text != nil || p.ToolResult != nil || p.File != nil || p.Data != nil || p.Reasoning != nil || !validModelCall(*p.ToolCall, defs...) {
+			if m.Role != "assistant" || len(m.Parts) > localtools.MaxCalls || len(r.Messages) != 3+len(m.Parts) {
 				return fail()
 			}
-			args := p.ToolCall.Args
-			if args == nil {
-				args = map[string]any{}
+			seen := map[string]bool{}
+			for _, p := range m.Parts {
+				if p.ToolCall == nil || p.Text != nil || p.ToolResult != nil || p.File != nil || p.Data != nil || p.Reasoning != nil || !validModelCall(*p.ToolCall, defs...) || seen[p.ToolCall.ID] {
+					return fail()
+				}
+				seen[p.ToolCall.ID] = true
+				args := p.ToolCall.Args
+				if args == nil {
+					args = map[string]any{}
+				}
+				raw, _ := json.Marshal(args)
+				w.ToolCalls = append(w.ToolCalls, toolWireCall{ID: p.ToolCall.ID, Type: "function", Function: toolWireFunction{Name: p.ToolCall.Tool, Arguments: string(raw)}})
 			}
-			raw, _ := json.Marshal(args)
-			w.ToolCalls = []toolWireCall{{ID: p.ToolCall.ID, Type: "function", Function: toolWireFunction{Name: p.ToolCall.Tool, Arguments: string(raw)}}}
-		case 3:
+		default:
 			result := p.ToolResult
-			if m.Role != "tool" || result == nil || p.Text != nil || p.ToolCall != nil || p.File != nil || p.Data != nil || p.Reasoning != nil || result.ID != r.Messages[2].Parts[0].ToolCall.ID || result.IsError || result.Error != "" || result.Output == nil || result.OutputURI != "" || result.OutputDigest != "" || len(result.Content) != 0 {
+			if m.Role != "tool" || result == nil || p.Text != nil || p.ToolCall != nil || p.File != nil || p.Data != nil || p.Reasoning != nil || result.ID != r.Messages[2].Parts[i-3].ToolCall.ID || result.IsError || result.Error != "" || result.Output == nil || result.OutputURI != "" || result.OutputDigest != "" || len(result.Content) != 0 {
 				return fail()
 			}
 			raw, err := json.Marshal(result.Output)
@@ -212,16 +219,25 @@ func parseToolReply(raw []byte, model string, allowCall bool, defs ...api.ToolDe
 	var calls []toolWireCall
 	d := json.NewDecoder(bytes.NewReader(m["tool_calls"]))
 	d.DisallowUnknownFields()
-	if d.Decode(&calls) != nil || len(calls) != 1 || calls[0].Type != "function" || calls[0].Function.Description != "" || calls[0].Function.Parameters != nil {
+	if d.Decode(&calls) != nil || len(calls) == 0 || len(calls) > localtools.MaxCalls {
 		return fail()
 	}
-	var args map[string]any
-	if len(calls[0].Function.Arguments) > 8*1024 || !runtime.JSONKeysUnique([]byte(calls[0].Function.Arguments)) || !runtime.JSONNumbersExact([]byte(calls[0].Function.Arguments)) || json.Unmarshal([]byte(calls[0].Function.Arguments), &args) != nil || args == nil {
-		return fail()
+	message := api.Message{Role: "assistant"}
+	seen := map[string]bool{}
+	for _, c := range calls {
+		if c.Type != "function" || c.Function.Description != "" || c.Function.Parameters != nil || seen[c.ID] {
+			return fail()
+		}
+		var args map[string]any
+		if len(c.Function.Arguments) > 8*1024 || !runtime.JSONKeysUnique([]byte(c.Function.Arguments)) || !runtime.JSONNumbersExact([]byte(c.Function.Arguments)) || json.Unmarshal([]byte(c.Function.Arguments), &args) != nil || args == nil {
+			return fail()
+		}
+		call := api.ToolCall{ID: c.ID, Tool: c.Function.Name, Args: args}
+		if !validModelCall(call, defs...) {
+			return fail()
+		}
+		seen[c.ID] = true
+		message.Parts = append(message.Parts, api.Part{ToolCall: &call})
 	}
-	call := api.ToolCall{ID: calls[0].ID, Tool: calls[0].Function.Name, Args: args}
-	if !validModelCall(call, defs...) {
-		return fail()
-	}
-	return api.ModelResponse{Message: api.Message{Role: "assistant", Parts: []api.Part{{ToolCall: &call}}}}, nil
+	return api.ModelResponse{Message: message}, nil
 }

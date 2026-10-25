@@ -6,6 +6,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
@@ -36,7 +37,7 @@ func previewCaseObserver(ctx context.Context, selected []agentfile.Example, agen
 		valid := row.ID == ex.ID && c.State == agentpreview.Complete && c.ID != "" && !seen[c.ID] &&
 			c.FileRevision == agent.Revision && c.Provider == route.Provider && c.Model == route.Model &&
 			len(c.Answer) <= 256*1024 && utf8.ValidString(c.Answer) &&
-			c.ToolCalls >= 0 && c.ToolCalls <= 1 && (len(agent.Tools) > 0 || c.ToolCalls == 0) &&
+			c.ToolCalls >= 0 && c.ToolCalls <= localtools.MaxCalls && (len(agent.Tools) > 0 || c.ToolCalls == 0) &&
 			len(row.Assertions) == len(ex.Assertions) && len(row.Assertions) > 0
 		for j, as := range row.Assertions {
 			if j >= len(ex.Assertions) {

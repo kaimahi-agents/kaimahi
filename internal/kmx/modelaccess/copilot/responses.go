@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
@@ -64,14 +65,17 @@ func encodeResponsesRequest(body []byte) ([]byte, bool, error) {
 				input = append(input, map[string]string{"type": "function_call_output", "call_id": id, "output": output})
 			case m["tool_calls"] != nil:
 				var calls []responseChatCall
-				if role != "assistant" || json.Unmarshal(m["tool_calls"], &calls) != nil || len(calls) != 1 {
+				if role != "assistant" || json.Unmarshal(m["tool_calls"], &calls) != nil || len(calls) == 0 || len(calls) > localtools.MaxCalls {
 					return nil, false, ErrMalformed
 				}
-				c := calls[0]
-				if c.Type != "function" || c.ID == "" || c.Function.Name == "" || !runtime.JSONKeysUnique([]byte(c.Function.Arguments)) {
-					return nil, false, ErrMalformed
+				seen := map[string]bool{}
+				for _, c := range calls {
+					if c.Type != "function" || c.ID == "" || seen[c.ID] || c.Function.Name == "" || !runtime.JSONKeysUnique([]byte(c.Function.Arguments)) {
+						return nil, false, ErrMalformed
+					}
+					seen[c.ID] = true
+					input = append(input, map[string]string{"type": "function_call", "call_id": c.ID, "name": c.Function.Name, "arguments": c.Function.Arguments})
 				}
-				input = append(input, map[string]string{"type": "function_call", "call_id": c.ID, "name": c.Function.Name, "arguments": c.Function.Arguments})
 			default:
 				input = append(input, m)
 			}

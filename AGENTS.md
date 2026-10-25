@@ -665,8 +665,9 @@ workspace v1 bytes/partition keys remain unchanged. This store is separate from
 Sessions journal replay and grants no evidence, Publish or Deploy authority.
 The additive `kmx-local-tools-v1` host-bound harness has a separate bounded
 converter and complete-invocation replay proof, never a relaxed suite/chat check.
-Its optional single call is host-enforced against trusted definitions and schemas;
-arguments are bounded to 8 KiB and results to 32 KiB; at most two agent model calls,
+Its optional first-response batch of up to five calls is host-enforced against
+trusted definitions and schemas, validated as a whole before serial dispatch;
+arguments are bounded to 8 KiB and results to 32 KiB per call; at most two agent model calls,
 with unchanged separate tool-free judging inside the case deadline. Safe call
 counts do not make tool assertions or native proof; actual-call qualification
 must independently show a correlated call. Safe tool definitions enter harness

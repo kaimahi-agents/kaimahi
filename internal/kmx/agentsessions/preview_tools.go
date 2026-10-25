@@ -86,9 +86,9 @@ func (c *Client) RunToolPreviewCase(ctx context.Context, r PreviewCaseRequest) (
 		return out, status.Error(codes.DataLoss, "agentsessions: tool preview reconstruction failed")
 	}
 	out.Output = trace.Answer
-	out.ToolCalls = map[string]int{}
-	if trace.ToolCalls > 0 {
-		out.ToolCalls[trace.ToolName] = trace.ToolCalls
+	out.ToolCalls = trace.CallsByName
+	if out.ToolCalls == nil {
+		out.ToolCalls = map[string]int{}
 	}
 	out.ToolEvidenceComplete = true
 	return out, nil

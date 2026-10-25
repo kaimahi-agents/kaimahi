@@ -61,8 +61,8 @@ Name the variable; never put the credential value on the command line.
   zero model calls. If it doesn't, the example is not a pass.
 - Instructions are the agent file's prefix before Examples, sent as the system
   prompt. The example input is sent as the user message. Each example gets one
-  model request when tool-free. A bound tool case permits one tool call and one
-  follow-up model send. There are no retries or fallback models.
+  model request when tool-free. A bound tool case permits up to five tool calls
+  from its first response, executed serially, and one follow-up model send. There are no retries or fallback models.
   Cancellation and the per-example deadline (default 2 minutes, which also
   covers judging) stop the request in flight.
 
@@ -83,7 +83,11 @@ The names-only declaration supports up to 32 unique tool names. Trusted embeddin
 may supply `RunnerOptions.ResolveTools` and `localtools.NewTrustedHost` with copied
 schemas, descriptions, an executor and a content checker. Model arguments must
 match the selected host schema and stay within 8 KiB; results stay within 32 KiB.
-One case still executes at most one tool call and two agent model sends.
+One case executes at most five tool calls and two agent model sends. The whole
+first-response batch validates before its first call; duplicate IDs, a sixth
+call or invalid later arguments refuse the batch. The final response must be
+text, not another tool round. App tools still use the app's native permission
+handling on every call.
 Safe definitions are journaled to reconstruct the exact request during zero-call
 offline replay; endpoint/binding credentials are not. Old fixed-read journals
 remain inspectable. There is no general CLI binding-file format; the explicit
@@ -190,9 +194,11 @@ It prints no PR content and removes its private temporary journal afterward;
 it is not real-LLM tool-selection qualification. Ordinary tests use owned TLS
 MCP fixtures and a test-only bridge excluded from shipped builds.
 
-A distinct `kmx-local-tools-v1` harness permits zero or one model-selected read
-and at most two agent-model calls. No forced call, parallel calls, pagination,
-fanout, writes, automatic resend or fallback. A text Test can pass without a
+A distinct `kmx-local-tools-v1` harness permits zero to five model-selected tool
+calls in one batch and at most two agent-model calls. Calls execute in order;
+failure or cancellation stops later dispatch and prevents a full pass. There is
+no forced call, parallel execution, adaptive tool round, automatic resend or
+fallback. Each fixed GitHub read is one unpaginated query and never writes. A text Test can pass without a
 tool call; actual-call qualification must separately prove one correlated read
 from journal/count metadata. `toolCalls` is a safe completion count (zero is
 omitted in JSON), not a tool assertion or suite receipt. The unchanged tool-free

@@ -35,7 +35,7 @@ func fixtureBinding(t *testing.T) string {
 
 // scriptedJournal is intentionally not real-LLM qualification. It exercises
 // actual HTTP conversion, MCP dispatch, journal acceptance and zero-send replay.
-func scriptedJournal(t *testing.T, binding string, factory func(context.Context, localtools.Binding) (*localtools.Host, error), unsafe bool, checkAfter func()) {
+func scriptedJournal(t *testing.T, binding string, factory func(context.Context, localtools.Binding) (*localtools.Host, error), unsafe bool, count int, checkAfter func()) {
 	t.Helper()
 	var models atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -53,9 +53,13 @@ func scriptedJournal(t *testing.T, binding string, factory func(context.Context,
 			if len(body.Tools) != 1 {
 				t.Error("tool not offered")
 			}
-			fmt.Fprint(w, `{"model":"unit","choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","tool_calls":[{"id":"read","type":"function","function":{"name":"github_list_merged_prs","arguments":"{}"}}]}}]}`)
+			calls := make([]any, 0, count)
+			for i := 0; i < count; i++ {
+				calls = append(calls, map[string]any{"id": fmt.Sprintf("read_%d", i), "type": "function", "function": map[string]string{"name": "github_list_merged_prs", "arguments": "{}"}})
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"model": "unit", "choices": []any{map[string]any{"finish_reason": "tool_calls", "message": map[string]any{"role": "assistant", "tool_calls": calls}}}})
 		} else {
-			if len(body.Messages) != 4 || body.Messages[3].Role != "tool" || len(body.Tools) != 1 {
+			if len(body.Messages) != 3+count || body.Messages[3].Role != "tool" || len(body.Tools) != 1 {
 				t.Error("uncorrelated final request")
 			}
 			fmt.Fprint(w, `{"model":"unit","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"Draft ready"}}]}`)
@@ -72,7 +76,7 @@ func scriptedJournal(t *testing.T, binding string, factory func(context.Context,
 		}
 		return
 	}
-	if err != nil || out.State != agentpreview.Complete || models.Load() != 2 || len(out.Examples) != 1 || out.Examples[0].Completion.ToolCalls != 1 {
+	if err != nil || out.State != agentpreview.Complete || models.Load() != 2 || len(out.Examples) != 1 || out.Examples[0].Completion.ToolCalls != count {
 		t.Fatal("scripted adapter/journal qualification failed")
 	}
 	if checkAfter != nil {
@@ -84,7 +88,7 @@ func scriptedJournal(t *testing.T, binding string, factory func(context.Context,
 	}
 	t.Setenv(b.CredentialEnv(), "")
 	replay, err := localpreview.Inspect(t.Context(), dir, out.Journal)
-	if err != nil || len(replay.Sessions) != 1 || replay.Sessions[0].Outcome != "completed" || replay.Sessions[0].ToolCalls != 1 || replay.ModelCalls != 0 || models.Load() != 2 {
+	if err != nil || len(replay.Sessions) != 1 || replay.Sessions[0].Outcome != "completed" || replay.Sessions[0].ToolCalls != count || replay.ModelCalls != 0 || models.Load() != 2 {
 		t.Fatal("offline tool proof failed")
 	}
 	if checkAfter != nil {
@@ -94,8 +98,12 @@ func scriptedJournal(t *testing.T, binding string, factory func(context.Context,
 }
 
 func TestMCPAdapterJournalAndOfflineReplay(t *testing.T) {
-	for _, unsafe := range []bool{false, true} {
-		t.Run(fmt.Sprint(unsafe), func(t *testing.T) {
+	for _, tc := range []struct {
+		unsafe bool
+		count  int
+	}{{false, 1}, {false, 5}, {true, 1}, {true, 5}} {
+		unsafe, count := tc.unsafe, tc.count
+		t.Run(fmt.Sprint(unsafe, count), func(t *testing.T) {
 			text := `{"total_count":1,"incomplete_results":false,"items":[{"number":7,"title":"Fix parser","repository_url":"https://api.github.com/repos/owner/repo","pull_request":{"merged_at":"2026-10-23T00:00:00Z"}}]}`
 			if unsafe {
 				text = strings.Replace(text, "Fix parser", "mcp-credential-canary", 1)
@@ -103,8 +111,8 @@ func TestMCPAdapterJournalAndOfflineReplay(t *testing.T) {
 			f := localtools.MCPFixtureForTest(t, text)
 			scriptedJournal(t, fixtureBinding(t), func(_ context.Context, b localtools.Binding) (*localtools.Host, error) {
 				return localtools.NewMCPHostForTest(b, "mcp-credential-canary", f.Transport)
-			}, unsafe, func() {
-				if f.Calls.Load() != 1 {
+			}, unsafe, count, func() {
+				if f.Calls.Load() != int64(count) {
 					t.Fatal("MCP read repeated during replay")
 				}
 			})
@@ -118,5 +126,5 @@ func TestHostedMCPWithScriptedModelJournal(t *testing.T) {
 		t.Skip("opt-in hosted read; scripted model, not live LLM qualification")
 	}
 	// Selection is explicit and credentials are resolved only by production Host.
-	scriptedJournal(t, path, localtools.NewMCPHost, false, nil)
+	scriptedJournal(t, path, localtools.NewMCPHost, false, 1, nil)
 }

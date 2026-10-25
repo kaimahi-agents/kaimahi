@@ -2,6 +2,7 @@ package copilot
 
 import (
 	"encoding/json"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
@@ -18,7 +19,7 @@ type responseChatCall struct {
 // Sessions model response or journal and cannot authorize a resumed execution.
 type responsesContinuation struct {
 	key    string
-	call   responseChatCall
+	calls  []responseChatCall
 	output []json.RawMessage
 }
 
@@ -60,19 +61,25 @@ func (t *previewTransport) responsesRequest(body []byte) ([]byte, string, error)
 	if role != "tool" {
 		return encoded, conversationKey(fields, messages), nil
 	}
-	if len(messages) != 4 || pending == nil || conversationKey(fields, messages[:2]) != pending.key {
+	if pending == nil || len(messages) != 3+len(pending.calls) || conversationKey(fields, messages[:2]) != pending.key {
 		return nil, "", ErrMalformed
 	}
 	var calls []responseChatCall
-	var id, output string
-	if json.Unmarshal(messages[2]["tool_calls"], &calls) != nil || len(calls) != 1 || calls[0].Type != "function" || calls[0].ID != pending.call.ID || calls[0].Function.Name != pending.call.Function.Name || !sameArguments(calls[0].Function.Arguments, pending.call.Function.Arguments) || json.Unmarshal(messages[3]["tool_call_id"], &id) != nil || id != pending.call.ID || json.Unmarshal(messages[3]["content"], &output) != nil {
+	if json.Unmarshal(messages[2]["tool_calls"], &calls) != nil || len(calls) != len(pending.calls) {
 		return nil, "", ErrMalformed
 	}
 	input := []any{messages[0], messages[1]}
 	for _, item := range pending.output {
 		input = append(input, item)
 	}
-	input = append(input, map[string]string{"type": "function_call_output", "call_id": id, "output": output})
+	for i, c := range calls {
+		want := pending.calls[i]
+		var id, output string
+		if c.Type != "function" || c.ID != want.ID || c.Function.Name != want.Function.Name || !sameArguments(c.Function.Arguments, want.Function.Arguments) || json.Unmarshal(messages[3+i]["tool_call_id"], &id) != nil || id != want.ID || json.Unmarshal(messages[3+i]["content"], &output) != nil {
+			return nil, "", ErrMalformed
+		}
+		input = append(input, map[string]string{"type": "function_call_output", "call_id": id, "output": output})
+	}
 	var next map[string]json.RawMessage
 	_ = json.Unmarshal(encoded, &next)
 	next["input"], _ = json.Marshal(input)
@@ -81,6 +88,7 @@ func (t *previewTransport) responsesRequest(body []byte) ([]byte, string, error)
 }
 
 func (t *previewTransport) rememberResponses(body []byte, key string) error {
+	t.continuation = nil
 	if key == "" {
 		return nil
 	}
@@ -95,6 +103,7 @@ func (t *previewTransport) rememberResponses(body []byte, key string) error {
 		return nil
 	}
 	var found *responsesContinuation
+	seen := map[string]bool{}
 	for _, raw := range reply.Output {
 		var item struct {
 			Type, Name, Arguments string
@@ -106,18 +115,21 @@ func (t *previewTransport) rememberResponses(body []byte, key string) error {
 		if item.Type != "function_call" {
 			continue
 		}
-		if found != nil || item.CallID == "" || item.Name == "" {
+		if item.CallID == "" || seen[item.CallID] || item.Name == "" || len(seen) >= localtools.MaxCalls {
 			return ErrMalformed
 		}
 		// Arguments are themselves JSON text: inspect decoded keys/values too.
 		if err := t.access.checkJSON([]byte(item.Arguments)); err != nil {
 			return err
 		}
-		found = &responsesContinuation{key: key, output: reply.Output}
-		found.call.ID = item.CallID
-		found.call.Type = "function"
-		found.call.Function.Name = item.Name
-		found.call.Function.Arguments = item.Arguments
+		if found == nil {
+			found = &responsesContinuation{key: key, output: reply.Output}
+		}
+		call := responseChatCall{ID: item.CallID, Type: "function"}
+		call.Function.Name = item.Name
+		call.Function.Arguments = item.Arguments
+		found.calls = append(found.calls, call)
+		seen[item.CallID] = true
 	}
 	t.continuation = found
 	return nil
