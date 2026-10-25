@@ -139,6 +139,30 @@ test('nested approval attribution uses exact outer progress and actual relay job
   a?.clear(); b?.clear(); assert.ok([...f.events.values()].every(set => set.size === 0));
 });
 
+test('approval ownership survives more than 128 completed calls in a supported full Test', async t => {
+  const f = await fixture(t), runId = 'b'.repeat(32);
+  const tracker = relay.observePreview(f.session, 'outer-test');
+  let finish;
+  t.after(() => { tracker.clear(); finish?.(); });
+  for (let i = 1; i <= 128; i++) {
+    const id = i.toString(16).padStart(32, '0');
+    tracker.progress({ kind: 'kmx.host-progress', schemaVersion: 1, phase: 'call', runId, jobId: id });
+    tracker.complete(`kmx-preview-${id}`);
+  }
+  tracker.progress({ kind: 'kmx.host-progress', schemaVersion: 1, phase: 'call', runId, jobId: 'c'.repeat(32) });
+  f.session.rpc.tools.execute = async call => {
+    f.calls.push(call);
+    f.emit('permission.requested', { requestId: 'last-approval', permissionRequest: { toolCallId: call.toolCallId } });
+    await new Promise(resolve => { finish = resolve; });
+    return { resultType: 'success', structuredContent: { pong: true } };
+  };
+  await ensureHostRuntime(f.session); await until(() => f.calls.length === 1);
+  assert.equal(tracker.waiting(), true);
+  assert.equal(tracker.pendingTool(), true);
+  tracker.progress({ kind: 'kmx.host-progress', schemaVersion: 1, phase: 'deadline', runId, jobId: 'c'.repeat(32) });
+  assert.equal(tracker.timedOut(), true);
+});
+
 test('foreign/malformed host metadata and native timeout without deadline evidence cannot attest approval timeout', async t => {
   const f = await fixture(t); let finish;
   f.session.rpc.tools.execute = async call => { f.calls.push(call); await new Promise(resolve => { finish = resolve; }); return { resultType: 'timeout' }; };

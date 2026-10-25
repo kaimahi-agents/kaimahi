@@ -42,7 +42,8 @@ export function observePreview(session, outerToolCallId) {
       if (closed || data?.kind !== "kmx.host-progress" || data.schemaVersion !== 1 ||
           !/^[a-f0-9]{32}$/.test(data.runId) || !/^[a-f0-9]{32}$/.test(data.jobId)) return;
       const call = s.calls.get(data.jobId);
-      if (data.phase === "call" && jobs.size < 128) { jobs.set(data.jobId, data.runId); if (call) observer.attach(call); }
+      // Lifetime inventory includes up to 128 cases with five calls each.
+      if (data.phase === "call" && jobs.size < 128 * 5) { jobs.set(data.jobId, data.runId); if (call) observer.attach(call); }
       if (data.phase === "deadline" && call?.runId === data.runId && jobs.get(data.jobId) === data.runId &&
           [...requests.values()].includes(call.toolCallId)) deadline = true;
     },
@@ -75,7 +76,9 @@ export function observePreview(session, outerToolCallId) {
     }),
     session.on("permission.completed", event => {
       const data = event?.data, id = requests.get(data?.requestId);
-      if (owned.has(data?.toolCallId) || id && (data.toolCallId === undefined || data.toolCallId === id)) { generation++; requests.delete(data.requestId); }
+      // A completion may precede our first hydration of its request ID.
+      if (text(data?.requestId, 1024)) generation++;
+      if (owned.has(data?.toolCallId) || id && (data.toolCallId === undefined || data.toolCallId === id)) requests.delete(data.requestId);
     }),
   ];
   s.observers.add(observer); return observer;

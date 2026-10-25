@@ -114,6 +114,15 @@ test('joined extensions hydrate approvals when the host does not deliver request
  items=[];n.session.rpc.permissions.pendingRequests=async()=>({items});assert.equal(await waiting(),false);
  n.gate.resolve();await pending;
 });
+test('request-only completion invalidates first hydration before its request ID is known',async()=>{
+ const n=nativeHarness();const {pending}=await n.start(),toolCallId=n.requests[0].toolCallId,late=deferred();
+ n.session.rpc.permissions={pendingRequests:()=>late.promise};
+ const polling=n.act({operation:'progress',runId:'run-1'});await new Promise(setImmediate);
+ n.event('permission.completed',{requestId:'first-request'});
+ late.resolve({items:[{requestId:'first-request',request:{kind:'mcp',toolCallId}}]});
+ assert.equal(!!(await polling).run.approvalWaiting,false);
+ n.gate.resolve();await pending;
+});
 test('approval waiting requires owned native call and request IDs; completion and Stop clear it',async()=>{
  const n=nativeHarness();const {pending}=await n.start(),toolCallId=n.requests[0].toolCallId;
  const waiting=async()=>!!(await n.act({operation:'progress',runId:'run-1'})).run.approvalWaiting;
