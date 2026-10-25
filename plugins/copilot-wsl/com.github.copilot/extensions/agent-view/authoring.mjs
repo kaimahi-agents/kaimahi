@@ -167,6 +167,19 @@ export function replaceInstructions(source, changes) {
   return bounded(source);
 }
 
+export function replaceTools(source, names) {
+  const { sections, eol } = locate(source), section = sections.get("Tools");
+  require(Array.isArray(names) && names.length <= 32 && new Set(names).size === names.length && names.every(name => typeof name === "string" && /^[A-Za-z_][A-Za-z0-9_-]{0,63}$/.test(name)), "Provide at most 32 unique tool names.");
+  const current = section ? source.slice(section.start, section.end).split(/\r?\n/).filter(line => line.trim()).map(line => {
+    require(/^- [A-Za-z_][A-Za-z0-9_-]{0,63}$/.test(line), "Unsupported Tools formatting.");
+    return line.slice(2);
+  }) : [];
+  if (same(current, names)) return source;
+  const start = section?.heading ?? sections.get("Examples").heading, end = section?.end ?? start;
+  const body = names.length ? ["## Tools", ...names.map(name => `- ${name}`), "", ""].join(eol) : "";
+  return bounded(source.slice(0, start) + body + source.slice(end));
+}
+
 function nonblank(value) {
   require(typeof value === "string" && value.trim(), "Expected a nonblank string.");
 }
@@ -281,7 +294,7 @@ export function validateDraft(draft, intended) {
   if (raw.assertions.some(a => !checkComplete(a))) return { check: true };
 }
 
-export function compareDrafts(base, candidate, snap, sectionDrafts, testDrafts) {
+export function compareDrafts(base, candidate, snap, sectionDrafts, testDrafts, toolsDraft) {
   const sectionText = (key) => sectionDrafts.get(key) ?? snap.sections.find((s) => s.key === key).text;
   const rawExamples = () => snap ? base.authoring.examples : [];
   const items = [], next = readSnapshot(candidate);
@@ -298,6 +311,7 @@ export function compareDrafts(base, candidate, snap, sectionDrafts, testDrafts) 
     const b = baseRaw.get(id) ?? undefined, t = theirsRaw.get(id) ?? undefined, m = draft ? (draft.deleted ? undefined : draft.raw) : b;
     if (!same(b, m) || !same(b, t)) items.push([`Test ${quoted(draft?.origin === null ? draft.name : id)}`, show(b), show(m), show(t)]);
   }
+  if (toolsDraft !== undefined || !same(base.tools ?? [], candidate.tools ?? [])) items.push(["Tools", show(base.tools ?? []), show(toolsDraft ?? base.tools ?? []), show(candidate.tools ?? [])]);
   if (candidate.model !== base.model) items.push(["Model", base.model, base.model, candidate.model]);
   if (candidate.title !== base.title) items.push(["Title", base.title, base.title, candidate.title]);
   return items;

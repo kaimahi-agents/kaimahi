@@ -80,7 +80,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     } else if (operation === "reload") {
       if (matches(response?.view)) {
         state.history.reset(); state.history.remember(response.view); state.run = undefined;
-        sectionDrafts.clear(); testDrafts.clear(); displayNames.clear(); state.blocked = false; state.savedUntested = false; state.lastRun = undefined;
+        sectionDrafts.clear(); testDrafts.clear(); state.toolsDraft = undefined; displayNames.clear(); state.blocked = false; state.savedUntested = false; state.lastRun = undefined;
         adopt(response.view, { sections: [], tests: [] }); state.message = "Reloaded the saved agent. Drafts were discarded.";
       } else state.message = response?.message || "Reload did not complete. Your draft is still here.";
     } else if (response?.error === "no-tests" && matches(response.view)) {
@@ -121,6 +121,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
   function submitAll() {
     if (!state.snap || state.busy || state.blocked || state.candidate || invalidEditors.size) return;
     const list = entries(), intended = localExamples();
+    if ((state.toolsDraft?.length ?? 0) > 32) { state.message = "Keep at most 32 tools for this agent."; refresh(); return; }
     for (const e of list) {
       if (!e.draft || e.draft.deleted) continue;
       const problem = validate(e.draft, intended);
@@ -129,6 +130,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     const values = {}, submitted = { sections: [...sectionDrafts.keys()], tests: [...testDrafts.keys()] };
     if (sectionDrafts.size) values.sections = [...sectionDrafts].map(([key, text]) => ({ key, text }));
     if (testDrafts.size) values.examples = localExamples();
+    if (state.toolsDraft !== undefined) { values.tools = state.toolsDraft; submitted.tools = true; }
     if (!hasDrafts() && !intended.length) { state.message = "No tests yet — add or suggest one"; refresh(); return; }
     act(hasDrafts() ? "save-and-test" : "test", values, submitted);
   }
@@ -151,7 +153,8 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     const values = { caseId: entry.raw.id }, submitted = { sections: [...sectionDrafts.keys()], tests: entry.draft ? [key] : [] };
     if (sectionDrafts.size) values.sections = [...sectionDrafts].map(([k, text]) => ({ key: k, text }));
     if (entry.draft) values.examples = intended;
-    act(sectionDrafts.size || entry.draft ? "save-and-test" : "test", values, submitted);
+    if (state.toolsDraft !== undefined) { values.tools = state.toolsDraft; submitted.tools = true; }
+    act(state.toolsDraft !== undefined || sectionDrafts.size || entry.draft ? "save-and-test" : "test", values, submitted);
   }
 
   return { act, submitAll, submitOne, testing, clearUndo, stop, dispose() { disposed = true; stopWatching(); } };
