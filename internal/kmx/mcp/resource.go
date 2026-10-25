@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"net/url"
+	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -15,17 +18,18 @@ import (
 // AgentView is authored content for the requested agent file, not a safe log.
 // Model answers appear only in an already opted-in safe preview result.
 type AgentView struct {
-	SchemaVersion int                 `json:"schemaVersion"`
-	Kind          string              `json:"kind"`
-	File          File                `json:"file"`
-	Title         string              `json:"title"`
-	Instructions  string              `json:"instructions"`
-	Model         string              `json:"model"`
-	Tools         []string            `json:"tools,omitempty"`
-	Examples      []AgentViewExample  `json:"examples"`
-	Latest        AgentViewLatest     `json:"latest"`
-	Authoring     *AgentViewAuthoring `json:"authoring,omitempty"`
-	History       *AgentHistory       `json:"history,omitempty"`
+	SchemaVersion int                      `json:"schemaVersion"`
+	Kind          string                   `json:"kind"`
+	File          File                     `json:"file"`
+	Title         string                   `json:"title"`
+	Instructions  string                   `json:"instructions"`
+	Model         string                   `json:"model"`
+	Tools         []string                 `json:"tools,omitempty"`
+	ToolSettings  []localtools.ToolSetting `json:"toolSettings,omitempty"`
+	Examples      []AgentViewExample       `json:"examples"`
+	Latest        AgentViewLatest          `json:"latest"`
+	Authoring     *AgentViewAuthoring      `json:"authoring,omitempty"`
+	History       *AgentHistory            `json:"history,omitempty"`
 }
 type AgentViewAuthoring struct {
 	Source   string `json:"source"`
@@ -82,6 +86,14 @@ func AddAgentResource(server *sdk.Server, files *Files) {
 			return nil, refusal("invalid_file")
 		}
 		view := AgentView{SchemaVersion: 1, Kind: "kmx.agent-view", File: File{Path: p, Revision: agent.Revision}, Title: agent.Title, Instructions: agent.Instructions, Model: agent.Model, Tools: agent.Tools, Latest: AgentViewLatest{Status: "none"}}
+		physical := target
+		if files.root != nil {
+			physical = filepath.Join(files.root.Name(), filepath.FromSlash(target))
+		}
+		view.ToolSettings, err = localtools.LoadSettings(ctx, physical, agent.Tools)
+		if err != nil {
+			return nil, refusal("invalid_tool_settings")
+		}
 		_, strictErr := agentfile.Parse(target, source)
 		view.Authoring = &AgentViewAuthoring{Source: string(source), Editable: strictErr == nil}
 		view.History = files.historyView(ctx, p)
@@ -93,7 +105,7 @@ func AddAgentResource(server *sdk.Server, files *Files) {
 		if observation.path == target && observation.result != nil && observation.result.File.Revision != "" {
 			view.Latest.Status = "stale"
 			// Runtime model choices do not change the authored source revision.
-			if observation.result.File.Revision == agent.Revision {
+			if observation.result.File.Revision == agent.Revision && slices.Equal(observation.result.ToolSettings, view.ToolSettings) {
 				view.Latest = AgentViewLatest{Status: "current", Result: observation.result}
 			}
 		}

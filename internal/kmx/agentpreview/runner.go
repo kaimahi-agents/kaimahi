@@ -10,6 +10,7 @@ import (
 	"github.com/agent-primitives/sessions/api"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
@@ -34,7 +35,9 @@ type Request struct {
 	// ToolDefinitions is safe journal data, populated from the runner's trusted
 	// resolver. It grants no authority and caller-supplied values are replaced.
 	ToolDefinitions []api.ToolDefinition
-	FileLabel       string
+	// ToolSettings is a frozen host input, never an agent declaration or tool argument.
+	ToolSettings []localtools.ToolSetting
+	FileLabel    string
 }
 
 // Report carries content-free diagnostics; a failed sink stops later execution.

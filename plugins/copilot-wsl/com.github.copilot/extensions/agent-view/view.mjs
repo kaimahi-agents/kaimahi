@@ -29,6 +29,7 @@ const MESSAGES = {
   "action-failed": "The action couldn't be confirmed. Reload the saved file before trying again.",
   "outcome-unknown": "The action outcome could not be confirmed. Do not retry; reload the source first.",
   "no-tests": "No tests yet — add or suggest one",
+  invalid_tool_settings: "The tool settings in kmx.yaml are invalid. Fix them before running this agent.",
 };
 
 export class ViewError extends Error {
@@ -41,7 +42,7 @@ export class ViewError extends Error {
 const invalid = () => {
   throw new ViewError("invalid-resource");
 };
-const safeError = (e) => e instanceof ViewError ? e : new ViewError("unavailable",
+const safeError = (e) => e instanceof ViewError ? e : /\binvalid_tool_settings\b/.test(e?.message) ? new ViewError("invalid_tool_settings") : new ViewError("unavailable",
   e instanceof HostRuntimeUnavailable ? "Host tools are unavailable in this session. Start a new Copilot session." : MESSAGES.unavailable);
 
 // Preserve the requested path. The MCP server resolves it and checks the target;
@@ -83,6 +84,20 @@ function fields(obj, skip = []) {
     .map(([k, v]) => [k, show(v, 1000)]);
 }
 
+// Per-run state of each declared folder tool; only these two values are known.
+const TOOL_NAME = /^[A-Za-z_][A-Za-z0-9_-]{0,63}$/;
+function cleanSettings(value) {
+  if (!Array.isArray(value) || value.length > 32) invalid();
+  const seen = new Set();
+  return value.map((s) => {
+    if (!isObj(s) || Object.keys(s).length !== 2 || typeof s.name !== "string" || !TOOL_NAME.test(s.name)
+      || !["Enabled", "Disabled"].includes(s.state) || seen.has(s.name)) invalid();
+    seen.add(s.name);
+    return { name: s.name, state: s.state };
+  });
+}
+const settingsMatch = (settings, tools) => settings.length === tools.length && settings.every((s, i) => s.name === tools[i]);
+
 function cleanJudge(value, verdict) {
   if (!isObj(value) || !Number.isInteger(value.minScore) || value.minScore < 0 || value.minScore > 100
     || !Array.isArray(value.scores) || value.scores.length !== 2 || !value.scores.every(s => Number.isInteger(s) && s >= 0 && s <= 100)) return;
@@ -121,6 +136,8 @@ function cleanResult(r, status, revision) {
       };
     }),
     ...(isObj(r.adHoc) ? { adHoc: completion(r.adHoc) } : {}),
+    // Absent means an older result that recorded no settings; never invent them.
+    ...(r.toolSettings !== undefined ? { toolSettings: cleanSettings(r.toolSettings) } : {}),
   };
 }
 
@@ -140,7 +157,10 @@ function parseView(json, path) {
   else if (isObj(raw.model)) model = fields(raw.model).map(([k, v]) => `${k}: ${v}`).join("\n");
   else invalid();
   const tools = raw.tools ?? [];
-  if (!Array.isArray(tools) || tools.length > 32 || new Set(tools).size !== tools.length || tools.some(t => typeof t !== "string" || !/^[A-Za-z_][A-Za-z0-9_-]{0,63}$/.test(t))) invalid();
+  if (!Array.isArray(tools) || tools.length > 32 || new Set(tools).size !== tools.length || tools.some(t => typeof t !== "string" || !TOOL_NAME.test(t))) invalid();
+  // An older server has no settings: every declared tool is Enabled by default.
+  const toolSettings = raw.toolSettings === undefined ? tools.map((name) => ({ name, state: "Enabled" })) : cleanSettings(raw.toolSettings);
+  if (!settingsMatch(toolSettings, tools)) invalid();
   const examples = list(raw.examples).map((e) => {
     if (!isObj(e) || typeof e.id !== "string") invalid();
     return {
@@ -156,13 +176,14 @@ function parseView(json, path) {
   if (!isObj(latest) || !["none", "current", "stale"].includes(latest.status)) invalid();
   if ((latest.status === "current") !== (latest.result !== undefined)) invalid();
   const result = latest.status === "current" ? cleanResult(latest.result, latest.status, file.revision) : undefined;
+  if (result?.toolSettings && !settingsMatch(result.toolSettings, tools)) invalid();
   const badge = latest.status !== "current" ? latest.status : result.fullPass && result.state === "complete" && result.selection.scope === "full" && result.verdict === "pass" ? "pass" : "not-passing";
   const authoring = authoringSnapshot(raw.authoring, raw.examples, file.revision);
   return {
     file: { path, revision: file.revision },
     title: clean(raw.title, 200),
     instructions: clean(raw.instructions, 60000, true),
-    model, tools,
+    model, tools, toolSettings,
     examples,
     ...(authoring ? { authoring } : {}),
     latest: { status: latest.status, badge, ...(result ? { result } : {}) },
@@ -327,7 +348,8 @@ export function createActionHandler({ session, path }) {
     if (result?.resultType === "timeout") { uncertain = true; throw new ViewError("outcome-unknown"); }
     if (result?.resultType !== "success") {
       const detail = typeof result === "string" ? result : [result?.textResultForLlm, result?.error].filter((s) => typeof s === "string").join("\n");
-      const code = ["rejected", "denied"].includes(result?.resultType) ? "permission_required" : /stale_revision/.test(detail) ? "stale_revision" : "action-failed";
+      const code = ["rejected", "denied"].includes(result?.resultType) ? "permission_required"
+        : result?.structuredContent?.reasonCode === "invalid_tool_settings" || /\binvalid_tool_settings\b/.test(detail) ? "invalid_tool_settings" : /stale_revision/.test(detail) ? "stale_revision" : "action-failed";
       const error = new ViewError(code);
       // Only the structured payload returned by this execute call can attest a
       // failed invocation. A matching older resource is not execution evidence.

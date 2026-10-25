@@ -385,11 +385,12 @@ type journalExecutor struct {
 	slotMu  sync.Mutex
 	current *turnSlot
 	// lock marks the run as executing until Close.
-	lock        *runLock
-	tools       bool
-	definitions []api.ToolDefinition
-	path        string
-	modelName   string
+	lock         *runLock
+	tools        bool
+	definitions  []api.ToolDefinition
+	toolSettings []localtools.ToolSetting
+	path         string
+	modelName    string
 	// The upstream chat harness pins its model. Separate in-process hosts share
 	// this run's journal while preserving each turn's exact harness/model pair.
 	chatHosts map[string]*host
@@ -415,12 +416,12 @@ func openJournalExecutor(dir, model string) (*journalExecutor, string, error) {
 	return e, runID, nil
 }
 
-func openToolJournalExecutor(dir, model string, tool controller.ToolFunc, definitions ...api.ToolDefinition) (*journalExecutor, string, error) {
+func openToolJournalExecutor(dir, model string, tool controller.ToolFunc, settings []localtools.ToolSetting, definitions ...api.ToolDefinition) (*journalExecutor, string, error) {
 	runID, path, lock, err := newJournal(dir, time.Now())
 	if err != nil {
 		return nil, "", err
 	}
-	e := &journalExecutor{sessions: map[string]bool{}, lock: lock, tools: true, definitions: definitions, path: path, modelName: model, chatHosts: map[string]*host{}}
+	e := &journalExecutor{sessions: map[string]bool{}, lock: lock, tools: true, definitions: definitions, toolSettings: append([]localtools.ToolSetting(nil), settings...), path: path, modelName: model, chatHosts: map[string]*host{}}
 	guarded := func(ctx context.Context, scope controller.ToolCallContext, call api.ToolCall) (api.ToolResult, error) {
 		e.slotMu.Lock()
 		slot := e.current
@@ -431,7 +432,7 @@ func openToolJournalExecutor(dir, model string, tool controller.ToolFunc, defini
 		}
 		return result, err
 	}
-	e.host, err = openPreviewHost(path, localtools.HarnessName, localtools.Harness{Model: model, Definitions: definitions}, e.model, guarded)
+	e.host, err = openPreviewHost(path, localtools.HarnessName, localtools.Harness{Model: model, Definitions: definitions, ToolSettings: e.toolSettings}, e.model, guarded)
 	if err != nil {
 		lock.discardRun()
 		return nil, runID, err
@@ -493,6 +494,7 @@ func (e *journalExecutor) Execute(ctx context.Context, turn Turn) (Execution, er
 	run := h.client.RunPreviewCase
 	if toolTurn {
 		request.ToolDefinitions = e.definitions
+		request.ToolSettings = e.toolSettings
 		run = h.client.RunToolPreviewCase
 	}
 	result, err := run(ctx, request)

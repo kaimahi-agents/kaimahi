@@ -60,10 +60,11 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 			if pathErr != nil {
 				return nil, pathErr
 			}
-			retentionPath := path
+			sourcePath := path
 			if files.root != nil {
-				retentionPath = filepath.Join(files.root.Name(), filepath.FromSlash(path))
+				sourcePath = filepath.Join(files.root.Name(), filepath.FromSlash(path))
 			}
+			retentionPath := sourcePath
 			if name != "test" {
 				retentionPath = ""
 			}
@@ -82,7 +83,7 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 					executionRoute = &modelaccess.Route{Provider: "copilot", Model: model, Endpoint: modelaccess.CopilotEndpoint, Auth: "copilot"}
 				}
 			}
-			options := app.FilePreviewOptions{File: input.Path, FullPath: files.root == nil, Operation: name, CaseID: input.CaseID, Input: input.Input, ShowContent: input.ShowContent, ShowFailedContent: input.ShowFailedContent, Model: input.Model, Route: executionRoute, CaseFinished: caseProgressNotifier(ctx, name, req)}
+			options := app.FilePreviewOptions{File: input.Path, SourceFile: sourcePath, FullPath: files.root == nil, Operation: name, CaseID: input.CaseID, Input: input.Input, ShowContent: input.ShowContent, ShowFailedContent: input.ShowFailedContent, Model: input.Model, Route: executionRoute, CaseFinished: caseProgressNotifier(ctx, name, req)}
 			if retentionPath != "" && parsed != nil {
 				options = app.WithFilePreviewRetention(options, retentionPath, parsed.Revision)
 			}

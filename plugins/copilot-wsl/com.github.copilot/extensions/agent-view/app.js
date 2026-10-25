@@ -18,6 +18,15 @@ async function fetchView() {
   const res = await fetch("view.json", { cache: "no-store", credentials: "omit" });
   return res.json();
 }
+// Folder tool settings change a result's meaning without changing the file revision.
+const defaultSettings = (view) => (view.tools ?? []).map((name) => ({ name, state: "Enabled" }));
+// A result without recorded settings predates them, when every tool ran Enabled.
+const ranWith = (view, result) => same(result?.toolSettings ?? defaultSettings(view), view.toolSettings ?? defaultSettings(view));
+// Retained results are current only if they ran with today's settings.
+const settingsGuard = (history) => Object.create(history, { selected: { value(view, model) {
+  const retained = history.selected(view, model);
+  return retained && ranWith(view, retained.latest.result) ? retained : undefined;
+} } });
 const NO_HANDLE = { observe: () => false, idle: () => false, dispose() {} };
 
 export function renderView(doc, root, payload, execute = postAction, options = {}) {
@@ -30,7 +39,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     base: payload, snap: readSnapshot(payload), candidate: undefined, compareOpen: false,
     sectionDrafts: new Map(), testDrafts: new Map(), invalidEditors: new Set(),
     route: { name: "main" }, busy: false, pending: undefined, blocked: false, savedUntested: false, message: "", runAlert: undefined, lastRun: undefined,
-    newCount: 0, history: resultHistory(payload), editingChecks: new Set(),
+    newCount: 0, history: settingsGuard(resultHistory(payload)), editingChecks: new Set(),
     focusTestName: false, nameHintKey: undefined, promptUndo: undefined, undoTimer: undefined, hostedSent: false,
     displayNames: new Map(),
     // Revisions alone cannot fence reruns of unchanged source.
@@ -268,6 +277,12 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       head.append(actions);
     }
     section.append(head);
+    // Read-only: settings come from the agent folder's kmx.yaml and are not edited here.
+    if (state.base.toolSettings?.length) {
+      const settings = el(doc, "ul", "tool-settings");
+      for (const { name, state: value } of state.base.toolSettings) settings.append(el(doc, "li", "meta tool-setting", `${name} · ${value}`));
+      section.append(settings);
+    }
     if (state.runAlert && (!state.runAlert.one || state.runAlert.refused)) section.append(runAlertNode(button, "all"));
     else if (!state.runAlert && refusedAlert()) section.append(runAlertNode(button, "all", refusedAlert()));
     const empty = el(doc, "div", "empty-tests");
@@ -325,7 +340,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
             const attempt = history.attempt(route.slice(route.indexOf("/") + 1)), latestView = !attempt?.run && attempt?.view || view;
             const c = inspectCases(latestView).find(c => c.example.id === id);
             const definition = latestView.authoring?.examples.find(c => c.id === id), current = state.base.authoring?.examples.find(c => c.id === id);
-            const old = !selected || testing() || hasDrafts() || view.file.revision !== state.base.file.revision;
+            const old = !selected || testing() || hasDrafts() || view.file.revision !== state.base.file.revision || !ranWith(state.base, view.latest.result);
             const prior = definition && same(definition, current) ? testRow(c, old, false) : { kind: "none", label: "Not run yet" };
             const foreign = selected && e.c?.previous && e.c.previousModel !== route && !currentRun();
             const own = selected && (currentRun() || state.base.latest.result?.modelRoute === route);
@@ -367,7 +382,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       const partnerSummary = !partner ? "" : partnerRun ? `Stopped · ${partnerRun.cases.length} of ${partnerRun.caseIds.length} ran` : isRefused(partnerResult) ? "Refused" : partnerResult.state !== "complete" ? "Didn't finish"
         : partnerResult.selection.scope === "subset" ? `${partnerResult.selection.caseIds.length} of ${partner.examples.length} tests ran`
         : inspectCases(partnerView).some(c => c.state === "unknown") ? "Incomplete run" : `${inspectCases(partnerView).filter(c => c.state === "pass").length} of ${partner.examples.length} passing`;
-      const partnerText = partner ? ` · ${modelLabel(partner.latest.result.modelRoute)} ${(partnerRun?.revision ?? partnerView.file.revision) === state.base.file.revision && !anyDraft ? "earlier" : "before your edit"}, ${partnerSummary}` : "";
+      const partnerText = partner ? ` · ${modelLabel(partner.latest.result.modelRoute)} ${(partnerRun?.revision ?? partnerView.file.revision) === state.base.file.revision && !anyDraft && ranWith(state.base, partnerResult) ? "earlier" : "before your edit"}, ${partnerSummary}` : "";
       const runText = run ? run.state === "stopping" ? "Stopping Copilot turn…" : run.state === "stopped" ? `Stopped · ${run.cases.length} of ${run.caseIds.length} ran` : "Running" : "";
       const accessible = state.blocked ? "Result unconfirmed" : run && (testing() || !anyDraft && run.revision === state.base.file.revision) ? runText + partnerText : !shown.length ? "" : testing() ? "Running…"
         : stale && state.base.latest.status !== "current" ? `Out of date${previous ? ` · last run on ${previous}` : ""}` : state.base.latest.status !== "current" || !text ? "Not run yet"

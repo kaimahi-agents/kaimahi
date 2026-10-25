@@ -47,6 +47,7 @@ type PreviewCaseRequest struct {
 	// RunSuiteCase.
 	UsedSessionUIDs map[string]bool
 	ToolDefinitions []api.ToolDefinition
+	ToolSettings    []localtools.ToolSetting
 }
 
 // RunPreviewCase executes one fresh Session with the same strict five-record

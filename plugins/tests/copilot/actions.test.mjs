@@ -564,3 +564,17 @@ test('zero tests: save, combined save, ad-hoc Run and a known no-tests Test refu
  assert.deepEqual([r.error,r.message,r.saved],['no-tests','No tests yet — add or suggest one',true]);
  assert.deepEqual(h.calls.map(c=>c.name),['owned-edit','owned-test']);assert.equal(r.view.file.revision,revision(h.source()));assert.equal(r.view.latest.result.reasonCode,'no_tests');
 });
+test('invalid folder tool settings refuse Test with one fixed reason and never lock later actions',async()=>{
+ const h=harness();h.o.failTest=true;
+ h.o.shape=r=>({...r,state:'refused',verdict:'unknown',fullPass:false,modelRoute:{},reasonCode:'invalid_tool_settings',reason:'tools: [unclosed\nsecret: yaml'});
+ const r=await h.act({operation:'test',expectedRevision:revision(original)});
+ assert.equal(r.error,'invalid_tool_settings');assert.match(r.message,/tool settings.*kmx\.yaml/i);
+ assert.equal(r.view,undefined);assert.doesNotMatch(JSON.stringify(r),/unclosed|secret|private detail/);
+ h.o.failTest=false;h.o.shape=undefined;
+ assert.equal((await h.act({operation:'test',expectedRevision:revision(original)})).error,undefined,'a refused configuration is not outcome uncertainty');
+});
+test('a refused tool-settings read is explained plainly without transport text',async()=>{
+ const h=harness();h.session.rpc.mcp.resources.read=async()=>{throw Error('invalid_tool_settings: kmx.yaml line 3 secret')};
+ await assert.rejects(readView(h.session,'greeter.agent.md'),e=>e.code==='invalid_tool_settings'&&/tool settings.*kmx\.yaml/i.test(e.message)&&!/secret|line 3/.test(e.message));
+ const r=await h.act({operation:'reload'});assert.equal(r.error,'invalid_tool_settings');assert.doesNotMatch(JSON.stringify(r),/secret|line 3/);
+});

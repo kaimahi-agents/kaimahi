@@ -127,12 +127,20 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 		if bindErr != nil || toolHost == nil || !toolHost.Matches(agent.Tools) {
 			return abort(agentpreview.ErrToolsUnavailable)
 		}
+		request.ToolSettings, bindErr = localtools.CopySettings(request.ToolSettings, toolHost.Definitions())
+		if bindErr != nil {
+			return abort(agentpreview.ErrToolsUnavailable)
+		}
+		toolHost, bindErr = toolHost.WithSettings(request.ToolSettings)
+		if bindErr != nil {
+			return abort(agentpreview.ErrToolsUnavailable)
+		}
 		if checkToolContent(toolHost, request) != nil {
 			return agentpreview.Outcome{State: agentpreview.Failed}, agentpreview.ErrUnsafeToolContent
 		}
 		request.ToolDefinitions = toolHost.Definitions()
 		agent.Tools = nil
-	} else if request.ToolBindings != "" {
+	} else if request.ToolBindings != "" || len(request.ToolSettings) > 0 {
 		return abort(agentpreview.ErrToolsUnavailable)
 	}
 	var providerRoutes []modelaccess.Route
@@ -253,6 +261,11 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 	if err := validate(ctx); err != nil {
 		return abort(err)
 	}
+	if toolHost != nil {
+		if checkErr := localtools.CheckJSON(localtools.Config{Instructions: agent.Instructions, Definitions: request.ToolDefinitions, ToolSettings: request.ToolSettings}, checkContent); checkErr != nil {
+			return agentpreview.Outcome{State: agentpreview.Failed}, checkErr
+		}
+	}
 	if r.options.JournalDir == nil {
 		return abort(agentpreview.ErrJournalFailed)
 	}
@@ -282,7 +295,7 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 			}
 			return result, nil
 		}
-		executor, journal, openErr = openToolJournalExecutor(dir, p.route.model, executeTool, request.ToolDefinitions...)
+		executor, journal, openErr = openToolJournalExecutor(dir, p.route.model, executeTool, request.ToolSettings, request.ToolDefinitions...)
 	} else {
 		executor, journal, openErr = r.open(dir, p.route.model)
 	}

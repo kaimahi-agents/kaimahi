@@ -31,7 +31,8 @@ async function connect(command, args, options) {
 }
 
 const binary = process.env.KMX_HOST_BRIDGE_TEST_BINARY;
-for (const mode of ['round trip', 'denial', 'cancelled', 'expired', 'batch', 'batch denial', 'batch limit']) test(`Go MCP plus Node runtime fixture: native tool ${mode}`, { skip: !binary, timeout: 60000 }, async t => {
+for (const mode of ['round trip', 'denial', 'cancelled', 'expired', 'batch', 'batch denial', 'batch limit', 'disabled', 'batch disabled', 'batch mixed']) test(`Go MCP plus Node runtime fixture: native tool ${mode}`, { skip: !binary, timeout: 60000 }, async t => {
+  const disabled = mode === 'disabled' || mode === 'batch disabled', mixed = mode === 'batch mixed';
   const batch = mode.startsWith('batch'), denied = mode.includes('denial'), overLimit = mode === 'batch limit', stopping = mode === 'cancelled' || mode === 'expired';
   let modelServer, modelError, sends = 0;
   if (batch) {
@@ -48,7 +49,7 @@ for (const mode of ['round trip', 'denial', 'cancelled', 'expired', 'batch', 'ba
         }
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify({ model: 'unit', choices: [{ finish_reason: sends === 1 ? 'tool_calls' : 'stop', message: sends === 1
-          ? { role: 'assistant', tool_calls: Array.from({ length: count }, (_, i) => ({ id: `call_${i}`, type: 'function', function: { name: 'ping', arguments: '{}' } })) }
+          ? { role: 'assistant', tool_calls: Array.from({ length: count }, (_, i) => ({ id: `call_${i}`, type: 'function', function: { name: mixed && i % 2 ? 'pong' : 'ping', arguments: '{}' } })) }
           : { role: 'assistant', content: 'done' } }] }));
       } catch (error) { modelError = error; res.writeHead(500); res.end(); }
     });
@@ -60,7 +61,10 @@ for (const mode of ['round trip', 'denial', 'cancelled', 'expired', 'batch', 'ba
   const state = path.join(root, 'state'); await mkdir(state, { mode: 0o700 });
   const env = { ...process.env, KMX_HOME: state };
   const source = '# Host fixture\n\n## Identity\n- **ID:** fixture\n- **Purpose:** One host read.\n\n## Accountable Responsibilities\nCall the tool `ping`. Reply with exactly `done`.\n\n## Non-Responsibilities\nNo other calls.\n\n## Collaboration and Review Authority\nReturn the answer.\n\n## Model\n- **Preferred:** fake\n\n## Tools\n- ping\n\n## Examples\n```yaml\nexamples:\n  - id: read\n    input: read\n    assertions:\n      - id: complete\n        type: contains\n        value: done\n```\n';
-  await writeFile(path.join(root, 'fixture.agent.md'), batch ? source.replace('Preferred:** fake', 'Preferred:** unit') : source, { mode: 0o600 });
+  let configured = batch ? source.replace('Preferred:** fake', 'Preferred:** unit') : source;
+  if (mixed) configured = configured.replace('- ping\n', '- ping\n- pong\n');
+  await writeFile(path.join(root, 'fixture.agent.md'), configured, { mode: 0o600 });
+  if (disabled || mixed) await writeFile(path.join(root, 'kmx.yaml'), 'tools:\n  ping: Disabled\n' + (mixed ? '  pong: Enabled\n' : ''), { mode: 0o600 });
   const original = await connect(binary, ['mcp', '--root', root, ...(batch ? ['--provider', 'compatible', '--endpoint', `http://127.0.0.1:${modelServer.address().port}`] : [])], { env });
   const servers = new Map([['kmx-agent-builder', original]]), calls = [], previews = [];
   const session = { rpc: { mcp: {
@@ -72,10 +76,10 @@ for (const mode of ['round trip', 'denial', 'cancelled', 'expired', 'batch', 'ba
     initializeAndValidate: async () => {},
     getCurrentMetadata: async () => { if (stopping && ++reads === 2) { enter(); await gate; } return { tools: [
       ...[...servers].flatMap(([serverName]) => ['create', 'edit', 'run', 'test'].map(name => ({ name: `${serverName}:${name}`, mcpServerName: serverName, mcpToolName: name, description: name, input_schema: { type: 'object' } }))),
-      { name: 'actual-host-ping', mcpServerName: 'actual-host', mcpToolName: 'ping', description: 'Actual host fixture ping', input_schema: { type: 'object', additionalProperties: false } },
+      ...['ping', 'pong'].map(name => ({ name: `actual-host-${name}`, mcpServerName: 'actual-host', mcpToolName: name, description: `Actual host fixture ${name}`, input_schema: { type: 'object', additionalProperties: false } })),
     ] }; },
     execute: async input => {
-      if (input.name === 'actual-host-ping') { calls.push(input); observe({ phase: 'executed' }); return denied && (!batch || calls.length === 3) ? { resultType: 'denied', error: 'private-canary' } : { resultType: 'success', structuredContent: { pong: true } }; }
+      if (['actual-host-ping', 'actual-host-pong'].includes(input.name)) { calls.push(input); observe({ phase: 'executed' }); return denied && (!batch || calls.length === 3) ? { resultType: 'denied', error: 'private-canary' } : { resultType: 'success', structuredContent: { pong: true } }; }
       const [serverName, name] = input.name.split(':');
       const result = await servers.get(serverName).request('tools/call', { name, arguments: input.arguments }); previews.push({ serverName, result });
       return { resultType: result.isError ? 'failure' : 'success', structuredContent: result.structuredContent };
@@ -105,16 +109,18 @@ for (const mode of ['round trip', 'denial', 'cancelled', 'expired', 'batch', 'ba
     assert.equal(calls.length, 0, 'metadata returning later must not initiate an effect');
     return;
   }
-  const before = await readView(session, 'fixture.agent.md'); assert.deepEqual(before.tools, ['ping']);
+  const before = await readView(session, 'fixture.agent.md'); assert.deepEqual(before.tools, mixed ? ['ping', 'pong'] : ['ping']);
   const result = await createActionHandler({ session, path: 'fixture.agent.md' })({ operation: 'test', expectedRevision: before.file.revision });
   assert.ifError(modelError);
-  assert.equal(calls.length, overLimit ? 0 : batch ? denied ? 3 : 5 : 1);
-  for (const call of calls) assert.equal(call.name, 'actual-host-ping');
+  const liveCalls = disabled || overLimit ? 0 : mixed ? 2 : batch ? denied ? 3 : 5 : 1;
+  assert.equal(calls.length, liveCalls);
+  for (const call of calls) assert.equal(call.name, mixed ? 'actual-host-pong' : 'actual-host-ping');
   if (batch) assert.equal(sends, denied || overLimit ? 1 : 2);
   assert.notEqual(previews[0].serverName, 'kmx-agent-builder');
   const payload = previews[0].result.structuredContent;
   assert.equal(payload.fullPass, !denied && !overLimit, JSON.stringify(payload));
   assert.equal(result.error, denied || overLimit ? 'action-failed' : undefined);
   assert.ok(!JSON.stringify(result).includes('private-canary'));
-  if (!denied && !overLimit) { assert.equal(payload.examples[0].toolCalls, batch ? 5 : 1); assert.equal(result.view.latest.result.fullPass, true); }
+  if (!denied && !overLimit) { assert.equal(payload.examples[0].toolCalls ?? 0, liveCalls);
+    assert.deepEqual(payload.toolSettings, [{ name: 'ping', state: disabled || mixed ? 'Disabled' : 'Enabled' }, ...(mixed ? [{ name: 'pong', state: 'Enabled' }] : [])]); assert.equal(result.view.latest.result.fullPass, true); }
 });

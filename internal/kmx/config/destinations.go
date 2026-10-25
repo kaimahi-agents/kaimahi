@@ -7,6 +7,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 	"go.yaml.in/yaml/v3"
 	"oras.land/oras-go/v2/registry"
@@ -20,6 +21,8 @@ type Destinations struct {
 	PublishRepository string                    `yaml:"publishRepository"`
 	Targets           map[string]Destination    `yaml:"targets"`
 	Registries        map[string]RegistryPolicy `yaml:"registries"`
+	// Tools coexists with folder test settings; destination selection ignores it.
+	Tools map[string]string `yaml:"tools"`
 }
 type Destination struct {
 	Context          string `yaml:"context" json:"context"`
@@ -59,6 +62,13 @@ func validDestinationNode(n *yaml.Node, depth int, key string) bool {
 				return false
 			}
 			seen[k.Value] = true
+			if depth == 1 && key == "tools" {
+				v := n.Content[i+1]
+				if !localtools.ValidToolName(k.Value) || v.Kind != yaml.ScalarNode || v.Tag != "!!str" || localtools.ToolState(v.Value) != localtools.Enabled && localtools.ToolState(v.Value) != localtools.Disabled {
+					return false
+				}
+				continue
+			}
 			if !validDestinationNode(n.Content[i+1], depth+1, k.Value) {
 				return false
 			}
