@@ -165,7 +165,11 @@ func TestCopilotBatchJournalAndReplay(t *testing.T) {
 					t.Fatalf("journal missing: %v", err)
 				}
 				journal, _ := localpreview.JournalPath(dir, runs[0])
-				u := url.URL{Scheme: "file", Path: filepath.ToSlash(journal)}
+				slashed := filepath.ToSlash(journal)
+				if !strings.HasPrefix(slashed, "/") {
+					slashed = "/" + slashed
+				}
+				u := url.URL{Scheme: "file", Path: slashed}
 				store, err := sqlitelog.Open(u.String() + "?mode=rw")
 				if err != nil {
 					t.Fatal(err)
