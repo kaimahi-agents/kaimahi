@@ -104,6 +104,10 @@ instructions, inputs and answers in cleartext; read the
 before using private material. Never put secrets in an agent file or test.
 
 Read the verdicts and open a test to inspect its answer and check explanations.
+The canvas shows when Copilot approval is waiting in chat. The host-tool relay
+allows 30 seconds per call, including approval waiting. A deadline does not dismiss
+the approval: granting it later may still execute the tool. The result is unconfirmed;
+reload before continuing to inspect the saved file.
 Test verdicts appear as each case finishes. They remain provisional until the
 full Test reply confirms the run. A running indicator does not mean a test has passed.
 
