@@ -480,9 +480,12 @@ resends. Read context bounds SDK-detached cleanup. Exact credential echoes
 refuse in protocol data; known-shape checks also cover every model/journal-bound
 projection. Discard remote metadata/descriptions and SDK logs. Test bridges stay
 in _test.go; scripted-model hosted smoke is not real-LLM qualification.
-Trusted embedding can still supply a frozen binding/host executor. Declared tools with either a Copilot agent or judge refuse
-before credentials or journaling; tool-free Copilot uses journaled Sessions.
-Copilot tool execution remains unsupported. No silent tool dropping.
+Trusted embedding may supply a frozen tool host through RunnerOptions.ResolveTools;
+schemas, descriptions and executors come from the trusted host, never the file.
+Bound tools support fake/local and Copilot Chat/Responses; unbound tools refuse
+before provider access. Copilot rechecks catalog tool support before inference.
+Judging remains tool-free. Responses continuation stays private to the selected
+transport, never the journal. No silent tool dropping.
 
 Canonical `run FILE` / `test FILE` use the parser and `agentpreview.Runner`
 interface without cluster/workspace configuration. CLI/MCP fake/local and explicit
@@ -593,8 +596,8 @@ team runtime or native Squad canvas actions. See [native authoring](docs/agent-f
 `internal/kmx/agentfile` keeps `Parse`/`Load` canonical as described in
 [agent-file.md](docs/agent-file.md), offline, with optional `## Tools` directly before required final Examples. Both are
 excluded from instructions; absent Tools preserves instruction bytes and all
-revisions bind exact original source. Only `- github_list_merged_prs` is accepted;
-parsing a name grants no execution or endpoint/credential authority. Separate explicit `ParseSquad` accepts
+revisions bind exact original source. Tools declares at most 32 unique bounded
+names; parsing grants no schema, execution or endpoint/credential authority. Separate explicit `ParseSquad` accepts
 qualified Squad 1.1.0 native starters/enrichment with an approved cast mapping,
 original bytes and source spans. It returns a distinct `SquadCharter`, not a
 runnable `Agent`; ordinary file CLI/v1 MCP remain canonical-only. Explicit native
@@ -662,11 +665,13 @@ workspace v1 bytes/partition keys remain unchanged. This store is separate from
 Sessions journal replay and grants no evidence, Publish or Deploy authority.
 The additive `kmx-local-tools-v1` host-bound harness has a separate bounded
 converter and complete-invocation replay proof, never a relaxed suite/chat check.
-Its optional single no-args read is host-enforced; at most two agent model calls,
+Its optional single call is host-enforced against trusted definitions and schemas;
+arguments are bounded to 8 KiB and results to 32 KiB; at most two agent model calls,
 with unchanged separate tool-free judging inside the case deadline. Safe call
 counts do not make tool assertions or native proof; actual-call qualification
-must independently show a correlated read. Bindings and credentials never enter
-harness config. Host content checks cover decoded model IDs/text before journal
+must independently show a correlated call. Safe tool definitions enter harness
+config for exact replay; bindings and credentials never do. Old fixed-read v1
+journals retain their original request/hash contract. Host content checks cover decoded model IDs/text before journal
 append as well as authored inputs and bounded projected results. Incomplete
 traces cannot pass. Inspection replays with zero model/executor/judge calls,
 without bindings or credentials, and has no verdicts. Preview

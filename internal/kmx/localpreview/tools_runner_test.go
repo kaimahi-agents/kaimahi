@@ -91,7 +91,7 @@ func TestToolRunnerOptionalCallCountsAndReplay(t *testing.T) {
 	}
 }
 
-func TestToolRunnerPreflightAndCopilotHaveNoEffects(t *testing.T) {
+func TestToolRunnerPreflightAndUnboundCopilotHaveNoEffects(t *testing.T) {
 	for _, field := range []string{"input", "instruction", "native task", "example ID", "assertion ID", "file label", "judge model", "copilot agent", "copilot judge", "missing factory"} {
 		t.Run(field, func(t *testing.T) {
 			req := runnerRequest(t)
@@ -113,8 +113,10 @@ func TestToolRunnerPreflightAndCopilotHaveNoEffects(t *testing.T) {
 			case "judge model":
 				req.JudgeRoute = &modelaccess.Route{Provider: "compatible", Model: "tool-secret-canary", Endpoint: "http://127.0.0.1:1", Auth: "none"}
 			case "copilot agent":
+				req.ToolBindings = ""
 				req.Route = modelaccess.Route{Provider: "copilot", Model: "fake", Endpoint: modelaccess.CopilotEndpoint, Auth: "copilot"}
 			case "copilot judge":
+				req.ToolBindings = ""
 				req.JudgeRoute = &modelaccess.Route{Provider: "copilot", Model: "judge", Endpoint: modelaccess.CopilotEndpoint, Auth: "copilot"}
 			}
 			factory := func(_ context.Context, b localtools.Binding) (*localtools.Host, error) {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"regexp"
 	"unicode/utf8"
 
@@ -19,27 +20,58 @@ var callID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 // Harness is the versioned, secret-free one-read preview contract. Bindings and
 // credentials belong exclusively to the host's executor, never this config.
-type Harness struct{ Model string }
+type Harness struct {
+	Model       string
+	Definitions []api.ToolDefinition
+}
+
+type Config struct {
+	Instructions string               `json:"instructions"`
+	Definitions  []api.ToolDefinition `json:"definitions,omitempty"`
+}
 
 func (h Harness) Describe(context.Context) (api.Descriptor, error) {
-	return api.Descriptor{ID: HarnessName, Version: "1", Models: []string{h.Model}, Tools: []api.ToolSpec{{Name: Operation, Mediation: api.MediationControllerMediated}}, Capabilities: api.Capabilities{Resumability: api.ResumabilityStatelessReplay}}, nil
+	defs := h.Definitions
+	if defs == nil {
+		defs = []api.ToolDefinition{Definition()}
+	}
+	tools := make([]api.ToolSpec, 0, len(defs))
+	for _, d := range defs {
+		tools = append(tools, api.ToolSpec{Name: d.Name, Mediation: api.MediationControllerMediated})
+	}
+	return api.Descriptor{ID: HarnessName, Version: "1", Models: []string{h.Model}, Tools: tools, Capabilities: api.Capabilities{Resumability: api.ResumabilityStatelessReplay}}, nil
 }
 
 func (h Harness) Run(ctx context.Context, s *api.Start, sink api.EventSink) error {
 	if s == nil || s.ExecutionID == "" || len(s.History) != 0 || len(s.Inputs) != 1 || !textMessage(&s.Inputs[0], "user") || !runtime.JSONKeysUnique(s.Config) {
 		return errTrace
 	}
-	var config struct {
-		Instructions string `json:"instructions"`
-	}
+	var config Config
 	d := json.NewDecoder(bytes.NewReader(s.Config))
 	d.DisallowUnknownFields()
 	if d.Decode(&config) != nil || config.Instructions == "" {
 		return errTrace
 	}
+	defs := []api.ToolDefinition{Definition()}
+	if config.Definitions != nil {
+		var err error
+		defs, err = CopyDefinitions(config.Definitions)
+		if err != nil {
+			return errTrace
+		}
+	}
+	if h.Definitions != nil {
+		trusted, err := CopyDefinitions(h.Definitions)
+		if err != nil || !reflect.DeepEqual(trusted, defs) {
+			return errTrace
+		}
+	}
 	messages := []api.Message{*api.TextMessage("system", config.Instructions), s.Inputs[0]}
 	for round := 0; round < 2; round++ {
-		response, err := sink.Model(ctx, api.ModelRequest{Model: h.Model, Messages: messages, Tools: []api.ToolDefinition{Definition()}})
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		response, err := sink.Model(ctx, api.ModelRequest{Model: h.Model, Messages: messages, Tools: defs})
 		if err != nil {
 			return err
 		}
@@ -52,7 +84,7 @@ func (h Harness) Run(ctx context.Context, s *api.Start, sink api.EventSink) erro
 		}
 		p := m.Parts[0]
 		c := p.ToolCall
-		if c == nil || p.Text != nil || p.Data != nil || p.File != nil || p.Reasoning != nil || p.ToolResult != nil || !callID.MatchString(c.ID) || c.Tool != Operation || len(c.Args) != 0 || c.Mediation != "" || c.IdempotencyKey != "" {
+		if c == nil || p.Text != nil || p.Data != nil || p.File != nil || p.Reasoning != nil || p.ToolResult != nil || !callID.MatchString(c.ID) || ValidateArguments(defs, c.Tool, c.Args) != nil || c.Mediation != "" || c.IdempotencyKey != "" {
 			return errTrace
 		}
 		// Copy: the model response is journaled and must not be mutated. On redrive,
@@ -60,6 +92,9 @@ func (h Harness) Run(ctx context.Context, s *api.Start, sink api.EventSink) erro
 		call := *c
 		call.Mediation = api.MediationControllerMediated
 		call.IdempotencyKey = s.ExecutionID + ":" + c.ID
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		result, err := sink.ToolCall(ctx, call)
 		if err != nil {
 			return err
@@ -88,6 +123,7 @@ func textMessage(m *api.Message, role string) bool {
 type Trace struct {
 	Answer    string
 	ToolCalls int
+	ToolName  string
 }
 
 // VerifyTrace accepts only one complete bounded invocation, then reconstructs
@@ -98,6 +134,10 @@ func VerifyTrace(ctx context.Context, records []eventlog.Record, model string) (
 	if len(records) == 9 {
 		kinds = []api.EventKind{api.EventExecutionStart, api.EventInput, api.EventModelCall, api.EventOutput, api.EventToolCall, api.EventToolResult, api.EventModelCall, api.EventOutput, api.EventEnd}
 		out.ToolCalls = 1
+		if records[4].Event.ToolCall == nil {
+			return Trace{}, errTrace
+		}
+		out.ToolName = records[4].Event.ToolCall.Tool
 	}
 	if len(records) != len(kinds) {
 		return Trace{}, errTrace

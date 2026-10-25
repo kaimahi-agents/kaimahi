@@ -142,6 +142,7 @@ var previewCopilotFailures = []struct {
 	{copilot.ErrPolicy, "copilot_policy_denied"},
 	{copilot.ErrQuota, "copilot_quota"},
 	{copilot.ErrModelUnavailable, "copilot_model_unavailable"},
+	{copilot.ErrToolsUnsupported, "copilot_tools_unsupported"},
 	{copilot.ErrMalformed, "copilot_malformed"},
 	{copilot.ErrKeychain, "copilot_keychain_unavailable"},
 	{copilot.ErrUnavailable, "copilot_unavailable"},
@@ -171,7 +172,7 @@ func previewReason(code string) string {
 		"no_tests":          "No tests yet — add or suggest one",
 		"invalid_selection": "Unknown example ID; select an authored example ID.", "invalid_options": "Invalid file preview options.",
 		"model_unavailable":   "Selected model route is unavailable or does not match the file model; select an exact trusted route.",
-		"tools_unavailable":   "Host-bound local tools are unavailable; Copilot tool execution is unsupported.",
+		"tools_unavailable":   "Host-bound tools are unavailable for the declared names.",
 		"unsafe_tool_content": "Unsafe tool preview content was withheld; nothing was journaled.",
 		"credential_content":  "Credential-bearing preview content was withheld.",
 		"runner_unavailable":  "Embedded preview runner is not available; no inference was performed.",
@@ -295,9 +296,6 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	}
 	if opt.JudgeRoute != nil {
 		r.JudgeRoute = &FilePreviewRoute{judge.Provider, judge.Model}
-	}
-	if len(parsed.Tools) > 0 && (route.Provider == "copilot" || judge.Provider == "copilot") {
-		return fail("tools_unavailable", 1)
 	}
 	if len(parsed.Tools) == 0 && opt.ToolBindings != "" {
 		return fail("invalid_options", 1)

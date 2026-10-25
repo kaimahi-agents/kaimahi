@@ -92,8 +92,11 @@ func (fakeTransport) RoundTrip(request *http.Request) (*http.Response, error) {
 	var chat struct {
 		Model    string        `json:"model"`
 		Messages []chatMessage `json:"messages"`
+		Tools    []struct {
+			Function toolWireFunction `json:"function"`
+		} `json:"tools"`
 	}
-	if json.Unmarshal(raw, &chat) != nil || len(chat.Messages) != 2 || chat.Messages[0].Role != "system" || chat.Messages[1].Role != "user" {
+	if json.Unmarshal(raw, &chat) != nil || (len(chat.Messages) != 2 && len(chat.Messages) != 4) || chat.Messages[0].Role != "system" || chat.Messages[1].Role != "user" {
 		return respond(http.StatusBadRequest, map[string]any{"error": map[string]string{"message": "fake: expected one system and one user message"}})
 	}
 	message := map[string]any{"role": "assistant"}
@@ -113,10 +116,27 @@ func (fakeTransport) RoundTrip(request *http.Request) (*http.Response, error) {
 		if chat.Model != FakeModel {
 			return respond(http.StatusNotFound, map[string]any{"error": map[string]string{"message": "fake: unknown model"}})
 		}
-		answer, toolCall := FakeAnswer(chat.Messages[0].Content, chat.Messages[1].Content)
+		instructions := chat.Messages[0].Content
+		answer, toolCall := FakeAnswer(instructions, chat.Messages[1].Content)
+		name := ""
+		if toolCall {
+			name = fakeTool.FindStringSubmatch(instructions)[1]
+		}
+		offered := len(chat.Tools) == 0 // legacy tool-free directive still exercises refusal
+		for _, d := range chat.Tools {
+			if d.Function.Name == name {
+				offered = true
+			}
+		}
+		if len(chat.Messages) == 4 || toolCall && !offered {
+			toolCall = false
+			answer = "fake model: tool completed"
+			if reply := fakeReply.FindStringIndex(instructions); reply != nil {
+				answer, _ = FakeAnswer(instructions[reply[0]:], chat.Messages[1].Content)
+			}
+		}
 		message["content"] = answer
 		if toolCall {
-			name := fakeTool.FindStringSubmatch(chat.Messages[0].Content)[1]
 			message["content"] = nil
 			message["tool_calls"] = []any{map[string]any{"id": "fake-call", "type": "function", "function": map[string]string{"name": name, "arguments": "{}"}}}
 			finish = "tool_calls"

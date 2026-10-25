@@ -47,7 +47,9 @@ examples:
 - Include exactly one of each H2 shown above except Model, which may be omitted,
   with those exact unindented spellings. Examples must be last; the other sections can be reordered.
   An optional `## Tools` section may appear directly before Examples, containing
-  exactly `- github_list_merged_prs` and otherwise only blank lines. No endpoints,
+  1–32 unique names as `- tool_name` bullets and otherwise only blank lines.
+  Names are 1–64 ASCII letters, digits, `_`, `.`, `-`, starting with a letter or `_`.
+  The host supplies each tool's schema and description. No endpoints,
   schemas, credentials or other names are accepted. Unknown or duplicate H2 sections
   refuse, including Hooks. No
   frontmatter, legacy aliases, inferred fields or arbitrary charter importer.
@@ -94,8 +96,10 @@ model. Prose cannot grant tools or hooks. Tool names declare a requirement,
 not authority: execution needs an explicit host binding and a qualified provider.
 The CLI supports one [host-bound read-only GitHub MCP operation](local-preview.md#host-tool-foundation)
 with an explicit local binding and environment credential reference. Missing
-bindings/credentials, unsupported routes or invalid provider results refuse;
-Copilot tools remain unsupported. Parsing is not a sandbox or
+bindings/credentials, unsupported routes or invalid provider results refuse.
+Bound tools also work on Copilot Chat Completions and Responses routes; judges
+remain tool-free. Trusted embedding can bind multiple declared names to copied
+host schemas/executors. General server binding from the canvas is not wired yet. Parsing is not a sandbox or
 a guarantee that arbitrary prose is safe or secret-free. The complete charter,
 including raw YAML comments, is checked with the existing credential-shape scanner
 and refuses known shapes with a fixed redacted error. Decoded example inputs and

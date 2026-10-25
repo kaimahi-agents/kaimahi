@@ -17,6 +17,7 @@ var (
 	ErrPolicy            = errors.New("copilot_policy_denied: access refused by policy")
 	ErrQuota             = errors.New("copilot_quota: quota or rate limit reached")
 	ErrModelUnavailable  = errors.New("copilot_model_unavailable: select an available Copilot model explicitly")
+	ErrToolsUnsupported  = errors.New("copilot_tools_unsupported: selected model does not support tool calls")
 	ErrMalformed         = errors.New("copilot_malformed: malformed or oversized data")
 	ErrKeychain          = errors.New("copilot_keychain_unavailable: use an existing gh login or COPILOT_GITHUB_TOKEN at runtime; no token file fallback")
 	ErrUnavailable       = errors.New("copilot_unavailable: request could not be completed")

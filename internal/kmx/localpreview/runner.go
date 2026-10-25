@@ -13,6 +13,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agent-primitives/sessions/api"
+	"github.com/agent-primitives/sessions/controller"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -38,6 +41,9 @@ type RunnerOptions struct {
 	// Tools resolves a trusted host from a frozen binding. Nil refuses tools;
 	// it never selects an implicit credential or a production fixture provider.
 	Tools func(context.Context, localtools.Binding) (*localtools.Host, error)
+	// ResolveTools freezes a trusted binding for exactly the declared names.
+	// It performs no discovery; the authored file supplies no execution authority.
+	ResolveTools func(context.Context, []string) (*localtools.Host, error)
 }
 
 type runner struct {
@@ -95,8 +101,8 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 		if access != nil && access.CheckContent(fields...) != nil {
 			return agentpreview.ErrCredentialContent
 		}
-		if toolHost != nil {
-			return toolHost.Check(fields...)
+		if toolHost != nil && toolHost.Check(fields...) != nil {
+			return agentpreview.ErrUnsafeToolContent
 		}
 		return nil
 	}
@@ -106,6 +112,29 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 		}
 		return ctx.Err()
 	}
+	request.ToolDefinitions = nil
+	if len(agent.Tools) > 0 {
+		var bindErr error
+		if request.ToolBindings != "" {
+			binding, err := localtools.Load(request.ToolBindings)
+			if err != nil || !binding.Matches(agent.Tools) || r.options.Tools == nil {
+				return abort(agentpreview.ErrToolsUnavailable)
+			}
+			toolHost, bindErr = r.options.Tools(ctx, binding)
+		} else if r.options.ResolveTools != nil {
+			toolHost, bindErr = r.options.ResolveTools(ctx, slices.Clone(agent.Tools))
+		}
+		if bindErr != nil || toolHost == nil || !toolHost.Matches(agent.Tools) {
+			return abort(agentpreview.ErrToolsUnavailable)
+		}
+		if checkToolContent(toolHost, request) != nil {
+			return agentpreview.Outcome{State: agentpreview.Failed}, agentpreview.ErrUnsafeToolContent
+		}
+		request.ToolDefinitions = toolHost.Definitions()
+		agent.Tools = nil
+	} else if request.ToolBindings != "" {
+		return abort(agentpreview.ErrToolsUnavailable)
+	}
 	var providerRoutes []modelaccess.Route
 	for _, selection := range []modelaccess.Route{request.Route, judgeSelection} {
 		if selection.Provider == "copilot" && !slices.Contains(providerRoutes, selection) {
@@ -113,9 +142,6 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 		}
 	}
 	if len(providerRoutes) > 0 {
-		if len(agent.Tools) > 0 || request.ToolBindings != "" {
-			return abort(agentpreview.ErrToolsUnavailable)
-		}
 		if r.options.Access == nil {
 			return abort(agentpreview.ErrModelUnavailable)
 		}
@@ -128,7 +154,8 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 				Label        string
 				Route, Judge modelaccess.Route
 				Input        *string
-			}{agent, request.FileLabel, request.Route, judgeSelection, request.Input})
+				Definitions  any
+			}{agent, request.FileLabel, request.Route, judgeSelection, request.Input, request.ToolDefinitions})
 			if checkJSONContent(content, checkContent) != nil {
 				return agentpreview.Outcome{State: agentpreview.Failed}, agentpreview.ErrCredentialContent
 			}
@@ -164,24 +191,6 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 	judgeRoute, routeErr := routeFor(judgeSelection)
 	if routeErr != nil {
 		return abort(routeErr)
-	}
-	if len(agent.Tools) > 0 {
-		binding, err := localtools.Load(request.ToolBindings)
-		if err != nil || !binding.Matches(agent.Tools) || r.options.Tools == nil {
-			return abort(agentpreview.ErrToolsUnavailable)
-		}
-		toolHost, err = r.options.Tools(ctx, binding)
-		if err != nil || toolHost == nil {
-			return abort(agentpreview.ErrToolsUnavailable)
-		}
-		if checkToolContent(toolHost, request) != nil {
-			return agentpreview.Outcome{State: agentpreview.Failed}, agentpreview.ErrUnsafeToolContent
-		}
-		// Only this explicitly bound path may use the tool harness. Standalone
-		// prepare/Run/Test remain tool-free; all other validation is shared.
-		agent.Tools = nil
-	} else if request.ToolBindings != "" {
-		return abort(agentpreview.ErrToolsUnavailable)
 	}
 	seenExamples := map[string]bool{}
 	hasJudge := false
@@ -254,7 +263,26 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 	var journal string
 	var openErr error
 	if toolHost != nil {
-		executor, journal, openErr = openToolJournalExecutor(dir, p.route.model, toolHost.Execute)
+		executeTool := func(ctx context.Context, scope controller.ToolCallContext, call api.ToolCall) (api.ToolResult, error) {
+			if err := validate(ctx); err != nil {
+				return api.ToolResult{}, err
+			}
+			if err := localtools.CheckJSON(call, checkContent); err != nil {
+				return api.ToolResult{}, err
+			}
+			result, err := toolHost.Execute(ctx, scope, call)
+			if err != nil {
+				return api.ToolResult{}, err
+			}
+			if err := validate(ctx); err != nil {
+				return api.ToolResult{}, err
+			}
+			if err := localtools.CheckJSON(result, checkContent); err != nil {
+				return api.ToolResult{}, err
+			}
+			return result, nil
+		}
+		executor, journal, openErr = openToolJournalExecutor(dir, p.route.model, executeTool, request.ToolDefinitions...)
 	} else {
 		executor, journal, openErr = r.open(dir, p.route.model)
 	}
@@ -288,7 +316,12 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 	}
 	call := client.Model
 	if toolHost != nil {
-		call = client.ToolModel
+		call = func(ctx context.Context, req api.ModelRequest) (api.ModelResponse, error) {
+			if err := validate(ctx); err != nil {
+				return api.ModelResponse{}, err
+			}
+			return client.ToolModel(ctx, req)
+		}
 	}
 	used := map[string]bool{}
 	execute := func(ex agentfile.Example, index int) (completion agentpreview.Completion, assertions []agentruntime.EvaluationAssertionResult, cause error) {

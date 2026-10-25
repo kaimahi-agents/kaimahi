@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
-	"reflect"
+	"net/url"
 	"regexp"
 	"unicode/utf8"
 
@@ -36,10 +37,11 @@ type toolWireMessage struct {
 var modelCallID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 // ToolModel is separate from the strict text-only converter. It accepts only
-// the fixed one-read conversation, not arbitrary tool definitions or histories.
+// one bounded call using host-owned definitions, never arbitrary histories.
 func (c *modelClient) ToolModel(ctx context.Context, r api.ModelRequest) (api.ModelResponse, error) {
 	fail := func() (api.ModelResponse, error) { return api.ModelResponse{}, errRunnerExecution }
-	if r.Model != c.route.model || len(r.Params) != 0 || r.ToolChoice != nil || !reflect.DeepEqual(r.Tools, []api.ToolDefinition{localtools.Definition()}) || (len(r.Messages) != 2 && len(r.Messages) != 4) {
+	defs, defsErr := localtools.CopyDefinitions(r.Tools)
+	if r.Model != c.route.model || len(r.Params) != 0 || r.ToolChoice != nil || defsErr != nil || (len(r.Messages) != 2 && len(r.Messages) != 4) {
 		return fail()
 	}
 	messages := make([]toolWireMessage, 0, len(r.Messages))
@@ -60,10 +62,15 @@ func (c *modelClient) ToolModel(ctx context.Context, r api.ModelRequest) (api.Mo
 			}
 			w.Content = p.Text.Text
 		case 2:
-			if m.Role != "assistant" || p.ToolCall == nil || p.Text != nil || p.ToolResult != nil || p.File != nil || p.Data != nil || p.Reasoning != nil || !validModelCall(*p.ToolCall) {
+			if m.Role != "assistant" || p.ToolCall == nil || p.Text != nil || p.ToolResult != nil || p.File != nil || p.Data != nil || p.Reasoning != nil || !validModelCall(*p.ToolCall, defs...) {
 				return fail()
 			}
-			w.ToolCalls = []toolWireCall{{ID: p.ToolCall.ID, Type: "function", Function: toolWireFunction{Name: localtools.Operation, Arguments: "{}"}}}
+			args := p.ToolCall.Args
+			if args == nil {
+				args = map[string]any{}
+			}
+			raw, _ := json.Marshal(args)
+			w.ToolCalls = []toolWireCall{{ID: p.ToolCall.ID, Type: "function", Function: toolWireFunction{Name: p.ToolCall.Tool, Arguments: string(raw)}}}
 		case 3:
 			result := p.ToolResult
 			if m.Role != "tool" || result == nil || p.Text != nil || p.ToolCall != nil || p.File != nil || p.Data != nil || p.Reasoning != nil || result.ID != r.Messages[2].Parts[0].ToolCall.ID || result.IsError || result.Error != "" || result.Output == nil || result.OutputURI != "" || result.OutputDigest != "" || len(result.Content) != 0 {
@@ -78,20 +85,23 @@ func (c *modelClient) ToolModel(ctx context.Context, r api.ModelRequest) (api.Mo
 		}
 		messages = append(messages, w)
 	}
-	definition := localtools.Definition()
+	tools := make([]any, 0, len(defs))
+	for _, d := range defs {
+		tools = append(tools, map[string]any{"type": "function", "function": map[string]any{"name": d.Name, "description": d.Description, "parameters": d.InputSchema}})
+	}
 	body := struct {
 		Model    string            `json:"model"`
 		Messages []toolWireMessage `json:"messages"`
 		Tools    []any             `json:"tools"`
 		Stream   bool              `json:"stream"`
-	}{Model: r.Model, Messages: messages, Tools: []any{map[string]any{"type": "function", "function": map[string]any{"name": definition.Name, "description": definition.Description, "parameters": definition.InputSchema}}}}
+	}{Model: r.Model, Messages: messages, Tools: tools}
 	raw, err := json.Marshal(body)
 	if err != nil || len(raw) > MaxRequestBytes {
 		return fail()
 	}
 	if c.check != nil {
-		if err = c.check(string(raw)); err != nil {
-			return fail()
+		if err = checkJSONContent(raw, c.check); err != nil {
+			return api.ModelResponse{}, err
 		}
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.route.baseURL+"/chat/completions", bytes.NewReader(raw))
@@ -99,11 +109,24 @@ func (c *modelClient) ToolModel(ctx context.Context, r api.ModelRequest) (api.Mo
 		return fail()
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if err := ctx.Err(); err != nil {
+		return api.ModelResponse{}, err
+	}
+	if c.route.key != "" {
+		req.Header.Set("Authorization", "Bearer "+c.route.key)
+	}
 	c.sends.Add(1)
 	response, err := c.http.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
 			return api.ModelResponse{}, ctx.Err()
+		}
+		if c.route.safeErrors {
+			var wrapped *url.Error
+			if errors.As(err, &wrapped) {
+				return api.ModelResponse{}, wrapped.Err
+			}
+			return api.ModelResponse{}, err
 		}
 		return fail()
 	}
@@ -116,33 +139,30 @@ func (c *modelClient) ToolModel(ctx context.Context, r api.ModelRequest) (api.Mo
 		return fail()
 	}
 	if c.check != nil {
-		if err = c.check(string(raw)); err != nil {
-			return fail()
+		if err = checkJSONContent(raw, c.check); err != nil {
+			return api.ModelResponse{}, err
 		}
 	}
-	result, err := parseToolReply(raw, r.Model, len(r.Messages) == 2)
+	result, err := parseToolReply(raw, r.Model, len(r.Messages) == 2, defs...)
 	if err != nil {
 		return fail()
 	}
 	if c.check != nil {
-		fields := []string{result.Message.Text()}
-		for _, part := range result.Message.Parts {
-			if part.ToolCall != nil {
-				fields = append(fields, part.ToolCall.ID, part.ToolCall.Tool)
-			}
-		}
-		if c.check(fields...) != nil {
-			return fail()
+		if err := localtools.CheckJSON(result, c.check); err != nil {
+			return api.ModelResponse{}, err
 		}
 	}
 	return result, nil
 }
 
-func validModelCall(c api.ToolCall) bool {
-	return modelCallID.MatchString(c.ID) && c.Tool == localtools.Operation && len(c.Args) == 0 && c.Mediation == "" && c.IdempotencyKey == ""
+func validModelCall(c api.ToolCall, defs ...api.ToolDefinition) bool {
+	if defs == nil {
+		defs = []api.ToolDefinition{localtools.Definition()}
+	}
+	return modelCallID.MatchString(c.ID) && localtools.ValidateArguments(defs, c.Tool, c.Args) == nil && c.Mediation == "" && c.IdempotencyKey == ""
 }
 
-func parseToolReply(raw []byte, model string, allowCall bool) (api.ModelResponse, error) {
+func parseToolReply(raw []byte, model string, allowCall bool, defs ...api.ToolDefinition) (api.ModelResponse, error) {
 	fail := func() (api.ModelResponse, error) { return api.ModelResponse{}, errRunnerExecution }
 	if !runtime.JSONKeysUnique(raw) {
 		return fail()
@@ -196,11 +216,11 @@ func parseToolReply(raw []byte, model string, allowCall bool) (api.ModelResponse
 		return fail()
 	}
 	var args map[string]any
-	if json.Unmarshal([]byte(calls[0].Function.Arguments), &args) != nil || args == nil || len(args) != 0 {
+	if len(calls[0].Function.Arguments) > 8*1024 || !runtime.JSONKeysUnique([]byte(calls[0].Function.Arguments)) || json.Unmarshal([]byte(calls[0].Function.Arguments), &args) != nil || args == nil {
 		return fail()
 	}
 	call := api.ToolCall{ID: calls[0].ID, Tool: calls[0].Function.Name, Args: args}
-	if !validModelCall(call) {
+	if !validModelCall(call, defs...) {
 		return fail()
 	}
 	return api.ModelResponse{Message: api.Message{Role: "assistant", Parts: []api.Part{{ToolCall: &call}}}}, nil

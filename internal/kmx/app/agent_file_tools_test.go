@@ -99,7 +99,7 @@ func TestFileToolsJudgeBudgetAndActualCallProof(t *testing.T) {
 	}
 }
 
-func TestFileToolsCopilotRefusesBeforeRunner(t *testing.T) {
+func TestFileToolsCopilotUnboundRemainsInert(t *testing.T) {
 	for _, judge := range []bool{false, true} {
 		opt := directOptions(t, "fake", false)
 		a, err := agentfile.Load(opt.File)
@@ -114,10 +114,13 @@ func TestFileToolsCopilotRefusesBeforeRunner(t *testing.T) {
 			a.Model = "unit"
 			opt.Route = &route
 		}
-		runner := &scriptedPreview{}
+		runner := localpreview.NewRunner(localpreview.RunnerOptions{Access: func(context.Context, []modelaccess.Route) (modelaccess.PreviewAccess, error) {
+			t.Fatal("unbound tools accessed provider")
+			return nil, nil
+		}, JournalDir: func() (string, error) { t.Fatal("unbound tools opened journal"); return "", nil }})
 		r, err := (&App{FileRunner: runner}).PreviewAgentSnapshot(t.Context(), a, opt)
-		if err == nil || r.ReasonCode != "tools_unavailable" || runner.calls > 0 {
-			t.Fatalf("Copilot tool request reached runner: %+v %v", r, err)
+		if err == nil || r.ReasonCode != "tools_unavailable" {
+			t.Fatalf("unbound tool request not refused: %+v %v", r, err)
 		}
 	}
 }

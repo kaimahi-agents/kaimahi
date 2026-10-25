@@ -40,7 +40,7 @@ func TestToolsCanonicalAndLegacy(t *testing.T) {
 
 func TestToolsRefusals(t *testing.T) {
 	source := sample(t)
-	for _, body := range []string{"", "- unknown", "- github_list_merged_prs\n- github_list_merged_prs", "github_list_merged_prs", " - github_list_merged_prs", "- github_list_merged_prs ", "```\n- github_list_merged_prs\n```", "- github_list_merged_prs\nextra"} {
+	for _, body := range []string{"", "- invalid name", "- github_list_merged_prs\n- github_list_merged_prs", "github_list_merged_prs", " - github_list_merged_prs", "- github_list_merged_prs ", "```\n- github_list_merged_prs\n```", "- github_list_merged_prs\nextra"} {
 		t.Run(body, func(t *testing.T) {
 			input := strings.Replace(source, "## Examples", "## Tools\n"+body+"\n\n## Examples", 1)
 			if _, err := Parse("greeter.agent.md", []byte(input)); err == nil {

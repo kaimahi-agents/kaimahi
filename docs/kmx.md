@@ -182,8 +182,10 @@ The operator binds one repository and an explicit environment credential name;
 no endpoint/credential comes from the agent or model. Only a selected call reads
 up to 20 merged PRs through the fixed Streamable-HTTP endpoint. Missing authority,
 foreign/unmerged results and transport/schema failures refuse, without retries.
-Copilot agent or judge plus tools remains unsupported. The opt-in hosted smoke
-uses a scripted model; it is not real-LLM qualification.
+Bound tools support Copilot Chat Completions and Responses routes; judging stays
+tool-free. Unbound tools still refuse with one plain reason. Trusted embedding
+can bind multiple declared tool names; the canvas binding path is not wired yet.
+The opt-in hosted smoke uses a scripted model, not real-LLM qualification.
 
 File mode uses embedded Sessions for fake/local and explicit Copilot routes,
 with one fresh Session per ad-hoc input, example and judge sample, and one private

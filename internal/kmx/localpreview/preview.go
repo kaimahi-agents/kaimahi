@@ -385,10 +385,11 @@ type journalExecutor struct {
 	slotMu  sync.Mutex
 	current *turnSlot
 	// lock marks the run as executing until Close.
-	lock      *runLock
-	tools     bool
-	path      string
-	modelName string
+	lock        *runLock
+	tools       bool
+	definitions []api.ToolDefinition
+	path        string
+	modelName   string
 	// The upstream chat harness pins its model. Separate in-process hosts share
 	// this run's journal while preserving each turn's exact harness/model pair.
 	chatHosts map[string]*host
@@ -414,13 +415,23 @@ func openJournalExecutor(dir, model string) (*journalExecutor, string, error) {
 	return e, runID, nil
 }
 
-func openToolJournalExecutor(dir, model string, tool controller.ToolFunc) (*journalExecutor, string, error) {
+func openToolJournalExecutor(dir, model string, tool controller.ToolFunc, definitions ...api.ToolDefinition) (*journalExecutor, string, error) {
 	runID, path, lock, err := newJournal(dir, time.Now())
 	if err != nil {
 		return nil, "", err
 	}
-	e := &journalExecutor{sessions: map[string]bool{}, lock: lock, tools: true, path: path, modelName: model, chatHosts: map[string]*host{}}
-	e.host, err = openPreviewHost(path, localtools.HarnessName, localtools.Harness{Model: model}, e.model, tool)
+	e := &journalExecutor{sessions: map[string]bool{}, lock: lock, tools: true, definitions: definitions, path: path, modelName: model, chatHosts: map[string]*host{}}
+	guarded := func(ctx context.Context, scope controller.ToolCallContext, call api.ToolCall) (api.ToolResult, error) {
+		e.slotMu.Lock()
+		slot := e.current
+		e.slotMu.Unlock()
+		result, err := tool(ctx, scope, call)
+		if err != nil {
+			e.rememberError(slot, err)
+		}
+		return result, err
+	}
+	e.host, err = openPreviewHost(path, localtools.HarnessName, localtools.Harness{Model: model, Definitions: definitions}, e.model, guarded)
 	if err != nil {
 		lock.discardRun()
 		return nil, runID, err
@@ -437,11 +448,17 @@ func (e *journalExecutor) model(ctx context.Context, request api.ModelRequest) (
 	}
 	response, err := slot.call(ctx, request)
 	if err != nil {
+		e.rememberError(slot, err)
+	}
+	return response, err
+}
+
+func (e *journalExecutor) rememberError(slot *turnSlot, err error) {
+	if slot != nil {
 		slot.mu.Lock()
 		slot.err = err
 		slot.mu.Unlock()
 	}
-	return response, err
 }
 
 func (e *journalExecutor) setSlot(slot *turnSlot) {
@@ -475,6 +492,7 @@ func (e *journalExecutor) Execute(ctx context.Context, turn Turn) (Execution, er
 	}
 	run := h.client.RunPreviewCase
 	if toolTurn {
+		request.ToolDefinitions = e.definitions
 		run = h.client.RunToolPreviewCase
 	}
 	result, err := run(ctx, request)
@@ -497,7 +515,9 @@ func (e *journalExecutor) Execute(ctx context.Context, turn Turn) (Execution, er
 		return execution, err
 	}
 	execution.Answer = result.Output
-	execution.ToolCalls = result.ToolCalls[localtools.Operation]
+	for _, count := range result.ToolCalls {
+		execution.ToolCalls += count
+	}
 	return execution, nil
 }
 

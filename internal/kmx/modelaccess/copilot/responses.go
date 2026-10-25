@@ -22,8 +22,58 @@ func encodeResponsesRequest(body []byte) ([]byte, bool, error) {
 	if value, ok := fields["stream"]; ok && json.Unmarshal(value, &stream) != nil {
 		return nil, false, ErrMalformed
 	}
+	if tools, ok := fields["tools"]; ok {
+		var definitions []struct {
+			Type     string                     `json:"type"`
+			Function map[string]json.RawMessage `json:"function"`
+		}
+		if json.Unmarshal(tools, &definitions) != nil || len(definitions) > 32 {
+			return nil, false, ErrMalformed
+		}
+		flat := make([]map[string]json.RawMessage, 0, len(definitions))
+		for _, d := range definitions {
+			var name string
+			if d.Type != "function" || json.Unmarshal(d.Function["name"], &name) != nil || name == "" {
+				return nil, false, ErrMalformed
+			}
+			d.Function["type"] = json.RawMessage(`"function"`)
+			// Keep Chat's best-effort default; Responses otherwise normalizes
+			// optional parameters into required ones under strict mode.
+			if d.Function["strict"] == nil {
+				d.Function["strict"] = json.RawMessage("false")
+			}
+			flat = append(flat, d.Function)
+		}
+		fields["tools"], _ = json.Marshal(flat)
+	}
 	if messages, ok := fields["messages"]; ok {
-		fields["input"] = messages
+		var history []map[string]json.RawMessage
+		if json.Unmarshal(messages, &history) != nil {
+			return nil, false, ErrMalformed
+		}
+		input := make([]any, 0, len(history))
+		for _, m := range history {
+			var role string
+			_ = json.Unmarshal(m["role"], &role)
+			switch {
+			case role == "tool":
+				var id, output string
+				if json.Unmarshal(m["tool_call_id"], &id) != nil || id == "" || json.Unmarshal(m["content"], &output) != nil {
+					return nil, false, ErrMalformed
+				}
+				input = append(input, map[string]string{"type": "function_call_output", "call_id": id, "output": output})
+			case m["tool_calls"] != nil:
+				var calls []responseChatCall
+				if role != "assistant" || json.Unmarshal(m["tool_calls"], &calls) != nil || len(calls) != 1 {
+					return nil, false, ErrMalformed
+				}
+				c := calls[0]
+				input = append(input, map[string]string{"type": "function_call", "call_id": c.ID, "name": c.Function.Name, "arguments": c.Function.Arguments})
+			default:
+				input = append(input, m)
+			}
+		}
+		fields["input"], _ = json.Marshal(input)
 		delete(fields, "messages")
 	}
 	if budget, ok := fields["max_completion_tokens"]; ok {

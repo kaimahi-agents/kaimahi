@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/agent-primitives/sessions/api"
+
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
@@ -29,7 +31,10 @@ type Request struct {
 	ExampleFinished func(ExampleOutcome)
 	// ToolBindings and FileLabel are operator-owned host inputs, never harness config.
 	ToolBindings string
-	FileLabel    string
+	// ToolDefinitions is safe journal data, populated from the runner's trusted
+	// resolver. It grants no authority and caller-supplied values are replaced.
+	ToolDefinitions []api.ToolDefinition
+	FileLabel       string
 }
 
 // Report carries content-free diagnostics; a failed sink stops later execution.

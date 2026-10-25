@@ -9,6 +9,7 @@ package agentfile
 import (
 	"crypto/sha256"
 	"fmt"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -190,13 +191,14 @@ func parse(filename string, data []byte, inspection bool) (*Agent, error) {
 			if strings.TrimSpace(lines[i]) == "" {
 				continue
 			}
-			if lines[i] != "- github_list_merged_prs" || len(a.Tools) != 0 {
-				return nil, refuse(filename, i+1, 1, "Tools", "declare exactly one supported tool name as a canonical bullet")
+			name, ok := strings.CutPrefix(lines[i], "- ")
+			if !ok || !localtools.ValidToolName(name) || slices.Contains(a.Tools, name) || len(a.Tools) >= 32 {
+				return nil, refuse(filename, i+1, 1, "Tools", "declare up to 32 unique tool names as canonical bullets")
 			}
-			a.Tools = append(a.Tools, "github_list_merged_prs")
+			a.Tools = append(a.Tools, name)
 		}
-		if len(a.Tools) != 1 {
-			return fail("Tools", "declare exactly one supported tool name")
+		if len(a.Tools) == 0 {
+			return fail("Tools", "declare at least one tool name")
 		}
 		a.Instructions = strings.Join(lines[:s.start], "\n") + "\n"
 	}

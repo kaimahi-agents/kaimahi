@@ -127,9 +127,11 @@ func (s *preview) Client(r modelaccess.Route) (http.RoundTripper, error) {
 }
 
 type previewTransport struct {
-	access *preview
-	route  modelaccess.Route
-	path   string
+	mu           sync.Mutex
+	continuation *responsesContinuation
+	access       *preview
+	route        modelaccess.Route
+	path         string
 }
 
 func (s *preview) checkJSON(b []byte) error {
@@ -182,6 +184,8 @@ func previewModel(b []byte) (string, error) {
 }
 
 func (t *previewTransport) RoundTrip(req *http.Request) (resp *http.Response, err error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	s := t.access
 	defer func() {
 		if err != nil {
@@ -237,20 +241,27 @@ func (t *previewTransport) RoundTrip(req *http.Request) (resp *http.Response, er
 	if err != nil {
 		return nil, err
 	}
-	if !slices.ContainsFunc(available, func(m catalogModel) bool { return m.route == t.route && slices.Contains(m.paths, t.path) }) {
+	index := slices.IndexFunc(available, func(m catalogModel) bool { return m.route == t.route && slices.Contains(m.paths, t.path) })
+	if index < 0 {
 		return nil, ErrModelUnavailable
+	}
+	var offered struct {
+		Tools []json.RawMessage `json:"tools"`
+	}
+	if json.Unmarshal(b, &offered) != nil {
+		return nil, ErrMalformed
+	}
+	if len(offered.Tools) > 0 && !available[index].tools {
+		return nil, ErrToolsUnsupported
 	}
 	if err = s.Validate(ctx); err != nil {
 		return nil, err
 	}
+	var conversation string
 	if t.path == "/responses" {
-		var stream bool
-		b, stream, err = encodeResponsesRequest(b)
+		b, conversation, err = t.responsesRequest(b)
 		if err != nil {
 			return nil, err
-		}
-		if stream {
-			return nil, ErrMalformed
 		}
 		// Translation introduces keys/constants; none bypass the provider check.
 		if err = s.checkJSON(b); err != nil {
@@ -301,6 +312,9 @@ func (t *previewTransport) RoundTrip(req *http.Request) (resp *http.Response, er
 		return nil, err
 	}
 	if t.path == "/responses" {
+		if err = t.rememberResponses(reply, conversation); err != nil {
+			return nil, err
+		}
 		// Inspect discarded fields before adapting, then inspect joined fragments.
 		checked := &http.Response{Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(reply))}
 		defer func() { _ = checked.Body.Close() }()

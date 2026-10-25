@@ -41,7 +41,7 @@ func registerFileCommandFlags(cmd *cobra.Command, f *fileCommandOptions, output 
 	cmd.Flags().StringVar(&f.CaseID, "case", "", "run only this saved example ID (partial local preview)")
 	cmd.Flags().StringVar(&f.Provider, "provider", "", "explicit file-model provider: ollama, foundry-local, compatible or copilot; no fallback")
 	cmd.Flags().StringVar(&f.Endpoint, "endpoint", "", "trusted model endpoint (required for local models; fixed for Copilot; never from the charter)")
-	cmd.Flags().StringVar(&f.ToolBindings, "tool-bindings", "", "explicit host-owned local tool binding file (requires FILE; remote provider execution not yet available)")
+	cmd.Flags().StringVar(&f.ToolBindings, "tool-bindings", "", "explicit host-owned tool binding file (requires FILE; supports local and Copilot models)")
 	if output {
 		cmd.Flags().StringVarP(&f.Output, "output", "o", "text", "file preview output: text|json")
 		cmd.Flags().BoolVar(&f.ShowContent, "show-content", false, "include sanitized bounded answer excerpts in file preview output")

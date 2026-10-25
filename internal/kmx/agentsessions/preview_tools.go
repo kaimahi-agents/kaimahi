@@ -27,7 +27,7 @@ func (c *Client) RunToolPreviewCase(ctx context.Context, r PreviewCaseRequest) (
 	if !ok || !safeIdentity(r.Model) || !safeIdentity(r.Agent) || len(r.Revision) != 71 || r.Revision[:7] != "sha256:" || !verifyDigest(r.Revision[7:]) || r.Example != "" && !safeIdentity(r.Example) {
 		return out, status.Error(codes.InvalidArgument, "agentsessions: valid tool preview request and deadline required")
 	}
-	config, err := json.Marshal(map[string]string{"instructions": r.Instructions})
+	config, err := json.Marshal(localtools.Config{Instructions: r.Instructions, Definitions: r.ToolDefinitions})
 	if err != nil || len(config) > 1<<20 || len(r.Input) > 16<<10 {
 		return out, status.Error(codes.InvalidArgument, "agentsessions: tool preview exceeds bounds")
 	}
@@ -86,7 +86,10 @@ func (c *Client) RunToolPreviewCase(ctx context.Context, r PreviewCaseRequest) (
 		return out, status.Error(codes.DataLoss, "agentsessions: tool preview reconstruction failed")
 	}
 	out.Output = trace.Answer
-	out.ToolCalls = map[string]int{localtools.Operation: trace.ToolCalls}
+	out.ToolCalls = map[string]int{}
+	if trace.ToolCalls > 0 {
+		out.ToolCalls[trace.ToolName] = trace.ToolCalls
+	}
 	out.ToolEvidenceComplete = true
 	return out, nil
 }

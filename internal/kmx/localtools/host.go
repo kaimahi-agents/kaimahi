@@ -27,9 +27,12 @@ type PullRequest struct {
 // Host holds ambient authority outside all serialized model/harness configuration.
 // The trusted read callback is repeat-safe; no transport or credential lookup is implied.
 type Host struct {
-	binding    Binding
-	credential string
-	read       func(context.Context) ([]PullRequest, error)
+	binding     Binding
+	credential  string
+	read        func(context.Context) ([]PullRequest, error)
+	definitions []api.ToolDefinition
+	execute     controller.ToolFunc
+	check       func(...string) error
 }
 
 var errUnsafeContent = errors.New("local tools: unsafe content refused")
@@ -41,7 +44,7 @@ func NewHost(binding Binding, credential string, read func(context.Context) ([]P
 	if !binding.valid() || credential == "" || read == nil {
 		return nil, errInvalidBinding
 	}
-	host := &Host{binding, credential, read}
+	host := &Host{binding: binding, credential: credential, read: read}
 	if host.Check(binding.repository, binding.endpoint, binding.credentialEnv) != nil {
 		return nil, errUnsafeContent
 	}
@@ -50,18 +53,24 @@ func NewHost(binding Binding, credential string, read func(context.Context) ([]P
 
 // Check must run before any supplied text reaches a journal or model.
 func (h *Host) Check(values ...string) error {
-	if h == nil || h.credential == "" {
+	if h == nil || h.credential == "" && h.check == nil {
 		return errUnsafeContent
 	}
 	for _, value := range values {
-		if strings.Contains(value, h.credential) || secretshapes.Match(value) != nil {
+		if h.credential != "" && strings.Contains(value, h.credential) || secretshapes.Match(value) != nil {
 			return errUnsafeContent
 		}
+	}
+	if h.check != nil {
+		return h.check(values...)
 	}
 	return nil
 }
 
 func (h *Host) Execute(ctx context.Context, scope controller.ToolCallContext, call api.ToolCall) (api.ToolResult, error) {
+	if h != nil && h.execute != nil {
+		return h.executeTrusted(ctx, scope, call)
+	}
 	if h == nil || h.read == nil || !h.binding.valid() || ctx.Err() != nil || strings.TrimSpace(scope.SessionUID) == "" || strings.TrimSpace(call.ID) == "" || strings.TrimSpace(call.IdempotencyKey) == "" || call.Tool != Operation || call.Mediation != api.MediationControllerMediated || len(call.Args) != 0 {
 		return api.ToolResult{}, errInvalidCall
 	}

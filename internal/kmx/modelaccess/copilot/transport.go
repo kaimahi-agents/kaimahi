@@ -114,6 +114,7 @@ func (p *Provider) exchange(ctx context.Context) error {
 }
 
 type catalogModel struct {
+	tools bool
 	route modelaccess.Route
 	path  string
 	paths []string // Recognized advertised paths; path is the ordinary preference.
@@ -190,7 +191,10 @@ func catalogRoutes(b []byte, source, bearer string) ([]catalogModel, error) {
 		Data *[]struct {
 			ID           string `json:"id"`
 			Capabilities struct {
-				Type string `json:"type"`
+				Type     string `json:"type"`
+				Supports struct {
+					Tools bool `json:"tool_calls"`
+				} `json:"supports"`
 			} `json:"capabilities"`
 			Policy struct {
 				State string `json:"state"`
@@ -221,7 +225,7 @@ func catalogRoutes(b []byte, source, bearer string) ([]catalogModel, error) {
 			return nil, ErrMalformed
 		}
 		seen[m.ID] = true
-		routes = append(routes, catalogModel{route: r, path: paths[0], paths: paths})
+		routes = append(routes, catalogModel{route: r, path: paths[0], paths: paths, tools: m.Capabilities.Supports.Tools})
 	}
 	return routes, nil
 }

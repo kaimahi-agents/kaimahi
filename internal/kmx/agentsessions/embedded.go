@@ -46,6 +46,7 @@ type PreviewCaseRequest struct {
 	// UsedSessionUIDs is caller-owned and read-only during invocation, as for
 	// RunSuiteCase.
 	UsedSessionUIDs map[string]bool
+	ToolDefinitions []api.ToolDefinition
 }
 
 // RunPreviewCase executes one fresh Session with the same strict five-record

@@ -68,6 +68,20 @@ for one real read-only GitHub MCP operation, without discovery or workspace
 configuration. Missing bindings or credentials refuse `tools_unavailable`;
 neither CLI nor inbound MCP silently executes declarations as tool-free agents.
 Inbound MCP still has no operator binding selector and cannot grant tools.
+Bound tools support local, fake and Copilot Chat Completions/Responses routes;
+judging remains tool-free. Copilot checks current tool capability before each
+model send. Responses reasoning/continuation items stay invocation-private and
+are never included in Sessions' journal. File previews do not stream.
+
+The names-only declaration supports up to 32 unique tool names. Trusted embedding
+may supply `RunnerOptions.ResolveTools` and `localtools.NewTrustedHost` with copied
+schemas, descriptions, an executor and a content checker. Model arguments must
+match the selected host schema and stay within 8 KiB; results stay within 32 KiB.
+One case still executes at most one tool call and two agent model sends.
+Safe definitions are journaled to reconstruct the exact request during zero-call
+offline replay; endpoint/binding credentials are not. Old fixed-read journals
+remain inspectable. There is no general CLI binding-file format or canvas server
+binding in this slice; the explicit CLI binding below remains the fixed read.
 
 The strict local JSON binding is at most 16 KiB and contains references, never
 credential values:
@@ -171,7 +185,7 @@ check:
 |---|---|
 | ``Reply with exactly `TEXT`.`` | `TEXT` |
 | ``Reply with exactly `TEXT` followed by the input`` | `TEXT` followed by the input |
-| ``Call the tool `NAME` `` | a tool-call reply, which is refused |
+| ``Call the tool `NAME` `` | calls the named tool only when offered by a bound host; otherwise refused |
 | no directive | fixed guidance text naming the directive |
 
 The standalone library's compatible endpoints follow the existing judge URL
