@@ -1497,6 +1497,21 @@ test("a refused preview has one plain cause and Refused instead of unfinished ve
   assert.match(banner.textContent, /Run model: fake/);
   assert.doesNotMatch(h.root.textContent, /ENGINE REASON|Execution is not complete|Didn't finish|Incomplete result/);
 });
+for (const error of [undefined, "action-failed"]) test(`a refused subset keeps its cause and visible counts after Back: ${error ?? "success reply"}`, async () => {
+  const examples = ["a", "b"].map(id => ({ id, input: id, assertions: [{ id: `includes-${id}`, type: "contains", value: id }] }));
+  let h, unknown = false;
+  h = await editableCanvas("Say hello.", undefined, { examples, respond: async () => unknown ? { error: "outcome-unknown" } : ({ ...(error ? { error } : {}), view: { ...h.view, latest: { status: "current", result: {
+    ...savedFixture().latest.result, operation: "test", state: "refused", verdict: "unknown", fullPass: false, reasonCode: "model_unavailable", modelRoute: "fake/fake",
+    selection: { scope: "subset", totalCases: 2, caseIds: ["a"] }, examples: [{ id: "a", state: "not_run", verdict: "unknown", reasonCode: "not_run", assertions: [] }]
+  } } } }) });
+  openTest(h.root, "a"); click(byClass(h.root, "save-run")[0]); await tick(); goBack(h.root);
+  const banner = byClass(h.root, "run-alert")[0]; assert.ok(banner, "subset refusal remains explained on the list");
+  assert.match(banner.textContent, /Refused: The selected model is not available/);
+  assert.equal(all(banner).filter(e => e.tag === "button").length, 0);
+  assert.equal(byClass(h.root, "tests-meta")[0].textContent, "1 refused · 1 not run");
+  unknown = true; openTest(h.root, "a"); click(byClass(h.root, "save-run")[0]); await tick(); goBack(h.root);
+  assert.doesNotMatch(byClass(h.root, "tests-meta")[0].textContent, /refused/, "an unknown later outcome does not keep old refusal counts");
+});
 test("Undo is not offered for unknown writes or a stale save", async () => {
   for (const error of ["outcome-unknown", "stale_revision"]) {
     const h = await editableCanvas("Before.", undefined, { response: { error, saved: error === "outcome-unknown", message: "Reload before continuing." } });

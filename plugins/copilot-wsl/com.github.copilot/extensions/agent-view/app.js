@@ -271,7 +271,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     base = candidate; snap = readSnapshot(base); candidate = undefined; compareOpen = false; lastRun = undefined;
     pruneDrafts(); message = "Using the new version. Your edits were discarded."; render();
   }
-  // Reapply changed keys/IDs onto the chosen snapshot; retain ambiguous drafts.
+  // Rebase drafts; retain ambiguous identities.
   function keepMine() {
     if (!candidate || invalidEditors.size) return;
     invalidCheck = undefined; clearUndo(); displayNames.clear();
@@ -590,7 +590,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       head.append(actions);
     }
     section.append(head);
-    if (runAlert && !runAlert.one) section.append(runAlertNode(button, "all"));
+    if (runAlert && (!runAlert.one || runAlert.refused)) section.append(runAlertNode(button, "all"));
     else if (!runAlert && refusedAlert()) section.append(runAlertNode(button, "all", refusedAlert()));
     const empty = el(doc, "div", "empty-tests");
     if (snap) {
@@ -659,9 +659,9 @@ export function renderView(doc, root, payload, execute = postAction, options = {
         : stale && base.latest.status !== "current" ? `Out of date${previous ? ` · last run on ${previous}` : ""}` : base.latest.status !== "current" || !text ? "Not run yet"
         : (base.latest.result.state !== "complete" || malformed) && !isRefused(base.latest.result) && !anyDraft && !/didn't finish|incomplete/.test(text) ? `Incomplete run: ${text}`
         : anyDraft ? `Last run, before your edit: ${text}` : lastRun && !lastRun.one && !runAlert ? `${text} · just now` : text;
-      // A live region needs changed text, not only a changed accessible name.
+      // Update live-region text for screen readers.
       if (summaryNode.textContent !== accessible) summaryNode.textContent = accessible;
-      meta.textContent = stale ? `Out of date${previous ? ` · last run on ${previous}` : ""}` : !busy && lastRun && !runAlert ? "· just now" : "";
+      meta.textContent = !oldResults && !busy && !blocked && isRefused(base.latest.result) ? text : stale ? `Out of date${previous ? ` · last run on ${previous}` : ""}` : !busy && lastRun && !runAlert ? "· just now" : "";
       if (firstRun) {
         firstRun.hidden = !counted.length || blocked || busy || !!history.last && !stale;
         firstRun.textContent = `${anyDraft ? "Save and run" : "Run"} ${plural(counted.length, "test")}`;
@@ -964,7 +964,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     if (facts.actual !== undefined && index >= 0) {
       const actions = el(doc, "div", "why-actions");
       const prompt = snap ? sectionText(snap.main.key) : "";
-      // Only a literal, unique occurrence in the prompt can be swapped in place.
+      // Replace only literal unique prompt text.
       if (prompt.split(facts.actual).length === 2) {
         actions.append(button("Apply to prompt", () => {
           if (!eligible()) return;

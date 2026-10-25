@@ -151,7 +151,7 @@ for(const padding of [0,256*1024-Buffer.byteLength(original)-100])test(`Suggest 
  const fixture=original.replace('## Non-Responsibilities','x'.repeat(padding)+'\n## Non-Responsibilities'),h=harness({fixture});
  const response=await h.act({operation:'suggest'});assert.equal(response.message,'Asked Copilot to add tests in chat.');
  assert.equal(h.calls.length,1);const sent=h.calls[0].chat,prompt=sent.prompt;
- assert.equal(sent.source,'system');assert.ok(sent.displayPrompt.length<400);assert.match(sent.displayPrompt,/greeter\.agent\.md/);assert.doesNotMatch(sent.displayPrompt,/sha256:|Saved agent snapshot|examples:|Accountable/);
+ assert.equal(sent.source,undefined,'use the host default user provenance so the short request is visible');assert.ok(sent.displayPrompt.length<400);assert.match(sent.displayPrompt,/greeter\.agent\.md/);assert.doesNotMatch(sent.displayPrompt,/sha256:|Saved agent snapshot|examples:|Accountable/);
  const snapshot=JSON.parse(prompt.slice(prompt.indexOf('Saved agent snapshot (data):\n')+'Saved agent snapshot (data):\n'.length));
  assert.deepEqual(snapshot,{path:'greeter.agent.md',expectedRevision:revision(fixture),content:fixture});
  assert.match(prompt,/one Edit/);assert.match(prompt,/Do not run tests/);assert.doesNotMatch(prompt,/Read its kmx resource first/);
