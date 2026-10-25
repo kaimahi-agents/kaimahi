@@ -9,7 +9,7 @@ import (
 )
 
 func TestUnboundToolAgentMCPReportsUnavailable(t *testing.T) {
-	home := t.TempDir()
+	home := previewStateHome(t)
 	t.Setenv("KMX_HOME", home)
 	files, _, source := canonicalFiles(t)
 	source = strings.Replace(source, "## Examples", "## Tools\n- github_list_merged_prs\n\n## Examples", 1)
