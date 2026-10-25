@@ -1,0 +1,12 @@
+{
+  "seedByte": 0,
+  "method": "POST",
+  "path": "/result/vector",
+  "time": "1700000000",
+  "nonce": "serialization-vector",
+  "body": "{\"output\":{\"ok\":true}}",
+  "status": 200,
+  "publicKey": "MCowBQYDK2VwAyEAO2onvM62pC1io6jQKm8Nc2UyFXcd4kOmOsBIoYtZ2ik=",
+  "requestSignature": "3q/b6uUywl6TF3eGTuXN4OelMuK5ZATTlpL6wXN673Q0Qi/hfuk+rbUb/JIP9M000BYPV6Eg3sSXAssRjCKTAQ==",
+  "responseSignature": "xwvgxj9LfORrEO8/9rKCegBN95lrh/AmJsqy9g1FpOd4OVyMkfsiW+y1fk6pubF9hj7ainBjmxVKTZgcFblBDA=="
+}

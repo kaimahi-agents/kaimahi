@@ -22,7 +22,16 @@ func NewLocalFileRunner() agentpreview.Runner {
 	return newLocalFileRunner(copilot.New(nil).PreviewClient)
 }
 
+// NewHostFileRunner adds invocation-frozen host tools to the same native factory.
+func NewHostFileRunner(resolve func(context.Context, []string) (*localtools.Host, error)) agentpreview.Runner {
+	return newConfiguredFileRunner(copilot.New(nil).PreviewClient, resolve)
+}
+
 func newLocalFileRunner(access func(context.Context, []modelaccess.Route) (modelaccess.PreviewAccess, error)) agentpreview.Runner {
+	return newConfiguredFileRunner(access, nil)
+}
+
+func newConfiguredFileRunner(access func(context.Context, []modelaccess.Route) (modelaccess.PreviewAccess, error), resolve func(context.Context, []string) (*localtools.Host, error)) agentpreview.Runner {
 	checkedAccess := func(ctx context.Context, routes []modelaccess.Route) (modelaccess.PreviewAccess, error) {
 		capability, err := access(ctx, routes)
 		if capability != nil {
@@ -30,7 +39,7 @@ func newLocalFileRunner(access func(context.Context, []modelaccess.Route) (model
 		}
 		return capability, err
 	}
-	return localpreview.NewRunner(localpreview.RunnerOptions{JournalDir: config.PrepareLocalPreviewJournalDir, Judge: localFilePreviewJudge, JudgeReply: localFileJudgeReply, Access: checkedAccess, Tools: localtools.NewMCPHost})
+	return localpreview.NewRunner(localpreview.RunnerOptions{JournalDir: config.PrepareLocalPreviewJournalDir, Judge: localFilePreviewJudge, JudgeReply: localFileJudgeReply, Access: checkedAccess, Tools: localtools.NewMCPHost, ResolveTools: resolve})
 }
 
 // The App owns display normalization, while the provider alone knows the keys.

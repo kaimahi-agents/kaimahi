@@ -67,7 +67,7 @@ The optional [Tools declaration](agent-file.md#markdown-contract) names
 for one real read-only GitHub MCP operation, without discovery or workspace
 configuration. Missing bindings or credentials refuse `tools_unavailable`;
 neither CLI nor inbound MCP silently executes declarations as tool-free agents.
-Inbound MCP still has no operator binding selector and cannot grant tools.
+Default inbound MCP remains unbound; tool input cannot supply a binding.
 Bound tools support local, fake and Copilot Chat Completions/Responses routes;
 judging remains tool-free. Copilot checks current tool capability before each
 model send. Responses reasoning/continuation items stay invocation-private and
@@ -80,8 +80,35 @@ match the selected host schema and stay within 8 KiB; results stay within 32 KiB
 One case still executes at most one tool call and two agent model sends.
 Safe definitions are journaled to reconstruct the exact request during zero-call
 offline replay; endpoint/binding credentials are not. Old fixed-read journals
-remain inspectable. There is no general CLI binding-file format or canvas server
-binding in this slice; the explicit CLI binding below remains the fixed read.
+remain inspectable. There is no general CLI binding-file format; the explicit
+CLI binding below remains the fixed read. Copilot's runtime-owned binding is
+separate and requires no hand-edited file.
+
+## Copilot host tools
+
+With a capable Copilot SDK host, the extension runtime binds names to its actual
+currently offered MCP tools and their input schemas. Match the server's raw tool
+name exactly. Multiple offered servers with the same name, missing/deferred
+schemas, kmx's own tools and non-MCP command/builtin tools refuse; nothing is
+silently loaded or selected. The binding is frozen per invocation and checked
+again before native execution. The native `tools.execute` pipeline still owns
+permission decisions; kmx adds no approval handler or retry.
+
+The runtime starts a session-only kmx preview MCP process, preserving the
+original server's checked root/provider/endpoint/cwd. Its Run/Test tools are
+model-callable, not hidden authorizations; canvas UI is unchanged. Edit stays
+on the original server; preview observations are read from the executing child.
+A child failure never substitutes an older server's result. Closing the runtime
+or session ends pending work; a tool already started in the host may finish,
+but cancellation keeps its journal incomplete and late results are discarded.
+
+Only ephemeral public signing keys appear in startup/discovery. Private keys
+stay in memory, and signed requests/responses bind exact bytes and fresh nonces.
+No app configuration or credential is copied, no new binding file is read, and
+no endpoint/token can come from authored source or Run/Test arguments. The
+original server/preferences are unchanged. Unsupported SDK/startup/platform
+combinations retain the plain unavailable/unbound reason. These are runtime
+contracts, not a claim of qualification for every installed host or tool.
 
 The strict local JSON binding is at most 16 KiB and contains references, never
 credential values:

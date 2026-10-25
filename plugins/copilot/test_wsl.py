@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1] / "copilot-wsl"
 VIEW = "com.github.copilot/extensions/agent-view/"
 ASSETS = {VIEW + name for name in (
     "extension.mjs", "view.mjs", "open.mjs", "index.html", "app.js", "style.css", "authoring.mjs", "editor.mjs",
-    "draft-controller.mjs", "action-controller.mjs", "observation-controller.mjs")}
+    "draft-controller.mjs", "action-controller.mjs", "observation-controller.mjs", "host-relay.mjs")}
 SKILLS = {"skills/kmx/SKILL.md", "skills/kmx-agent-builder/SKILL.md"}
 
 

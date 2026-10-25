@@ -1,0 +1,112 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { createPublicKey, generateKeyPairSync, sign, verify } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import http from 'node:http';
+import { once } from 'node:events';
+import { freezeTools, launchConfig, requestPayload, responsePayload, ensureHostRuntime, closeHostRuntime, previewServer, beginPreview } from '../../copilot-wsl/com.github.copilot/extensions/agent-view/host-relay.mjs';
+
+const base = 'kmx-agent-builder';
+const tool = { name: 'github-ping', mcpServerName: 'github', mcpToolName: 'ping', description: 'Host ping', input_schema: { type: 'object', additionalProperties: false } };
+const descriptor = { schemaVersion: 1, kind: 'kmx.host-runtime', executable: '/usr/local/bin/kmx', cwd: '/work', goos: 'linux', distro: 'Ubuntu', args: ['mcp', '--provider', 'copilot'] };
+
+test('freeze raw host names with schemas; collision, missing schema and kmx tools refuse', () => {
+  const selected = freezeTools([tool], ['ping'], [base]);
+  assert.equal(selected.get('ping').name, 'github-ping');
+  tool.input_schema.extra = true;
+  assert.equal(selected.get('ping').input_schema.extra, undefined);
+  delete tool.input_schema.extra;
+  for (const metadata of [[tool, { ...tool, name: 'other-ping', mcpServerName: 'other' }], [{ ...tool, input_schema: undefined, deferLoading: true }], [{ ...tool, mcpServerName: base }]]) {
+    assert.throws(() => freezeTools(metadata, ['ping'], [base]));
+  }
+});
+
+test('trusted launch preserves route/root and uses only a public startup key', () => {
+  const native = launchConfig(descriptor, 'public', 'linux');
+  assert.deepEqual(native, { type: 'stdio', command: descriptor.executable, cwd: '/work', args: [...descriptor.args, '--host-bridge-public-key', 'public'], tools: ['run', 'test'] });
+  const wsl = launchConfig(descriptor, 'public', 'win32');
+  assert.equal(wsl.command, 'wsl.exe');
+  assert.deepEqual(wsl.args.slice(0, 6), ['--distribution', 'Ubuntu', '--cd', '/work', '--exec', descriptor.executable]);
+  assert.equal(wsl.env, undefined);
+  assert.throws(() => launchConfig({ ...descriptor, distro: '' }, 'public', 'win32'));
+  assert.throws(() => launchConfig({ ...descriptor, args: ['mcp', '--secret', 'bad'] }, 'public', 'linux'));
+});
+
+test('shared Go/Node signing vector verifies byte-for-byte', () => {
+  const v = JSON.parse(readFileSync(new URL('../../../testdata/host-bridge-signing.json', import.meta.url), 'utf8'));
+  const key = createPublicKey({ key: Buffer.from(v.publicKey, 'base64'), format: 'der', type: 'spki' });
+  assert.ok(verify(null, Buffer.from(requestPayload(v.method, v.path, v.time, v.nonce, v.body)), key, Buffer.from(v.requestSignature, 'base64')));
+  assert.ok(verify(null, Buffer.from(responsePayload(v.status, v.nonce, v.body)), key, Buffer.from(v.responseSignature, 'base64')));
+});
+
+test('canonical signed bytes pin exact method/path/time/nonce/body and response status', () => {
+  const body = '{"output":{"ok":true}}';
+  assert.equal(requestPayload('POST', '/result/abc', '1700000000', '010203', body), `POST\n/result/abc\n1700000000\n010203\n${body}`);
+  assert.equal(responsePayload(200, '010203', body), `200\n010203\n${body}`);
+});
+
+async function fixture(t, { corrupt = false, stale = false, denied = false } = {}) {
+  const keys = generateKeyPairSync('ed25519');
+  const jobs = [{ id: 'a'.repeat(32), runId: 'b'.repeat(32), kind: 'resolve', names: ['ping'] }, { id: 'c'.repeat(32), runId: 'b'.repeat(32), kind: 'call', name: 'ping', arguments: {}, callId: 'call' }];
+  const results = [], calls = [], configs = [], stopped = []; let clientKey, reads = 0;
+  const session = { rpc: { mcp: {
+    resources: { read: async ({ serverName }) => ({ contents: [{ text: JSON.stringify(serverName === base ? descriptor : { ...descriptor, broker: { url, publicKey: keys.publicKey.export({ format: 'der', type: 'spki' }).toString('base64') } }) }] }) },
+    listConfigured: async () => ({ servers: [{ name: base }] }),
+    startServer: async (value) => { configs.push(value); const key = value.config.args.at(-1); clientKey = createPublicKey({ key: Buffer.from(key, 'base64'), format: 'der', type: 'spki' }); },
+    stopServer: async ({ serverName }) => stopped.push(serverName),
+  }, tools: {
+    initializeAndValidate: async () => {},
+    getCurrentMetadata: async () => ({ tools: [{ ...tool, description: stale && reads++ ? 'Changed' : tool.description }] }),
+    execute: async (call) => { calls.push(call); return denied ? { resultType: 'denied', error: 'private-error-canary' } : { resultType: 'success', structuredContent: { pong: true } }; },
+  } } };
+  const server = http.createServer(async (req, res) => {
+    let body = ''; for await (const chunk of req) body += chunk;
+    const nonce = req.headers['x-kmx-nonce'];
+    assert.ok(verify(null, Buffer.from(requestPayload(req.method, req.url, req.headers['x-kmx-time'], nonce, body)), clientKey, Buffer.from(req.headers['x-kmx-signature'], 'base64')));
+    let answer = null;
+    if (req.url === '/next') { answer = jobs.shift() || null; if (!answer) await new Promise(r => setTimeout(r, 50)); }
+    else { results.push({ path: req.url, value: JSON.parse(body) }); }
+    const raw = JSON.stringify(answer);
+    res.setHeader('X-Kmx-Signature', sign(null, Buffer.from(responsePayload(200, nonce, raw)), corrupt ? generateKeyPairSync('ed25519').privateKey : keys.privateKey).toString('base64'));
+    res.end(raw);
+  });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening'); const url = `http://127.0.0.1:${server.address().port}`;
+  t.after(async () => { await closeHostRuntime(session); server.closeAllConnections(); await new Promise(r => server.close(r)); });
+  return { session, configs, stopped, results, calls };
+}
+
+async function until(predicate) {
+  const end = Date.now() + 3000;
+  while (!predicate()) { if (Date.now() > end) assert.fail('relay did not finish'); await new Promise(r => setTimeout(r, 10)); }
+}
+
+test('session relay executes the frozen actual host tool once and strips SDK metadata', async t => {
+  const f = await fixture(t); await ensureHostRuntime(f.session);
+  await until(() => f.results.length === 2);
+  assert.equal(f.calls.length, 1); assert.equal(f.calls[0].name, 'github-ping');
+  assert.deepEqual(f.results[0].value.definitions[0], { Name: 'ping', Description: 'Host ping', InputSchema: tool.input_schema });
+  assert.deepEqual(f.results[1].value, { output: { pong: true } });
+  assert.equal(f.configs[0].expectedInstallationId, undefined);
+  assert.notEqual(previewServer(f.session), base);
+  assert.ok(!JSON.stringify(f.configs).includes('PRIVATE KEY'));
+  await closeHostRuntime(f.session); assert.deepEqual(f.stopped, [f.configs[0].serverName]);
+});
+
+for (const mode of ['stale', 'denied']) test(`${mode} host offer/result refuses without retry or raw errors`, async t => {
+  const f = await fixture(t, { [mode]: true }); await ensureHostRuntime(f.session);
+  await until(() => f.results.length === 2);
+  assert.deepEqual(f.results[1].value, { error: true });
+  assert.equal(f.calls.length, mode === 'denied' ? 1 : 0);
+  assert.ok(!JSON.stringify(f.results).includes('private-error-canary'));
+});
+
+test('forged broker response never reaches native execution', async t => {
+  const f = await fixture(t, { corrupt: true }); await ensureHostRuntime(f.session);
+  await new Promise(r => setTimeout(r, 120)); assert.equal(f.calls.length, 0); assert.equal(f.results.length, 0);
+});
+
+test('do not switch observation servers during another active original preview', async t => {
+  const f = await fixture(t); const first = beginPreview(f.session), second = beginPreview(f.session);
+  await assert.rejects(ensureHostRuntime(f.session, second)); assert.equal(f.configs.length, 0);
+  first.release(); second.release();
+});

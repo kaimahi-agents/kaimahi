@@ -101,7 +101,11 @@ with an explicit local binding and environment credential reference. Missing
 bindings/credentials, unsupported routes or invalid provider results refuse.
 Bound tools also work on Copilot Chat Completions and Responses routes; judges
 remain tool-free. Trusted embedding can bind multiple declared names to copied
-host schemas/executors. General server binding from the canvas is not wired yet. Parsing is not a sandbox or
+host schemas/executors. The Copilot extension runtime can bind those declarations
+to its currently offered MCP tools, using their input schemas without a binding
+file. Raw-name collisions and missing/deferred schemas refuse; no default server
+is selected. See [host tools](local-preview.md#copilot-host-tools).
+Parsing is not a sandbox or
 a guarantee that arbitrary prose is safe or secret-free. The complete charter,
 including raw YAML comments, is checked with the existing credential-shape scanner
 and refuses known shapes with a fixed redacted error. Decoded example inputs and

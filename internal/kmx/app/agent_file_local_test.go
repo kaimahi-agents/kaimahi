@@ -11,11 +11,62 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agent-primitives/sessions/api"
+	"github.com/agent-primitives/sessions/controller"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localpreview"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
+
+func TestHostFileRunnerNativeFactoryAndReplay(t *testing.T) {
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := filepath.Join(base, "state")
+	t.Setenv("KMX_HOME", home)
+	resolutions, executions := 0, 0
+	var invocation context.Context
+	runner := NewHostFileRunner(func(ctx context.Context, names []string) (*localtools.Host, error) {
+		invocation = ctx
+		resolutions++
+		if len(names) != 1 || names[0] != "ping" {
+			t.Fatalf("names=%v", names)
+		}
+		return localtools.NewTrustedHost([]api.ToolDefinition{{Name: "ping", InputSchema: map[string]any{"type": "object", "additionalProperties": false}}}, func(_ context.Context, _ controller.ToolCallContext, call api.ToolCall) (api.ToolResult, error) {
+			executions++
+			return api.ToolResult{ID: call.ID, Output: map[string]any{"ok": true}}, nil
+		}, func(...string) error { return nil })
+	})
+	if _, err := os.Lstat(home); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("constructor performed IO")
+	}
+	opt := directOptions(t, "fake", true)
+	// No tools: retain the ordinary factory's native two-sample judge path.
+	result, err := (&App{FileRunner: runner}).PreviewAgentFile(t.Context(), opt)
+	if err != nil || !result.FullPass || resolutions != 0 {
+		t.Fatalf("tool-free native path: %+v %v", result, err)
+	}
+	a, err := agentfile.Load(opt.File)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.Tools = []string{"ping"}
+	a.Instructions = "Call the tool `ping`. Reply with exactly `done`."
+	a.Examples = a.Examples[:1]
+	a.Examples[0].Assertions = nil
+	out, err := runner.Run(t.Context(), agentpreview.Request{Agent: a, Examples: a.Examples, Route: modelaccess.Route{Provider: "fake", Model: "fake", Auth: "none"}})
+	if err != nil || out.State != agentpreview.Complete || executions != 1 || resolutions != 1 || out.Examples[0].Completion.Answer != "done" || invocation.Err() == nil {
+		t.Fatalf("host runner: %+v %v calls=%d resolves=%d", out, err, executions, resolutions)
+	}
+	replay, err := localpreview.Inspect(t.Context(), filepath.Join(home, "local-preview", "journals"), out.Journal)
+	if err != nil || replay.ModelCalls != 0 || len(replay.Sessions) != 1 || replay.Sessions[0].ToolCalls != 1 || executions != 1 || resolutions != 1 {
+		t.Fatalf("replay=%+v %v", replay, err)
+	}
+}
 
 func TestLocalFileRunnerJournaledAppSnapshot(t *testing.T) {
 	base, err := filepath.EvalSymlinks(t.TempDir())

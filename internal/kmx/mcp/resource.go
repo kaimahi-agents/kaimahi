@@ -21,6 +21,7 @@ type AgentView struct {
 	Title         string              `json:"title"`
 	Instructions  string              `json:"instructions"`
 	Model         string              `json:"model"`
+	Tools         []string            `json:"tools,omitempty"`
 	Examples      []AgentViewExample  `json:"examples"`
 	Latest        AgentViewLatest     `json:"latest"`
 	Authoring     *AgentViewAuthoring `json:"authoring,omitempty"`
@@ -80,7 +81,7 @@ func AddAgentResource(server *sdk.Server, files *Files) {
 		if err != nil {
 			return nil, refusal("invalid_file")
 		}
-		view := AgentView{SchemaVersion: 1, Kind: "kmx.agent-view", File: File{Path: p, Revision: agent.Revision}, Title: agent.Title, Instructions: agent.Instructions, Model: agent.Model, Latest: AgentViewLatest{Status: "none"}}
+		view := AgentView{SchemaVersion: 1, Kind: "kmx.agent-view", File: File{Path: p, Revision: agent.Revision}, Title: agent.Title, Instructions: agent.Instructions, Model: agent.Model, Tools: agent.Tools, Latest: AgentViewLatest{Status: "none"}}
 		_, strictErr := agentfile.Parse(target, source)
 		view.Authoring = &AgentViewAuthoring{Source: string(source), Editable: strictErr == nil}
 		view.History = files.historyView(ctx, p)

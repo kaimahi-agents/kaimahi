@@ -184,7 +184,9 @@ up to 20 merged PRs through the fixed Streamable-HTTP endpoint. Missing authorit
 foreign/unmerged results and transport/schema failures refuse, without retries.
 Bound tools support Copilot Chat Completions and Responses routes; judging stays
 tool-free. Unbound tools still refuse with one plain reason. Trusted embedding
-can bind multiple declared tool names; the canvas binding path is not wired yet.
+can bind multiple declared tool names. The Copilot extension runtime also binds
+names to the joined session's actual MCP tools without a binding file; see
+[Copilot host tools](local-preview.md#copilot-host-tools). No Tools editor UI is added.
 The opt-in hosted smoke uses a scripted model, not real-LLM qualification.
 
 File mode uses embedded Sessions for fake/local and explicit Copilot routes,

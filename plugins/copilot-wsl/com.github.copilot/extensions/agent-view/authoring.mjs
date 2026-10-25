@@ -5,7 +5,7 @@ const INSTRUCTIONS = [
   "Non-Responsibilities",
   "Collaboration and Review Authority",
 ];
-const HEADINGS = ["Identity", ...INSTRUCTIONS, "Model", "Examples"];
+const HEADINGS = ["Identity", ...INSTRUCTIONS, "Model", "Tools", "Examples"];
 export const DEFAULT_MODEL = "gpt-5.6-terra";
 export const effectiveModel = (authored, override, chatModel) => override || authored.match(/^model: (.+)$/m)?.[1] || authored || chatModel || DEFAULT_MODEL;
 export const agentName = title => {
@@ -102,7 +102,7 @@ function locate(source) {
     if (/^[ \t]*##(?:[ \t]|$)/.test(line)) {
       const key = line.slice(3);
       require(HEADINGS.includes(key) && line === `## ${key}`, "Unsupported section heading.");
-      require(!sections.has(key) && current?.key !== "Examples", "Duplicate or misplaced section.");
+      require(!sections.has(key) && current?.key !== "Examples" && (current?.key !== "Tools" || key === "Examples"), "Duplicate or misplaced section.");
       if (current) current.end = offset;
       current = { key, heading: offset, start: next, end: source.length };
       sections.set(key, current);
@@ -112,7 +112,7 @@ function locate(source) {
     if (marker) open = marker;
     offset = next;
   }
-  require(!open && HEADINGS.every((key) => key === "Model" || sections.has(key)), "Incomplete canonical source.");
+  require(!open && HEADINGS.every((key) => key === "Model" || key === "Tools" || sections.has(key)), "Incomplete canonical source.");
   for (const key of INSTRUCTIONS) {
     const section = sections.get(key);
     const raw = source.slice(section.start, section.end);
