@@ -985,7 +985,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   }
 
   const modelControl = runtimeModelControl(doc,
-    () => ({ authored: base.model, selected: modelChoice.override, chatModel: base.chatModel, disabled: busy || blocked || invalidEditors.size > 0 }),
+    () => ({ authored: base.model, selected: modelChoice.override, chatModel: base.chatModel, chatModelName: base.chatModelName, disabled: busy || blocked || invalidEditors.size > 0 }),
     options.fetchModels ?? (() => execute({ operation: "models" })), (value) => {
       if (busy || blocked) return;
       clearUndo();

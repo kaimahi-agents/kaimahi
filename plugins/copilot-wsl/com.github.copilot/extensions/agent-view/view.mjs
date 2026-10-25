@@ -195,8 +195,8 @@ export async function readView(session, rawPath) {
   const body = contents[0].text;
   if (Buffer.byteLength(body, "utf8") > MAX_RESOURCE_BYTES) throw new ViewError("too-large");
   if (typeof body.isWellFormed === "function" && !body.isWellFormed()) invalid();
-  const view = parseView(body, path), chatModel = await chat;
-  return chatModel ? { ...view, chatModel } : view;
+  const view = parseView(body, path), metadata = await chat;
+  return { ...view, ...(metadata.model ? { chatModel: metadata.model } : {}), ...(metadata.name ? { chatModelName: metadata.name } : {}) };
 }
 
 // Optional joined-session SDK metadata, not catalog/auth discovery. Keep the
@@ -215,11 +215,12 @@ async function readChatModel(session) {
       new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Model metadata timed out.")), 2000); }),
     ]) : undefined;
     if (generation > state.resolved) {
-      state.model = validModel(current?.modelId) ? current.modelId : undefined; state.resolved = generation;
+      state.model = validModel(current?.modelId) ? current.modelId : undefined;
+      state.name = current?.modelId === "auto" ? "Copilot Fusion" : undefined; state.resolved = generation;
     }
   } catch { /* Transient metadata failures keep the last known valid model. */ }
   finally { clearTimeout(timer); }
-  return state.model;
+  return { model: state.model, name: state.name };
 }
 
 const validModel = (model) => typeof model === "string" && /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/.test(model) && model.toLowerCase() !== "auto" && !model.includes("://");

@@ -392,7 +392,7 @@ export function runtimeModelControl(doc, settings, load, change) {
     if (!item.disabled) choices.push(item);
   };
   const update = () => {
-    const { authored, selected, chatModel, disabled } = settings();
+    const { authored, selected, chatModel, chatModelName, disabled } = settings();
     const fallback = effectiveModel(authored, "", chatModel), current = selected || fallback;
     const origin = selected ? selected === defaultModel ? "default" : "this canvas" : authored ? "from the agent file" : "default";
     trigger.replaceChildren(el(doc, "span", "model-name", modelPresentation(current).name), el(doc, "span", "model-origin", ` · ${origin}`), icon(doc, "down", 12, 2));
@@ -413,6 +413,13 @@ export function runtimeModelControl(doc, settings, load, change) {
     follow.type = "button"; follow.disabled = !!disabled || !!(!authored && chatUnavailable);
     follow.setAttribute("role", "menuitem"); follow.setAttribute("data-model", "");
     bind(follow, ""); menu.append(follow);
+    if (chatModelName && !chatModel) {
+      const group = el(doc, "div", "model-options"), option = el(doc, "button", "model-option", chatModelName);
+      group.setAttribute("role", "group"); group.setAttribute("aria-label", "Chat");
+      option.type = "button"; option.disabled = true; option.setAttribute("role", "menuitemradio"); option.setAttribute("aria-checked", "false");
+      option.append(el(doc, "span", "model-chat", "Chat model · not available here"));
+      group.append(el(doc, "div", "model-group", "Chat"), option); menu.append(group);
+    }
     for (const [name, ids] of groups) {
       const group = el(doc, "div", "model-options"); group.setAttribute("role", "group"); group.setAttribute("aria-label", name);
       group.append(el(doc, "div", "model-group", name));

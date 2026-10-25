@@ -90,6 +90,13 @@ test('explicit auto/invalid host metadata clears known chat forwarding, while th
   assert.equal(response.view.chatModel,next==='throw'?'chat-a':undefined);
  }
 });
+test('host Auto is named for display without becoming a runnable model ID',async()=>{
+ const h=harness({omitModel:true});h.session.rpc.model={getCurrent:async()=>({modelId:'auto'})};
+ const view=await readView(h.session,'greeter.agent.md');assert.equal(view.chatModel,undefined);assert.equal(view.chatModelName,'Copilot Fusion');
+ h.o.shape=r=>({...r,modelRoute:{provider:'copilot',model:'gpt-5.6-terra'}});
+ assert.equal((await h.act({operation:'test',expectedRevision:revision(h.source())})).error,undefined);
+ assert.equal(h.calls[0].arguments.model,undefined,'Auto must not become a preview route');
+});
 test('default follows chat at action start rather than the last displayed observation',async()=>{
  const h=harness({omitModel:true});let current='chat-a';
  h.session.rpc.model={getCurrent:async()=>({modelId:current})};

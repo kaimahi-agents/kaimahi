@@ -1560,6 +1560,15 @@ test("model menu puts following first and chat's group first, disabling unavaila
   click(pinned); assert.deepEqual(changes, ["other-default"], "default display does not erase the explicit pin");
 });
 
+test("the host's Auto name appears first as unavailable, never as a runnable choice", async () => {
+  const changes = [], control = runtimeModelControl(fakeDoc(), () => ({ authored: "", selected: "", chatModelName: "Copilot Fusion" }), async () => ({ models: ["gpt-5.6-terra"] }), value => changes.push(value));
+  await control.trigger.listeners.click[0]();
+  const menu = byClass(control.node, "model-menu")[0]; assert.equal(menu.children[0].textContent, "Use default model");
+  assert.equal(byClass(menu, "model-group")[0].textContent, "Chat");
+  const chat = byClass(menu, "model-option").find(n => /Copilot Fusion/.test(n.textContent));
+  assert.ok(chat); assert.equal(chat.disabled, true); assert.match(chat.textContent, /not available here/);
+  assert.equal(chat.attrs["data-model"], undefined); assert.deepEqual(changes, []);
+});
 test("model default origin falls back to DEFAULT_MODEL while catalog is unavailable", async () => {
   const control = runtimeModelControl(fakeDoc(), () => ({ authored: "other", selected: "gpt-5.6-terra" }), async () => ({ error: "models-unavailable" }), () => {});
   assert.equal(control.trigger.textContent, "GPT-5.6 Terra · default");
