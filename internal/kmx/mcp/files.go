@@ -23,6 +23,9 @@
 // Mounts lacking both use exclusive creation and synced copy without atomic visibility.
 // Canonical Test passes its resolved target to App for subject-scoped failure
 // retention; requested display paths never grant storage authority.
+// The kmx://host-runtime resource exposes nonsecret trusted process identity. Its
+// signed host bridge permits at most 64 active runs and 128 pending requests,
+// with a 30-second relay deadline; public keys grant no executor authority.
 package mcp
 
 import (

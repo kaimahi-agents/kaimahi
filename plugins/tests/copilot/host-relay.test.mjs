@@ -151,6 +151,25 @@ test('closing a view keeps session observations pinned; runtime disposal never r
   assert.throws(() => previewServer(f.session), /Host-bound tools are unavailable/, 'no original-server fallback after runtime teardown');
 });
 
+test('shutdown during metadata recheck cannot dispatch a new native effect', async t => {
+  const f = await fixture(t), metadata = f.session.rpc.tools.getCurrentMetadata;
+  let entered, release, reads = 0; const waiting = new Promise(r => { entered = r; }), gate = new Promise(r => { release = r; });
+  f.session.rpc.tools.getCurrentMetadata = async () => { if (++reads === 2) { entered(); await gate; } return metadata(); };
+  await ensureHostRuntime(f.session); await waiting;
+  await closeHostRuntime(f.session); release(); await new Promise(setImmediate);
+  assert.equal(f.calls.length, 0, 'teardown before dispatch must not start the tool');
+});
+
+test('pending activation reserves routing before another preview can choose the original server', async t => {
+  const f = await fixture(t), read = f.session.rpc.mcp.resources.read;
+  let entered, release; const waiting = new Promise(r => { entered = r; }), gate = new Promise(r => { release = r; });
+  f.session.rpc.mcp.resources.read = async args => { if (args.serverName === base) { entered(); await gate; } return read(args); };
+  const pending = ensureHostRuntime(f.session); await waiting;
+  const late = beginPreview(f.session);
+  try { assert.throws(() => previewServer(f.session), /Host-bound tools are unavailable/); }
+  finally { late.release(); release(); await pending; }
+});
+
 test('runtime closed while startup is pending cleans up after start completes and never activates', async t => {
   const f = await fixture(t), events = [];
   let release, began; const gate = new Promise(r => { release = r; }), entered = new Promise(r => { began = r; });

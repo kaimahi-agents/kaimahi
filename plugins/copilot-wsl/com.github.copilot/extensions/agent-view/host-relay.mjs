@@ -17,12 +17,14 @@ function stateFor(session) {
   return states.get(session);
 }
 export function previewServer(session) {
-  const s = states.get(session); if (!s?.activated) return ORIGINAL;
+  const s = states.get(session);
+  if (s?.start && !s.active && !s.closed && !s.failed) throw unavailable();
+  if (!s?.activated) return ORIGINAL;
   if (!s.active || s.closed || s.failed) throw unavailable();
   return s.child;
 }
 export function beginPreview(session) {
-  const s = stateFor(session), lease = { release: () => s.leases.delete(lease) };
+  const s = stateFor(session), lease = { original: !s.start && !s.activated, release: () => s.leases.delete(lease) };
   s.leases.add(lease); return lease;
 }
 
@@ -136,7 +138,7 @@ async function pump(session, s) {
         const run = s.runs.get(job.runId), tool = run?.tools.get(job.name);
         if (!tool || run.seen.has(job.id) || !object(job.arguments) || Buffer.byteLength(JSON.stringify(job.arguments)) > 8192 || !text(job.callId, 1024)) throw unavailable();
         const current = freezeTools((await session.rpc.tools.getCurrentMetadata())?.tools, [job.name], excluded).get(job.name);
-        if (!isDeepStrictEqual(tool, current)) throw unavailable();
+        if (s.closed || s.failed || run.until < Date.now() || !isDeepStrictEqual(tool, current)) throw unavailable();
         run.seen.add(job.id);
         const result = await session.rpc.tools.execute({ name: tool.name, arguments: job.arguments, toolCallId: `kmx-preview-${job.id}` });
         if (result?.resultType !== "success") throw unavailable();
@@ -175,7 +177,7 @@ export async function ensureHostRuntime(session, lease) {
     s.serverKey = createPublicKey({ key: Buffer.from(bound.broker.publicKey, "base64"), format: "der", type: "spki" });
     if (s.serverKey.asymmetricKeyType !== "ed25519") throw unavailable();
     await rpc.tools.initializeAndValidate();
-    if (s.closed) throw unavailable();
+    if (s.closed || [...s.leases].some(other => other !== lease && other.original)) throw unavailable();
     s.active = true;
     void pump(session, s).catch(() => { s.failed = true; });
   })().catch(async e => { s.failed = true; await closeHostRuntime(session); throw e; });
