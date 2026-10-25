@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -30,7 +31,11 @@ func TestFileRecordedSourceProjectionAndMismatch(t *testing.T) {
 				}
 				a.Examples[i].Mocks = &agentfile.Mocks{Tools: []agentfile.MockTool{{Name: "ping", Mode: "recorded", Description: "Saved ping", Parameters: map[string]any{"type": "object"}, Calls: []agentfile.MockCall{{Arguments: args, Result: map[string]any{"private": "fixture-canary"}}}}}}
 			}
-			dir := t.TempDir()
+			base, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			dir := filepath.Join(base, "journals")
 			runner := localpreview.NewRunner(localpreview.RunnerOptions{JournalDir: func() (string, error) { return dir, nil }})
 			r, err := (&App{FileRunner: runner}).PreviewAgentSnapshot(context.Background(), a, opt)
 			if mismatch {
