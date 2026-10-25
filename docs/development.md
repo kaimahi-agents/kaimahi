@@ -158,6 +158,12 @@ native contract tests are in
 [`main_windows_test.go`](../scripts/ci/windows-tests/main_windows_test.go). It
 may change only a duplicated child token's default owner and never changes kmx,
 the parent token, accounts, privileges or machine policy.
+The native amd64 selection also runs one real Markdown agent through the
+production embedded fake runner: package-free Run, a source edit and failing
+Test, retained diagnostics, then offline Explain with no further model send.
+It scans both private state families for an ambient credential canary. This is
+still package-level qualification, not execution of the guarded Windows CLI or
+a release artifact.
 
 ```bash
 formatted=$(gofmt -l cmd internal pkg embed.go embed_test.go) && test -z "$formatted" && go vet ./... && go build ./... && go test ./...

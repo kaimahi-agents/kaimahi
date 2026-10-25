@@ -31,8 +31,12 @@ and translated completion, so joined output fragments cannot bypass the check.
 Status: the hermetic tests (fake model, an in-process HTTP endpoint and the
 judge) run with the root Go tests. Native Windows amd64 package tests exercise
 the fake model, replay, private journal family and interrupted clear on local
-NTFS. This is not execution of the guarded Windows CLI or native arm64. No run
-against a real compatible model is recorded yet. To record one, a human runs:
+NTFS. They also run one real Markdown file through package-free fake Run, an
+instruction-regressed failing Test, retained diagnostics and offline Explain,
+checking that Explain sends nothing and that neither private state family keeps
+an ambient credential canary. This is not execution of the guarded Windows CLI
+or native arm64. No run against a real compatible model is recorded yet. To
+record one, a human runs:
 
 ```sh
 KMX_LOCAL_PREVIEW_LIVE_BASE_URL=http://127.0.0.1:11434/v1 \
