@@ -143,15 +143,17 @@ HTML and caches are ignored. See the
 [documentation site](docs/docs-site.md) for versioning, publication and
 removal boundaries.
 
-The checkers above are the ones you can usefully run by hand. CI's hygiene
-job runs each checker, each checker's self-test, and a set of inline
-meta-checks over CI's own guards; it is the authority on what gates a
-merge, not this list.
+The checkers above are the ones you can usefully run by hand. CI's
+`hygiene-checks` job runs each checker, each checker's self-test, and inline
+meta-checks over CI's own guards, alongside the App and Windows tests.
+The required `hygiene` gate reports success only when all three dependencies
+succeed; missing, skipped, cancelled or failed work refuses success.
+The workflow is the authority on what gates a merge, not this list.
 
 The Linux and macOS app tests each run in four process-isolated CI shards,
 assigned by SHA-256 of each compiled top-level test name. Subtests stay with their parent. The
-required `hygiene` check requires every shard to succeed and still runs the other
-packages and focused app regressions. Each shard retains the 600-second package
+required `hygiene` check requires every shard to succeed; `hygiene-checks` runs
+the other packages and focused app regressions independently. Each shard retains the 600-second package
 limit and publishes payload-free per-test timings. To run one shard locally,
 use `python3 scripts/ci/app-tests.py --shard 0 --shards 4`; ordinary
 `go test ./...` still runs the complete suite without sharding.
@@ -267,8 +269,8 @@ Helm/Docker credentials or plugins. Docker daemon access is preserved. It remove
 only its owned cluster and temporary work. A failed kind create is ambiguous and
 left for inspection. Bootstrap checks readiness and MCP discovery, not suite
 Deploy or native A2A execution qualification; it is not an installed CLI installer.
-Hygiene runs hermetic bootstrap, qualification, audit, shell, CI-routing and
-loopback fixture tests without creating a cluster.
+The required kagent contract job runs hermetic bootstrap, qualification,
+audit, shell, CI-routing and loopback fixture tests without creating a cluster.
 
 Full runs emit closed `kagent timing:` markers on saved stderr, with a fixed span
 (`bootstrap`, `qualify`, `suite-evaluation`, `suite-helpers` or `cleanup`),
@@ -292,8 +294,9 @@ Every PR and routine main push instead runs `kagent contract — not live qualif
 hermetic Python bootstrap/qualifier/audit/fixture contracts, suite-lift contracts,
 and focused offline Go kagent profile, evaluation, placement, provenance and
 ownership/refusal tests. It creates no live cluster and proves no live A2A, image
-pull, controller rollout or real suite execution. Existing hygiene and all App
-shards remain; their overlapping tests are not removed.
+pull, controller rollout or real suite execution. Hygiene and all App shards
+remain required; the Python kagent fixture suites run once in the contract job,
+which gates `e2e-hello-world`.
 
 Full `e2e-kagent-lift / qualify` runs in the existing 03:23 UTC scheduled CI,
 manual CI and the on-demand `runtime-qualification.yml` workflow. Its unchanged

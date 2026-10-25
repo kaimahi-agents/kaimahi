@@ -25,7 +25,7 @@ class ChangelogWorkflowTests(unittest.TestCase):
         self.change("changes/README.md", "# Pending release notes\n")
         self.base = self.commit()
         workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
-        self.steps = workflow["jobs"]["hygiene"]["steps"]
+        self.steps = workflow["jobs"]["hygiene-checks"]["steps"]
 
     def gate(self, event="pull_request", merge=True, base=None):
         step = next((s for s in self.steps if s.get("name") == POLICY_STEP), None)

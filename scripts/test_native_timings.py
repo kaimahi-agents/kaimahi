@@ -266,7 +266,7 @@ class NativeTimingsTests(unittest.TestCase):
         self.assertEqual(passing["with"]["path"].splitlines(), [
             "${{ runner.temp }}/kmx-suite-native/artifacts/passing.json",
             "${{ runner.temp }}/kmx-suite-native/artifacts/qualification.json"])
-        hygiene = workflow["jobs"]["hygiene"]["steps"]
+        hygiene = workflow["jobs"]["hygiene-checks"]["steps"]
         self.assertTrue(any("python3 scripts/test_native_timings.py" in step.get("run", "") for step in hygiene))
 
 

@@ -127,10 +127,8 @@ jobs:
           go vet ./internal/kmx/fileaccess ./internal/kmx/config ./internal/kmx/localpreview ./internal/kmx/app ./scripts/ci/windows-tests
           exit $LASTEXITCODE
 
-  hygiene:
+  hygiene-checks:
     runs-on: ubuntu-latest
-    needs: [app-tests, windows-day-zero-foundation]
-    if: always()
     steps:
       - uses: actions/checkout@v4
         with:
@@ -777,8 +775,8 @@ jobs:
           print(f"{total} cluster steps across {len(shards)} shards + kmx-clone-free: all guarded")
           print(f"{required} reports for: {', '.join(shards)}; kmx-clone-free has no checkout")
           EOF
-      # kmx's own module. It lives in the REQUIRED hygiene job rather
-      # than a job of its own, because the guard port, the scaffolder's
+      # kmx's own module. These checks feed the REQUIRED hygiene gate,
+      # because the guard port, the scaffolder's
       # refusals and the checksum verification are the parts of kmx that
       # decide whether someone's cluster gets written to or a credential
       # gets committed — they gate merges or they are decoration. Keyless
@@ -968,8 +966,13 @@ jobs:
           grep -q -- '--- PASS: TestChatRefusesTheRetiredKagentRuntimeWithoutReachingACluster' retirement.out
           grep -q -- '--- PASS: TestLegacyAgentEditIsRemovedBeforeConfiguration' retirement.out
           ! grep -q -- '--- SKIP:' retirement.out
-      # Preserve the required check's name and collect other hygiene diagnostics
-      # even if a dependency fails. Missing, skipped and cancelled work refuses.
+  # Run checks alongside native tests; keep the required name fail-closed.
+  # Missing, skipped, cancelled or failed work must never produce a green gate.
+  hygiene:
+    runs-on: ubuntu-latest
+    needs: [hygiene-checks, app-tests, windows-day-zero-foundation]
+    if: always()
+    steps:
       - name: Every required hygiene dependency succeeded
         if: always()
         env:
@@ -978,7 +981,7 @@ jobs:
           python3 - <<'EOF'
           import json, os, sys
           needs = json.loads(os.environ["SHARDS"])
-          expected = {"app-tests", "windows-day-zero-foundation"}
+          expected = {"hygiene-checks", "app-tests", "windows-day-zero-foundation"}
           if set(needs) != expected:
               print("missing or unexpected hygiene dependency — refusing success"); sys.exit(1)
           bad = {}

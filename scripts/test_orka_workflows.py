@@ -159,7 +159,7 @@ class QualificationCallers(unittest.TestCase):
                     self.assertIn('CHANGELOG.md has no section', result.stderr)
 
     def run_hygiene_check(self, name, mutate=None):
-        step = next(s for s in workflow('ci.yml')['jobs']['hygiene']['steps'] if s.get('name') == name)
+        step = next(s for s in workflow('ci.yml')['jobs']['hygiene-checks']['steps'] if s.get('name') == name)
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             shutil.copytree(ROOT / '.github/workflows', root / '.github/workflows')

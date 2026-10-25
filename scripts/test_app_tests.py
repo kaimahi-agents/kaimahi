@@ -144,7 +144,8 @@ class AppShardWorkflowTests(unittest.TestCase):
         body = "\n".join(s.get("run", "") for s in job["steps"])
         self.assertIn("python3 scripts/ci/app-tests.py --shard", body)
         self.assertIn("--shards 4", body)
-        self.assertEqual(self.jobs["hygiene"]["needs"], ["app-tests", "windows-day-zero-foundation"])
+        self.assertEqual(self.jobs["hygiene"]["needs"],
+                         ["hygiene-checks", "app-tests", "windows-day-zero-foundation"])
         self.assertEqual(self.jobs["hygiene"]["if"], "always()")
         windows = self.jobs["windows-day-zero-foundation"]
         windows_body = "\n".join(step.get("run", "") for step in windows["steps"])
@@ -162,16 +163,28 @@ class AppShardWorkflowTests(unittest.TestCase):
         self.assertIn("--- SKIP:", windows_body)
         self.assertEqual(windows_body.count("did not pass"), 2)
 
+    def test_hygiene_checks_run_independently_without_skip_paths(self):
+        worker = self.jobs["hygiene-checks"]
+        self.assertEqual(worker["runs-on"], "ubuntu-latest")
+        self.assertNotIn("needs", worker)
+        self.assertNotIn("if", worker)
+        self.assertEqual(len(self.jobs["hygiene"]["steps"]), 1)
+
     def test_final_gate_rejects_every_non_success_and_wrong_dependency_set(self):
         steps = self.jobs["hygiene"]["steps"]
         gate = steps[-1]
         self.assertEqual(gate.get("name"), "Every required hygiene dependency succeeded")
         self.assertEqual(gate.get("if"), "always()")
         self.assertEqual(gate["env"]["SHARDS"], "${{ toJSON(needs) }}")
-        success = {"app-tests": {"result": "success"}, "windows-day-zero-foundation": {"result": "success"}}
-        cases = [(success, True), ({}, False), ({"app-tests": {}}, False),
+        success = {"hygiene-checks": {"result": "success"}, "app-tests": {"result": "success"},
+                   "windows-day-zero-foundation": {"result": "success"}}
+        cases = [(success, True), ({}, False),
                  ({**success, "unexpected": {"result": "success"}}, False)]
         for dependency in success:
+            missing = {name: result for name, result in success.items() if name != dependency}
+            cases.append((missing, False))
+            cases.append(({**success, dependency: {}}, False))
+            # Includes a failed checks worker while every native shard is green.
             for value in ("failure", "cancelled", "skipped", "unknown", ""):
                 broken = {name: dict(result) for name, result in success.items()}
                 broken[dependency] = {"result": value}
@@ -197,7 +210,7 @@ class AppShardWorkflowTests(unittest.TestCase):
             self.assertIn("${{ matrix.os }}", artifact["with"]["name"])
 
     def test_general_suite_excludes_only_app_and_discovery_fails_closed(self):
-        step = next(s for s in self.jobs["hygiene"]["steps"] if s.get("id") == "kmx_tests")
+        step = next(s for s in self.jobs["hygiene-checks"]["steps"] if s.get("id") == "kmx_tests")
         body = step["run"]
         self.assertIn('grep -vx "' + PACKAGE + '"', body)
         self.assertNotIn('"internal/kmx/app":', body)

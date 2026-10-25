@@ -150,7 +150,7 @@ class WorkflowTests(unittest.TestCase):
                 agg["needs"] = original
 
     def test_inline_guards_execute_and_reject_missing_or_docs_only_new_routing(self):
-        step = next(s for s in self.jobs["hygiene"]["steps"]
+        step = next(s for s in self.jobs["hygiene-checks"]["steps"]
                     if s.get("name", "").startswith("Cluster routing, reusable Orka"))
         with tempfile.TemporaryDirectory(prefix="kmx-ci-guards-") as directory:
             root = pathlib.Path(directory)
@@ -215,7 +215,7 @@ class WorkflowTests(unittest.TestCase):
             root = pathlib.Path(directory)
             workflow = root / ".github/workflows/ci.yml"
             workflow.parent.mkdir(parents=True)
-            for step in self.jobs["hygiene"]["steps"]:
+            for step in self.jobs["hygiene-checks"]["steps"]:
                 name = step.get("name", "")
                 if name.startswith("Converted shards install"):
                     job = "e2e-quickstart"
@@ -233,7 +233,7 @@ class WorkflowTests(unittest.TestCase):
                         self.assertEqual(result.returncode == 0, allowed, result.stdout + result.stderr)
 
     def test_native_tripwires_execute_without_legacy_runtime_commands(self):
-        for step in self.jobs["hygiene"]["steps"]:
+        for step in self.jobs["hygiene-checks"]["steps"]:
             if step.get("name", "").startswith(("Converted shards install", "The clone-free journey sets up")):
                 result = subprocess.run(["bash", "-e", "-c", step["run"]], cwd=ROOT, text=True,
                                         capture_output=True, timeout=10)

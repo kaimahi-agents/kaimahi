@@ -54,7 +54,7 @@ class RetirementCITests(unittest.TestCase):
         self.assertIn("Orka says hello.", runtime)
 
     def test_terminal_and_state_gates_require_retained_tests_without_skips(self):
-        terminal = next(step["run"] for step in self.jobs["hygiene"]["steps"]
+        terminal = next(step["run"] for step in self.jobs["hygiene-checks"]["steps"]
                         if step.get("name") == "agent-create wizard — terminal lifecycle")
         suiteview = next(step["run"] for step in self.jobs["state-paths-macos"]["steps"]
                          if step.get("name") == "Native macOS suite view safety")
@@ -89,7 +89,7 @@ class RetirementCITests(unittest.TestCase):
 
 
     def test_real_clonefree_hygiene_requires_authored_exactness_absence_and_promotion(self):
-        program = next(step["run"] for step in self.jobs["hygiene"]["steps"]
+        program = next(step["run"] for step in self.jobs["hygiene-checks"]["steps"]
                        if step.get("name", "").startswith("The clone-free journey sets up"))
         program = program.split("<<'EOF'\n", 1)[1].rsplit("\nEOF", 1)[0]
         def check(workflow):

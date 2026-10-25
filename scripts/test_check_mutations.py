@@ -315,7 +315,7 @@ class WhitespaceGateTests(unittest.TestCase):
     def setUp(self):
         ClassificationTests.setUp(self)
         workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
-        steps = [s for s in workflow["jobs"]["hygiene"]["steps"]
+        steps = [s for s in workflow["jobs"]["hygiene-checks"]["steps"]
                  if s.get("id") == "whitespace"]
         self.assertEqual(len(steps), 1, "hygiene must check the committed diff")
         self.body = steps[0]["run"]
@@ -395,7 +395,7 @@ class WorkflowRoutingTests(unittest.TestCase):
         return bool(eval(expression, {"__builtins__": {}}, {}))
 
     def test_mutations_run_for_scripts_pr_and_all_non_pr_events(self):
-        step = next(s for s in self.workflow["jobs"]["hygiene"]["steps"]
+        step = next(s for s in self.workflow["jobs"]["hygiene-checks"]["steps"]
                     if s.get("name") == "Every checker notices being broken")
         for event, scripts, wanted in (
             ("pull_request", "false", False),
@@ -409,7 +409,7 @@ class WorkflowRoutingTests(unittest.TestCase):
                 self.assertEqual(self.enabled(step.get("if", "True"), event, scripts), wanted)
 
     def test_routing_self_tests_run_even_without_script_changes(self):
-        steps = self.workflow["jobs"]["hygiene"]["steps"]
+        steps = self.workflow["jobs"]["hygiene-checks"]["steps"]
         tests = [s for s in steps if "python3 scripts/test_check_mutations.py" in s.get("run", "")]
         self.assertTrue(tests, "routing tests must be invoked")
         self.assertTrue(any(self.enabled(s.get("if", "True"), "pull_request", "false") for s in tests),
@@ -419,7 +419,7 @@ class WorkflowRoutingTests(unittest.TestCase):
         for name, job in self.workflow["jobs"].items():
             with self.subTest(job=name):
                 expression = job.get("if", "True")
-                self.assertEqual(self.enabled(expression, "schedule"), name in {"hygiene", "app-tests", "windows-day-zero-foundation", "classify-change", "kagent-contract", "e2e-kagent-lift", "e2e-hello-world"})
+                self.assertEqual(self.enabled(expression, "schedule"), name in {"hygiene", "hygiene-checks", "app-tests", "windows-day-zero-foundation", "classify-change", "kagent-contract", "e2e-kagent-lift", "e2e-hello-world"})
                 if name not in {"kmx-clone-free", "e2e-kagent-lift"}:
                     self.assertTrue(self.enabled(expression, "pull_request"))
         triggers = self.workflow.get("on", self.workflow.get(True))
