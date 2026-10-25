@@ -142,7 +142,6 @@ var previewCopilotFailures = []struct {
 	{copilot.ErrPolicy, "copilot_policy_denied"},
 	{copilot.ErrQuota, "copilot_quota"},
 	{copilot.ErrModelUnavailable, "copilot_model_unavailable"},
-	{copilot.ErrToolsUnsupported, "copilot_tools_unsupported"},
 	{copilot.ErrMalformed, "copilot_malformed"},
 	{copilot.ErrKeychain, "copilot_keychain_unavailable"},
 	{copilot.ErrUnavailable, "copilot_unavailable"},
@@ -346,6 +345,12 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 			return fail("unsafe_tool_content", 1)
 		}
 		return fail("credential_content", 1)
+	}
+	if errors.Is(cause, copilot.ErrToolsUnsupported) {
+		result, previewErr := fail("tools_unavailable", 1)
+		result.Reason = "Selected model does not support tool calls."
+		previewErr.message = result.Reason
+		return result, previewErr
 	}
 	if errors.Is(cause, agentpreview.ErrToolsUnavailable) {
 		return fail("tools_unavailable", 1)

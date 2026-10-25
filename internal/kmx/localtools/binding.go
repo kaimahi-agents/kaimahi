@@ -1,4 +1,5 @@
-// Package localtools defines host-owned, fixed read-only local tools.
+// Package localtools defines bounded host-owned tool previews and explicit
+// bindings, including the fixed read-only GitHub adapter.
 package localtools
 
 import (

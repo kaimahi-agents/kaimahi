@@ -216,7 +216,7 @@ func parseToolReply(raw []byte, model string, allowCall bool, defs ...api.ToolDe
 		return fail()
 	}
 	var args map[string]any
-	if len(calls[0].Function.Arguments) > 8*1024 || !runtime.JSONKeysUnique([]byte(calls[0].Function.Arguments)) || json.Unmarshal([]byte(calls[0].Function.Arguments), &args) != nil || args == nil {
+	if len(calls[0].Function.Arguments) > 8*1024 || !runtime.JSONKeysUnique([]byte(calls[0].Function.Arguments)) || !runtime.JSONNumbersExact([]byte(calls[0].Function.Arguments)) || json.Unmarshal([]byte(calls[0].Function.Arguments), &args) != nil || args == nil {
 		return fail()
 	}
 	call := api.ToolCall{ID: calls[0].ID, Tool: calls[0].Function.Name, Args: args}

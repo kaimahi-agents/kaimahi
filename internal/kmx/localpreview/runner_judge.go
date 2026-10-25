@@ -11,6 +11,7 @@ import (
 
 	"github.com/agent-primitives/sessions/api"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
 // runnerJudgeTransport puts each native judge sample through a fresh tool-free
@@ -164,6 +165,9 @@ func checkJSONContent(raw []byte, check func(...string) error) error {
 				return err
 			}
 			var nested any
+			if json.Valid([]byte(v)) && !runtime.JSONKeysUnique([]byte(v)) {
+				return errRunnerExecution
+			}
 			if json.Unmarshal([]byte(v), &nested) == nil {
 				return walk(nested, depth+1)
 			}

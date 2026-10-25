@@ -13,6 +13,14 @@ import (
 	"testing"
 )
 
+func TestToolModelRejectsRoundedArguments(t *testing.T) {
+	defs := []api.ToolDefinition{{Name: "lookup", InputSchema: map[string]any{"type": "object", "properties": map[string]any{"id": map[string]any{"type": "integer"}}}}}
+	raw := []byte(`{"model":"unit","choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","tool_calls":[{"id":"c","type":"function","function":{"name":"lookup","arguments":"{\"id\":9007199254740993}"}}]}}]}`)
+	if _, err := parseToolReply(raw, "unit", true, defs...); err == nil {
+		t.Fatal("tool identifier rounded before execution")
+	}
+}
+
 func generalDefinitions() []api.ToolDefinition {
 	return []api.ToolDefinition{{Name: "lookup", Description: "Trusted lookup", InputSchema: map[string]any{"type": "object", "required": []any{"query"}, "properties": map[string]any{"query": map[string]any{"type": "string"}}, "additionalProperties": false}}, {Name: "ping", InputSchema: map[string]any{"type": "object", "additionalProperties": false}}}
 }

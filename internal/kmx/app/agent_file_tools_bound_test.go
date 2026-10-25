@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
 	"github.com/agent-primitives/sessions/api"
@@ -70,7 +71,8 @@ func TestFileToolsCopilotTrustedBindingAndPlainRefusal(t *testing.T) {
 			a.Tools = []string{"ping"}
 			access := &boundToolAccess{failure: failure}
 			executions := 0
-			runner := localpreview.NewRunner(localpreview.RunnerOptions{JournalDir: func() (string, error) { return t.TempDir(), nil }, Judge: localFilePreviewJudge, Access: func(context.Context, []modelaccess.Route) (modelaccess.PreviewAccess, error) { return access, nil }, ResolveTools: func(context.Context, []string) (*localtools.Host, error) {
+			dir := filepath.Join(t.TempDir(), "journals")
+			runner := localpreview.NewRunner(localpreview.RunnerOptions{JournalDir: func() (string, error) { return dir, nil }, Judge: localFilePreviewJudge, Access: func(context.Context, []modelaccess.Route) (modelaccess.PreviewAccess, error) { return access, nil }, ResolveTools: func(context.Context, []string) (*localtools.Host, error) {
 				return localtools.NewTrustedHost([]api.ToolDefinition{{Name: "ping", InputSchema: map[string]any{"type": "object", "additionalProperties": false}}}, func(_ context.Context, _ controller.ToolCallContext, c api.ToolCall) (api.ToolResult, error) {
 					executions++
 					return api.ToolResult{ID: c.ID, Output: map[string]any{"ok": true}}, nil
@@ -78,7 +80,7 @@ func TestFileToolsCopilotTrustedBindingAndPlainRefusal(t *testing.T) {
 			}})
 			result, err := (&App{FileRunner: runner}).PreviewAgentSnapshot(t.Context(), a, opt)
 			if failure != nil {
-				want := "copilot_tools_unsupported"
+				want := "tools_unavailable"
 				if failure == copilot.ErrAuthRevoked {
 					want = "copilot_auth_revoked"
 				}

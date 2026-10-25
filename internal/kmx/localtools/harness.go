@@ -18,7 +18,7 @@ import (
 var errTrace = errors.New("local tools: unsupported or incomplete preview trace")
 var callID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
-// Harness is the versioned, secret-free one-read preview contract. Bindings and
+// Harness is the versioned, secret-free one-call preview contract. Bindings and
 // credentials belong exclusively to the host's executor, never this config.
 type Harness struct {
 	Model       string

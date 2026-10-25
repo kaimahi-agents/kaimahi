@@ -2,6 +2,7 @@ package copilot
 
 import (
 	"encoding/json"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
 type responseChatCall struct {
@@ -28,6 +29,9 @@ func conversationKey(fields map[string]json.RawMessage, messages []map[string]js
 
 func sameArguments(a, b string) bool {
 	var x, y any
+	if !runtime.JSONNumbersExact([]byte(a)) || !runtime.JSONNumbersExact([]byte(b)) {
+		return false
+	}
 	if json.Unmarshal([]byte(a), &x) != nil || json.Unmarshal([]byte(b), &y) != nil {
 		return false
 	}

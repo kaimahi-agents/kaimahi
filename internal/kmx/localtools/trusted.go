@@ -8,6 +8,7 @@ import (
 
 	"github.com/agent-primitives/sessions/api"
 	"github.com/agent-primitives/sessions/controller"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
@@ -20,7 +21,7 @@ func ValidToolName(name string) bool { return toolName.MatchString(name) }
 // data. Schemas resolve locally only: offline replay has no loader authority.
 func CopyDefinitions(defs []api.ToolDefinition) ([]api.ToolDefinition, error) {
 	raw, err := json.Marshal(defs)
-	if err != nil || len(raw) > 64*1024 || len(defs) == 0 || len(defs) > 32 {
+	if err != nil || len(raw) > 64*1024 || len(defs) == 0 || len(defs) > 32 || !runtime.JSONNumbersExact(raw) {
 		return nil, errInvalidBinding
 	}
 	var copied []api.ToolDefinition
@@ -53,7 +54,7 @@ func compileSchema(schema map[string]any) (*jsonschema.Schema, error) {
 // ValidateArguments requires a listed name and a schema-valid bounded object.
 func ValidateArguments(defs []api.ToolDefinition, name string, args map[string]any) error {
 	raw, err := json.Marshal(args)
-	if err != nil || len(raw) > 8*1024 {
+	if err != nil || len(raw) > 8*1024 || !runtime.JSONNumbersExact(raw) {
 		return errInvalidCall
 	}
 	// Nil arguments represent the legacy empty object, not JSON null.
@@ -97,6 +98,9 @@ func CheckJSON(value any, check func(...string) error) error {
 				return err
 			}
 			var nested any
+			if json.Valid([]byte(v)) && !runtime.JSONKeysUnique([]byte(v)) {
+				return errUnsafeContent
+			}
 			if json.Unmarshal([]byte(v), &nested) == nil {
 				return walk(nested, depth+1)
 			}
@@ -190,7 +194,7 @@ func (h *Host) executeTrusted(ctx context.Context, scope controller.ToolCallCont
 		return api.ToolResult{}, err
 	}
 	raw, err = json.Marshal(result)
-	if err != nil || len(raw) > 32*1024 || result.ID != call.ID || result.IsError || result.Error != "" || result.Output == nil || result.Content != nil || result.OutputURI != "" || result.OutputDigest != "" {
+	if err != nil || len(raw) > 32*1024 || !runtime.JSONNumbersExact(raw) || result.ID != call.ID || result.IsError || result.Error != "" || result.Output == nil || result.Content != nil || result.OutputURI != "" || result.OutputDigest != "" {
 		return api.ToolResult{}, errInvalidResult
 	}
 	var copied api.ToolResult
