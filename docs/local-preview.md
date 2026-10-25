@@ -19,8 +19,9 @@ cancellation stops later samples and examples; start a new preview to establish
 fresh credentials. Logging out in another kmx process does not revoke this
 in-memory snapshot or stop a running preview; cancel that preview explicitly.
 It ends within the five-minute invocation bound. Ordinary model listing and
-non-preview access keep their existing refresh behavior. Declared tools with either a Copilot agent or a
-Copilot judge still refuse before authentication or journal creation.
+non-preview access keep their existing refresh behavior. Unbound Copilot agent
+tools refuse before authentication or journal creation; explicitly bound agent
+tools are supported. Judges remain tool-free.
 Enabled Copilot models may use Chat Completions or Responses; the provider
 captures the catalog-selected protocol with the credential snapshot. The same
 path is retained while the catalog still advertises it; disappearance aborts,
@@ -60,7 +61,8 @@ Name the variable; never put the credential value on the command line.
   zero model calls. If it doesn't, the example is not a pass.
 - Instructions are the agent file's prefix before Examples, sent as the system
   prompt. The example input is sent as the user message. Each example gets one
-  model request. There are no retries, no fallback model and no tool execution.
+  model request when tool-free. A bound tool case permits one tool call and one
+  follow-up model send. There are no retries or fallback models.
   Cancellation and the per-example deadline (default 2 minutes, which also
   covers judging) stop the request in flight.
 
@@ -93,8 +95,9 @@ separate and requires no hand-edited file.
 With a capable Copilot SDK host, the extension runtime binds names to its actual
 currently offered MCP tools and their input schemas. Match the server's raw tool
 name exactly. Multiple offered servers with the same name, missing/deferred
-schemas, kmx's own tools and non-MCP command/builtin tools refuse; nothing is
-silently loaded or selected. The binding is frozen per invocation and checked
+schemas, tools from the original kmx server or this preview child, and non-MCP
+command/builtin tools refuse; nothing is silently loaded or selected. These two
+server identities are excluded, not every separately configured kmx alias. The binding is frozen per invocation and checked
 again before native execution. The native `tools.execute` pipeline still owns
 permission decisions; kmx adds no approval handler or retry.
 
@@ -106,9 +109,12 @@ Closing a canvas keeps the session-owned child, so reopening cannot revive the
 original process's older result. Runtime/session teardown stops it and remains
 unavailable rather than falling back. Windows-to-WSL uses the trusted kmx binary
 to pipe one signed request/response; Windows localhost forwarding is not needed.
-A tool already started in the host may finish after cancellation. A native
+Immediately before native dispatch, a signed one-shot claim checks that the Go
+call is still pending and its context is live. Cancellation or expiry completed
+before this dispatch commitment refuses without starting the native operation.
+After commitment, the delegated operation may finish after cancellation. A native
 permission wait can also outlast the 30-second relay call; kmx cannot cancel that
-host operation. Its journal stays incomplete, late results are discarded, and
+already-committed host operation. Its journal stays incomplete, late results are discarded, and
 nothing is retried. A waiting native call serializes the relay until it finishes.
 
 Only ephemeral public signing keys appear in startup/discovery. Private keys

@@ -113,6 +113,14 @@ func (p *bridgePeer) result(job map[string]any, value any) int {
 	code, _ := p.send(p.request("POST", "/result/"+job["id"].(string), body))
 	return code
 }
+func (p *bridgePeer) claim(job map[string]any) int {
+	p.t.Helper()
+	code, body := p.send(p.request("POST", "/claim/"+job["id"].(string), nil))
+	if string(body) != "null" {
+		p.t.Fatalf("claim response=%s", body)
+	}
+	return code
+}
 func bridgeDefinitions() []api.ToolDefinition {
 	return []api.ToolDefinition{{Name: "lookup", Description: "Look up a value", InputSchema: map[string]any{"type": "object", "properties": map[string]any{}, "additionalProperties": false}}}
 }
@@ -246,6 +254,139 @@ func TestHostBridgeAuthenticationAndCorrelation(t *testing.T) {
 		t.Fatalf("unknown=%d", code)
 	}
 }
+func TestHostBridgeCallRequiresOneShotClaim(t *testing.T) {
+	p := newBridgePeer(t)
+	done := make(chan error, 1)
+	go func() { done <- p.bridge.rpc(t.Context(), hostJob{Kind: "call"}, new(any)) }()
+	job := p.next()
+	path := "/claim/" + job["id"].(string)
+	for _, mutation := range []string{"unsigned", "modified"} {
+		req := p.request("POST", path, nil)
+		if mutation == "unsigned" {
+			req.Header.Del("X-Kmx-Signature")
+		} else {
+			req.Body = io.NopCloser(strings.NewReader("x"))
+			req.ContentLength = 1
+		}
+		if code, _ := p.send(req); code != 401 {
+			t.Fatalf("%s claim=%d", mutation, code)
+		}
+	}
+	if code, _ := p.send(p.request("POST", path, []byte("x"))); code != 400 {
+		t.Fatalf("nonempty claim=%d", code)
+	}
+	if code := p.result(job, map[string]any{"output": map[string]any{"ok": true}}); code != 410 {
+		t.Fatalf("premature result=%d", code)
+	}
+	select {
+	case err := <-done:
+		t.Fatalf("premature result completed call: %v", err)
+	default:
+	}
+	if code := p.claim(job); code != 200 {
+		t.Fatalf("live claim=%d", code)
+	}
+	if code := p.claim(job); code != 410 {
+		t.Fatalf("duplicate claim=%d", code)
+	}
+	if code := p.result(job, map[string]any{"output": map[string]any{"ok": true}}); code != 200 {
+		t.Fatalf("claimed result=%d", code)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("claimed result did not complete call")
+	}
+	if code := p.claim(job); code != 410 {
+		t.Fatalf("completed claim=%d", code)
+	}
+}
+
+func TestHostBridgeClaimRequiresLivePendingContexts(t *testing.T) {
+	for _, mode := range []string{"cancelled", "expired", "broker-cancelled"} {
+		t.Run(mode, func(t *testing.T) {
+			p := newBridgePeer(t)
+			dead, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+			defer cancel()
+			pending := &hostPending{ctx: dead, kind: "call", result: make(chan []byte, 1)}
+			brokerCtx := t.Context()
+			if mode != "expired" {
+				dead, stop := context.WithCancel(t.Context())
+				stop()
+				pending.ctx = dead
+			}
+			if mode == "broker-cancelled" {
+				brokerCtx, pending.ctx = pending.ctx, t.Context()
+			}
+			id := hostID()
+			bridge := &HostBridge{descriptor: p.bridge.descriptor, public: p.bridge.public, private: p.bridge.private, ctx: brokerCtx, nonces: map[string]int64{}, pending: map[string]*hostPending{id: pending}}
+			req := p.request("POST", "/claim/"+id, nil)
+			req.RequestURI = req.URL.Path
+			recorder := httptest.NewRecorder()
+			bridge.serve(recorder, req)
+			if recorder.Code != 410 || pending.claimed {
+				t.Fatalf("nonlive claim=%d committed=%v", recorder.Code, pending.claimed)
+			}
+		})
+	}
+}
+
+func TestHostBridgeClaimRejectsResolve(t *testing.T) {
+	p := newBridgePeer(t)
+	done := p.resolve(t.Context())
+	job := p.next()
+	if code := p.claim(job); code != 410 {
+		t.Fatalf("resolve claim=%d", code)
+	}
+	if code := p.result(job, map[string]any{"definitions": bridgeDefinitions()}); code != 200 {
+		t.Fatalf("resolve result=%d", code)
+	}
+	if got := awaitResolved(t, done); got.err != nil {
+		t.Fatal(got.err)
+	}
+}
+
+func TestHostBridgeClaimRejectsCancelledAndExpiredCall(t *testing.T) {
+	for _, mode := range []string{"cancelled", "expired"} {
+		t.Run(mode, func(t *testing.T) {
+			p := newBridgePeer(t)
+			ctx, cancel := context.WithCancel(t.Context())
+			if mode == "expired" {
+				cancel()
+				ctx, cancel = context.WithTimeout(t.Context(), time.Second)
+			}
+			defer cancel()
+			done := make(chan error, 1)
+			go func() { done <- p.bridge.rpc(ctx, hostJob{Kind: "call"}, new(any)) }()
+			job := p.next()
+			if mode == "cancelled" {
+				cancel()
+			}
+			<-ctx.Done()
+			select {
+			case err := <-done:
+				if err != errHostBridge {
+					t.Fatalf("cancelled call=%v", err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("call did not finish cancellation")
+			}
+			p.bridge.mu.Lock()
+			pending := p.bridge.pending[job["id"].(string)]
+			p.bridge.mu.Unlock()
+			if pending != nil {
+				t.Fatal("cancelled response preceded pending removal")
+			}
+			if code := p.claim(job); code != 410 {
+				t.Fatalf("%s claim=%d", mode, code)
+			}
+		})
+	}
+}
+
 func TestHostBridgeFrozenCallAndCancellationIsolation(t *testing.T) {
 	p := newBridgePeer(t)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -271,6 +412,9 @@ func TestHostBridgeFrozenCallAndCancellationIsolation(t *testing.T) {
 	callJob := p.next()
 	if callJob["kind"] != "call" || callJob["runId"] != job["runId"] || callJob["name"] != "lookup" || callJob["callId"] != "call_1" || !reflect.DeepEqual(callJob["arguments"], map[string]any{}) {
 		t.Fatalf("call projection: %v", callJob)
+	}
+	if code := p.claim(callJob); code != 200 {
+		t.Fatalf("call claim=%d", code)
 	}
 	if p.result(callJob, map[string]any{"output": map[string]any{"value": "found"}}) != 200 {
 		t.Fatal("call result")
@@ -330,6 +474,9 @@ func TestHostBridgeCancelledInvocationRejectsInFlightCall(t *testing.T) {
 		callDone <- err
 	}()
 	callJob := p.next()
+	if code := p.claim(callJob); code != 200 {
+		t.Fatalf("call claim=%d", code)
+	}
 	cancel()
 	select {
 	case err := <-callDone:
@@ -484,7 +631,11 @@ func TestHostBridgeRejectsUnsafeDefinitionsAndResults(t *testing.T) {
 				_, err := got.host.Execute(t.Context(), controller.ToolCallContext{SessionUID: "session"}, api.ToolCall{ID: "call_1", Tool: "lookup", Args: map[string]any{}, IdempotencyKey: "once", Mediation: api.MediationControllerMediated})
 				result <- err
 			}()
-			p.result(p.next(), value)
+			callJob := p.next()
+			if code := p.claim(callJob); code != 200 {
+				t.Fatalf("call claim=%d", code)
+			}
+			p.result(callJob, value)
 			if err := <-result; err == nil {
 				t.Fatal("unsafe result accepted")
 			}

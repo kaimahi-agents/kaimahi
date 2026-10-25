@@ -4,7 +4,7 @@ import { randomBytes, timingSafeEqual, createHash } from "node:crypto";
 import { instructionSections, replaceInstructions, replaceExamples, effectiveModel, preRouteRefusal, agentName, fileLocation } from "./authoring.mjs";
 import { readFile } from "node:fs/promises";
 import http from "node:http";
-import { ensureHostRuntime, previewServer, beginPreview, closeHostRuntime } from "./host-relay.mjs";
+import { ensureHostRuntime, previewServer, beginPreview, closeHostRuntime, HostRuntimeUnavailable } from "./host-relay.mjs";
 
 export const CANVAS_ID = "kmx-agent-view";
 export const SERVER_NAME = "kmx-agent-builder";
@@ -32,8 +32,8 @@ const MESSAGES = {
 };
 
 export class ViewError extends Error {
-  constructor(code) {
-    super(MESSAGES[code] ?? MESSAGES.unavailable);
+  constructor(code, message = MESSAGES[code] ?? MESSAGES.unavailable) {
+    super(message);
     this.name = "ViewError";
     this.code = MESSAGES[code] ? code : "unavailable";
   }
@@ -41,7 +41,8 @@ export class ViewError extends Error {
 const invalid = () => {
   throw new ViewError("invalid-resource");
 };
-const safeError = (e) => (e instanceof ViewError ? e : new ViewError("unavailable"));
+const safeError = (e) => e instanceof ViewError ? e : new ViewError("unavailable",
+  e instanceof HostRuntimeUnavailable ? "Host tools are unavailable in this session. Start a new Copilot session." : MESSAGES.unavailable);
 
 // Preserve the requested path. The MCP server resolves it and checks the target;
 // a Windows-hosted extension must not resolve WSL paths on the Windows filesystem.
@@ -190,8 +191,8 @@ export async function readView(session, rawPath) {
   let response;
   try {
     response = await session.rpc.mcp.resources.read({ serverName: previewServer(session), uri: resourceUri(path) });
-  } catch {
-    throw new ViewError("unavailable"); // never surface raw transport errors
+  } catch (e) {
+    throw safeError(e); // never surface raw transport errors
   }
   const contents = response?.contents;
   if (!Array.isArray(contents) || contents.length !== 1 || typeof contents[0]?.text !== "string") invalid();

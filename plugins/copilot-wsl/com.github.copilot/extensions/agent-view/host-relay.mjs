@@ -8,7 +8,8 @@ const ORIGINAL = "kmx-agent-builder", URI = "kmx://host-runtime";
 const states = new WeakMap();
 const object = v => v !== null && typeof v === "object" && !Array.isArray(v);
 const text = (v, max = 4096) => typeof v === "string" && v.length > 0 && v.length <= max && !v.includes("\0");
-const unavailable = () => new Error("Host-bound tools are unavailable for the declared names.");
+export class HostRuntimeUnavailable extends Error {}
+const unavailable = () => new HostRuntimeUnavailable("Host-bound tools are unavailable for the declared names.");
 export const requestPayload = (method, route, time, nonce, body) => `${method}\n${route}\n${time}\n${nonce}\n${body}`;
 export const responsePayload = (status, nonce, body) => `${status}\n${nonce}\n${body}`;
 
@@ -140,6 +141,9 @@ async function pump(session, s) {
         const current = freezeTools((await session.rpc.tools.getCurrentMetadata())?.tools, [job.name], excluded).get(job.name);
         if (s.closed || s.failed || run.until < Date.now() || !isDeepStrictEqual(tool, current)) throw unavailable();
         run.seen.add(job.id);
+        // One-shot Go-side claim commits dispatch only while this call is live.
+        await send(s, "POST", `/claim/${job.id}`);
+        if (s.closed || s.failed) throw unavailable();
         const result = await session.rpc.tools.execute({ name: tool.name, arguments: job.arguments, toolCallId: `kmx-preview-${job.id}` });
         if (result?.resultType !== "success") throw unavailable();
         const output = result.structuredContent ?? (typeof result.textResultForLlm === "string" ? { text: result.textResultForLlm } : undefined);

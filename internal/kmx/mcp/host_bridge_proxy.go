@@ -13,7 +13,7 @@ import (
 )
 
 var hostProxyAddress = regexp.MustCompile(`^http://127\.0\.0\.1:([0-9]+)/?$`)
-var hostProxyResult = regexp.MustCompile(`^/result/[0-9a-f]{32}$`)
+var hostProxyResult = regexp.MustCompile(`^/(result|claim)/[0-9a-f]{32}$`)
 
 // ProxyHostRequest forwards one already-signed request to the trusted child broker.
 // It preserves signed bytes and holds no credentials or signing authority.

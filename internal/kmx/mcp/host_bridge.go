@@ -84,8 +84,10 @@ type hostJob struct {
 	CallID    string          `json:"callId,omitempty"`
 }
 type hostPending struct {
-	ctx    context.Context
-	result chan []byte
+	ctx     context.Context
+	result  chan []byte
+	kind    string
+	claimed bool
 }
 
 // HostBridge is a bounded invocation relay pinned to one runtime's signing key.
@@ -185,6 +187,22 @@ func (b *HostBridge) serve(w http.ResponseWriter, r *http.Request) {
 		b.respond(w, r, 401, nil)
 		return
 	}
+	if r.Method == "POST" && strings.HasPrefix(r.URL.Path, "/claim/") {
+		if len(body) != 0 {
+			b.respond(w, r, 400, nil)
+			return
+		}
+		b.mu.Lock()
+		pending := b.pending[strings.TrimPrefix(r.URL.Path, "/claim/")]
+		status := 410
+		if pending != nil && pending.kind == "call" && !pending.claimed && pending.ctx.Err() == nil && b.ctx.Err() == nil {
+			pending.claimed = true
+			status = 200
+		}
+		b.mu.Unlock()
+		b.respond(w, r, status, nil)
+		return
+	}
 	if r.Method == "POST" && strings.HasPrefix(r.URL.Path, "/result/") {
 		if !runtime.JSONKeysUnique(body) || !runtime.JSONNumbersExact(body) {
 			b.respond(w, r, 400, nil)
@@ -193,6 +211,9 @@ func (b *HostBridge) serve(w http.ResponseWriter, r *http.Request) {
 		id := strings.TrimPrefix(r.URL.Path, "/result/")
 		b.mu.Lock()
 		pending := b.pending[id]
+		if pending != nil && pending.kind == "call" && !pending.claimed {
+			pending = nil
+		}
 		if pending != nil {
 			delete(b.pending, id)
 		}
@@ -243,7 +264,7 @@ func (b *HostBridge) rpc(ctx context.Context, job hostJob, result any) error {
 		return errHostBridge
 	}
 	job.ID = hostID()
-	pending := &hostPending{ctx: ctx, result: make(chan []byte, 1)}
+	pending := &hostPending{ctx: ctx, result: make(chan []byte, 1), kind: job.Kind}
 	b.mu.Lock()
 	if len(b.pending) >= 128 {
 		b.mu.Unlock()

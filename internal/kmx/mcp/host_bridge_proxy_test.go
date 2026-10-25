@@ -21,11 +21,14 @@ func proxyEnvelope(method, path string, body []byte) []byte {
 }
 
 func TestProxyHostRequestRoundTrip(t *testing.T) {
-	for _, method := range []string{"GET", "POST"} {
-		t.Run(method, func(t *testing.T) {
-			path, body := "/next", []byte{}
-			if method == "POST" {
-				path, body = "/result/"+strings.Repeat("a", 32), []byte(" {\r\n \"answer\":\"exact\" }\n")
+	for _, operation := range []string{"next", "result", "claim"} {
+		t.Run(operation, func(t *testing.T) {
+			method, path, body := "GET", "/next", []byte{}
+			if operation != "next" {
+				method, path = "POST", "/"+operation+"/"+strings.Repeat("a", 32)
+			}
+			if operation == "result" {
+				body = []byte(" {\r\n \"answer\":\"exact\" }\n")
 			}
 			response := []byte{0, 255, '\r', '\n', ' '}
 			key := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{7}, ed25519.SeedSize))
@@ -111,6 +114,10 @@ func TestProxyHostRequestRefusesBeforeHTTP(t *testing.T) {
 		}
 		inputs[path] = proxyEnvelope(method, path, nil)
 	}
+	for _, suffix := range []string{strings.Repeat("A", 32), strings.Repeat("a", 31), strings.Repeat("a", 33), strings.Repeat("a", 32) + "?x", "../next"} {
+		inputs["claim-"+suffix] = proxyEnvelope("POST", "/claim/"+suffix, nil)
+	}
+	inputs["get-claim"] = proxyEnvelope("GET", "/claim/"+strings.Repeat("a", 32), nil)
 	inputs["get-result"] = proxyEnvelope("GET", "/result/"+strings.Repeat("a", 32), nil)
 	inputs["post-next"] = proxyEnvelope("POST", "/next", nil)
 	inputs["put"] = proxyEnvelope("PUT", "/result/"+strings.Repeat("a", 32), nil)

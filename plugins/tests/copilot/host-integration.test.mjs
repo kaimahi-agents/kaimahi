@@ -6,7 +6,7 @@ import { mkdtemp, mkdir, writeFile, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { readView, createActionHandler } from '../../copilot-wsl/com.github.copilot/extensions/agent-view/view.mjs';
-import { closeHostRuntime } from '../../copilot-wsl/com.github.copilot/extensions/agent-view/host-relay.mjs';
+import { closeHostRuntime, ensureHostRuntime, previewServer } from '../../copilot-wsl/com.github.copilot/extensions/agent-view/host-relay.mjs';
 
 async function connect(command, args, options) {
   const child = spawn(command, args, { ...options, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -26,11 +26,14 @@ async function connect(command, args, options) {
   const request = (method, params) => new Promise((resolve, reject) => { const key = ++id; pending.set(key, { resolve, reject }); child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: key, method, params }) + '\n'); });
   await request('initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'runtime-fixture', version: '1' } });
   child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
-  return { request, close: () => child.stdin.end(), get diagnostics() { return diagnostics; } };
+  return { request, cancelLast: () => child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: id } }) + '\n'), close: () => child.stdin.end(), get diagnostics() { return diagnostics; } };
 }
 
 const binary = process.env.KMX_HOST_BRIDGE_TEST_BINARY;
-for (const denied of [false, true]) test(`Go MCP plus Node runtime fixture: native tool ${denied ? 'denial' : 'round trip'}`, { skip: !binary, timeout: 60000 }, async t => {
+for (const mode of ['round trip', 'denial', 'cancelled', 'expired']) test(`Go MCP plus Node runtime fixture: native tool ${mode}`, { skip: !binary, timeout: 60000 }, async t => {
+  const denied = mode === 'denial', stopping = mode === 'cancelled' || mode === 'expired';
+  let enter, release, observe, reads = 0;
+  const entered = new Promise(r => { enter = r; }), gate = new Promise(r => { release = r; }), dispatch = new Promise(r => { observe = r; });
   const root = await realpath(await mkdtemp(path.join(tmpdir(), 'kmx-host-fixture-')));
   const state = path.join(root, 'state'); await mkdir(state, { mode: 0o700 });
   const env = { ...process.env, KMX_HOME: state };
@@ -45,18 +48,41 @@ for (const denied of [false, true]) test(`Go MCP plus Node runtime fixture: nati
     stopServer: async ({ serverName }) => { assert.notEqual(serverName, 'kmx-agent-builder'); servers.get(serverName)?.close(); },
   }, tools: {
     initializeAndValidate: async () => {},
-    getCurrentMetadata: async () => ({ tools: [
+    getCurrentMetadata: async () => { if (stopping && ++reads === 2) { enter(); await gate; } return { tools: [
       ...[...servers].flatMap(([serverName]) => ['create', 'edit', 'run', 'test'].map(name => ({ name: `${serverName}:${name}`, mcpServerName: serverName, mcpToolName: name, description: name, input_schema: { type: 'object' } }))),
       { name: 'actual-host-ping', mcpServerName: 'actual-host', mcpToolName: 'ping', description: 'Actual host fixture ping', input_schema: { type: 'object', additionalProperties: false } },
-    ] }),
+    ] }; },
     execute: async input => {
-      if (input.name === 'actual-host-ping') { calls.push(input); return denied ? { resultType: 'denied', error: 'private-canary' } : { resultType: 'success', structuredContent: { pong: true } }; }
+      if (input.name === 'actual-host-ping') { calls.push(input); observe({ phase: 'executed' }); return denied ? { resultType: 'denied', error: 'private-canary' } : { resultType: 'success', structuredContent: { pong: true } }; }
       const [serverName, name] = input.name.split(':');
       const result = await servers.get(serverName).request('tools/call', { name, arguments: input.arguments }); previews.push({ serverName, result });
       return { resultType: result.isError ? 'failure' : 'success', structuredContent: result.structuredContent };
     },
   } } };
-  t.after(async () => { await closeHostRuntime(session); for (const server of servers.values()) server.close(); await new Promise(r => setTimeout(r, 150)); await rm(root, { recursive: true, force: true }); });
+  t.after(async () => { release(); await closeHostRuntime(session); for (const server of servers.values()) server.close(); await new Promise(r => setTimeout(r, 150)); await rm(root, { recursive: true, force: true }); });
+  if (stopping) {
+    const fetch = globalThis.fetch;
+    t.mock.method(globalThis, 'fetch', async (url, options) => {
+      const response = await fetch(url, options);
+      if (options?.method === 'POST' && new URL(url).pathname.startsWith('/claim/')) observe({ phase: 'claim', status: response.status });
+      return response;
+    });
+    await ensureHostRuntime(session);
+    const child = servers.get(previewServer(session));
+    const running = child.request('tools/call', { name: 'test', arguments: { schemaVersion: 1, path: 'fixture.agent.md' } });
+    await entered;
+    if (mode === 'cancelled') child.cancelLast();
+    const stopped = (await running).structuredContent;
+    assert.equal(stopped.fullPass, false);
+    if (mode === 'cancelled') { assert.equal(stopped.state, 'cancelled'); assert.equal(stopped.reasonCode, 'cancelled'); }
+    else { assert.equal(stopped.state, 'error'); assert.equal(stopped.reasonCode, 'execution_failed'); }
+    assert.equal(calls.length, 0, 'no native effect when cancellation/expiry has completed');
+    release();
+    assert.deepEqual(await dispatch, { phase: 'claim', status: 410 });
+    await new Promise(setImmediate);
+    assert.equal(calls.length, 0, 'metadata returning later must not initiate an effect');
+    return;
+  }
   const before = await readView(session, 'fixture.agent.md'); assert.deepEqual(before.tools, ['ping']);
   const result = await createActionHandler({ session, path: 'fixture.agent.md' })({ operation: 'test', expectedRevision: before.file.revision });
   assert.equal(calls.length, 1); assert.equal(calls[0].name, 'actual-host-ping');
