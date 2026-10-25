@@ -48,7 +48,9 @@ examples:
   with those exact unindented spellings. Examples must be last; the other sections can be reordered.
   An optional `## Tools` section may appear directly before Examples, containing
   1–32 unique names as `- tool_name` bullets and otherwise only blank lines.
-  Names are 1–64 ASCII letters, digits, `_`, `.`, `-`, starting with a letter or `_`.
+  Names are 1–64 ASCII letters, digits, `_` or `-`, starting with a letter or `_`.
+  Dotted names such as `server.read` refuse; names must fit the Chat/Responses
+  function-name contract.
   The host supplies each tool's schema and description. No endpoints,
   schemas, credentials or other names are accepted. Unknown or duplicate H2 sections
   refuse, including Hooks. No

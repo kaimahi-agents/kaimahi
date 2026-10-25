@@ -22,7 +22,7 @@ func TestToolsNamesOnlyBoundedSet(t *testing.T) {
 			t.Fatal("accepted 33 declarations")
 		}
 	}
-	for _, name := range []string{"tool extra", "tool: {}", "https://example.test", "tool/token", "tool\n- tool", strings.Repeat("x", 65)} {
+	for _, name := range []string{"server.read", "tool extra", "tool: {}", "https://example.test", "tool/token", "tool\n- tool", strings.Repeat("x", 65)} {
 		if _, err := Parse("greeter.agent.md", []byte(strings.Replace(source, "## Examples", "## Tools\n- "+name+"\n\n## Examples", 1))); err == nil {
 			t.Fatalf("accepted %q", name)
 		}

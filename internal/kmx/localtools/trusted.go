@@ -12,7 +12,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
-var toolName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]{0,63}$`)
+var toolName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_-]{0,63}$`)
 
 // ValidToolName accepts a bounded identifier, never a binding or endpoint.
 func ValidToolName(name string) bool { return toolName.MatchString(name) }

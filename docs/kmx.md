@@ -196,7 +196,7 @@ overall budget. Execution errors stop later sends. Journal close failure prevent
 a full pass. [Journal content, retention and clearing](local-preview.md#journal-retention-and-clearing)
 are disclosed separately: instructions, inputs and answers are retained in cleartext.
 
-**Tool-free Copilot is journaled**, for both Chat Completions and Responses:
+**Copilot previews are journaled**, for both Chat Completions and Responses:
 the provider checks content against its source
 token and exchanged bearer before any Session starts, without exposing either
 to the runner or harness. Its invocation-local credentials are pinned before
@@ -204,7 +204,7 @@ journaling; there is no mid-run refresh or inference retry. Expiry, logout throu
 that provider or authentication refusal stops later sends. Start a new preview
 for fresh credentials. Logout in another kmx process does not interrupt an
 existing preview: cancel it explicitly, or let its five-minute bound finish.
-Declared tools with a Copilot agent or judge still refuse.
+Unbound tools refuse. Bound agent runs support tools; judging stays tool-free.
 There are no retries, redirects or provider/model fallback. A nil dependency
 still refuses `runner_unavailable`. Hermetic tests do not qualify real local
 models or native Windows.
@@ -276,8 +276,9 @@ running it and account for subscription, policy and quota limits. The endpoint
 is pinned: omit `--endpoint` or supply exactly `https://api.githubcopilot.com`.
 Known authentication, entitlement, policy, quota and service failures produce
 safe `copilot_*` reasons and stop later sends, including after a judge failure.
-This remains tool-free preview on embedded Sessions, not a Copilot SDK harness
-or native deployment evidence. See [Copilot access](copilot-access.md).
+This remains preview on embedded Sessions, not a Copilot SDK harness
+or native deployment evidence. Bound agent runs support tools; unbound tools
+refuse, and judging stays tool-free. See [Copilot access](copilot-access.md).
 
 `--case ID` selects one stable saved example and always reports **partial**, even
 if the file contains only that example. Unknown/blank IDs refuse before inference.

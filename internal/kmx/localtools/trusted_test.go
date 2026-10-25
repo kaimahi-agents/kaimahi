@@ -116,6 +116,7 @@ func TestTrustedDefinitionsRejectInvalidAuthority(t *testing.T) {
 		func(d []api.ToolDefinition) []api.ToolDefinition { return nil },
 		func(d []api.ToolDefinition) []api.ToolDefinition { return append(d, d[0]) },
 		func(d []api.ToolDefinition) []api.ToolDefinition { d[0].Name = "bad name"; return d },
+		func(d []api.ToolDefinition) []api.ToolDefinition { d[0].Name = "server.read"; return d },
 		func(d []api.ToolDefinition) []api.ToolDefinition { d[0].Description = "private-canary"; return d },
 		func(d []api.ToolDefinition) []api.ToolDefinition {
 			d[0].InputSchema = map[string]any{"$ref": "https://untrusted.invalid/schema"}
