@@ -324,6 +324,7 @@ export function inconclusiveJudge(c, observed) {
 // Judge diagnostics are display-only and stay out of the list's status copy.
 export function judgeDetails(doc) {
   const binding = el(doc, "div", "meta judge-binding"), node = el(doc, "div", "judge-result");
+  node.style.gridColumn = "1 / -1"; // Also span inspection-only check grids.
   const score = el(doc, "div", "judge-score"), reason = el(doc, "div", "judge-reason");
   return { binding, node, score, reason, update(assertion, observed, visible, old) {
     const model = assertion?.judgeModel ?? assertion?.fields?.find(([key]) => key === "judgeModel")?.[1];

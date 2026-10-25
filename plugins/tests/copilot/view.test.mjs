@@ -1445,6 +1445,30 @@ test("prompt Undo immediately saves previous instructions and never reruns", asy
   assert.equal(saved.latest.status, "stale"); assert.equal(c18Prompt(h.root).textContent, "Previous prompt.");
   assert.equal(byClass(h.root, "prompt-undo")[0]?.hidden ?? true, true); h.app.dispose();
 });
+test("scoped prompt Undo preserves an unrelated draft and the test saved by the same Enter", async t => {
+  let h, savedSource, savedExamples, savedView;
+  h = await editableCanvas("Before.", undefined, { examples: c18Examples(["a", "b"]), respond: async action => {
+    savedSource = replaceInstructions(savedSource ?? h.source, action.sections);
+    if (action.examples) savedSource = replaceExamples(savedSource, action.examples);
+    savedExamples = action.examples ?? savedExamples ?? h.examples;
+    savedView = await viewFor(savedSource, savedExamples, action.operation === "save-prompt" ? { status: "stale" } : c18Latest({ b: "pass" }, { scope: "subset", selected: ["b"] }));
+    return { saved: true, view: savedView };
+  } });
+  t.after(() => h.app.dispose());
+  openTest(h.root, "a"); edited(byClass(h.root, "example-input")[0], "Unrelated draft A"); goBack(h.root);
+  c18Prompt(h.root).textContent = "After."; c18Prompt(h.root).listeners.input[0]();
+  openTest(h.root, "b"); edited(byClass(h.root, "example-input")[0], "Saved B");
+  click(byClass(h.root, "save-run")[0]); await new Promise(setImmediate);
+  const revision = savedView.file.revision, undo = byClass(h.root, "prompt-undo")[0];
+  assert.equal(undo.hidden, false); assert.equal(undo.disabled, false);
+  click(undo); await new Promise(setImmediate);
+  assert.deepEqual(h.calls.map(a => a.operation), ["save-and-test", "save-prompt"]);
+  assert.equal(h.calls[1].expectedRevision, revision); assert.equal(Object.hasOwn(h.calls[1], "examples"), false);
+  assert.equal(instructionSections(savedSource)[0].text, "Before.");
+  assert.equal(savedExamples.find(e => e.id === "a").input, "Name a");
+  assert.equal(savedExamples.find(e => e.id === "b").input, "Saved B");
+  goBack(h.root); openTest(h.root, "a"); assert.equal(byClass(h.root, "example-input")[0].value, "Unrelated draft A");
+});
 for (const invalidate of ["expiry", "edit", "outside"]) test(`prompt Undo disappears after ${invalidate}`, async t => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   let h, saved;
@@ -1516,6 +1540,29 @@ for (const error of [undefined, "action-failed"]) test(`a refused subset keeps i
   click(byClass(h.root, "cancel-test")[0]);
   unknown = true; openTest(h.root, "a"); click(byClass(h.root, "save-run")[0]); await tick(); goBack(h.root);
   assert.doesNotMatch(byClass(h.root, "tests-meta")[0].textContent, /refused/, "an unknown later outcome does not keep old refusal counts");
+});
+for (const failure of ["outcome-unknown", "connection loss"]) test(`a later ${failure} hides the previous refusal until deliberate reload`, async t => {
+  let h, unknown = false;
+  const examples = c18Examples(["a"]);
+  h = await editableCanvas("Before.", undefined, { examples, respond: async action => {
+    if (action.operation === "reload") return { view: await viewFor(h.source, examples, c18Latest({ a: "pass" })) };
+    if (unknown) { if (failure === "connection loss") throw new Error("Disconnected"); return { error: "outcome-unknown" }; }
+    return { error: "action-failed", view: { ...h.view, latest: { status: "current", result: {
+      ...savedFixture().latest.result, file: h.view.file, operation: "test", state: "refused", verdict: "unknown", fullPass: false, reasonCode: "model_unavailable", modelRoute: "fake/fake",
+      selection: { scope: "subset", totalCases: 1, caseIds: ["a"] }, examples: [{ id: "a", state: "not_run", verdict: "unknown", reasonCode: "not_run", assertions: [] }]
+    } } } };
+  } });
+  t.after(() => h.app.dispose());
+  openTest(h.root, "a"); click(byClass(h.root, "save-run")[0]); await tick();
+  assert.equal(byClass(h.root, "run-alert").length, 1);
+  unknown = true; click(byClass(h.root, "save-run")[0]); await tick();
+  assert.equal(byClass(h.root, "run-alert").length, 0, "the detail cannot attribute the later attempt to an old refusal");
+  assert.match(byClass(h.root, "detail-status")[0].textContent, /Result unconfirmed/);
+  click(byClass(h.root, "save-run")[0]); await tick(); assert.equal(h.calls.length, 2, "unknown outcomes remain locked");
+  goBack(h.root);
+  assert.deepEqual(rowLabels(h.root), ["Result unconfirmed"]); assert.equal(byClass(h.root, "run-alert").length, 0);
+  click(btn(h.root, "Reload and discard draft")); await new Promise(setImmediate);
+  assert.equal(h.calls[2].operation, "reload"); assert.deepEqual(rowLabels(h.root), ["Passed"]);
 });
 test("Undo is not offered for unknown writes or a stale save", async () => {
   for (const error of ["outcome-unknown", "stale_revision"]) {
@@ -2486,6 +2533,34 @@ test("an invalid authored Judge model does not gain a free-text repair field", a
   assert.equal(byClass(h.root, "check-fields").length, 0, "invalid source retains its existing read-only boundary");
 });
 
+for (const method of ["Escape", "Cancel"]) test(`${method} clears a discarded existing Judge check's validation`, async t => {
+  const h = await editableCanvas("Before.", undefined, { examples: [{ id: "a", input: "A", assertions: [{ ...judgeAssertion(), minScore: 70 }] }] });
+  t.after(() => h.app.dispose());
+  openTest(h.root, "a"); click(byClass(h.root, "check-line")[0]);
+  edited(judgeField(h.root, 1, "minimum score"), ""); enterOn(judgeField(h.root, 1, "rubric")); await tick();
+  assert.equal(judgeField(h.root, 1, "minimum score").attrs["aria-invalid"], "true");
+  if (method === "Escape") judgeField(h.root, 1, "minimum score").listeners.keydown[0]({ key: "Escape", preventDefault() {} });
+  else click(byClass(h.root, "cancel-test")[0]);
+  click(byClass(h.root, "check-line")[0]);
+  const score = judgeField(h.root, 1, "minimum score");
+  assert.equal(Number(score.value), 70); assert.equal(h.calls.length, 0);
+  assert.equal(score.attrs["aria-invalid"], "false");
+  assert.equal(all(h.root).find(e => e.id === "check-1-minScore-issue").hidden, true);
+});
+test("read-only Judge results stay inside their check and span its grid", async t => {
+  const h = await editableCanvas("Before.", undefined, { examples: [{ id: "a", input: "A", assertions: [{ ...judgeAssertion(), minScore: 70 }] }], latest: (rev, examples) => {
+    const latest = bLatest({ a: "fail" })(rev, examples);
+    latest.result.examples[0].assertions[0].judge = { scores: [40, 55], minScore: 70, reasons: ["First reason", "Second reason"] }; return latest;
+  } });
+  t.after(() => h.app.dispose());
+  const view = structuredClone(h.view); view.authoring.editable = false;
+  const root = h.doc.createElement("main"), app = renderView(h.doc, root, view, async () => { throw new Error("No execution permitted"); });
+  t.after(() => app.dispose()); openTest(root, "a");
+  const row = byClass(root, "check")[0], diagnostic = byClass(root, "judge-result")[0];
+  assert.ok(byClass(row, "check-readonly")[0]); assert.ok(row.children.includes(diagnostic)); assert.equal(diagnostic.hidden, false);
+  assert.equal(diagnostic.style.gridColumn, "1 / -1", "the result spans the grid rather than taking its 28px action column");
+  assert.equal(byClass(diagnostic, "judge-score")[0].textContent, "Scores 40, 55 · needs 70");
+});
 test("Judge duplicates and deletes without changing metadata", async () => {
   const h = await editableCanvas("Reply briefly.", undefined, { examples: [{ id: "a", input: "Name a", assertions: [judgeAssertion()] }] });
   openTest(h.root, "a"); click(byClass(h.root, "more")[0]); click(btn(h.root, "Duplicate test"));

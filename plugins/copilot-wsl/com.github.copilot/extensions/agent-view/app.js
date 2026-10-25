@@ -60,10 +60,10 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   const testing = () => busy && ["test", "save-and-test"].includes(pending?.operation);
   const rawExamples = () => snap ? base.authoring.examples : [];
   const sectionText = (key) => sectionDrafts.get(key) ?? snap.sections.find((s) => s.key === key).text;
-  // Display rows and their unique raw join; ambiguous IDs stay visible but not editable.
+  // Ambiguous IDs stay visible but cannot be edited.
   function entries() {
     const cases = history.cases(base), raws = uniqueIndex(rawExamples(), (e) => e.id), ids = uniqueIndex(base.examples, (e) => e.id);
-    const result = base.latest.status === "current" ? base.latest.result : undefined;
+    const result = !blocked && base.latest.status === "current" ? base.latest.result : undefined;
     const list = cases.map((c) => {
       if (isRefused(result) && result.selection.caseIds.includes(c.example.id)) c = { ...c, state: "refused", label: "Refused", row: result, previous: false };
       const raw = snap && ids.get(c.example.id) === c.example ? raws.get(c.example.id) : undefined;
@@ -495,7 +495,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     const box = el(doc, "span", "status-line"), undo = snap ? el(doc, "button", "tb prompt-undo", "Undo") : undefined;
     if (undo) { undo.type = "button"; undo.addEventListener("click", () => {
       const checkpoint = promptUndo;
-      if (!checkpoint || checkpoint.revision !== base.file.revision || hasDrafts() || busy || blocked || candidate) return;
+      if (!checkpoint || checkpoint.revision !== base.file.revision || sectionDrafts.size || busy || blocked || candidate) return;
       act("save-prompt", { sections: checkpoint.sections });
     });
     controls.push({ node: undo, guard: "save" }); }
@@ -554,7 +554,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   }
 
   function refusedAlert() {
-    const result = base.latest.status === "current" ? base.latest.result : undefined;
+    const result = !blocked && base.latest.status === "current" ? base.latest.result : undefined;
     return isRefused(result) ? { text: plainReason(result), refused: true } : undefined;
   }
   function runAlertNode(button, scope, alert = runAlert) {
@@ -635,7 +635,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
         const rowNote = e.c?.state === "refused" ? "" : e.c?.previous && base.latest.status === "current" ? "Not in this run" : r.note;
         const noteText = e.draft ? "Unsaved" + (rowNote ? ` · ${rowNote}` : "") : rowNote;
         const example = e.c?.example, summary = example ? `${oneLine(example.input, 64)} → ${example.assertions.map(checkLabel).join(" · ")}` : "";
-        const word = e.c?.state === "refused" ? "Refused" : r.base === "pass" ? "Passed" : r.base === "fail" ? "Failed" : r.base === "error" ? "Didn't finish" : r.label === "No current result" || r.label === "Out of date" && history.last ? "Not run yet" : r.label;
+        const word = !blocked && e.c?.state === "refused" ? "Refused" : r.base === "pass" ? "Passed" : r.base === "fail" ? "Failed" : r.base === "error" ? "Didn't finish" : r.label === "No current result" || r.label === "Out of date" && history.last ? "Not run yet" : r.label;
         const verdict = el(doc, "span", `test-verdict ${r.kind}`); verdict.setAttribute("data-tone", r.tone ?? "none");
         verdict.append(el(doc, "span", "verdict-word", word));
         if (r.kind.startsWith("old-")) verdict.append(el(doc, "span", "sr-only verdict-context", " last run"));
@@ -941,7 +941,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       updates.push(() => { status.textContent = snap ? "This test can't be edited here: its name isn't unique." : footText(); });
     }
     function cancelDraft() {
-      const d = draft();
+      const d = draft(); invalidCheck = undefined;
       testDrafts.delete(key);
       for (const id of editingChecks) if (id.startsWith(`${key}/`)) editingChecks.delete(id);
       if (d?.origin === null) navigate({ name: "main" });
