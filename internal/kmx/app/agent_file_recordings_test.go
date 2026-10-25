@@ -26,7 +26,7 @@ func TestFileRecordedSourceProjectionAndMismatch(t *testing.T) {
 			for i := range a.Examples {
 				a.Examples[i].Assertions = []runtime.EvaluationAssertion{{ID: "called", Type: "toolCalled", Tool: "ping"}}
 				args := map[string]any{}
-				if mismatch {
+				if mismatch && i == 1 {
 					args["different"] = true
 				}
 				a.Examples[i].Mocks = &agentfile.Mocks{Tools: []agentfile.MockTool{{Name: "ping", Mode: "recorded", Description: "Saved ping", Parameters: map[string]any{"type": "object"}, Calls: []agentfile.MockCall{{Arguments: args, Result: map[string]any{"private": "fixture-canary"}}}}}}
@@ -39,7 +39,7 @@ func TestFileRecordedSourceProjectionAndMismatch(t *testing.T) {
 			runner := localpreview.NewRunner(localpreview.RunnerOptions{JournalDir: func() (string, error) { return dir, nil }})
 			r, err := (&App{FileRunner: runner}).PreviewAgentSnapshot(context.Background(), a, opt)
 			if mismatch {
-				if err == nil || r.ReasonCode != "recording_mismatch" || !strings.Contains(r.Reason, "Recording mismatch") {
+				if err == nil || r.ReasonCode != "recording_mismatch" || !strings.Contains(r.Reason, "Recording mismatch") || r.State != "error" || r.FullPass || r.Verdict != runtime.EvaluationUnknown || r.Examples[0].State != "complete" || r.Examples[0].Verdict != runtime.EvaluationPass || len(r.Examples[0].Tools) != 1 || r.Examples[0].Tools[0].CallCount != 1 || r.Examples[1].State != "not_run" {
 					t.Fatalf("missing diagnostic %+v %v", r, err)
 				}
 				return

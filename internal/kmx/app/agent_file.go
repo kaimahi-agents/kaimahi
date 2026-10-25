@@ -355,9 +355,6 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		previewErr.message = result.Reason
 		return result, previewErr
 	}
-	if errors.Is(cause, agentpreview.ErrRecordingMismatch) {
-		return fail("recording_mismatch", 1)
-	}
 	if errors.Is(cause, agentpreview.ErrToolsUnavailable) {
 		return fail("tools_unavailable", 1)
 	}
@@ -435,6 +432,9 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	}
 	if errors.Is(cause, agentpreview.ErrJournalFailed) {
 		return fail("journal_failed", 1)
+	}
+	if errors.Is(cause, agentpreview.ErrRecordingMismatch) {
+		return fail("recording_mismatch", 1)
 	}
 	if errors.Is(cause, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
 		r.State = "cancelled"

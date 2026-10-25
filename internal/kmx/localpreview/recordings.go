@@ -162,6 +162,7 @@ func makeToolPlan(names []string, ex agentfile.Example, host *localtools.Host, c
 						return api.ToolResult{}, agentpreview.ErrRecordingMismatch
 					}
 					raw, _ := json.Marshal(saved.Result)
+					result.Output = nil // Decode into a fresh map, not the unavailable stub's map.
 					if len(raw) > 32*1024 || !runtime.JSONNumbersExact(raw) || json.Unmarshal(raw, &result.Output) != nil {
 						return api.ToolResult{}, agentpreview.ErrUnsafeToolContent
 					}

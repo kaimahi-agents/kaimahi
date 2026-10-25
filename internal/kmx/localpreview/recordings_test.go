@@ -2,6 +2,7 @@ package localpreview
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -106,6 +107,24 @@ func TestPendingAndUnavailableRunnerSources(t *testing.T) {
 				t.Fatalf("out %+v calls %d", out, count)
 			}
 		})
+	}
+}
+
+func TestReplayReturnsExactlySavedOutput(t *testing.T) {
+	req := recordingRequest(t)
+	saved := req.Examples[0].Mocks.Tools[0].Calls[0]
+	plan, err := makeToolPlan(req.Agent.Tools, req.Examples[0], nil, func(...string) error { return nil }, func(ctx context.Context) error { return ctx.Err() })
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := json.Marshal(saved.Result)
+	for _, id := range []string{"first", "fresh"} {
+		got, err := plan.execute(t.Context(), controller.ToolCallContext{}, api.ToolCall{ID: id, Tool: "ping", Args: map[string]any{}})
+		raw, _ := json.Marshal(got.Output)
+		if err != nil || string(raw) != string(want) || got.ID != id {
+			t.Fatalf("changed saved output: %+v %v", got, err)
+		}
+		got.Output["changed"] = true
 	}
 }
 
