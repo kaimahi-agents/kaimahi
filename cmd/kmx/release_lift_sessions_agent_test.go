@@ -9,6 +9,28 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 )
 
+func TestSessionsAgentDeployArgumentUsage(t *testing.T) {
+	for _, verb := range []string{"deploy", "lift"} {
+		t.Run(verb, func(t *testing.T) {
+			var out, diag bytes.Buffer
+			deps, loads := testDependencies(&out, &diag)
+			err := execute([]string{verb, "unexpected", "extra"}, deps)
+			if err == nil || *loads != 0 {
+				t.Fatalf("argument refusal: %v, config loads=%d", err, *loads)
+			}
+			for _, want := range []string{
+				"kmx " + verb + " <ref>@<digest> --to <AgentSessions-destination> --evidence FILE [--name NAME]",
+				"(--inference provider:NAME | --bindings FILE)",
+				"--harness-image IMAGE --bindings FILE --evidence FILE --plan",
+			} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("argument usage %q lacks %q", err, want)
+				}
+			}
+		})
+	}
+}
+
 func TestSessionsAgentDeploySelectors(t *testing.T) {
 	root := destinationWorkspace(t, "version: 1\ntargets:\n  sessions: {context: kind-saved, namespace: agents, runtime: agentsessions}\n")
 	for _, tc := range []struct {

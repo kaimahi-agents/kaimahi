@@ -29,9 +29,6 @@ func statusTerminating(meta map[string]any) (bool, bool) {
 // Consume exact Kubernetes keys rather than encoding/json's case-folded field
 // aliases. Unknown payload fields and raw controller messages never enter output.
 func statusPrimaryReadiness(runtime string, doc map[string]any) destinationStatusReadiness {
-	if runtime == "agentsessions" {
-		return statusSessionsReadiness(doc)
-	}
 	unknown := destinationStatusReadiness{"unknown", "primary identity or readiness is malformed or indeterminate"}
 	pending := destinationStatusReadiness{"pending", "current-generation readiness has not been acknowledged"}
 	meta, _ := doc["metadata"].(map[string]any)

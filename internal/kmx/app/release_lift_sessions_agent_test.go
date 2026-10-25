@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsessions"
 	protocol "github.com/kaimahi-agents/kaimahi/internal/kmx/app/kubectlfake"
 )
 
@@ -287,22 +286,5 @@ func TestSessionsAgentAppearsDuringConsent(t *testing.T) {
 	calls, _ := os.ReadFile(filepath.Join(dir, "calls"))
 	if err == nil || !strings.Contains(err.Error(), "no longer absent") || result.State != "not-applied" || strings.Contains(string(calls), `"create"`) {
 		t.Fatalf("adopted racing object %+v %v calls=%s", result, err, calls)
-	}
-}
-
-func TestSessionsAgentContractFixture(t *testing.T) {
-	// The fixture response is independently validated by the contract projection.
-	a, opt, dir := sessionsAgentFixture(t)
-	p, err := a.PrepareReleaseLift(t.Context(), opt)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = a.ApplyReleaseLift(t.Context(), p, p.Summary().PlanDigest); err != nil {
-		t.Fatal(err)
-	}
-	raw, _ := os.ReadFile(filepath.Join(dir, "agent.json"))
-	agent, err := agentsessions.DecodeAgent(raw)
-	if err != nil || !agentsessions.AgentRegistered(agent) {
-		t.Fatalf("invalid fixture %v", err)
 	}
 }

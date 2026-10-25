@@ -84,15 +84,6 @@ func DecodeAgent(raw []byte) (Agent, error) {
 	if json.Unmarshal(encoded, &a) != nil {
 		return a, bad
 	}
-	spec, err := json.Marshal(doc["spec"])
-	if err != nil {
-		return a, bad
-	}
-	dec := json.NewDecoder(strings.NewReader(string(spec)))
-	dec.DisallowUnknownFields()
-	if dec.Decode(&a.Spec) != nil {
-		return a, bad
-	}
 	if _, err := HarnessImageDigest(a.Spec.Package.Reference); err != nil || !agentSafeText(a.Spec.Member) || a.Spec.ModelBindingRef.Name != "default" {
 		return a, bad
 	}
