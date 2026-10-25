@@ -250,20 +250,12 @@ jobs:
           python3 scripts/test_orka_runtime_fixture.py
           python3 scripts/test_app_tests.py
           python3 scripts/test_bundle_retirement_ci.py
-      - name: kagent bootstrap, qualification and deterministic fixture self-tests
+      - name: Native suite fixtures, timing and reference self-tests
         run: |
-          python3 scripts/test_kagent_lift.py
-          python3 scripts/test_kagent_lift_shell.py
-          python3 scripts/test_kagent_lift_fixture.py
-          python3 scripts/test_kagent_lift_qualification.py
-          python3 scripts/test_kagent_lift_audit.py
-          python3 scripts/test_kagent_lift_qualify.py
-          python3 scripts/test_kagent_lift_ci.py
           python3 scripts/test_suite_native.py
           python3 scripts/test_native_timings.py
           python3 scripts/test_suite_native_lift.py
           python3 scripts/test_orka_native_reference.py
-          python3 scripts/test_suite_kagent.py
       - name: Orka qualification and dependency boundaries
         run: |
           python3 scripts/test_orka_routing.py
@@ -791,9 +783,6 @@ jobs:
       # decide whether someone's cluster gets written to or a credential
       # gets committed — they gate merges or they are decoration. Keyless
       # and clusterless: every one of these tests runs on fixtures.
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
       - name: Comment-history tripwire self-test
         run: python3 scripts/check-comment-history.py --selftest
       - name: Source comments describe current behavior

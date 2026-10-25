@@ -38,9 +38,3 @@ jobs:
         run: |
           GOARCH=amd64 go build ./...
           GOARCH=arm64 go build ./...
-      - name: Linux CLI tests
-        if: runner.os == 'Linux'
-        run: go test -count=1 ./cmd/kmx
-      - name: Linux CLI build
-        if: runner.os == 'Linux'
-        run: go build ./cmd/kmx

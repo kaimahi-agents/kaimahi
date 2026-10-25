@@ -1,5 +1,6 @@
 // Inert DOM editing and exact source serialization. Loaders and actions are caller-owned.
-import { effectiveModel, DEFAULT_MODEL } from "./authoring.mjs";
+import { effectiveModel, DEFAULT_MODEL, agentName, fileLocation, same, uniqueIndex, operandKey, EDITABLE_TYPES, quoted } from "./authoring.mjs";
+export { clone, same, uniqueIndex, operandKey, EDITABLE_TYPES, quoted, checkIssue, checkComplete, convertCheck } from "./authoring.mjs";
 export const el = (doc, tag, className, text) => {
   const node = doc.createElement(tag);
   if (className) node.className = className;
@@ -7,14 +8,6 @@ export const el = (doc, tag, className, text) => {
   return node;
 };
 export const checkKey = (a) => JSON.stringify([a.id, a.type]);
-export function uniqueIndex(items, key) {
-  const map = new Map();
-  for (const item of items) {
-    const id = key(item);
-    map.set(id, map.has(id) ? null : item);
-  }
-  return map;
-}
 export function inspectCases(payload) {
   const r = payload.latest.status === "current" ? payload.latest.result : undefined;
   const authored = uniqueIndex(payload.examples, (e) => e.id);
@@ -44,11 +37,6 @@ export const friendlyName = (id) => {
   const text = id.replace(/[-_]+/g, " ");
   return text ? text[0].toUpperCase() + text.slice(1) : "Unnamed test";
 };
-export const clone = (value) => JSON.parse(JSON.stringify(value));
-export const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-export const operandKey = (type) => type === "regex" ? "pattern" : type === "llmJudge" ? "rubric" : "value";
-export const EDITABLE_TYPES = [["contains", "Contains"], ["notContains", "Not contains"], ["regex", "Regex"], ["llmJudge", "Judge"]];
-export const quoted = (text) => `“${text}”`;
 const fieldValue = (a) => new Map(a.fields).get(operandKey(a.type)) ?? "";
 export const checkLabel = (a) => {
   const value = fieldValue(a);
@@ -338,22 +326,6 @@ export function judgeDetails(doc) {
     node.hidden = !visible; node.className = old ? "judge-result old" : "judge-result";
   } };
 }
-export function checkIssue(a) {
-  if (!EDITABLE_TYPES.some(([type]) => type === a.type)) return;
-  const field = operandKey(a.type);
-  if (!String(a[field] ?? "").trim()) return { field, message: field === "rubric" ? "Needs a rubric" : field === "pattern" ? "Needs a pattern" : "Needs text to check" };
-  if (a.type !== "llmJudge") return;
-  if (typeof a.minScore !== "number" || !Number.isInteger(a.minScore) || a.minScore < 0 || a.minScore > 100) return { field: "minScore", message: "Needs a minimum score, 0 to 100" };
-  if (!(a.judgeModel === undefined || a.judgeModel === "" || typeof a.judgeModel === "string" && !!a.judgeModel.trim())) return { field: "judgeModel", message: "Choose a Judge model" };
-  if (typeof a.judgeVersion !== "string" || !a.judgeVersion.trim()) return { field: "judgeVersion", message: "Needs a Judge version" };
-}
-export const checkComplete = a => !checkIssue(a);
-export function convertCheck(target, type) {
-  const oldKey = operandKey(target.type), newKey = operandKey(type), value = target[oldKey] ?? "";
-  if (oldKey !== newKey) delete target[oldKey];
-  if (target.type === "llmJudge" && type !== "llmJudge") for (const key of ["minScore", "judgeModel", "judgeVersion"]) delete target[key];
-  target.type = type; target[newKey] = value;
-}
 export function checkTypeControl(doc, initial, change, cancel) {
   const node = el(doc, "div", "check-type"), trigger = el(doc, "button", "check-type-button"), menu = el(doc, "div", "check-type-menu");
   trigger.type = "button"; trigger.setAttribute("aria-haspopup", "menu"); menu.setAttribute("role", "menu");
@@ -562,6 +534,145 @@ export function statusIcon(doc, kind, label) {
   mark.setAttribute("role", "img"); mark.setAttribute("aria-label", label); mark.setAttribute("title", label);
   mark.append(icon(doc, base === "running" ? "running" : base, 14, 2.2, base === "running" ? "spin" : ""));
   return mark;
+}
+
+export function canvasResultSummary(view, { n, testing, one, blocked, dirty, last }) {
+  const result = view.latest.result;
+  if (testing) return { tone: "running", text: `Running ${one ? "1 test" : plural(n, "test")}…` };
+  if (blocked) return { tone: "none", text: "Result unconfirmed" };
+  if (view.latest.status === "stale" || (dirty || view.latest.status !== "current") && last) return { tone: "none", text: "Out of date" };
+  if (!n || !result || result.reasonCode === "no_tests") return { tone: "none", text: "Not run yet" };
+  if (isRefused(result)) return { tone: "error", text: "Refused" };
+  if (result.state !== "complete" || !coherentSelection(view)) return { tone: "error", text: result.state === "complete" ? "Incomplete run" : "Didn't finish" };
+  const cases = inspectCases(view), passing = cases.filter(c => c.state === "pass").length;
+  const full = result.fullPass && result.verdict === "pass" && result.selection.scope === "full" && passing === n;
+  if (!full && (passing === n || cases.some(c => c.state === "unknown"))) return { tone: "error", text: "Incomplete run" };
+  return { tone: full ? "pass" : cases.some(c => c.state === "fail") ? "fail" : "none", text: result.selection.scope === "subset" ? countText(cases.map(c => testRow(c, false, false))) : `${passing} of ${n} passing` };
+}
+
+export function canvasFooterText({ editable, n, busy, pending, blocked, savedUntested, invalid, candidate, scope, promptDirty, testDirty, dirty, runAlert }) {
+  if (!editable) return "Read-only inspection. This engine or agent file does not provide a complete editable snapshot.";
+  const tests = plural(n, "test");
+  if (busy) {
+    if (!pending?.operation || !["save-and-test", "test"].includes(pending.operation)) return "Working…";
+    const what = pending.one ? "this test" : tests;
+    return pending.operation === "save-and-test" ? `Saving and running ${what}…` : `Saved · running ${what}`;
+  }
+  if (blocked) return savedUntested ? "Saved · test result unconfirmed" : "Reload required · result unconfirmed";
+  if (invalid) return "Edited · unsupported formatting, reload before saving";
+  if (candidate) return "Edited · settle the outside change before saving";
+  if (scope === "one") return promptDirty || testDirty
+    ? "Enter saves and runs this test" : "Saved · Enter runs this test";
+  if (!n) return dirty ? `${promptDirty ? "Edited" : "Prompt saved"} · Enter saves` : "Saved · add a test to run it";
+  if (dirty) return `${promptDirty ? "Edited" : "Prompt saved"} · Enter saves and runs ${tests}`;
+  if (runAlert?.saved && !runAlert.finished) return "Saved · tests didn't run";
+  return `Saved · Enter runs ${tests}`;
+}
+
+export function canvasHeader(doc, view, actionNodes, readOnly) {
+  const displayName = agentName(view.title), file = fileLocation(view.file.path);
+  const source = el(doc, "details", "source-details"), info = el(doc, "div", "source-info");
+  const sourceSummary = el(doc, "summary", "meta agent-meta", `${file.name}${file.folder ? ` · in ${file.folder}` : ""}`);
+  sourceSummary.setAttribute("title", "Source details"); source.append(sourceSummary, info);
+  info.append(el(doc, "p", "source-title", view.title), pathControls(doc, view.file.path), el(doc, "code", "revision", view.file.revision));
+  const head = el(doc, "header", "agent-header"), identity = el(doc, "div", "agent-identity"), actions = el(doc, "div", "header-controls");
+  identity.append(el(doc, "span", "agent-eyebrow", "Your agent"), el(doc, "h1", "", displayName));
+  actions.append(...actionNodes);
+  if (readOnly) {
+    const id = effectiveModel(view.model, "", view.chatModel);
+    const model = el(doc, "span", "model-readonly", `${modelPresentation(id).name} · ${view.model ? "from the agent file" : "default"}`);
+    model.setAttribute("title", id); actions.append(model);
+  }
+  const purpose = purposeText(view), summary = el(doc, "p", "purpose");
+  const chars = Array.from(purpose); summary.textContent = chars.length > 160 ? chars.slice(0, 159).join("") + "…" : purpose;
+  identity.append(summary, source); head.append(identity, actions);
+  if (chars.length > 160) info.append(el(doc, "p", "", purpose));
+  return { head, info };
+}
+
+export function saveButton(doc, button, label, action, className = "ib save-run") {
+  const node = button("", action, className, "save");
+  node.setAttribute("aria-label", label); node.setAttribute("title", `${label} (Enter)`);
+  node.append(icon(doc, "enter", 16, 2.2));
+  return node;
+}
+export function runNotice(doc, button, alert, dirty, modelContext, retry) {
+  const box = el(doc, "div", "notice notice-warn run-alert"); box.setAttribute("role", "alert");
+  const reason = alert.text.replace(/\.\s*$/, "");
+  const text = alert.refused ? `Refused: ${reason}.` : alert.finished ? `The run didn't finish: ${reason}.` : `The run didn't start: ${reason}.`;
+  const tail = alert.saved ? " Your changes are saved." : dirty ? " Your edits are kept." : "";
+  const line = el(doc, "span", "notice-text"); line.append(icon(doc, "warn", 15, 2), el(doc, "span", "", text + tail + (alert.refused ? modelContext : "")));
+  box.append(line);
+  if (!alert.refused) box.append(button("Try again", retry, "sb", "save"));
+  return box;
+}
+
+export function conflictNotice(doc, button, items, compareOpen, toggleCompare, keepMine, useTheirs) {
+  const box = el(doc, "div", "notice notice-info"); box.setAttribute("role", "alert");
+  const parts = [];
+  if (items.some(([name]) => name === "Prompt")) parts.push("the prompt");
+  const tests = items.filter(([name]) => name.startsWith("Test ")).length;
+  if (tests) parts.push(plural(tests, "test"));
+  const others = items.length - tests - (parts[0] === "the prompt" ? 1 : 0);
+  if (others) parts.push(plural(others, "other part"));
+  const head = el(doc, "span", "notice-text"); head.append(icon(doc, "sync", 15, 2),
+    el(doc, "span", "", `This agent changed outside the panel${parts.length ? `: ${parts.join(", ")}` : ""}. You have unsaved edits.`));
+  const actions = el(doc, "div", "notice-actions");
+  const compare = button("Compare", toggleCompare, "sb", "nav");
+  compare.setAttribute("aria-expanded", String(compareOpen));
+  actions.append(compare, button("Keep my edits", keepMine, "sb"), button("Use the new version", useTheirs, "sb"));
+  box.append(head, actions);
+  if (compareOpen) {
+    const list = el(doc, "div", "compare");
+    for (const [name, b, m, t] of items) {
+      const item = el(doc, "section", "compare-item");
+      item.append(el(doc, "h3", "lbl", name));
+      const cols = el(doc, "div", "compare-cols");
+      for (const [label, text] of [["Before your edits", b], ["Your edits", m], ["New version", t]]) {
+        const col = el(doc, "div", "compare-col");
+        col.append(el(doc, "span", "meta", label), el(doc, "pre", "compare-text", text === undefined ? "(not present)" : text));
+        cols.append(col);
+      }
+      item.append(cols); list.append(item);
+    }
+    if (!items.length) list.append(el(doc, "p", "quiet", "No differences in the prompt or tests."));
+    box.append(list);
+  }
+  return box;
+}
+
+// Event and refresh hooks read live owner state; mutations remain caller-owned.
+export function instructionEditor(doc, label, initialText, hooks) {
+  const node = el(doc, "div", "instruction-body");
+  fillEditor(doc, node, initialText);
+  node.setAttribute("role", "textbox"); node.setAttribute("aria-multiline", "true");
+  node.setAttribute("aria-label", label); node.setAttribute("contenteditable", "plaintext-only");
+  node.setAttribute("spellcheck", "false");
+  const changed = () => hooks.change(node);
+  const lineBreak = () => { if (!hooks.disabled()) { insertPlainText(doc, node, "\n"); changed(); } };
+  node.addEventListener("input", changed);
+  node.addEventListener("beforeinput", event => {
+    if (event.inputType === "insertLineBreak" && event.cancelable && !event.isComposing) { event.preventDefault(); lineBreak(); }
+  });
+  node.addEventListener("keydown", (event) => {
+    if (event.isComposing) return;
+    if (event.key === "Enter" && !event.ctrlKey && !event.altKey && !event.metaKey) {
+      event.preventDefault();
+      if (event.shiftKey) lineBreak(); else hooks.submit();
+    } else if (event.key === "Escape" && hooks.hasDraft()) {
+      event.preventDefault(); hooks.cancel();
+    }
+  });
+  for (const kind of ["paste", "drop"]) node.addEventListener(kind, (event) => {
+    event.preventDefault(); if (hooks.disabled()) return;
+    const transfer = kind === "paste" ? event.clipboardData : event.dataTransfer;
+    insertPlainText(doc, node, transfer?.getData("text/plain") ?? ""); changed();
+  });
+  const update = () => {
+    node.setAttribute("contenteditable", hooks.disabled() ? "false" : "plaintext-only");
+    node.setAttribute("aria-readonly", String(hooks.disabled()));
+  };
+  return { node, update };
 }
 
 export function testNameControl(doc, settings, change) {

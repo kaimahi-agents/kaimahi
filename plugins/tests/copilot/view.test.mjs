@@ -1360,10 +1360,10 @@ test("UI hides a minimal prelude Purpose once while keeping three primary paragr
 });
 
 test("frontend and provider sources avoid unsafe sinks and mutation surfaces", async () => {
-  const [controller, html, css, ext, view, editor] = await Promise.all(
-    ["app.js", "index.html", "style.css", "extension.mjs", "view.mjs", "editor.mjs"].map((f) => readFile(here(f), "utf8")),
+  const [controller, html, css, ext, view, editor, authoring] = await Promise.all(
+    ["app.js", "index.html", "style.css", "extension.mjs", "view.mjs", "editor.mjs", "authoring.mjs"].map((f) => readFile(here(f), "utf8")),
   );
-  const app = controller + "\n" + editor;
+  const app = controller + "\n" + editor + "\n" + authoring;
   const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   for (const bad of [/innerHTML/, /outerHTML/, /insertAdjacentHTML/, /document\.write/, /\beval\s*\(/, /new Function/, /dangerouslySet/, /marked|markdown/i, /\bXMLHttpRequest\b/, /WebSocket/, /localStorage/, /<form|<button|<input|<textarea/i]) {
     assert.doesNotMatch(strip(app), bad, String(bad));
@@ -1934,6 +1934,36 @@ test("Shift+Enter and native insertLineBreak insert one literal LF; composition 
   editor.listeners.keydown[0]({key:"Enter",preventDefault(){prevented++}});
   editor.listeners.keydown[0]({key:"Enter",preventDefault(){prevented++}}); await tick();
   assert.equal(h.calls.length,1); assert.equal(h.calls[0].sections[0].text,"First sentence.\n\n<plain>\ntext");
+});
+
+test("instruction handlers read live busy and blocked state before inserting or reading transfers", async t => {
+  let finish;
+  const h = await editableCanvas("Original.", undefined, { respond: () => new Promise(resolve => { finish = resolve; }) });
+  t.after(() => h.app.dispose());
+  const editor = c18Prompt(h.root);
+  await h.clickTest();
+  const locked = () => {
+    const prevented = [];
+    editor.listeners.keydown[0]({ key: "Enter", preventDefault() { prevented.push("Enter"); } });
+    editor.listeners.keydown[0]({ key: "Enter", shiftKey: true, preventDefault() { prevented.push("Shift+Enter"); } });
+    editor.listeners.beforeinput[0]({ inputType: "insertLineBreak", cancelable: true, preventDefault() { prevented.push("beforeinput"); } });
+    for (const kind of ["paste", "drop"]) {
+      const event = { preventDefault() { prevented.push(kind); } };
+      Object.defineProperty(event, kind === "paste" ? "clipboardData" : "dataTransfer", { get() { assert.fail("locked handlers must not read transfers"); } });
+      editor.listeners[kind][0](event);
+    }
+    assert.deepEqual(prevented, ["Enter", "Shift+Enter", "beforeinput", "paste", "drop"]);
+    assert.equal(editorValue(editor), "Original.");
+    assert.equal(h.calls.length, 1);
+    assert.equal(c18Prompt(h.root).attrs.contenteditable, "false");
+    assert.equal(c18Prompt(h.root).attrs["aria-readonly"], "true");
+  };
+  locked();
+  finish({ error: "outcome-unknown", message: "Outcome not confirmed." });
+  await tick();
+  assert.equal(h.root.attrs["aria-busy"], "false");
+  assert.equal(h.app.idle(), false);
+  locked(); // Retained handlers must now see blocked, not the old busy value.
 });
 
 test("successful main runs keep the saved Enter instruction; observed time belongs only to Tests", async () => {
