@@ -25,10 +25,16 @@ type mcpOutput struct{ io.Writer }
 func (mcpOutput) Close() error { return nil }
 
 func newMCPCommand(state *commandState) *cobra.Command {
-	var root, provider, endpoint, squadProgram, squadRelease, hostBridgePublicKey string
+	var root, provider, endpoint, squadProgram, squadRelease, hostBridgePublicKey, hostBridgeRequest string
 	var clearHistory bool
 	cmd := &cobra.Command{Use: "mcp [--root DIRECTORY]", Short: "Serve Create/Edit/Run/Test over local stdio MCP", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if cmd.Flag("host-bridge-request").Changed {
+				if cmd.Flag("host-bridge-public-key").Changed || state.deps.stdin == nil {
+					return errors.New("host tools unavailable")
+				}
+				return kmxmcp.ProxyHostRequest(cmd.Context(), hostBridgeRequest, state.deps.stdin, cmd.OutOrStdout())
+			}
 			if state.contextFlag != "" || cmd.Flag("container-engine").Changed {
 				return fmt.Errorf("MCP refuses cluster/container selectors")
 			}
@@ -76,7 +82,7 @@ func newMCPCommand(state *commandState) *cobra.Command {
 				application.FileRunner = app.NewHostFileRunner(bridge.ResolveTools)
 			}
 			hostRuntime, err := kmxmcp.NewHostRuntime(root, provider, endpoint, bridge)
-			if err != nil {
+			if err != nil && bridge != nil {
 				return err
 			}
 			operations := kmxmcp.Operations(files, application, route)
@@ -97,7 +103,9 @@ func newMCPCommand(state *commandState) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			kmxmcp.AddHostRuntimeResource(server, hostRuntime)
+			if hostRuntime != nil {
+				kmxmcp.AddHostRuntimeResource(server, hostRuntime)
+			}
 			kmxmcp.AddAgentResource(server, files)
 			if route == nil && root == "" || route != nil && route.Provider == "copilot" {
 				kmxmcp.AddModelResource(server, func(ctx context.Context) ([]modelaccess.Route, error) {
@@ -116,6 +124,8 @@ func newMCPCommand(state *commandState) *cobra.Command {
 			}
 			return nil
 		}}
+	cmd.Flags().StringVar(&hostBridgeRequest, "host-bridge-request", "", "forward one signed request to the trusted host broker, then exit")
+	_ = cmd.Flags().MarkHidden("host-bridge-request")
 	cmd.Flags().StringVar(&hostBridgePublicKey, "host-bridge-public-key", "", "trusted session-only runtime signing public key")
 	_ = cmd.Flags().MarkHidden("host-bridge-public-key")
 	cmd.Flags().StringVar(&root, "root", "", "optional absolute existing operation root for legacy clients; otherwise agent paths resolve against cwd")

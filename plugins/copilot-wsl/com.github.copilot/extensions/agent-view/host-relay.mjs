@@ -2,6 +2,7 @@
 import { createPublicKey, generateKeyPairSync, randomBytes, sign, verify } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import path from "node:path";
+import { spawn } from "node:child_process";
 
 const ORIGINAL = "kmx-agent-builder", URI = "kmx://host-runtime";
 const states = new WeakMap();
@@ -15,10 +16,20 @@ function stateFor(session) {
   if (!states.has(session)) states.set(session, { leases: new Set(), runs: new Map(), child: `kmx-agent-preview-${randomBytes(12).toString("hex")}`, abort: new AbortController() });
   return states.get(session);
 }
-export function previewServer(session) { const s = states.get(session); return s?.active ? s.child : ORIGINAL; }
+export function previewServer(session) {
+  const s = states.get(session); if (!s?.activated) return ORIGINAL;
+  if (!s.active || s.closed || s.failed) throw unavailable();
+  return s.child;
+}
 export function beginPreview(session) {
   const s = stateFor(session), lease = { release: () => s.leases.delete(lease) };
   s.leases.add(lease); return lease;
+}
+
+// SDK JSON has already crossed a JS-number wire: unsafe integers might be rounded.
+function safeNumbers(value) {
+  return typeof value === "number" ? Number.isFinite(value) && (!Number.isInteger(value) || Number.isSafeInteger(value))
+    : !object(value) && !Array.isArray(value) || Object.values(value).every(safeNumbers);
 }
 
 export function freezeTools(metadata, names, excluded) {
@@ -29,7 +40,7 @@ export function freezeTools(metadata, names, excluded) {
     const candidates = metadata.filter(t => t.mcpToolName === raw && text(t.mcpServerName, 512) && !excluded.includes(t.mcpServerName));
     if (candidates.length !== 1) throw unavailable();
     const t = candidates[0];
-    if (!text(t.name, 512) || !object(t.input_schema) || typeof t.description !== "string" || t.description.length > 4096) throw unavailable();
+    if (!text(t.name, 512) || !object(t.input_schema) || !safeNumbers(t.input_schema) || typeof t.description !== "string" || t.description.length > 4096) throw unavailable();
     selected.set(raw, structuredClone({ name: t.name, mcpServerName: t.mcpServerName, mcpToolName: raw, description: t.description, input_schema: t.input_schema }));
   }
   if (Buffer.byteLength(JSON.stringify([...selected.values()])) > 64 * 1024) throw unavailable();
@@ -58,15 +69,41 @@ async function runtimeResource(session, serverName) {
   return JSON.parse(content[0].text);
 }
 
+// WSL loopback need not be forwarded to Windows. The trusted binary proxies one
+// signed packet over stdio; no private key, credential, environment or shell.
+export function wslRequest(d, address, route, options, spawnProcess = spawn) {
+  return new Promise((resolve, reject) => {
+    const child = spawnProcess("wsl.exe", ["--distribution", d.distro, "--cd", d.cwd, "--exec", d.executable, "mcp", "--host-bridge-request", address],
+      { stdio: ["pipe", "pipe", "ignore"], windowsHide: true, signal: options.signal });
+    const chunks = []; let size = 0;
+    child.on("error", () => reject(unavailable()));
+    child.stdin.on("error", () => reject(unavailable()));
+    child.stdout.on("data", chunk => {
+      size += chunk.length;
+      if (size > 192 * 1024) { child.kill(); reject(unavailable()); } else chunks.push(chunk);
+    });
+    child.on("close", code => {
+      try {
+        if (code !== 0 || size > 192 * 1024) throw unavailable();
+        const reply = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        resolve(new Response(Buffer.from(reply.body, "base64"), { status: reply.status, headers: { "X-Kmx-Signature": reply.signature } }));
+      } catch { reject(unavailable()); }
+    });
+    child.stdin.end(JSON.stringify({ method: options.method, path: route, time: options.headers["X-Kmx-Time"], nonce: options.headers["X-Kmx-Nonce"],
+      signature: options.headers["X-Kmx-Signature"], body: Buffer.from(options.body ?? "").toString("base64") }));
+  });
+}
+
 async function send(s, method, route, value) {
   const body = value === undefined ? "" : JSON.stringify(value);
   if (Buffer.byteLength(body) > 64 * 1024) throw unavailable();
   const nonce = randomBytes(16).toString("hex"), time = String(Math.floor(Date.now() / 1000));
-  const response = await fetch(s.url + route, {
+  const options = {
     method, redirect: "error", signal: AbortSignal.any([s.abort.signal, AbortSignal.timeout(15000)]),
     headers: { "Content-Type": "application/json", "X-Kmx-Time": time, "X-Kmx-Nonce": nonce, "X-Kmx-Signature": sign(null, Buffer.from(requestPayload(method, route, time, nonce, body)), s.privateKey).toString("base64") },
     ...(method === "POST" ? { body } : {}),
-  });
+  };
+  const response = s.wsl ? await wslRequest(s.wsl, s.url, route, options) : await fetch(s.url + route, options);
   const reader = response.body.getReader(), chunks = []; let size = 0;
   while (true) {
     const { done, value: chunk } = await reader.read(); if (done) break;
@@ -101,10 +138,10 @@ async function pump(session, s) {
         const current = freezeTools((await session.rpc.tools.getCurrentMetadata())?.tools, [job.name], excluded).get(job.name);
         if (!isDeepStrictEqual(tool, current)) throw unavailable();
         run.seen.add(job.id);
-        const result = await session.rpc.tools.execute({ name: tool.name, arguments: job.arguments, toolCallId: job.callId });
+        const result = await session.rpc.tools.execute({ name: tool.name, arguments: job.arguments, toolCallId: `kmx-preview-${job.id}` });
         if (result?.resultType !== "success") throw unavailable();
         const output = result.structuredContent ?? (typeof result.textResultForLlm === "string" ? { text: result.textResultForLlm } : undefined);
-        if (output === undefined) throw unavailable();
+        if (output === undefined || !safeNumbers(output)) throw unavailable();
         answer = { output: object(output) ? output : { value: output } };
         if (Buffer.byteLength(JSON.stringify(answer)) > 32 * 1024) throw unavailable();
       } else throw unavailable();
@@ -121,30 +158,36 @@ export async function ensureHostRuntime(session, lease) {
   if (!s.start) s.start = (async () => {
     const rpc = session.rpc;
     if (typeof rpc?.mcp?.startServer !== "function" || typeof rpc.mcp.listConfigured !== "function" || typeof rpc.tools?.initializeAndValidate !== "function") throw unavailable();
-    if ((await rpc.mcp.listConfigured())?.servers?.some(t => t.name === s.child)) throw unavailable();
-    const d = await runtimeResource(session, ORIGINAL), keys = generateKeyPairSync("ed25519");
+    if ((await rpc.mcp.listConfigured())?.servers?.some(t => t.name === s.child) || s.closed) throw unavailable();
+    const d = await runtimeResource(session, ORIGINAL); if (s.closed) throw unavailable();
+    const keys = generateKeyPairSync("ed25519");
     s.privateKey = keys.privateKey;
     const publicKey = keys.publicKey.export({ format: "der", type: "spki" }).toString("base64");
-    s.started = true;
-    await rpc.mcp.startServer({ serverName: s.child, config: launchConfig(d, publicKey) });
+    const config = launchConfig(d, publicKey); s.activated = true;
+    s.wsl = process.platform === "win32" && d.goos === "linux" ? d : undefined;
+    try { await rpc.mcp.startServer({ serverName: s.child, config }); }
+    finally { s.started = true; } // Even ambiguous startup must clean up this reserved name.
+    if (s.closed) throw unavailable();
     const bound = await runtimeResource(session, s.child), url = new URL(bound?.broker?.url);
+    if (s.closed) throw unavailable();
     if (url.protocol !== "http:" || url.hostname !== "127.0.0.1" || !url.port || url.username || url.password || url.search || url.hash || !["/", ""].includes(url.pathname)) throw unavailable();
     s.url = url.origin;
     s.serverKey = createPublicKey({ key: Buffer.from(bound.broker.publicKey, "base64"), format: "der", type: "spki" });
     if (s.serverKey.asymmetricKeyType !== "ed25519") throw unavailable();
     await rpc.tools.initializeAndValidate();
+    if (s.closed) throw unavailable();
     s.active = true;
     void pump(session, s).catch(() => { s.failed = true; });
-  })().catch(async e => { s.failed = true; await closeHostRuntime(session, false); throw e; });
+  })().catch(async e => { s.failed = true; await closeHostRuntime(session); throw e; });
   await s.start;
 }
 
-export async function closeHostRuntime(session, forget = true) {
+export async function closeHostRuntime(session) {
   const s = states.get(session); if (!s) return;
-  s.closed = true; s.abort.abort(); s.runs.clear();
+  s.closed = true; s.abort.abort(); s.runs.clear(); s.privateKey = undefined;
   if (s.started) {
     s.started = false;
-    try { void Promise.resolve(session.rpc.mcp.stopServer({ serverName: s.child })).catch(() => {}); } catch { /* Session teardown also reaps this child. */ }
+    try { await session.rpc.mcp.stopServer({ serverName: s.child }); } catch { /* Session teardown also reaps this child. */ }
   }
-  if (forget) states.delete(session);
+  // Keep a weak tombstone: teardown must never revive the original process\u0027s older observation.
 }

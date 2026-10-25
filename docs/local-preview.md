@@ -98,9 +98,14 @@ The runtime starts a session-only kmx preview MCP process, preserving the
 original server's checked root/provider/endpoint/cwd. Its Run/Test tools are
 model-callable, not hidden authorizations; canvas UI is unchanged. Edit stays
 on the original server; preview observations are read from the executing child.
-A child failure never substitutes an older server's result. Closing the runtime
-or session ends pending work; a tool already started in the host may finish,
-but cancellation keeps its journal incomplete and late results are discarded.
+Closing a canvas keeps the session-owned child, so reopening cannot revive the
+original process's older result. Runtime/session teardown stops it and remains
+unavailable rather than falling back. Windows-to-WSL uses the trusted kmx binary
+to pipe one signed request/response; Windows localhost forwarding is not needed.
+A tool already started in the host may finish after cancellation. A native
+permission wait can also outlast the 30-second relay call; kmx cannot cancel that
+host operation. Its journal stays incomplete, late results are discarded, and
+nothing is retried. A waiting native call serializes the relay until it finishes.
 
 Only ephemeral public signing keys appear in startup/discovery. Private keys
 stay in memory, and signed requests/responses bind exact bytes and fresh nonces.

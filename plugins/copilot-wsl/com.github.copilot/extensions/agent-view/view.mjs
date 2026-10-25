@@ -531,7 +531,6 @@ export function createViewController({ getSession }) {
     const entry = instances.get(ctx?.instanceId);
     instances.delete(ctx?.instanceId);
     if (entry) await stop(entry);
-    if (!instances.size && getSession()) await closeHostRuntime(getSession());
   }
   async function closeAll() {
     const all = [...instances.values()];

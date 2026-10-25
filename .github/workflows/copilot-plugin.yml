@@ -49,7 +49,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Build Go runtime fixture
+        if: runner.os != 'Windows'
+        shell: bash
+        run: go build -o "$RUNNER_TEMP/kmx-host-fixture" ./cmd/kmx
       - name: Agent canvas, authoring and text fallback contracts
+        env:
+          KMX_HOST_BRIDGE_TEST_BINARY: ${{ runner.os != 'Windows' && format('{0}/kmx-host-fixture', runner.temp) || '' }}
         run: node --test plugins/tests/copilot/*.test.mjs
       - name: Package contracts and real MCP loop (Windows packaging only)
         run: python -m unittest discover -s plugins/copilot -p 'test_*.py' -v

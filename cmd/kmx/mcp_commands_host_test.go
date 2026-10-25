@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -111,6 +112,28 @@ func TestMCPCommandHostRuntimeAndBridgeLifetime(t *testing.T) {
 		})
 	}
 }
+func TestMCPWithoutBridgeStillStartsWhenRuntimeIdentityIsUnavailable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows prevents deleting the current directory")
+	}
+	root, cwd := t.TempDir(), t.TempDir()
+	t.Chdir(cwd)
+	if err := os.Remove(cwd); err != nil {
+		t.Fatal(err)
+	}
+	var out, diag bytes.Buffer
+	deps, loads := testDependencies(&out, &diag)
+	stdin, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stdin.Close()
+	deps.stdin = stdin
+	if err := execute([]string{"mcp", "--root", root}, deps); err != nil || *loads != 0 {
+		t.Fatalf("optional runtime discovery must not break ordinary MCP: %v loads=%d", err, *loads)
+	}
+}
+
 func TestMCPHostBridgeInvalidKeyIsConstantAndHidden(t *testing.T) {
 	var out, diag bytes.Buffer
 	deps, loads := testDependencies(&out, &diag)
