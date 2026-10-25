@@ -250,9 +250,9 @@ export function growTextarea(input) {
   input.style.height = `${input.scrollHeight + 2}px`;
 }
 // A check's fields own only their input values; source mutation and key actions stay caller-owned.
-export function checkFields(doc, initial, index, change, fieldKeys) {
+export function checkFields(doc, initial, index, change, fieldKeys, modelControl) {
   const node = el(doc, "div", "check-fields");
-  let inputs = [], first, targets = new Map(), advanced;
+  let inputs = [], first, targets = new Map(), advanced, judgeModel, disabled = false;
   const markIssue = issue => {
     for (const { input, hint } of targets.values()) {
       input.setAttribute("aria-invalid", "false"); input.setAttribute("aria-describedby", "");
@@ -263,17 +263,30 @@ export function checkFields(doc, initial, index, change, fieldKeys) {
     const { input, hint } = target;
     hint.textContent = issue.message; hint.hidden = false;
     input.setAttribute("aria-invalid", "true"); input.setAttribute("aria-describedby", hint.id);
-    if (advanced && ["judgeModel", "judgeVersion"].includes(issue.field)) advanced.open = true;
+    if (advanced && issue.field === "judgeVersion") advanced.open = true;
     return input;
   };
   const show = assertion => {
-    inputs = []; targets = new Map(); node.replaceChildren();
+    inputs = []; targets = new Map(); judgeModel = undefined; node.replaceChildren();
     const judge = assertion.type === "llmJudge";
     node.className = judge ? "check-fields judge-fields" : "check-fields";
     advanced = judge ? el(doc, "details", "judge-advanced") : undefined;
     if (advanced) { advanced.append(el(doc, "summary", "", "Advanced")); advanced.open = !String(assertion.judgeVersion ?? "").trim(); }
     const definitions = judge ? [["rubric", "Rubric"], ["minScore", "Minimum score (0 to 100)"], ["judgeModel", "Judge model"], ["judgeVersion", "Judge version"]] : [[operandKey(assertion.type), "text"]];
     for (const [key, label] of definitions) {
+      if (key === "judgeModel") {
+        // Picked from the canvas model catalog, never typed; the menu button keeps its own keys (no form Enter/Escape).
+        let value = assertion.judgeModel;
+        modelControl ??= runtimeModelControl(doc, () => ({ authored: "" }), async () => ({ error: "unavailable" }), () => {});
+        judgeModel = modelControl.judge(() => ({ value, disabled, label: `Check ${index + 1} judge model` }), chosen => {
+          if (chosen === value || value === undefined && chosen === "") return;
+          value = chosen; judgeModel.update(); change(key, chosen);
+        });
+        const hint = el(doc, "span", "field-hint"); hint.id = `check-${index + 1}-${key}-issue`; hint.hidden = true;
+        targets.set(key, { input: judgeModel.trigger, hint });
+        const wrap = el(doc, "div", "check-field", label); wrap.append(judgeModel.node, hint); node.append(wrap);
+        continue;
+      }
       const input = el(doc, judge && key === "rubric" ? "textarea" : "input", `field check-value${key === "rubric" ? " judge-rubric" : ""}`);
       input.value = assertion[key] ?? "";
       input.setAttribute("aria-label", `Check ${index + 1} ${key === "minScore" ? "minimum score" : label.toLowerCase()}`); input.setAttribute("spellcheck", "false");
@@ -290,14 +303,17 @@ export function checkFields(doc, initial, index, change, fieldKeys) {
       targets.set(key, { input, hint });
       if (judge) {
         const wrap = el(doc, "label", `check-field ${key === "rubric" ? "rubric-field" : ""}`, label); wrap.append(input, hint);
-        (key === "judgeModel" || key === "judgeVersion" ? advanced : node).append(wrap);
+        (key === "judgeVersion" ? advanced : node).append(wrap);
       } else node.append(input, hint);
     }
     if (advanced) node.append(advanced);
     first = inputs[0];
   };
   show(initial);
-  return { node, show, markIssue, focus() { first.focus(); }, update(disabled) { for (const input of inputs) { input.disabled = disabled; if (input === first && first.rows) growTextarea(first); } } };
+  return { node, show, markIssue, focus() { first.focus(); }, update(off) {
+    disabled = off; judgeModel?.update();
+    for (const input of inputs) { input.disabled = off; if (input === first && first.rows) growTextarea(first); }
+  } };
 }
 // Unknown is an observation, not a passing/failing check. Identity must still be unambiguous.
 export function inconclusiveJudge(c, observed) {
@@ -327,7 +343,7 @@ export function checkIssue(a) {
   if (!String(a[field] ?? "").trim()) return { field, message: field === "rubric" ? "Needs a rubric" : field === "pattern" ? "Needs a pattern" : "Needs text to check" };
   if (a.type !== "llmJudge") return;
   if (typeof a.minScore !== "number" || !Number.isInteger(a.minScore) || a.minScore < 0 || a.minScore > 100) return { field: "minScore", message: "Needs a minimum score, 0 to 100" };
-  if (!(a.judgeModel === undefined || a.judgeModel === "" || typeof a.judgeModel === "string" && !!a.judgeModel.trim())) return { field: "judgeModel", message: "Clear the Judge model or name one" };
+  if (!(a.judgeModel === undefined || a.judgeModel === "" || typeof a.judgeModel === "string" && !!a.judgeModel.trim())) return { field: "judgeModel", message: "Choose a Judge model" };
   if (typeof a.judgeVersion !== "string" || !a.judgeVersion.trim()) return { field: "judgeVersion", message: "Needs a Judge version" };
 }
 export const checkComplete = a => !checkIssue(a);
@@ -372,13 +388,33 @@ export function checkTypeControl(doc, initial, change, cancel) {
   return { node, update(disabled) { for (const control of [trigger, ...choices]) control.disabled = disabled; if (disabled) open(false); } };
 }
 
+// One lazy catalog read per canvas: concurrent opens share it, success is cached and failure retries on the next open.
+function modelCatalog(load) {
+  let pending;
+  const catalog = { models: [], defaultModel: DEFAULT_MODEL, state: "idle", discover() {
+    if (catalog.state === "ready") return Promise.resolve();
+    if (pending) return pending;
+    catalog.state = "loading";
+    pending = Promise.resolve().then(load).then(response => {
+      if (response?.error || !Array.isArray(response?.models)) throw new Error("unavailable");
+      catalog.models = response.models; catalog.defaultModel = response.defaultModel ?? DEFAULT_MODEL; catalog.state = "ready";
+    }).catch(() => { catalog.state = "failed"; }).finally(() => { pending = undefined; });
+    return pending;
+  } };
+  return catalog;
+}
 // Runtime selection only emits values to its owner; it cannot read or write an agent.
 export function runtimeModelControl(doc, settings, load, change) {
-  const node = el(doc, "div", "runtime-model"), trigger = el(doc, "button", "model-picker"), menu = el(doc, "div", "model-menu");
+  const catalog = modelCatalog(load), control = modelMenu(doc, settings, catalog, change);
+  // Judge menus offer only catalog IDs or "" (follow the run model); an authored pin outside the catalog stays read-only.
+  return { ...control, judge: (judgeSettings, judgeChange) => modelMenu(doc, judgeSettings, catalog, judgeChange, true) };
+}
+function modelMenu(doc, settings, catalog, change, judge) {
+  const node = el(doc, "div", judge ? "runtime-model judge-model" : "runtime-model"), trigger = el(doc, "button", "model-picker"), menu = el(doc, "div", "model-menu");
   const status = el(doc, "div", "quiet model-status"); status.setAttribute("role", "status");
   trigger.type = "button"; trigger.setAttribute("aria-haspopup", "menu");
-  menu.setAttribute("role", "menu"); menu.setAttribute("aria-label", "Runtime models");
-  let models = [], defaultModel = DEFAULT_MODEL, state = "idle", choices = [], opened = false;
+  menu.setAttribute("role", "menu"); menu.setAttribute("aria-label", judge ? "Judge models" : "Runtime models");
+  let choices = [], opened = false, renderedModels;
   const open = value => { opened = value; menu.hidden = !value; trigger.setAttribute("aria-expanded", String(value)); };
   const bind = (item, value) => {
     item.addEventListener("click", () => { if (trigger.disabled || item.disabled) return; open(false); change(value); trigger.focus(); });
@@ -392,6 +428,9 @@ export function runtimeModelControl(doc, settings, load, change) {
     if (!item.disabled) choices.push(item);
   };
   const update = () => {
+    renderedModels = catalog.models;
+    if (judge) return updateJudge();
+    const { models, defaultModel, state } = catalog;
     const { authored, selected, chatModel, chatModelName, disabled } = settings();
     const fallback = effectiveModel(authored, "", chatModel), current = selected || fallback;
     const origin = selected ? selected === defaultModel ? "default" : "this canvas" : authored ? "from the agent file" : "default";
@@ -421,8 +460,7 @@ export function runtimeModelControl(doc, settings, load, change) {
       group.append(el(doc, "div", "model-group", "Chat"), option); menu.append(group);
     }
     for (const [name, ids] of groups) {
-      const group = el(doc, "div", "model-options"); group.setAttribute("role", "group"); group.setAttribute("aria-label", name);
-      group.append(el(doc, "div", "model-group", name));
+      const group = groupOf(name);
       for (const id of ids) {
         const option = el(doc, "button", `model-option${name === "Other models" ? " model-id" : ""}`, modelPresentation(id).name); option.type = "button";
         option.setAttribute("role", "menuitemradio"); option.setAttribute("aria-checked", String(id === current));
@@ -430,22 +468,48 @@ export function runtimeModelControl(doc, settings, load, change) {
         if (id === chatModel) option.append(el(doc, "span", "model-chat", chatUnavailable ? "Chat model · not available here" : "Current chat model"));
         bind(option, id); group.append(option);
       }
-      menu.append(group);
     }
+    finish(disabled, focused, wasOpen);
+  };
+  const finish = (disabled, focused, wasOpen) => {
+    const { state } = catalog;
     status.textContent = state === "loading" ? "Loading models…" : state === "failed" ? "Choices unavailable; model selection unchanged." : "";
     menu.append(status);
     if (disabled) open(false);
     if (focused !== undefined && !disabled) { open(wasOpen); choices.find(option => option.getAttribute("data-model") === focused)?.focus(); }
   };
+  const groupOf = name => {
+    const group = el(doc, "div", "model-options"); group.setAttribute("role", "group"); group.setAttribute("aria-label", name);
+    group.append(el(doc, "div", "model-group", name)); menu.append(group); return group;
+  };
+  const updateJudge = () => {
+    const { value, disabled, label } = settings(), pin = value ?? "", ready = catalog.state === "ready";
+    const name = pin === "" ? "Run model" : modelPresentation(String(pin)).name, origin = pin === "" ? "follows selection" : "pinned";
+    trigger.replaceChildren(el(doc, "span", "model-name", name), el(doc, "span", "model-origin", ` · ${origin}`), icon(doc, "down", 12, 2));
+    trigger.setAttribute("aria-label", `${label}: ${name} · ${origin}`); trigger.setAttribute("title", `${pin || name} · ${origin}`); trigger.disabled = !!disabled;
+    const focused = choices.find(option => option === doc.activeElement)?.getAttribute("data-model"), wasOpen = opened;
+    choices = []; menu.replaceChildren();
+    const follow = el(doc, "button", "model-default", "Run model · follows selection");
+    follow.type = "button"; follow.disabled = !!disabled; follow.setAttribute("role", "menuitemradio"); follow.setAttribute("aria-checked", String(pin === ""));
+    follow.setAttribute("data-model", ""); bind(follow, ""); menu.append(follow);
+    const models = ready ? [...new Set(catalog.models)] : [], ids = pin !== "" && !models.includes(pin) ? [...models, pin] : models, groups = new Map();
+    for (const id of ids) { const group = modelPresentation(String(id)).group; groups.set(group, [...groups.get(group) ?? [], id]); }
+    for (const [group, members] of groups) {
+      const node = groupOf(group);
+      for (const id of members) {
+        const option = el(doc, "button", `model-option${group === "Other models" ? " model-id" : ""}`, modelPresentation(String(id)).name); option.type = "button";
+        option.setAttribute("role", "menuitemradio"); option.setAttribute("aria-checked", String(id === pin));
+        option.setAttribute("data-model", id); option.setAttribute("title", id); option.disabled = !!disabled || !models.includes(id);
+        // Unknown until the catalog is read; afterwards an authored pin outside it is shown, never offered.
+        if (ready && !models.includes(id)) option.append(el(doc, "span", "model-chat", "From the agent file · not in the model list"));
+        bind(option, id); node.append(option);
+      }
+    }
+    finish(disabled, focused, wasOpen);
+  };
   const discover = async () => {
-    if (state === "ready" || state === "loading") return;
-    state = "loading"; update();
-    try {
-      const response = await load();
-      if (response?.error || !Array.isArray(response?.models)) throw new Error("unavailable");
-      models = response.models; defaultModel = response.defaultModel ?? DEFAULT_MODEL; state = "ready";
-    } catch { state = "failed"; }
-    update();
+    if (catalog.state === "ready") { if (renderedModels !== catalog.models) update(); return; }
+    const read = catalog.discover(); update(); await read; update();
   };
   trigger.addEventListener("click", async () => { if (trigger.disabled) return; open(!opened); if (opened) await discover(); });
   trigger.addEventListener("keydown", event => {

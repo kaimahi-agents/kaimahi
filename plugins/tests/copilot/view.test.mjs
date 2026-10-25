@@ -1642,7 +1642,7 @@ test("the following action keeps keyboard focus through a late catalog response"
   const doc = fakeDoc(); let release;
   const control = runtimeModelControl(doc, () => ({ authored: "fake", selected: "" }), () => new Promise(resolve => { release = resolve; }), () => {});
   const opened = control.trigger.listeners.click[0](); byClass(control.node, "model-default")[0].focus();
-  release({ models: ["other-model"] }); await opened;
+  await Promise.resolve(); release({ models: ["other-model"] }); await opened;
   assert.equal(doc.activeElement, byClass(control.node, "model-default")[0]);
   assert.equal(control.trigger.attrs["aria-expanded"], "true");
 });
@@ -2186,39 +2186,114 @@ test("Board C passing answer is requested explicitly without a hidden checkbox",
 const judgeField = (root, index, label) => all(root).find(e => e.attrs?.["aria-label"] === `Check ${index} ${label}`);
 const judgeAssertion = () => ({ id: "why", type: "llmJudge", rubric: "Says why.", minScore: 0, judgeModel: "fake", judgeVersion: "v1" });
 
-test("Judge Advanced holds model and required version, opening only when the version needs attention", () => {
-  const doc = fakeDoc(), changes = [];
-  const fields = checkFields(doc, judgeAssertion(), 0, (...value) => changes.push(value), () => {});
+const judgeTrigger = (root, index = 0) => byClass(byClass(root, "judge-model")[index], "model-picker")[0];
+const judgeChoice = (root, id, index = 0) => all(byClass(root, "judge-model")[index]).find(e => e.attrs?.["data-model"] === id);
+async function pickJudge(root, id, index = 0) {
+  await judgeTrigger(root, index).listeners.click[0]();
+  const choice = judgeChoice(root, id, index); assert.ok(choice, `Judge choice ${id}`); click(choice);
+}
+const catalogControl = (doc, load) => runtimeModelControl(doc, () => ({ authored: "fake", selected: "" }), load, () => {});
+
+test("Judge Advanced holds only the required version; the model is a catalog menu in the main form", async () => {
+  const doc = fakeDoc(), changes = [], keyed = []; let loads = 0;
+  const control = catalogControl(doc, async () => { loads++; return { models: ["gpt-5.6-terra", "claude-sonnet-5.5", "unknown/raw-id"] }; });
+  const fields = checkFields(doc, { ...judgeAssertion(), judgeModel: undefined }, 0, (...value) => changes.push(value), node => keyed.push(node), control);
   const advanced = all(fields.node).find(e => e.tag === "details");
-  assert.ok(advanced, "Judge model and version belong in Advanced");
-  assert.equal(advanced.children[0].textContent, "Advanced");
-  assert.notEqual(advanced.open, true);
-  assert.equal(judgeField(advanced, 1, "judge model").value, "fake");
+  assert.equal(advanced.children[0].textContent, "Advanced"); assert.notEqual(advanced.open, true);
   assert.equal(judgeField(advanced, 1, "judge version").value, "v1");
-  assert.match(fields.node.textContent, /Minimum score \(0 to 100\)/);
-  assert.equal(judgeField(fields.node, 1, "judge model").attrs.placeholder, undefined);
+  assert.equal(judgeField(fields.node, 1, "judge model"), undefined, "no typed Judge model field");
+  assert.equal(all(fields.node).filter(e => ["input", "textarea"].includes(e.tag)).length, 3);
+  const menu = byClass(fields.node, "judge-model")[0], trigger = judgeTrigger(fields.node);
+  assert.ok(menu && !all(advanced).includes(menu), "Judge model sits in the main form");
+  assert.match(fields.node.textContent, /Minimum score \(0 to 100\)/); assert.match(fields.node.textContent, /Judge model/);
+  assert.equal(trigger.textContent, "Run model · follows selection"); assert.equal(keyed.includes(trigger), false);
+  assert.equal(loads, 0); await trigger.listeners.click[0](); assert.equal(loads, 1);
+  const first = byClass(menu, "model-menu")[0].children[0];
+  assert.equal(first.textContent, "Run model · follows selection"); assert.equal(first.attrs["data-model"], "");
+  assert.deepEqual(byClass(menu, "model-group").map(e => e.textContent), ["OpenAI", "Claude", "Other models"]);
+  const options = byClass(menu, "model-option");
+  assert.deepEqual(options.map(o => [o.attrs["data-model"], o.attrs.title, o.textContent]), [["gpt-5.6-terra", "gpt-5.6-terra", "GPT-5.6 Terra"], ["claude-sonnet-5.5", "claude-sonnet-5.5", "Claude Sonnet 5.5"], ["unknown/raw-id", "unknown/raw-id", "unknown/raw-id"]]);
+  assert.match(options[2].className, /\bmodel-id\b/);
+  click(options[1]); assert.deepEqual(changes, [["judgeModel", "claude-sonnet-5.5"]]);
+  assert.equal(trigger.textContent, "Claude Sonnet 5.5 · pinned"); assert.equal(doc.activeElement, trigger);
+  await pickJudge(fields.node, ""); assert.deepEqual(changes.at(-1), ["judgeModel", ""]);
+  assert.equal(trigger.textContent, "Run model · follows selection"); assert.equal(loads, 1, "catalog is cached");
   fields.show({ ...judgeAssertion(), judgeModel: "", judgeVersion: "" });
   assert.equal(all(fields.node).find(e => e.tag === "details").open, true);
   assert.equal(judgeField(fields.node, 1, "judge version").value, "", "never invent a version");
-  edited(judgeField(fields.node, 1, "judge model"), "");
-  assert.deepEqual(changes, [["judgeModel", ""]]);
   fields.update(true);
-  assert.ok(byClass(fields.node, "check-value").every(e => e.disabled));
+  assert.ok(byClass(fields.node, "check-value").every(e => e.disabled)); assert.equal(judgeTrigger(fields.node).disabled, true);
 });
 
+test("an authored Judge pin outside the catalog stays visible, read-only and private to its check", async () => {
+  const doc = fakeDoc(), changes = [], key = (node, k) => node.listeners.keydown[0]({ key: k, preventDefault() {} }); let loads = 0;
+  const control = catalogControl(doc, async () => { loads++; return { models: ["gpt-5.6-terra"] }; });
+  const a = checkFields(doc, { ...judgeAssertion(), judgeModel: "no-such-model" }, 0, (...v) => changes.push(v), () => {}, control);
+  const b = checkFields(doc, { ...judgeAssertion(), judgeModel: "" }, 1, (...v) => changes.push(v), () => {}, control);
+  assert.match(judgeTrigger(a.node).textContent, /^no-such-model · pinned/);
+  await judgeTrigger(a.node).listeners.click[0]();
+  const pin = judgeChoice(a.node, "no-such-model");
+  assert.equal(pin.disabled, true); assert.equal(pin.attrs["aria-checked"], "true");
+  assert.match(pin.textContent, /From the agent file · not in the model list/);
+  click(pin); a.update(false); assert.deepEqual(changes, []);
+  key(judgeTrigger(a.node), "Escape"); key(judgeTrigger(a.node), "ArrowDown");
+  assert.equal(doc.activeElement, byClass(a.node, "model-default")[0]);
+  key(doc.activeElement, "ArrowUp"); assert.equal(doc.activeElement, judgeChoice(a.node, "gpt-5.6-terra"), "the pin is skipped");
+  key(doc.activeElement, "Escape"); assert.equal(doc.activeElement, judgeTrigger(a.node));
+  await judgeTrigger(b.node).listeners.click[0]();
+  assert.equal(judgeChoice(b.node, "no-such-model"), undefined, "another check's pin is not a catalog choice");
+  assert.equal(loads, 1);
+  click(judgeChoice(b.node, "gpt-5.6-terra")); assert.deepEqual(changes, [["judgeModel", "gpt-5.6-terra"]]);
+  await pickJudge(a.node, "gpt-5.6-terra"); assert.deepEqual(changes.at(-1), ["judgeModel", "gpt-5.6-terra"], "choosing a known model replaces the pin");
+});
+
+test("Judge catalog loading or failure never changes the pin, shares one read and retries once", async () => {
+  const doc = fakeDoc(), changes = [], replies = [];
+  const control = catalogControl(doc, () => new Promise(resolve => replies.push(resolve)));
+  const a = checkFields(doc, { ...judgeAssertion(), judgeModel: "claude-sonnet-5.5" }, 0, (...v) => changes.push(v), () => {}, control);
+  const b = checkFields(doc, { ...judgeAssertion(), judgeModel: "" }, 1, (...v) => changes.push(v), () => {}, control);
+  const openA = judgeTrigger(a.node).listeners.click[0](), openRun = control.trigger.listeners.click[0](), openB = judgeTrigger(b.node).listeners.click[0]();
+  await Promise.resolve(); assert.equal(replies.length, 1, "concurrent widgets share one catalog read");
+  assert.equal(byClass(a.node, "model-status")[0].textContent, "Loading models…");
+  const pending = judgeChoice(a.node, "claude-sonnet-5.5");
+  assert.equal(pending.disabled, true); assert.doesNotMatch(pending.textContent, /not in the model list/);
+  replies[0]({ error: "models-unavailable" }); await Promise.all([openA, openRun, openB]);
+  assert.equal(byClass(a.node, "model-status")[0].textContent, "Choices unavailable; model selection unchanged.");
+  assert.match(judgeTrigger(a.node).textContent, /^Claude Sonnet 5.5 · pinned/); assert.doesNotMatch(a.node.textContent, /not in the model list/);
+  assert.equal(byClass(a.node, "model-default")[0].disabled, false); assert.deepEqual(changes, []);
+  await judgeTrigger(a.node).listeners.click[0](); await judgeTrigger(b.node).listeners.click[0]();
+  const retryA = judgeTrigger(a.node).listeners.click[0](), retryB = judgeTrigger(b.node).listeners.click[0]();
+  await Promise.resolve(); assert.equal(replies.length, 2, "one retry after a failed read");
+  replies[1]({ models: ["claude-sonnet-5.5"] }); await Promise.all([retryA, retryB]);
+  assert.equal(judgeChoice(a.node, "claude-sonnet-5.5").disabled, false);
+  control.update(); assert.ok(byClass(control.node, "model-option").some(o => o.attrs["data-model"] === "claude-sonnet-5.5"));
+  assert.equal(replies.length, 2); assert.deepEqual(changes, []);
+});
+
+test("a synchronous catalog failure can be retried without changing a file pin", async () => {
+  const doc = fakeDoc(), changes = []; let reads = 0;
+  const control = catalogControl(doc, () => { if (++reads === 1) throw new Error("unavailable"); return { models: ["claude-sonnet-5.5"] }; });
+  const fields = checkFields(doc, { ...judgeAssertion(), judgeModel: "file-only" }, 0, (...v) => changes.push(v), () => {}, control);
+  await judgeTrigger(fields.node).listeners.click[0]();
+  assert.equal(reads, 1); assert.deepEqual(changes, []); assert.match(judgeTrigger(fields.node).textContent, /^file-only · pinned/);
+  await judgeTrigger(fields.node).listeners.click[0](); await judgeTrigger(fields.node).listeners.click[0]();
+  assert.equal(reads, 2); assert.equal(judgeChoice(fields.node, "claude-sonnet-5.5").disabled, false);
+  assert.deepEqual(changes, []); assert.equal(judgeChoice(fields.node, "file-only").disabled, true);
+});
 test("Judge conversion authors four explicit fields and scoped Enter preserves raw source model absence", async () => {
-  const h = await editableCanvas("Reply briefly.", undefined, { omitModel: true }); openTest(h.root, "greeting");
+  const h = await editableCanvas("Reply briefly.", undefined, { omitModel: true, fetchModels: async () => ({ models: ["fake"] }) }); openTest(h.root, "greeting");
   click(byClass(h.root, "check-line")[0]); click(byClass(h.root, "check-type-option")[3]);
   const rubric = judgeField(h.root, 1, "rubric");
   assert.ok(rubric, "Judge has a rubric field"); assert.equal(rubric.tag, "textarea");
   assert.equal(rubric.value, "Hello, Ada");
-  for (const field of ["minimum score", "judge model", "judge version"]) assert.equal(judgeField(h.root, 1, field).value, "");
+  for (const field of ["minimum score", "judge version"]) assert.equal(judgeField(h.root, 1, field).value, "");
+  assert.equal(judgeTrigger(h.root).textContent, "Run model · follows selection");
   const score = judgeField(h.root, 1, "minimum score");
   assert.equal(score.type, "number"); assert.equal(String(score.min), "0"); assert.equal(String(score.max), "100"); assert.equal(String(score.step), "1");
   edited(rubric, "Says why.\nKeeps detail.");
   let prevented = false; rubric.listeners.keydown[0]({ key: "Enter", shiftKey: true, preventDefault() { prevented = true; } });
   assert.equal(prevented, false); assert.equal(h.calls.length, 0);
-  edited(score, "0"); edited(judgeField(h.root, 1, "judge model"), "fake"); edited(judgeField(h.root, 1, "judge version"), "v1");
+  edited(score, "0"); await pickJudge(h.root, "fake"); edited(judgeField(h.root, 1, "judge version"), "v1");
   enterOn(rubric); await tick();
   assert.equal(h.calls.length, 1); assert.equal(h.calls[0].operation, "save-and-test"); assert.equal(h.calls[0].caseId, "greeting");
   assert.equal(Object.hasOwn(h.calls[0], "sourceModel"), false);
@@ -2257,8 +2332,8 @@ for (const prefix of [[], [{ id: "text", type: "contains", value: "Hello" }]]) t
 });
 
 test("clearing an existing Judge pin keeps its explicit version and permits the next run", async () => {
-  const h = await editableCanvas("Reply briefly.", undefined, { examples: [{ id: "a", input: "Name a", assertions: [judgeAssertion()] }] });
-  openTest(h.root, "a"); edited(judgeField(h.root, 1, "judge model"), "");
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: [{ id: "a", input: "Name a", assertions: [judgeAssertion()] }], fetchModels: async () => ({ models: ["fake"] }) });
+  openTest(h.root, "a"); await pickJudge(h.root, "");
   assert.equal(byClass(h.root, "judge-binding")[0].hidden, true);
   enterOn(judgeField(h.root, 1, "rubric")); await tick();
   assert.equal(h.calls.length, 1); assert.equal(h.calls[0].examples[0].assertions[0].judgeVersion, "v1");
@@ -2338,10 +2413,10 @@ for (const verdict of ["pass", "fail", "unknown"]) test(`Judge renders observed 
 
 for (const [label, key, value] of [["rubric", "rubric", "New\nRubric"], ["minimum score", "minScore", "100"], ["judge model", "judgeModel", "other"], ["judge version", "judgeVersion", "opaque-revision"]]) test(`Judge changing only ${label} preserves other raw fields and dims verdict`, async () => {
   const original = judgeAssertion();
-  const h = await editableCanvas("Reply briefly.", undefined, { examples: [{ id: "a", input: "Name a", assertions: [original] }], latest: bLatest({ a: "pass" }) });
-  openTest(h.root, "a"); edited(judgeField(h.root, 1, label), value);
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: [{ id: "a", input: "Name a", assertions: [original] }], latest: bLatest({ a: "pass" }), fetchModels: async () => ({ models: ["fake", "other"] }) });
+  openTest(h.root, "a"); if (key === "judgeModel") await pickJudge(h.root, value); else edited(judgeField(h.root, 1, label), value);
   assert.deepEqual(checkLabels(h.root), ["Passed last run"]);
-  enterOn(judgeField(h.root, 1, label)); await tick();
+  enterOn(judgeField(h.root, 1, "rubric")); await tick();
   assert.deepEqual(h.calls[0].examples[0].assertions[0], { ...original, [key]: key === "minScore" ? Number(value) : value });
 });
 
@@ -2383,7 +2458,32 @@ test("Judge conversion in both directions preserves ID and operand, drops only i
   assert.equal(judgeField(h.root, 1, "minimum score").value, "");
   judgeField(h.root, 1, "rubric").listeners.keydown[0]({ key: "Escape", preventDefault() {} });
   assert.equal(String(judgeField(h.root, 1, "minimum score").value), "0");
-  assert.equal(judgeField(h.root, 1, "judge model").value, "fake");
+  assert.match(judgeTrigger(h.root).textContent, /^fake · pinned/);
+});
+
+test("a Judge model picked from the shared catalog saves its exact ID and leaves the run model and source alone", async () => {
+  let catalogs = 0;
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: [{ id: "a", input: "Name a", assertions: [judgeAssertion()] }],
+    fetchModels: async () => { catalogs++; return { models: ["fake", "claude-sonnet-5.5", "unknown/raw-id"] }; } });
+  const runPicker = byClass(h.root, "model-picker")[0], runText = runPicker.textContent;
+  openTest(h.root, "a"); assert.equal(judgeField(h.root, 1, "judge model"), undefined);
+  const trigger = judgeTrigger(h.root);
+  const keyed = trigger.listeners.keydown.length; trigger.listeners.keydown.forEach(f => f({ key: "Enter", preventDefault() {} }));
+  assert.equal(h.calls.length, 0, "Enter on the menu button does not save"); assert.equal(keyed, 1);
+  await pickJudge(h.root, "unknown/raw-id"); assert.equal(h.doc.activeElement, judgeTrigger(h.root));
+  assert.equal(catalogs, 1); assert.equal(h.calls.length, 0);
+  enterOn(judgeField(h.root, 1, "rubric")); await tick();
+  assert.equal(h.calls.length, 1); assert.deepEqual(h.calls[0].examples[0].assertions[0], { ...judgeAssertion(), judgeModel: "unknown/raw-id" });
+  assert.equal(Object.hasOwn(h.calls[0], "model"), false); assert.equal(Object.hasOwn(h.calls[0], "sections"), false);
+  goBack(h.root); assert.equal(byClass(h.root, "model-picker")[0].textContent, runText);
+});
+
+test("an invalid authored Judge model does not gain a free-text repair field", async () => {
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: [{ id: "a", input: "Name a", assertions: [{ ...judgeAssertion(), judgeModel: "  " }] }], fetchModels: async () => ({ models: ["fake"] }) });
+  openTest(h.root, "a");
+  assert.equal(h.calls.length, 0); assert.ok(byClass(h.root, "check-readonly").length);
+  assert.equal(judgeField(h.root, 1, "judge model"), undefined);
+  assert.equal(byClass(h.root, "check-fields").length, 0, "invalid source retains its existing read-only boundary");
 });
 
 test("Judge duplicates and deletes without changing metadata", async () => {

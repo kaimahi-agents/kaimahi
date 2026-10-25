@@ -838,7 +838,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
         const editKey = `${key}/${a.id}`, edit = el(doc, "div", "check-edit");
         const fields = checkFields(doc, a, index, (field, value) => {
           editingChecks.add(editKey); mutate(d => { d.raw.assertions[index][field] = value; });
-        }, fieldKeys);
+        }, fieldKeys, modelControl);
         const line = button("", () => { editingChecks.add(editKey); refresh(); fields.focus(); }, "check-line");
         line.append(state, el(doc, "span", "check-label", checkLabel({ type: a.type, fields: [[operandKey(a.type), a[operandKey(a.type)] ?? ""]] })));
         const choice = checkTypeControl(doc, a.type, chosen => {

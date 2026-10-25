@@ -15,7 +15,7 @@ function fakeDoc() {
       addEventListener() {},
       focus() { doc.activeElement = this; },
     };
-  } };
+  }, createElementNS(ns, tagName) { return doc.createElement(tagName); } };
   return doc;
 }
 const descendants = node => [node, ...node.children.flatMap(descendants)];
@@ -69,10 +69,11 @@ test("markIssue places one inert accessible hint under its input and clears mark
   assert.equal(hint.children.length, 0);
   const advanced = descendants(fields.node).find(node => node.tagName === "details");
   assert.equal(advanced.open, false);
-  assert.equal(fields.markIssue({ field: "judgeModel", message: "Needs a Judge model" }), inputs[2]);
-  assert.equal(advanced.open, true);
-  advanced.open = false;
-  assert.equal(fields.markIssue({ field: "judgeVersion", message: "Needs a Judge version" }), inputs[3]);
+  const trigger = descendants(fields.node).find(node => node.tagName === "button" && /\bmodel-picker\b/.test(node.className));
+  assert.equal(fields.markIssue(editor.checkIssue(judge({ judgeModel: "  " }))), trigger, "a model issue focuses the menu button");
+  assert.equal(advanced.open, false, "only the version lives in Advanced");
+  assert.doesNotMatch(descendants(fields.node).find(node => node.id === trigger.getAttribute("aria-describedby")).textContent, /name|type/i);
+  assert.equal(fields.markIssue({ field: "judgeVersion", message: "Needs a Judge version" }), inputs[2]);
   assert.equal(advanced.open, true);
   assert.equal(inputs[1].getAttribute("aria-invalid"), "false");
   assert.equal(inputs[1].getAttribute("aria-describedby"), "");
@@ -81,7 +82,7 @@ test("markIssue places one inert accessible hint under its input and clears mark
   assert.ok(inputs.every(input => input.getAttribute("aria-invalid") !== "true"));
   assert.equal(descendants(fields.node).filter(node => !node.hidden && node.textContent.startsWith("Needs a")).length, 0);
   assert.deepEqual(changes, []);
-  assert.equal(inputs[2].getAttribute("placeholder"), null, "binding copy owns the model explanation");
+  assert.equal(inputs.length, 3, "no typed Judge model input");
 });
 
 test("markIssue also annotates ordinary operands and resets on type changes", () => {
