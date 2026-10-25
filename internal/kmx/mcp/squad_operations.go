@@ -162,7 +162,7 @@ func WithSquadOperations(ops map[string]Operation, c *SquadCreator, a *app.App, 
 				}
 				result.File = &file
 			} else {
-				preview, err := a.PreviewSquadSnapshot(ctx, d, app.FilePreviewOptions{File: result.File.Path, Operation: name, CaseID: input.CaseID, Input: input.Input, ShowContent: input.Show, Route: selected})
+				preview, err := a.PreviewSquadSnapshot(ctx, d, app.FilePreviewOptions{File: result.File.Path, Operation: name, CaseID: input.CaseID, Input: input.Input, ShowContent: input.Show, Route: selected, CaseFinished: caseProgressNotifier(ctx, name, req)})
 				result.Preview = &preview
 				var failure *app.FilePreviewError
 				completed := errors.As(err, &failure) && failure.ExitCode() == 2 && preview.State == "complete"

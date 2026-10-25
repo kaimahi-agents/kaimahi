@@ -15,7 +15,7 @@ import (
 // nothing. Substrate apply is a separate, unimplemented seam.
 var ErrAgentSessionsLiftPlanOnly = errors.New("AgentSessions deployment is plan-only: it renders an ActorTemplate and harness registration and applies nothing")
 
-var errAgentSessionsLiftSelectors = errors.New("packaged AgentSessions deployment requires --harness-image NAME@sha256:<digest>, --bindings FILE (AgentSessionsBinding) and --plan, without cluster or inference selectors")
+var errAgentSessionsLiftSelectors = errors.New("packaged AgentSessions deployment requires --to NAME declaring runtime: agentsessions and an explicit namespace (no --inference or --bindings); alternatively use the offline --harness-image NAME@sha256:<digest> --bindings FILE --plan render without cluster selectors")
 
 // ReleaseLiftSessionsPlan is the rendered AgentSessions half of a plan. It
 // contains identities, references and the rendered documents, never prompts,

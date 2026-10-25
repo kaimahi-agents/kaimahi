@@ -133,7 +133,9 @@ any judge answers/rubrics to Copilot. Startup does not sign in or access credent
 In v0.9.0-rc.2 native bundles, Copilot previews use a direct, unjournaled runner.
 Current main journals tool-free Copilot agent and judge turns on embedded Sessions
 under `<kmx state>/local-preview/journals`, using the cleartext-content retention
-policy above. Neither path uses the Copilot SDK harness.
+policy above, with one fresh Session per agent turn and judge sample. The provider
+owns pre-journal credential/content checks and captures one invocation-local
+credential snapshot. Neither path uses the Copilot SDK harness.
 
 A public archive cannot contain a user's absolute root. Release archives start
 unconfigured and refuse MCP startup until an operator chooses a root as below.
@@ -306,7 +308,11 @@ assertion failures are normal tool results: `isError: false` does not mean pass.
 Preview file.path is a display basename, **not the original Edit target**.
 Boundary refusals have a safe reason code instead of a preview.
 Default tool output omits answers/operands. Explicit `showContent` includes all
-bounded excerpts; optional `showFailedContent` includes only failed saved examples. Retention remains `not_requested`; file-scoped Explain is deferred.
+bounded excerpts; optional `showFailedContent` includes only failed saved examples.
+Completed non-pass Test results may report `retention.status: retained` with
+opaque diagnostic IDs, or `unavailable` when persistence could not be confirmed;
+Run and passing/error/cancelled Test remain `not_requested`. Offline inspection
+is the CLI-only `kmx test explain --file FILE`; no fifth MCP tool is added.
 These results grant no native shipping evidence or Publish/Deploy authority.
 Squad placement alone does not register a team member.
 

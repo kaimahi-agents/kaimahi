@@ -1,6 +1,6 @@
 # Inspect a destination
 
-`kmx status --to NAME` inventories deployed Orka and kagent Agents throughout one
+`kmx status --to NAME` inventories deployed Orka, kagent and AgentSessions Agents throughout one
 named destination namespace. It does not select this workspace's suite, evaluate
 an agent, repair resources, or report controller installation qualification.
 
@@ -37,10 +37,10 @@ A saved namespace is required: status never derives it from bindings or the
 kubeconfig's mutable namespace. An explicit global `--context` overrides the saved
 context for this invocation; otherwise the destination context wins over ambient
 or remembered selections. Concrete selectors are frozen before observation.
-AgentSessions destinations refuse before cluster inspection.
 
-Both supported Agent APIs are inspected when served: Orka
-`core.orka.ai/v1alpha1` and kagent `kagent.dev/v1alpha2`. An optional saved runtime
+All supported Agent APIs are inspected when served: Orka
+`core.orka.ai/v1alpha1`, kagent `kagent.dev/v1alpha2` and AgentSessions
+`agents.aks-durable-agents.io/v1alpha1`. An optional saved runtime
 is an expectation, **not a filter**: an unavailable expected API or any observed
 Agent of a different runtime makes the report incomplete without hiding readable
 rows. An API being served does not qualify its controller, images or authentication.
@@ -60,7 +60,7 @@ It reads no Secret contents or metadata, Nodes, controller proxies or auth probe
 | Reported state | Meaning |
 |---|---|
 | `recorded` | A valid, applicable unsigned Deploy attempt observation is present (v1 create or Orka v2 mutation). |
-| `provenance not recorded` | Native suite ownership is valid, but this object has no Deploy annotation. This is normal for older objects or no-write reuse; it does not prove the object's age. |
+| `provenance not recorded` | For Orka/kagent, native suite ownership is valid but this object has no Deploy annotation. For AgentSessions, the contract carries no kmx ownership/evaluation proof. This is normal for older objects or no-write reuse; it does not prove the object's age. |
 | `unknown` | Ownership or provenance is incomplete, malformed, conflicting, unsupported, changed during inspection, or cannot be observed safely. |
 | `not kmx-owned` | No native suite or legacy reservation markers are present. A copied Deploy annotation alone cannot change this classification. |
 
@@ -81,6 +81,24 @@ Copied annotations do not prove original resource-UID continuity. Status does no
 open private history or claim that continuity, even when local records exist.
 Context aliases are access names; target comparison uses cluster/namespace UIDs
 and the namespace, not matching kubeconfig aliases across machines.
+
+## AgentSessions registration
+
+AgentSessions rows read only the namespaced `Agent`, with no host, model binding,
+Secret, workload or Sessions API reads. They report `registered` only when:
+
+- The object is not deleting and `status.agentUID` equals its current UID.
+- Status and both `PackageVerified=True` and `Registered=True` conditions acknowledge
+  the current metadata generation.
+- Status member equals the immutable spec member, and `servedDigest` and
+  `packageDigest` both equal the digest in `spec.package.reference`.
+
+Registered means **last controller-observed admission**, not current host or
+inference availability, target evaluation or a qualified runtime. Pending checks
+remain `pending`; malformed data or identity/spec changes across reads are unknown.
+The package digest/member come from the resource, not local history. Provenance is
+`provenance not recorded`: the controller contract does not carry kmx evaluation or
+ownership proof. Orka/kagent provenance and candidate handling remain unchanged.
 
 ## Shared release observation
 
@@ -156,7 +174,7 @@ accepted-response budget. No polling or automatic retry is performed.
 
 | Exit | Meaning |
 |---|---|
-| `0` | Complete inventory; deployed Agents ready, or verified empty. |
+| `0` | Complete inventory; deployed Agents ready/registered, or verified empty. |
 | `2` | Complete observation with known pending deployed placement. |
 | `1` | Incomplete/unknown, partial shared revision, unhealthy or drifted placement, runtime mismatch, or output failure. This takes precedence over pending. |
 

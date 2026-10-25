@@ -24,6 +24,9 @@ type Request struct {
 	JudgeRoute *modelaccess.Route
 	Input      *string
 	Progress   func(string) error
+	// ExampleFinished is synchronous, observational and runner-dependent. It
+	// reports a checked case before the next starts; finalization can still fail.
+	ExampleFinished func(ExampleOutcome)
 	// ToolBindings and FileLabel are operator-owned host inputs, never harness config.
 	ToolBindings string
 	FileLabel    string

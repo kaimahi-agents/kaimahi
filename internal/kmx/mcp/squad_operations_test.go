@@ -54,7 +54,7 @@ func TestSquadMCPChatCreateMapEditAndPreview(t *testing.T) {
 	}
 	defer files.Close()
 	a := &app.App{FileRunner: app.NewLocalFileRunner()}
-	cs := connectFixture(t, WithSquadOperations(Operations(files, a, nil), c, a, nil), func(s *sdk.Server) { AddSquadResource(s, c) })
+	cs, notifications := connectProgressFixture(t, WithSquadOperations(Operations(files, a, nil), c, a, nil), func(s *sdk.Server) { AddSquadResource(s, c) })
 	lead := squadLead()
 	lead.Model = "fake"
 	lead.TaskInstructions = "Reply with exactly `Hello, ` followed by the input name."
@@ -80,13 +80,30 @@ func TestSquadMCPChatCreateMapEditAndPreview(t *testing.T) {
 		t.Fatal("lost reopened native view")
 	}
 	for _, operation := range []string{"run", "test"} {
-		res, err = cs.CallTool(t.Context(), &sdk.CallToolParams{Name: operation, Arguments: map[string]any{"schemaVersion": 2, "target": "squad-member", "memberId": "leader"}})
+		params := &sdk.CallToolParams{Name: operation, Arguments: map[string]any{"schemaVersion": 2, "target": "squad-member", "memberId": "leader"}}
+		params.SetProgressToken("native-cases")
+		res, err = cs.CallTool(t.Context(), params)
 		if err != nil || res.IsError {
 			t.Fatalf("native %s failed: %+v %v", operation, res, err)
 		}
 		b, _ = json.Marshal(res.StructuredContent)
 		if !strings.Contains(string(b), `"fullPass":true`) || !strings.Contains(string(b), doc.File.Revision) {
 			t.Fatalf("native preview not revision bound: %s", b)
+		}
+		if operation == "test" {
+			select {
+			case n := <-notifications:
+				if n.ProgressToken != "native-cases" || n.Progress != 1 || !strings.Contains(n.Message, `"verdict":"pass"`) {
+					t.Fatalf("native progress: %+v", n)
+				}
+			default:
+				t.Fatal("missing native case progress")
+			}
+		}
+		select {
+		case n := <-notifications:
+			t.Fatalf("unexpected native progress: %+v", n)
+		default:
 		}
 	}
 	res, err = cs.CallTool(t.Context(), &sdk.CallToolParams{Name: "edit", Arguments: map[string]any{"schemaVersion": 2, "target": "squad-member", "memberId": "leader", "expectedRevision": doc.File.Revision, "taskInstructions": "Reply with exactly `Goodbye, ` followed by the input name.", "model": "fake", "examples": lead.Examples}})

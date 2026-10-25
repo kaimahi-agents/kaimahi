@@ -4,6 +4,8 @@
 // ordinary absolute-path handling; responses retain the requested path identity.
 // Unbound non-fake previews default to Copilot's fixed endpoint and the authored
 // model; explicit routes, fake previews and legacy root-bound behavior are unchanged.
+// Test requests with a progress token observe safe provisional per-case progress
+// in case order; notification delivery never changes the final shared App result.
 // Tool requests must not choose model endpoints or substitute a runner.
 // Human-readable tool titles leave protocol names and argument schemas unchanged.
 // The canonical resource includes an exact, revision-bound authoring snapshot.
@@ -19,6 +21,8 @@
 // Source-only versions are read-only resources; restore uses the same Edit CAS.
 // Linux creation uses no-replace rename, then hard-link publication when needed.
 // Mounts lacking both use exclusive creation and synced copy without atomic visibility.
+// Canonical Test passes its resolved target to App for subject-scoped failure
+// retention; requested display paths never grant storage authority.
 package mcp
 
 import (

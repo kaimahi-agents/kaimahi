@@ -222,6 +222,10 @@ func suiteHTTPDiagnostic(source string, status int) error {
 }
 
 func captureSuiteFailure(frame suitePassingInventoryCase, observation suitePassingObservation, answer string, notes map[string]suiteJudgeDiagnostic, cause error, keys ...string) *suiteFailureDetail {
+	return captureSuiteFailureWithReasons(frame, observation, answer, notes, true, cause, keys...)
+}
+
+func captureSuiteFailureWithReasons(frame suitePassingInventoryCase, observation suitePassingObservation, answer string, notes map[string]suiteJudgeDiagnostic, retainReasons bool, cause error, keys ...string) *suiteFailureDetail {
 	verdict := suiteRunVerdict(observation.Assertions)
 	if cause == nil && verdict == agentruntime.EvaluationPass && suiteRunComplete(observation, frame) {
 		return nil
@@ -298,6 +302,9 @@ func captureSuiteFailure(frame suitePassingInventoryCase, observation suitePassi
 		if note, ok := notes[row.ID]; ok {
 			a.Class = note.Class
 			for _, reason := range note.Reasons {
+				if !retainReasons {
+					break
+				}
 				if !available {
 					break
 				}

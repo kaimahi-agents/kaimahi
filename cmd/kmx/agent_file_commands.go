@@ -83,6 +83,9 @@ func fileFlagsWithoutFile(cmd *cobra.Command) error {
 
 func runFileCommand(cmd *cobra.Command, state *commandState, file string, f fileCommandOptions, prompt, promptFile string) error {
 	opt := app.FilePreviewOptions{File: file, Operation: cmd.Name(), CaseID: f.CaseID, ShowContent: f.ShowContent, ToolBindings: f.ToolBindings}
+	if cmd.Name() == "test" {
+		opt.RetentionFile = file
+	}
 	if f.Verbose {
 		opt.Progress = func(message string) error {
 			_, err := fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] %s\n", message)

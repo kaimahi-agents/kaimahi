@@ -92,12 +92,14 @@ func TestPreviewCancellationRecoversFinishedTestsFromResource(t *testing.T) {
 					return result, err
 				}
 				ops[operation] = op
-				cs := connectFixture(t, ops, func(s *sdk.Server) { AddAgentResource(s, files) })
+				cs, notifications := connectProgressFixture(t, ops, func(s *sdk.Server) { AddAgentResource(s, files) })
 				ctx, cancel := context.WithCancel(t.Context())
 				defer cancel()
 				callDone := make(chan error, 1)
 				go func() {
-					_, err := cs.CallTool(ctx, &sdk.CallToolParams{Name: operation, Arguments: args})
+					params := &sdk.CallToolParams{Name: operation, Arguments: args}
+					params.SetProgressToken("cancel-progress")
+					_, err := cs.CallTool(ctx, params)
 					callDone <- err
 				}()
 				select {
@@ -106,6 +108,17 @@ func TestPreviewCancellationRecoversFinishedTestsFromResource(t *testing.T) {
 					t.Fatalf("preview ended before the selected model request: sends=%d result=%+v", sends.Load(), result)
 				case <-time.After(5 * time.Second):
 					t.Fatalf("second test did not reach the selected model request: sends=%d", sends.Load())
+				}
+				if operation == "test" {
+					select {
+					case n := <-notifications:
+						var row app.FilePreviewCaseProgress
+						if json.Unmarshal([]byte(n.Message), &row) != nil || row.CaseID != "first" || row.Verdict != firstVerdict || n.Progress != 1 {
+							t.Fatalf("finished case progress: %+v", n)
+						}
+					case <-time.After(5 * time.Second):
+						t.Fatal("no live progress while second case was blocked")
+					}
 				}
 				cancel() // The SDK sends notifications/cancelled for this request.
 				select {
@@ -128,6 +141,11 @@ func TestPreviewCancellationRecoversFinishedTestsFromResource(t *testing.T) {
 					}
 				case <-time.After(5 * time.Second):
 					t.Fatal("preview did not finalize after cancellation")
+				}
+				select {
+				case n := <-notifications:
+					t.Fatalf("unfinished case or Run notified: %+v", n)
+				default:
 				}
 				// The cancelled CallTool does not deliver the server result. Recover
 				// it through a new resource read after the handler has finalized.

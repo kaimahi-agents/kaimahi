@@ -12,9 +12,11 @@ run a model or invoke Docker/buildx. The pinned AgentSessions chat profile also
 supports offline authoring, preparation, loading and explicitly unevaluated push
 (`--unevaluated`) with no member image. Full packaged evaluation and exact-suite evaluated push
 require the explicit [development host](#agentsessions-development-evaluation)
-boundary and an [`AgentSessionsBinding`](#agentsessionsbinding). Deploy is a
-[plan-only render](#agentsessions-deploy-plan); chat/status and Orka/kagent
-operational consumers refuse it.
+boundary and an [`AgentSessionsBinding`](#agentsessionsbinding). Explicit-reference
+[Deploy to Agent Sessions](#agentsessions-agent-deploy) creates an immutable Agent
+resource; destination status reads registration. The offline
+[ActorTemplate render](#agentsessions-deploy-plan) remains available. Chat and
+Orka/kagent operational consumers refuse this profile.
 
 **Implemented:** offline creation, preparation and publication, and full-inventory
 native Orka or exact kagent v0.10.3 Go/linux-amd64 evaluation of one tool-free
@@ -421,7 +423,8 @@ a digest/private evidence and explicit `--promote` for source-only evidence.
 and ownership-safe cleanup are qualified**; standalone explicit kagent operations
 retain their existing boundaries. AgentSessions workspaces and `--harness-image`
 also refuse composed Deploy before evaluation or publication; AgentSessions Deploy is
-the explicit-reference [plan-only render](#agentsessions-deploy-plan). Named selectors
+explicit-reference only: [Agent resource deployment](#agentsessions-agent-deploy)
+or the offline [ActorTemplate render](#agentsessions-deploy-plan). Named selectors
 never bypass remote confirmation.
 
 <a id="composed-workspace-lift"></a>
@@ -806,8 +809,9 @@ reads are bounded, and credential-shaped content is refused.
 Select a pinned, operator-owned built-in `chat` host explicitly. This path uses
 one fresh, non-fork Session and one never-retried Exec per declared case run, with
 exact `system_prompt` config sent every time. It loads no Kubernetes settings.
-No registry, authentication, chat/status or remote-host support is added; Deploy
-is a [plan-only render](#agentsessions-deploy-plan).
+This evaluation path adds no registry, authentication, chat or remote-host support.
+[Agent deployment](#agentsessions-agent-deploy) and destination status are separate
+Kubernetes operations; development evaluation is not target evaluation.
 
 ```sh
 kmx test --workspace ./sessions-workspace --development-host ./private/host.json \
@@ -886,8 +890,8 @@ observations, fresh Session/execution IDs and verified journal heads. Prompts,
 answers, config bytes, endpoint locators and journal bodies are excluded. Push
 consumes that explicit proof for exact S; evidence is not embedded in the suite
 or published as a referrer. Orka/kagent evidence cannot authorize this member;
-Sessions evidence feeds only the [plan-only Deploy render](#agentsessions-deploy-plan)
-and is refused by receipt diff. Read-only Replay can
+Sessions evidence feeds [Agent deployment](#agentsessions-agent-deploy) or the
+[offline Deploy render](#agentsessions-deploy-plan), and is refused by receipt diff. Read-only Replay can
 support diagnosis with zero model calls but cannot become fresh candidate proof.
 
 The pinned daemon path has been demonstrated once with an instruction-sensitive,
@@ -903,7 +907,7 @@ deployment. It lives outside the suite, one per environment. The suite pins the
 exact model; the binding says where that model is served and where sessions are
 placed. Its `model.name` must be exactly the packaged model (no case folding,
 prefix or version matching); a different model is a new suite version and a new
-evaluation. AgentSessions eval and deploy read it with `--bindings FILE` and
+evaluation. AgentSessions eval and the offline `--harness-image` Deploy render read it with `--bindings FILE` and
 refuse a binding that serves another model.
 
 ```yaml
@@ -947,6 +951,65 @@ the RFC 8785 (JCS) form of its JSON mapping, so comments, key order and
 YAML/JSON spelling do not change it. Evaluation records this digest in its
 evidence.
 
+### AgentSessions Agent deploy
+
+A named destination with `runtime: agentsessions`, an explicit context and namespace
+selects the `agents.aks-durable-agents.io/v1alpha1` Agent controller path:
+
+```yaml
+version: 1
+targets:
+  sessions:
+    context: kind-sessions
+    namespace: agents
+    runtime: agentsessions
+```
+
+```sh
+kmx deploy registry.example/suite@sha256:<digest> --to sessions \
+  --evidence ./private/passing.json --plan -o json
+kmx deploy registry.example/suite@sha256:<digest> --to sessions \
+  --evidence ./private/passing.json
+kmx status --to sessions
+```
+
+Deploy still verifies the exact packaged member and its full-passing private
+AgentSessions evidence. That development-source evidence does **not** evaluate or
+authenticate this destination. The controller independently pulls and verifies the
+package; kmx creates only this readable spec:
+
+```yaml
+apiVersion: agents.aks-durable-agents.io/v1alpha1
+kind: Agent
+metadata: {name: greeter, namespace: agents}
+spec:
+  package: {reference: "registry.example/suite@sha256:<digest>"}
+  member: greeter
+  modelBindingRef: {name: default}
+```
+
+The controller/operator owns the `default` model binding; kmx reads no model
+credentials or host internals. No `--bindings`, `--inference`, `--harness-image` or
+`--promote` or `--update` is accepted on this path. Explicit `--to-context`/`--to-namespace` can
+override the named selectors, but `--to` must declare the runtime. `--from-layout`
+can supply local package verification; the controller must still be able to pull
+the digest-pinned registry reference. `--plan` performs GETs only and JSON includes
+the Agent document. Apply retains the existing scoped context consent.
+
+The spec is immutable. The name defaults to the packaged member; use
+`--name greeter-v2` for changed inputs. An existing exact spec with controller
+acknowledgment of its current UID is a GET-only no-op that reports its existing
+status without waiting (exit 2 while not registered, matching status). Different inputs under an occupied name refuse and name
+the current package reference. There is no update, adoption, retry or cleanup path.
+A failed create response is unknown, not permission to resend. Acknowledged partial
+creates retain their UID in command output.
+
+A new create waits up to two minutes for the exact UID/generation/member/digest
+[registration checks](destination-status.md#agentsessions-registration). Registered
+means last controller-observed admission, **not** live host/inference availability,
+a passing target evaluation or a qualified runtime. No Sessions API calls or model
+requests are made by Deploy or status.
+
 ### AgentSessions deploy plan
 
 ```sh
@@ -955,7 +1018,7 @@ kmx deploy suite@sha256:<digest> --from-layout ./sessions-layout \
   --bindings ./prod-binding.yaml --evidence ./private/passing.json --plan -o json
 ```
 
-AgentSessions deploy is plan-only. From full-passing AgentSessions evidence for
+The `--harness-image` form remains plan-only. From full-passing AgentSessions evidence for
 exactly this suite, the binding and a digest-pinned AgentSessions `harnessnode`
 image built from the pinned runtime commit, it renders two documents offline:
 a substrate `ActorTemplate` and an AgentSessions `HarnessRegistration` with a

@@ -88,7 +88,7 @@ changes in the package's Go doc comment.
   GET-only skips, never Apply/reuse/adoption/repair. Keep kagent out of composed
   Deploy until its candidate-scoped placement and ownership-safe cleanup are qualified.
   AgentSessions workspaces and --harness-image also refuse composed Deploy before
-  evaluation or publication; their Deploy is the explicit-reference plan-only render.
+  evaluation or publication. Explicit-reference AgentSessions --to creates an immutable Agent under the approved v1.1 contract; --harness-image retains the offline render. See the Agent deployment exception below.
 - Create-only deployment stamps only newly created primaries with versioned non-secret
   `kaimahi.dev/lift-record` JSON: exact consumed canonical receipt identity,
   source/destination, actual gate, attempt time and expected specs. Actor is omitted
@@ -344,7 +344,8 @@ changes in the package's Go doc comment.
   even on abort; retention errors warn without changing verdicts or causing
   another send. Offline test explain lists/shows local records without config,
   Prepare, runtime, registry or model calls; --show-content opts into bounded
-  stdout content, --clear deletes one ID or all only with explicit --workspace.
+  stdout content, --clear deletes one ID or all only with explicit --workspace
+  (file-mode selection and clearing follow the separate local-preview rule below).
   Clearing never reaches passing/candidate state or upstream history. A bounded
   owned .pending file is never read/displayed; only explicit whole-workspace
   clearing removes it. It must not hide healthy records or cause pre-pruning on
@@ -450,6 +451,21 @@ changes in the package's Go doc comment.
   updating current examples. Do not bulk-rename historical text or serialized
   state. Generated recovery commands must preserve the invoking executable,
   selectors and shell quoting.
+
+## AgentSessions Agent deployment exception
+
+Named `runtime: agentsessions` destinations support explicit-reference Deploy and
+GET-only destination status via `agents.aks-durable-agents.io/v1alpha1` Agent.
+This supersedes the plan-only/no-status statements above and below only for this
+Agent resource path; the old `--harness-image --bindings --plan` render is unchanged.
+Require exact-S full-passing development evidence; label it development-source, not
+target evaluation. Freeze context/namespace and retain existing scoped consent.
+Spec package.reference/member/modelBindingRef.name=default is immutable. --name
+defaults to the member. Exact spec with current UID acknowledgment is GET-only;
+changed inputs need a new name. No update/adoption/host calls or new config schema.
+Registered requires current UID, all three generations, both True conditions,
+matching member and servedDigest=packageDigest=reference digest, and no deletion.
+It is last controller-observed admission, not live availability or qualification.
 
 ## Agent-file preview boundary
 
@@ -629,8 +645,22 @@ only explicit `JudgeEndpoint` overrides it. Journals keep content in cleartext,
   identity-bound, directory-flushed and rediscovers partial known families after
   interruption without touching unrelated entries. Journals stay under
   `config.StateDir` on every OS (`%LOCALAPPDATA%` on Windows). Native package
-  tests qualify local-NTFS storage, not the guarded Windows CLI. The additive
-`kmx-local-tools-v1` host-bound harness has a separate bounded
+  tests qualify local-NTFS storage, not the guarded Windows CLI.
+Completed non-pass `test FILE` outcomes additionally retain bounded diagnostics
+in the existing `eval-failures` store. A file subject is the checked physical
+parent identity plus normalized leaf name; records keep exact source revision,
+agent/model/judge selection and assertion identity/results. CLI and MCP pass the
+trusted resolved target separately from display paths and freeze the scope
+against the parsed revision before any send. Run, cancellation,
+execution/journal-finalization failure and passing Test create no failure record.
+An invocation with more non-pass examples than the per-subject store can retain
+reports retention unavailable and writes none rather than returning partial IDs.
+Offline `test explain --file FILE` reports current versus historical revisions
+without provider/config/model access; `--file` and `--workspace` are exclusive,
+and clear stays subject-scoped. File partitions use a closed v2 record while
+workspace v1 bytes/partition keys remain unchanged. This store is separate from
+Sessions journal replay and grants no evidence, Publish or Deploy authority.
+The additive `kmx-local-tools-v1` host-bound harness has a separate bounded
 converter and complete-invocation replay proof, never a relaxed suite/chat check.
 Its optional single no-args read is host-enforced; at most two agent model calls,
 with unchanged separate tool-free judging inside the case deadline. Safe call

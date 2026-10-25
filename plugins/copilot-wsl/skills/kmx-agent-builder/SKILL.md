@@ -90,7 +90,9 @@ is complete and verdict is pass. A subset may have verdict pass but fullPass fal
 Missing/unknown versions, states or verdicts are not passes. Preserve
 `selection.scope`, unknown and refused outcomes when shortening a result.
 Content labeled `not_requested` was not returned; do not invent an answer.
-Explain is not an MCP tool.
+Test retention metadata contains only opaque diagnostic IDs, not failure content.
+Explain is not an MCP tool; file diagnostics are inspected offline through the
+CLI with the exact file path.
 
 ## Add tests from chat
 

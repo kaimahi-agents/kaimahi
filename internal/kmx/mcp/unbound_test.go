@@ -91,6 +91,7 @@ func TestUnboundFilesPathForms(t *testing.T) {
 // Create through a parent alias, preview through a file alias, read through both
 // spellings and edit through the alias without replacing either link.
 func TestUnboundMCPAliasesKeepIdentityAndLinks(t *testing.T) {
+	t.Setenv("KMX_HOME", filepath.Join(t.TempDir(), "state"))
 	f, source := unboundFiles(t)
 	realParent, aliases := t.TempDir(), t.TempDir()
 	parentAlias := filepath.Join(aliases, "repo link")

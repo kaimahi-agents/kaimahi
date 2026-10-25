@@ -1,4 +1,5 @@
-// Package agentsessions adapts Sessions chat execution and verifies its journals.
+// Package agentsessions adapts Sessions chat execution, verifies its journals,
+// and projects the immutable Agent resource registration contract without host calls.
 // Suite evaluation and local preview use distinct session labels; preview
 // reconstruction must not be treated as suite evaluation proof.
 package agentsessions

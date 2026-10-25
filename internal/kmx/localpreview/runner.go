@@ -370,6 +370,9 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 		}
 		out.Examples[i].Completion = c
 		out.Examples[i].Assertions = assertions
+		if request.ExampleFinished != nil && ctx.Err() == nil {
+			request.ExampleFinished(out.Examples[i])
+		}
 	}
 	if ctx.Err() != nil {
 		return abort(ctx.Err())
