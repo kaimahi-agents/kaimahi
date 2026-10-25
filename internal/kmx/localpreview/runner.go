@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/agent-primitives/sessions/api"
-	"github.com/agent-primitives/sessions/controller"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -24,6 +23,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
 // RunnerOptions supplies invocation-local facilities. JournalDir is resolved
@@ -44,6 +44,8 @@ type RunnerOptions struct {
 	// ResolveTools freezes a trusted binding for exactly the declared names.
 	// It performs no discovery; the authored file supplies no execution authority.
 	ResolveTools func(context.Context, []string) (*localtools.Host, error)
+	// ResolveAvailableTools has explicit host-owned missing-name accounting; nil means all absent.
+	ResolveAvailableTools func(context.Context, []string) (*localtools.Host, error)
 }
 
 type runner struct {
@@ -98,6 +100,13 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 	var access modelaccess.PreviewAccess
 	var toolHost *localtools.Host
 	checkContent := func(fields ...string) error {
+		if len(request.Agent.Tools) > 0 {
+			for _, field := range fields {
+				if secretshapes.Match(field) != nil {
+					return agentpreview.ErrUnsafeToolContent
+				}
+			}
+		}
 		if access != nil && access.CheckContent(fields...) != nil {
 			return agentpreview.ErrCredentialContent
 		}
@@ -113,28 +122,24 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 		return ctx.Err()
 	}
 	request.ToolDefinitions = nil
-	if len(agent.Tools) > 0 {
-		var bindErr error
-		if request.ToolBindings != "" {
-			binding, err := localtools.Load(request.ToolBindings)
-			if err != nil || !binding.Matches(agent.Tools) || r.options.Tools == nil {
-				return abort(agentpreview.ErrToolsUnavailable)
-			}
-			toolHost, bindErr = r.options.Tools(ctx, binding)
-		} else if r.options.ResolveTools != nil {
-			toolHost, bindErr = r.options.ResolveTools(ctx, slices.Clone(agent.Tools))
-		}
-		if bindErr != nil || toolHost == nil || !toolHost.Matches(agent.Tools) {
+	declared := slices.Clone(agent.Tools)
+	for _, name := range declared {
+		if !localtools.ValidToolName(name) {
 			return abort(agentpreview.ErrToolsUnavailable)
 		}
-		if checkToolContent(toolHost, request) != nil {
+	}
+	if len(declared) > 0 || request.ToolBindings != "" {
+		var bindErr error
+		toolHost, bindErr = r.resolveTools(ctx, request, neededLiveTools(declared, examples, request.Input != nil))
+		if bindErr != nil {
+			return abort(bindErr)
+		}
+		if checkToolContent(checkContent, request) != nil {
 			return agentpreview.Outcome{State: agentpreview.Failed}, agentpreview.ErrUnsafeToolContent
 		}
-		request.ToolDefinitions = toolHost.Definitions()
 		agent.Tools = nil
-	} else if request.ToolBindings != "" {
-		return abort(agentpreview.ErrToolsUnavailable)
 	}
+
 	var providerRoutes []modelaccess.Route
 	for _, selection := range []modelaccess.Route{request.Route, judgeSelection} {
 		if selection.Provider == "copilot" && !slices.Contains(providerRoutes, selection) {
@@ -217,7 +222,7 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 	}
 	// A placeholder satisfies prepare's no-empty-directory check, without
 	// resolving operator state until all content and route preflights succeed.
-	options := Options{JournalDir: "pending", ExampleTimeout: r.options.ExampleTimeout}
+	options := Options{JournalDir: "pending", ExampleTimeout: r.options.ExampleTimeout, allowToolAssertions: len(declared) > 0}
 	options.resolveRoute = func(_ string, _ *Endpoint, _ http.RoundTripper, role string) (route, error) {
 		if role == "the judge" {
 			return judgeRoute, nil
@@ -242,7 +247,7 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 	if prepareErr != nil {
 		return abort(prepareErr)
 	}
-	journalContent := slices.Clone(examples)
+	journalContent := agentfile.CloneExamples(examples)
 	if request.Input != nil {
 		journalContent = append(journalContent, agentfile.Example{Input: input})
 	}
@@ -256,36 +261,24 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 	if r.options.JournalDir == nil {
 		return abort(agentpreview.ErrJournalFailed)
 	}
+	plans := make([]toolPlan, len(examples))
+	for i, ex := range examples {
+		plans[i], err = makeToolPlan(declared, ex, toolHost, checkContent, validate)
+		if err != nil {
+			return abort(err)
+		}
+	}
+	adHocPlan, planErr := makeToolPlan(declared, agentfile.Example{}, toolHost, checkContent, validate)
+	if request.Input != nil && planErr != nil {
+		return abort(planErr)
+	}
 	dir, dirErr := r.options.JournalDir()
 	if dirErr != nil {
 		return abort(fmt.Errorf("%w: %w", agentpreview.ErrJournalFailed, dirErr))
 	}
 	var journal string
 	var openErr error
-	if toolHost != nil {
-		executeTool := func(ctx context.Context, scope controller.ToolCallContext, call api.ToolCall) (api.ToolResult, error) {
-			if err := validate(ctx); err != nil {
-				return api.ToolResult{}, err
-			}
-			if err := localtools.CheckJSON(call, checkContent); err != nil {
-				return api.ToolResult{}, err
-			}
-			result, err := toolHost.Execute(ctx, scope, call)
-			if err != nil {
-				return api.ToolResult{}, err
-			}
-			if err := validate(ctx); err != nil {
-				return api.ToolResult{}, err
-			}
-			if err := localtools.CheckJSON(result, checkContent); err != nil {
-				return api.ToolResult{}, err
-			}
-			return result, nil
-		}
-		executor, journal, openErr = openToolJournalExecutor(dir, p.route.model, executeTool, request.ToolDefinitions...)
-	} else {
-		executor, journal, openErr = r.open(dir, p.route.model)
-	}
+	executor, journal, openErr = r.open(dir, p.route.model)
 	if openErr != nil {
 		return abort(fmt.Errorf("%w: %w", agentpreview.ErrJournalFailed, openErr))
 	}
@@ -311,11 +304,11 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 		}
 	}()
 	client := newModelClient(p.route)
-	if access != nil || toolHost != nil {
+	if access != nil || len(declared) > 0 {
 		client.check = checkContent
 	}
 	call := client.Model
-	if toolHost != nil {
+	if len(declared) > 0 {
 		call = func(ctx context.Context, req api.ModelRequest) (api.ModelResponse, error) {
 			if err := validate(ctx); err != nil {
 				return api.ModelResponse{}, err
@@ -338,7 +331,11 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 			return completion, nil, reportErr
 		}
 		started := time.Now()
-		execution, execErr := executor.Execute(turnCtx, Turn{AgentID: agent.Identity.ID, Revision: agent.Revision, ExampleID: ex.ID, Instructions: agent.Instructions, Input: ex.Input, Model: p.route.model, Call: call})
+		plan := adHocPlan
+		if index >= 0 {
+			plan = plans[index]
+		}
+		execution, execErr := executor.Execute(turnCtx, Turn{AgentID: agent.Identity.ID, Revision: agent.Revision, ExampleID: ex.ID, Instructions: agent.Instructions, Input: ex.Input, Model: p.route.model, Call: call, Tool: plan.execute, ToolDefinitions: plan.definitions, ToolSources: plan.sources})
 		reason := "complete"
 		if execErr != nil || turnCtx.Err() != nil {
 			reason = "execution_failed"
@@ -357,12 +354,12 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 		}
 		// Match App's completion bound before judging or sending later turns;
 		// the standalone library permits larger answers than the file API.
-		if !execution.Journaled || execution.SessionUID == "" || used[execution.SessionUID] || len(execution.Answer) > 256*1024 {
+		if !execution.Journaled || execution.SessionUID == "" || used[execution.SessionUID] || len(execution.Answer) > 256*1024 || len(declared) > 0 && !execution.ToolEvidenceComplete {
 			return completion, nil, errRunnerExecution
 		}
 		used[execution.SessionUID] = true
 		if index >= 0 {
-			evidence := agentruntime.EvaluationEvidence{Answer: execution.Answer, AnswerAvailable: true}
+			evidence := agentruntime.EvaluationEvidence{Answer: execution.Answer, AnswerAvailable: true, ToolSupported: len(declared) > 0, ToolEvidenceComplete: execution.ToolEvidenceComplete, ToolCalls: execution.ToolCallCounts}
 			if p.judge != nil {
 				assertions = p.judge(turnCtx, p.cases[index], evidence)
 			} else {
@@ -386,7 +383,7 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 				}
 			}
 		}
-		completion = agentpreview.Completion{State: agentpreview.Complete, ID: execution.SessionUID, FileRevision: agent.Revision, Provider: request.Route.Provider, Model: request.Route.Model, Answer: execution.Answer, ToolCalls: execution.ToolCalls}
+		completion = agentpreview.Completion{State: agentpreview.Complete, ID: execution.SessionUID, FileRevision: agent.Revision, Provider: request.Route.Provider, Model: request.Route.Model, Answer: execution.Answer, ToolCalls: execution.ToolCalls, Tools: plan.summaries(execution.ToolCallCounts)}
 		return completion, assertions, nil
 	}
 	if request.Input != nil {
@@ -415,18 +412,8 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 }
 
 func cloneRunnerExamples(examples []agentfile.Example) []agentfile.Example {
-	copied := slices.Clone(examples)
-	for i := range copied {
-		copied[i].Assertions = slices.Clone(copied[i].Assertions)
-		for j := range copied[i].Assertions {
-			a := &copied[i].Assertions[j]
-			if a.MinScore != nil {
-				score := *a.MinScore
-				a.MinScore = &score
-			}
-		}
-	}
-	return copied
+	return agentfile.CloneExamples(examples)
+
 }
 
 // runnerRoute is deliberately narrower than standalone library endpoints. These

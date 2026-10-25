@@ -96,12 +96,13 @@ func WithFilePreviewRetention(opt FilePreviewOptions, filename, revision string)
 }
 
 type FilePreviewCompletion struct {
-	State         string `json:"state"`
-	ReasonCode    string `json:"reasonCode"`
-	Reason        string `json:"reason"`
-	AnswerExcerpt string `json:"answerExcerpt,omitempty"`
-	Truncated     bool   `json:"truncated,omitempty"`
-	ToolCalls     int    `json:"toolCalls,omitempty"`
+	State         string                     `json:"state"`
+	ReasonCode    string                     `json:"reasonCode"`
+	Reason        string                     `json:"reason"`
+	AnswerExcerpt string                     `json:"answerExcerpt,omitempty"`
+	Truncated     bool                       `json:"truncated,omitempty"`
+	ToolCalls     int                        `json:"toolCalls,omitempty"`
+	Tools         []agentpreview.ToolSummary `json:"tools,omitempty"`
 }
 type FilePreviewExample struct {
 	ID string `json:"id"`
@@ -173,6 +174,7 @@ func previewReason(code string) string {
 		"invalid_selection": "Unknown example ID; select an authored example ID.", "invalid_options": "Invalid file preview options.",
 		"model_unavailable":   "Selected model route is unavailable or does not match the file model; select an exact trusted route.",
 		"tools_unavailable":   "Host-bound tools are unavailable for the declared names.",
+		"recording_mismatch":  "Recording mismatch: tool arguments differ from the saved call. Update the saved call before retrying.",
 		"unsafe_tool_content": "Unsafe tool preview content was withheld; nothing was journaled.",
 		"credential_content":  "Credential-bearing preview content was withheld.",
 		"runner_unavailable":  "Embedded preview runner is not available; no inference was performed.",
@@ -353,6 +355,9 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		previewErr.message = result.Reason
 		return result, previewErr
 	}
+	if errors.Is(cause, agentpreview.ErrRecordingMismatch) {
+		return fail("recording_mismatch", 1)
+	}
 	if errors.Is(cause, agentpreview.ErrToolsUnavailable) {
 		return fail("tools_unavailable", 1)
 	}
@@ -362,7 +367,10 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	// Whitelist result fields; never marshal runtime assertion rows (which include
 	// judge evidence and raw reasons), answers or journal handles directly.
 	seen := map[string]bool{}
-	validCompletion := func(c agentpreview.Completion) bool {
+	validCompletion := func(c agentpreview.Completion, ex agentfile.Example) bool {
+		if !validPreviewTools(c, ex, parsed.Tools) {
+			return false
+		}
 		if c.ToolCalls < 0 || c.ToolCalls > localtools.MaxCalls || len(parsed.Tools) == 0 && c.ToolCalls != 0 || c.State != agentpreview.Complete || c.ID == "" || seen[c.ID] || c.FileRevision != parsed.Revision || c.Provider != route.Provider || c.Model != route.Model || len(c.Answer) > 256*1024 || !utf8.ValidString(c.Answer) {
 			return false
 		}
@@ -371,7 +379,7 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	}
 	malformed := len(outcome.Examples) > len(selected) || (outcome.AdHoc == nil) != (opt.Input == nil)
 	if outcome.AdHoc != nil {
-		if validCompletion(*outcome.AdHoc) {
+		if validCompletion(*outcome.AdHoc, agentfile.Example{}) {
 			c := previewCompleted(*outcome.AdHoc, opt.ShowContent)
 			r.AdHoc = &c
 		} else if outcome.AdHoc.State == agentpreview.Complete {
@@ -394,7 +402,7 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		if row.Completion.State != agentpreview.Complete {
 			continue
 		}
-		if !validCompletion(row.Completion) || len(row.Assertions) != len(ex.Assertions) {
+		if !validCompletion(row.Completion, ex) || len(row.Assertions) != len(ex.Assertions) {
 			malformed = true
 			break
 		}
@@ -563,6 +571,7 @@ func previewCompletion(state, code string) FilePreviewCompletion {
 func previewCompleted(c agentpreview.Completion, show bool) FilePreviewCompletion {
 	row := previewCompletion("complete", "completion_ready")
 	row.ToolCalls = c.ToolCalls
+	row.Tools = append([]agentpreview.ToolSummary(nil), c.Tools...)
 	if show {
 		row.AnswerExcerpt, _ = suiteDiagnosticText(c.Answer, 4096, nil)
 		full, _ := suiteDiagnosticText(c.Answer, len(c.Answer), nil)

@@ -481,9 +481,12 @@ refuse in protocol data; known-shape checks also cover every model/journal-bound
 projection. Discard remote metadata/descriptions and SDK logs. Test bridges stay
 in _test.go; scripted-model hosted smoke is not real-LLM qualification.
 Trusted embedding may supply a frozen tool host through RunnerOptions.ResolveTools;
-schemas, descriptions and executors come from the trusted host, never the file.
-Bound tools support fake/local and Copilot Chat/Responses; unbound tools refuse
-before provider access. Copilot rechecks catalog tool support before inference.
+live schemas, descriptions and executors come from the trusted host, never the file.
+Per-test explicit-mode mocks.tools may supply checked offline fixture definitions/results only;
+never construct a trusted live host from them. Frozen replay resolves no tool credentials;
+unbound names use unavailable stubs. Available-host replies explicitly partition requested names
+into definitions and missing names; malformed/ambiguous replies still refuse.
+Bound tools support fake/local and Copilot Chat/Responses. Copilot rechecks catalog tool support before inference.
 Judging remains tool-free. Responses continuation stays private to the selected
 transport, never the journal. No silent tool dropping.
 
@@ -627,8 +630,9 @@ backs `run/test FILE` and MCP for fake/local and explicit Copilot routes, includ
 journaled native judge samples. `Model.Preferred` is exact: `fake` is the in-memory deterministic
 route; other models need an explicit OpenAI-compatible endpoint and optional
 key environment variable name. No fallback, retries, tool execution, daemon,
-subprocess, cluster or config probing. Refuse missing routes, tool assertions
-and unwired judges before any file or network effect; refuse journal-bound
+subprocess, cluster or config probing. Standalone Run/Test remain tool-free; only the
+canonical runner enables declared tool checks with complete named journal evidence.
+Refuse missing routes and unwired judges before any file or network effect; refuse journal-bound
 instructions, examples, ad-hoc input and identities containing a resolved agent
 or judge credential before the journal opens, including returned assertion IDs,
 types and authored judge model/version metadata; refuse
@@ -668,9 +672,10 @@ converter and complete-invocation replay proof, never a relaxed suite/chat check
 Its optional first-response batch of up to five calls is host-enforced against
 trusted definitions and schemas, validated as a whole before serial dispatch;
 arguments are bounded to 8 KiB and results to 32 KiB per call; at most two agent model calls,
-with unchanged separate tool-free judging inside the case deadline. Safe call
-counts do not make tool assertions or native proof; actual-call qualification
-must independently show a correlated call. Safe tool definitions enter harness
+with unchanged separate tool-free judging inside the case deadline. Explicit Calls/Doesn't call
+checks use named complete correlated evidence, including replay/unavailable requests, never saved data alone.
+Incomplete execution cannot pass a negative check; none of these results is native proof.
+Per-test dispatch remains isolated even for identical schemas. Argument mismatch stops without fallback. Safe tool definitions enter harness
 config for exact replay; bindings and credentials never do. Old fixed-read v1
 journals retain their original request/hash contract. Host content checks cover decoded model IDs/text before journal
 append as well as authored inputs and bounded projected results. Incomplete

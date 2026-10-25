@@ -498,6 +498,7 @@ test("plainReason translates every preview engine code and retains only validate
     runner_unavailable: "The agent could not start. No model was called.", execution_failed: "The agent could not finish this run.",
     invalid_completion: "The answer could not be confirmed for this run.", diagnostics_failed: "Run details could not be saved.",
     journal_failed: "The run could not be saved, so its result is unconfirmed.",
+    recording_mismatch: "Recording mismatch: tool arguments differ from the saved call. Update the saved call before retrying.",
     copilot_auth_required: "Sign in to GitHub Copilot before running this agent.", copilot_auth_revoked: "Sign in to GitHub Copilot again before running this agent.",
     copilot_no_subscription: "An active GitHub Copilot subscription is needed for this run.", copilot_policy_denied: "Your Copilot policy does not allow this run.",
     copilot_quota: "Copilot's usage limit was reached.", copilot_model_unavailable: "Choose an available Copilot model.",

@@ -62,6 +62,15 @@ func ExportRunProfile(filename string) ([]byte, error) {
 		loc := agent.Locations["Examples"]
 		return nil, refuse(filename, loc.Line, loc.Column, "Examples", "add at least one example before exporting a run profile")
 	}
+	for _, example := range agent.Examples {
+		unsupported := example.Mocks != nil
+		for _, assertion := range example.Assertions {
+			unsupported = unsupported || assertion.Type == "toolCalled" || assertion.Type == "toolNotCalled"
+		}
+		if unsupported {
+			return nil, refuse(filename, example.Location.Line, example.Location.Column, "Examples", "run profiles cannot preserve tool fixtures or tool checks")
+		}
+	}
 	profile := runProfile{
 		SchemaVersion: 1, Kind: "kmx.agent-run-profile",
 		SourceRevision: agent.Revision, AgentID: agent.Identity.ID,

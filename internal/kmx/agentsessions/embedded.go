@@ -47,6 +47,7 @@ type PreviewCaseRequest struct {
 	// RunSuiteCase.
 	UsedSessionUIDs map[string]bool
 	ToolDefinitions []api.ToolDefinition
+	ToolSources     *localtools.SourceConfig
 }
 
 // RunPreviewCase executes one fresh Session with the same strict five-record
@@ -80,9 +81,10 @@ type PreviewSession struct {
 	Input, Answer string
 	// ModelCalls counts live model invocations during reconstruction. A
 	// verified reconstruction always reports zero.
-	ModelCalls int
-	ToolCalls  int
-	Records    int
+	ModelCalls  int
+	ToolCalls   int
+	ToolSources *localtools.SourceConfig
+	Records     int
 }
 
 // InspectPreviewSession reads one Session's journal without Exec, Resume or a

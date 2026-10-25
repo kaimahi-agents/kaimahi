@@ -58,6 +58,7 @@ const (
 )
 
 var (
+	ErrRecordingMismatch = errors.New("recording mismatch: tool arguments differ from the saved call")
 	ErrToolsUnavailable  = errors.New("host-bound local tools are unavailable")
 	ErrUnsafeToolContent = errors.New("unsafe tool preview content refused")
 	// ErrCredentialContent withholds all identity/content projections, including
@@ -77,6 +78,16 @@ type Completion struct {
 	Model        string
 	Answer       string
 	ToolCalls    int
+	Tools        []ToolSummary
+}
+
+// ToolSummary is content-free; a zero count means the selected source was not exercised.
+type ToolSummary struct {
+	Name           string `json:"name"`
+	Mode           string `json:"mode"`
+	Source         string `json:"source"`
+	CallCount      int    `json:"callCount"`
+	RecordingSaved bool   `json:"recordingSaved"`
 }
 type ExampleOutcome struct {
 	ID         string

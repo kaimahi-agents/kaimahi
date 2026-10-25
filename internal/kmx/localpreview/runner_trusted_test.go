@@ -100,12 +100,12 @@ func TestTrustedRunnerFakeAndCopilotReplay(t *testing.T) {
 	}
 }
 
-func TestTrustedRunnerRejectsUnboundBeforeProviderAccess(t *testing.T) {
+func TestTrustedRunnerRejectsUnexpectedDefinitionsBeforeProviderAccess(t *testing.T) {
 	req := runnerRequest(t)
 	req.Agent.Tools = []string{"ping"}
 	req.Agent.Model = "unit"
 	req.Route = modelaccess.Route{Provider: "copilot", Model: "unit", Endpoint: modelaccess.CopilotEndpoint, Auth: "copilot"}
-	for _, bound := range []bool{false, true} {
+	for _, bound := range []bool{true} {
 		options := RunnerOptions{Access: func(context.Context, []modelaccess.Route) (modelaccess.PreviewAccess, error) {
 			t.Fatal("unbound accessed provider")
 			return nil, nil

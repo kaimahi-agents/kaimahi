@@ -26,11 +26,13 @@ const MaxCalls = 5
 type Harness struct {
 	Model       string
 	Definitions []api.ToolDefinition
+	Sources     *SourceConfig
 }
 
 type Config struct {
 	Instructions string               `json:"instructions"`
 	Definitions  []api.ToolDefinition `json:"definitions,omitempty"`
+	Sources      *SourceConfig        `json:"sources,omitempty"`
 }
 
 func (h Harness) Describe(context.Context) (api.Descriptor, error) {
@@ -68,6 +70,9 @@ func (h Harness) Run(ctx context.Context, s *api.Start, sink api.EventSink) erro
 		if err != nil || !reflect.DeepEqual(trusted, defs) {
 			return errTrace
 		}
+	}
+	if config.Sources.Validate(defs) != nil || h.Sources != nil && !reflect.DeepEqual(h.Sources, config.Sources) {
+		return errTrace
 	}
 	messages := []api.Message{*api.TextMessage("system", config.Instructions), s.Inputs[0]}
 	for round := 0; round < 2; round++ {
@@ -133,6 +138,7 @@ type Trace struct {
 	Answer      string
 	ToolCalls   int
 	CallsByName map[string]int
+	Sources     *SourceConfig
 }
 
 // VerifyTrace accepts only one complete bounded invocation, then reconstructs
@@ -208,6 +214,11 @@ func VerifyTrace(ctx context.Context, records []eventlog.Record, model string) (
 	if err != nil || calls != 0 || replay.ModelInvocations() != 0 || len(outputs) != wantOutputs || outputs[len(outputs)-1] != final.Text() {
 		return Trace{}, errTrace
 	}
+	var config Config
+	if json.Unmarshal(s.Config, &config) != nil {
+		return Trace{}, errTrace
+	}
+	out.Sources = config.Sources
 	out.Answer = final.Text()
 	return out, nil
 }

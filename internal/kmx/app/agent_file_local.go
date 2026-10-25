@@ -24,14 +24,19 @@ func NewLocalFileRunner() agentpreview.Runner {
 
 // NewHostFileRunner adds invocation-frozen host tools to the same native factory.
 func NewHostFileRunner(resolve func(context.Context, []string) (*localtools.Host, error)) agentpreview.Runner {
-	return newConfiguredFileRunner(copilot.New(nil).PreviewClient, resolve)
+	return newConfiguredFileRunner(copilot.New(nil).PreviewClient, resolve, false)
 }
 
 func newLocalFileRunner(access func(context.Context, []modelaccess.Route) (modelaccess.PreviewAccess, error)) agentpreview.Runner {
-	return newConfiguredFileRunner(access, nil)
+	return newConfiguredFileRunner(access, nil, false)
 }
 
-func newConfiguredFileRunner(access func(context.Context, []modelaccess.Route) (modelaccess.PreviewAccess, error), resolve func(context.Context, []string) (*localtools.Host, error)) agentpreview.Runner {
+// NewAvailableHostFileRunner consumes a resolver that explicitly accounts for missing tools.
+func NewAvailableHostFileRunner(resolve func(context.Context, []string) (*localtools.Host, error)) agentpreview.Runner {
+	return newConfiguredFileRunner(copilot.New(nil).PreviewClient, resolve, true)
+}
+
+func newConfiguredFileRunner(access func(context.Context, []modelaccess.Route) (modelaccess.PreviewAccess, error), resolve func(context.Context, []string) (*localtools.Host, error), available bool) agentpreview.Runner {
 	checkedAccess := func(ctx context.Context, routes []modelaccess.Route) (modelaccess.PreviewAccess, error) {
 		capability, err := access(ctx, routes)
 		if capability != nil {
@@ -39,7 +44,12 @@ func newConfiguredFileRunner(access func(context.Context, []modelaccess.Route) (
 		}
 		return capability, err
 	}
-	return localpreview.NewRunner(localpreview.RunnerOptions{JournalDir: config.PrepareLocalPreviewJournalDir, Judge: localFilePreviewJudge, JudgeReply: localFileJudgeReply, Access: checkedAccess, Tools: localtools.NewMCPHost, ResolveTools: resolve})
+	options := localpreview.RunnerOptions{JournalDir: config.PrepareLocalPreviewJournalDir, Judge: localFilePreviewJudge, JudgeReply: localFileJudgeReply, Access: checkedAccess, Tools: localtools.NewMCPHost, ResolveTools: resolve}
+	if available {
+		options.ResolveTools = nil
+		options.ResolveAvailableTools = resolve
+	}
+	return localpreview.NewRunner(options)
 }
 
 // The App owns display normalization, while the provider alone knows the keys.

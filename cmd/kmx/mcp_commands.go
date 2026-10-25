@@ -79,7 +79,7 @@ func newMCPCommand(state *commandState) *cobra.Command {
 					return err
 				}
 				defer bridge.Close()
-				application.FileRunner = app.NewHostFileRunner(bridge.ResolveTools)
+				application.FileRunner = app.NewAvailableHostFileRunner(bridge.ResolveAvailableTools)
 			}
 			hostRuntime, err := kmxmcp.NewHostRuntime(root, provider, endpoint, bridge)
 			if err != nil && bridge != nil {

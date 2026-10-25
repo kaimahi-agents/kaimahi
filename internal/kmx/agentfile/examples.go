@@ -94,7 +94,7 @@ func parseExamples(file string, lines []string, firstLine int, allowUnpinnedJudg
 	if root.Kind != yaml.DocumentNode || len(root.Content) != 1 {
 		return nil, refuse(file, base+1, 1, "Examples", "provide one examples mapping")
 	}
-	fields := func(n *yaml.Node, allowed ...string) (map[string]*yaml.Node, error) {
+	fields := func(n *yaml.Node, required int, allowed ...string) (map[string]*yaml.Node, error) {
 		if n.Kind != yaml.MappingNode {
 			return nil, errAt(n, "use a mapping with the documented required fields")
 		}
@@ -109,14 +109,14 @@ func parseExamples(file string, lines []string, firstLine int, allowUnpinnedJudg
 			}
 			values[key.Value] = value
 		}
-		for _, name := range allowed {
+		for _, name := range allowed[:required] {
 			if values[name] == nil {
-				return nil, errAt(n, "add all required examples fields: "+strings.Join(allowed, ", "))
+				return nil, errAt(n, "add all required examples fields: "+strings.Join(allowed[:required], ", "))
 			}
 		}
 		return values, nil
 	}
-	doc, err := fields(root.Content[0], "examples")
+	doc, err := fields(root.Content[0], 1, "examples")
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +129,11 @@ func parseExamples(file string, lines []string, firstLine int, allowUnpinnedJudg
 	examples := make([]Example, 0, len(sequence.Content))
 	seen := map[string]bool{}
 	for _, node := range sequence.Content {
-		values, err := fields(node, "id", "input", "assertions")
+		allowed := []string{"id", "input", "assertions"}
+		if allowUnpinnedJudge { // Canonical additions must not widen native Squad.
+			allowed = append(allowed, "mocks")
+		}
+		values, err := fields(node, 3, allowed...)
 		if err != nil {
 			return nil, err
 		}
@@ -152,6 +156,12 @@ func parseExamples(file string, lines []string, firstLine int, allowUnpinnedJudg
 			return nil, errAt(assertions, "provide 1–64 assertions for each example")
 		}
 		e := Example{ID: id, Input: values["input"].Value, Location: location(node)}
+		if mocks := values["mocks"]; mocks != nil {
+			e.Mocks, err = parseMocks(mocks)
+			if err != nil {
+				return nil, errAt(mocks, "provide valid explicit-mode tool fixtures with bounded exact JSON and offline schemas; no credentials")
+			}
+		}
 		assertionIDs := map[string]bool{}
 		validationAssertions := make([]runtime.EvaluationAssertion, 0, len(assertions.Content))
 		for _, n := range assertions.Content {
@@ -166,8 +176,12 @@ func parseExamples(file string, lines []string, firstLine int, allowUnpinnedJudg
 			}
 			switch assertion.Type {
 			case "contains", "notContains", "regex", "llmJudge":
+			case "toolCalled", "toolNotCalled":
+				if !allowUnpinnedJudge {
+					return nil, errAt(n, "native Squad examples must remain tool-free")
+				}
 			default:
-				return nil, errAt(n, "use contains, notContains, regex or llmJudge; tool assertions are unsupported")
+				return nil, errAt(n, "use contains, notContains, regex, llmJudge, toolCalled or toolNotCalled")
 			}
 			if assertionIDs[assertion.ID] {
 				return nil, errAt(n, "use unique assertion IDs within each example")
