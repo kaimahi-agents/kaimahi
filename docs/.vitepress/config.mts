@@ -79,6 +79,7 @@ function rewriteRepositoryLinks(md: any): void {
 }
 
 const userGuides = [
+  { text: 'Use kmx in the Copilot app', link: '/docs/copilot-app' },
   { text: 'Getting started', link: '/docs/getting-started' },
   { text: 'Workspace lifecycle', link: '/docs/suite-workspace' },
   { text: 'Runtime support', link: '/docs/runtime-adapters' },
