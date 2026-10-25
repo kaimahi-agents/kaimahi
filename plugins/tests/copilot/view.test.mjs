@@ -3861,3 +3861,93 @@ test("tool settings: invalid_tool_settings is explained plainly, never as a gene
   assert.match(shown, /tool settings.*kmx\.yaml/i);
   assert.doesNotMatch(shown, /secret|unclosed|could not be confirmed/);
 });
+
+// --- tool settings: freshness regressions ------------------------------------
+const DISABLED = (...names) => names.map((name) => ({ name, state: "Disabled" }));
+const INVALID_MESSAGE = /tool settings.*kmx\.yaml/i;
+const passing = (settings) => (rev, ex) => { const latest = bLatest({ a: "pass", b: "pass" })(rev, ex); latest.result.toolSettings = settings; return latest; };
+const toolCanvas = (settings = ENABLED("ping"), options = {}) => editableCanvas("Reply briefly.", undefined, { examples: c18Examples(["a", "b"]),
+  extra: { tools: ["ping"], toolSettings: settings }, latest: passing(settings), ...options });
+
+test("tool settings: an invalid_tool_settings poll after a pass makes the old pass old, keeps drafts and recovers on a valid read", async () => {
+  for (const mode of ["thrown", "payload"]) {
+    const h = await toolCanvas();
+    c18Prompt(h.root).textContent = "My draft."; c18Prompt(h.root).listeners.input[0]();
+    assert.deepEqual(toolLabels(h.root), ["ping · Enabled"]);
+    const typed = new ViewError("invalid_tool_settings");
+    if (mode === "thrown") h.app.observeFailure(typed); else h.app.observe({ error: typed.code, message: typed.message });
+    assert.deepEqual(toolLabels(h.root), [], mode + ": the old Enabled labels are not claimed");
+    assert.match(all(h.root).map((n) => n.textContent).join("\n"), INVALID_MESSAGE);
+    assert.deepEqual(items(h.root).map((i) => /old-pass/.test(byClass(i, "test-verdict")[0].className)), [true, true], mode + ": the old pass is not current");
+    assert.equal(c18Text(h.root, "result-pill").includes("2 of 2 passing"), false);
+    assert.equal(c18Prompt(h.root).textContent, "My draft.", "drafts are kept");
+    // A transient (untyped) failure changes nothing.
+    h.app.observeFailure(new Error("network"));
+    assert.match(all(h.root).map((n) => n.textContent).join("\n"), INVALID_MESSAGE);
+    h.app.observe(await viewFor(h.source, h.examples, passing(ENABLED("ping")), "fake", { tools: ["ping"], toolSettings: ENABLED("ping") }));
+    assert.deepEqual(toolLabels(h.root), ["ping · Enabled"], mode + ": a valid same-revision read recovers");
+    assert.doesNotMatch(all(h.root).map((n) => n.textContent).join("\n"), INVALID_MESSAGE);
+    assert.equal(c18Prompt(h.root).textContent, "My draft.");
+    h.app.dispose();
+  }
+});
+
+test("tool settings: a valid response started before invalidation cannot restore an old pass", async () => {
+  const h = await toolCanvas();
+  const before = h.app.observation();
+  const old = await viewFor(h.source, h.examples, passing(ENABLED("ping")), "fake", { tools: ["ping"], toolSettings: ENABLED("ping") });
+  h.app.observe({ error: "invalid_tool_settings" }, before);
+  assert.equal(h.app.observe(old, before), false, "invalidation fences older in-flight reads");
+  assert.deepEqual(toolLabels(h.root), []);
+  assert.match(all(h.root).map(n => n.textContent).join("\n"), INVALID_MESSAGE);
+  h.app.dispose();
+});
+
+test("tool settings: a stopped Test keeps its start settings, not a changed Stop readback", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let finish, run;
+  const h = await toolCanvas(ENABLED("ping"), { latest: undefined, fetchProgress: async id => ({ run: { ...run, id } }),
+    respond: action => action.operation === "stop" ? { stopping: true } : new Promise(resolve => { finish = resolve; }) });
+  t.after(() => h.app.dispose());
+  run = { revision: h.view.file.revision, model: "fake", caseIds: ["a", "b"], totalCases: 2, state: "running", cases: [{ caseId: "a", verdict: "pass" }], elapsedMs: 200 };
+  promptEnter(h.root); t.mock.timers.tick(250); await tick(); await tick();
+  const id = h.calls.at(-1).runId; click(byClass(h.root, "stop-run")[0]);
+  finish({ stopped: true, saved: false, run: { ...run, id, state: "stopped", toolSettings: ENABLED("ping") }, view: { ...h.view, toolSettings: DISABLED("ping"), latest: { status: "none", badge: "none" } } });
+  await tick(); await tick();
+  assert.match(rowLabels(h.root)[0], /^Passed/);
+  assert.equal(c18Text(h.root, "result-pill"), "Out of date", "changed during the run, before Stop readback");
+  const changed = await viewFor(h.source, h.examples, { status: "stale", badge: "stale" }, "fake", { tools: ["ping"], toolSettings: DISABLED("ping") });
+  assert.equal(h.app.observe(changed), true);
+  assert.deepEqual(toolLabels(h.root), ["ping · Disabled"]);
+  assert.equal(byClass(items(h.root)[0], "test-verdict")[0].className.includes("old-pass"), true, "the stopped pass is old under Disabled");
+  assert.equal(c18Text(h.root, "result-pill"), "Out of date");
+});
+
+test("tool settings: selecting a model restores its cached settings-free refusal, not an old pass", async () => {
+  let h;
+  const refused = rev => ({ status: "current", result: result({ file: { path: MINIMAL, revision: rev }, state: "refused", verdict: "unknown", fullPass: false,
+    reasonCode: "model_unavailable", modelRoute: {}, examples: [], selection: { scope: "full", totalCases: 2, caseIds: ["a", "b"] } }) });
+  h = await toolCanvas(DISABLED("ping"), { fetchModels: async () => ({ models: ["fake", "claude-sonnet-5.5"] }),
+    respond: async () => ({ view: await viewFor(h.source, h.examples, refused, "fake", { tools: ["ping"], toolSettings: DISABLED("ping") }) }) });
+  promptEnter(h.root); await tick(); await tick();
+  assert.match(c18Text(h.root, "tests-meta"), /refused/i);
+  await chooseModel(h, "claude-sonnet-5.5");
+  await chooseModel(h, "fake");
+  assert.match(c18Text(h.root, "tests-meta"), /refused/i);
+  assert.doesNotMatch(c18Text(h.root, "result-pill"), /passing/);
+  h.app.dispose();
+});
+
+test("tool settings: route-less pre-execution refusals are not made stale by Disabled settings", async () => {
+  for (const reasonCode of ["no_tests", "model_unavailable", "invalid_selection"]) {
+    const refused = (rev) => ({ status: "current", badge: "none", result: result({ file: { path: MINIMAL, revision: rev }, state: "refused", verdict: "unknown", fullPass: false,
+      reasonCode, modelRoute: {}, examples: [], selection: { scope: "full", totalCases: 2, caseIds: ["a", "b"] } }) });
+    const h = await toolCanvas(DISABLED("ping"), { latest: refused });
+    assert.equal(h.view.latest.result.modelRoute, "/");
+    assert.equal(Object.hasOwn(h.view.latest.result, "toolSettings"), false);
+    assert.doesNotMatch(c18Text(h.root, "tests-meta"), /Out of date/, reasonCode);
+    assert.notEqual(c18Text(h.root, "result-pill"), "Out of date", reasonCode);
+    // A legacy executed result without provenance still runs against the Enabled default.
+    h.app.dispose();
+  }
+});

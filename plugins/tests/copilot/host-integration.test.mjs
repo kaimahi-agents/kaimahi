@@ -31,8 +31,8 @@ async function connect(command, args, options) {
 }
 
 const binary = process.env.KMX_HOST_BRIDGE_TEST_BINARY;
-for (const mode of ['round trip', 'denial', 'cancelled', 'expired', 'batch', 'batch denial', 'batch limit', 'disabled', 'batch disabled', 'batch mixed']) test(`Go MCP plus Node runtime fixture: native tool ${mode}`, { skip: !binary, timeout: 60000 }, async t => {
-  const disabled = mode === 'disabled' || mode === 'batch disabled', mixed = mode === 'batch mixed';
+for (const mode of ['round trip', 'denial', 'cancelled', 'expired', 'batch', 'batch denial', 'batch limit', 'disabled', 'batch disabled', 'batch mixed', 'invalid settings']) test(`Go MCP plus Node runtime fixture: native tool ${mode}`, { skip: !binary, timeout: 60000 }, async t => {
+  const disabled = mode === 'disabled' || mode === 'batch disabled', mixed = mode === 'batch mixed', invalidSettings = mode === 'invalid settings';
   const batch = mode.startsWith('batch'), denied = mode.includes('denial'), overLimit = mode === 'batch limit', stopping = mode === 'cancelled' || mode === 'expired';
   let modelServer, modelError, sends = 0;
   if (batch) {
@@ -64,11 +64,15 @@ for (const mode of ['round trip', 'denial', 'cancelled', 'expired', 'batch', 'ba
   let configured = batch ? source.replace('Preferred:** fake', 'Preferred:** unit') : source;
   if (mixed) configured = configured.replace('- ping\n', '- ping\n- pong\n');
   await writeFile(path.join(root, 'fixture.agent.md'), configured, { mode: 0o600 });
+  if (invalidSettings) await writeFile(path.join(root, 'kmx.yaml'), 'tools: {ping: Ask}\n', { mode: 0o600 });
   if (disabled || mixed) await writeFile(path.join(root, 'kmx.yaml'), 'tools:\n  ping: Disabled\n' + (mixed ? '  pong: Enabled\n' : ''), { mode: 0o600 });
   const original = await connect(binary, ['mcp', '--root', root, ...(batch ? ['--provider', 'compatible', '--endpoint', `http://127.0.0.1:${modelServer.address().port}`] : [])], { env });
   const servers = new Map([['kmx-agent-builder', original]]), calls = [], previews = [];
   const session = { rpc: { mcp: {
-    resources: { read: ({ serverName, uri }) => servers.get(serverName).request('resources/read', { uri }) },
+    resources: { read: async ({ serverName, uri }) => {
+      try { return await servers.get(serverName).request('resources/read', { uri }); }
+      catch (e) { if (invalidSettings) throw Error('protocol_failed'); throw e; }
+    } },
     listConfigured: async () => ({ servers: [...servers.keys()].map(name => ({ name })) }),
     startServer: async ({ serverName, config }) => { assert.ok(!config.env); servers.set(serverName, await connect(config.command, config.args, { cwd: config.cwd, env })); },
     stopServer: async ({ serverName }) => { assert.notEqual(serverName, 'kmx-agent-builder'); servers.get(serverName)?.close(); },
@@ -108,6 +112,15 @@ for (const mode of ['round trip', 'denial', 'cancelled', 'expired', 'batch', 'ba
     await new Promise(setImmediate);
     assert.equal(calls.length, 0, 'metadata returning later must not initiate an effect');
     return;
+  }
+  if (invalidSettings) {
+    await assert.rejects(readView(session, 'fixture.agent.md'), { code: 'invalid_tool_settings' }, 'fixed data must survive the native host discarding RPC errors');
+    const act = createActionHandler({ session, path: 'fixture.agent.md' });
+    const refused = await act({ operation: 'reload' });
+    assert.equal(refused.error, 'invalid_tool_settings');
+    assert.match(refused.message, /tool settings.*kmx\.yaml/i);
+    assert.equal(calls.length, 0);
+    act.dispose(); return;
   }
   const before = await readView(session, 'fixture.agent.md'); assert.deepEqual(before.tools, mixed ? ['ping', 'pong'] : ['ping']);
   const result = await createActionHandler({ session, path: 'fixture.agent.md' })({ operation: 'test', expectedRevision: before.file.revision });

@@ -12,8 +12,17 @@ import (
 	"github.com/agent-primitives/sessions/controller"
 )
 
+func settingsRoot(t *testing.T) string {
+	t.Helper()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
 func TestFolderToolSettingsDefaultsAndExactFolder(t *testing.T) {
-	root := t.TempDir()
+	root := settingsRoot(t)
 	child := filepath.Join(root, "agents")
 	if err := os.Mkdir(child, 0700); err != nil {
 		t.Fatal(err)
@@ -35,7 +44,10 @@ func TestFolderToolSettingsDefaultsAndExactFolder(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(got, []ToolSetting{{Name: "ping", State: Disabled}, {Name: "lookup", State: Enabled}}) {
 		t.Fatalf("settings: %+v %v", got, err)
 	}
-	after, _ := os.ReadFile(p)
+	after, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if string(after) != body {
 		t.Fatal("reader changed unrelated keys/comments")
 	}
@@ -44,7 +56,7 @@ func TestFolderToolSettingsDefaultsAndExactFolder(t *testing.T) {
 func TestFolderToolSettingsRejectAmbiguousAndInvalidFiles(t *testing.T) {
 	for _, body := range []string{"", "[one]", "tools: {ping: Ask}", "tools: {ping: false}", "tools: {ping: Disabled, ping: Enabled}", "tools: null", "tools: {bad.name: Disabled}", "schemaVersion: 2", "tools: &settings {ping: Disabled}\ncopy: *settings", "other: {<<: {ping: Disabled}}", "tools: {ping: Disabled}\n---\nother: x", "other: {same: one, same: two}", "other: " + strings.Repeat("x", 256*1024)} {
 		t.Run(body[:min(len(body), 28)], func(t *testing.T) {
-			root := t.TempDir()
+			root := settingsRoot(t)
 			if err := os.WriteFile(filepath.Join(root, "kmx.yaml"), []byte(body), 0600); err != nil {
 				t.Fatal(err)
 			}
@@ -53,9 +65,11 @@ func TestFolderToolSettingsRejectAmbiguousAndInvalidFiles(t *testing.T) {
 			}
 		})
 	}
-	root := t.TempDir()
+	root := settingsRoot(t)
 	target := filepath.Join(root, "other.yaml")
-	_ = os.WriteFile(target, []byte("tools: {ping: Disabled}"), 0600)
+	if err := os.WriteFile(target, []byte("tools: {ping: Disabled}"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Symlink(target, filepath.Join(root, "kmx.yaml")); err == nil {
 		if _, err := LoadSettings(t.Context(), filepath.Join(root, "agent.agent.md"), []string{"ping"}); err == nil {
 			t.Fatal("linked config accepted")

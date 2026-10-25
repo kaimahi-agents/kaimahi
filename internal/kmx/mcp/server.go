@@ -141,12 +141,7 @@ func NewServer(engineVersion string, operations map[string]Operation) (*sdk.Serv
 				if errors.As(err, &rpcErr) {
 					code = rpcErr.Code
 				}
-				message := "protocol_failed"
-				var safe *Error
-				if errors.As(err, &safe) && safe.Code == "invalid_tool_settings" {
-					message = safe.Code
-				}
-				return nil, &jsonrpc.Error{Code: code, Message: message}
+				return nil, &jsonrpc.Error{Code: code, Message: "protocol_failed"}
 			}
 			return result, nil
 		}
@@ -159,7 +154,7 @@ func errorResult(err error) *sdk.CallToolResult {
 	var safe *Error
 	if errors.As(err, &safe) {
 		switch safe.Code {
-		case "invalid_root", "unsafe_path", "invalid_file", "invalid_tool_settings", "already_exists", "stale_revision", "busy", "publication_failed", "cancelled", "invalid_options", "incompatible_version", "io_failed", "lock_unavailable", "not_found", "deadline_exceeded":
+		case "invalid_root", "unsafe_path", "invalid_file", "already_exists", "stale_revision", "busy", "publication_failed", "cancelled", "invalid_options", "incompatible_version", "io_failed", "lock_unavailable", "not_found", "deadline_exceeded":
 			code = safe.Code
 		}
 	}

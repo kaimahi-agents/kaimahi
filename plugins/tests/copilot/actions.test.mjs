@@ -44,8 +44,8 @@ test('runtime reads existing tool declarations without adding a tool editor', as
 });
 
 function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no});return{promise,resolve,reject}}
-function nativeHarness(){
- const h=harness(),listeners=new Set(),retired=[],requests=[],gate=deferred(),ack=deferred(),aborts=[],dispatched=deferred();
+function nativeHarness(options){
+ const h=harness(options),listeners=new Set(),retired=[],requests=[],gate=deferred(),ack=deferred(),aborts=[],dispatched=deferred();
  h.session.on=(name,listener)=>{assert.equal(name,'tool.execution_progress');listeners.add(listener);return()=>{listeners.delete(listener);retired.push(listener)}};
  const execute=h.session.rpc.tools.execute;
  h.session.rpc.tools.execute=async request=>{
@@ -62,6 +62,21 @@ function nativeHarness(){
  };
  return{...h,listeners,retired,requests,gate,ack,aborts,emit,start,dispatched};
 }
+test('stopped snapshots keep request settings from before a config change, not Stop readback settings',async()=>{
+ const n=nativeHarness({fixture:original.replace('## Examples','## Tools\n- ping\n\n## Examples')});
+ let state='Enabled';const read=n.session.rpc.mcp.resources.read;
+ n.session.rpc.mcp.resources.read=async args=>{const r=await read(args),raw=JSON.parse(r.contents[0].text);raw.tools=['ping'];raw.toolSettings=[{name:'ping',state}];r.contents[0].text=JSON.stringify(raw);return r};
+ const {pending}=await n.start();
+ const progress=await n.act({operation:'progress',runId:'run-1'});
+ assert.deepEqual(progress.run.toolSettings,[{name:'ping',state:'Enabled'}]);
+ progress.run.toolSettings[0].state='Disabled';
+ state='Disabled';await n.act({operation:'stop',runId:'run-1'});n.ack.resolve({success:true});n.gate.reject(Error('aborted'));
+ const stopped=await pending;
+ assert.equal(stopped.stopped,true);
+ assert.deepEqual(stopped.run.toolSettings,[{name:'ping',state:'Enabled'}],'snapshot is detached request metadata, not execution proof');
+ assert.deepEqual(stopped.view.toolSettings,[{name:'ping',state:'Disabled'}]);
+});
+
 test('native progress is correlated, bounded, ordered and provisional until the final Test reply',async()=>{
  const n=nativeHarness();n.o.nextExamples=[greeting,farewell];
  const {pending}=await n.start({operation:'save-and-test',sections:edited(),examples:[greeting,farewell]});

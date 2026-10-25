@@ -92,7 +92,11 @@ func AddAgentResource(server *sdk.Server, files *Files) {
 		}
 		view.ToolSettings, err = localtools.LoadSettings(ctx, physical, agent.Tools)
 		if err != nil {
-			return nil, refusal("invalid_tool_settings")
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			// The native host drops RPC error details; fixed resource data survives.
+			return &sdk.ReadResourceResult{Contents: []*sdk.ResourceContents{{URI: req.Params.URI, MIMEType: "application/json", Text: `{"schemaVersion":1,"kind":"kmx.agent-view-error","reasonCode":"invalid_tool_settings"}`}}}, nil
 		}
 		_, strictErr := agentfile.Parse(target, source)
 		view.Authoring = &AgentViewAuthoring{Source: string(source), Editable: strictErr == nil}
@@ -105,7 +109,9 @@ func AddAgentResource(server *sdk.Server, files *Files) {
 		if observation.path == target && observation.result != nil && observation.result.File.Revision != "" {
 			view.Latest.Status = "stale"
 			// Runtime model choices do not change the authored source revision.
-			if observation.result.File.Revision == agent.Revision && slices.Equal(observation.result.ToolSettings, view.ToolSettings) {
+			// Settings-free refusals precede tool setup and are not execution evidence.
+			settingsMatch := slices.Equal(observation.result.ToolSettings, view.ToolSettings) || observation.result.State == "refused" && len(observation.result.ToolSettings) == 0
+			if observation.result.File.Revision == agent.Revision && settingsMatch {
 				view.Latest = AgentViewLatest{Status: "current", Result: observation.result}
 			}
 		}

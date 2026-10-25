@@ -1,5 +1,5 @@
 // Resource and authoring values are untrusted: render only inert DOM text.
-import { runtimeModelSelection, effectiveModel, readSnapshot, portableId, compareDrafts, same } from "./authoring.mjs";
+import { runtimeModelSelection, effectiveModel, readSnapshot, portableId, compareDrafts, same, preRouteRefusal } from "./authoring.mjs";
 import { el, inlineText, editorValue, instructionsContent, runtimeModelControl, testNameControl, icon, statusIcon,
   inspectCases, compareLabels, checkKey, uniqueIndex, clone, operandKey, EDITABLE_TYPES, quoted, checkLabel, oneLine, failureFacts, testRow, coherentSelection, ambiguousPassSet, countText, plural, resultHistory, resultPill, modelLabel, growTextarea, checkTypeControl, checkFields, convertCheck, inconclusiveJudge, judgeDetails, plainReason, isRefused, matchedAnswer, answerBlock, refusalContext,
   canvasResultSummary, canvasFooterText, canvasHeader, runNotice, instructionEditor, conflictNotice, saveButton } from "./editor.mjs";
@@ -21,13 +21,14 @@ async function fetchView() {
 // Folder tool settings change a result's meaning without changing the file revision.
 const defaultSettings = (view) => (view.tools ?? []).map((name) => ({ name, state: "Enabled" }));
 // A result without recorded settings predates them, when every tool ran Enabled.
-const ranWith = (view, result) => same(result?.toolSettings ?? defaultSettings(view), view.toolSettings ?? defaultSettings(view));
+// Owned pre-route refusals never executed, so no settings vector applies to them.
+const ranWith = (view, result) => !view.settingsInvalid && (preRouteRefusal(result) && result.toolSettings === undefined || same(result?.toolSettings ?? defaultSettings(view), view.toolSettings ?? defaultSettings(view)));
 // Retained results are current only if they ran with today's settings.
 const settingsGuard = (history) => Object.create(history, { selected: { value(view, model) {
   const retained = history.selected(view, model);
   return retained && ranWith(view, retained.latest.result) ? retained : undefined;
 } } });
-const NO_HANDLE = { observe: () => false, idle: () => false, dispose() {} };
+const NO_HANDLE = { observe: () => false, observeFailure: () => false, idle: () => false, dispose() {} };
 
 export function renderView(doc, root, payload, execute = postAction, options = {}) {
   if (!payload || payload.error || !payload.file) {
@@ -54,7 +55,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   let actions;
   const drafts = createDraftController(state, { clearUndo: () => actions.clearUndo(), navigate, render, refresh: () => refresh() });
   const { hasDrafts, sectionText, entries, localExamples, draftName, noteDraft, addTest } = drafts;
-  const { observation, matches, observe, checkNow, useTheirs, keepMine } = createObservationController(state,
+  const { observation, matches, observe, observeFailure, checkNow, useTheirs, keepMine } = createObservationController(state,
     { path: payload.file.path, options, drafts, clearUndo: () => actions.clearUndo(), render, refresh: () => refresh() });
   actions = createActionController(state, { execute, fetchProgress: options.fetchProgress, drafts, matches, checkNow, render, refresh: () => refresh(), focusName: () => activeTestName?.focus() });
   const { act, submitAll, submitOne, testing, clearUndo } = actions;
@@ -105,6 +106,12 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   }
 
   const selectedModel = () => effectiveModel(state.base.model, modelChoice.override, state.base.chatModel);
+  // Partial runs use request-start settings, not the possibly changed Stop readback.
+  // Legacy snapshots had no policy switches and therefore requested Enabled.
+  const runFresh = (run) => {
+    const attempt = history.attempt(run.model), frozen = run.toolSettings ?? (attempt?.run === run ? defaultSettings(attempt.view) : undefined);
+    return !state.base.settingsInvalid && (!frozen || same(frozen, state.base.toolSettings ?? defaultSettings(state.base)));
+  };
   const currentRun = () => testing() ? state.run : history.attempt(selectedModel())?.run;
   function runSummary(run) {
     if (run.state === "stopping") return { tone: "running", text: "Stopping…" };
@@ -119,7 +126,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     if (!run || !run.caseIds.includes(id)) return fallback;
     const attempt = history.attempt(run.model);
     if ((!testing() || partner) && !same(attempt?.view.authoring?.examples.find(e => e.id === id), state.base.authoring?.examples.find(e => e.id === id))) return fallback;
-    const old = partner || !testing() && (hasDrafts() || run.revision !== state.base.file.revision);
+    const old = partner || !testing() && (hasDrafts() || run.revision !== state.base.file.revision || !runFresh(run));
     const c = run.cases.find(c => c.caseId === id);
     let base = c?.verdict === "pass" ? "pass" : c?.verdict === "fail" ? "fail" : c ? "error" : "none";
     let label = c?.verdict === "pass" ? "Passed" : c?.verdict === "fail" ? "Failed" : c ? "Didn't finish" : "Not run";
@@ -140,7 +147,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   }
   function resultSummary() {
     const run = currentRun();
-    if (run && !state.blocked && state.route.name !== "detail") return !testing() && (hasDrafts() || run.revision !== state.base.file.revision)
+    if (run && !state.blocked && state.route.name !== "detail") return !testing() && (hasDrafts() || run.revision !== state.base.file.revision || !runFresh(run))
       ? { tone: "none", text: "Out of date" } : runSummary(run);
     return canvasResultSummary(state.base, { n: entries().filter(e => !e.draft?.deleted).length, testing: testing(), one: state.pending?.one,
       blocked: state.blocked, dirty: hasDrafts(), last: history.last });
@@ -278,7 +285,8 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     }
     section.append(head);
     // Read-only: settings come from the agent folder's kmx.yaml and are not edited here.
-    if (state.base.toolSettings?.length) {
+    if (state.base.settingsInvalid) section.append(el(doc, "p", "meta tool-settings-error", plainReason({ reasonCode: "invalid_tool_settings" })));
+    else if (state.base.toolSettings?.length) {
       const settings = el(doc, "ul", "tool-settings");
       for (const { name, state: value } of state.base.toolSettings) settings.append(el(doc, "li", "meta tool-setting", `${name} · ${value}`));
       section.append(settings);
@@ -382,15 +390,15 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       const partnerSummary = !partner ? "" : partnerRun ? `Stopped · ${partnerRun.cases.length} of ${partnerRun.caseIds.length} ran` : isRefused(partnerResult) ? "Refused" : partnerResult.state !== "complete" ? "Didn't finish"
         : partnerResult.selection.scope === "subset" ? `${partnerResult.selection.caseIds.length} of ${partner.examples.length} tests ran`
         : inspectCases(partnerView).some(c => c.state === "unknown") ? "Incomplete run" : `${inspectCases(partnerView).filter(c => c.state === "pass").length} of ${partner.examples.length} passing`;
-      const partnerText = partner ? ` · ${modelLabel(partner.latest.result.modelRoute)} ${(partnerRun?.revision ?? partnerView.file.revision) === state.base.file.revision && !anyDraft && ranWith(state.base, partnerResult) ? "earlier" : "before your edit"}, ${partnerSummary}` : "";
+      const partnerText = partner ? ` · ${modelLabel(partner.latest.result.modelRoute)} ${(partnerRun?.revision ?? partnerView.file.revision) === state.base.file.revision && !anyDraft && (partnerRun ? runFresh(partnerRun) : ranWith(state.base, partnerResult)) ? "earlier" : "before your edit"}, ${partnerSummary}` : "";
       const runText = run ? run.state === "stopping" ? "Stopping Copilot turn…" : run.state === "stopped" ? `Stopped · ${run.cases.length} of ${run.caseIds.length} ran` : "Running" : "";
-      const accessible = state.blocked ? "Result unconfirmed" : run && (testing() || !anyDraft && run.revision === state.base.file.revision) ? runText + partnerText : !shown.length ? "" : testing() ? "Running…"
+      const accessible = state.blocked ? "Result unconfirmed" : run && (testing() || !anyDraft && run.revision === state.base.file.revision && runFresh(run)) ? runText + partnerText : !shown.length ? "" : testing() ? "Running…"
         : stale && state.base.latest.status !== "current" ? `Out of date${previous ? ` · last run on ${previous}` : ""}` : state.base.latest.status !== "current" || !text ? "Not run yet"
         : (state.base.latest.result.state !== "complete" || malformed) && !isRefused(state.base.latest.result) && !anyDraft && !/didn't finish|incomplete/.test(text) ? `Incomplete run: ${text}`
         : anyDraft ? `Last run, before your edit: ${text}` : state.lastRun && !state.lastRun.one && !state.runAlert ? `${text} · just now` : text;
       // Update live-region text for screen readers.
       if (summaryNode.textContent !== accessible) summaryNode.textContent = accessible;
-      meta.textContent = !state.blocked && run ? (anyDraft && !testing() || run.revision !== state.base.file.revision && !testing() ? "Out of date · " : "") + runText + partnerText
+      meta.textContent = !state.blocked && run ? (anyDraft && !testing() || (run.revision !== state.base.file.revision || !runFresh(run)) && !testing() ? "Out of date · " : "") + runText + partnerText
         : !state.blocked && partner ? (stale ? `Out of date · ${modelLabel(selected.latest.result.modelRoute)} before your edit, ${inspectCases(selected).filter(c => c.state === "pass").length} of ${selected.examples.length} passing` : `Ran ${state.lastRun ? "just now" : "earlier"} on ${modelLabel(state.base.latest.result?.modelRoute) || selectedModel()}${duration}`) + partnerText
         : !oldResults && !state.busy && !state.blocked && isRefused(state.base.latest.result) ? text : stale ? `Out of date${previous ? ` · last run on ${previous}` : ""}` : !state.busy && state.lastRun && !state.runAlert ? duration ? `Ran just now${duration}` : "· just now" : "";
       if (firstRun) {
@@ -723,6 +731,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   render();
   return {
     observe,
+    observeFailure,
     observation,
     idle: () => !state.busy && !state.blocked && invalidEditors.size === 0,
     dispose() { clearUndo(); actions.dispose(); state.observationGeneration++; for (const cleanup of cleanups.splice(0)) cleanup(); },
@@ -744,7 +753,7 @@ async function main() {
     if (reading || document.visibilityState !== "visible" || !app.idle()) return;
     reading = true;
     const started = app.observation();
-    try { app.observe(await fetchView(), started); } catch { /* Try again on the next tick. */ } finally { reading = false; }
+    try { app.observe(await fetchView(), started); } catch (e) { app.observeFailure(e, started); /* Other failures: try again on the next tick. */ } finally { reading = false; }
   }, 4000);
 }
 if (typeof document !== "undefined" && document.getElementById) main();

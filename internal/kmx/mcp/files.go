@@ -54,8 +54,6 @@ func (e *Error) Error() string {
 		return "invalid_root: select an absolute existing directory with --root"
 	case "unsafe_path":
 		return "unsafe_path: select a regular agent file beneath the selected root"
-	case "invalid_tool_settings":
-		return "invalid_tool_settings: tool settings in the agent folder's kmx.yaml are invalid"
 	case "invalid_file":
 		return "invalid_file: charter validation failed; repair unsupported source manually"
 	case "not_found":

@@ -148,6 +148,7 @@ function parseView(json, path) {
   } catch {
     invalid();
   }
+  if (raw?.schemaVersion === 1 && raw.kind === "kmx.agent-view-error" && raw.reasonCode === "invalid_tool_settings") throw new ViewError("invalid_tool_settings");
   if (!isObj(raw) || raw.schemaVersion !== 1 || raw.kind !== KIND) invalid();
   const file = raw.file;
   if (!isObj(file) || file.path !== path || typeof file.revision !== "string" || !/^sha256:[0-9a-f]{64}$/.test(file.revision)) invalid();
@@ -286,6 +287,8 @@ export function createActionHandler({ session, path }) {
   const snapshot = () => current?.id === undefined ? undefined : ({
     id: current.id, revision: current.revision, model: current.model,
     caseIds: [...current.caseIds], totalCases: current.totalCases,
+    // Request metadata is for partial-run freshness, not execution provenance.
+    ...(current.toolSettings ? { toolSettings: current.toolSettings.map(s => ({ ...s })) } : {}),
     cases: current.caseIds.filter(id => current.rows.has(id)).map(id => ({ ...current.rows.get(id) })),
     state: current.state, elapsedMs: current.elapsedMs ?? Math.max(0, Date.now() - current.started),
   });
@@ -428,7 +431,8 @@ export function createActionHandler({ session, path }) {
       }
       tested = true;
       const outcome = await invoke(operation, { ...(runtimeModel ? { model: runtimeModel } : {}), ...(operation === "run" ? { input: input.input } : {}), ...(input.caseId !== undefined ? { caseId: input.caseId } : {}), showContent: input.showContent === true, showFailedContent: true },
-        { id: input.runId, revision: targetRevision, model, caseIds: input.caseId === undefined ? ids : [input.caseId], totalCases: ids.length });
+        { id: input.runId, revision: targetRevision, model, caseIds: input.caseId === undefined ? ids : [input.caseId], totalCases: ids.length,
+          ...(view.tools.length ? { toolSettings: view.toolSettings.map(s => ({ ...s })) } : {}) });
       try { view = await readView(session, path); }
       catch { uncertain = true; throw new ViewError("outcome-unknown"); }
       if (outcome.stopped) {

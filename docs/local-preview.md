@@ -117,8 +117,9 @@ Bindings and schemas still resolve as before. A Disabled request returns
 native tool. It still consumes one of the five batch slots. Enabled app calls
 continue through the app's unchanged permission handling.
 
-Each result's `toolSettings` records every declared tool's state frozen at run
-start. `toolCalls` counts only Enabled live calls, not Disabled answers. Changing
+Execution results' `toolSettings` record every declared tool's state frozen at run
+start. Pre-execution refusals have no execution provenance. `toolCalls` counts
+only Enabled live calls, not Disabled answers. Changing
 the effective settings makes an earlier result out of date even when the agent
 file is unchanged. Offline replay uses the journaled settings and results,
 never today's YAML or a live executor. Older journals without settings retain
