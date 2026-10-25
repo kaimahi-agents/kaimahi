@@ -410,6 +410,9 @@ const ASSETS = {
   "style.css": ["style.css", "text/css; charset=utf-8"],
   "authoring.mjs": ["authoring.mjs", "text/javascript; charset=utf-8"],
   "editor.mjs": ["editor.mjs", "text/javascript; charset=utf-8"],
+  "draft-controller.mjs": ["draft-controller.mjs", "text/javascript; charset=utf-8"],
+  "action-controller.mjs": ["action-controller.mjs", "text/javascript; charset=utf-8"],
+  "observation-controller.mjs": ["observation-controller.mjs", "text/javascript; charset=utf-8"],
 };
 const SECURITY_HEADERS = {
   "Cache-Control": "no-store",

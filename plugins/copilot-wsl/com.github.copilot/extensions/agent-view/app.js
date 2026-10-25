@@ -1,11 +1,12 @@
 // Resource and authoring values are untrusted: render only inert DOM text.
-import { runtimeModelSelection, effectiveModel, readSnapshot, portableId, validateDraft as validate, compareDrafts } from "./authoring.mjs";
+import { runtimeModelSelection, effectiveModel, readSnapshot, portableId, compareDrafts } from "./authoring.mjs";
 import { el, inlineText, editorValue, instructionsContent, runtimeModelControl, testNameControl, icon, statusIcon,
-  checkKey, uniqueIndex, friendlyName, clone, same, operandKey, EDITABLE_TYPES, quoted, checkLabel, oneLine, failureFacts, testRow, coherentSelection, ambiguousPassSet, countText, plural, resultHistory, resultPill, modelLabel, growTextarea, checkTypeControl, checkFields, convertCheck, inconclusiveJudge, judgeDetails, plainReason, isRefused, matchedAnswer, checkIssue, answerBlock, refusalContext,
+  checkKey, uniqueIndex, clone, operandKey, EDITABLE_TYPES, quoted, checkLabel, oneLine, failureFacts, testRow, coherentSelection, ambiguousPassSet, countText, plural, resultHistory, resultPill, modelLabel, growTextarea, checkTypeControl, checkFields, convertCheck, inconclusiveJudge, judgeDetails, plainReason, isRefused, matchedAnswer, answerBlock, refusalContext,
   canvasResultSummary, canvasFooterText, canvasHeader, runNotice, instructionEditor, conflictNotice, saveButton } from "./editor.mjs";
+import { createDraftController } from "./draft-controller.mjs";
+import { createActionController } from "./action-controller.mjs";
+import { createObservationController } from "./observation-controller.mjs";
 export { provenActual } from "./editor.mjs";
-const CONFLICTS = ["revision_mismatch", "revision-mismatch"];
-const UNKNOWN = ["outcome-unknown", "uncertain-outcome", "uncertain_outcome"];
 
 async function postAction(action) {
   const response = await fetch("actions", {
@@ -25,254 +26,36 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     return NO_HANDLE;
   }
   // Navigation neither saves nor drops these controller-owned drafts.
-  let base = payload, snap = readSnapshot(payload), candidate, compareOpen = false;
-  const sectionDrafts = new Map(), testDrafts = new Map(), invalidEditors = new Set();
-  let route = { name: "main" }, busy = false, pending, blocked = false, savedUntested = false, message = "", runAlert, lastRun;
-  let filter = "all", newCount = 0, menuOpen = false, cleanups = [], controls = [];
-  const history = resultHistory(payload), editingChecks = new Set();
-  let refresh = () => {};
-  let focusTestName = false, nameHintKey, activeTestName, promptUndo, undoTimer, hostedSent = false;
-  const displayNames = new Map();
-  function clearUndo() { promptUndo = undefined; clearTimeout(undoTimer); }
-  function offerUndo(sections) {
-    promptUndo = { sections, revision: base.file.revision };
-    undoTimer = setTimeout(() => { clearUndo(); refresh(); }, 10000);
-    undoTimer.unref?.();
-  }
-  // Revisions alone cannot fence reruns of unchanged source.
-  let observationGeneration = 0;
-  const modelChoice = runtimeModelSelection();
-  base = modelChoice.view(base);
-  const observation = () => ({ generation: observationGeneration, revision: base.file.revision });
+  const state = {
+    base: payload, snap: readSnapshot(payload), candidate: undefined, compareOpen: false,
+    sectionDrafts: new Map(), testDrafts: new Map(), invalidEditors: new Set(),
+    route: { name: "main" }, busy: false, pending: undefined, blocked: false, savedUntested: false, message: "", runAlert: undefined, lastRun: undefined,
+    newCount: 0, history: resultHistory(payload), editingChecks: new Set(),
+    focusTestName: false, nameHintKey: undefined, promptUndo: undefined, undoTimer: undefined, hostedSent: false,
+    displayNames: new Map(),
+    // Revisions alone cannot fence reruns of unchanged source.
+    observationGeneration: 0, modelChoice: runtimeModelSelection(),
+    invalidCheck: undefined, focusIssue: undefined,
+  };
+  const { sectionDrafts, testDrafts, invalidEditors, history, editingChecks, modelChoice } = state;
+  let filter = "all", menuOpen = false, cleanups = [], controls = [];
+  let refresh = () => {}, activeTestName, issueInput;
+  state.base = modelChoice.view(state.base);
+  let actions;
+  const drafts = createDraftController(state, { clearUndo: () => actions.clearUndo(), navigate, render, refresh: () => refresh() });
+  const { hasDrafts, sectionText, entries, localExamples, draftName, noteDraft, addTest } = drafts;
+  const { observation, matches, observe, checkNow, useTheirs, keepMine } = createObservationController(state,
+    { path: payload.file.path, options, drafts, clearUndo: () => actions.clearUndo(), render, refresh: () => refresh() });
+  actions = createActionController(state, { execute, drafts, matches, checkNow, render, refresh: () => refresh(), focusName: () => activeTestName?.focus() });
+  const { act, submitAll, submitOne, testing, clearUndo } = actions;
 
-  const matches = (view) => view && !view.error && view.file?.path === payload.file.path;
-  const hasDrafts = () => sectionDrafts.size > 0 || testDrafts.size > 0 || invalidEditors.size > 0;
-  const testing = () => busy && ["test", "save-and-test"].includes(pending?.operation);
-  const rawExamples = () => snap ? base.authoring.examples : [];
-  const sectionText = (key) => sectionDrafts.get(key) ?? snap.sections.find((s) => s.key === key).text;
-  // Ambiguous IDs stay visible but cannot be edited.
-  function entries() {
-    const cases = history.cases(base), raws = uniqueIndex(rawExamples(), (e) => e.id), ids = uniqueIndex(base.examples, (e) => e.id);
-    const result = !blocked && base.latest.status === "current" ? base.latest.result : undefined;
-    const list = cases.map((c) => {
-      if (isRefused(result) && result.selection.caseIds.includes(c.example.id)) c = { ...c, state: "refused", label: "Refused", row: result, previous: false };
-      const raw = snap && ids.get(c.example.id) === c.example ? raws.get(c.example.id) : undefined;
-      const key = raw ? `id:${raw.id}` : undefined, draft = key ? testDrafts.get(key) : undefined;
-      return { key, c, raw: draft ? draft.raw : raw, origin: raw, draft, openable: !!raw || !snap && ids.get(c.example.id) === c.example };
-    });
-    for (const [key, draft] of testDrafts) if (draft.origin === null) list.push({ key, raw: draft.raw, origin: undefined, draft, openable: true });
-    return list;
-  }
-  const localExamples = () => entries().filter((e) => e.raw && !e.draft?.deleted).map((e) => clone(e.raw));
-  const draftName = (e) => e.draft?.origin === null ? (e.draft.name.trim() || "New test") : displayNames.get(e.raw?.id ?? e.c.example.id)?.name ?? friendlyName(e.raw?.id ?? e.c.example.id);
+  function navigate(next) { state.route = next; state.invalidCheck = undefined; if (!state.blocked && !state.savedUntested) { state.message = ""; state.runAlert = undefined; } }
 
-  let invalidCheck, issueInput, focusIssue;
-  function navigate(next) { route = next; invalidCheck = undefined; if (!blocked && !savedUntested) { message = ""; runAlert = undefined; } }
-  function checkProblem(key, raw) {
-    const a = raw.assertions.find(a => checkIssue(a));
-    if (!a) return false;
-    navigate({ name: "detail", key }); invalidCheck = { id: a.id, issue: checkIssue(a) };
-    editingChecks.add(`${key}/${a.id}`); focusIssue = true; render(); return true;
-  }
-  function noteDraft(key, draft) {
-    clearUndo(); invalidCheck = undefined;
-    const origin = draft.origin && rawExamples().find((e) => `id:${e.id}` === key);
-    if (draft.origin && origin && same(origin, draft.raw)) testDrafts.delete(key); else testDrafts.set(key, draft);
-  }
-  function pruneDrafts() {
-    if (!snap) { sectionDrafts.clear(); testDrafts.clear(); return; }
-    for (const [key, text] of sectionDrafts) if (snap.sections.find((s) => s.key === key)?.text === text) sectionDrafts.delete(key);
-    const raws = uniqueIndex(rawExamples(), (e) => e.id);
-    for (const [id, record] of displayNames) if (!same(raws.get(id), record.raw)) displayNames.delete(id);
-    for (const [key, draft] of testDrafts) {
-      if (draft.origin === null) continue;
-      const raw = raws.get(draft.origin);
-      if (raw === undefined) {
-        // Keep a remotely removed edited test as a new draft.
-        testDrafts.delete(key);
-        if (!draft.deleted) {
-          const next = `new:${++newCount}`;
-          testDrafts.set(next, { origin: null, fixedId: true, name: draft.raw.id, raw: draft.raw });
-          if (route.key === key) route = { name: "detail", key: next };
-        }
-      } else if (raw && !draft.deleted && same(raw, draft.raw)) testDrafts.delete(key);
-    }
-    if (route.name === "detail" && !entries().some((e) => e.key === route.key)) route = { name: "main" };
-  }
-  function adopt(view, submitted) {
-    invalidCheck = undefined; observationGeneration++;
-    for (const key of submitted.tests) {
-      const draft = testDrafts.get(key);
-      if (draft?.origin === null && !draft.deleted) displayNames.set(draft.raw.id, { name: draft.name.trim(), raw: clone(draft.raw) });
-    }
-    const renamed = route.name === "detail" && submitted.tests.includes(route.key) ? testDrafts.get(route.key)?.raw?.id : undefined;
-    history.remember(view); editingChecks.clear();
-    base = modelChoice.view(view); snap = readSnapshot(base); candidate = undefined; compareOpen = false;
-    for (const key of submitted.sections) sectionDrafts.delete(key);
-    for (const key of submitted.tests) testDrafts.delete(key);
-    if (renamed) route = { name: "detail", key: `id:${renamed}` };
-    pruneDrafts();
-  }
-
-  async function act(operation, values = {}, submitted = { sections: [], tests: [] }) {
-    if (busy || ((blocked || invalidEditors.size) && operation !== "reload")) return;
-    const previousPrompt = submitted.sections.map(key => ({ key, text: snap.sections.find(s => s.key === key).text }));
-    clearUndo();
-    observationGeneration++;
-    busy = true; pending = { operation, one: values.caseId !== undefined }; message = operation === "run" ? "Running…" : ""; runAlert = undefined; refresh();
-    const action = { operation, ...values };
-    if (!["reload", "suggest"].includes(operation)) action.expectedRevision = base.file.revision;
-    const executing = ["save-and-test", "test", "run"].includes(operation);
-    const hostedAttempt = executing && effectiveModel(base.model, modelChoice.override, base.chatModel) !== "fake";
-    if (executing) {
-      action.showContent = true;
-      if (modelChoice.override) action.model = modelChoice.override;
-    }
-    let response;
-    try { response = await execute(action); } catch {
-      if (hostedAttempt) hostedSent = true;
-      busy = false; pending = undefined; blocked = true;
-      message = "Connection lost. The action may have completed. Do not resubmit. Your draft is still here; reload to inspect the saved file.";
-      render(); return;
-    }
-    busy = false; pending = undefined; message = "";
-    const latest = response?.view?.latest;
-    if (hostedAttempt && (UNKNOWN.includes(response?.error) || CONFLICTS.includes(response?.error) || latest?.status === "current" && latest.result && !isRefused(latest.result))) hostedSent = true;
-    if (executing && matches(response?.view)) modelChoice.confirm(response.view);
-    const tested = ["test", "save-and-test"].includes(operation);
-    if (operation === "reload") {
-      if (matches(response?.view)) {
-        sectionDrafts.clear(); testDrafts.clear(); displayNames.clear(); blocked = false; savedUntested = false; lastRun = undefined;
-        adopt(response.view, { sections: [], tests: [] }); message = "Reloaded the saved agent. Drafts were discarded.";
-      } else message = response?.message || "Reload did not complete. Your draft is still here.";
-    } else if (response?.error === "no-tests" && matches(response.view)) {
-      adopt(response.view, response.saved ? submitted : { sections: [], tests: [] }); lastRun = undefined;
-    } else if (response?.error) {
-      const unknown = UNKNOWN.includes(response.error) || CONFLICTS.includes(response.error);
-      // Unsaved failures must still match our revision.
-      const fresh = matches(response.view) && (response.saved === true || response.view.file.revision === base.file.revision);
-      if (response.error === "stale_revision" || response.error === "stale-revision") {
-        message = "This agent changed outside the panel. Your edits are kept."; checkNow();
-      } else if (!unknown && fresh && (response.saved || ["test", "run", "save-and-test"].includes(operation))) {
-        // Only confirmed snapshots can replace the baseline after failure.
-        adopt(response.view, response.saved ? submitted : { sections: [], tests: [] });
-        const result = response.view.latest.result;
-        runAlert = { text: result ? plainReason(result) : response.message || "", refused: isRefused(result), saved: response.saved === true, finished: response.view.latest.status === "current", one: values.caseId };
-        lastRun = undefined;
-      } else if (unknown || response.saved === true || (response.error === "action-failed" && ["test", "run"].includes(operation))) {
-        blocked = true; savedUntested = response.saved === true;
-        message = CONFLICTS.includes(response.error) ? "Changed elsewhere during the run. Your draft is still here. Reload and discard draft to continue."
-          : response.saved ? "Saved; test result unconfirmed. Your draft is still here. Reload before continuing."
-          : response.message || "Outcome not confirmed. Reload deliberately to inspect the saved file.";
-      } else if (response.error === "permission_required" && tested) {
-        runAlert = { text: response.message || "", saved: false, one: values.caseId };
-      } else message = response.message || "The action was refused. Your draft is still here.";
-    } else if (operation === "suggest") {
-      message = response?.message || "Asked Copilot to add tests in chat.";
-    } else if (matches(response?.view)) {
-      adopt(response.view, submitted);
-      if (tested) lastRun = { one: values.caseId };
-    } else {
-      blocked = true; message = "Outcome not confirmed. Do not resubmit. Reload deliberately to inspect the saved file.";
-    }
-    if (previousPrompt.length && response?.saved === true && matches(response.view) && base.file.revision === response.view.file.revision && !blocked && !candidate) offerUndo(previousPrompt);
-    render();
-  }
-
-  // Enter saves all drafts once, then runs the suite.
-  function submitAll() {
-    if (!snap || busy || blocked || candidate || invalidEditors.size) return;
-    const list = entries(), intended = localExamples();
-    for (const e of list) {
-      if (!e.draft || e.draft.deleted) continue;
-      const problem = validate(e.draft, intended);
-      if (problem) { if (problem.check && checkProblem(e.key, e.raw)) return; message = `Finish or cancel the unsaved test ${quoted(draftName(e))}: ${problem}`; refresh(); return; }
-    }
-    const values = {}, submitted = { sections: [...sectionDrafts.keys()], tests: [...testDrafts.keys()] };
-    if (sectionDrafts.size) values.sections = [...sectionDrafts].map(([key, text]) => ({ key, text }));
-    if (testDrafts.size) values.examples = localExamples();
-    if (!hasDrafts() && !intended.length) { message = "No tests yet — add or suggest one"; refresh(); return; }
-    act(hasDrafts() ? "save-and-test" : "test", values, submitted);
-  }
-  // Detail Enter saves the prompt and this test, then runs its caseId.
-  function submitOne(key) {
-    if (!snap || busy || blocked || candidate || invalidEditors.size) return;
-    const entry = entries().find((e) => e.key === key);
-    if (!entry?.raw || entry.draft?.deleted) return;
-    if (entry.draft?.origin === null && !entry.draft.fixedId && !entry.draft.name.trim()) {
-      nameHintKey = key; message = ""; refresh(); activeTestName?.focus(); return;
-    }
-    let intended = clone(rawExamples());
-    if (entry.draft) {
-      const raw = entry.draft.raw;
-      if (entry.draft.origin === null) intended.push(raw); else intended = intended.map((e) => e.id === entry.draft.origin ? raw : e);
-      const problem = validate(entry.draft, intended);
-      if (problem) { if (problem.check && checkProblem(key, entry.raw)) return; message = problem; refresh(); return; }
-      intended = clone(intended);
-    }
-    const values = { caseId: entry.raw.id }, submitted = { sections: [...sectionDrafts.keys()], tests: entry.draft ? [key] : [] };
-    if (sectionDrafts.size) values.sections = [...sectionDrafts].map(([k, text]) => ({ key: k, text }));
-    if (entry.draft) values.examples = intended;
-    act(sectionDrafts.size || entry.draft ? "save-and-test" : "test", values, submitted);
-  }
-
-  // Observation never writes or clears a lock.
-  function observe(view, started = observation()) {
-    if (started.generation !== observationGeneration || started.revision !== base.file.revision
-      || !matches(view) || busy || blocked || invalidEditors.size) return false;
-    const observed = view;
-    view = modelChoice.view(view);
-    if (same(view, base) || (candidate && same(view, candidate))) return false;
-    clearUndo(); displayNames.clear(); runAlert = undefined;
-    observationGeneration++;
-    lastRun = undefined;
-    if (view.file.revision === base.file.revision || !hasDrafts()) {
-      history.remember(observed);
-      base = view; snap = readSnapshot(view); candidate = undefined; compareOpen = false;
-      // New results need new DOM; local edits refresh styling without losing focus.
-      pruneDrafts(); render();
-      return true;
-    }
-    candidate = view; compareOpen = false; render();
-    return true;
-  }
-  async function checkNow() {
-    if (typeof options.fetchView !== "function") return;
-    const started = observation();
-    try { observe(await options.fetchView(), started); } catch { /* Polling is best effort and never changes state on failure. */ }
-  }
-  function useTheirs() {
-    if (!candidate) return;
-    invalidCheck = undefined; clearUndo(); displayNames.clear();
-    observationGeneration++;
-    sectionDrafts.clear(); testDrafts.clear(); invalidEditors.clear();
-    history.remember(candidate);
-    base = candidate; snap = readSnapshot(base); candidate = undefined; compareOpen = false; lastRun = undefined;
-    pruneDrafts(); message = "Using the new version. Your edits were discarded."; render();
-  }
-  // Rebase drafts; retain ambiguous identities.
-  function keepMine() {
-    if (!candidate || invalidEditors.size) return;
-    invalidCheck = undefined; clearUndo(); displayNames.clear();
-    observationGeneration++;
-    const next = readSnapshot(candidate);
-    if (!next) { message = "The new version can't be edited here. Compare it, or use the new version."; refresh(); return; }
-    const theirs = candidate.authoring.examples, ids = uniqueIndex(theirs, (e) => e.id);
-    const idOf = (d) => d.fixedId ? d.raw.id : portableId(d.name);
-    const clash = [...testDrafts.values()].find((d) => d.origin === null ? theirs.some((e) => e.id === idOf(d)) : ids.get(d.origin) === null);
-    if (clash) {
-      message = `Can't keep your edits automatically: the new version also has a test named ${quoted(clash.raw?.id ?? clash.origin)}. Compare, or use the new version.`;
-      refresh(); return;
-    }
-    history.remember(candidate);
-    base = candidate; snap = next; candidate = undefined; compareOpen = false; lastRun = undefined;
-    pruneDrafts(); message = "Kept your edits on top of the new version. Enter saves them."; render();
-  }
   // DOM
   function render() {
     for (const cleanup of cleanups.splice(0)) cleanup();
     invalidEditors.clear();
-    const content = el(doc, "div", route.name === "detail" ? "content detail-view" : "content");
+    const content = el(doc, "div", state.route.name === "detail" ? "content detail-view" : "content");
     controls = []; activeTestName = undefined; issueInput = undefined;
     const button = (label, action, className = "", guard = "idle") => {
       const node = el(doc, "button", className, label); node.type = "button";
@@ -282,51 +65,51 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     const messageNode = el(doc, "p", "action-message"); messageNode.setAttribute("role", "status"); messageNode.setAttribute("aria-live", "polite");
     const updates = [];
     refresh = () => {
-      root.setAttribute("aria-busy", String(busy));
-      messageNode.textContent = message;
+      root.setAttribute("aria-busy", String(state.busy));
+      messageNode.textContent = state.message;
       for (const u of updates) u();
       for (const { node, guard } of controls) {
-        node.disabled = guard === "reload" ? busy : invalidEditors.size > 0 || (guard === "nav" ? false
-          : busy || blocked || (guard === "save" && !!candidate) || (guard === "clean" && hasDrafts()));
+        node.disabled = guard === "reload" ? state.busy : invalidEditors.size > 0 || (guard === "nav" ? false
+          : state.busy || state.blocked || (guard === "save" && !!state.candidate) || (guard === "clean" && hasDrafts()));
       }
     };
-    const detail = route.name === "detail";
+    const detail = state.route.name === "detail";
     const parts = detail ? detailView(button, status, updates) : mainView(button, status, updates);
     const line = el(doc, "div", "message-line");
     line.append(messageNode);
-    if (snap) {
+    if (state.snap) {
       const reloadNow = button("Reload and discard draft", () => act("reload"), "tb", "reload");
-      updates.push(() => { reloadNow.hidden = !blocked; });
+      updates.push(() => { reloadNow.hidden = !state.blocked; });
       line.append(reloadNow);
     }
     // Keep Suggest feedback with Tests.
-    if (!detail && message === "Asked Copilot to add tests in chat.") parts[2].append(line);
+    if (!detail && state.message === "Asked Copilot to add tests in chat.") parts[2].append(line);
     else parts.splice(detail ? 1 : Math.min(2, parts.length), 0, line);
-    if (candidate) parts.splice(detail ? 1 : 1, 0, conflictNotice(doc, button, compareDrafts(base, candidate, snap, sectionDrafts, testDrafts), compareOpen,
-      () => { compareOpen = !compareOpen; render(); }, keepMine, useTheirs));
+    if (state.candidate) parts.splice(detail ? 1 : 1, 0, conflictNotice(doc, button, compareDrafts(state.base, state.candidate, state.snap, sectionDrafts, testDrafts), state.compareOpen,
+      () => { state.compareOpen = !state.compareOpen; render(); }, keepMine, useTheirs));
     content.append(...parts);
     root.replaceChildren(content);
     refresh();
-    if (focusTestName) { activeTestName?.focus(); focusTestName = false; }
-    if (focusIssue) { issueInput?.focus(); focusIssue = false; }
+    if (state.focusTestName) { activeTestName?.focus(); state.focusTestName = false; }
+    if (state.focusIssue) { issueInput?.focus(); state.focusIssue = false; }
   }
 
   function resultSummary() {
-    return canvasResultSummary(base, { n: entries().filter(e => !e.draft?.deleted).length, testing: testing(), one: pending?.one,
-      blocked, dirty: hasDrafts(), last: history.last });
+    return canvasResultSummary(state.base, { n: entries().filter(e => !e.draft?.deleted).length, testing: testing(), one: state.pending?.one,
+      blocked: state.blocked, dirty: hasDrafts(), last: history.last });
   }
 
   function header(updates) {
     const pill = resultPill(doc, resultSummary), actions = [pill.node]; updates.push(pill.update);
-    if (snap) {
+    if (state.snap) {
       updates.push(modelControl.update); controls.push({ node: modelControl.trigger, guard: "idle" }); actions.push(modelControl.node);
     }
-    return canvasHeader(doc, base, actions, !snap);
+    return canvasHeader(doc, state.base, actions, !state.snap);
   }
 
   function makeEditor(section, label, updates) {
     const control = instructionEditor(doc, label, sectionText(section.key), {
-      disabled: () => busy || blocked,
+      disabled: () => state.busy || state.blocked,
       hasDraft: () => sectionDrafts.has(section.key),
       change(node) {
         clearUndo();
@@ -335,11 +118,11 @@ export function renderView(doc, root, payload, execute = postAction, options = {
           if (value === section.text) sectionDrafts.delete(section.key); else sectionDrafts.set(section.key, value);
         } catch {
           invalidEditors.add(section.key);
-          message = "Unsupported editor formatting. Your draft is kept; reload before saving.";
+          state.message = "Unsupported editor formatting. Your draft is kept; reload before saving.";
         }
         refresh();
       },
-      submit: () => route.name === "detail" ? submitOne(route.key) : submitAll(),
+      submit: () => state.route.name === "detail" ? submitOne(state.route.key) : submitAll(),
       cancel() { sectionDrafts.delete(section.key); invalidEditors.delete(section.key); render(); },
     });
     updates.push(control.update);
@@ -348,26 +131,26 @@ export function renderView(doc, root, payload, execute = postAction, options = {
 
   const total = () => localExamples().length;
   function footText(scope) {
-    return canvasFooterText({ editable: !!snap, n: snap ? total() : 0, busy, pending, blocked, savedUntested,
-      invalid: invalidEditors.size, candidate, scope, promptDirty: sectionDrafts.size, testDirty: testDrafts.has(route.key), dirty: hasDrafts(), runAlert });
+    return canvasFooterText({ editable: !!state.snap, n: state.snap ? total() : 0, busy: state.busy, pending: state.pending, blocked: state.blocked, savedUntested: state.savedUntested,
+      invalid: invalidEditors.size, candidate: state.candidate, scope, promptDirty: sectionDrafts.size, testDirty: testDrafts.has(state.route.key), dirty: hasDrafts(), runAlert: state.runAlert });
   }
   function spinnerStatus(status, scope, updates) {
     const spin = el(doc, "span", "busy-spinner"); spin.append(icon(doc, "running", 12, 2.6, "spin"));
-    const box = el(doc, "span", "status-line"), undo = snap ? el(doc, "button", "tb prompt-undo", "Undo") : undefined;
+    const box = el(doc, "span", "status-line"), undo = state.snap ? el(doc, "button", "tb prompt-undo", "Undo") : undefined;
     if (undo) { undo.type = "button"; undo.addEventListener("click", () => {
-      const checkpoint = promptUndo;
-      if (!checkpoint || checkpoint.revision !== base.file.revision || sectionDrafts.size || busy || blocked || candidate) return;
+      const checkpoint = state.promptUndo;
+      if (!checkpoint || checkpoint.revision !== state.base.file.revision || sectionDrafts.size || state.busy || state.blocked || state.candidate) return;
       act("save-prompt", { sections: checkpoint.sections });
     });
     controls.push({ node: undo, guard: "save" }); }
     box.append(spin, status, ...(undo ? [undo] : []));
-    updates.push(() => { status.textContent = footText(scope); spin.hidden = !busy; if (undo) undo.hidden = !promptUndo; });
+    updates.push(() => { status.textContent = footText(scope); spin.hidden = !state.busy; if (undo) undo.hidden = !state.promptUndo; });
     return box;
   }
 
   function hostedNotice(updates) {
     const notice = el(doc, "span", "meta hosted-notice", "Testing sends the agent prompt and test inputs to the selected hosted model.");
-    updates.push(() => { notice.hidden = hostedSent || effectiveModel(base.model, modelChoice.override, base.chatModel) === "fake"; });
+    updates.push(() => { notice.hidden = state.hostedSent || effectiveModel(state.base.model, modelChoice.override, state.base.chatModel) === "fake"; });
     return notice;
   }
 
@@ -376,51 +159,51 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     const promptSection = el(doc, "section", "prompt-section"), promptBox = el(doc, "div", "prompt-box main-prompt");
     const promptLabel = el(doc, "h2", "lbl", "Prompt");
     const foot = el(doc, "div", "prompt-foot");
-    if (snap) {
-      promptBox.append(makeEditor(snap.main, "Prompt", updates));
+    if (state.snap) {
+      promptBox.append(makeEditor(state.snap.main, "Prompt", updates));
       const additional = el(doc, "details", "additional");
       additional.append(el(doc, "summary", "", "Additional instructions"));
-      for (const section of snap.sections.filter((s) => s !== snap.main)) additional.append(el(doc, "h3", "", section.key), makeEditor(section, section.key, updates));
-      if ([...sectionDrafts.keys()].some((k) => k !== snap.main.key)) additional.open = true;
+      for (const section of state.snap.sections.filter((s) => s !== state.snap.main)) additional.append(el(doc, "h3", "", section.key), makeEditor(section, section.key, updates));
+      if ([...sectionDrafts.keys()].some((k) => k !== state.snap.main.key)) additional.open = true;
       info.append(additional);
-    } else promptBox.append(instructionsContent(doc, base));
+    } else promptBox.append(instructionsContent(doc, state.base));
     foot.append(spinnerStatus(status, "all", updates));
-    const saveRun = snap ? saveButton(doc, button, "Save and run all tests", submitAll) : undefined;
+    const saveRun = state.snap ? saveButton(doc, button, "Save and run all tests", submitAll) : undefined;
     if (saveRun) foot.append(saveRun);
-    if (snap) foot.append(hostedNotice(updates));
+    if (state.snap) foot.append(hostedNotice(updates));
     promptBox.append(foot); promptSection.append(promptLabel, promptBox);
 
     sourceActions(button, info, updates);
     const tests = testsSection(button, updates);
     const out = [head, promptSection, tests];
-    if (snap) out.push(pinnedBar(button, foot, tests, updates));
+    if (state.snap) out.push(pinnedBar(button, foot, tests, updates));
     return out;
   }
 
   function sourceActions(button, info, updates) {
-    const adHoc = base.latest.status === "current" ? base.latest.result?.adHoc : undefined;
+    const adHoc = state.base.latest.status === "current" ? state.base.latest.result?.adHoc : undefined;
     if (adHoc) {
       const result = el(doc, "section", "ad-hoc-result");
       result.append(el(doc, "h3", "", "Last ad-hoc run"), el(doc, "p", "", `${adHoc.state} · ${adHoc.verdict}`), answerBlock(doc, adHoc, hasDrafts, undefined, updates));
-      updates.push(() => { result.hidden = hasDrafts() || blocked; });
+      updates.push(() => { result.hidden = hasDrafts() || state.blocked; });
       info.append(result);
     }
-    if (!snap) return;
+    if (!state.snap) return;
     const runInput = el(doc, "textarea"); runInput.setAttribute("aria-label", "Ad-hoc input"); runInput.rows = 2;
     const box = el(doc, "div", "source-actions"), run = el(doc, "details", "run-disclosure");
     run.append(el(doc, "summary", "", "Try another input"), runInput, button("Run", () => act("run", { input: runInput.value }), "sb", "clean"));
-    updates.push(() => { runInput.disabled = busy || blocked || hasDrafts(); });
+    updates.push(() => { runInput.disabled = state.busy || state.blocked || hasDrafts(); });
     box.append(run, button("Reload and discard draft", () => act("reload"), "tb", "reload"));
     info.append(box);
   }
 
   function refusedAlert() {
-    const result = !blocked && base.latest.status === "current" ? base.latest.result : undefined;
+    const result = !state.blocked && state.base.latest.status === "current" ? state.base.latest.result : undefined;
     return isRefused(result) ? { text: plainReason(result), refused: true } : undefined;
   }
-  function runAlertNode(button, scope, alert = runAlert) {
-    return runNotice(doc, button, alert, hasDrafts(), alert.refused ? refusalContext(base, modelChoice.override) : "",
-      () => scope === "one" ? submitOne(route.key) : submitAll());
+  function runAlertNode(button, scope, alert = state.runAlert) {
+    return runNotice(doc, button, alert, hasDrafts(), alert.refused ? refusalContext(state.base, modelChoice.override) : "",
+      () => scope === "one" ? submitOne(state.route.key) : submitAll());
   }
 
   function testsSection(button, updates) {
@@ -435,9 +218,9 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       group.append(node); return node;
     });
     summaryNode.setAttribute("role", "status");
-    const firstRun = snap ? button("", submitAll, "tb first-run", "save") : undefined;
+    const firstRun = state.snap ? button("", submitAll, "tb first-run", "save") : undefined;
     title.append(group, meta, summaryNode, ...(firstRun ? [firstRun] : [])); head.append(title);
-    if (snap) {
+    if (state.snap) {
       const actions = el(doc, "div", "tests-actions"), add = button("", addTest, "tb", "nav");
       const plus = el(doc, "span", "plus"); plus.append(icon(doc, "plus", 12, 2.6));
       add.append(plus, "Add test");
@@ -445,10 +228,10 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       head.append(actions);
     }
     section.append(head);
-    if (runAlert && (!runAlert.one || runAlert.refused)) section.append(runAlertNode(button, "all"));
-    else if (!runAlert && refusedAlert()) section.append(runAlertNode(button, "all", refusedAlert()));
+    if (state.runAlert && (!state.runAlert.one || state.runAlert.refused)) section.append(runAlertNode(button, "all"));
+    else if (!state.runAlert && refusedAlert()) section.append(runAlertNode(button, "all", refusedAlert()));
     const empty = el(doc, "div", "empty-tests");
-    if (snap) {
+    if (state.snap) {
       const add = button("", addTest, "tb", "nav"); const plus = el(doc, "span", "plus"); plus.append(icon(doc, "plus", 12, 2.6));
       add.append(plus, "Add a test yourself");
       const text = el(doc, "div", "empty-text");
@@ -462,8 +245,8 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     const rowControls = [];
     const draw = () => {
       for (const node of rowControls.splice(0)) if (controls.includes(node)) controls.splice(controls.indexOf(node), 1);
-      const all = entries(), anyDraft = hasDrafts(), oldResults = anyDraft || testing() || base.latest.status !== "current";
-      const shown = all.map((e) => ({ e, r: e.draft?.origin === null ? { kind: "none", base: "none", label: "Not run", note: "", count: "" } : testRow(e.c, oldResults || e.c?.previous, blocked, ambiguousPassSet(base)) }));
+      const all = entries(), anyDraft = hasDrafts(), oldResults = anyDraft || testing() || state.base.latest.status !== "current";
+      const shown = all.map((e) => ({ e, r: e.draft?.origin === null ? { kind: "none", base: "none", label: "Not run", note: "", count: "" } : testRow(e.c, oldResults || e.c?.previous, state.blocked, ambiguousPassSet(state.base)) }));
       const counted = shown.filter(({ e }) => !e.draft?.deleted);
       const currentPass = ({ e, r }) => r.base === "pass" && !e.c?.previous;
       const notPassing = counted.filter(row => !currentPass(row)).length;
@@ -487,10 +270,10 @@ export function renderView(doc, root, payload, execute = postAction, options = {
         }
         const open = e.openable ? button("", () => { navigate({ name: "detail", key: e.key ?? `view:${id}` }); menuOpen = false; render(); }, "test-row", "nav") : el(doc, "div", "test-row");
         if (e.openable) rowControls.push(controls[controls.length - 1]);
-        const rowNote = e.c?.state === "refused" ? "" : e.c?.previous && base.latest.status === "current" ? "Not in this run" : r.note;
+        const rowNote = e.c?.state === "refused" ? "" : e.c?.previous && state.base.latest.status === "current" ? "Not in this run" : r.note;
         const noteText = e.draft ? "Unsaved" + (rowNote ? ` · ${rowNote}` : "") : rowNote;
         const example = e.c?.example, summary = example ? `${oneLine(example.input, 64)} → ${example.assertions.map(checkLabel).join(" · ")}` : "";
-        const word = !blocked && e.c?.state === "refused" ? "Refused" : r.base === "pass" ? "Passed" : r.base === "fail" ? "Failed" : r.base === "error" ? "Didn't finish" : r.label === "No current result" || r.label === "Out of date" && history.last ? "Not run yet" : r.label;
+        const word = !state.blocked && e.c?.state === "refused" ? "Refused" : r.base === "pass" ? "Passed" : r.base === "fail" ? "Failed" : r.base === "error" ? "Didn't finish" : r.label === "No current result" || r.label === "Out of date" && history.last ? "Not run yet" : r.label;
         const verdict = el(doc, "span", `test-verdict ${r.kind}`); verdict.setAttribute("data-tone", r.tone ?? "none");
         verdict.append(el(doc, "span", "verdict-word", word));
         if (r.kind.startsWith("old-")) verdict.append(el(doc, "span", "sr-only verdict-context", " last run"));
@@ -504,21 +287,21 @@ export function renderView(doc, root, payload, execute = postAction, options = {
         show.addEventListener("click", () => { filter = "all"; draw(); refresh(); });
         note.append(`${plural(hidden, "passing test")} hidden `, show);
       }
-      empty.hidden = !snap || shown.length > 0;
+      empty.hidden = !state.snap || shown.length > 0;
       list.hidden = shown.length === 0;
-      const text = countText(counted.map(({ e, r }) => base.latest.status === "current" && e.c?.previous ? { count: "not run" } : r));
-      const malformed = !!base.latest.result && !coherentSelection(base);
-      const stale = base.latest.status === "stale" || (anyDraft || base.latest.status !== "current") && !!history.last;
+      const text = countText(counted.map(({ e, r }) => state.base.latest.status === "current" && e.c?.previous ? { count: "not run" } : r));
+      const malformed = !!state.base.latest.result && !coherentSelection(state.base);
+      const stale = state.base.latest.status === "stale" || (anyDraft || state.base.latest.status !== "current") && !!history.last;
       const previous = modelLabel(history.last?.latest.result.modelRoute);
-      const accessible = blocked ? "Result unconfirmed" : !shown.length ? "" : testing() ? "Running…"
-        : stale && base.latest.status !== "current" ? `Out of date${previous ? ` · last run on ${previous}` : ""}` : base.latest.status !== "current" || !text ? "Not run yet"
-        : (base.latest.result.state !== "complete" || malformed) && !isRefused(base.latest.result) && !anyDraft && !/didn't finish|incomplete/.test(text) ? `Incomplete run: ${text}`
-        : anyDraft ? `Last run, before your edit: ${text}` : lastRun && !lastRun.one && !runAlert ? `${text} · just now` : text;
+      const accessible = state.blocked ? "Result unconfirmed" : !shown.length ? "" : testing() ? "Running…"
+        : stale && state.base.latest.status !== "current" ? `Out of date${previous ? ` · last run on ${previous}` : ""}` : state.base.latest.status !== "current" || !text ? "Not run yet"
+        : (state.base.latest.result.state !== "complete" || malformed) && !isRefused(state.base.latest.result) && !anyDraft && !/didn't finish|incomplete/.test(text) ? `Incomplete run: ${text}`
+        : anyDraft ? `Last run, before your edit: ${text}` : state.lastRun && !state.lastRun.one && !state.runAlert ? `${text} · just now` : text;
       // Update live-region text for screen readers.
       if (summaryNode.textContent !== accessible) summaryNode.textContent = accessible;
-      meta.textContent = !oldResults && !busy && !blocked && isRefused(base.latest.result) ? text : stale ? `Out of date${previous ? ` · last run on ${previous}` : ""}` : !busy && lastRun && !runAlert ? "· just now" : "";
+      meta.textContent = !oldResults && !state.busy && !state.blocked && isRefused(state.base.latest.result) ? text : stale ? `Out of date${previous ? ` · last run on ${previous}` : ""}` : !state.busy && state.lastRun && !state.runAlert ? "· just now" : "";
       if (firstRun) {
-        firstRun.hidden = !counted.length || blocked || busy || !!history.last && !stale;
+        firstRun.hidden = !counted.length || state.blocked || state.busy || !!history.last && !stale;
         firstRun.textContent = `${anyDraft ? "Save and run" : "Run"} ${plural(counted.length, "test")}`;
       }
       fitFilter();
@@ -548,7 +331,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     inner.append(status, right); bar.append(inner); bar.hidden = true;
     updates.push(() => {
       status.textContent = footText("all");
-      const rows = entries().filter((e) => !e.draft?.deleted).map((e) => testRow(e.c, true, blocked, ambiguousPassSet(base)));
+      const rows = entries().filter((e) => !e.draft?.deleted).map((e) => testRow(e.c, true, state.blocked, ambiguousPassSet(state.base)));
       const failing = rows.filter((r) => r.base === "fail").length;
       jump.textContent = failing ? `Tests: ${failing} failing, last run` : "Tests";
     });
@@ -563,20 +346,12 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     return bar;
   }
 
-  function addTest() {
-    if (!snap) return;
-    clearUndo();
-    if (localExamples().length >= 128) { message = "Keep at most 128 tests. Edit or delete an existing test first."; refresh(); return; }
-    const key = `new:${++newCount}`;
-    testDrafts.set(key, { origin: null, name: "", raw: { id: "", input: "", assertions: [{ id: "check-1", type: "contains", value: "" }] } });
-    navigate({ name: "detail", key }); focusTestName = true; render();
-  }
 
   function detailView(button, status, updates) {
-    const entry = entries().find((e) => (e.key ?? `view:${e.c?.example.id}`) === route.key);
+    const entry = entries().find((e) => (e.key ?? `view:${e.c?.example.id}`) === state.route.key);
     if (!entry) { navigate({ name: "main" }); return mainView(button, status, updates); }
-    const key = entry.key, editableTest = !!snap && !!key, c = entry.c, draft = () => key ? testDrafts.get(key) : undefined;
-    const local = () => hasDrafts() || testing() || base.latest.status !== "current" || c?.previous === true;
+    const key = entry.key, editableTest = !!state.snap && !!key, c = entry.c, draft = () => key ? testDrafts.get(key) : undefined;
+    const local = () => hasDrafts() || testing() || state.base.latest.status !== "current" || c?.previous === true;
     const current = () => draft()?.raw ?? entry.raw;
     const mutate = (fn) => {
       const d = draft() ?? { origin: entry.origin.id, raw: clone(entry.origin) };
@@ -598,13 +373,13 @@ export function renderView(doc, root, payload, execute = postAction, options = {
         const duplicate = button("Duplicate test", () => {
           clearUndo();
           const copy = clone(current()), name = `${draftName(entry)} copy`; copy.id = portableId(name);
-          const newKey = `new:${++newCount}`; testDrafts.set(newKey, { origin: null, name, raw: copy });
-          navigate({ name: "detail", key: newKey }); menuOpen = false; focusTestName = true; render();
+          const newKey = `new:${++state.newCount}`; testDrafts.set(newKey, { origin: null, name, raw: copy });
+          navigate({ name: "detail", key: newKey }); menuOpen = false; state.focusTestName = true; render();
         }, "mi");
         const remove = button("Delete test", () => {
           clearUndo();
           if (entry.origin) testDrafts.set(key, { origin: entry.origin.id, raw: null, deleted: true }); else testDrafts.delete(key);
-          navigate({ name: "main" }); menuOpen = false; message = "Test deleted locally. Enter saves; Restore brings it back."; render();
+          navigate({ name: "main" }); menuOpen = false; state.message = "Test deleted locally. Enter saves; Restore brings it back."; render();
         }, "mi mi-danger");
         for (const node of [duplicate, remove]) node.setAttribute("role", "menuitem");
         menu.append(duplicate, remove); bar.append(menu);
@@ -614,9 +389,9 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     let nameHint;
     if (editableTest && draft()?.origin === null) {
       const control = testNameControl(doc,
-        () => ({ name: draft().name, disabled: busy || blocked, invalid: nameHintKey === key }), value => {
+        () => ({ name: draft().name, disabled: state.busy || state.blocked, invalid: state.nameHintKey === key }), value => {
           clearUndo(); draft().name = value; draft().raw.id = portableId(value);
-          if (value.trim()) nameHintKey = undefined;
+          if (value.trim()) state.nameHintKey = undefined;
           refresh();
         });
       activeTestName = control.input; nameHint = control.hint;
@@ -630,16 +405,16 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       const r = c ? inspectFor(c) : "Not run yet";
       const [word, ...context] = (draft()?.origin === null ? "" : r).split(" · ");
       resultLine.replaceChildren(el(doc, "span", "result-word", word), el(doc, "span", "detail-result-meta", context.length ? ` · ${context.join(" · ")}` : ""));
-      resultLine.setAttribute("data-tone", testRow(c, local(), blocked, ambiguousPassSet(base)).tone ?? "none");
+      resultLine.setAttribute("data-tone", testRow(c, local(), state.blocked, ambiguousPassSet(state.base)).tone ?? "none");
       resultLine.setAttribute("data-result", c?.state ?? "none");
     });
     function inspectFor(caseInfo) {
-      if (blocked) return "Result unconfirmed";
+      if (state.blocked) return "Result unconfirmed";
       if (testing()) return "Tests running…";
       if (caseInfo.label === "Not in this run") return "Not in the last run";
-      if (!["pass", "fail"].includes(caseInfo.state)) return caseInfo.row ? caseInfo.label : base.latest.status === "stale" && !history.last ? "Out of date" : "Not run yet";
-      const model = modelLabel(caseInfo.previous ? caseInfo.previousModel : base.latest.result?.modelRoute);
-      const when = local() ? caseInfo.previous ? "Out of date · last run" : "before your edit" : lastRun && !runAlert ? "just now" : "last run";
+      if (!["pass", "fail"].includes(caseInfo.state)) return caseInfo.row ? caseInfo.label : state.base.latest.status === "stale" && !history.last ? "Out of date" : "Not run yet";
+      const model = modelLabel(caseInfo.previous ? caseInfo.previousModel : state.base.latest.result?.modelRoute);
+      const when = local() ? caseInfo.previous ? "Out of date · last run" : "before your edit" : state.lastRun && !state.runAlert ? "just now" : "last run";
       return `${caseInfo.state === "pass" ? "Passed" : "Failed"} · ${when}${model ? ` on ${model}` : ""}`;
     }
     top.append(bar, nameLine, ...(nameHint ? [nameHint] : []), resultLine);
@@ -654,7 +429,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       label.append(input);
       input.addEventListener("input", () => mutate((d) => { d.raw.input = input.value; }));
       fieldKeys(input); updates.push(() => {
-        input.disabled = busy || blocked;
+        input.disabled = state.busy || state.blocked;
         let json = false; try { JSON.parse(input.value); json = true; } catch { /* Prose stays proportional. */ }
         input.className = `field example-input${json ? " json-input" : ""}`; growTextarea(input);
       });
@@ -666,24 +441,24 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     const checksSection = el(doc, "section", "detail-section checks-section");
     checksSection.append(el(doc, "h2", "lbl", "Passes if"));
     const checks = el(doc, "div", "checks");
-    const facts = c && !blocked && draft()?.origin !== null ? failureFacts(c) : undefined;
+    const facts = c && !state.blocked && draft()?.origin !== null ? failureFacts(c) : undefined;
     const displayChecks = uniqueIndex(c?.example.assertions ?? [], checkKey);
     const assertions = editableTest ? current().assertions : c.example.assertions;
     assertions.forEach((a, index) => {
       const display = editableTest ? displayChecks.get(checkKey(a)) : a;
       const observed = display && c?.expected?.get(checkKey(display)) === display ? c.checks?.get(checkKey(display)) : undefined;
-      const row = el(doc, "div", "check"), state = el(doc, "span", "check-state"), verdict = el(doc, "span", "check-verdict");
+      const row = el(doc, "div", "check"), checkState = el(doc, "span", "check-state"), verdict = el(doc, "span", "check-verdict");
       const judge = a.type === "llmJudge", details = judge ? judgeDetails(doc) : undefined;
       const judgeResult = details?.node;
       updates.push(() => {
         let kind = "none", label = "No result";
-        const completed = !ambiguousPassSet(base) && (c?.state === "pass" || c?.state === "fail");
-        if (completed && !blocked && draft()?.origin !== null && observed?.verdict === "pass") [kind, label] = ["pass", "Passed"];
-        else if (completed && !blocked && draft()?.origin !== null && observed?.verdict === "fail") [kind, label] = ["fail", "Failed"];
-        else if (judge && !ambiguousPassSet(base) && !blocked && draft()?.origin !== null && inconclusiveJudge(c, observed)) [kind, label] = ["error", "Inconclusive"];
+        const completed = !ambiguousPassSet(state.base) && (c?.state === "pass" || c?.state === "fail");
+        if (completed && !state.blocked && draft()?.origin !== null && observed?.verdict === "pass") [kind, label] = ["pass", "Passed"];
+        else if (completed && !state.blocked && draft()?.origin !== null && observed?.verdict === "fail") [kind, label] = ["fail", "Failed"];
+        else if (judge && !ambiguousPassSet(state.base) && !state.blocked && draft()?.origin !== null && inconclusiveJudge(c, observed)) [kind, label] = ["error", "Inconclusive"];
         const text = kind === "none" ? "" : label;
         if (kind !== "none" && local()) [kind, label] = [`old-${kind}`, `${label} last run`];
-        state.replaceChildren(statusIcon(doc, kind, label));
+        checkState.replaceChildren(statusIcon(doc, kind, label));
         verdict.textContent = text ? `${text}${judge && local() ? " · last run" : ""}` : "";
         verdict.setAttribute("data-tone", kind);
         if (details) details.update(editableTest ? current().assertions[index] : a, observed, kind !== "none", local());
@@ -695,7 +470,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
           editingChecks.add(editKey); mutate(d => { d.raw.assertions[index][field] = value; });
         }, fieldKeys, modelControl);
         const line = button("", () => { editingChecks.add(editKey); refresh(); fields.focus(); }, "check-line");
-        line.append(state, el(doc, "span", "check-label", checkLabel({ type: a.type, fields: [[operandKey(a.type), a[operandKey(a.type)] ?? ""]] })));
+        line.append(checkState, el(doc, "span", "check-label", checkLabel({ type: a.type, fields: [[operandKey(a.type), a[operandKey(a.type)] ?? ""]] })));
         const choice = checkTypeControl(doc, a.type, chosen => {
           const wasJudge = current().assertions[index].type === "llmJudge";
           editingChecks.add(editKey); mutate(d => convertCheck(d.raw.assertions[index], chosen));
@@ -709,8 +484,8 @@ export function renderView(doc, root, payload, execute = postAction, options = {
         updates.push(() => {
           const editing = draft()?.origin === null || editingChecks.has(editKey);
           line.hidden = editing; edit.hidden = !editing;
-          fields.update(busy || blocked); choice.update(busy || blocked);
-          const target = fields.markIssue(invalidCheck?.id === a.id ? invalidCheck.issue : undefined);
+          fields.update(state.busy || state.blocked); choice.update(state.busy || state.blocked);
+          const target = fields.markIssue(state.invalidCheck?.id === a.id ? state.invalidCheck.issue : undefined);
           if (target) issueInput = target;
         });
       } else {
@@ -724,7 +499,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
           if (shown.type === "llmJudge" && k === "rubric") { line.append(`${k}: `); inlineText(doc, line, v); } else line.textContent = `${k}: ${v}`;
           details.append(line);
         }
-        body.append(details); row.append(state, body);
+        body.append(details); row.append(checkState, body);
       }
       if (editableTest && !known) {
         const remove = button("", () => { mutate((d) => { d.raw.assertions.splice(index, 1); }); render(); }, "ib remove-check");
@@ -733,7 +508,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       }
       checks.append(row);
       if (judgeResult) { judgeResult.append(details.binding, verdict, details.score, details.reason); row.append(judgeResult); }
-      const checkFacts = display && c && !blocked && draft()?.origin !== null ? failureFacts(c, display) : undefined;
+      const checkFacts = display && c && !state.blocked && draft()?.origin !== null ? failureFacts(c, display) : undefined;
       if (checkFacts) {
         // Repairs belong to the saved assertion they explain, not a later type
         // or operand occupying the same input. Recheck even detached handlers.
@@ -761,7 +536,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     out.push(checksSection);
 
     // The agent answered
-    if (c && !blocked && draft()?.origin !== null && c.row) {
+    if (c && !state.blocked && draft()?.origin !== null && c.row) {
       const answered = el(doc, "section", "detail-section answered");
       answered.append(el(doc, "h2", "lbl", "The agent answered"));
       // Unknown observations never acquire a verdict.
@@ -777,7 +552,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       }
       out.push(answered);
     }
-    if (runAlert?.one !== undefined) out.push(runAlertNode(button, "one"));
+    if (state.runAlert?.one !== undefined) out.push(runAlertNode(button, "one"));
     else if (c?.state === "refused" && refusedAlert()) out.push(runAlertNode(button, "one", refusedAlert()));
 
     // Footer: scoped Enter
@@ -793,10 +568,10 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       foot.append(right, hostedNotice(updates)); out.push(foot);
     } else {
       const foot = el(doc, "div", "detail-foot"); foot.append(status); out.push(foot);
-      updates.push(() => { status.textContent = snap ? "This test can't be edited here: its name isn't unique." : footText(); });
+      updates.push(() => { status.textContent = state.snap ? "This test can't be edited here: its name isn't unique." : footText(); });
     }
     function cancelDraft() {
-      const d = draft(); invalidCheck = undefined;
+      const d = draft(); state.invalidCheck = undefined;
       testDrafts.delete(key);
       for (const id of editingChecks) if (id.startsWith(`${key}/`)) editingChecks.delete(id);
       if (d?.origin === null) navigate({ name: "main" });
@@ -818,13 +593,13 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     box.append(el(doc, "span", "why-text", facts.text));
     if (facts.actual !== undefined && index >= 0) {
       const actions = el(doc, "div", "why-actions");
-      const prompt = snap ? sectionText(snap.main.key) : "";
+      const prompt = state.snap ? sectionText(state.snap.main.key) : "";
       // Replace only literal unique prompt text.
       if (prompt.split(facts.actual).length === 2) {
         actions.append(button("Apply to prompt", () => {
           if (!eligible()) return;
-          sectionDrafts.set(snap.main.key, prompt.replace(facts.actual, () => facts.value));
-          if (sectionDrafts.get(snap.main.key) === snap.main.text) sectionDrafts.delete(snap.main.key);
+          sectionDrafts.set(state.snap.main.key, prompt.replace(facts.actual, () => facts.value));
+          if (sectionDrafts.get(state.snap.main.key) === state.snap.main.text) sectionDrafts.delete(state.snap.main.key);
           render();
         }, "sb"));
       }
@@ -840,13 +615,13 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   }
 
   const modelControl = runtimeModelControl(doc,
-    () => ({ authored: base.model, selected: modelChoice.override, chatModel: base.chatModel, chatModelName: base.chatModelName, disabled: busy || blocked || invalidEditors.size > 0 }),
+    () => ({ authored: state.base.model, selected: modelChoice.override, chatModel: state.base.chatModel, chatModelName: state.base.chatModelName, disabled: state.busy || state.blocked || invalidEditors.size > 0 }),
     options.fetchModels ?? (() => execute({ operation: "models" })), (value) => {
-      if (busy || blocked) return;
+      if (state.busy || state.blocked) return;
       clearUndo();
-      observationGeneration++;
-      if (modelChoice.choose(value, base)) {
-        base = modelChoice.view(base); lastRun = undefined; runAlert = undefined;
+      state.observationGeneration++;
+      if (modelChoice.choose(value, state.base)) {
+        state.base = modelChoice.view(state.base); state.lastRun = undefined; state.runAlert = undefined;
       }
       render(); modelControl.trigger.focus();
     });
@@ -854,8 +629,8 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   return {
     observe,
     observation,
-    idle: () => !busy && !blocked && invalidEditors.size === 0,
-    dispose() { clearUndo(); observationGeneration++; for (const cleanup of cleanups.splice(0)) cleanup(); },
+    idle: () => !state.busy && !state.blocked && invalidEditors.size === 0,
+    dispose() { clearUndo(); state.observationGeneration++; for (const cleanup of cleanups.splice(0)) cleanup(); },
   };
 }
 
