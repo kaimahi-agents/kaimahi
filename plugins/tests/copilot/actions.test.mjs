@@ -43,24 +43,24 @@ test('runtime reads existing tool declarations without adding a tool editor', as
  assert.equal(h.calls.at(-1).name,'owned-test');
 });
 
-test('tools save uses the current source revision, preserves prompt/examples, and reads back before Test',async()=>{
- const h=harness();
+for(const eol of ['\n','\r\n']) test('tools save uses the current source revision, preserves prompt/examples, and reads back before Test '+JSON.stringify(eol),async()=>{
+ const source=original.replace(/\r?\n/g,eol),h=harness({fixture:source});
  const response=await h.act({operation:'save-and-test',expectedRevision:revision(h.source()),tools:['search','list_tags']});
  assert.equal(response.error,undefined);assert.equal(response.saved,true);
  assert.deepEqual(h.calls.map(c=>c.name),['owned-edit','owned-test']);
- assert.equal(h.calls[0].arguments.expectedRevision,revision(original));
- assert.match(h.source(),/## Tools\n- search\n- list_tags\n\n## Examples/);
+ assert.equal(h.calls[0].arguments.expectedRevision,revision(source));
+ assert.match(h.source(),/## Tools\r?\n- search\r?\n- list_tags\r?\n\r?\n## Examples/);
  assert.equal(response.view.file.revision,revision(h.source()));
  assert.deepEqual(response.view.authoring.examples,h.raw().examples);
- const stale=await h.act({operation:'save-and-test',expectedRevision:revision(original),tools:[]});
+ const stale=await h.act({operation:'save-and-test',expectedRevision:revision(source),tools:[]});
  assert.equal(stale.error,'stale_revision');assert.equal(h.calls.length,2);
 });
-test('tools save with zero tests acknowledges source save without claiming tests ran',async()=>{
+for(const eol of ['\n','\r\n']) test('tools save with zero tests acknowledges source save without claiming tests ran '+JSON.stringify(eol),async()=>{
  const {replaceExamples}=await import('../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs');
- const h=harness({fixture:replaceExamples(original,[])});h.o.nextExamples=[];
+ const h=harness({fixture:replaceExamples(original.replace(/\r?\n/g,eol),[])});h.o.nextExamples=[];
  const response=await h.act({operation:'save-and-test',expectedRevision:revision(h.source()),tools:['ping']});
  assert.equal(response.saved,true);assert.equal(response.view.latest.result.fullPass,false);
- assert.equal(response.view.latest.result.reasonCode,'no_tests');assert.match(h.source(),/## Tools\n- ping/);
+ assert.equal(response.view.latest.result.reasonCode,'no_tests');assert.match(h.source(),/## Tools\r?\n- ping/);
 });
 test('read-only catalog action cannot accept browser paths or tool-execution operands',async()=>{
  const h=harness();
