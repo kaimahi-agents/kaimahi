@@ -68,6 +68,9 @@ func encodeResponsesRequest(body []byte) ([]byte, bool, error) {
 					return nil, false, ErrMalformed
 				}
 				c := calls[0]
+				if c.Type != "function" || c.ID == "" || c.Function.Name == "" || !runtime.JSONKeysUnique([]byte(c.Function.Arguments)) {
+					return nil, false, ErrMalformed
+				}
 				input = append(input, map[string]string{"type": "function_call", "call_id": c.ID, "name": c.Function.Name, "arguments": c.Function.Arguments})
 			default:
 				input = append(input, m)

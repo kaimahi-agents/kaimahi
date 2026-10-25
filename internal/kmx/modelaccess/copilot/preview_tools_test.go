@@ -28,6 +28,19 @@ func toolFixture(t *testing.T, handler http.HandlerFunc) (*Provider, *memoryStor
 	return p, store
 }
 
+func TestResponsesEncoderRejectsMalformedToolCalls(t *testing.T) {
+	for _, messages := range []string{
+		strings.ReplaceAll(followupToolMessages, "call_1", ""),
+		strings.Replace(followupToolMessages, `"name":"lookup"`, `"name":""`, 1),
+		strings.Replace(followupToolMessages, `"type":"function"`, `"type":"other"`, 1),
+		strings.Replace(followupToolMessages, `{\"name\":\"Ada\"}`, `not-json`, 1),
+	} {
+		if _, _, err := encodeResponsesRequest([]byte(toolRequest(messages))); !errors.Is(err, ErrMalformed) {
+			t.Fatalf("malformed call forwarded: %v", err)
+		}
+	}
+}
+
 func TestPreviewToolRoundTrip(t *testing.T) {
 	for _, path := range []string{"/chat/completions", "/responses"} {
 		t.Run(path, func(t *testing.T) {

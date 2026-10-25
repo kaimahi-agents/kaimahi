@@ -187,11 +187,11 @@ func (h *Host) executeTrusted(ctx context.Context, scope controller.ToolCallCont
 		_ = json.Unmarshal(raw, &call.Args)
 	}
 	result, err := h.execute(ctx, scope, call)
+	if contextErr := ctx.Err(); contextErr != nil {
+		return api.ToolResult{}, contextErr
+	}
 	if err != nil {
 		return api.ToolResult{}, errReadFailed
-	}
-	if err = ctx.Err(); err != nil {
-		return api.ToolResult{}, err
 	}
 	raw, err = json.Marshal(result)
 	if err != nil || len(raw) > 32*1024 || !runtime.JSONNumbersExact(raw) || result.ID != call.ID || result.IsError || result.Error != "" || result.Output == nil || result.Content != nil || result.OutputURI != "" || result.OutputDigest != "" {
