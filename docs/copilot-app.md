@@ -42,6 +42,22 @@ is not available yet.
 On macOS, use the [macOS install instructions](../plugins/copilot/README.md#install-on-macos)
 instead. They install a macOS binary and the plain Copilot plugin, not WSL.
 
+### Check model access
+
+Windows Copilot app sign-in does not sign in kmx inside WSL. In WSL, with the
+[GitHub CLI](https://cli.github.com/) installed, sign in to your Copilot-enabled
+GitHub account and check access before running hosted tests:
+
+```sh
+gh auth login --hostname github.com
+kmx model list --provider copilot
+```
+
+On macOS, run the same check in your Mac terminal. kmx can use that existing gh
+sign-in without copying it into kmx's keychain. If listing fails, follow the
+[Copilot authentication options](kmx.md#copilot-model-access) before continuing;
+kmx does not read the app's credentials or start sign-in during a test.
+
 ## Create an agent
 
 Open a conversation in the Copilot app and ask:
@@ -123,10 +139,13 @@ for supported file-preview routes and limits.
 ## Run the same tests in CI
 
 Commit the agent file, then run `kmx test FILE` in a GitHub Actions step after
-checkout and [installing kmx](getting-started.md). For example, this step tests
-`greeter.agent.md` using its authored `fake` model:
+checkout. Use a file-preview-capable binary such as v0.9.0-rc.2, not v0.8.1.
+These steps install it on an Ubuntu runner and test `greeter.agent.md` using its
+authored `fake` model:
 
 ```yaml
+- name: Install kmx
+  run: curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.2/install.sh | sudo sh -s -- --version=v0.9.0-rc.2 --bin-dir=/usr/local/bin
 - name: Test the agent
   run: kmx test ./greeter.agent.md
 ```
@@ -136,7 +155,7 @@ Its `fake` model follows a small set of deterministic instructions; it checks
 wiring, not a real model's quality. Your release-notes agent needs a real model:
 use an available model ID and `kmx test ./release-notes.agent.md --provider copilot`
 with credentials supplied securely to the runner. App sign-in is not CI sign-in;
-see [Copilot authentication](kmx.md#agent-file-local-preview-unreleased-integration).
+see [Copilot authentication](kmx.md#copilot-model-access).
 Never commit credentials or print them in workflow logs.
 
 File-mode exit codes make this a CI gate without parsing the output:
