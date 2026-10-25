@@ -1509,6 +1509,11 @@ for (const error of [undefined, "action-failed"]) test(`a refused subset keeps i
   assert.match(banner.textContent, /Refused: The selected model is not available/);
   assert.equal(all(banner).filter(e => e.tag === "button").length, 0);
   assert.equal(byClass(h.root, "tests-meta")[0].textContent, "1 refused · 1 not run");
+  click(btn(h.root, "Add test"));
+  assert.equal(byClass(h.root, "run-alert").length, 0, "a new test does not inherit another test's refusal notice");
+  click(byClass(h.root, "save-run")[0]);
+  assert.equal(byClass(h.root, "run-alert").length, 0, "name validation does not resurrect that notice");
+  click(byClass(h.root, "cancel-test")[0]);
   unknown = true; openTest(h.root, "a"); click(byClass(h.root, "save-run")[0]); await tick(); goBack(h.root);
   assert.doesNotMatch(byClass(h.root, "tests-meta")[0].textContent, /refused/, "an unknown later outcome does not keep old refusal counts");
 });

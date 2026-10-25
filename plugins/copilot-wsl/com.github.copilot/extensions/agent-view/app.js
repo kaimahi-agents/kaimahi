@@ -88,7 +88,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     if (raw.assertions.some(a => !checkComplete(a))) return { check: true };
   }
   let invalidCheck, issueInput, focusIssue;
-  function navigate(next) { route = next; invalidCheck = undefined; if (!blocked && !savedUntested) message = ""; }
+  function navigate(next) { route = next; invalidCheck = undefined; if (!blocked && !savedUntested) { message = ""; runAlert = undefined; } }
   function checkProblem(key, raw) {
     const a = raw.assertions.find(a => checkIssue(a));
     if (!a) return false;
