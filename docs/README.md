@@ -16,6 +16,7 @@ runtime contract when extending or comparing implementations.
 
 | I want to… | Read |
 |---|---|
+| Create an agent, edit its prompt and test it in the Copilot app without a cluster | [Use kmx in the Copilot app](copilot-app.md) |
 | Set up the current development CLI and understand prerequisites | [Getting started](getting-started.md) |
 | Review Run, Test, Publish and Deploy stages, workspace/live paths and safety limits | [Workflow overview](workflow-overview.md) |
 | Inspect compiled runtime support and qualification evidence with `kmx targets`; understand runtime and inference boundaries | [Runtime contract and support matrix](runtime-adapters.md) |

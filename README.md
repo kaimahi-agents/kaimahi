@@ -32,6 +32,9 @@ These docs follow main. `kmx test` and `kmx deploy` are unreleased; v0.8.1 uses
 [Test compatibility](docs/kmx.md#test-compatibility-unreleased) and
 [Deploy compatibility](docs/kmx.md#deploy-compatibility-unreleased).
 
+[Use kmx in the Copilot app](docs/copilot-app.md) to create an agent, edit its prompt
+and run tests without Kubernetes or Docker.
+
 ## Try it locally
 
 Have Docker running and Homebrew installed. For Podman, [select it explicitly](docs/getting-started.md#using-podman-instead-of-docker).
