@@ -24,6 +24,9 @@ func WriteFilePreview(w io.Writer, r FilePreviewResult, format string) error {
 		scope = "partial"
 	}
 	fmt.Fprintf(&b, "kmx local preview of this charter (%s): %s\nrevision: %s\nmodel: %s/%s\n%s %s: %s\n", scope, r.File.Path, r.File.Revision, r.ModelRoute.Provider, r.ModelRoute.Model, r.State, r.Verdict, r.Reason)
+	for _, tool := range r.ToolSettings {
+		fmt.Fprintf(&b, "tool setting %s: %s\n", tool.Name, tool.State)
+	}
 	if r.Diagnostic != nil {
 		fmt.Fprintf(&b, "%s:%d:%d: %s\n", r.Diagnostic.Field, r.Diagnostic.Line, r.Diagnostic.Column, r.Diagnostic.Repair)
 	}

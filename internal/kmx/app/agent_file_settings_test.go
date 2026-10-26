@@ -1,16 +1,20 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/agent-primitives/sessions/api"
 	"github.com/agent-primitives/sessions/controller"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/localpreview"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 )
@@ -80,6 +84,54 @@ func TestFilePreviewFolderSettingsAndFrozenProvenance(t *testing.T) {
 					}
 				}
 			})
+		}
+	}
+}
+
+// Cancel at the loader's first context check, after the App's precheck.
+type cancelDuringSettingsRead struct {
+	context.Context
+	cancel context.CancelFunc
+	checks atomic.Int32
+}
+
+func (c *cancelDuringSettingsRead) Err() error {
+	if c.checks.Add(1) == 2 {
+		c.cancel()
+	}
+	return c.Context.Err()
+}
+
+func TestFilePreviewCancellationDuringSettingsRead(t *testing.T) {
+	file := previewFile(t)
+	agent, err := agentfile.Load(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent.Tools = []string{"ping"}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(file), "kmx.yaml"), []byte("tools: {ping: Disabled}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	base, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	ctx := &cancelDuringSettingsRead{Context: base, cancel: cancel}
+	runner := &scriptedPreview{verdict: "pass"}
+	result, err := (&App{FileRunner: runner}).PreviewAgentSnapshot(ctx, agent, FilePreviewOptions{File: file, Operation: "test"})
+	var previewErr *FilePreviewError
+	if base.Err() != context.Canceled || !errors.As(err, &previewErr) || previewErr.ExitCode() != 130 || result.State != "cancelled" || result.ReasonCode != "cancelled" || result.FullPass || runner.calls != 0 {
+		t.Fatalf("settings IO cancellation lost: %+v, %v; runner=%d", result, err, runner.calls)
+	}
+}
+
+func TestFilePreviewTextIncludesFrozenToolStates(t *testing.T) {
+	result := FilePreviewResult{State: "complete", ToolSettings: []localtools.ToolSetting{{Name: "ping", State: localtools.Disabled}, {Name: "lookup", State: localtools.Enabled}}, Examples: []FilePreviewExample{{ID: "one", FilePreviewCompletion: FilePreviewCompletion{Tools: []agentpreview.ToolSummary{{Name: "ping", Mode: "live", Source: "live"}, {Name: "lookup", Mode: "recorded", Source: "recorded", CallCount: 1}}}}}}
+	var output bytes.Buffer
+	if err := WriteFilePreview(&output, result, "text"); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"tool setting ping: Disabled", "tool setting lookup: Enabled", "tool ping: Not called; mode=live source=live", "tool lookup: 1 call(s); mode=recorded source=recorded"} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("missing %q: %s", want, output.String())
 		}
 	}
 }

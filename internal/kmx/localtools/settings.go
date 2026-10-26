@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/fs"
+	"os"
 	"path/filepath"
 
 	"github.com/agent-primitives/sessions/api"
@@ -31,6 +33,11 @@ var ErrSettings = errors.New("invalid tool settings in the agent folder's kmx.ya
 // LoadSettings reads only beside the caller's checked physical agent filename.
 // It never searches ancestors, creates a file or rewrites unrelated YAML keys.
 func LoadSettings(ctx context.Context, filename string, names []string) ([]ToolSetting, error) {
+	return loadSettings(ctx, filename, names, fileaccess.OpenDirectory)
+}
+
+// loadSettings takes the directory opener only so a test can prove the boundary.
+func loadSettings(ctx context.Context, filename string, names []string, openDirectory func(context.Context, string) (*fileaccess.Directory, error)) ([]ToolSetting, error) {
 	settings := make([]ToolSetting, len(names))
 	seen := map[string]bool{}
 	for i, name := range names {
@@ -47,17 +54,43 @@ func LoadSettings(ctx context.Context, filename string, names []string) ([]ToolS
 	if err != nil {
 		return nil, ErrSettings
 	}
-	dir, err := fileaccess.OpenDirectory(ctx, filepath.Dir(absolute))
-	if err != nil {
+	// Cancellation outranks an invalid-config verdict so callers keep it.
+	refuse := func() ([]ToolSetting, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		return nil, ErrSettings
+	}
+	folder := filepath.Dir(absolute)
+	// An absent optional file in an existing source folder must not trigger the
+	// private-state filesystem qualification (Windows accepts only local NTFS).
+	// Lstat sees a dangling final symlink as present, so it still reaches the
+	// checked no-follow open below and is refused.
+	if _, statErr := os.Lstat(filepath.Join(folder, "kmx.yaml")); statErr != nil {
+		if !errors.Is(statErr, fs.ErrNotExist) {
+			return refuse()
+		}
+		if info, dirErr := os.Lstat(folder); dirErr == nil && info.IsDir() {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			return settings, nil
+		}
+	}
+	dir, err := openDirectory(ctx, folder)
+	if err != nil {
+		return refuse()
 	}
 	defer dir.Close()
 	file, err := fileaccess.OpenRegularAt(ctx, dir, "kmx.yaml")
 	if errors.Is(err, fileaccess.ErrMissing) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		return settings, nil
 	}
 	if err != nil {
-		return nil, ErrSettings
+		return refuse()
 	}
 	defer file.Close()
 	before, err := file.Stat()

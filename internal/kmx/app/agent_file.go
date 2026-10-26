@@ -346,6 +346,14 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		var settingsErr error
 		r.ToolSettings, settingsErr = localtools.LoadSettings(ctx, source, parsed.Tools)
 		if settingsErr != nil {
+			if cause := ctx.Err(); cause != nil {
+				r.State = "error"
+				if errors.Is(cause, context.Canceled) {
+					r.State = "cancelled"
+					return fail("cancelled", 130)
+				}
+				return fail("deadline_exceeded", 1)
+			}
 			return fail("invalid_tool_settings", 1)
 		}
 	}
