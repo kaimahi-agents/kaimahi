@@ -112,7 +112,7 @@ const PLAIN_REASONS = {
   copilot_quota: "Copilot's usage limit was reached.", copilot_model_unavailable: "Choose an available Copilot model.",
   copilot_malformed: "Copilot returned an answer that could not be used.", copilot_keychain_unavailable: "Copilot sign-in could not be read. Use an existing GitHub sign-in.",
   copilot_unavailable: "Copilot could not complete this run.",
-  model_reply_unusable: "This model replied in a form kmx cannot use, so the test did not finish. Try another model.",
+  model_reply_unusable: "This model's reply couldn't be used, so the test didn't finish. Try another model.",
 };
 export function plainReason(row) {
   if (row?.reasonCode === "copilot_model_unavailable" && row.reason?.startsWith("Available Copilot models: ")) {
@@ -232,14 +232,13 @@ export function resultHistory(initial) {
       return matches.length === 1 ? { ...view, latest: matches[0].latest } : undefined;
     },
     pair: () => [...models.values()],
-    // A capture's results stay this run's results after its recordings are saved.
+    // Keep a capture's results once its recordings are saved.
     noteCapture: (receipt, saved) => {
       capturedModel = receipt.model;
-      if (!saved) return;
-      const definitions = uniqueIndex(saved.authoring?.examples ?? [], e => e.id), route = receipt.modelRoute;
-      for (const c of inspectCases({ ...saved, latest: { status: "current", result: receipt } })) {
-        const definition = definitions.get(c.example.id);
-        if (definition && c.row) { const record = { definition, c: { ...c, capturedRevision: saved.file.revision }, model: route }; records.set(c.example.id, record); modelCases.set(`${route}\0${c.example.id}`, record); }
+      const defs = uniqueIndex(saved?.authoring?.examples ?? [], e => e.id), route = receipt.modelRoute;
+      if (saved) for (const c of inspectCases({ ...saved, latest: { status: "current", result: receipt } })) if (defs.get(c.example.id) && c.row) {
+        const record = { definition: defs.get(c.example.id), c: { ...c, capturedRevision: saved.file.revision }, model: route };
+        records.set(c.example.id, record); modelCases.set(`${route}\0${c.example.id}`, record);
       }
     },
     comparisonModels(selected) { const candidates = [...models.values()].filter(v => v.latest.result.state === "complete").map(modelId).filter(id => id !== selected); const other = candidates.includes(preferred) ? preferred : candidates.at(-1) ?? (capturedModel !== selected ? capturedModel : undefined); return other ? [selected, other] : [selected]; },

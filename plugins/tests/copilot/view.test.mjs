@@ -510,7 +510,7 @@ test("plainReason translates every preview engine code and retains only validate
     copilot_quota: "Copilot's usage limit was reached.", copilot_model_unavailable: "Choose an available Copilot model.",
     copilot_malformed: "Copilot returned an answer that could not be used.", copilot_keychain_unavailable: "Copilot sign-in could not be read. Use an existing GitHub sign-in.",
     copilot_unavailable: "Copilot could not complete this run.",
-    model_reply_unusable: "This model replied in a form kmx cannot use, so the test did not finish. Try another model.",
+    model_reply_unusable: "This model's reply couldn't be used, so the test didn't finish. Try another model.",
   };
   const source = await readFile(new URL("../../../internal/kmx/app/agent_file.go", import.meta.url), "utf8");
   const codes = [...source.matchAll(/\{copilot\.\w+, "([a-z_]+)"\}/g), ...source.slice(source.indexOf("reasons := map[string]string{"), source.indexOf("return reasons[code]")).matchAll(/"([a-z_]+)":/g)].map(m => m[1]);
