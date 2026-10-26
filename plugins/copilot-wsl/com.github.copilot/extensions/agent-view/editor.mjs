@@ -611,7 +611,7 @@ export function canvasResultSummary(view, { n, testing, one, blocked, dirty, las
   return { tone: full ? "pass" : cases.some(c => c.state === "fail") ? "fail" : "none", text: result.selection.scope === "subset" ? countText(cases.map(c => testRow(c, false, false))) : `${passing} of ${n} passing` };
 }
 
-export function canvasFooterText({ editable, n, busy, pending, blocked, savedUntested, invalid, candidate, scope, promptDirty, testDirty, dirty, runAlert }) {
+export function canvasFooterText({ editable, n, busy, pending, blocked, savedUntested, settingsIncomplete, invalid, candidate, scope, promptDirty, testDirty, dirty, runAlert }) {
   if (!editable) return "Read-only inspection. This engine or agent file does not provide a complete editable snapshot.";
   const tests = plural(n, "test");
   if (busy) {
@@ -619,6 +619,7 @@ export function canvasFooterText({ editable, n, busy, pending, blocked, savedUnt
     const what = pending.one ? "this test" : tests;
     return pending.operation === "save-and-test" ? `Saving and running ${what}…` : `Saved · running ${what}`;
   }
+  if (blocked && settingsIncomplete) return `${savedUntested ? "Some changes saved" : "Reload required"} · tests did not run`;
   if (blocked) return savedUntested ? "Saved · test result unconfirmed" : "Reload required · result unconfirmed";
   if (invalid) return "Edited · unsupported formatting, reload before saving";
   if (candidate) return "Edited · settle the outside change before saving";

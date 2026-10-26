@@ -40,7 +40,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   const state = {
     base: payload, snap: readSnapshot(payload), candidate: undefined, compareOpen: false,
     sectionDrafts: new Map(), testDrafts: new Map(), invalidEditors: new Set(),
-    route: { name: "main" }, busy: false, pending: undefined, blocked: false, savedUntested: false, message: "", runAlert: undefined, lastRun: undefined,
+    route: { name: "main" }, busy: false, pending: undefined, blocked: false, savedUntested: false, settingsIncomplete: false, message: "", runAlert: undefined, lastRun: undefined,
     newCount: 0, history: settingsGuard(resultHistory(payload)), editingChecks: new Set(),
     focusTestName: false, nameHintKey: undefined, promptUndo: undefined, undoTimer: undefined, hostedSent: false,
     displayNames: new Map(),
@@ -207,7 +207,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   function footText(scope) {
     if (testing() && state.run) return state.run.state === "stopping" ? "Saved · stopping Copilot turn…"
       : state.run.approvalWaiting ? "Copilot approval is waiting in chat." : `Saved · running ${state.pending.one ? "this test" : plural(total(), "test")}`;
-    return canvasFooterText({ editable: !!state.snap, n: state.snap ? total() : 0, busy: state.busy, pending: state.pending, blocked: state.blocked, savedUntested: state.savedUntested,
+    return canvasFooterText({ editable: !!state.snap, n: state.snap ? total() : 0, busy: state.busy, pending: state.pending, blocked: state.blocked, savedUntested: state.savedUntested, settingsIncomplete: state.settingsIncomplete,
       invalid: invalidEditors.size, candidate: state.candidate, scope, promptDirty: sectionDrafts.size, testDirty: testDrafts.has(state.route.key), dirty: hasDrafts(), runAlert: state.runAlert });
   }
   function spinnerStatus(status, scope, updates) {

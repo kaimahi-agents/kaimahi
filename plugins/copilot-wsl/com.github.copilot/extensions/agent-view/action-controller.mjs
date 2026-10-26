@@ -80,7 +80,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     } else if (operation === "reload") {
       if (matches(response?.view)) {
         state.history.reset(); state.history.remember(response.view); state.run = undefined;
-        sectionDrafts.clear(); testDrafts.clear(); state.toolsDraft = undefined; state.settingsDraft.clear(); displayNames.clear(); state.blocked = false; state.savedUntested = false; state.lastRun = undefined;
+        sectionDrafts.clear(); testDrafts.clear(); state.toolsDraft = undefined; state.settingsDraft.clear(); displayNames.clear(); state.blocked = false; state.savedUntested = false; state.settingsIncomplete = false; state.lastRun = undefined;
         adopt(response.view, { sections: [], tests: [] }); state.message = "Reloaded the saved agent. Drafts were discarded.";
       } else state.message = response?.message || "Reload did not complete. Your draft is still here.";
     } else if (response?.error === "no-tests" && matches(response.view)) {
@@ -90,7 +90,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
       // Unsaved failures must still match our revision.
       const fresh = matches(response.view) && (response.saved === true || response.view.file.revision === state.base.file.revision);
       if (response.settingsIncomplete && (response.saved === true || unknown)) {
-        state.blocked = true; state.savedUntested = response.saved === true;
+        state.blocked = true; state.savedUntested = response.saved === true; state.settingsIncomplete = true;
         state.message = `${response.saved ? "Some changes were saved. " : ""}${unknown ? "The tool settings outcome is unconfirmed. " : ""}Tests did not run. Your draft is still here; reload to inspect the saved agent and settings.`;
       } else if (["stale_revision", "stale-revision", "stale_settings_revision"].includes(response.error)) {
         state.message = response.error === "stale_settings_revision" ? "Tool settings changed outside the panel. Your edits are kept." : "This agent changed outside the panel. Your edits are kept."; checkNow();

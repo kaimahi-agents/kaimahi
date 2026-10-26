@@ -1648,6 +1648,26 @@ for (const error of ["stale_revision", "stale_settings_revision", "permission_re
   assert.equal(stateWord(h).textContent, "Disabled"); assert.equal(stateWord(h).disabled, true); assert.equal(h.calls.length, 1);
   h.root.children[0].listeners.keydown[0]({ key: "Escape", preventDefault() {} }); assert.equal(stateWord(h).textContent, "Disabled");
 });
+for (const page of ["main", "detail"]) for (const saved of [true, false]) test(`switch drafts: ${page} footer distinguishes ${saved ? "partially saved" : "unconfirmed"} settings from a started Test`, async t => {
+  let h, reloads = 0;
+  h = await switchCanvas({ respond: async action => {
+    if (action.operation !== "reload") return { error: saved ? "stale_settings_revision" : "outcome-unknown", saved, settingsIncomplete: true };
+    if (++reloads === 1) return { error: "unavailable", message: "Read did not complete." };
+    return { view: await viewFor(replaceTools(h.source, ["search"]), h.examples, { status: "none" }, "fake", { toolSettings: [{ name: "search", state: "Enabled" }], toolSettingsRevision: NEXT_SWITCH_TOKEN }) };
+  } });
+  t.after(() => h.app.dispose());
+  await openServer(h); chooseTool(h, "list_tags", false); flipState(h, "search"); byClass(h.root, "back")[0].listeners.click[0]();
+  if (page === "detail") openTest(h.root, "greeting");
+  click(byClass(h.root, "save-run")[0]); await settleTools();
+  assert.equal(h.calls[0].operation, "save-and-test"); assert.deepEqual(h.calls[0].tools, ["search"]);
+  const footer = saved ? "Some changes saved · tests did not run" : "Reload required · tests did not run";
+  assert.equal(c18Text(h.root, "prompt-status"), footer); assert.doesNotMatch(h.root.textContent, /test result unconfirmed/i);
+  click(btn(h.root, "Reload and discard draft")); await settleTools();
+  assert.equal(c18Text(h.root, "prompt-status"), footer, "failed Reload cannot erase the known Test-not-started outcome");
+  click(btn(h.root, "Reload and discard draft")); await settleTools();
+  assert.doesNotMatch(c18Text(h.root, "prompt-status"), /tests did not run|unconfirmed/i, "confirmed Reload clears the incomplete-settings state");
+  assert.deepEqual(h.calls.map(a => a.operation), ["save-and-test", "reload", "reload"], "no automatic Test or retry");
+});
 test("switch drafts: source-only prompt draft accepts a settings-only observation without false conflict", async t => {
   const h = await switchCanvas(); t.after(() => h.app.dispose()); c18Prompt(h.root).textContent = "Prompt kept."; c18Prompt(h.root).listeners.input[0]();
   h.app.observe(await viewFor(h.source, h.examples, { status: "none" }, "fake", { toolSettings: switchStates(), toolSettingsRevision: NEXT_SWITCH_TOKEN }));
