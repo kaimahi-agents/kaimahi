@@ -3,7 +3,26 @@
 // or a persistent runtime record.
 package runview
 
-import "time"
+import (
+	"strings"
+	"time"
+)
+
+// Enforcement is a redacted historical admission observation, never live proof.
+type Enforcement struct {
+	State, BindingID, RequirementDigest string
+	Guidance                            []string
+}
+
+func (e Enforcement) Summary() string {
+	if e.State == "admitted" {
+		return "admitted for " + e.RequirementDigest + ", container binding " + e.BindingID + " (historical admission; not a live provider check)"
+	}
+	if len(e.Guidance) > 0 {
+		return e.State + "; " + strings.Join(e.Guidance, "; ")
+	}
+	return e.State + "; inspect Task EnforcementReady conditions for details"
+}
 
 // Missing distinguishes unavailable evidence from an observed negative outcome.
 type Missing struct {
@@ -30,6 +49,7 @@ type Task struct {
 	RevisionMissing *Missing
 	EventsMissing   *Missing
 	TraceMissing    *Missing
+	Enforcement     *Enforcement
 }
 
 type DeclaredHelper struct {
