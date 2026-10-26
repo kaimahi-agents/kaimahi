@@ -20,8 +20,9 @@ fresh credentials. Logging out in another kmx process does not revoke this
 in-memory snapshot or stop a running preview; cancel that preview explicitly.
 It ends within the five-minute invocation bound. Ordinary model listing and
 non-preview access keep their existing refresh behavior. Unbound Copilot agent
-tools refuse before authentication or journal creation; explicitly bound agent
-tools are supported. Judges remain tool-free.
+tool names use stubs answering "not available in this test"; bound tools execute
+through their trusted host. Ordinary model access is still required, and judges
+remain tool-free.
 Enabled Copilot models may use Chat Completions or Responses; the provider
 captures the catalog-selected protocol with the credential snapshot. The same
 path is retained while the catalog still advertises it; disappearance aborts,
