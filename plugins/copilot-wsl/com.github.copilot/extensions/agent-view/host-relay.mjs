@@ -90,13 +90,14 @@ function safeNumbers(value) {
     : !object(value) && !Array.isArray(value) || Object.values(value).every(safeNumbers);
 }
 
-export function freezeTools(metadata, names, excluded) {
+export function freezeTools(metadata, names, excluded, allowMissing = false) {
   if (!Array.isArray(metadata) || !Array.isArray(names) || !names.length || names.length > 32 || new Set(names).size !== names.length) throw unavailable();
   const selected = new Map();
   for (const raw of names) {
     if (!/^[A-Za-z_][A-Za-z0-9_-]{0,63}$/.test(raw)) throw unavailable();
-    const candidates = metadata.filter(t => t.mcpToolName === raw && text(t.mcpServerName, 512) && !excluded.includes(t.mcpServerName));
-    if (candidates.length !== 1) throw unavailable();
+    const candidates = metadata.filter(t => t?.mcpToolName === raw && !excluded.includes(t.mcpServerName));
+    if (allowMissing && candidates.length === 0) continue;
+    if (candidates.length !== 1 || !text(candidates[0].mcpServerName, 512)) throw unavailable();
     const t = candidates[0];
     if (!text(t.name, 512) || !object(t.input_schema) || !safeNumbers(t.input_schema) || typeof t.description !== "string" || t.description.length > 4096) throw unavailable();
     selected.set(raw, structuredClone({ name: t.name, mcpServerName: t.mcpServerName, mcpToolName: raw, description: t.description, input_schema: t.input_schema }));
@@ -187,9 +188,10 @@ async function pump(session, s) {
       if (job.kind === "resolve") {
         if (s.runs.size >= 32 || s.runs.has(job.runId)) throw unavailable();
         const metadata = await session.rpc.tools.getCurrentMetadata();
-        const tools = freezeTools(metadata?.tools, job.names, excluded);
+        const tools = freezeTools(metadata?.tools, job.names, excluded, job.allowMissing === true);
         s.runs.set(job.runId, { tools, seen: new Set(), until: Date.now() + 5 * 60 * 1000 });
-        answer = { definitions: [...tools.values()].map(t => ({ Name: t.mcpToolName, Description: t.description, InputSchema: t.input_schema })) };
+        answer = { definitions: [...tools.values()].map(t => ({ Name: t.mcpToolName, Description: t.description, InputSchema: t.input_schema })),
+          ...(job.allowMissing === true ? { missing: job.names.filter(name => !tools.has(name)) } : {}) };
       } else if (job.kind === "call") {
         const run = s.runs.get(job.runId), tool = run?.tools.get(job.name);
         if (!tool || run.seen.has(job.id) || !object(job.arguments) || Buffer.byteLength(JSON.stringify(job.arguments)) > 8192 || !text(job.callId, 1024)) throw unavailable();

@@ -38,12 +38,14 @@ func WriteFilePreview(w io.Writer, r FilePreviewResult, format string) error {
 	}
 	if r.AdHoc != nil {
 		fmt.Fprintf(&b, "ad-hoc: %s\n", r.AdHoc.State)
+		writeFileTools(&b, *r.AdHoc)
 		if r.AdHoc.AnswerExcerpt != "" {
 			fmt.Fprintf(&b, "  answer excerpt: %q\n", r.AdHoc.AnswerExcerpt)
 		}
 	}
 	for _, ex := range r.Examples {
 		fmt.Fprintf(&b, "example %s: %s %s\n", ex.ID, ex.State, ex.Verdict)
+		writeFileTools(&b, ex.FilePreviewCompletion)
 		for _, as := range ex.Assertions {
 			fmt.Fprintf(&b, "  %s %s %s: %s\n", as.ID, as.Type, as.Verdict, as.Reason)
 		}
@@ -53,4 +55,14 @@ func WriteFilePreview(w io.Writer, r FilePreviewResult, format string) error {
 	}
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+func writeFileTools(b *strings.Builder, c FilePreviewCompletion) {
+	for _, tool := range c.Tools {
+		usage := "Not called"
+		if tool.CallCount > 0 {
+			usage = fmt.Sprintf("%d call(s)", tool.CallCount)
+		}
+		fmt.Fprintf(b, "  tool %s: %s; mode=%s source=%s\n", tool.Name, usage, tool.Mode, tool.Source)
+	}
 }

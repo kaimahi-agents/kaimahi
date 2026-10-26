@@ -31,7 +31,14 @@ func (c *Client) RunToolPreviewCase(ctx context.Context, r PreviewCaseRequest) (
 	if err != nil {
 		return out, status.Error(codes.InvalidArgument, "agentsessions: invalid tool settings")
 	}
-	config, err := json.Marshal(localtools.Config{Instructions: r.Instructions, Definitions: r.ToolDefinitions, ToolSettings: settings})
+	defs := r.ToolDefinitions
+	if defs == nil {
+		defs = []api.ToolDefinition{localtools.Definition()}
+	}
+	if r.ToolSources.Validate(defs) != nil {
+		return out, status.Error(codes.InvalidArgument, "agentsessions: invalid tool sources")
+	}
+	config, err := json.Marshal(localtools.Config{Instructions: r.Instructions, Definitions: r.ToolDefinitions, ToolSettings: settings, Sources: r.ToolSources})
 	if err != nil || len(config) > 1<<20 || len(r.Input) > 16<<10 {
 		return out, status.Error(codes.InvalidArgument, "agentsessions: tool preview exceeds bounds")
 	}
@@ -120,6 +127,7 @@ func inspectToolPreview(ctx context.Context, out PreviewSession, records []event
 	}
 	if err == nil {
 		out.Outcome, out.Answer, out.ToolCalls = "completed", trace.Answer, trace.ToolCalls
+		out.ToolSources = trace.Sources
 	}
 	return out, nil
 }

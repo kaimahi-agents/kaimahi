@@ -20,8 +20,9 @@ fresh credentials. Logging out in another kmx process does not revoke this
 in-memory snapshot or stop a running preview; cancel that preview explicitly.
 It ends within the five-minute invocation bound. Ordinary model listing and
 non-preview access keep their existing refresh behavior. Unbound Copilot agent
-tools refuse before authentication or journal creation; explicitly bound agent
-tools are supported. Judges remain tool-free.
+tool names use stubs answering "not available in this test"; bound tools execute
+through their trusted host. Ordinary model access is still required, and judges
+remain tool-free.
 Enabled Copilot models may use Chat Completions or Responses; the provider
 captures the catalog-selected protocol with the credential snapshot. The same
 path is retained while the catalog still advertises it; disappearance aborts,
@@ -71,8 +72,10 @@ Name the variable; never put the credential value on the command line.
 The optional [Tools declaration](agent-file.md#markdown-contract) names
 `github_list_merged_prs`. File Run/Test accepts explicit `--tool-bindings FILE`
 for one real read-only GitHub MCP operation, without discovery or workspace
-configuration. Missing bindings or credentials refuse `tools_unavailable`;
-neither CLI nor inbound MCP silently executes declarations as tool-free agents.
+configuration. An unbound name is offered as a bounded unavailable stub answering
+"not available in this test"; it is never silently dropped. Malformed supplied bindings,
+missing live credentials and broken calls still refuse. [Per-test recordings](agent-file.md#per-test-recorded-tools)
+can supply saved output without any tool binding; this slice does not automatically capture or save results.
 Default inbound MCP remains unbound; tool input cannot supply a binding.
 Bound tools support local, fake and Copilot Chat Completions/Responses routes;
 judging remains tool-free. Copilot checks current tool capability before each
@@ -88,9 +91,11 @@ first-response batch validates before its first call; duplicate IDs, a sixth
 call or invalid later arguments refuse the batch. The final response must be
 text, not another tool round. App tools still use the app's native permission
 handling on every call.
-Safe definitions are journaled to reconstruct the exact request during zero-call
-offline replay; endpoint/binding credentials are not. Old fixed-read journals
-remain inspectable. There is no general CLI binding-file format; the explicit
+Per-test definitions and versioned dispatch-source selection are journaled to reconstruct the exact request during
+zero-call offline replay; endpoint/binding credentials are not. Source selection is not proof of capture or of a call.
+Old fixed-read journals remain inspectable. Their source metadata is absent (`ToolSources` is nil), meaning
+source not recorded, never assumed live. Older kmx
+builds refuse the new source metadata rather than reinterpret it. There is no general CLI binding-file format; the explicit
 CLI binding below remains the fixed read. Copilot's runtime-owned binding is
 separate and requires no hand-edited file.
 
@@ -119,7 +124,9 @@ continue through the app's unchanged permission handling.
 
 Execution results' `toolSettings` record every declared tool's state frozen at run
 start. Pre-execution refusals have no execution provenance. `toolCalls` counts
-only Enabled live calls, not Disabled answers. Changing
+Enabled dispatches, not Disabled answers. Per-case tool sources distinguish live,
+recorded and unavailable dispatch; a selected source alone is not proof of a live
+call. Disabled also bypasses saved-recording matching and unavailable stubs. Changing
 the effective settings makes an earlier result out of date even when the agent
 file is unchanged. Offline replay uses the journaled settings and results,
 never today's YAML or a live executor. Older journals without settings retain
@@ -304,7 +311,7 @@ Each refusal says what to change:
   endpoint;
 - an invalid, insecure or credential-bearing endpoint, or an empty or invalid
   credential variable;
-- tool assertions or other unsupported assertion types;
+- tool assertions in standalone tool-free Run/Test, or other unsupported assertion types;
 - `llmJudge` examples without the shared judge, or a judge override with no
   `llmJudge` examples;
 - instructions, example IDs or inputs, ad-hoc `Run` input, the agent ID,

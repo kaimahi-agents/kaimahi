@@ -20,9 +20,11 @@ func TestSettingsJournalReplayCountsOnlyLiveCalls(t *testing.T) {
 				t.Fatal(err)
 			}
 			settings := []ToolSetting{{Name: Operation, State: state}}
-			host, err = host.WithSettings(settings)
-			if err != nil {
-				t.Fatal(err)
+			execute := func(ctx context.Context, scope controller.ToolCallContext, call api.ToolCall) (api.ToolResult, error) {
+				if IsDisabled(settings, call.Tool) {
+					return DisabledResult(call.ID), nil
+				}
+				return host.Execute(ctx, scope, call)
 			}
 			config, _ := json.Marshal(Config{Instructions: "draft", ToolSettings: settings})
 			log := eventlog.New()
@@ -35,7 +37,7 @@ func TestSettingsJournalReplayCountsOnlyLiveCalls(t *testing.T) {
 					t.Fatal("model did not receive disabled answer")
 				}
 				return api.ModelResponse{Message: *api.TextMessage("assistant", "done")}, nil
-			}, controller.WithSessionUID("s"), controller.WithStart(config, 0), controller.WithToolExecutor(host.Execute))
+			}, controller.WithSessionUID("s"), controller.WithStart(config, 0), controller.WithToolExecutor(execute))
 			if err != nil {
 				t.Fatal(err)
 			}

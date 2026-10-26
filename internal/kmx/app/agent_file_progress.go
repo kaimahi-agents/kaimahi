@@ -35,7 +35,7 @@ func previewCaseObserver(ctx context.Context, selected []agentfile.Example, agen
 		// Apply the final projection's attribution and assertion fences before any
 		// metadata escapes. A malformed runner event disables further observation,
 		// without changing the runner's eventual outcome or App's final validation.
-		valid := row.ID == ex.ID && c.State == agentpreview.Complete && c.ID != "" && !seen[c.ID] &&
+		valid := validPreviewTools(c, ex, agent.Tools) && row.ID == ex.ID && c.State == agentpreview.Complete && c.ID != "" && !seen[c.ID] &&
 			c.FileRevision == agent.Revision && c.Provider == route.Provider && c.Model == route.Model &&
 			len(c.Answer) <= 256*1024 && utf8.ValidString(c.Answer) &&
 			c.ToolCalls >= 0 && c.ToolCalls <= localtools.MaxCalls && (len(agent.Tools) > 0 || c.ToolCalls == 0) &&

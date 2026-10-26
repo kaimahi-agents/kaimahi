@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsessions"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
@@ -38,14 +39,20 @@ type Turn struct {
 	Instructions, Input string
 	// Model is the exact selected model; Call is its only route. Call sends at
 	// most once per invocation and returns fixed-text errors.
-	Model string
-	Call  controller.ModelFunc
+	Model           string
+	Call            controller.ModelFunc
+	Tool            controller.ToolFunc
+	ToolDefinitions []api.ToolDefinition
+	ToolSources     *localtools.SourceConfig
+	ToolSettings    []localtools.ToolSetting
 }
 
 // Execution is an attributable terminal result of one Turn.
 type Execution struct {
-	Answer    string
-	ToolCalls int
+	Answer               string
+	ToolCalls            int
+	ToolCallCounts       map[string]int
+	ToolEvidenceComplete bool
 	// SessionUID identifies the journaled Session; empty for an Executor that
 	// does not journal.
 	SessionUID string
@@ -66,8 +73,9 @@ type Executor interface {
 type Options struct {
 	// resolveRoute is private to the runner adapter's validated modelaccess routes.
 	// Standalone Run/Test retain the shared endpoint validation and canonicalization.
-	resolveRoute func(string, *Endpoint, http.RoundTripper, string) (route, error)
-	JournalDir   string
+	resolveRoute        func(string, *Endpoint, http.RoundTripper, string) (route, error)
+	allowToolAssertions bool
+	JournalDir          string
 	// Endpoint is the agent model's OpenAI-compatible route. It must be nil
 	// when Model.Preferred is fake and is required otherwise.
 	Endpoint *Endpoint
@@ -153,6 +161,9 @@ func prepare(agent *agentfile.Agent, options Options, examples bool) (*prepared,
 				case "llmJudge":
 					hasJudge = true
 				case "toolCalled", "toolNotCalled":
+					if options.allowToolAssertions {
+						break
+					}
 					return nil, refuse(RefusedTools, "an example asserts tool use", "local preview is tool-free; remove tool assertions")
 				default:
 					return nil, refuse(RefusedRequest, "an example uses an unsupported assertion type", "use contains, notContains, regex or llmJudge")
@@ -226,6 +237,9 @@ func (p *prepared) addCredential(key string) {
 func (p *prepared) refuseJournalCredentials(examples []agentfile.Example) error {
 	fields := []string{p.agent.Identity.ID, p.agent.Revision, p.route.model, p.agent.Instructions}
 	for _, example := range examples {
+		if localtools.CheckJSON(example.Mocks, func(values ...string) error { fields = append(fields, values...); return nil }) != nil {
+			return agentpreview.ErrUnsafeToolContent
+		}
 		fields = append(fields, example.ID, example.Input)
 		for _, assertion := range example.Assertions {
 			fields = append(fields, assertion.ID, assertion.Type, assertion.JudgeModel, assertion.JudgeVersion)
@@ -398,6 +412,7 @@ type journalExecutor struct {
 
 type turnSlot struct {
 	call controller.ModelFunc
+	tool controller.ToolFunc
 	mu   sync.Mutex
 	err  error
 }
@@ -468,10 +483,10 @@ func (e *journalExecutor) setSlot(slot *turnSlot) {
 	e.slotMu.Unlock()
 }
 
-func (e *journalExecutor) Execute(ctx context.Context, turn Turn) (Execution, error) {
+func (e *journalExecutor) Execute(ctx context.Context, turn Turn) (execution Execution, err error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	slot := &turnSlot{call: turn.Call}
+	slot := &turnSlot{call: turn.Call, tool: turn.Tool}
 	e.setSlot(slot)
 	defer e.setSlot(nil)
 	request := agentsessions.PreviewCaseRequest{
@@ -492,13 +507,28 @@ func (e *journalExecutor) Execute(ctx context.Context, turn Turn) (Execution, er
 		}
 	}
 	run := h.client.RunPreviewCase
-	if toolTurn {
+	if turn.Tool != nil && !turn.Judge {
+		guarded := func(ctx context.Context, scope controller.ToolCallContext, call api.ToolCall) (api.ToolResult, error) {
+			result, err := slot.tool(ctx, scope, call)
+			if err != nil {
+				e.rememberError(slot, err)
+			}
+			return result, err
+		}
+		h, err = openPreviewHost(e.path, localtools.HarnessName, localtools.Harness{Model: turn.Model, Definitions: turn.ToolDefinitions, Sources: turn.ToolSources, ToolSettings: turn.ToolSettings}, e.model, guarded)
+		if err != nil {
+			return Execution{}, err
+		}
+		defer func() { err = errors.Join(err, h.close()) }()
+		request.ToolDefinitions, request.ToolSources, request.ToolSettings = turn.ToolDefinitions, turn.ToolSources, turn.ToolSettings
+		run = h.client.RunToolPreviewCase
+	} else if toolTurn {
 		request.ToolDefinitions = e.definitions
 		request.ToolSettings = e.toolSettings
 		run = h.client.RunToolPreviewCase
 	}
 	result, err := run(ctx, request)
-	execution := Execution{SessionUID: result.SessionUID, Journaled: true}
+	execution = Execution{SessionUID: result.SessionUID, Journaled: true}
 	if result.SessionUID != "" {
 		e.sessions[result.SessionUID] = true
 	}
@@ -517,6 +547,7 @@ func (e *journalExecutor) Execute(ctx context.Context, turn Turn) (Execution, er
 		return execution, err
 	}
 	execution.Answer = result.Output
+	execution.ToolCallCounts, execution.ToolEvidenceComplete = result.ToolCalls, result.ToolEvidenceComplete
 	for _, count := range result.ToolCalls {
 		execution.ToolCalls += count
 	}

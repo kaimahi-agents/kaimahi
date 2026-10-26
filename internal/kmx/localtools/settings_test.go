@@ -1,15 +1,11 @@
 package localtools
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/agent-primitives/sessions/api"
-	"github.com/agent-primitives/sessions/controller"
 )
 
 func settingsRoot(t *testing.T) string {
@@ -77,27 +73,22 @@ func TestFolderToolSettingsRejectAmbiguousAndInvalidFiles(t *testing.T) {
 	}
 }
 
-func TestDisabledHostReturnsAnswerWithoutLiveExecution(t *testing.T) {
-	executions := 0
-	host, err := NewTrustedHost(trustedDefinitions(), func(_ context.Context, _ controller.ToolCallContext, c api.ToolCall) (api.ToolResult, error) {
-		executions++
-		return api.ToolResult{ID: c.ID, Output: map[string]any{"ok": true}}, nil
-	}, func(...string) error { return nil })
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestSettingsCopyAndDisabledResultAreDetached(t *testing.T) {
 	states := []ToolSetting{{Name: "lookup", State: Enabled}, {Name: "ping", State: Disabled}}
-	wrapped, err := host.WithSettings(states)
+	frozen, err := CopySettings(states, trustedDefinitions())
 	if err != nil {
 		t.Fatal(err)
 	}
-	states[1].State = Enabled // Caller mutation cannot silently enable dispatch.
-	result, err := wrapped.Execute(t.Context(), controller.ToolCallContext{SessionUID: "s"}, api.ToolCall{ID: "c", Tool: "ping", Mediation: api.MediationControllerMediated, IdempotencyKey: "e:c"})
-	if err != nil || result.ID != "c" || result.Output["message"] != "This tool is disabled for this test." || executions != 0 {
-		t.Fatalf("disabled ran live: %+v %v %d", result, err, executions)
+	states[1].State = Enabled
+	if !IsDisabled(frozen, "ping") {
+		t.Fatal("caller mutation changed the frozen policy")
 	}
-	_, err = wrapped.Execute(t.Context(), controller.ToolCallContext{SessionUID: "s"}, api.ToolCall{ID: "d", Tool: "lookup", Args: map[string]any{"query": "find"}, Mediation: api.MediationControllerMediated, IdempotencyKey: "e:d"})
-	if err != nil || executions != 1 {
-		t.Fatalf("enabled did not delegate: %v %d", err, executions)
+	result := DisabledResult("c")
+	if result.ID != "c" || result.Output["message"] != "This tool is disabled for this test." {
+		t.Fatal("invalid disabled answer")
+	}
+	result.Output["status"] = "changed"
+	if DisabledResult("d").Output["status"] != "disabled" {
+		t.Fatal("shared mutable answer")
 	}
 }

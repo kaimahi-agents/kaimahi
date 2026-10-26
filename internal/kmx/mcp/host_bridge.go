@@ -76,13 +76,14 @@ func AddHostRuntimeResource(server *sdk.Server, value *HostRuntime) {
 }
 
 type hostJob struct {
-	ID        string          `json:"id"`
-	RunID     string          `json:"runId"`
-	Kind      string          `json:"kind"`
-	Names     []string        `json:"names,omitempty"`
-	Name      string          `json:"name,omitempty"`
-	Arguments *map[string]any `json:"arguments,omitempty"`
-	CallID    string          `json:"callId,omitempty"`
+	ID           string          `json:"id"`
+	RunID        string          `json:"runId"`
+	Kind         string          `json:"kind"`
+	Names        []string        `json:"names,omitempty"`
+	AllowMissing bool            `json:"allowMissing,omitempty"`
+	Name         string          `json:"name,omitempty"`
+	Arguments    *map[string]any `json:"arguments,omitempty"`
+	CallID       string          `json:"callId,omitempty"`
 }
 type hostPending struct {
 	ctx     context.Context
@@ -307,6 +308,15 @@ func (b *HostBridge) rpc(ctx context.Context, job hostJob, result any) error {
 	}
 }
 func (b *HostBridge) ResolveTools(ctx context.Context, names []string) (*localtools.Host, error) {
+	return b.resolveTools(ctx, names, false)
+}
+
+// ResolveAvailableTools requires the peer to account explicitly for every absent name.
+func (b *HostBridge) ResolveAvailableTools(ctx context.Context, names []string) (*localtools.Host, error) {
+	return b.resolveTools(ctx, names, true)
+}
+
+func (b *HostBridge) resolveTools(ctx context.Context, names []string, partial bool) (*localtools.Host, error) {
 	if len(names) == 0 || len(names) > 32 {
 		return nil, errHostBridge
 	}
@@ -340,11 +350,43 @@ func (b *HostBridge) ResolveTools(ctx context.Context, names []string) (*localto
 	stop := context.AfterFunc(ctx, release)
 	var response struct {
 		Definitions []api.ToolDefinition `json:"definitions"`
+		Missing     *[]string            `json:"missing,omitempty"`
 	}
-	if b.rpc(ctx, hostJob{RunID: runID, Kind: "resolve", Names: append([]string(nil), names...)}, &response) != nil {
+	if b.rpc(ctx, hostJob{RunID: runID, Kind: "resolve", Names: append([]string(nil), names...), AllowMissing: partial}, &response) != nil {
 		stop()
 		release()
 		return nil, errHostBridge
+	}
+	expected := names
+	if partial {
+		accounted := map[string]bool{}
+		if response.Missing == nil {
+			stop()
+			release()
+			return nil, errHostBridge
+		}
+		expected = nil
+		for _, d := range response.Definitions {
+			expected = append(expected, d.Name)
+		}
+		for _, name := range append(append([]string(nil), expected...), (*response.Missing)...) {
+			if !seen[name] || accounted[name] {
+				stop()
+				release()
+				return nil, errHostBridge
+			}
+			accounted[name] = true
+		}
+		if len(accounted) != len(names) {
+			stop()
+			release()
+			return nil, errHostBridge
+		}
+		if len(expected) == 0 {
+			stop()
+			release()
+			return nil, nil
+		}
 	}
 	execute := func(callCtx context.Context, _ controller.ToolCallContext, call api.ToolCall) (api.ToolResult, error) {
 		// Sessions owns the call context; attribution belongs to the frozen outer invocation.
@@ -379,7 +421,7 @@ func (b *HostBridge) ResolveTools(ctx context.Context, names []string) (*localto
 		}
 		return nil
 	})
-	if err != nil || !host.Matches(names) || ctx.Err() != nil {
+	if err != nil || !host.Matches(expected) || ctx.Err() != nil {
 		stop()
 		release()
 		return nil, errHostBridge

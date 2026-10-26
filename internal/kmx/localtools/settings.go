@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 
 	"github.com/agent-primitives/sessions/api"
-	"github.com/agent-primitives/sessions/controller"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 	"go.yaml.in/yaml/v3"
@@ -171,31 +170,7 @@ func IsDisabled(settings []ToolSetting, name string) bool {
 	return false
 }
 
-// WithSettings freezes a gate in front of the existing trusted executor. A
-// Disabled answer is local, correlated and journal-checked, never native execution.
-func (h *Host) WithSettings(settings []ToolSetting) (*Host, error) {
-	if h == nil {
-		return nil, ErrSettings
-	}
-	defs := h.Definitions()
-	if defs == nil {
-		defs = []api.ToolDefinition{Definition()}
-	}
-	frozen, err := CopySettings(settings, defs)
-	if err != nil {
-		return nil, err
-	}
-	disabled := false
-	for _, s := range frozen {
-		disabled = disabled || s.State == Disabled
-	}
-	if !disabled {
-		return h, nil
-	}
-	return NewTrustedHost(defs, func(ctx context.Context, scope controller.ToolCallContext, call api.ToolCall) (api.ToolResult, error) {
-		if IsDisabled(frozen, call.Tool) {
-			return api.ToolResult{ID: call.ID, Output: map[string]any{"status": "disabled", "message": "This tool is disabled for this test."}}, nil
-		}
-		return h.Execute(ctx, scope, call)
-	}, h.Check)
+// DisabledResult is a correlated controller-local answer, never tool dispatch.
+func DisabledResult(id string) api.ToolResult {
+	return api.ToolResult{ID: id, Output: map[string]any{"status": "disabled", "message": "This tool is disabled for this test."}}
 }

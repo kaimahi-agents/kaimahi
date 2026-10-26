@@ -40,6 +40,7 @@ type AgentViewExample struct {
 	ID         string                        `json:"id"`
 	Input      string                        `json:"input"`
 	Assertions []runtime.EvaluationAssertion `json:"assertions"`
+	Mocks      *agentfile.Mocks              `json:"mocks,omitempty"`
 }
 type AgentViewLatest struct {
 	Status string                 `json:"status"`
@@ -109,7 +110,16 @@ func AddAgentResource(server *sdk.Server, files *Files) {
 		view.Authoring = &AgentViewAuthoring{Source: string(source), Editable: strictErr == nil}
 		view.History = files.historyView(ctx, p)
 		for _, example := range agent.Examples {
-			view.Examples = append(view.Examples, AgentViewExample{ID: example.ID, Input: example.Input, Assertions: example.Assertions})
+			// The current canvas serializer cannot round-trip tool fixtures/checks yet.
+			if example.Mocks != nil {
+				view.Authoring.Editable = false
+			}
+			for _, as := range example.Assertions {
+				if as.Type == "toolCalled" || as.Type == "toolNotCalled" {
+					view.Authoring.Editable = false
+				}
+			}
+			view.Examples = append(view.Examples, AgentViewExample{ID: example.ID, Input: example.Input, Assertions: example.Assertions, Mocks: example.Mocks})
 		}
 		files.viewMu.Lock()
 		observation := files.latest

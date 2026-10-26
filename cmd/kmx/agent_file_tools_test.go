@@ -30,8 +30,9 @@ func TestFileToolBindingsExplicitAndInert(t *testing.T) {
 		out.Reset()
 		diag.Reset()
 		deps.fileRunner = app.NewLocalFileRunner()
-		if err = execute([]string{op, file}, deps); err == nil || !strings.Contains(out.String(), "tools") || *loads != 0 {
-			t.Fatal("missing provider did not refuse", err, out.String())
+		err = execute([]string{op, file}, deps)
+		if !strings.Contains(out.String(), "unavailable") || !strings.Contains(out.String(), "Not called") || *loads != 0 {
+			t.Fatal("missing tool source not reported", err, out.String())
 		}
 	}
 	for _, args := range [][]string{{"test", "--tool-bindings", "host-binding.json"}, {"run", "--tool-bindings", "host-binding.json"}, {"test", file, "--tool-bindings", ""}, {"test", "--help"}, {"run", "--help"}} {

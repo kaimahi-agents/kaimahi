@@ -27,12 +27,14 @@ type Harness struct {
 	Model        string
 	Definitions  []api.ToolDefinition
 	ToolSettings []ToolSetting
+	Sources      *SourceConfig
 }
 
 type Config struct {
 	Instructions string               `json:"instructions"`
 	Definitions  []api.ToolDefinition `json:"definitions,omitempty"`
 	ToolSettings []ToolSetting        `json:"toolSettings,omitempty"`
+	Sources      *SourceConfig        `json:"sources,omitempty"`
 }
 
 func decodeConfig(raw []byte) (Config, []api.ToolDefinition, error) {
@@ -52,6 +54,9 @@ func decodeConfig(raw []byte) (Config, []api.ToolDefinition, error) {
 	}
 	settings, err := CopySettings(config.ToolSettings, defs)
 	if err != nil {
+		return Config{}, nil, errTrace
+	}
+	if config.Sources.Validate(defs) != nil {
 		return Config{}, nil, errTrace
 	}
 	config.ToolSettings = settings
@@ -89,6 +94,10 @@ func (h Harness) Run(ctx context.Context, s *api.Start, sink api.EventSink) erro
 		if err != nil || !reflect.DeepEqual(trusted, config.ToolSettings) {
 			return errTrace
 		}
+	}
+	// Sources record dispatch selection only; this is not execution proof.
+	if h.Sources != nil && !reflect.DeepEqual(h.Sources, config.Sources) {
+		return errTrace
 	}
 	messages := []api.Message{*api.TextMessage("system", config.Instructions), s.Inputs[0]}
 	for round := 0; round < 2; round++ {
@@ -154,6 +163,7 @@ type Trace struct {
 	Answer      string
 	ToolCalls   int
 	CallsByName map[string]int
+	Sources     *SourceConfig
 }
 
 // VerifyTrace accepts only one complete bounded invocation, then reconstructs
@@ -240,6 +250,7 @@ func VerifyTrace(ctx context.Context, records []eventlog.Record, model string) (
 	if err != nil || calls != 0 || replay.ModelInvocations() != 0 || len(outputs) != wantOutputs || outputs[len(outputs)-1] != final.Text() {
 		return Trace{}, errTrace
 	}
+	out.Sources = config.Sources
 	out.Answer = final.Text()
 	return out, nil
 }

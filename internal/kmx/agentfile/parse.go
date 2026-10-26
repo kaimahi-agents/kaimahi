@@ -53,6 +53,7 @@ type Agent struct {
 }
 type Example struct {
 	ID, Input          string
+	Mocks              *Mocks
 	Assertions         []runtime.EvaluationAssertion
 	Location           Location
 	AssertionLocations []Location
@@ -308,6 +309,24 @@ func parse(filename string, data []byte, inspection bool) (*Agent, error) {
 	examples, err := parseExamples(filename, lines[s.start+1:s.end], s.start+2, true)
 	if err != nil {
 		return nil, err
+	}
+	for _, example := range examples {
+		names := []string{}
+		if example.Mocks != nil {
+			for _, tool := range example.Mocks.Tools {
+				names = append(names, tool.Name)
+			}
+		}
+		for _, assertion := range example.Assertions {
+			if assertion.Type == "toolCalled" || assertion.Type == "toolNotCalled" {
+				names = append(names, assertion.Tool)
+			}
+		}
+		for _, name := range names {
+			if !slices.Contains(a.Tools, name) {
+				return nil, refuse(filename, example.Location.Line, example.Location.Column, "Examples", "fixtures and tool checks must name a declared tool")
+			}
+		}
 	}
 	a.Examples = examples
 	return a, nil

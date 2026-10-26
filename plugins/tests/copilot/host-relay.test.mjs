@@ -49,6 +49,15 @@ test('freeze raw host names with schemas; collision, missing schema and kmx tool
   }
 });
 
+test('partial availability skips only absent names, never malformed or ambiguous metadata', () => {
+  const selected = freezeTools([tool], ['ping', 'absent'], [base], true);
+  assert.deepEqual([...selected.keys()], ['ping']);
+  assert.deepEqual([...freezeTools([], ['absent'], [base], true)], []);
+  for (const metadata of [[{ ...tool, mcpServerName: undefined }], [{ ...tool, input_schema: undefined }], [tool, { ...tool, name: 'duplicate' }]]) {
+    assert.throws(() => freezeTools(metadata, ['ping'], [base], true));
+  }
+});
+
 test('trusted launch preserves route/root and uses only a public startup key', () => {
   const native = launchConfig(descriptor, 'public', 'linux');
   assert.deepEqual(native, { type: 'stdio', command: descriptor.executable, cwd: '/work', args: [...descriptor.args, '--host-bridge-public-key', 'public'], tools: ['run', 'test'] });

@@ -98,7 +98,8 @@ model. Prose cannot grant tools or hooks. Tool names declare a requirement,
 not authority: execution needs an explicit host binding and a qualified provider.
 The CLI supports one [host-bound read-only GitHub MCP operation](local-preview.md#host-tool-foundation)
 with an explicit local binding and environment credential reference. Missing
-bindings/credentials, unsupported routes or invalid provider results refuse.
+bindings leave a declared tool available as a stub answering "not available in this test".
+Malformed supplied bindings, missing credentials for an actual live binding, unsupported routes and invalid provider results still refuse.
 Bound tools also work on Copilot Chat Completions and Responses routes; judges
 remain tool-free. Trusted embedding can bind multiple declared names to copied
 host schemas/executors. The Copilot extension runtime can bind those declarations
@@ -119,8 +120,8 @@ is valid while authoring; a missing sequence, YAML null or a mapping still refus
 Create, Edit and Load preserve the same canonical source/revision at zero tests.
 Ad-hoc Run with an input remains available. Test refuses with
 “No tests yet — add or suggest one”; an empty test set never passes or supplies
-shipping evidence. Each nonempty example has exactly `id`, `input` and
-`assertions`. Order is preserved. Example IDs are unique across the file,
+shipping evidence. Each nonempty example requires `id`, `input` and
+`assertions`, with optional per-test `mocks.tools` data described below. Order is preserved. Example IDs are unique across the file,
 1–63 ASCII letters, digits, `.`, `_` or `-`, starting with a letter or digit.
 Input is a nonblank string, validated with the existing runtime case validator
 (including known credential-shape refusal). Assertions are nonempty and reuse existing
@@ -132,6 +133,7 @@ Supported types and operands:
 |---|---|
 | `contains`, `notContains` | `value`: nonblank single-line string |
 | `regex` | `pattern`: nonblank valid Go RE2, at most 1024 bytes |
+| `toolCalled`, `toolNotCalled` | `tool`: a name declared in `## Tools` |
 | `llmJudge` | `rubric`: nonblank, at most 4096 bytes; `minScore`: integer 0–100; `judgeModel`, `judgeVersion`: nonblank safe printable ASCII identity strings, at most 256 bytes each |
 
 Every assertion also requires `id` and `type`. Assertion IDs use the example-ID
@@ -144,10 +146,47 @@ samples as a separate Session, including explicit Copilot routes. Judge payloads
 and responses are retained in cleartext under the same retention/clearing policy
 as agent turns; never author secrets in a rubric.
 
-No tool assertions, `tool` fields, legacy `expectContains`, repeat policy,
+No legacy `expectContains`, repeat policy,
 executable declarations, unknown/duplicate fields, anchors, aliases, merge keys
 or custom YAML tags are accepted. String fields must be YAML strings: quote a
 numeric-looking input such as `"123"`; null entries cannot disappear silently.
+
+## Per-test recorded tools
+
+File Run/Test accepts hand-authored recordings. This first slice does **not** capture or save live results automatically.
+Each `mocks.tools` entry names a declared tool and an explicit `mode: live` or `mode: recorded`:
+
+```yaml
+mocks:
+  tools:
+    - name: ping
+      mode: recorded
+      description: Read a greeting.
+      parameters: {type: object, additionalProperties: false}
+      calls:
+        - arguments: {}
+          result: {greeting: "Hello"}
+```
+
+A populated recording requires a description, an offline JSON parameter schema and exactly one saved call with
+object arguments/result. The result is model-visible JSON output, not an MCP envelope. Live entries have only name/mode.
+Recorded entries with `calls: []` use a live binding if present, otherwise an unavailable stub; they remain pending
+in this slice. Omitted settings keep live/unavailable behavior. Saved data never grants live execution authority.
+A recording runs without a tool binding or tool sign-in, but the model still needs its normal access.
+
+Schema-valid calls match canonical JSON arguments, independent of key order or model call ID. Different arguments stop the run
+with a recording-mismatch message and no live fallback. Schema-invalid model requests are refused before dispatch,
+like invalid live requests. The same saved response can answer repeated identical
+requests within the existing five-call first-response batch. Saved-but-unused data is not an implicit Calls check.
+Both call checks count validated requests, including recorded and unavailable requests; incomplete execution
+cannot pass a Doesn't call check. Results report configured mode, selected source and actual count; zero means
+**Not called**, not proof that a live tool worked. A recorded pass does not qualify today's server.
+
+Fixtures share all existing YAML/source bounds below, including the shallow 12-level nesting budget. They reject
+external schema references, duplicate keys, inexact JSON numbers and known credential shapes. Arbitrary private data
+can evade those checks: saved results are plain file content that the author may commit. Native Squad stays tool-free.
+Run-profile export refuses fixtures and tool checks rather than dropping them. Until canvas round-trip support lands,
+fixture/tool-check files are read-only in the canvas; CLI/MCP Test remains available. No automatic migration occurs.
 
 ## Bounds, loading and errors
 
