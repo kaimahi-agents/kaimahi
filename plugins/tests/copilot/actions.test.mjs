@@ -9,7 +9,7 @@ const revision=s=>'sha256:'+createHash('sha256').update(s).digest('hex');
 function harness({omitModel=false,fixture=original}={}){
  let source=omitModel?fixture.replace(/## Model\r?\n[\s\S]*?(?=## Examples)/,''):fixture,latest={status:'none'};
  const calls=[],o={};let race=false,denied=false,unavailable=false,release;
- let examples=[{id:'greeting',input:'Ada',assertions:[{id:'greeting-text',type:'contains',value:'Hello, Ada'}]}];
+ let examples=fixture.includes('examples: []')?[]:[{id:'greeting',input:'Ada',assertions:[{id:'greeting-text',type:'contains',value:'Hello, Ada'}]}];
  const raw=()=>({schemaVersion:1,kind:'kmx.agent-view',file:{path:'greeter.agent.md',revision:revision(source)},title:'Greeter',instructions:source,model:omitModel?'':'fake',examples,authoring:{source,editable:true},latest});
  const session={rpc:{mcp:{resources:{read:async({uri})=>({contents:[{uri,text:JSON.stringify(raw())}]})}},tools:{getCurrentMetadata:async()=>({tools:['edit','test','run'].map(op=>({name:'owned-'+op,mcpServerName:'kmx-agent-builder',mcpToolName:op}))}),execute:async request=>{
   calls.push(request);assert.equal(request.arguments.schemaVersion,1);assert.equal(request.arguments.path,'greeter.agent.md');
@@ -43,6 +43,31 @@ test('runtime reads existing tool declarations without adding a tool editor', as
  assert.equal(h.calls.at(-1).name,'owned-test');
 });
 
+for(const eol of ['\n','\r\n']) test('tools save uses the current source revision, preserves prompt/examples, and reads back before Test '+JSON.stringify(eol),async()=>{
+ const source=original.replace(/\r?\n/g,eol),h=harness({fixture:source});
+ const response=await h.act({operation:'save-and-test',expectedRevision:revision(h.source()),tools:['search','list_tags']});
+ assert.equal(response.error,undefined);assert.equal(response.saved,true);
+ assert.deepEqual(h.calls.map(c=>c.name),['owned-edit','owned-test']);
+ assert.equal(h.calls[0].arguments.expectedRevision,revision(source));
+ assert.match(h.source(),/## Tools\r?\n- search\r?\n- list_tags\r?\n\r?\n## Examples/);
+ assert.equal(response.view.file.revision,revision(h.source()));
+ assert.deepEqual(response.view.authoring.examples,h.raw().examples);
+ const stale=await h.act({operation:'save-and-test',expectedRevision:revision(source),tools:[]});
+ assert.equal(stale.error,'stale_revision');assert.equal(h.calls.length,2);
+});
+for(const eol of ['\n','\r\n']) test('tools save with zero tests acknowledges source save without claiming tests ran '+JSON.stringify(eol),async()=>{
+ const {replaceExamples}=await import('../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs');
+ const h=harness({fixture:replaceExamples(original.replace(/\r?\n/g,eol),[])});h.o.nextExamples=[];
+ const response=await h.act({operation:'save-and-test',expectedRevision:revision(h.source()),tools:['ping']});
+ assert.equal(response.saved,true);assert.equal(response.view.latest.result.fullPass,false);
+ assert.equal(response.view.latest.result.reasonCode,'no_tests');assert.match(h.source(),/## Tools\r?\n- ping/);
+});
+test('read-only catalog action cannot accept browser paths or tool-execution operands',async()=>{
+ const h=harness();
+ for(const extra of [{path:'else.agent.md'},{serverName:'github'},{tools:['ping']},{content:'x'}]) assert.equal((await h.act({operation:'tools',...extra})).error,'invalid-action');
+ const response=await h.act({operation:'tools'});
+ assert.equal(response.error,undefined);assert.deepEqual(response.servers,[]);assert.equal(h.calls.length,0);
+});
 function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no});return{promise,resolve,reject}}
 function nativeHarness(){
  const h=harness(),listeners=new Set(),retired=[],requests=[],gate=deferred(),ack=deferred(),aborts=[],dispatched=deferred(),events=new Map();

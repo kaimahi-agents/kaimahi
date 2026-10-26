@@ -1,10 +1,13 @@
 // Agent canvas. Files and previews are accessed only through the
 // same session's existing kmx MCP resource and Edit/Run/Test operations.
 import { randomBytes, timingSafeEqual, createHash } from "node:crypto";
-import { instructionSections, replaceInstructions, replaceExamples, effectiveModel, preRouteRefusal, agentName, fileLocation } from "./authoring.mjs";
+import { instructionSections, replaceInstructions, replaceExamples, replaceTools, effectiveModel, preRouteRefusal, agentName, fileLocation } from "./authoring.mjs";
 import { readFile } from "node:fs/promises";
 import http from "node:http";
 import { ensureHostRuntime, previewServer, beginPreview, closeHostRuntime, observePreview, HostRuntimeUnavailable } from "./host-relay.mjs";
+
+import { readToolCatalog } from "./tool-catalog.mjs";
+export { readToolCatalog };
 
 export const CANVAS_ID = "kmx-agent-view";
 export const SERVER_NAME = "kmx-agent-builder";
@@ -257,11 +260,11 @@ export function createActionHandler({ session, path }) {
   path = normalizePath(path);
   let busy = false, uncertain = false, current, disposed = false;
   const allowed = {
-    "save-and-test": ["expectedRevision", "sections", "examples", "showContent", "caseId", "model", "runId"],
+    "save-and-test": ["expectedRevision", "sections", "examples", "tools", "showContent", "caseId", "model", "runId"],
     "save-examples": ["expectedRevision", "examples"],
     "save-prompt": ["expectedRevision", "sections"],
     test: ["expectedRevision", "showContent", "caseId", "model", "runId"], run: ["expectedRevision", "input", "showContent", "model"],
-    suggest: [], reload: [], models: [], progress: ["runId"], stop: ["runId"],
+    suggest: [], reload: [], models: [], tools: [], progress: ["runId"], stop: ["runId"],
   };
   const validRunId = (id) => typeof id === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(id);
   const snapshot = () => current?.id === undefined ? undefined : ({
@@ -371,6 +374,9 @@ export function createActionHandler({ session, path }) {
     if (input.operation === "models") {
       try { return await readModels(session); } catch (e) { const error = safeError(e); return { error: error.code, message: error.message }; }
     }
+    if (input.operation === "tools") {
+      try { return await readToolCatalog(session); } catch { return { error: "tools-unavailable", message: "Tools are unavailable in this session." }; }
+    }
     if (busy) return { error: "busy", message: MESSAGES.busy };
     busy = true;
     current = undefined; // Never replay the previous invocation's snapshot.
@@ -402,6 +408,7 @@ export function createActionHandler({ session, path }) {
           content = replaceExamples(content, input.examples);
           examples = input.examples;
         }
+        if (input.tools !== undefined) content = replaceTools(content, input.tools);
         instructionSections(content);
       } catch { throw new ViewError("invalid-action"); }
       ids = examples.map((e) => e.id);
@@ -511,6 +518,7 @@ const ASSETS = {
   "app.js": ["app.js", "text/javascript; charset=utf-8"],
   "style.css": ["style.css", "text/css; charset=utf-8"],
   "authoring.mjs": ["authoring.mjs", "text/javascript; charset=utf-8"],
+  "tools-view.mjs": ["tools-view.mjs", "text/javascript; charset=utf-8"],
   "editor.mjs": ["editor.mjs", "text/javascript; charset=utf-8"],
   "draft-controller.mjs": ["draft-controller.mjs", "text/javascript; charset=utf-8"],
   "action-controller.mjs": ["action-controller.mjs", "text/javascript; charset=utf-8"],

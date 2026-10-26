@@ -42,7 +42,7 @@ export function createObservationController(state, { path, options, drafts, clea
     if (!state.candidate) return;
     state.invalidCheck = undefined; clearUndo(); displayNames.clear();
     state.observationGeneration++;
-    sectionDrafts.clear(); testDrafts.clear(); invalidEditors.clear();
+    sectionDrafts.clear(); testDrafts.clear(); invalidEditors.clear(); state.toolsDraft = undefined;
     history.remember(state.candidate);
     state.base = state.candidate; state.snap = readSnapshot(state.base); state.candidate = undefined; state.compareOpen = false; state.lastRun = undefined;
     pruneDrafts(); state.message = "Using the new version. Your edits were discarded."; render();
@@ -60,6 +60,10 @@ export function createObservationController(state, { path, options, drafts, clea
     if (clash) {
       state.message = `Can't keep your edits automatically: the new version also has a test named ${quoted(clash.raw?.id ?? clash.origin)}. Compare, or use the new version.`;
       refresh(); return;
+    }
+    if (state.toolsDraft !== undefined) {
+      const previous = state.base.tools ?? [], removed = previous.filter(name => !state.toolsDraft.includes(name));
+      state.toolsDraft = [...new Set([...(state.candidate.tools ?? []).filter(name => !removed.includes(name)), ...state.toolsDraft.filter(name => !previous.includes(name))])];
     }
     history.remember(state.candidate);
     state.base = state.candidate; state.snap = next; state.candidate = undefined; state.compareOpen = false; state.lastRun = undefined;

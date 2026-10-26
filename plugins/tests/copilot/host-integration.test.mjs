@@ -60,7 +60,7 @@ for (const mode of ['round trip', 'denial', 'cancelled', 'expired', 'batch', 'ba
   const state = path.join(root, 'state'); await mkdir(state, { mode: 0o700 });
   const env = { ...process.env, KMX_HOME: state };
   const source = '# Host fixture\n\n## Identity\n- **ID:** fixture\n- **Purpose:** One host read.\n\n## Accountable Responsibilities\nCall the tool `ping`. Reply with exactly `done`.\n\n## Non-Responsibilities\nNo other calls.\n\n## Collaboration and Review Authority\nReturn the answer.\n\n## Model\n- **Preferred:** fake\n\n## Tools\n- ping\n\n## Examples\n```yaml\nexamples:\n  - id: read\n    input: read\n    assertions:\n      - id: complete\n        type: contains\n        value: done\n```\n';
-  await writeFile(path.join(root, 'fixture.agent.md'), batch ? source.replace('Preferred:** fake', 'Preferred:** unit') : source, { mode: 0o600 });
+  await writeFile(path.join(root, 'fixture.agent.md'), batch ? source.replace('Preferred:** fake', 'Preferred:** unit') : mode === 'round trip' ? source.replace('## Tools\n- ping\n\n', '') : source, { mode: 0o600 });
   const original = await connect(binary, ['mcp', '--root', root, ...(batch ? ['--provider', 'compatible', '--endpoint', `http://127.0.0.1:${modelServer.address().port}`] : [])], { env });
   const servers = new Map([['kmx-agent-builder', original]]), calls = [], previews = [];
   const session = { rpc: { mcp: {
@@ -105,14 +105,20 @@ for (const mode of ['round trip', 'denial', 'cancelled', 'expired', 'batch', 'ba
     assert.equal(calls.length, 0, 'metadata returning later must not initiate an effect');
     return;
   }
-  const before = await readView(session, 'fixture.agent.md'); assert.deepEqual(before.tools, ['ping']);
-  const result = await createActionHandler({ session, path: 'fixture.agent.md' })({ operation: 'test', expectedRevision: before.file.revision });
+  const before = await readView(session, 'fixture.agent.md'); assert.deepEqual(before.tools, mode === 'round trip' ? [] : ['ping']);
+  const result = await createActionHandler({ session, path: 'fixture.agent.md' })({ operation: mode === 'round trip' ? 'save-and-test' : 'test', expectedRevision: before.file.revision, ...(mode === 'round trip' ? { tools: ['ping'] } : {}) });
+  if (mode === 'round trip') {
+    assert.equal(result.saved, true); assert.deepEqual(result.view.tools, ['ping']);
+    assert.notEqual(result.view.file.revision, before.file.revision);
+    assert.equal(previews[0].serverName, 'kmx-agent-builder', 'Edit stays on the original checked agent-file server');
+  }
   assert.ifError(modelError);
   assert.equal(calls.length, overLimit ? 0 : batch ? denied ? 3 : 5 : 1);
   for (const call of calls) assert.equal(call.name, 'actual-host-ping');
   if (batch) assert.equal(sends, denied || overLimit ? 1 : 2);
-  assert.notEqual(previews[0].serverName, 'kmx-agent-builder');
-  const payload = previews[0].result.structuredContent;
+  const preview = previews.find(p => p.result.structuredContent?.kind === 'kmx.agent-file-preview');
+  assert.notEqual(preview.serverName, 'kmx-agent-builder');
+  const payload = preview.result.structuredContent;
   assert.equal(payload.fullPass, !denied && !overLimit, JSON.stringify(payload));
   assert.equal(result.error, denied || overLimit ? 'action-failed' : undefined);
   assert.ok(!JSON.stringify(result).includes('private-canary'));

@@ -6,6 +6,7 @@ import { el, inlineText, editorValue, instructionsContent, runtimeModelControl, 
 import { createDraftController } from "./draft-controller.mjs";
 import { createActionController } from "./action-controller.mjs";
 import { createObservationController } from "./observation-controller.mjs";
+import { toolsSection, serverToolsView } from "./tools-view.mjs";
 export { provenActual } from "./editor.mjs";
 
 async function postAction(action) {
@@ -39,12 +40,13 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   };
   const { sectionDrafts, testDrafts, invalidEditors, history, editingChecks, modelChoice } = state;
   let filter = "all", menuOpen = false, cleanups = [], controls = [];
+  let toolServers = [], toolsLoading = false, toolsError = "", toolsMenu = false, toolsLoaded = false, toolsFor, disposed = false;
   let refresh = () => {}, activeTestName, issueInput;
   state.base = modelChoice.view(state.base);
   history.focus(effectiveModel(state.base.model, modelChoice.override, state.base.chatModel));
   let actions;
   const drafts = createDraftController(state, { clearUndo: () => actions.clearUndo(), navigate, render, refresh: () => refresh() });
-  const { hasDrafts, sectionText, entries, localExamples, draftName, noteDraft, addTest } = drafts;
+  const { hasDrafts, toolNames, noteTools, sectionText, entries, localExamples, draftName, noteDraft, addTest } = drafts;
   const { observation, matches, observe, checkNow, useTheirs, keepMine } = createObservationController(state,
     { path: payload.file.path, options, drafts, clearUndo: () => actions.clearUndo(), render, refresh: () => refresh() });
   actions = createActionController(state, { execute, fetchProgress: options.fetchProgress, drafts, matches, checkNow, render, refresh: () => refresh(), focusName: () => activeTestName?.focus() });
@@ -54,6 +56,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
 
   // DOM
   function render() {
+    const focusedTool = state.route.name === "tools" && root.contains(doc.activeElement) ? doc.activeElement?.getAttribute?.("data-tool-name") : undefined;
     for (const cleanup of cleanups.splice(0)) cleanup();
     invalidEditors.clear();
     const content = el(doc, "div", state.route.name === "detail" ? "content detail-view" : "content");
@@ -74,8 +77,15 @@ export function renderView(doc, root, payload, execute = postAction, options = {
           : state.busy || state.blocked || (guard === "save" && !!state.candidate) || (guard === "clean" && hasDrafts()));
       }
     };
-    const detail = state.route.name === "detail";
-    const parts = detail ? detailView(button, status, updates) : mainView(button, status, updates);
+    const declaredTools = JSON.stringify(state.base.tools ?? []);
+    if (declaredTools !== toolsFor) { toolsFor = declaredTools; toolsLoaded = false; toolsError = ""; }
+    const detail = state.route.name === "detail", tools = state.route.name === "tools";
+    const parts = tools ? toolPage(button, updates) : detail ? detailView(button, status, updates) : mainView(button, status, updates);
+    if (tools) content.addEventListener("keydown", event => {
+      if (event.defaultPrevented || event.isComposing || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return;
+      if (event.key === "Enter" && event.target?.tagName !== "BUTTON" && !event.target?.closest?.("button")) { event.preventDefault(); submitAll(); }
+      else if (event.key === "Escape" && !state.busy && !state.blocked && !state.candidate) { event.preventDefault(); state.toolsDraft = undefined; render(); }
+    });
     const line = el(doc, "div", "message-line");
     line.append(messageNode);
     if (state.snap) {
@@ -84,15 +94,21 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       line.append(reloadNow);
     }
     // Keep Suggest feedback with Tests.
-    if (!detail && state.message === "Asked Copilot to add tests in chat.") parts[2].append(line);
-    else parts.splice(detail ? 1 : Math.min(2, parts.length), 0, line);
-    if (state.candidate) parts.splice(detail ? 1 : 1, 0, conflictNotice(doc, button, compareDrafts(state.base, state.candidate, state.snap, sectionDrafts, testDrafts), state.compareOpen,
+    const tests = parts.find(part => part.className === "tests-section");
+    if (tests && state.message === "Asked Copilot to add tests in chat.") tests.append(line);
+    else parts.splice(detail || tools ? 1 : Math.min(2, parts.length), 0, line);
+    if (state.candidate) parts.splice(detail ? 1 : 1, 0, conflictNotice(doc, button, compareDrafts(state.base, state.candidate, state.snap, sectionDrafts, testDrafts, state.toolsDraft), state.compareOpen,
       () => { state.compareOpen = !state.compareOpen; render(); }, keepMine, useTheirs));
     content.append(...parts);
     root.replaceChildren(content);
     refresh();
     if (state.focusTestName) { activeTestName?.focus(); state.focusTestName = false; }
     if (state.focusIssue) { issueInput?.focus(); state.focusIssue = false; }
+    if (focusedTool) {
+      const replacement = Array.from(root.querySelectorAll(".tool-choice")).find(node => node.getAttribute("data-tool-name") === focusedTool);
+      (replacement && !replacement.disabled ? replacement : root.querySelector(".tool-filter"))?.focus();
+    }
+    if ((state.base.tools ?? []).length && !toolsLoaded && !toolsLoading && !toolsError) loadTools();
   }
 
   const selectedModel = () => effectiveModel(state.base.model, modelChoice.override, state.base.chatModel);
@@ -218,9 +234,52 @@ export function renderView(doc, root, payload, execute = postAction, options = {
 
     sourceActions(button, info, updates);
     const tests = testsSection(button, updates);
-    const out = [head, promptSection, tests];
+    const tools = toolsSection(doc, button, { servers: toolServers, names: state.base.tools ?? [], editable: !!state.snap,
+      loading: toolsLoading, loaded: toolsLoaded, error: toolsError, menuOpen: toolsMenu, onToggleMenu: () => {
+        toolsMenu = !toolsMenu;
+        if (toolsMenu) loadTools(); else render();
+      }, onOpen: openTools });
+    const out = [head, promptSection, tools, tests];
     if (state.snap) out.push(pinnedBar(button, foot, tests, updates));
     return out;
+  }
+
+  async function loadTools() {
+    if (toolsLoading) return;
+    toolsLoading = true; toolsError = ""; render();
+    try {
+      const response = await (options.fetchTools ? options.fetchTools() : execute({ operation: "tools" }));
+      if (disposed) return;
+      if (response?.error || !Array.isArray(response?.servers)) throw new Error();
+      toolServers = response.servers; toolsLoaded = true;
+    } catch { toolsError = "Tools are unavailable in this session."; }
+    finally { toolsLoading = false; if (!disposed) render(); }
+  }
+  function openTools(server) {
+    const selected = toolNames(); toolsMenu = false;
+    navigate({ name: "tools", server, filter: "", rows: [...server.tools].sort((a, b) => Number(selected.includes(b.name)) - Number(selected.includes(a.name))) });
+    render();
+  }
+  function toolPage(button, updates) {
+    const route = state.route, status = el(doc, "span", "meta prompt-status");
+    updates.push(() => { status.textContent = !state.snap || state.busy ? footText("all") : !total()
+      ? hasDrafts() ? "Edited · Enter saves" : "Saved · add a test to run it"
+      : `${hasDrafts() ? "Edited · Enter saves and runs" : "Saved · Enter runs"} ${plural(total(), "test")}`; });
+    const parts = serverToolsView(doc, button, { agentName: state.base.title.split(" — ")[0], server: route.server, servers: toolServers, rows: route.rows, names: toolNames(), filter: route.filter, editable: !!state.snap,
+      onFilter: value => { route.filter = value; }, busy: !state.snap || state.busy || state.blocked || !!state.candidate,
+      onBack: () => { navigate({ name: "main" }); render(); },
+      onToggle: (name, checked) => {
+        if (!state.snap || state.busy || state.blocked || state.candidate) return;
+        const current = toolNames();
+        if (checked && current.length >= 32 && !current.includes(name)) { state.message = "Keep at most 32 tools for this agent."; render(); return; }
+        noteTools(checked ? [...new Set([...current, name])] : current.filter(value => value !== name)); render();
+      }, onDiscard: () => { if (state.busy || state.blocked || state.candidate) return; state.toolsDraft = undefined; state.message = ""; render(); }, onSubmit: submitAll,
+      dirty: state.toolsDraft !== undefined, footer: status });
+    for (const node of parts.flatMap(part => Array.from(part.querySelectorAll("input")))) updates.push(() => {
+      const name = node.getAttribute("data-tool-name");
+      node.disabled = !state.snap || state.busy || state.blocked || !!state.candidate || (name !== null && !node.checked && !route.rows.find(tool => tool.name === name)?.selectable);
+    });
+    return parts;
   }
 
   function sourceActions(button, info, updates) {
@@ -713,7 +772,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     observe,
     observation,
     idle: () => !state.busy && !state.blocked && invalidEditors.size === 0,
-    dispose() { clearUndo(); actions.dispose(); state.observationGeneration++; for (const cleanup of cleanups.splice(0)) cleanup(); },
+    dispose() { disposed = true; clearUndo(); actions.dispose(); state.observationGeneration++; for (const cleanup of cleanups.splice(0)) cleanup(); },
   };
 }
 

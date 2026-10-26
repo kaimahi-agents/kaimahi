@@ -3,7 +3,12 @@ import { uniqueIndex, isRefused, clone, same, friendlyName, checkIssue } from ".
 
 export function createDraftController(state, { clearUndo, navigate, render, refresh }) {
   const { sectionDrafts, testDrafts, invalidEditors, history, editingChecks, displayNames, modelChoice } = state;
-  const hasDrafts = () => sectionDrafts.size > 0 || testDrafts.size > 0 || invalidEditors.size > 0;
+  const hasDrafts = () => state.toolsDraft !== undefined || sectionDrafts.size > 0 || testDrafts.size > 0 || invalidEditors.size > 0;
+  const toolNames = () => state.toolsDraft ?? state.base.tools ?? [];
+  function noteTools(names) {
+    clearUndo();
+    state.toolsDraft = same([...names].sort(), [...(state.base.tools ?? [])].sort()) ? undefined : [...names];
+  }
   const rawExamples = () => state.snap ? state.base.authoring.examples : [];
   const sectionText = (key) => sectionDrafts.get(key) ?? state.snap.sections.find((s) => s.key === key).text;
   // Ambiguous IDs stay visible but cannot be edited.
@@ -34,7 +39,8 @@ export function createDraftController(state, { clearUndo, navigate, render, refr
     if (draft.origin && origin && same(origin, draft.raw)) testDrafts.delete(key); else testDrafts.set(key, draft);
   }
   function pruneDrafts() {
-    if (!state.snap) { sectionDrafts.clear(); testDrafts.clear(); return; }
+    if (!state.snap) { sectionDrafts.clear(); testDrafts.clear(); state.toolsDraft = undefined; return; }
+    if (state.toolsDraft !== undefined && same([...state.toolsDraft].sort(), [...(state.base.tools ?? [])].sort())) state.toolsDraft = undefined;
     for (const [key, text] of sectionDrafts) if (state.snap.sections.find((s) => s.key === key)?.text === text) sectionDrafts.delete(key);
     const raws = uniqueIndex(rawExamples(), (e) => e.id);
     for (const [id, record] of displayNames) if (!same(raws.get(id), record.raw)) displayNames.delete(id);
@@ -62,6 +68,7 @@ export function createDraftController(state, { clearUndo, navigate, render, refr
     const renamed = state.route.name === "detail" && submitted.tests.includes(state.route.key) ? testDrafts.get(state.route.key)?.raw?.id : undefined;
     history.remember(view); editingChecks.clear();
     state.base = modelChoice.view(view); state.snap = readSnapshot(state.base); state.candidate = undefined; state.compareOpen = false;
+    if (submitted.tools) state.toolsDraft = undefined;
     for (const key of submitted.sections) sectionDrafts.delete(key);
     for (const key of submitted.tests) testDrafts.delete(key);
     if (renamed) state.route = { name: "detail", key: `id:${renamed}` };
@@ -77,5 +84,5 @@ export function createDraftController(state, { clearUndo, navigate, render, refr
     navigate({ name: "detail", key }); state.focusTestName = true; render();
   }
 
-  return { hasDrafts, rawExamples, sectionText, entries, localExamples, draftName, checkProblem, noteDraft, pruneDrafts, adopt, addTest };
+  return { hasDrafts, toolNames, noteTools, rawExamples, sectionText, entries, localExamples, draftName, checkProblem, noteDraft, pruneDrafts, adopt, addTest };
 }

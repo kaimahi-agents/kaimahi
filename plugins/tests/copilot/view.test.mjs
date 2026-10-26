@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { instructionSections, replaceExamples, replaceInstructions } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs";
+import { instructionSections, replaceExamples, replaceInstructions, replaceTools } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs";
 import { readFile } from "node:fs/promises";
 import http from "node:http";
 import test from "node:test";
@@ -1379,7 +1379,7 @@ test("frontend and provider sources avoid unsafe sinks and mutation surfaces", a
   assert.match(strip(app), /method: "POST"/);
   assert.match(strip(app), /fetch\("actions"/);
   const operations = strip(view).match(/const allowed = \{([\s\S]*?)\n  \};/)[1];
-  assert.deepEqual([...operations.matchAll(/(?:"([a-z-]+)"|\b([a-z]+))\s*:\s*\[/g)].map((m) => m[1] ?? m[2]).sort(), ["models", "progress", "reload", "run", "save-and-test", "save-examples", "save-prompt", "stop", "suggest", "test"]);
+  assert.deepEqual([...operations.matchAll(/(?:"([a-z-]+)"|\b([a-z]+))\s*:\s*\[/g)].map((m) => m[1] ?? m[2]).sort(), ["models", "progress", "reload", "run", "save-and-test", "save-examples", "save-prompt", "stop", "suggest", "test", "tools"]);
   assert.doesNotMatch(strip(app), /createElement\(\s*["']button["']/);
   assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)[^>]*>|\son[a-z]+\s*=|style\s*=|<form|<button|<input|<textarea|http-equiv/i);
   assert.doesNotMatch(css, /@import|url\(/i);
@@ -1397,6 +1397,7 @@ async function viewFor(source, examples, latest = { status: "none" }, model = "f
   const revision = "sha256:" + createHash("sha256").update(source).digest("hex");
   return readView(stubSession(resource(MINIMAL, {
     file: { path: MINIMAL, revision }, instructions: source, model, examples,
+    tools: [...(source.match(/## Tools\r?\n([\s\S]*?)## Examples/)?.[1] ?? "").matchAll(/^- ([A-Za-z_][A-Za-z0-9_-]{0,63})\r?$/gm)].map(m => m[1]),
     latest: typeof latest === "function" ? latest(revision, examples) : latest,
     authoring: { source, editable: true },
   })), MINIMAL);
@@ -1405,6 +1406,7 @@ async function editableCanvas(body, eol, options = {}) {
   let original = await readFile(new URL("../../../internal/kmx/agentfile/testdata/greeter.agent.md", import.meta.url), "utf8");
   if (options.omitModel) original = original.replace(/## Model\r?\n- \*\*Preferred:\*\* fake\r?\n\r?\n/, "");
   if (eol) original = original.replace(/\r?\n/g, eol);
+  if (options.tools) original = replaceTools(original, options.tools);
   const sections = instructionSections(original); sections[0].text = body;
   const source = replaceInstructions(original, sections);
   const revision = "sha256:" + createHash("sha256").update(source).digest("hex");
@@ -1424,13 +1426,171 @@ async function editableCanvas(body, eol, options = {}) {
   const app = renderView(doc, root, view, async (action) => {
     calls.push(action);
     return options.respond ? options.respond(action, calls) : options.response ?? { error: "refused", message: "Draft kept." };
-  }, { fetchView: options.fetchView, fetchModels: options.fetchModels, fetchProgress: options.fetchProgress });
+  }, { fetchView: options.fetchView, fetchModels: options.fetchModels, fetchTools: options.fetchTools, fetchProgress: options.fetchProgress });
   const clickTest = async () => {
     byClass(root, "save-run")[0].listeners.click[0]();
     await Promise.resolve(); await Promise.resolve();
   };
   return { doc, root, calls, source, view, app, examples, sections: instructionSections(source), clickTest };
 }
+
+const toolsCatalog = () => ({servers:[{name:"github",label:"GitHub",tools:[{name:"search",description:"Find pull requests",selectable:true},{name:"list_tags",description:"List tags",selectable:true}]}]});
+const settleTools = () => new Promise(setImmediate);
+async function openServer(h) {
+  btn(h.root, "+ Add tools").listeners.click[0](); await settleTools();
+  byClass(h.root, "tool-server-option")[0].listeners.click[0]();
+}
+function chooseTool(h, name, checked) {
+  const node = byClass(h.root, "tool-choice").find(n => n.attrs["data-tool-name"] === name);
+  node.checked = checked; node.listeners.change[0]();
+}
+test("Tools always sits between Prompt and Tests with the exact empty state and working server navigation", async t => {
+  const h = await editableCanvas("Before.", undefined, {fetchTools:async()=>toolsCatalog()}); t.after(()=>h.app.dispose());
+  const parts = h.root.children[0].children.map(n=>n.className);
+  assert.ok(parts.indexOf("prompt-section") < parts.indexOf("tools-section"));
+  assert.ok(parts.indexOf("tools-section") < parts.indexOf("tests-section"));
+  const section = byClass(h.root,"tools-section")[0];
+  assert.match(section.textContent,/No tools yet/);
+  assert.match(section.textContent,/A tool lets the agent read or change things through a server this app has\. Tests use the same tools\./);
+  await openServer(h);
+  assert.equal(byClass(h.root,"back")[0].attrs["aria-label"],"Back to Greeter");
+  assert.deepEqual(byClass(h.root,"tool-choice").map(n=>n.attrs["data-tool-name"]),["search","list_tags"]);
+  assert.doesNotMatch(h.root.textContent,/signed in|Live/);
+  assert.equal(h.calls.length,0,"catalog navigation neither saves nor runs");
+});
+test("tools ticks remain drafts across navigation, scoped discard preserves prompt, and Enter saves once", async t => {
+  let h;
+  h = await editableCanvas("Before.", undefined, {fetchTools:async()=>toolsCatalog(),respond:async action=>{
+    const {replaceTools}=await import("../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs");
+    let source=replaceTools(h.source,action.tools);
+    if(action.sections) source=replaceInstructions(source,action.sections);
+    return {saved:true,view:await viewFor(source,h.examples,{status:"stale"})};
+  }}); t.after(()=>h.app.dispose());
+  c18Prompt(h.root).textContent="Prompt draft.";c18Prompt(h.root).listeners.input[0]();
+  await openServer(h);chooseTool(h,"search",true);
+  assert.match(h.root.textContent,/Edited · Enter saves and runs 1 test/);
+  assert.deepEqual(byClass(h.root,"tool-choice").map(n=>n.attrs["data-tool-name"]),["search","list_tags"]);
+  byClass(h.root,"tools-discard")[0].listeners.click[0]();
+  assert.equal(byClass(h.root,"tool-choice").find(n=>n.attrs["data-tool-name"]==="search").checked,false);
+  chooseTool(h,"list_tags",true); byClass(h.root,"back")[0].listeners.click[0]();
+  assert.equal(c18Prompt(h.root).textContent,"Prompt draft.");
+  assert.equal(byClass(h.root,"tool-source").length,0,"unsaved newly-added server does not masquerade as saved source");
+  await openServer(h);
+  assert.equal(byClass(h.root,"tool-choice")[0].attrs["data-tool-name"],"list_tags","ticked first only on a new visit");
+  chooseTool(h,"search",true);
+  assert.equal(byClass(h.root,"tool-choice")[0].attrs["data-tool-name"],"list_tags","tick does not move rows");
+  byClass(h.root,"tools-save")[0].listeners.click[0]();await settleTools();
+  assert.equal(h.calls.length,1);assert.equal(h.calls[0].operation,"save-and-test");
+  assert.deepEqual(h.calls[0].tools,["list_tags","search"]);
+  assert.equal(h.calls[0].sections[0].text,"Prompt draft.");
+  byClass(h.root,"back")[0].listeners.click[0]();
+  const row=byClass(h.root,"tool-source")[0];assert.match(row.textContent,/GitHub.*2 of 2 tools/);
+  assert.doesNotMatch(row.textContent,/search|list_tags|signed in|Live/);
+});
+test("tools draft conflicts survive Keep mine without deleting outside declarations",async t=>{
+  const {replaceTools}=await import("../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs");
+  const h=await editableCanvas("Before.",undefined,{fetchTools:async()=>toolsCatalog()});t.after(()=>h.app.dispose());
+  await openServer(h);chooseTool(h,"search",true);byClass(h.root,"back")[0].listeners.click[0]();
+  h.app.observe(await viewFor(replaceTools(h.source,["outside"]),h.examples));
+  assert.match(h.root.textContent,/changed|outside/i);
+  btn(h.root,"Keep my edits").listeners.click[0]();
+  await openServer(h);byClass(h.root,"tools-save")[0].listeners.click[0]();await settleTools();
+  assert.deepEqual(new Set(h.calls[0].tools),new Set(["outside","search"]));
+});
+
+test("tools page Escape discards only tools and Enter dispatches one combined save",async t=>{
+  const h=await editableCanvas("Before.",undefined,{fetchTools:async()=>toolsCatalog()});t.after(()=>h.app.dispose());
+  c18Prompt(h.root).textContent="Keep prompt.";c18Prompt(h.root).listeners.input[0]();
+  await openServer(h);chooseTool(h,"search",true);
+  const key=key=>({key,preventDefault(){},defaultPrevented:false});
+  h.root.children[0].listeners.keydown[0](key("Escape"));
+  assert.ok(byClass(h.root,"tool-choice").every(n=>!n.checked));
+  chooseTool(h,"search",true);
+  h.root.children[0].listeners.keydown[0](key("Enter"));await settleTools();
+  assert.equal(h.calls.length,1);assert.deepEqual(h.calls[0].tools,["search"]);assert.equal(h.calls[0].sections[0].text,"Keep prompt.");
+});
+test("outside Use theirs clears tools drafts but unknown outcomes keep them until deliberate reload",async t=>{
+  const {replaceTools}=await import("../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs");
+  const h=await editableCanvas("Before.",undefined,{fetchTools:async()=>toolsCatalog(),response:{error:"outcome-unknown"}});t.after(()=>h.app.dispose());
+  await openServer(h);chooseTool(h,"search",true);byClass(h.root,"back")[0].listeners.click[0]();
+  h.app.observe(await viewFor(replaceTools(h.source,["list_tags"]),h.examples));
+  btn(h.root,"Use the new version").listeners.click[0]();await settleTools();
+  byClass(h.root,"tool-source")[0].listeners.click[0]();
+  assert.equal(byClass(h.root,"tool-choice").find(n=>n.attrs["data-tool-name"]==="search").checked,false);
+  chooseTool(h,"search",true);byClass(h.root,"tools-save")[0].listeners.click[0]();await settleTools();
+  const before=byClass(h.root,"tool-choice").map(n=>n.checked);
+  const content=h.root.children[0];content.listeners.keydown[0]({key:"Escape",preventDefault(){}});
+  assert.deepEqual(byClass(h.root,"tool-choice").map(n=>n.checked),before);
+  assert.equal(h.calls.length,1);assert.equal(h.app.idle(),false);
+});
+
+test("untick-all retains the saved server until confirmed save and disables controls while saving",async t=>{
+  let h,release;
+  h=await editableCanvas("Before.",undefined,{tools:["search"],fetchTools:async()=>toolsCatalog(),respond:()=>new Promise(resolve=>{release=resolve})});t.after(()=>h.app.dispose());
+  await settleTools();byClass(h.root,"tool-source")[0].listeners.click[0]();chooseTool(h,"search",false);
+  byClass(h.root,"back")[0].listeners.click[0]();assert.equal(byClass(h.root,"tool-source").length,1);
+  byClass(h.root,"tool-source")[0].listeners.click[0]();byClass(h.root,"tools-save")[0].listeners.click[0]();
+  assert.ok(byClass(h.root,"tool-choice").every(n=>n.disabled));
+  assert.equal(byClass(h.root,"tools-save")[0].disabled,true);
+  assert.deepEqual(h.calls[0].tools,[]);
+  release({saved:true,view:await viewFor(replaceTools(h.source,[]),h.examples,{status:"stale"})});await settleTools();
+  byClass(h.root,"back")[0].listeners.click[0]();assert.equal(byClass(h.root,"tool-source").length,0);
+  assert.match(byClass(h.root,"tools-section")[0].textContent,/No tools yet/);
+});
+test("Enter on tools-page buttons preserves the button action instead of saving",async t=>{
+  const h=await editableCanvas("Before.",undefined,{fetchTools:async()=>toolsCatalog()});t.after(()=>h.app.dispose());
+  await openServer(h);chooseTool(h,"search",true);
+  function activate(button) {
+    let prevented=false;
+    h.root.children[0].listeners.keydown[0]({key:"Enter",target:button,preventDefault(){prevented=true}});
+    assert.equal(prevented,false,"native button activation must not be cancelled");
+    button.listeners.click[0]();
+  }
+  activate(byClass(h.root,"tools-discard")[0]);
+  assert.ok(byClass(h.root,"tool-choice").every(n=>!n.checked));
+  chooseTool(h,"search",true);activate(byClass(h.root,"back")[0]);
+  assert.ok(byClass(h.root,"tools-section").length);assert.equal(h.calls.length,0);
+});
+test("outside additions load the previously unread catalog before claiming tools are unmatched",async t=>{
+  let reads=0;
+  const h=await editableCanvas("Before.",undefined,{fetchTools:async()=>{reads++;return toolsCatalog()}});t.after(()=>h.app.dispose());
+  assert.equal(reads,0);
+  h.app.observe(await viewFor(replaceTools(h.source,["search"]),h.examples));
+  assert.doesNotMatch(byClass(h.root,"tools-section")[0].textContent,/can’t be matched/);
+  await settleTools();assert.equal(reads,1);
+  assert.equal(byClass(h.root,"tool-source").length,1);assert.match(byClass(h.root,"tool-source")[0].textContent,/GitHub.*1 of 2 tools/);
+});
+test("tool ticks retain keyboard focus, falling back to the filter when the replacement is disabled",async t=>{
+  const h=await editableCanvas("Before.",undefined,{fetchTools:async()=>toolsCatalog()});t.after(()=>h.app.dispose());
+  await openServer(h);
+  let box=byClass(h.root,"tool-choice").find(n=>n.attrs["data-tool-name"]==="search");box.focus();
+  chooseTool(h,"search",true);
+  assert.ok(h.root.contains(h.doc.activeElement));assert.equal(h.doc.activeElement.attrs["data-tool-name"],"search");
+  const catalog=toolsCatalog();catalog.servers[0].tools[0].selectable=false;
+  const unavailable=await editableCanvas("Before.",undefined,{tools:["search"],fetchTools:async()=>catalog});t.after(()=>unavailable.app.dispose());
+  await settleTools();byClass(unavailable.root,"tool-source")[0].listeners.click[0]();
+  box=byClass(unavailable.root,"tool-choice").find(n=>n.attrs["data-tool-name"]==="search");box.focus();chooseTool(unavailable,"search",false);
+  assert.equal(unavailable.doc.activeElement,byClass(unavailable.root,"tool-filter")[0]);
+});
+test("inspection-only agents can inspect a server but cannot change tool declarations",async t=>{
+  const doc=fakeDoc(),root=doc.createElement("main");
+  const view=await readView(stubSession(resource(MINIMAL,{tools:["search"]})),MINIMAL);
+  const app=renderView(doc,root,view,async()=>assert.fail("inspection must not execute"),{fetchTools:async()=>toolsCatalog()});t.after(()=>app.dispose());
+  await settleTools();byClass(root,"tool-source")[0].listeners.click[0]();
+  assert.ok(byClass(root,"tool-choice").every(n=>n.disabled));
+  assert.equal(byClass(root,"tools-save").length,0);
+  assert.doesNotMatch(root.textContent,/Tick a tool|Saved · Enter/);
+});
+test("a 33rd tick leaves the existing 32 names intact and reports the canonical limit",async t=>{
+  const names=Array.from({length:32},(_,i)=>"tool"+i);
+  const h=await editableCanvas("Before.",undefined,{tools:names,fetchTools:async()=>({servers:[{name:"many",label:"Many",tools:[...names,"extra"].map(name=>({name,description:"",selectable:true}))}]})});t.after(()=>h.app.dispose());
+  await settleTools();byClass(h.root,"tool-source")[0].listeners.click[0]();
+  byClass(h.root,"tool-choice").find(n=>n.attrs["data-tool-name"]==="extra").focus();chooseTool(h,"extra",true);
+  assert.ok(h.root.contains(h.doc.activeElement));assert.equal(h.doc.activeElement.attrs["data-tool-name"],"extra");
+  assert.match(h.root.textContent,/Keep at most 32 tools/);
+  assert.equal(byClass(h.root,"tool-choice").filter(n=>n.checked).length,32);
+  assert.equal(h.calls.length,0);
+});
 
 test("stale_revision checks the supplied view and retains the draft as a conflict without resubmitting", async t => {
   let h;
@@ -2115,7 +2275,7 @@ test("boards A/G show one name, separate file and model, Prompt and Tests, and p
   assert.equal(c18Text(h.root, "agent-meta"), "greeter.agent.md");
   assert.equal(c18Text(h.root,"model-picker"),"fake · from the agent file");
   assert.equal(c18Text(h.root, "purpose"), "Return a short greeting for the supplied name.");
-  assert.deepEqual(all(h.root).filter((e) => e.tag === "h2").map((e) => e.textContent), ["Prompt", "Tests"]);
+  assert.deepEqual(all(h.root).filter((e) => e.tag === "h2").map((e) => e.textContent), ["Prompt", "Tools", "Tests"]);
   const prompt = byClass(h.root, "prompt-box")[0], source = byClass(h.root, "source-details")[0];
   assert.equal(byClass(prompt, "instruction-body").length, 1);
   assert.equal(c18Prompt(h.root).textContent, "Reply briefly.");
