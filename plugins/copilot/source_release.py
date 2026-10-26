@@ -4,6 +4,8 @@
 Run from the repository root. Checks never write; --write explicitly regenerates
 three identity-bearing files and optionally stamps the paired release version.
 """
+from __future__ import annotations
+
 import argparse
 import json
 import re
