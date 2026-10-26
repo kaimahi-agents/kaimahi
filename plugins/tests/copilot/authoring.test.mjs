@@ -65,6 +65,22 @@ test("an attested pre-route refusal is current but never restores an old model p
   selection.choose("", view); assert.equal(selection.view(view).latest.status, "stale");
 });
 
+test("tools edits preserve unrelated bytes and remove the final declaration rather than an empty section", async () => {
+  const { replaceTools } = await import("../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs");
+  assert.equal(typeof replaceTools, "function");
+  for (const source of [SOURCE, SOURCE.replace("## Model\n- **Preferred:** fake\n\n", ""), SOURCE.replaceAll("\n", "\r\n")]) {
+    const changed = replaceTools(source, ["search", "list_tags"]);
+    assert.match(changed, /## Tools\r?\n- search\r?\n- list_tags\r?\n\r?\n## Examples/);
+    assert.equal(replaceTools(changed, ["search", "list_tags"]), changed);
+    assert.equal(replaceTools(changed, []), source);
+    const combined = replaceExamples(replaceInstructions(changed, [{key: KEYS[1], text:"Changed prompt."}]), []);
+    assert.match(combined, /## Tools\r?\n- search\r?\n- list_tags/);
+  }
+  assert.equal(replaceTools(SOURCE, []), SOURCE);
+  for (const names of [["duplicate", "duplicate"], ["invalid.name"], Array.from({length:33}, (_,i)=>"t"+i), null]) assert.throws(()=>replaceTools(SOURCE,names));
+  assert.throws(()=>replaceTools(SOURCE.slice(0,SOURCE.indexOf("## Examples")),["ping"]));
+});
+
 const BODY = "Reply with exactly Hello.";
 const examples = () => [{ id: "hello", input: "Ada", assertions: [{ id: "text", type: "contains", value: "Hello" }] }];
 const clone = (value) => JSON.parse(JSON.stringify(value));
