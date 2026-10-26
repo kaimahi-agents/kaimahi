@@ -195,15 +195,32 @@ These comparison pictures are from a build before rc.3.
 ## Run the same tests in CI
 
 Commit the agent file, then run `kmx test FILE` in a GitHub Actions step after
-checkout. Use a file-preview-capable binary such as v0.9.0-rc.3, not v0.8.1.
-These steps install it on an Ubuntu runner and test `greeter.agent.md` using its
-authored `fake` model:
+checkout. `--github-summary` is currently unreleased on `main`; use an exact
+checkout build or future pinned release that documents the flag. Existing
+v0.9.0 release candidates do not contain it. After installing that binary, these
+steps test `greeter.agent.md` using its authored `fake` model:
 
 ```yaml
-- name: Install kmx
-  run: curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.3/install.sh | sudo sh -s -- --version=v0.9.0-rc.3 --bin-dir=/usr/local/bin
 - name: Test the agent
-  run: kmx test ./greeter.agent.md
+  id: agent_test
+  shell: bash
+  run: |
+    set +e
+    kmx test ./greeter.agent.md -o json --github-summary > kmx-test.json
+    status=$?
+    set -e
+    if ! python3 -m json.tool kmx-test.json >/dev/null; then
+      rm -f kmx-test.json
+      status=1
+    fi
+    exit "$status"
+- name: Upload the test report
+  if: always() && hashFiles('kmx-test.json') != ''
+  uses: actions/upload-artifact@v4
+  with:
+    name: kmx-test-report
+    path: kmx-test.json
+    if-no-files-found: error
 ```
 
 For an offline check, start with the [complete greeter sample](../internal/kmx/agentfile/testdata/greeter.agent.md).
@@ -225,4 +242,9 @@ File-mode exit codes make this a CI gate without parsing the output:
 
 GitHub Actions fails the step on a nonzero exit. Do not use `continue-on-error`
 if these tests are meant to gate the pull request. This file-mode check does not
-publish a package or create evidence for deployment.
+publish a package or create evidence for deployment. The explicit status capture
+lets the upload step run while the test step still records the original
+0/2/1/130 result. `--github-summary` adds a content-free table with revision,
+model/judge, scope, timings, checks and tool settings/sources/counts; the JSON
+artifact is the durable report you chose to retain. Neither output creates
+automatic local history.

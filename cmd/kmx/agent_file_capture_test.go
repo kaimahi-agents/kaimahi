@@ -36,6 +36,10 @@ func TestFileCommandsCaptureSelectedFileAndReplayWithoutLiveHost(t *testing.T) {
 			t.Setenv("KMX_HOME", privateCommandHome(t))
 			var output, diagnostic bytes.Buffer
 			deps, loads := testDependencies(&output, &diagnostic)
+			summary := filepath.Join(base, "step-summary.md")
+			if operation == "test" {
+				t.Setenv("GITHUB_STEP_SUMMARY", summary)
+			}
 			calls, resolves := 0, 0
 			deps.fileRunner = localpreview.NewRunner(localpreview.RunnerOptions{JournalDir: func() (string, error) { return filepath.Join(base, "journals"), nil }, ResolveAvailableTools: func(context.Context, []string) (*localtools.Host, error) {
 				resolves++
@@ -47,7 +51,14 @@ func TestFileCommandsCaptureSelectedFileAndReplayWithoutLiveHost(t *testing.T) {
 			for run := range 2 {
 				output.Reset()
 				diagnostic.Reset()
-				if err := execute([]string{operation, file, "-o", "json"}, deps); err != nil {
+				args := []string{operation, file, "-o", "json"}
+				if operation == "test" {
+					if err := os.Remove(summary); err != nil && !os.IsNotExist(err) {
+						t.Fatal(err)
+					}
+					args = append(args, "--github-summary")
+				}
+				if err := execute(args, deps); err != nil {
 					t.Fatalf("CLI %v: %s", err, diagnostic.String())
 				}
 				var result app.FilePreviewResult
@@ -70,6 +81,16 @@ func TestFileCommandsCaptureSelectedFileAndReplayWithoutLiveHost(t *testing.T) {
 				}
 				if strings.Contains(output.String(), "private-cli-result") || strings.Contains(output.String(), "private-cli-schema") {
 					t.Fatal("default CLI leaked recording")
+				}
+				if operation == "test" {
+					markdown, err := os.ReadFile(summary)
+					wantSource := "`live`"
+					if run == 1 {
+						wantSource = "`recorded`"
+					}
+					if err != nil || !bytes.Contains(markdown, []byte("## kmx test: PASS")) || !bytes.Contains(markdown, []byte("`ping`")) || !bytes.Contains(markdown, []byte(wantSource)) || bytes.Contains(markdown, []byte("private-cli-result")) || bytes.Contains(markdown, []byte("private-cli-schema")) || bytes.Contains(markdown, []byte(file)) {
+						t.Fatalf("capture summary run=%d: %q, %v", run, markdown, err)
+					}
 				}
 			}
 			saved, err := os.ReadFile(file)

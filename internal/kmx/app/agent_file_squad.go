@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 )
 
@@ -14,8 +15,8 @@ func (a *App) PreviewSquadSnapshot(ctx context.Context, d *agentfile.SquadCharte
 	}
 	native, err := agentfile.ParseSquad(".squad/agents/"+d.Profile.MemberID+"/charter.md", d.Source(), d.Profile)
 	if err != nil || !native.Enriched {
-		return a.previewAgentSnapshot(ctx, nil, opt, err)
+		return a.previewAgentSnapshot(ctx, nil, opt, err, a.timeNow())
 	}
 	parsed := &agentfile.Agent{Identity: agentfile.Identity{ID: native.Profile.MemberID}, Title: native.Title, Instructions: native.Instructions, Model: native.Model, Examples: native.Examples, Revision: native.Revision, Locations: native.Locations, NativeTaskInstructions: native.TaskInstructions}
-	return a.previewAgentSnapshot(ctx, parsed, opt, nil)
+	return a.previewAgentSnapshot(ctx, parsed, opt, nil, a.timeNow())
 }

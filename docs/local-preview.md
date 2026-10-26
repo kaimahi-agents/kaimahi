@@ -137,6 +137,10 @@ the effective settings makes an earlier result out of date even when the agent
 file is unchanged. Offline replay uses the journaled settings and results,
 never today's YAML or a live executor. Older journals without settings retain
 Enabled semantics; older readers can refuse new settings-bearing journals.
+The safe JSON report projects these settings and per-test source/call counts
+without definitions, arguments or results. It also records monotonic total and
+per-test `durationMs`; those timings are diagnostics, not model billing or
+deployment evidence.
 
 ## Copilot host tools
 

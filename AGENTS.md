@@ -509,6 +509,16 @@ not the Copilot SDK.
 native evidence receipt. Subset is always partial, execution/journal failure is
 unknown, and only an explicit caller override changes the judge route. Keep
 live `run --agent`, native workspace Test/Explain and legacy Eval unchanged.
+The additive report includes monotonic total/per-test duration and content-free
+tool setting/source/count rows. Optional `test FILE -o json --github-summary`
+appends a bounded Markdown projection to the existing GitHub Actions summary
+file after writing the same JSON result; it never includes paths, prompts,
+answers, operands, tool arguments/results, credentials or provider diagnostics.
+Unset/unsafe summary paths refuse before execution; a missing regular-file target
+at a valid absolute path is created with mode 0600. Write failure exits 1.
+Preserve the original 0/2/1/130 Test status when report and summary writes work.
+This creates no automatic local history and grants no evidence, Publish or
+Deploy authority.
 File Run/Test `--verbose` is content-free stderr diagnostics only, never implicit
 `--show-content`. Keep transport errors classified without raw URLs/bodies;
 only validated local origins and standard endpoint paths may be shown. Failed

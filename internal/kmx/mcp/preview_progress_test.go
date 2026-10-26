@@ -161,6 +161,27 @@ func TestPreviewCaseProgressProtocol(t *testing.T) {
 		t.Fatalf("baseline: %+v %v", baseline, err)
 	}
 	baselineBytes, _ := json.Marshal(baseline)
+	var baselineDoc map[string]any
+	if json.Unmarshal(baselineBytes, &baselineDoc) != nil {
+		t.Fatal("baseline result is not JSON")
+	}
+	removeTimings := func(doc map[string]any) {
+		structured := doc["structuredContent"].(map[string]any)
+		duration, ok := structured["durationMs"].(float64)
+		if !ok || duration < 0 {
+			t.Fatalf("total duration missing: %+v", structured)
+		}
+		delete(structured, "durationMs")
+		for _, row := range structured["examples"].([]any) {
+			example := row.(map[string]any)
+			duration, ok := example["durationMs"].(float64)
+			if !ok || duration < 0 {
+				t.Fatalf("test duration missing: %+v", example)
+			}
+			delete(example, "durationMs")
+		}
+	}
+	removeTimings(baselineDoc)
 	for _, token := range []any{"cases", 0, ""} {
 		params := &sdk.CallToolParams{Name: "test", Arguments: args}
 		params.SetProgressToken(token)
@@ -169,8 +190,15 @@ func TestPreviewCaseProgressProtocol(t *testing.T) {
 			t.Fatal(err)
 		}
 		resultBytes, _ := json.Marshal(result)
-		if !bytes.Equal(resultBytes, baselineBytes) {
-			t.Fatalf("progress changed result bytes:\n%s\n%s", baselineBytes, resultBytes)
+		var resultDoc map[string]any
+		if json.Unmarshal(resultBytes, &resultDoc) != nil {
+			t.Fatal("progress result is not JSON")
+		}
+		removeTimings(resultDoc)
+		baselineComparable, _ := json.Marshal(baselineDoc)
+		resultComparable, _ := json.Marshal(resultDoc)
+		if !bytes.Equal(resultComparable, baselineComparable) {
+			t.Fatalf("progress changed result except timing:\n%s\n%s", baselineComparable, resultComparable)
 		}
 		for i, want := range []string{`{"caseId":"first","verdict":"pass","reason":""}`, `{"caseId":"second","verdict":"fail","reason":"Assertion not satisfied.","failedAssertionId":"missing"}`} {
 			select {

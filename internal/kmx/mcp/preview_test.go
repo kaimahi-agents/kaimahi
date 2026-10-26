@@ -299,6 +299,10 @@ func TestPreviewToolsSharedResults(t *testing.T) {
 				got.Retention.Diagnostics = nil
 				want.Retention.Diagnostics = nil
 			}
+			if got.DurationMs < 0 || want.DurationMs < 0 {
+				t.Fatalf("invalid duration: got=%d want=%d", got.DurationMs, want.DurationMs)
+			}
+			got.DurationMs, want.DurationMs = 0, 0
 			b1, _ := json.Marshal(got)
 			b2, _ := json.Marshal(want)
 			if string(b1) != string(b2) || res.IsError != (tc.cause != nil) {

@@ -302,7 +302,10 @@ Strict workspace assertions and exported run profiles still require a model pin.
 Output defaults to text; `-o json` returns one versioned `schemaVersion: 1`,
 `kind: kmx.agent-file-preview` document. Both preserve operation, exact source-byte
 SHA-256 revision, provider/model, full/subset selection, terminal state and
-example/assertion IDs with pass/fail/unknown and safe reasons. JSON includes
+example/assertion IDs with pass/fail/unknown and safe reasons. It also includes
+monotonic `durationMs` for the whole invocation and each completed test, effective
+judge identity when judging ran, frozen tool Enabled/Disabled settings and each
+test's live/recorded/unavailable source plus call count. JSON includes
 `fullPass`, which is false for every subset, incomplete or unknown result.
 Fake/local and Copilot execution retain a private journal handle internally,
 never in this safe result. A journaled preview pass is not deploy evidence. Paths
@@ -311,6 +314,19 @@ are sanitized display basenames, not a file-targeting API. The optional structur
 Default output contains no instructions, inputs, answers, operands, provider error
 text, endpoint or journal handle. `--show-content` explicitly adds sanitized answer
 excerpts, at most 4096 UTF-8 bytes each; treat them as untrusted content.
+
+`kmx test FILE -o json --github-summary` writes the JSON report to stdout and
+appends a bounded Markdown rendering of that same safe result to the file named by
+GitHub Actions' existing `$GITHUB_STEP_SUMMARY`. It omits file paths, prompts,
+answers, assertion operands, tool arguments/results, credentials, endpoints,
+provider diagnostics, retained diagnostic IDs and judge rationale. The flag is
+Test-file-only, requires JSON output, and creates no local history beyond an
+explicit recording capture requested by the test. An unset, relative, linked or
+non-regular summary path is refused before model execution; a missing file at a
+valid absolute path is created with mode 0600.
+A summary-write failure exits 1. Otherwise the command retains the normal
+0/2/1/130 exit status. Reports and summaries are local-preview diagnostics only,
+not suite evidence or Publish/Deploy authority.
 
 File-mode exits: 0 means the selected checks completed and passed (a partial
 selection is **not** a full pass); 2 means completed assertion fail/unknown;

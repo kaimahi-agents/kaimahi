@@ -108,6 +108,28 @@ test('Test is canonical while compatibility and current runtime limits stay expl
   assert.match(workflow, /kmx push --workspace DIR --evaluation RECEIPT REF/)
 })
 
+test('agent-file CI reports retain failure status and content-free summaries', async () => {
+  const app = plainText(await readFile(path.join(dist, 'docs/copilot-app.html'), 'utf8')).replace(/\s+/g, ' ')
+  for (const marker of [
+    'kmx test ./greeter.agent.md -o json --github-summary > kmx-test.json',
+    'if: always() && hashFiles',
+    'kmx-test-report',
+    'Do not use continue-on-error',
+    'original 0/2/1/130 result',
+    'content-free table',
+    'Neither output creates automatic local history'
+  ]) assert.ok(app.includes(marker), `CI report contract: ${marker}`)
+  assert.match(app, /--github-summary[^.]*unreleased on main/i)
+  assert.match(app, /v0\.9\.0 release candidates do not contain it/i)
+
+  const reference = plainText(await readFile(path.join(dist, 'docs/kmx.html'), 'utf8')).replace(/\s+/g, ' ')
+  for (const marker of [
+    'durationMs', 'effective judge identity', 'Enabled/Disabled settings',
+    'live/recorded/unavailable source', 'GITHUB_STEP_SUMMARY',
+    'omits file paths', '0/2/1/130 exit status', 'not suite evidence'
+  ]) assert.ok(reference.includes(marker), `JSON/summary contract: ${marker}`)
+})
+
 /** Inspect rendered instructions without syntax-highlighter markup. */
 function plainText(html) {
   return html.replace(/<\/(?:p|pre|h[1-6])>/g, '\n').replace(/<[^>]*>/g, '').replaceAll('&gt;', '>').replaceAll('&lt;', '<').replaceAll('&amp;', '&')

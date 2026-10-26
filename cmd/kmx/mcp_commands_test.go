@@ -191,7 +191,10 @@ func TestMCPCommandCopilotRoute(t *testing.T) {
 	deps, loads := testDependencies(&ignored, &diag)
 	runner := &cliPreviewFake{verdict: runtime.EvaluationPass}
 	deps.stdin, deps.stdout, deps.fileRunner = sr, sw, runner
-	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	source, err := os.ReadFile(cliPreviewFile(t))
 	if err != nil {
 		t.Fatal(err)
@@ -240,7 +243,11 @@ func TestMCPCommandCopilotRoute(t *testing.T) {
 }
 
 func TestMCPCommandSharedOperationParity(t *testing.T) {
-	t.Setenv("KMX_HOME", t.TempDir())
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KMX_HOME", filepath.Join(home, "state"))
 	sr, cw, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
@@ -257,7 +264,10 @@ func TestMCPCommandSharedOperationParity(t *testing.T) {
 	deps, loads := testDependencies(&ignored, &diag)
 	deps.stdin = sr
 	deps.stdout = sw
-	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	done := make(chan error, 1)
 	go func() { done <- execute([]string{"mcp", "--root", root}, deps) }()
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
@@ -304,6 +314,22 @@ func TestMCPCommandSharedOperationParity(t *testing.T) {
 		}
 		if err := json.Unmarshal(b, &mcpResult); err != nil {
 			t.Fatal(err)
+		}
+		for _, result := range []any{cliResult, mcpResult} {
+			doc := result.(map[string]any)
+			duration, ok := doc["durationMs"].(float64)
+			if !ok || duration < 0 {
+				t.Fatalf("missing or invalid total duration: %+v", doc)
+			}
+			delete(doc, "durationMs")
+			for _, row := range doc["examples"].([]any) {
+				example := row.(map[string]any)
+				duration, ok := example["durationMs"].(float64)
+				if !ok || duration < 0 {
+					t.Fatalf("missing or invalid test duration: %+v", example)
+				}
+				delete(example, "durationMs")
+			}
 		}
 		if !reflect.DeepEqual(cliResult, mcpResult) {
 			t.Fatalf("CLI/MCP differ: %s vs %s", out.String(), b)

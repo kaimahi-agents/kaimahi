@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
@@ -31,7 +32,7 @@ func (f *scriptedPreview) Run(ctx context.Context, req agentpreview.Request) (ag
 	f.calls++
 	f.request = req
 	complete := func(id string) agentpreview.Completion {
-		return agentpreview.Completion{State: agentpreview.Complete, ID: id, FileRevision: req.Agent.Revision, Provider: req.Route.Provider, Model: req.Route.Model, Answer: "PRIVATE ANSWER\x1b[31m"}
+		return agentpreview.Completion{State: agentpreview.Complete, ID: id, FileRevision: req.Agent.Revision, Provider: req.Route.Provider, Model: req.Route.Model, Answer: "PRIVATE ANSWER\x1b[31m", DurationMs: 1}
 	}
 	out := agentpreview.Outcome{State: agentpreview.Complete, Journal: "PRIVATE JOURNAL"}
 	if req.Input != nil {
@@ -139,6 +140,11 @@ func TestFilePreviewSelectionAndPrivacy(t *testing.T) {
 				if subset && (fake.request.Examples[0].ID != "second" || result.Selection.Scope != "subset") {
 					t.Fatal("subset not explicit")
 				}
+				for _, example := range result.Examples {
+					if example.ReasonCode != "checks_passed" {
+						t.Fatalf("case reason does not explain verdict: %+v", example)
+					}
+				}
 				if !subset && fake.request.Examples[0].ID != "first" {
 					t.Fatal("authored order lost")
 				}
@@ -176,6 +182,31 @@ func TestFilePreviewSelectionAndPrivacy(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestFilePreviewReportsTotalAndPerTestDuration(t *testing.T) {
+	start := time.Unix(100, 0)
+	times := []time.Time{start, start.Add(2500 * time.Millisecond)}
+	fake := &scriptedPreview{verdict: runtime.EvaluationPass, mutate: func(out *agentpreview.Outcome) {
+		out.Examples[0].Completion.DurationMs = 700
+		out.Examples[1].Completion.DurationMs = 900
+	}}
+	a := &App{FileRunner: fake, now: func() time.Time {
+		if len(times) == 0 {
+			t.Fatal("unexpected clock read")
+		}
+		now := times[0]
+		times = times[1:]
+		return now
+	}}
+	result, err := a.PreviewAgentFile(t.Context(), FilePreviewOptions{File: previewFile(t), Operation: "test"})
+	if err != nil || result.DurationMs != 2500 || result.Examples[0].DurationMs != 700 || result.Examples[1].DurationMs != 900 || len(times) != 0 {
+		t.Fatalf("timings=%+v err=%v remaining=%d", result, err, len(times))
+	}
+	var output bytes.Buffer
+	if err := WriteFilePreview(&output, result, "json"); err != nil || !strings.Contains(output.String(), `"durationMs":2500`) || strings.Count(output.String(), `"durationMs":`) != 3 {
+		t.Fatalf("JSON timing contract: %v / %s", err, output.String())
 	}
 }
 
@@ -234,6 +265,10 @@ func TestFilePreviewRefusalsBeforeRunner(t *testing.T) {
 		{"route mismatch", func(o *FilePreviewOptions) {
 			o.Route = &modelaccess.Route{Provider: "fake", Model: "other", Auth: "none"}
 		}, "model_unavailable"},
+		{"subset route mismatch", func(o *FilePreviewOptions) {
+			o.CaseID = "first"
+			o.Route = &modelaccess.Route{Provider: "fake", Model: "other", Auth: "none"}
+		}, "model_unavailable"},
 		{"missing file", func(o *FilePreviewOptions) { o.File += "-missing" }, "invalid_file"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -243,6 +278,9 @@ func TestFilePreviewRefusalsBeforeRunner(t *testing.T) {
 			result, err := (&App{FileRunner: f}).PreviewAgentFile(context.Background(), opt)
 			if err == nil || result.ReasonCode != tc.code || f.calls != 0 || result.FullPass {
 				t.Fatalf("%+v / %v / calls %d", result, err, f.calls)
+			}
+			if opt.CaseID != "" && result.Selection.Scope != "subset" {
+				t.Fatalf("subset intent lost on refusal: %+v", result.Selection)
 			}
 		})
 	}

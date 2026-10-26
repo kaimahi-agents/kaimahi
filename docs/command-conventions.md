@@ -102,6 +102,7 @@ Keep these distinctions:
 | `--plan` | Read the target and print what would change. No writes. |
 | `--show-content` | Opt into sanitized bounded failure excerpts and expected values: stderr for test/executing workspace Deploy, stdout for offline test explain. Workspace records may include retained rationale; file records do not retain judge rationale. Not evidence; never implied by --verbose; conflicts with explain --clear. |
 | `--verbose` | Where supported, add content-free diagnostics and timings on stderr. File Run/Test includes request progress, endpoints, HTTP status, timings and safe failures, without repeating the final report; never implies --show-content. |
+| `--github-summary` | File Test only: with `-o json`, append the same result's bounded content-free Markdown projection to `$GITHUB_STEP_SUMMARY`. Never changes the Test exit code or grants evidence. |
 | `--no-apply` | Where supported by runtime setup, render without cluster writes; removed from workspace create. |
 | `--dry-run` | Where supported by runtime setup, check server admission without persistent writes; removed from workspace create. |
 | `--step` | Run one named phase of a multi-phase workflow. |

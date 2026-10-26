@@ -22,6 +22,7 @@ import (
 type fileCommandOptions struct {
 	CaseID, Provider, Endpoint, Output string
 	ToolBindings                       string
+	GitHubSummary                      bool
 	ShowContent                        bool
 	Verbose                            bool
 }
@@ -43,6 +44,9 @@ func registerFileCommandFlags(cmd *cobra.Command, f *fileCommandOptions, output 
 	cmd.Flags().StringVar(&f.Provider, "provider", "", "explicit file-model provider: ollama, foundry-local, compatible or copilot; no fallback")
 	cmd.Flags().StringVar(&f.Endpoint, "endpoint", "", "trusted model endpoint (required for local models; fixed for Copilot; never from the charter)")
 	cmd.Flags().StringVar(&f.ToolBindings, "tool-bindings", "", "explicit host-owned tool binding file (requires FILE; supports local and Copilot models)")
+	if cmd.Name() == "test" {
+		cmd.Flags().BoolVar(&f.GitHubSummary, "github-summary", false, "append the content-free JSON report summary to $GITHUB_STEP_SUMMARY (requires FILE and -o json)")
+	}
 	if output {
 		cmd.Flags().StringVarP(&f.Output, "output", "o", "text", "file preview output: text|json")
 		cmd.Flags().BoolVar(&f.ShowContent, "show-content", false, "include sanitized bounded answer excerpts in file preview output")
@@ -55,7 +59,7 @@ func validateFileCommand(cmd *cobra.Command, state *commandState, f fileCommandO
 	var invalid string
 	cmd.Flags().Visit(func(flag *pflag.Flag) {
 		switch flag.Name {
-		case "case", "output", "show-content", "provider", "endpoint", "prompt", "prompt-file", "verbose", "tool-bindings":
+		case "case", "output", "show-content", "provider", "endpoint", "prompt", "prompt-file", "verbose", "tool-bindings", "github-summary":
 		default:
 			invalid = flag.Name
 		}
@@ -71,10 +75,13 @@ func validateFileCommand(cmd *cobra.Command, state *commandState, f fileCommandO
 	if f.Output != "text" && f.Output != "json" {
 		return fmt.Errorf("file preview output must be text or json")
 	}
+	if f.GitHubSummary && f.Output != "json" {
+		return fmt.Errorf("--github-summary requires -o json")
+	}
 	return nil
 }
 func fileFlagsWithoutFile(cmd *cobra.Command) error {
-	for _, name := range []string{"case", "provider", "endpoint", "verbose", "tool-bindings"} {
+	for _, name := range []string{"case", "provider", "endpoint", "verbose", "tool-bindings", "github-summary"} {
 		if flag := cmd.Flag(name); flag != nil && flag.Changed {
 			return fmt.Errorf("--%s requires an explicit agent FILE", name)
 		}
@@ -124,6 +131,14 @@ func runFileCommand(cmd *cobra.Command, state *commandState, file string, f file
 		input := string(b)
 		opt.Input = &input
 	}
+	var summary io.WriteCloser
+	if f.GitHubSummary {
+		var err error
+		summary, err = state.deps.openGitHubSummary()
+		if err != nil {
+			return err
+		}
+	}
 	// Intake precedes signal interception: blocking stdin cannot observe cancellation.
 	// User think time must not consume the preview execution budget.
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
@@ -143,8 +158,20 @@ func runFileCommand(cmd *cobra.Command, state *commandState, file string, f file
 			return fmt.Errorf("cannot write local preview diagnostics")
 		}
 	}
-	if outputErr := app.WriteFilePreview(cmd.OutOrStdout(), result, f.Output); outputErr != nil {
+	outputErr := app.WriteFilePreview(cmd.OutOrStdout(), result, f.Output)
+	if outputErr != nil {
+		if summary != nil {
+			_ = summary.Close()
+		}
 		return fmt.Errorf("cannot write local preview output")
+	}
+	var summaryErr, closeErr error
+	if summary != nil {
+		summaryErr = app.WriteFilePreviewGitHubSummary(summary, result)
+		closeErr = summary.Close()
+	}
+	if summaryErr != nil || closeErr != nil {
+		return fmt.Errorf("cannot write GitHub Actions summary")
 	}
 	return err
 }

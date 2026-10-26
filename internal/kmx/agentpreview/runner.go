@@ -82,6 +82,7 @@ type Completion struct {
 	Provider     string
 	Model        string
 	Answer       string
+	DurationMs   int64
 	ToolCalls    int
 	Tools        []ToolSummary
 }
