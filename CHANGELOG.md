@@ -22,11 +22,11 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
-## v0.9.0 — 2026-10-25
+## v0.9.0 — 2026-10-26
 
 ### Added
 
-- `kmx mcp --root DIRECTORY` serves exactly Create/Edit/Run/Test over stdio.
+- `kmx mcp --root DIRECTORY` serves Create/Edit/Run/Test and `set_tool_state` over stdio.
   It confines canonical charter access to an explicit root, creates without
   replacement, edits at an expected revision and delegates Run/Test to the shared
   snapshot API. Fake, local and Copilot previews use embedded Sessions and retain
@@ -183,8 +183,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 - Native Copilot plugin archives with a separate signed checksum inventory,
   exact engine/platform/source checks and explicit root setup before installation.
-  An opt-in isolated host check covers install/discovery, cache bytes and four
-  real MCP tools without changing normal Copilot settings. No Windows release,
+  An opt-in isolated host check covers install/discovery, cache bytes and five
+  original-server MCP tools without changing normal Copilot settings. No Windows release,
   marketplace publication or OS trust qualification is implied.
 
 - Add a conservative Orka path decision and unconditional hygiene checks for package initialization and typed caller drift across independent Go code. Runtime qualification frequency and existing shard coverage are unchanged.
@@ -214,7 +214,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   publication and anchored flushes; arm64 remains compile/vet only, and the
   guarded Windows CLI and release assets remain unchanged.
 
-- Optional native Squad chat/MCP flow with reviewed init → cast → enrich, native-state member validation, owned-field edits and revision-bound local previews. Requires an explicitly configured, separately qualified standalone Squad 1.1.0 dependency. Keeps the four tools and canonical v1 behavior; native Squad canvas and package/team execution are not included.
+- Optional native Squad chat/MCP flow with reviewed init → cast → enrich, native-state member validation, owned-field edits and revision-bound local previews. Requires an explicitly configured, separately qualified standalone Squad 1.1.0 dependency. Keeps canonical v1 behavior; native Squad canvas and package/team execution are not included.
 
 - Canonical agent files can declare `github_list_merged_prs` in an optional Tools
   section. Add host-owned binding validation and a bounded journaled tool-preview
@@ -270,13 +270,23 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 - Follow the Copilot app walkthrough to create and test agent files, try another model and run the same file tests in CI.
 
-- File Run/Test reads each tool's Enabled/Disabled setting from `kmx.yaml` beside the agent file, defaulting to Enabled; the canvas shows these settings read-only and results retain the settings used. Disabled answers never execute or count as live calls; enabled tools keep their existing permissions and call, size, journal and replay limits.
+- File Run/Test reads each tool's Enabled/Disabled setting from `kmx.yaml` beside the agent file, defaulting to Enabled; the canvas can edit these settings and results retain the settings used. Disabled answers never execute or count as live calls; enabled tools keep their existing permissions and call, size, journal and replay limits.
 
 - The canvas shows tool servers and counts between Prompt and Tests, with Add tools opening the app's server catalog. Tool selections stay as drafts until Enter saves and tests; Escape or discard cancels tool edits without dropping prompt or test drafts.
 
 - Native `/kmx-canvas open PATH` opens or focuses an agent canvas without a model turn, or shows its text view when no renderer is available. It requires host extension support; `/kmx-canvas help` shows usage, and the distinct name avoids the model-backed `/kmx` skill alias.
 
+- The canvas drafts Enabled/Disabled test-tool settings, saves them with revision checks and shows disabled counts per server. Partial or unconfirmed saves stop before testing and retain drafts.
+
+- Each canvas test offers Live/Recorded controls, saved recording details and Calls/Doesn't call checks. Record again remains a draft until saved and run.
+
+- Model comparison captures pending Recorded tools once, then replays the saved source for every model; Live tools remain live. Missing recordings, changed source or settings, and unconfirmed saves stop comparison without silently changing modes or retrying captures.
+
 - Deploy evaluated AgentSessions packages by digest as immutable Agents; new creates wait for registration, and the separate offline `--harness-image --plan` render remains available. Exact acknowledged deployments are read-only no-ops; use `--name` for changed inputs, and treat Registered as controller-observed admission rather than live availability or target evaluation.
+
+- The original MCP server adds `set_tool_state` to set one declared tool Enabled or Disabled in the agent folder's `kmx.yaml`, preserving other keys and checking agent/settings revisions. Internal preview servers retain four tools; read-only resources expose an opaque settings revision, and uncertain writes are reported without automatic retries.
+
+- File Run/Test captures a pending Recorded tool's first successful live result and saves it with source-revision and file-identity checks for later replay without live tool access. Results distinguish the executed and saved revisions; failed or stale saves cannot report full success.
 
 - File tests accept per-test Live/Recorded tool responses and Calls/Doesn't call checks. Recorded responses replay without a live tool, mismatched arguments stop without fallback, and results identify live, recorded or unavailable sources.
 
@@ -343,7 +353,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 - Print payload-free UTC phase timestamps for full kagent bootstrap, live A2A, suite evaluation, private helpers and cleanup. Preserve qualification commands, cases, pins and failure behavior; no execution optimization.
 
-- Make the read-only Copilot agent canvas author-focused, with instructions first, compact header status, a failure-only band and plain-language example checks.
+- Make the Copilot agent canvas author-focused, with instructions first, compact header status, a failure-only band and plain-language example checks.
 - Show friendly source labels and complete paths in Details, with an explicit Copy path action that respects clipboard permissions.
 - Keep incomplete, partial and stale observations distinct from full passes; mark failed contains checks as missing without changing tools, execution or the answer-content opt-in.
 
@@ -525,7 +535,6 @@ For v0.9.0-rc.3 on Windows, [install kmx at `/usr/local/bin/kmx` in WSL](plugins
 Known gaps in this preview:
 - The Copilot CLI marks direct plugin installs as deprecated, though this install still works. A marketplace install will come later.
 - Copilot may keep showing “Working” after a canvas run until the next chat turn. Test rows and the final Test reply show the observed results.
-- Recorded tool responses can be authored in files; automatic capture and canvas recording controls are not available yet.
 - AgentSessions deployment is create-only by digest. Registered reports controller-observed admission, not live availability or destination evaluation.
 
 ## v0.8.1 — 2026-10-17
