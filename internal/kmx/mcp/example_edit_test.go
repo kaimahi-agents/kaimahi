@@ -21,7 +21,7 @@ func TestExampleEditSDKCheckedPatch(t *testing.T) {
 		t.Fatalf("patch rejected: %+v %v", result, err)
 	}
 	got, err := os.ReadFile(filepath.Join(root, "greeter.agent.md"))
-	if err != nil || !bytes.Contains(got, []byte("input: different\n")) {
+	if err != nil || !bytes.Contains(got, []byte("input: different")) || bytes.Contains(got, []byte(`"different"`)) {
 		t.Fatalf("not patched %s %v", got, err)
 	}
 	for _, edits := range []any{[]any{map[string]any{"beforeId": "greeting", "calls": []any{}}}, []any{map[string]any{"beforeId": "missing", "input": "bad"}}} {
