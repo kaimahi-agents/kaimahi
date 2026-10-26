@@ -104,7 +104,7 @@ const PLAIN_REASONS = {
   recording_mismatch: "Recording mismatch: tool arguments differ from the saved call. Update the saved call before retrying.",
   recording_source_changed: "The agent file changed. The recording was not saved.",
   recording_unrepresentable: "The recording does not fit this agent file. Nothing was saved.",
-  recording_save_failed: "The recording could not be saved. Results refer to the source that ran.",
+  recording_save_failed: "The recording could not be saved.",
   copilot_auth_required: "Sign in to GitHub Copilot before running this agent.", copilot_auth_revoked: "Sign in to GitHub Copilot again before running this agent.",
   copilot_no_subscription: "An active GitHub Copilot subscription is needed for this run.", copilot_policy_denied: "Your Copilot policy does not allow this run.",
   copilot_quota: "Copilot's usage limit was reached.", copilot_model_unavailable: "Choose an available Copilot model.",

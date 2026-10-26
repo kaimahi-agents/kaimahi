@@ -185,7 +185,7 @@ func previewReason(code string) string {
 		"recording_mismatch":        "Recording mismatch: tool arguments differ from the saved call. Update the saved call before retrying.",
 		"recording_source_changed":  "Agent file changed; recording was not saved.",
 		"recording_unrepresentable": "Recording cannot fit the agent file format and limits; no recording was saved.",
-		"recording_save_failed":     "Recording save failed; results still refer to the executed source revision.",
+		"recording_save_failed":     "Recording save failed.",
 		"unsafe_tool_content":       "Unsafe tool preview content was withheld; nothing was journaled.",
 		"credential_content":        "Credential-bearing preview content was withheld.",
 		"runner_unavailable":        "Embedded preview runner is not available; no inference was performed.",

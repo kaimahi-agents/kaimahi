@@ -64,6 +64,29 @@ func (f *previewFixture) Run(_ context.Context, r agentpreview.Request) (agentpr
 	}
 	return out, f.cause
 }
+func TestPreviewDescriptionsDiscloseRecordingSave(t *testing.T) {
+	files, _, _ := canonicalFiles(t)
+	runner := &previewFixture{}
+	client := connectFixture(t, Operations(files, &app.App{FileRunner: runner}, nil))
+	list, err := client.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := 0
+	for _, tool := range list.Tools {
+		if tool.Name != "run" && tool.Name != "test" {
+			continue
+		}
+		if !strings.Contains(tool.Description, "A successful first live call for a pending Recorded tool saves its result in this file.") {
+			t.Errorf("%s description omits recording save: %q", tool.Name, tool.Description)
+		}
+		found++
+	}
+	if found != 2 || runner.calls != 0 {
+		t.Fatalf("descriptions=%d executions=%d", found, runner.calls)
+	}
+}
+
 func canonicalFiles(t *testing.T) (*Files, string, string) {
 	t.Helper()
 	b, err := os.ReadFile("../agentfile/testdata/greeter.agent.md")

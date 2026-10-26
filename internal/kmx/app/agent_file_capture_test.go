@@ -127,6 +127,9 @@ func TestFileCaptureAcknowledgmentAndFailure(t *testing.T) {
 					t.Fatal("save failure retried")
 				}
 			}
+			if scenario == "no-capability" && (result.ReasonCode != "recording_save_failed" || result.Reason != "Recording save failed." || result.State != "refused") {
+				t.Fatalf("preflight described execution: %+v", result)
+			}
 			if scenario == "disabled" && (prepared != 0 || result.ToolSettings[0].State != localtools.Disabled) {
 				t.Fatal("disabled capture requested source write authority")
 			}
