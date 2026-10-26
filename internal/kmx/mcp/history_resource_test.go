@@ -212,7 +212,7 @@ func TestHistoryMCPRestoreUndoAndRestart(t *testing.T) {
 		t.Fatalf("restart/occurrence contract lost: %+v", view)
 	}
 	tools, err := fresh.ListTools(t.Context(), nil)
-	if err != nil || len(tools.Tools) != 4 {
+	if err != nil || len(tools.Tools) != 5 {
 		t.Fatal("history added a tool", err)
 	}
 	_, stale := historyEdit(t, fresh, saved.Path, saved.Revision, source)

@@ -19,7 +19,7 @@ func TestProtocolNativeVersionIsPerOperationAndClosed(t *testing.T) {
 	ops["create"] = op
 	cs := connectFixture(t, ops)
 	list, err := cs.ListTools(t.Context(), nil)
-	if err != nil || len(list.Tools) != 4 {
+	if err != nil || len(list.Tools) != 5 {
 		t.Fatal("changed tool count")
 	}
 	for _, tool := range list.Tools {

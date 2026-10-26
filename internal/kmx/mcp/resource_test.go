@@ -52,7 +52,7 @@ func TestAgentResourceShapesAndConfinement(t *testing.T) {
 		t.Fatal("resource not discoverable", err)
 	}
 	tools, err := cs.ListTools(t.Context(), nil)
-	if err != nil || len(tools.Tools) != 4 {
+	if err != nil || len(tools.Tools) != 5 {
 		t.Fatal("resource added a tool")
 	}
 	for _, p := range []string{"minimal.agent.md", saved.Path} {

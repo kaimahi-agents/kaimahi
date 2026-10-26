@@ -19,13 +19,14 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Operations binds the four tools directly to canonical parsing and the shared
+// Operations binds original-server authoring, settings and execution to canonical parsing and the shared
 // snapshot operation. An explicit route is trusted startup configuration, never
 // tool input. Without one, unbound real-model previews use Copilot; fake and
 // legacy root-bound previews retain their existing route behavior.
 // A nil runner retains the application's honest runner_unavailable result.
 func Operations(files *Files, application *app.App, route *modelaccess.Route) map[string]Operation {
 	ops := AuthoringOperations(files)
+	ops["set_tool_state"] = ToolStateOperation(files)
 	var selected *modelaccess.Route
 	if route != nil {
 		frozen := *route

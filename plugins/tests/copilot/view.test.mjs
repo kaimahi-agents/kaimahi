@@ -3995,6 +3995,16 @@ test("tool settings: a legacy view defaults declared tools to Enabled without in
   assert.deepEqual((await readWith({})).toolSettings, []);
 });
 
+test("tool settings: byte revision token is preserved for callers without being synthesized", async () => {
+  for (const token of ["absent", "sha256:" + "a".repeat(64)]) {
+    assert.equal((await readWith({ tools: ["ping"], toolSettingsRevision: token })).toolSettingsRevision, token);
+  }
+  assert.equal(Object.hasOwn(await readWith({}), "toolSettingsRevision"), false);
+  for (const token of [null, "", "sha256:nope", "private raw config", {}]) {
+    await assert.rejects(readWith({ tools: ["ping"], toolSettingsRevision: token }), { code: "invalid-resource" });
+  }
+});
+
 test("tool settings: ordered view and result settings are preserved as detached clean data", async () => {
   const raw = [{ name: "ping", state: "Disabled" }, { name: "lookup", state: "Enabled" }];
   const view = await readWith({ tools: ["ping", "lookup"], toolSettings: raw, latest: { status: "current", result: result({ toolSettings: raw }) } });

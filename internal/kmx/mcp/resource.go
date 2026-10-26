@@ -19,18 +19,19 @@ import (
 // AgentView is authored content for the requested agent file, not a safe log.
 // Model answers appear only in an already opted-in safe preview result.
 type AgentView struct {
-	SchemaVersion int                      `json:"schemaVersion"`
-	Kind          string                   `json:"kind"`
-	File          File                     `json:"file"`
-	Title         string                   `json:"title"`
-	Instructions  string                   `json:"instructions"`
-	Model         string                   `json:"model"`
-	Tools         []string                 `json:"tools,omitempty"`
-	ToolSettings  []localtools.ToolSetting `json:"toolSettings,omitempty"`
-	Examples      []AgentViewExample       `json:"examples"`
-	Latest        AgentViewLatest          `json:"latest"`
-	Authoring     *AgentViewAuthoring      `json:"authoring,omitempty"`
-	History       *AgentHistory            `json:"history,omitempty"`
+	SchemaVersion        int                      `json:"schemaVersion"`
+	Kind                 string                   `json:"kind"`
+	File                 File                     `json:"file"`
+	Title                string                   `json:"title"`
+	Instructions         string                   `json:"instructions"`
+	Model                string                   `json:"model"`
+	Tools                []string                 `json:"tools,omitempty"`
+	ToolSettingsRevision string                   `json:"toolSettingsRevision,omitempty"`
+	ToolSettings         []localtools.ToolSetting `json:"toolSettings,omitempty"`
+	Examples             []AgentViewExample       `json:"examples"`
+	Latest               AgentViewLatest          `json:"latest"`
+	Authoring            *AgentViewAuthoring      `json:"authoring,omitempty"`
+	History              *AgentHistory            `json:"history,omitempty"`
 }
 type AgentViewAuthoring struct {
 	Source   string `json:"source"`
@@ -98,7 +99,8 @@ func AddAgentResource(server *sdk.Server, files *Files) {
 		if files.root != nil {
 			physical = filepath.Join(files.root.Name(), filepath.FromSlash(target))
 		}
-		view.ToolSettings, err = localtools.LoadSettings(ctx, physical, agent.Tools)
+		snapshot, settingsErr := localtools.ReadSettingsSnapshot(ctx, physical, agent.Tools)
+		view.ToolSettings, view.ToolSettingsRevision, err = snapshot.Settings, snapshot.Revision, settingsErr
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, ctx.Err()

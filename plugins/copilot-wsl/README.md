@@ -2,6 +2,9 @@
 
 The plugin contains skills, canvas assets and MCP configuration. It uses the
 Linux kmx binary in your default WSL distribution; it does not bundle an engine.
+The original MCP server exposes Create/Edit/Run/Test and the revision-checked
+`set_tool_state` folder-settings writer. Internal preview children retain only
+Create/Edit/Run/Test; a preview does not gain config-write authority.
 
 ## Install
 

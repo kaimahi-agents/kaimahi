@@ -56,8 +56,8 @@ func TestMCPSquadStartupConfigurationAndInertDiscovery(t *testing.T) {
 	}
 	defer cs.Close()
 	tools, err := cs.ListTools(ctx, nil)
-	if err != nil || len(tools.Tools) != 4 {
-		t.Fatal("missing four native-enabled tools")
+	if err != nil || len(tools.Tools) != 5 {
+		t.Fatal("missing four native-enabled tools and canonical settings writer")
 	}
 	for _, tool := range tools.Tools {
 		b, _ := json.Marshal(tool.InputSchema)
@@ -68,7 +68,11 @@ func TestMCPSquadStartupConfigurationAndInertDiscovery(t *testing.T) {
 		if schema["oneOf"] != nil || schema["anyOf"] != nil || schema["allOf"] != nil {
 			t.Fatal("top-level schema union can break model tool loading")
 		}
-		if len(schema["properties"].(map[string]any)["schemaVersion"].(map[string]any)["enum"].([]any)) != 2 {
+		versions := 2
+		if tool.Name == "set_tool_state" {
+			versions = 1
+		}
+		if len(schema["properties"].(map[string]any)["schemaVersion"].(map[string]any)["enum"].([]any)) != versions {
 			t.Fatal("native operation not advertised")
 		}
 

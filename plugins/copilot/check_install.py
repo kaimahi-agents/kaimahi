@@ -71,7 +71,7 @@ def discovery(binary: Path, root: Path, env: dict, arguments: list[str] | None =
         process.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n')
         process.stdin.flush()
         tools = request(2, "tools/list", {})["tools"]
-        if len(tools) != 4 or {t["name"] for t in tools} != {"create", "edit", "run", "test"}:
+        if len(tools) != 5 or {t["name"] for t in tools} != {"create", "edit", "run", "test", "set_tool_state"}:
             raise ValueError("unexpected MCP tool inventory")
         process.stdin.close()
         process.wait(timeout=5)
@@ -135,7 +135,7 @@ def check(copilot: str, plugin: Path, digest: str, home: Path) -> None:
             discovery(cache / "bin/kmx", root, env, arguments)
             cli("plugin", "uninstall", "kmx-agent-builder")
             installed = False
-        print("PASS: installed plugin/skills, four real tools, pinned cache bytes, uninstall/reinstall")
+        print("PASS: installed plugin/skills, five real tools, pinned cache bytes, uninstall/reinstall")
     finally:
         if installed:
             cli("plugin", "uninstall", "kmx-agent-builder")
