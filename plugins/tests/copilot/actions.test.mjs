@@ -55,6 +55,20 @@ test('comparison reuses a certified same-source partner instead of rerunning it'
  assert.equal(second.error,undefined);assert.equal(h.calls.length,2,'only newly selected model executes');assert.equal(second.comparison.results.length,2);
 });
 
+test('recording detail capacity follows test/tool pairs, not test count',async()=>{
+ const h=harness(),read=h.session.rpc.mcp.resources.read;
+ h.session.rpc.mcp.resources.read=async args=>{const r=await read(args),raw=JSON.parse(r.contents[0].text);raw.authoring.recordingControls=true;raw.authoring.recordingDetails=Array.from({length:130},(_,i)=>({exampleId:`e${Math.floor(i/2)}`,name:i%2?'clock':'read',text:'{arguments: {}, result: {ok: true}}'}));r.contents[0].text=JSON.stringify(raw);return r};
+ const v=await readView(h.session,'greeter.agent.md');assert.equal(v.authoring?.recordingControls,true);assert.equal(v.authoring.recordingDetails.length,130);
+});
+
+for (const changed of [false,true]) test('recording outcome fences '+(changed?'changed settings':'unconfirmed replay receipt'),async()=>{
+ const h=harness(),read=h.session.rpc.mcp.resources.read,execute=h.session.rpc.tools.execute;
+ h.session.rpc.mcp.resources.read=async args=>{const r=await read(args),raw=JSON.parse(r.contents[0].text);raw.authoring.recordingControls=true;raw.tools=['ping'];raw.toolSettings=[{name:'ping',state:changed&&h.calls.length?'Disabled':'Enabled'}];r.contents[0].text=JSON.stringify(raw);return r};
+ h.session.rpc.tools.execute=async req=>{const r=await execute({...req,arguments:Object.fromEntries(Object.entries(req.arguments).filter(([k])=>!['expectedRevision','expectedToolSettings','recordedReplayOnly'].includes(k)))});const result=h.raw().latest.result;result.toolSettings=[{name:'ping',state:'Enabled'}];if(changed)result.recordedReplayOnly=true;return {...r,structuredContent:result}};
+ const first=await h.act({operation:'test',expectedRevision:revision(h.source())});assert.equal(first.error,changed?'tool_settings_changed':'outcome-unknown');
+ if(!changed){const next=await h.act({operation:'test',expectedRevision:revision(h.source())});assert.equal(next.error,'outcome-unknown');assert.equal(h.calls.length,1,'unknown replay receipt locks before another dispatch')}
+});
+
 test('runtime reads existing tool declarations without adding a tool editor', async()=>{
  const h=harness({fixture:original.replace('## Examples','## Tools\n- ping\n\n## Examples')});
  const read=h.session.rpc.mcp.resources.read;
@@ -112,6 +126,13 @@ function nativeHarness(options){
  };
  return{...h,listeners,retired,requests,gate,ack,aborts,emit,start,dispatched,events,event:(name,data)=>{for(const listener of events.get(name)??[])listener({data})}};
 }
+test('recording-capable abort finishes stopped and reads back the resource',async()=>{
+ const n=nativeHarness(),read=n.session.rpc.mcp.resources.read;let reads=0;
+ n.session.rpc.mcp.resources.read=async args=>{reads++;const r=await read(args),raw=JSON.parse(r.contents[0].text);raw.authoring.recordingControls=true;r.contents[0].text=JSON.stringify(raw);return r};
+ const {pending}=await n.start();const before=reads;await n.act({operation:'stop',runId:'run-1'});n.ack.resolve({success:true});n.gate.reject(Error('aborted'));const stopped=await pending;
+ assert.equal(stopped.stopped,true);assert.equal(stopped.run.state,'stopped');assert.ok(reads>before,'read after acknowledged abort');assert.equal(stopped.view.latest.status,'none');
+});
+
 test('stopped snapshots keep request settings from before a config change, not Stop readback settings',async()=>{
  const n=nativeHarness({fixture:original.replace('## Examples','## Tools\n- ping\n\n## Examples')});
  let state='Enabled';const read=n.session.rpc.mcp.resources.read;

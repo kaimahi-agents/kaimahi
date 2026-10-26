@@ -14,6 +14,8 @@ export function setToolMode(raw, name, mode, reset = false) {
   return draft;
 }
 
+// A draft without mocks still carries the synthesized default modes shown for it.
+export const withToolModes = (raw, shown) => raw?.mocks || !shown?.mocks ? raw : { ...raw, mocks: shown.mocks };
 export const duplicateTest = raw => (raw.mocks?.tools ?? []).reduce((copy, t) => t.mode === "recorded" ? setToolMode(copy,t.name,"recorded",true) : copy, structuredClone(raw));
 
 const modeLabel = mode => mode === "recorded" ? "◉ Recorded" : "⚡ Live";
@@ -37,13 +39,15 @@ export function toolUseText(tools = [], settings = []) {
   }).join(", ");
 }
 
-export function renderTestTools(doc, { names, raw, tools = [], settings = [], details = [], onChange, onReset, disabled = false }) {
+export function renderTestTools(doc, { names, raw, tools = [], settings = [], details = [], onChange, onReset, disabled = false, updates }) {
   const section = el(doc, "section", "detail-section test-tools");
+  const isDisabled = typeof disabled === "function" ? disabled : () => disabled;
   section.append(el(doc, "h2", "lbl", "Tools"));
   const button = (text, label, action, className) => {
     const node = el(doc, "button", `tb ${className}`, text);
-    node.type = "button"; node.disabled = disabled; node.setAttribute("aria-label", label);
-    node.addEventListener("click", () => { if (!disabled) action(); });
+    node.type = "button"; node.disabled = isDisabled(); node.setAttribute("aria-label", label);
+    updates?.push(() => { node.disabled = isDisabled(); });
+    node.addEventListener("click", () => { if (!isDisabled()) action(); });
     return node;
   };
   for (const name of names) {

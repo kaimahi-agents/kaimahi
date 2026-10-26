@@ -35,6 +35,7 @@ const MESSAGES = {
   "action-failed": "The action couldn't be confirmed. Reload the saved file before trying again.",
   "outcome-unknown": "The action outcome could not be confirmed. Do not retry; reload the source first.",
   "no-tests": "No tests yet — add or suggest one",
+  tool_settings_changed: "Tool settings changed. Reload before comparing.",
   invalid_tool_settings: "The tool settings in kmx.yaml are invalid. Fix them before running this agent.",
 };
 
@@ -219,7 +220,7 @@ function authoringSnapshot(snapshot, examples, revision) {
       if (snapshot.recordingControls === true) validateExamples(examples ?? [], true);
       else replaceExamples(snapshot.source, examples ?? []);
     }
-    return { source: snapshot.source, editable: snapshot.editable, examples: structuredClone(examples ?? []), ...(snapshot.recordingControls === true ? { recordingControls: true, recordingDetails: list(snapshot.recordingDetails).map(d => { if (!isObj(d) || typeof d.exampleId !== "string" || !TOOL_NAME.test(d.name) || typeof d.text !== "string") invalid(); return {exampleId:d.exampleId,name:d.name,text:d.text}; }) } : {}) };
+    return { source: snapshot.source, editable: snapshot.editable, examples: structuredClone(examples ?? []), ...(snapshot.recordingControls === true ? { recordingControls: true, recordingDetails: list(snapshot.recordingDetails, MAX_ITEMS * 32).map(d => { if (!isObj(d) || typeof d.exampleId !== "string" || !TOOL_NAME.test(d.name) || typeof d.text !== "string") invalid(); return {exampleId:d.exampleId,name:d.name,text:d.text}; }) } : {}) };
   } catch { return; } // A malformed authoring snapshot cannot enable writes.
 }
 
@@ -439,7 +440,10 @@ export function createActionHandler({ session, path }) {
       catch (e) { if (e.code !== "action-failed" || e.preview?.state !== "complete") throw e; response = {structuredContent:e.preview}; }
       let raw = response.structuredContent;
       if (!raw && typeof response.textResultForLlm === "string" && Buffer.byteLength(response.textResultForLlm) <= MAX_RESOURCE_BYTES) { try {raw=JSON.parse(response.textResultForLlm);} catch {} }
-      if (response.stopped) return {stopped:true};
+      if (response.stopped) {
+        const fresh = await readView(session,path); if (fresh.file.revision !== view.file.revision) throw new ViewError("outcome-unknown");
+        current.state = "stopped"; view = {...fresh,latest:{status:"none",badge:"none"}}; return {stopped:true};
+      }
       if (raw?.file?.path !== path || raw.file.revision !== view.file.revision) throw new ViewError("outcome-unknown");
       const result = cleanResult(raw,"current",view.file.revision);
       if (result.modelRoute.slice(result.modelRoute.indexOf("/")+1) !== model || result.state !== "complete" || !sameSettings(result.toolSettings ?? [],settings) || JSON.stringify(result.selection.caseIds) !== JSON.stringify(ids)) throw new ViewError("outcome-unknown");
@@ -606,6 +610,7 @@ export function createActionHandler({ session, path }) {
       return { view, saved, ...(snapshot() ? { run: snapshot() } : {}) };
     } catch (e) {
       const err = safeError(e);
+      if (err.code === "outcome-unknown") uncertain = true;
       const response = { error: err.code, message: err.message, saved, ...(settingsIncomplete ? { settingsIncomplete: true } : {}), ...(err.approvalTimeout ? { approvalTimeout: true } : {}) };
       const failedPreview = tested && err.code === "action-failed";
       if (!settingsIncomplete && (saved || failedPreview) && err.code !== "revision_mismatch" && err.code !== "outcome-unknown") {

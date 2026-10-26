@@ -80,11 +80,15 @@ func ApplyExampleEdits(source []byte, edits []ExampleEdit) ([]byte, error) {
 	// Limits follow the parsed tree, not a second interpretation of YAML. Flow
 	// tokens have explicit delimiters; block values end before the next sibling.
 	limits := map[*yaml.Node]int{}
+	var endOf func(*yaml.Node) int
 	var visit func(*yaml.Node, int)
 	visit = func(n *yaml.Node, end int) {
 		limits[n] = end
 		for i, c := range n.Content {
 			next := end
+			if n.Style&yaml.FlowStyle != 0 {
+				next = endOf(n) - 1
+			}
 			if i+1 < len(n.Content) {
 				next = offset(n.Content[i+1])
 				if n.Style&yaml.FlowStyle == 0 && c.Line != n.Content[i+1].Line {
@@ -98,8 +102,7 @@ func ApplyExampleEdits(source []byte, edits []ExampleEdit) ([]byte, error) {
 			visit(c, next)
 		}
 	}
-	visit(root.Content[0], starts[close])
-	endOf := func(n *yaml.Node) int {
+	endOf = func(n *yaml.Node) int {
 		start, end := offset(n), limits[n]
 		if n.Style&yaml.FlowStyle != 0 || n.Style&(yaml.SingleQuotedStyle|yaml.DoubleQuotedStyle) != 0 {
 			// Quoted strings and flow collections can span lines; comments and escaped
@@ -159,6 +162,7 @@ func ApplyExampleEdits(source []byte, edits []ExampleEdit) ([]byte, error) {
 		}
 		return end
 	}
+	visit(root.Content[0], starts[close])
 	seq := field(root.Content[0], "examples")
 	if seq == nil {
 		return nil, ErrRecordingInvalid
@@ -338,6 +342,11 @@ func ApplyExampleEdits(source []byte, edits []ExampleEdit) ([]byte, error) {
 	last := len(text) + 1
 	for i := 0; i < len(patches); i++ {
 		p := patches[i]
+		for i+1 < len(patches) && p.text == "" && patches[i+1].text == "" && patches[i+1].end >= p.start {
+			i++
+			p.start = patches[i].start
+			p.end = max(p.end, patches[i].end)
+		}
 		for i+1 < len(patches) && p.start == p.end && patches[i+1].start == p.start && patches[i+1].end == p.end {
 			i++
 			p.text += patches[i].text

@@ -69,6 +69,37 @@ func TestExamplePatchLayoutsAndComments(t *testing.T) {
 	}
 }
 
+func TestExamplePatchFlowLastScalarAndAdjacentDeletes(t *testing.T) {
+	source := recordingSource(t, pendingTool)
+	start := strings.Index(source, "examples:")
+	end := strings.LastIndex(source, "```")
+	example := func(id string) string {
+		return `{id: ` + id + `, assertions: [{id: word, type: contains, value: hello}], input: Ada}`
+	}
+	input := "changed"
+	for _, body := range []string{"examples:\n  - " + example("a") + "\n", "examples: [" + example("a") + ", " + example("b") + ", " + example("c") + "]\n"} {
+		raw := []byte(source[:start] + body + source[end:])
+		got, err := ApplyExampleEdits(raw, []ExampleEdit{{BeforeID: "a", Input: &input}})
+		if err != nil {
+			t.Fatal("last flow scalar", err)
+		}
+		a, _ := Parse("test.agent.md", got)
+		if a.Examples[0].Input != input {
+			t.Fatal("wrong input")
+		}
+		if len(a.Examples) == 3 {
+			got, err = ApplyExampleEdits(raw, []ExampleEdit{{BeforeID: "b", Delete: true}, {BeforeID: "c", Delete: true}})
+			if err != nil {
+				t.Fatal("adjacent flow delete", err)
+			}
+			a, _ = Parse("test.agent.md", got)
+			if len(a.Examples) != 1 || a.Examples[0].ID != "a" {
+				t.Fatal("wrong retained test")
+			}
+		}
+	}
+}
+
 func mustJSON(t *testing.T, v any) []byte {
 	t.Helper()
 	b, err := json.Marshal(v)

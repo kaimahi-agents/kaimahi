@@ -187,3 +187,26 @@ test("untrusted names remain text in labels and names without enabling details",
   assert.equal(byTag(root, "img").length, 0);
   assert.equal(byTag(root, "details").length, 0);
 });
+
+test("live disabled state guards mode and reset buttons until refresh releases them", () => {
+  let busy = false; const updates = [];
+  const { root, changes, resets } = render({ disabled: () => busy, updates });
+  const nodes = buttons(root); assert.ok(nodes.length > 0);
+  busy = true; for (const update of updates) update();
+  for (const node of nodes) { assert.equal(node.disabled, true); for (const listener of node.listeners.click ?? []) listener({}); }
+  assert.deepEqual(changes, []); assert.deepEqual(resets, []);
+  busy = false; for (const update of updates) update();
+  click(nodes[0]); assert.equal(changes.length, 1);
+});
+
+test("mode change and reset keep later input and check edits with shown default modes", async () => {
+  const { withToolModes } = await import("../../copilot-wsl/com.github.copilot/extensions/agent-view/test-tools.mjs");
+  const shown = { id: "new", input: "old", assertions: [], mocks: { tools: [{ name: "read", mode: "recorded", calls: [] }, { name: "clock", mode: "live" }] } };
+  const edited = { id: "new", input: "typed later", assertions: [{ id: "a", type: "contains", value: "Ada" }] };
+  const changed = setToolMode(withToolModes(edited, shown), "clock", "recorded");
+  assert.equal(changed.input, "typed later"); assert.deepEqual(changed.assertions, edited.assertions);
+  assert.deepEqual(changed.mocks.tools.map(t => [t.name, t.mode]), [["read", "recorded"], ["clock", "recorded"]]);
+  const reset = setToolMode(withToolModes({ ...changed, input: "typed again" }, shown), "read", "recorded", true);
+  assert.equal(reset.input, "typed again"); assert.equal(reset.mocks.tools[1].mode, "recorded");
+  assert.equal(shown.mocks.tools[1].mode, "live");
+});

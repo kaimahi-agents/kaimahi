@@ -220,8 +220,8 @@ inspection-only in the canvas. These source capabilities are not supplied by the
 Fixtures share all existing YAML/source bounds below, including the shallow 12-level nesting budget. They reject
 external schema references, duplicate keys, inexact JSON numbers and known credential shapes. Arbitrary private data
 can evade those checks: saved results are plain file content that the author may commit. Native Squad stays tool-free.
-Run-profile export refuses fixtures and tool checks rather than dropping them. Until canvas round-trip support lands,
-fixture/tool-check files are read-only in the canvas; CLI/MCP Test remains available. No automatic migration occurs.
+Run-profile export refuses fixtures and tool checks rather than dropping them. Older backends without sparse
+`exampleEdits` keep fixture/tool-check files read-only in the canvas; CLI/MCP Test remains available. No automatic migration occurs.
 
 ## Bounds, loading and errors
 

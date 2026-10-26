@@ -1,5 +1,5 @@
 // Resource and authoring values are untrusted: render only inert DOM text.
-import { renderTestTools, setToolMode, toolUseText, duplicateTest } from "./test-tools.mjs";
+import { renderTestTools, setToolMode, withToolModes, toolUseText, duplicateTest } from "./test-tools.mjs";
 import { runtimeModelSelection, effectiveModel, readSnapshot, portableId, compareDrafts, same, preRouteRefusal } from "./authoring.mjs";
 import { el, inlineText, editorValue, instructionsContent, runtimeModelControl, testNameControl, icon, statusIcon,
   inspectCases, compareLabels, checkKey, uniqueIndex, clone, operandKey, EDITABLE_TYPES, quoted, checkLabel, oneLine, failureFacts, testRow, coherentSelection, ambiguousPassSet, countText, plural, resultHistory, resultPill, modelLabel, growTextarea, checkTypeControl, checkFields, convertCheck, inconclusiveJudge, judgeDetails, plainReason, isRefused, matchedAnswer, answerBlock, refusalContext,
@@ -604,8 +604,8 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     if (state.base.authoring?.recordingControls && editableTest && state.base.tools.length) {
       const raw = current()?.mocks ? current() : entry.raw;
       const observed = c?.row?.tools ?? state.lastCapture?.examples?.find(e => e.id === raw.id)?.tools ?? [];
-      out.push(renderTestTools(doc, { names: state.base.tools, raw, tools: observed.map(t => ({...t,settingDisabled:state.base.toolSettings.find(s=>s.name===t.name)?.state === "Disabled"})), details: state.base.authoring.recordingDetails?.filter(d=>d.exampleId===raw.id), disabled:state.busy||state.blocked||!!state.candidate,
-        onChange:(name,mode)=>{mutate(d=>{d.raw=setToolMode(raw,name,mode)});render()}, onReset:name=>{mutate(d=>{d.raw=setToolMode(raw,name,"recorded",true)});render()} }));
+      out.push(renderTestTools(doc, { names: state.base.tools, raw, tools: observed.map(t => ({...t,settingDisabled:state.base.toolSettings.find(s=>s.name===t.name)?.state === "Disabled"})), details: state.base.authoring.recordingDetails?.filter(d=>d.exampleId===raw.id), disabled:()=>state.busy||state.blocked||!!state.candidate, updates,
+        onChange:(name,mode)=>{mutate(d=>{d.raw=setToolMode(withToolModes(d.raw,raw),name,mode)});render()}, onReset:name=>{mutate(d=>{d.raw=setToolMode(withToolModes(d.raw,raw),name,"recorded",true)});render()} }));
     }
 
     // Passes if
