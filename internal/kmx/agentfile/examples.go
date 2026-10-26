@@ -65,12 +65,22 @@ func parseExamples(file string, lines []string, firstLine int, allowUnpinnedJudg
 	errAt := func(n *yaml.Node, problem string) *Error {
 		return &Error{location(n), "Examples", problem}
 	}
+	payloads := recordingPayloadRoots(&root)
 	nodes := 0
-	var check func(*yaml.Node, int) error
-	check = func(n *yaml.Node, depth int) error {
+	var check func(*yaml.Node, int, int) error
+	check = func(n *yaml.Node, depth, limit int) error {
+		if payloads[n] {
+			depth, limit = 0, 32
+		}
 		nodes++
-		if depth > 12 || nodes > 32768 {
-			return errAt(n, "reduce YAML complexity (12 levels and 32768 nodes maximum)")
+		if nodes > 32768 {
+			return errAt(n, "reduce YAML complexity (32768 nodes maximum)")
+		}
+		if depth > limit {
+			if limit == 32 {
+				return errAt(n, "reduce YAML complexity (32 recorded payload levels maximum)")
+			}
+			return errAt(n, "reduce YAML complexity (12 levels maximum outside recorded payloads)")
 		}
 		if n.Kind == yaml.AliasNode || n.Anchor != "" {
 			return errAt(n, "remove YAML anchors and aliases")
@@ -82,13 +92,13 @@ func parseExamples(file string, lines []string, firstLine int, allowUnpinnedJudg
 			return errAt(n, "keep each YAML scalar within 16 KiB")
 		}
 		for _, child := range n.Content {
-			if err := check(child, depth+1); err != nil {
+			if err := check(child, depth+1, limit); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
-	if err := check(&root, 0); err != nil {
+	if err := check(&root, 0, 12); err != nil {
 		return nil, err
 	}
 	if root.Kind != yaml.DocumentNode || len(root.Content) != 1 {

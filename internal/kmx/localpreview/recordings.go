@@ -137,14 +137,14 @@ func makeToolPlan(names []string, ex agentfile.Example, host *localtools.Host, c
 	if err != nil {
 		return p, agentpreview.ErrToolsUnavailable
 	}
-	if localtools.CheckJSON(ex.Mocks, check) != nil || localtools.CheckJSON(localtools.Config{Definitions: p.definitions, ToolSettings: p.settings, Sources: p.sources}, check) != nil {
+	if localtools.CheckJSONPayloads(ex.Mocks, check, mockPayloadPaths...) != nil || localtools.CheckJSON(localtools.Config{Definitions: p.definitions, ToolSettings: p.settings, Sources: p.sources}, check) != nil {
 		return p, agentpreview.ErrUnsafeToolContent
 	}
 	p.execute = func(ctx context.Context, scope controller.ToolCallContext, call api.ToolCall) (api.ToolResult, error) {
 		if err := validate(ctx); err != nil {
 			return api.ToolResult{}, err
 		}
-		if localtools.ValidateArguments(p.definitions, call.Tool, call.Args) != nil || localtools.CheckJSON(call, check) != nil {
+		if localtools.ValidateArguments(p.definitions, call.Tool, call.Args) != nil || localtools.CheckJSONPayloads(call, check, callPayloadPaths...) != nil {
 			return api.ToolResult{}, agentpreview.ErrUnsafeToolContent
 		}
 		result := api.ToolResult{ID: call.ID, Output: map[string]any{"text": "not available in this test"}}
@@ -205,7 +205,7 @@ func makeToolPlan(names []string, ex agentfile.Example, host *localtools.Host, c
 		if err := validate(ctx); err != nil {
 			return api.ToolResult{}, err
 		}
-		if localtools.CheckJSON(result, check) != nil {
+		if localtools.CheckJSONPayloads(result, check, resultPayloadPaths...) != nil {
 			return api.ToolResult{}, agentpreview.ErrUnsafeToolContent
 		}
 		if capturing {

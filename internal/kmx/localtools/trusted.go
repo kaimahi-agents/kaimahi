@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"regexp"
 	"slices"
+	"strconv"
 
 	"github.com/agent-primitives/sessions/api"
 	"github.com/agent-primitives/sessions/controller"
@@ -76,6 +77,18 @@ func ValidateArguments(defs []api.ToolDefinition, name string, args map[string]a
 
 // CheckJSON checks raw JSON and every decoded key/string before journal append.
 func CheckJSON(value any, check func(...string) error) error {
+	return CheckJSONPayloads(value, check)
+}
+
+// CheckJSONPayloads is CheckJSON with trusted absolute payload roots. Each path
+// is a list of mapping keys or sequence indices from the marshaled value's root;
+// "*" matches any sequence element, never a mapping key. The nesting budget restarts at 0 once,
+// at each matched root, and never again inside that payload. A matched string
+// that encodes JSON is decoded at the same restarted level, so a wire envelope
+// does not shrink the payload's budget. JSON embedded deeper keeps the
+// cumulative ceiling. Every raw string, key and decoded string is still passed
+// to check, and no path means the original whole-value budget.
+func CheckJSONPayloads(value any, check func(...string) error, payloadPaths ...[]string) error {
 	raw, err := json.Marshal(value)
 	if err != nil || check == nil {
 		return errUnsafeContent
@@ -87,8 +100,48 @@ func CheckJSON(value any, check func(...string) error) error {
 	if err := check(string(raw)); err != nil {
 		return err
 	}
-	var walk func(any, int) error
-	walk = func(v any, depth int) error {
+	type step struct {
+		key      string
+		sequence bool
+		index    int
+	}
+	matches := func(path []step) bool {
+		for _, want := range payloadPaths {
+			if len(want) != len(path) {
+				continue
+			}
+			ok := true
+			for i, s := range path {
+				if s.sequence {
+					if want[i] != "*" && want[i] != strconv.Itoa(s.index) {
+						ok = false
+						break
+					}
+				} else if want[i] == "*" || s.key != want[i] {
+					ok = false
+					break
+				}
+			}
+			if ok {
+				return true
+			}
+		}
+		return false
+	}
+	child := func(path []step, tracking bool, s step) []step {
+		if !tracking {
+			return nil
+		}
+		return append(slices.Clip(path), s)
+	}
+	// tracking is false inside a payload and inside embedded JSON, where no
+	// trusted path can apply.
+	var walk func(v any, depth int, path []step, tracking bool) error
+	walk = func(v any, depth int, path []step, tracking bool) error {
+		root := false
+		if tracking && len(payloadPaths) > 0 && matches(path) {
+			depth, tracking, root = 0, false, true
+		}
 		if depth > 32 {
 			return errUnsafeContent
 		}
@@ -102,27 +155,33 @@ func CheckJSON(value any, check func(...string) error) error {
 				return errUnsafeContent
 			}
 			if json.Unmarshal([]byte(v), &nested) == nil {
-				return walk(nested, depth+1)
+				// A matched root already restarted depth; its decoded content is
+				// the same level, not one deeper. Other strings add one level.
+				next := depth + 1
+				if root {
+					next = 0
+				}
+				return walk(nested, next, nil, false)
 			}
 		case map[string]any:
 			for k, x := range v {
 				if err := check(k); err != nil {
 					return err
 				}
-				if err := walk(x, depth+1); err != nil {
+				if err := walk(x, depth+1, child(path, tracking, step{key: k}), tracking); err != nil {
 					return err
 				}
 			}
 		case []any:
-			for _, x := range v {
-				if err := walk(x, depth+1); err != nil {
+			for i, x := range v {
+				if err := walk(x, depth+1, child(path, tracking, step{sequence: true, index: i}), tracking); err != nil {
 					return err
 				}
 			}
 		}
 		return nil
 	}
-	return walk(decoded, 0)
+	return walk(decoded, 0, nil, len(payloadPaths) > 0)
 }
 
 // NewTrustedHost accepts only host-supplied authority. Nothing in an agent file

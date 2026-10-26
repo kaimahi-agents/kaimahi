@@ -108,7 +108,7 @@ func (c *modelClient) ToolModel(ctx context.Context, r api.ModelRequest) (api.Mo
 		return fail()
 	}
 	if c.check != nil {
-		if err = checkJSONContent(raw, c.check); err != nil {
+		if err = checkJSONContent(raw, c.check, wireRequestPayloadPaths(len(messages))...); err != nil {
 			return api.ModelResponse{}, err
 		}
 	}
@@ -147,7 +147,7 @@ func (c *modelClient) ToolModel(ctx context.Context, r api.ModelRequest) (api.Mo
 		return fail()
 	}
 	if c.check != nil {
-		if err = checkJSONContent(raw, c.check); err != nil {
+		if err = checkJSONContent(raw, c.check, wireReplyPayloadPaths...); err != nil {
 			return api.ModelResponse{}, err
 		}
 	}
@@ -156,7 +156,7 @@ func (c *modelClient) ToolModel(ctx context.Context, r api.ModelRequest) (api.Mo
 		return api.ModelResponse{}, err
 	}
 	if c.check != nil {
-		if err := localtools.CheckJSON(result, c.check); err != nil {
+		if err := localtools.CheckJSONPayloads(result, c.check, modelCallPayloadPath...); err != nil {
 			return api.ModelResponse{}, err
 		}
 	}

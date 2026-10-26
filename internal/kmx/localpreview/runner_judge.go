@@ -11,6 +11,7 @@ import (
 
 	"github.com/agent-primitives/sessions/api"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
@@ -153,7 +154,37 @@ func runnerJudgeContextError(err error) error {
 // Inspect decoded text as well as raw JSON: a response may escape a credential
 // in content, metadata or the nested JSON rationale. Depth is bounded by the
 // already bounded response; excessive nesting refuses instead of skipping checks.
-func checkJSONContent(raw []byte, check func(...string) error) error {
+//
+// With payload paths (see localtools.CheckJSONPayloads) matched recorded
+// payloads are measured from their own root; the raw body is still checked
+// lexically first and every string, key and decoded string is still checked.
+func checkJSONContent(raw []byte, check func(...string) error, payloadPaths ...[]string) error {
+	if len(payloadPaths) > 0 {
+		if err := check(string(raw)); err != nil {
+			return err
+		}
+		var value any
+		if json.Unmarshal(raw, &value) != nil {
+			return errRunnerExecution
+		}
+		// Keep the caller's refusal (credential, unsafe content) distinct from a
+		// structural refusal such as depth or duplicate embedded keys.
+		var refused error
+		err := localtools.CheckJSONPayloads(value, func(values ...string) error {
+			if err := check(values...); err != nil {
+				refused = err
+				return err
+			}
+			return nil
+		}, payloadPaths...)
+		if refused != nil {
+			return refused
+		}
+		if err != nil {
+			return errRunnerExecution
+		}
+		return nil
+	}
 	var walk func(any, int) error
 	walk = func(value any, depth int) error {
 		if depth > 32 {
