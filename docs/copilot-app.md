@@ -104,8 +104,14 @@ instructions, inputs and answers in cleartext; read the
 before using private material. Never put secrets in an agent file or test.
 
 Read the verdicts and open a test to inspect its answer and check explanations.
-On main, test results arrive together when the batch finishes, not one at a time.
-A running indicator does not mean a test has passed.
+The canvas shows when Copilot approval is waiting in chat. The host-tool relay
+allows 30 seconds per call, including approval waiting. A deadline does not dismiss
+the approval: granting it later may still execute the tool. The result is unconfirmed;
+reload before continuing to inspect the saved file.
+Test verdicts appear as each case finishes. They remain provisional until the
+full Test reply confirms the run. A running indicator does not mean a test has passed.
+Known issue: Copilot may keep showing “Working” after a canvas run until the next
+chat turn, even when the run has finished.
 
 *Screenshot to add: a completed test and its check explanations.*
 
@@ -126,10 +132,11 @@ Use the model picker to select an available Copilot model, then press **Enter**
 to run the same tests again. The choice applies to execution; it does not rewrite
 the agent file's saved model. Changing models makes old results stale.
 
-Compare the verdicts and answers from these separate runs yourself. Main does
-not yet provide a side-by-side model comparison or a durable canvas run history.
-Record any comparison you need to keep before closing the canvas. A model
-picker choice is not a test result, and a preview pass is not deployment evidence.
+The canvas keeps two models' verdicts side by side for the current source.
+Switch the picker to inspect each model's results without another run. This
+comparison lasts only in the open canvas, not as durable run history; record
+anything you need to keep before closing it. A model picker choice is not a test
+result, and a preview pass is not deployment evidence.
 Declared tools bind to the app's current MCP servers when the host supports the
 binding path. An unbound tool gives one plain reason; judges remain tool-free.
 See the [CLI reference](kmx.md#agent-file-local-preview-unreleased-integration)

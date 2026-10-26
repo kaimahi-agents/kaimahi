@@ -73,7 +73,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       messageNode.textContent = state.message;
       for (const u of updates) u();
       for (const { node, guard } of controls) {
-        node.disabled = guard === "stop" ? currentRun()?.state !== "running" : guard === "reload" ? state.busy : invalidEditors.size > 0 || (guard === "nav" ? false
+        node.disabled = guard === "reload" ? state.busy : invalidEditors.size > 0 || (guard === "nav" ? false
           : state.busy || state.blocked || (guard === "save" && !!state.candidate) || (guard === "clean" && hasDrafts()));
       }
     };
@@ -115,6 +115,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   const currentRun = () => testing() ? state.run : history.attempt(selectedModel())?.run;
   function runSummary(run) {
     if (run.state === "stopping") return { tone: "running", text: "Stopping…" };
+    if (run.approvalWaiting) return { tone: "running", text: "Copilot approval is waiting in chat." };
     const n = run.caseIds.length, done = run.cases.length;
     if (run.state !== "stopped") return { tone: "running", text: `Running · ${done} of ${n} done` };
     const passing = run.cases.filter(c => c.verdict === "pass").length, failing = run.cases.filter(c => c.verdict === "fail").length;
@@ -133,17 +134,19 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     if (!c && run.state !== "stopped") {
       const next = !run.cases.some(c => c.verdict === "unknown") && run.caseIds.find(id => !run.cases.some(c => c.caseId === id));
       if (next === id && run.state !== "stopping") { base = "running"; label = "Running"; }
-      else if (fallback.base !== "none") return { ...fallback, kind: `old-${fallback.base}`, tone: "none" };
+      else if (run.state !== "stopping" && fallback.base !== "none") return { ...fallback, kind: `old-${fallback.base}`, tone: "none" };
       else label = "Waiting";
     }
+    let note = c?.verdict !== "pass" ? c?.reason ?? "" : "";
+    const definitions = testing() ? localExamples() : attempt?.view.authoring?.examples;
+    const checks = definitions?.find(e => e.id === id)?.assertions.filter(a => a.id === c?.failedAssertionId);
+    if (c?.verdict === "fail" && checks?.length === 1) {
+      const raw = checks[0], a = { ...raw, fields: raw.fields ?? Object.entries(raw).filter(([key]) => !["id", "type"].includes(key)) };
+      const key = checkKey(a);
+      note = failureFacts({ state: "fail", example: { assertions: [a] }, expected: new Map([[key, a]]), checks: new Map([[key, { verdict: "fail" }]]) })?.text ?? note;
+    }
     const kind = old && base !== "none" ? `old-${base}` : base;
-    return { base, kind, tone: old ? "none" : base, label, note: c?.verdict !== "pass" ? c?.reason ?? "" : "", count: c?.verdict === "pass" ? "passing" : c?.verdict === "fail" ? "failing" : "" };
-  }
-  function stopButton(button, updates) {
-    const node = button("■ Stop Copilot turn", () => actions.stop(), "tb stop-run", "stop");
-    node.setAttribute("aria-label", "Stop Copilot turn"); node.setAttribute("title", "Stop Copilot turn");
-    updates.push(() => { node.hidden = !testing() || !state.run; });
-    return node;
+    return { base, kind, tone: old ? "none" : base, label, note, count: c?.verdict === "pass" ? "passing" : c?.verdict === "fail" ? "failing" : "" };
   }
   function resultSummary() {
     const run = currentRun();
@@ -186,7 +189,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   const total = () => localExamples().length;
   function footText(scope) {
     if (testing() && state.run) return state.run.state === "stopping" ? "Saved · stopping Copilot turn…"
-      : `Saved · running ${state.pending.one ? "this test" : plural(total(), "test")}`;
+      : state.run.approvalWaiting ? "Copilot approval is waiting in chat." : `Saved · running ${state.pending.one ? "this test" : plural(total(), "test")}`;
     return canvasFooterText({ editable: !!state.snap, n: state.snap ? total() : 0, busy: state.busy, pending: state.pending, blocked: state.blocked, savedUntested: state.savedUntested,
       invalid: invalidEditors.size, candidate: state.candidate, scope, promptDirty: sectionDrafts.size, testDirty: testDrafts.has(state.route.key), dirty: hasDrafts(), runAlert: state.runAlert });
   }
@@ -225,7 +228,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     } else promptBox.append(instructionsContent(doc, state.base));
     foot.append(spinnerStatus(status, "all", updates));
     const saveRun = state.snap ? saveButton(doc, button, "Save and run all tests", submitAll) : undefined;
-    if (saveRun) { foot.append(saveRun, stopButton(button, updates)); updates.push(() => { saveRun.hidden = testing() && !!state.run; }); }
+    if (saveRun) { foot.append(saveRun); updates.push(() => { saveRun.hidden = testing() && !!state.run; }); }
     if (state.snap) foot.append(hostedNotice(updates));
     promptBox.append(foot); promptSection.append(promptLabel, promptBox);
 
@@ -464,7 +467,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     const status = el(doc, "span", "meta"); status.setAttribute("aria-hidden", "true");
     const jump = button("", () => tests.scrollIntoView?.({ block: "start" }), "tb tb-quiet pinned-tests", "nav");
     const right = el(doc, "div", "pinned-actions");
-    right.append(jump, saveButton(doc, button, "Save and run all tests", submitAll), stopButton(button, updates));
+    right.append(jump, saveButton(doc, button, "Save and run all tests", submitAll));
     inner.append(status, right); bar.append(inner); bar.hidden = true;
     updates.push(() => {
       status.textContent = footText("all");
@@ -701,7 +704,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       cancel.setAttribute("aria-label", "Cancel"); cancel.append(icon(doc, "close", 16, 2.2));
       cancel.setAttribute("title", "Discard this test's edits (Esc)");
       updates.push(() => { cancel.hidden = !draft(); });
-      right.append(cancel, saveButton(doc, button, "Save and run this test", () => submitOne(key)), stopButton(button, updates));
+      right.append(cancel, saveButton(doc, button, "Save and run this test", () => submitOne(key)));
       foot.append(right, hostedNotice(updates)); out.push(foot);
     } else {
       const foot = el(doc, "div", "detail-foot"); foot.append(status); out.push(foot);

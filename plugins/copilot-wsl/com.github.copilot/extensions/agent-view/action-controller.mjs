@@ -22,7 +22,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
       try {
         const response = await fetchProgress(id);
         if (!disposed && activeRun === id && response?.run?.id === id) {
-          state.run = { ...response.run, ...(state.run?.state === "stopping" ? { state: "stopping" } : {}) }; refresh();
+          state.run = { ...response.run, ...(state.run?.state === "stopping" ? { state: "stopping", approvalWaiting: false } : {}) }; refresh();
         }
       } catch { /* Final Test reply remains authoritative when progress is unavailable. */ }
       if (!disposed && activeRun === id) { progressTimer = setTimeout(poll, 200); progressTimer.unref?.(); }
@@ -32,7 +32,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
   async function stop() {
     if (!activeRun || state.run?.id !== activeRun || state.run.state !== "running") return;
     const runId = activeRun;
-    state.run = { ...state.run, state: "stopping" }; refresh();
+    state.run = { ...state.run, state: "stopping", approvalWaiting: false }; refresh();
     try { await execute({ operation: "stop", runId }); } catch { /* The long action owns the final outcome. */ }
   }
 
@@ -100,7 +100,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
       } else if (unknown || response.saved === true || (response.error === "action-failed" && ["test", "run"].includes(operation))) {
         state.blocked = true; state.savedUntested = response.saved === true;
         state.message = CONFLICTS.includes(response.error) ? "Changed elsewhere during the run. Your draft is still here. Reload and discard draft to continue."
-          : response.saved ? "Saved; test result unconfirmed. Your draft is still here. Reload before continuing."
+          : response.saved ? response.approvalTimeout ? `Saved; your draft is still here. ${response.message}` : "Saved; test result unconfirmed. Your draft is still here. Reload before continuing."
           : response.message || "Outcome not confirmed. Reload deliberately to inspect the saved file.";
       } else if (response.error === "permission_required" && tested) {
         state.runAlert = { text: response.message || "", saved: false, one: values.caseId };

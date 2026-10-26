@@ -122,8 +122,8 @@ configured supported route and exact Model.Preferred; no silent fallback.
 Fake/local previews retain instructions, inputs and answers in cleartext SQLite
 journals under `<kmx state>/local-preview/journals` (`KMX_HOME` when set).
 Each invocation owns one journal. New starts prune to the newest 20 runs,
-keeping active runs; concurrent starts can leave more. Stop previews before
-removing journal files there to clear retained content. See
+keeping active runs; concurrent starts can leave more. Wait for previews to finish
+before removing journal files there to clear retained content. See
 [journal retention](../../docs/local-preview.md#journal-retention-and-clearing).
 Real-model route setup is not automated by this packager.
 For manually configured trusted startup, `kmx mcp --root ABSOLUTE_DIR --provider copilot`
@@ -242,7 +242,7 @@ Failed saves stop Test. Test/Run have no atomic revision precondition; actual
 returned revisions and selected case IDs must match before results are attributed.
 A failed call also needs its own structured result to match the resource;
 without that evidence, an older result cannot unlock a retry.
-Stop, versions/restore, a new Model validated type, Ask Copilot and All versions
+Versions/restore, a new Model validated type, Ask Copilot and All versions
 are not part of this canvas release; no inactive versions clock is shown.
 
 Canvas runs explicitly request bounded answer excerpts with `showContent: true`,
@@ -292,7 +292,7 @@ layout/instance-ID length have not been app-qualified by that check.
 These pairs show the Final boards beside the accepted native saved/edited
 milestone. The native captures precede the final wording and paragraph-spacing
 fixes. The detail pair shows the latest real-MCP **browser** check, not a native
-or hosted-model run. Clock/history, stop and the new model-check type are deferred.
+or hosted-model run. Clock/history and the new model-check type are deferred.
 
 ![Edited board beside the native visual checkpoint](../../docs/images/copilot-canvas-native-edited.png)
 ![Saved board beside the native visual checkpoint](../../docs/images/copilot-canvas-native-saved.png)

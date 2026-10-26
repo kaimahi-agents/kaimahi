@@ -6,11 +6,12 @@ import { createOpenHandler, readOpenView, viewInstanceId, OPEN_TOOL_NAME, OPEN_T
 
 const PATH = "greeter.agent.md";
 const PROVIDER = "plugin:kmx-agent-builder:agent-view";
-function setup({ renderer = true, readError, badResource = false, openError, path = PATH } = {}) {
+function setup({ renderer = true, readError, badResource = false, resourceError, openError, path = PATH } = {}) {
   const calls = [];
   const session = { capabilities: { ui: { canvases: renderer } }, rpc: {
     mcp: { resources: { read: async (input) => {
       calls.push(["read", input]); if (readError) throw readError;
+      if (resourceError) return { contents: [{ text: JSON.stringify(resourceError) }] };
       return { contents: [{ text: JSON.stringify({ schemaVersion: 1, kind: "kmx.agent-view", file: { path: badResource ? "other.agent.md" : path, revision: "sha256:" + "a".repeat(64) }, title: "Greeter", instructions: "Reply hello.", model: "fake", examples: [], latest: { status: "none" } }) }] };
     } } },
     canvas: { open: async (input) => {
@@ -86,6 +87,18 @@ test("resource refusal and invalid projection never launch a canvas or disclose 
     assert.doesNotMatch(JSON.stringify(result), /secret endpoint/);
   }
 });
+test("invalid check resource explains the file needs fixing without exposing parser details", async () => {
+  const f = setup({ resourceError: { schemaVersion: 1, kind: "kmx.agent-view-error", reasonCode: "invalid_file", message: "PRIVATE SOURCE /private/path" } });
+  const result = await f.run({ path: PATH });
+  assert.equal(result.opened, false);
+  assert.equal(result.reasonCode, "invalid-file");
+  assert.equal(result.message, "This agent file needs fixing before it can open. Check its format and test fields.");
+  assert.deepEqual(f.calls.map(c => c[0]), ["read"]);
+  assert.doesNotMatch(JSON.stringify(result), /PRIVATE|private|MCP server/);
+  const malformed = setup({ resourceError: { schemaVersion: 2, kind: "kmx.agent-view-error", reasonCode: "invalid_file" } });
+  assert.equal((await malformed.run({ path: PATH })).reasonCode, "invalid-resource");
+});
+
 test("no renderer yields existing text projection with no canvas call", async () => {
   for (const renderer of [false, undefined]) {
     const f = setup({ renderer });

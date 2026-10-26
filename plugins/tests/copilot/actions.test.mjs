@@ -70,8 +70,8 @@ test('read-only catalog action cannot accept browser paths or tool-execution ope
 });
 function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no});return{promise,resolve,reject}}
 function nativeHarness(){
- const h=harness(),listeners=new Set(),retired=[],requests=[],gate=deferred(),ack=deferred(),aborts=[],dispatched=deferred();
- h.session.on=(name,listener)=>{assert.equal(name,'tool.execution_progress');listeners.add(listener);return()=>{listeners.delete(listener);retired.push(listener)}};
+ const h=harness(),listeners=new Set(),retired=[],requests=[],gate=deferred(),ack=deferred(),aborts=[],dispatched=deferred(),events=new Map();
+ h.session.on=(name,listener)=>{if(name==='tool.execution_progress')listeners.add(listener);const set=events.get(name)??new Set();events.set(name,set);set.add(listener);return()=>{set.delete(listener);listeners.delete(listener);if(name==='tool.execution_progress')retired.push(listener)}};
  const execute=h.session.rpc.tools.execute;
  h.session.rpc.tools.execute=async request=>{
   if(request.name!=='owned-test')return execute(request);
@@ -85,7 +85,7 @@ function nativeHarness(){
   await new Promise(setImmediate);assert.equal(requests.length,1,'Test must dispatch once');
   return{pending};
  };
- return{...h,listeners,retired,requests,gate,ack,aborts,emit,start,dispatched};
+ return{...h,listeners,retired,requests,gate,ack,aborts,emit,start,dispatched,events,event:(name,data)=>{for(const listener of events.get(name)??[])listener({data})}};
 }
 test('native progress is correlated, bounded, ordered and provisional until the final Test reply',async()=>{
  const n=nativeHarness();n.o.nextExamples=[greeting,farewell];
@@ -114,6 +114,68 @@ test('native progress is correlated, bounded, ordered and provisional until the 
  n.retired[0]({data:{toolCallId:request.toolCallId,progressMessage:'1.0: {"caseId":"farewell","verdict":"pass","reason":"late"}'}});
  assert.equal((await n.act({operation:'progress',runId:'run-1'})).run.cases[1].verdict,'fail');
  await n.act({operation:'reload'});assert.deepEqual(await n.act({operation:'progress',runId:'run-1'}),{run:undefined});
+});
+test('live failure identifies only a check in this invocation saved examples',async()=>{
+ const n=nativeHarness();n.o.nextExamples=[greeting,farewell];
+ const {pending}=await n.start({operation:'save-and-test',sections:edited(),examples:[greeting,farewell]});
+ n.emit({caseId:'greeting',verdict:'fail',reason:'Assertion not satisfied.',failedAssertionId:'greeting-text'});
+ n.emit({caseId:'farewell',verdict:'fail',reason:'Assertion not satisfied.',failedAssertionId:'foreign-check'});
+ const rows=(await n.act({operation:'progress',runId:'run-1'})).run.cases;
+ assert.equal(rows[0].failedAssertionId,'greeting-text');
+ assert.equal(rows[1].failedAssertionId,undefined);
+ n.gate.resolve();await pending;
+});
+test('joined extensions hydrate approvals when the host does not deliver requested events',async()=>{
+ const n=nativeHarness();const {pending}=await n.start(),toolCallId=n.requests[0].toolCallId;
+ let items=[{requestId:'native-request',request:{kind:'mcp',toolCallId,args:{private:'approval-canary'}}},{requestId:'foreign',request:{kind:'mcp',toolCallId:'chat-call'}}];
+ n.session.rpc.permissions={pendingRequests:async()=>({items})};
+ const waiting=async()=>!!(await n.act({operation:'progress',runId:'run-1'})).run.approvalWaiting;
+ assert.equal(await waiting(),true);
+ assert.doesNotMatch(JSON.stringify(await n.act({operation:'progress',runId:'run-1'})),/native-request|chat-call|approval-canary/);
+ const late=deferred();n.session.rpc.permissions.pendingRequests=()=>late.promise;
+ const polling=n.act({operation:'progress',runId:'run-1'});await new Promise(setImmediate);
+ n.event('permission.completed',{requestId:'native-request',toolCallId});late.resolve({items});
+ assert.equal(!!(await polling).run.approvalWaiting,false,'late hydration cannot resurrect a completed prompt');
+ items=[];n.session.rpc.permissions.pendingRequests=async()=>({items});assert.equal(await waiting(),false);
+ n.gate.resolve();await pending;
+});
+test('request-only completion invalidates first hydration before its request ID is known',async()=>{
+ const n=nativeHarness();const {pending}=await n.start(),toolCallId=n.requests[0].toolCallId,late=deferred();
+ n.session.rpc.permissions={pendingRequests:()=>late.promise};
+ const polling=n.act({operation:'progress',runId:'run-1'});await new Promise(setImmediate);
+ n.event('permission.completed',{requestId:'first-request'});
+ late.resolve({items:[{requestId:'first-request',request:{kind:'mcp',toolCallId}}]});
+ assert.equal(!!(await polling).run.approvalWaiting,false);
+ n.gate.resolve();await pending;
+});
+test('approval waiting requires owned native call and request IDs; completion and Stop clear it',async()=>{
+ const n=nativeHarness();const {pending}=await n.start(),toolCallId=n.requests[0].toolCallId;
+ const waiting=async()=>!!(await n.act({operation:'progress',runId:'run-1'})).run.approvalWaiting;
+ for(const data of [{requestId:'foreign',permissionRequest:{toolCallId:'chat-call'}},{requestId:'missing',permissionRequest:{}},{requestId:'hook',permissionRequest:{toolCallId},resolvedByHook:true},{permissionRequest:{toolCallId}}]){
+  n.event('permission.requested',data);assert.equal(await waiting(),false);
+ }
+ n.event('permission.requested',{requestId:'first',permissionRequest:{toolCallId,private:'permission-canary'}});
+ n.event('permission.requested',{requestId:'second',permissionRequest:{toolCallId}});
+ assert.equal(await waiting(),true);
+ assert.doesNotMatch(JSON.stringify(await n.act({operation:'progress',runId:'run-1'})),/permission-canary|first|second|toolCallId/);
+ n.event('permission.completed',{requestId:'first',toolCallId:'foreign'});assert.equal(await waiting(),true);
+ n.event('permission.completed',{requestId:'first',toolCallId});n.event('permission.completed',{requestId:'foreign'});assert.equal(await waiting(),true);
+ n.event('permission.completed',{requestId:'second'});assert.equal(await waiting(),false);
+ n.event('permission.requested',{requestId:'third',permissionRequest:{toolCallId}});assert.equal(await waiting(),true);
+ await n.act({operation:'stop',runId:'run-1'});assert.equal(await waiting(),false);
+ n.event('permission.requested',{requestId:'late',permissionRequest:{toolCallId}});assert.equal(await waiting(),false);
+ n.ack.resolve({success:true});n.gate.reject(Error('aborted'));await pending;
+ assert.ok([...n.events.values()].every(set=>set.size===0));
+});
+for(const ending of ['finish','dispose'])test('approval observers are cleaned on '+ending+' and late requests do not revive waiting',async()=>{
+ const n=nativeHarness();const {pending}=await n.start(),toolCallId=n.requests[0].toolCallId;
+ n.event('permission.requested',{requestId:'waiting',permissionRequest:{toolCallId}});
+ assert.equal((await n.act({operation:'progress',runId:'run-1'})).run.approvalWaiting,true);
+ if(ending==='dispose')n.act.dispose();
+ n.gate.resolve();await pending;
+ assert.ok([...n.events.values()].every(set=>set.size===0));
+ n.event('permission.requested',{requestId:'late',permissionRequest:{toolCallId}});
+ assert.notEqual((await n.act({operation:'progress',runId:'run-1'})).run?.approvalWaiting,true);
 });
 test('run IDs validate before writes and fixed progress/Stop accept no execution selectors',async()=>{
  for(const runId of ['',null,42,'x'.repeat(129),'bad\nID']){

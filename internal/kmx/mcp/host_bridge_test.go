@@ -22,6 +22,7 @@ import (
 
 	"github.com/agent-primitives/sessions/api"
 	"github.com/agent-primitives/sessions/controller"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -145,6 +146,80 @@ func awaitResolved(t *testing.T, done <-chan bridgeResolved) bridgeResolved {
 		return bridgeResolved{}
 	}
 }
+func TestHostBridgeNativeProgressAttributionAndExactDeadline(t *testing.T) {
+	for _, cancelEarly := range []bool{false, true} {
+		t.Run(fmt.Sprint(cancelEarly), func(t *testing.T) {
+			t.Setenv("KMX_HOME", previewStateHome(t))
+			p := newBridgePeer(t)
+			files, _, source := canonicalFiles(t)
+			source = strings.Replace(source, "## Examples", "## Tools\n- lookup\n\n## Examples", 1)
+			source = strings.Replace(source, "Reply with exactly `Hello, ` followed by the input name.", "Call the tool `lookup`. Reply with exactly `done`.", 1)
+			saved, err := files.Create(t.Context(), "greeter.agent.md", []byte(source))
+			if err != nil {
+				t.Fatal(err)
+			}
+			cs, notifications := connectProgressFixture(t, Operations(files, &app.App{FileRunner: app.NewHostFileRunner(p.bridge.ResolveTools)}, nil))
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			params := &sdk.CallToolParams{Name: "test", Arguments: map[string]any{"schemaVersion": 1, "path": saved.Path}}
+			params.SetProgressToken("outer-native")
+			done := make(chan struct{})
+			go func() { defer close(done); _, _ = cs.CallTool(ctx, params) }()
+			resolve := p.next()
+			if p.result(resolve, map[string]any{"definitions": bridgeDefinitions()}) != 200 {
+				t.Fatal("resolve")
+			}
+			job := p.next()
+			select {
+			case n := <-notifications:
+				var metadata map[string]any
+				_ = json.Unmarshal([]byte(n.Message), &metadata)
+				want := map[string]any{"kind": "kmx.host-progress", "schemaVersion": float64(1), "phase": "call", "runId": job["runId"], "jobId": job["id"]}
+				if n.ProgressToken != "outer-native" || !reflect.DeepEqual(metadata, want) {
+					t.Fatalf("call metadata=%+v", n)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("missing exact native call attribution")
+			}
+			if p.claim(job) != 200 {
+				t.Fatal("claim")
+			}
+			if cancelEarly {
+				cancel()
+			}
+			select {
+			case <-done:
+			case <-time.After(35 * time.Second):
+				t.Fatal("fixed broker deadline did not complete")
+			}
+			if cancelEarly {
+				time.Sleep(50 * time.Millisecond)
+				for len(notifications) > 0 {
+					n := <-notifications
+					if strings.Contains(n.Message, `"phase":"deadline"`) {
+						t.Fatal("cancelled invocation is not broker expiry")
+					}
+				}
+			} else {
+				select {
+				case n := <-notifications:
+					var metadata map[string]any
+					_ = json.Unmarshal([]byte(n.Message), &metadata)
+					want := map[string]any{"kind": "kmx.host-progress", "schemaVersion": float64(1), "phase": "deadline", "runId": job["runId"], "jobId": job["id"]}
+					if !reflect.DeepEqual(metadata, want) {
+						t.Fatalf("deadline metadata=%+v", n)
+					}
+				default:
+					t.Fatal("missing actual broker deadline evidence")
+				}
+				if p.result(job, map[string]any{"output": map[string]any{"late": true}}) != 410 {
+					t.Fatal("post-claim expiry accepted late result")
+				}
+			}
+		})
+	}
+}
+
 func TestHostBridgeSharedSigningVector(t *testing.T) {
 	raw, err := os.ReadFile("../../../testdata/host-bridge-signing.json")
 	if err != nil {

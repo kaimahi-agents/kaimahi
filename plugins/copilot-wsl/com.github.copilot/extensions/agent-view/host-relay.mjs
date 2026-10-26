@@ -14,7 +14,7 @@ export const requestPayload = (method, route, time, nonce, body) => `${method}\n
 export const responsePayload = (status, nonce, body) => `${status}\n${nonce}\n${body}`;
 
 function stateFor(session) {
-  if (!states.has(session)) states.set(session, { leases: new Set(), runs: new Map(), child: `kmx-agent-preview-${randomBytes(12).toString("hex")}`, abort: new AbortController() });
+  if (!states.has(session)) states.set(session, { leases: new Set(), runs: new Map(), calls: new Map(), observers: new Set(), child: `kmx-agent-preview-${randomBytes(12).toString("hex")}`, abort: new AbortController() });
   return states.get(session);
 }
 export function previewServer(session) {
@@ -27,6 +27,61 @@ export function previewServer(session) {
 export function beginPreview(session) {
   const s = stateFor(session), lease = { original: !s.start && !s.activated, release: () => s.leases.delete(lease) };
   s.leases.add(lease); return lease;
+}
+
+// Only exact native outer progress plus an actual signed relay job can own an
+// inner permission prompt. Neither a shared session nor an ID prefix is proof.
+export function observePreview(session, outerToolCallId) {
+  const s = stateFor(session), owned = new Set([outerToolCallId]), jobs = new Map(), requests = new Map();
+  let closed = false, deadline = false, pendingAtClose = false, generation = 0;
+  const complete = id => { generation++; owned.delete(id); for (const [request, tool] of requests) if (tool === id) requests.delete(request); };
+  const observer = {
+    attach(job) { if (!closed && jobs.get(job.id) === job.runId) owned.add(job.toolCallId); },
+    complete,
+    progress(data) {
+      if (closed || data?.kind !== "kmx.host-progress" || data.schemaVersion !== 1 ||
+          !/^[a-f0-9]{32}$/.test(data.runId) || !/^[a-f0-9]{32}$/.test(data.jobId)) return;
+      const call = s.calls.get(data.jobId);
+      // Lifetime inventory includes up to 128 cases with five calls each.
+      if (data.phase === "call" && jobs.size < 128 * 5) { jobs.set(data.jobId, data.runId); if (call) observer.attach(call); }
+      if (data.phase === "deadline" && call?.runId === data.runId && jobs.get(data.jobId) === data.runId &&
+          [...requests.values()].includes(call.toolCallId)) deadline = true;
+    },
+    async refresh() {
+      if (closed || typeof session.rpc?.permissions?.pendingRequests !== "function") return;
+      const started = ++generation;
+      let timer;
+      try {
+        // Joined extensions may receive completion but not requested events.
+        const result = await Promise.race([session.rpc.permissions.pendingRequests(),
+          new Promise((_, reject) => { timer = setTimeout(() => reject(unavailable()), 1000); })]);
+        if (closed || started !== generation || !Array.isArray(result?.items) || result.items.length > 128) return;
+        requests.clear();
+        for (const item of result.items) {
+          const id = item?.request?.toolCallId;
+          if (owned.has(id) && text(item.requestId, 1024)) requests.set(item.requestId, id);
+        }
+      } catch { /* Optional metadata cannot settle or block the Test invocation. */ }
+      finally { clearTimeout(timer); }
+    },
+    waiting: () => !closed && requests.size > 0,
+    timedOut: () => deadline,
+    pendingTool: () => closed ? pendingAtClose : owned.size > 1,
+    clear() { if (closed) return; pendingAtClose = owned.size > 1; closed = true; generation++; for (const off of subscriptions) off?.(); s.observers.delete(observer); owned.clear(); jobs.clear(); requests.clear(); },
+  };
+  const subscriptions = typeof session.on !== "function" ? [] : [
+    session.on("permission.requested", event => {
+      const data = event?.data, id = data?.permissionRequest?.toolCallId;
+      if (!closed && !data?.resolvedByHook && owned.has(id) && text(data.requestId, 1024) && requests.size < 128) { generation++; requests.set(data.requestId, id); }
+    }),
+    session.on("permission.completed", event => {
+      const data = event?.data, id = requests.get(data?.requestId);
+      // A completion may precede our first hydration of its request ID.
+      if (text(data?.requestId, 1024)) generation++;
+      if (owned.has(data?.toolCallId) || id && (data.toolCallId === undefined || data.toolCallId === id)) requests.delete(data.requestId);
+    }),
+  ];
+  s.observers.add(observer); return observer;
 }
 
 // SDK JSON has already crossed a JS-number wire: unsafe integers might be rounded.
@@ -144,7 +199,11 @@ async function pump(session, s) {
         // One-shot Go-side claim commits dispatch only while this call is live.
         await send(s, "POST", `/claim/${job.id}`);
         if (s.closed || s.failed) throw unavailable();
-        const result = await session.rpc.tools.execute({ name: tool.name, arguments: job.arguments, toolCallId: `kmx-preview-${job.id}` });
+        const call = { id: job.id, runId: job.runId, toolCallId: `kmx-preview-${job.id}` };
+        s.calls.set(job.id, call); for (const observer of s.observers) observer.attach(call);
+        let result;
+        try { result = await session.rpc.tools.execute({ name: tool.name, arguments: job.arguments, toolCallId: call.toolCallId }); }
+        finally { s.calls.delete(job.id); for (const observer of s.observers) observer.complete(call.toolCallId); }
         if (result?.resultType !== "success") throw unavailable();
         const output = result.structuredContent ?? (typeof result.textResultForLlm === "string" ? { text: result.textResultForLlm } : undefined);
         if (output === undefined || !safeNumbers(output)) throw unavailable();
@@ -190,7 +249,9 @@ export async function ensureHostRuntime(session, lease) {
 
 export async function closeHostRuntime(session) {
   const s = states.get(session); if (!s) return;
-  s.closed = true; s.abort.abort(); s.runs.clear(); s.privateKey = undefined;
+  s.closed = true; s.abort.abort(); s.runs.clear(); s.calls.clear();
+  for (const observer of s.observers) observer.clear();
+  s.privateKey = undefined;
   if (s.started) {
     s.started = false;
     try { await session.rpc.mcp.stopServer({ serverName: s.child }); } catch { /* Session teardown also reaps this child. */ }
