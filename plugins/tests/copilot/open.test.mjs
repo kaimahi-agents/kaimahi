@@ -8,7 +8,10 @@ const PATH = "greeter.agent.md";
 const PROVIDER = "plugin:kmx-agent-builder:agent-view";
 function setup({ renderer = true, readError, badResource = false, resourceError, openError, path = PATH } = {}) {
   const calls = [];
-  const session = { capabilities: { ui: { canvases: renderer } }, rpc: {
+  const session = {
+    log: async (message, options) => { assert.equal(typeof message, "string", "SDK log takes a string"); calls.push(["log", message, options]); },
+    send: () => { throw new Error("Native opening must not send a model message"); },
+    capabilities: { ui: { canvases: renderer } }, rpc: {
     mcp: { resources: { read: async (input) => {
       calls.push(["read", input]); if (readError) throw readError;
       if (resourceError) return { contents: [{ text: JSON.stringify(resourceError) }] };
@@ -141,7 +144,7 @@ test("actual extension registers one explicit opener and the kmx skill, with no 
     await import("../../copilot-wsl/com.github.copilot/extensions/agent-view/extension.mjs");
     assert.deepEqual(f.calls, [], "joining must not read an agent or open a canvas");
     assert.deepEqual(registration.tools.map(t => t.name), ["open_kmx_canvas"]);
-    assert.deepEqual(registration.commands.map(c => c.name), ["agent-view"]);
+    assert.deepEqual(registration.commands.map(c => c.name), ["agent-view", "kmx-canvas"]);
     assert.equal(registration.canvases[0].id, "kmx-agent-view");
     assert.equal((await registration.tools[0].handler({ path: PATH })).opened, true);
     assert.deepEqual(f.calls.map(c => c[0]), ["read", "open"]);
@@ -164,6 +167,57 @@ test("actual extension registers one explicit opener and the kmx skill, with no 
       f.session.rpc.mcp.resources.read = readResource;
       await canvas.onClose(ctx);
     }
+    const command = registration.commands.find(c => c.name === "kmx-canvas").handler;
+    for (const args of ["", " \t", "help", " \thelp\t ", "open", "open ", "openfoo.agent.md", "run greeter.agent.md"]) {
+      f.calls.length = 0;
+      await command({ args });
+      assert.equal(f.calls.length, 1, "help and malformed commands must not read or open");
+      assert.equal(f.calls[0][0], "log");
+      assert.match(f.calls[0][1], /Usage: \/kmx-canvas open <path>/);
+    }
+    f.calls.length = 0;
+    await command({ args: "open greeter.agent.md" });
+    await command({ args: "open greeter.agent.md" });
+    assert.deepEqual(f.calls.map(c => c[0]), ["read", "open", "read", "open"]);
+    assert.deepEqual(f.calls[1][1], { extensionId: PROVIDER, canvasId: "kmx-agent-view", instanceId: "kmx-agent-greeter", input: { path: PATH } });
+    assert.deepEqual(f.calls[1], f.calls[3], "native reopen focuses the same instance");
+    const nativeRead = f.session.rpc.mcp.resources.read;
+    try {
+      for (const path of ["/repo Māori/Release Notes.agent.md", " greeter.agent.md", "\tgreeter.agent.md"]) {
+        const literal = setup({ path });
+        f.session.rpc.mcp.resources.read = literal.session.rpc.mcp.resources.read;
+        f.calls.length = 0;
+        await command({ args: "\t open\t" + path });
+        assert.deepEqual(literal.calls, [["read", { serverName: "kmx-agent-builder", uri: "kmx://agent/" + encodeURIComponent(path) }]]);
+        assert.equal(f.calls[0][0], "open");
+        assert.equal(f.calls[0][1].input.path, path, "capture is not trimmed or split");
+      }
+    } finally { f.session.rpc.mcp.resources.read = nativeRead; }
+    for (const args of ["open greeter.agent.md ", 'open "greeter.agent.md"', "open README.md"]) {
+      f.calls.length = 0;
+      await command({ args });
+      assert.equal(f.calls.length, 1, "invalid literal path must not be repaired or read");
+      assert.deepEqual([f.calls[0][0], f.calls[0][2]], ["log", { level: "error" }]);
+    }
+    f.session.capabilities.ui.canvases = false;
+    f.calls.length = 0;
+    await command({ args: "open greeter.agent.md" });
+    assert.deepEqual(f.calls.map(c => c[0]), ["read", "log"]);
+    assert.match(f.calls[1][1], /Title: Greeter/);
+    f.session.capabilities.ui.canvases = true;
+    const nativeOpen = f.session.rpc.canvas.open;
+    try {
+      for (const failure of ["read", "open"]) {
+        const denied = async () => { throw new Error("http://private/token"); };
+        f.session.rpc.mcp.resources.read = failure === "read" ? denied : nativeRead;
+        f.session.rpc.canvas.open = failure === "open" ? denied : nativeOpen;
+        f.calls.length = 0;
+        await command({ args: "open greeter.agent.md" });
+        assert.deepEqual(f.calls.map(c => c[0]), failure === "read" ? ["log"] : ["read", "log"]);
+        assert.deepEqual(f.calls.at(-1)[2], { level: "error" });
+        assert.doesNotMatch(f.calls.at(-1)[1], /private|token|http/);
+      }
+    } finally { f.session.rpc.mcp.resources.read = nativeRead; f.session.rpc.canvas.open = nativeOpen; }
     const skill = await readFile(new URL("../../copilot-wsl/skills/kmx/SKILL.md", import.meta.url), "utf8");
     for (const eol of ["\n", "\r\n"]) {
       assert.match(skill.replace(/\r?\n/g, eol), /^---\r?\nname: kmx\r?\n/);

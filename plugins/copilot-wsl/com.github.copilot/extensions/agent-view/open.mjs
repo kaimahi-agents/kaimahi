@@ -52,3 +52,19 @@ export function createOpenHandler({ getSession, extensionId }) {
     }
   };
 }
+
+export function createOpenCommand(options) {
+  const open = createOpenHandler(options);
+  return async ({ args }) => {
+    const session = options.getSession();
+    // Consume one horizontal delimiter; every following path byte is literal.
+    const match = /^[ \t]*open[ \t]([\s\S]+)$/.exec(args);
+    if (!match) {
+      await session.log("Usage: /kmx-canvas open <path>\nExample: /kmx-canvas open greeter.agent.md");
+      return;
+    }
+    const result = await open({ path: match[1] });
+    if (result.mode === "text") await session.log(result.text);
+    else if (!result.opened) await session.log(result.message, { level: "error" });
+  };
+}
