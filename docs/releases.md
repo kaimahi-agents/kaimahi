@@ -485,6 +485,26 @@ than the first.
    Release dry runs still read `Unreleased` only, not pending fragments. An empty
    section is the existing tolerated no-section result; this does not change tag
    publication or the release-notes extractor's exit codes.
+   Stamp both tracked source-plugin manifests in the preparation PR, including
+   the exact prerelease suffix for an RC (for example `v0.9.0-rc.3`), even though
+   RC changelog notes use the base release section:
+
+   ```bash
+   python3 plugins/copilot/source_release.py --write --version vX.Y.Z
+   python3 plugins/copilot/source_release.py --version vX.Y.Z
+   ```
+
+   Use the actual tag, including `-rc.N` when preparing a candidate. These
+   commands also regenerate the three PATH provider-identity copies from the
+   canonical WSL sources. Any ordinary PR changing those inputs must regenerate
+   its copies with `--write` too. Native archives retain their existing identity;
+   the PATH source plugin is separately named `kmx-agent-builder-path`.
+   Tagged releases and explicitly named dry runs refuse mismatched source
+   versions before building. Only synthetic dry runs omit tag-version equality;
+   they still require valid equal source versions and synchronized PATH copies.
+   Checks never rewrite the release checkout. Source versions alone do not pin
+   direct installs from moving main or update a user's external kmx binary.
+
 2. Merge that to `main`. Releases are cut from `main`. For a runtime-related tag,
    first run [on-demand runtime qualification](#release-qualification) on that exact
    commit and require both workers to pass.
