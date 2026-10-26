@@ -22,6 +22,7 @@ const MESSAGES = {
   unavailable: "The kmx agent builder could not be read. Check that its MCP server is running.",
   "invalid-resource": "The kmx agent view was not in the supported format.",
   "invalid-file": "This agent file needs fixing before it can open. Check its format and test fields.",
+  "not-found": "File not found. Check the name, or give the full path.",
   "models-unavailable": "Model choices are unavailable. Your model selection is unchanged.",
   "too-large": "The kmx agent view was too large to show.",
   "invalid-action": "This canvas action is not supported.",
@@ -164,6 +165,7 @@ function parseView(json, path) {
   }
   if (raw?.schemaVersion === 1 && raw.kind === "kmx.agent-view-error" && raw.reasonCode === "invalid_tool_settings") throw new ViewError("invalid_tool_settings");
   if (raw?.schemaVersion === 1 && raw.kind === "kmx.agent-view-error" && raw.reasonCode === "invalid_file") throw new ViewError("invalid-file");
+  if (raw?.schemaVersion === 1 && raw.kind === "kmx.agent-view-error" && raw.reasonCode === "not_found") throw new ViewError("not-found");
   if (!isObj(raw) || raw.schemaVersion !== 1 || raw.kind !== KIND) invalid();
   const file = raw.file;
   if (!isObj(file) || file.path !== path || typeof file.revision !== "string" || !/^sha256:[0-9a-f]{64}$/.test(file.revision)) invalid();
@@ -643,6 +645,7 @@ export function createActionHandler({ session, path }) {
   };
   act.dispose = () => {
     disposed = true;
+    saving?.approval.clear(); saving = undefined; // The Edit itself is neither cancelled nor retried.
     finish(current); current?.releaseAbort?.(false); current = undefined;
   };
   return act;

@@ -266,7 +266,7 @@ test(`actual ${variant} extension opens its own provider and registers the kmx s
 });
 
 test("/kmx-canvas open resolves a relative path in the session folder and says what happened", async () => {
-  for (const [folder, want] of [["C:\\Users\\ada\\walk", "C:\\Users\\ada\\walk\\team\\count.agent.md"], ["/home/ada/walk/", "/home/ada/walk/team/count.agent.md"]]) {
+  for (const [folder, want] of [["C:\\Users\\ada\\walk", "C:\\Users\\ada\\walk/team/count.agent.md"], ["/home/ada/walk/", "/home/ada/walk/team/count.agent.md"]]) {
     const f = setup({ path: want });
     f.session.rpc.metadata = { snapshot: async () => ({ workingDirectory: folder }) };
     const command = createOpenCommand({ getSession: () => f.session, extensionId: PROVIDER });
@@ -275,19 +275,25 @@ test("/kmx-canvas open resolves a relative path in the session folder and says w
     assert.equal(f.calls[1][1].input.path, want);
     assert.deepEqual(f.calls[2], ["log", "Opened count.agent.md in the agent canvas.", undefined]);
   }
+  // Squad charters keep forward slashes, which the path check requires.
+  const squad = setup({ path: "C:\\walk/.squad/agents/leader/charter.md" });
+  squad.session.rpc.metadata = { snapshot: async () => ({ workingDirectory: "C:\\walk" }) };
+  await createOpenCommand({ getSession: () => squad.session, extensionId: PROVIDER })({ args: "open .squad/agents/leader/charter.md" });
+  assert.deepEqual(squad.calls.map(c => c[0]), ["read", "open", "log"]);
   const full = setup({ path: "/mnt/c/walk/count.agent.md" });
   full.session.rpc.metadata = { snapshot: async () => ({ workingDirectory: "C:\\walk" }) };
   await createOpenCommand({ getSession: () => full.session, extensionId: PROVIDER })({ args: "open /mnt/c/walk/count.agent.md" });
   assert.equal(full.calls[1][1].input.path, "/mnt/c/walk/count.agent.md", "a full path is used as typed");
 });
 
-test("/kmx-canvas open says file not found when the kmx server answers but the file is missing", async () => {
-  const f = setup({ readError: new Error("unsafe_path") });
+test("/kmx-canvas open says file not found only when the kmx server says so", async () => {
+  const f = setup({ resourceError: { schemaVersion: 1, kind: "kmx.agent-view-error", reasonCode: "not_found" } });
   f.session.rpc.metadata = { snapshot: async () => { throw new Error("not supported"); } };
-  f.session.rpc.tools = { getCurrentMetadata: async () => ({ tools: [{ name: "kmx-agent-builder:create", mcpServerName: "kmx-agent-builder", mcpToolName: "create" }] }) };
   await createOpenCommand({ getSession: () => f.session, extensionId: PROVIDER })({ args: "open missing.agent.md" });
   assert.deepEqual(f.calls.at(-1), ["log", "File not found: missing.agent.md. Check the name, or give the full path.", { level: "error" }]);
-  f.session.rpc.tools.getCurrentMetadata = async () => ({ tools: [] });
-  await createOpenCommand({ getSession: () => f.session, extensionId: PROVIDER })({ args: "open missing.agent.md" });
-  assert.match(f.calls.at(-1)[1], /MCP server is running/);
+  assert.equal((await f.run({ path: "missing.agent.md" })).reasonCode, "not-found");
+  // A transport or permission failure is not a missing file.
+  const g = setup({ readError: new Error("io_failed") });
+  await createOpenCommand({ getSession: () => g.session, extensionId: PROVIDER })({ args: "open missing.agent.md" });
+  assert.match(g.calls.at(-1)[1], /MCP server is running/);
 });

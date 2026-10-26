@@ -103,6 +103,16 @@ func TestAgentResourceInvalidCheckIsClassifiedWithoutSource(t *testing.T) {
 	}
 }
 
+// The native host drops RPC error data, so a missing file is fixed resource data.
+func TestAgentResourceMissingFileIsClassified(t *testing.T) {
+	f, _, _ := canonicalFiles(t)
+	cs := resourceClient(t, f, &app.App{})
+	result, err := cs.ReadResource(t.Context(), &sdk.ReadResourceParams{URI: agentResourceURI("missing.agent.md")})
+	if err != nil || len(result.Contents) != 1 || result.Contents[0].Text != `{"schemaVersion":1,"kind":"kmx.agent-view-error","reasonCode":"not_found"}` {
+		t.Fatalf("missing file not classified: %+v %v", result, err)
+	}
+}
+
 func TestAgentResourceLatestResult(t *testing.T) {
 	f, root, source := canonicalFiles(t)
 	saved, err := f.Create(t.Context(), "greeter.agent.md", []byte(source))

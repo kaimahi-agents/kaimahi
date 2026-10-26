@@ -95,6 +95,9 @@ func AddAgentResource(server *sdk.Server, files *Files) {
 				// classification in the resource, never parser text or source paths.
 				return &sdk.ReadResourceResult{Contents: []*sdk.ResourceContents{{URI: req.Params.URI, MIMEType: "application/json", Text: `{"schemaVersion":1,"kind":"kmx.agent-view-error","reasonCode":"invalid_file"}`}}}, nil
 			}
+			if missing := (*Error)(nil); errors.As(err, &missing) && missing.Code == "not_found" {
+				return &sdk.ReadResourceResult{Contents: []*sdk.ResourceContents{{URI: req.Params.URI, MIMEType: "application/json", Text: `{"schemaVersion":1,"kind":"kmx.agent-view-error","reasonCode":"not_found"}`}}}, nil
+			}
 			return nil, refusal("invalid_file")
 		}
 		view := AgentView{SchemaVersion: 1, Kind: "kmx.agent-view", File: File{Path: p, Revision: agent.Revision}, Title: agent.Title, Instructions: agent.Instructions, Model: agent.Model, Tools: agent.Tools, Latest: AgentViewLatest{Status: "none"}}

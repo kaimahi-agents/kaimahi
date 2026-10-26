@@ -839,3 +839,15 @@ test('an Edit approval waiting in chat is reported while saving before a test',a
  assert.equal((await n.act({operation:'progress',runId:'run-1'})).approvalWaiting,undefined);
  held.resolve();await new Promise(setImmediate);n.gate.resolve();await pending;
 });
+
+test('closing the canvas while an Edit approval waits releases its observer without cancelling the Edit',async()=>{
+ const n=nativeHarness(),execute=n.session.rpc.tools.execute,held=deferred(),edits=[];
+ n.session.rpc.tools.execute=async request=>{if(request.name==='owned-edit'){edits.push(request);await held.promise}return execute(request)};
+ const before=(n.events.get('permission.requested')?.size??0),beforeDone=(n.events.get('permission.completed')?.size??0);
+ const pending=n.act({operation:'save-and-test',expectedRevision:revision(n.source()),sections:edited(),runId:'run-1'});
+ await new Promise(setImmediate);assert.equal(n.events.get('permission.requested').size,before+1);
+ n.act.dispose();
+ assert.equal(n.events.get('permission.requested').size,before);assert.equal(n.events.get('permission.completed').size,beforeDone);
+ assert.equal((await n.act({operation:'progress',runId:'run-1'})).approvalWaiting,undefined);
+ held.resolve();await pending.catch(()=>{});assert.equal(edits.length,1,'the Edit is neither cancelled nor retried');
+});
