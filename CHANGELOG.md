@@ -385,6 +385,10 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 - Live Orka checks run nightly and on demand rather than on PRs or pushes. PR CI retains stock Helm, Quickstart and source-boundary hygiene checks.
 
+- Source Copilot plugins carry the kmx release version, including its exact RC suffix. Tags and named dry runs check both source versions against that release before building; synthetic dry runs still check source consistency.
+
+- The macOS/PATH source plugin is named `kmx-agent-builder-path`, while WSL and legacy native bundles keep `kmx-agent-builder`. Direct install commands are unchanged; use only one variant per host profile.
+
 - Windows storage internals now use checked private storage for preview journals and retained test-failure diagnostics. Native amd64 tests cover fake preview/replay, interrupted clearing and uncertain publication outcomes.
 
 ### Fixed
@@ -513,6 +517,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   case directories, receipts or configuration fields. No data migration is needed.
 
 - Remove `kmx suite diff` from scripts. `kmx test diff` compares passing evaluation receipts, not packages, and is not a replacement.
+
+- Before installing the renamed PATH source plugin, uninstall an existing direct PATH installation under its old `kmx-agent-builder` name. This does not update the kmx binary or add a marketplace install.
 
 For v0.9.0-rc.3 on Windows, [install kmx at `/usr/local/bin/kmx` in WSL](plugins/copilot-wsl/README.md#install), then run `copilot plugin install kaimahi-agents/kaimahi:plugins/copilot-wsl` in Windows. On macOS, [install the Darwin binary and plugin](plugins/copilot/README.md#install-on-macos) with the two commands in that guide.
 
