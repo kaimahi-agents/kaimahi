@@ -2,18 +2,18 @@
 
 The plugin contains skills, canvas assets and MCP configuration. It uses the
 Linux kmx binary in your default WSL distribution; it does not bundle an engine.
-The v0.9.0-rc.2 install below exposes Create/Edit/Run/Test. The matching
-current-checkout engine adds the revision-checked `set_tool_state` folder-settings
-writer; installed use needs a newer release containing that tool, not rc.2.
+The v0.9.0-rc.3 install below exposes Create/Edit/Run/Test and the revision-checked
+`set_tool_state` folder-settings writer. Older rc.2 binaries expose only the first
+four tools.
 Internal preview children retain only Create/Edit/Run/Test and never gain
 config-write authority.
 
 ## Install
 
-1. In WSL, install the v0.9.0-rc.2 Linux kmx binary at `/usr/local/bin/kmx`:
+1. In WSL, install the v0.9.0-rc.3 Linux kmx binary at `/usr/local/bin/kmx`:
 
    ```sh
-   curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.2/install.sh | sudo sh -s -- --version=v0.9.0-rc.2 --bin-dir=/usr/local/bin
+   curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.3/install.sh | sudo sh -s -- --version=v0.9.0-rc.3 --bin-dir=/usr/local/bin
    ```
 
    The installer downloads the binary and checks its published SHA256 over HTTPS;

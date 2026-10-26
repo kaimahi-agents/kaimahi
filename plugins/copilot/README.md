@@ -9,7 +9,7 @@ skills, a canvas and MCP configuration, not an engine or a fixed working folder.
 With Copilot installed, run these two commands in a Mac terminal:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.2/install.sh | sudo sh -s -- --version=v0.9.0-rc.2 --bin-dir=/usr/local/bin
+curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.3/install.sh | sudo sh -s -- --version=v0.9.0-rc.3 --bin-dir=/usr/local/bin
 copilot plugin install kaimahi-agents/kaimahi:plugins/copilot
 ```
 
@@ -18,7 +18,7 @@ The first command selects `kmx-darwin-arm64` on Apple Silicon and
 and installs it at `/usr/local/bin/kmx`. It uses the same binary installer as WSL,
 not a plugin setup script. It does not verify the separate signature bundle.
 The Homebrew tap tracks final releases, not release candidates; use this binary
-for rc.2. Homebrew is the install path for final v0.9.0.
+for rc.3. Homebrew is the install path for final v0.9.0.
 
 The plugin starts `kmx mcp` from PATH; `/usr/local/bin` must be on Copilot's PATH.
 No root, model or binary is configured inside the plugin. The MCP schema has no
@@ -117,10 +117,10 @@ The existing native bundle builder below still produces the legacy
 to its configured directory; the new unbound server needs neither file nor a
 folder confirmation. Plugin installation is replaced separately.
 
-The matching current-checkout engine exposes exactly lowercase `create`, `edit`,
+The v0.9.0-rc.3 engine pinned above exposes exactly lowercase `create`, `edit`,
 `run`, `test` and `set_tool_state`; internal preview children retain the first four.
-The v0.9.0-rc.2 install pinned above exposes only those first four; installed use
-of the settings writer needs a newer release containing it, not rc.2. Canonical branches require `schemaVersion: 1` and an agent `path`; Create
+Older rc.2 binaries expose only those first four. Canonical branches require
+`schemaVersion: 1` and an agent `path`; Create
 also needs canonical `content`, Edit needs `content` and `expectedRevision`.
 Run/Test accept `caseId`, `showContent` and `showFailedContent`; Run also accepts `input`.
 Use discovered schemas as authority. See the
@@ -143,7 +143,7 @@ uses existing runtime credentials and an exact listed
 `Model.Preferred`, with a fixed endpoint. This sends instructions/inputs and
 any judge answers/rubrics to Copilot. Startup does not sign in or access credentials.
 In v0.9.0-rc.2 native bundles, Copilot previews use a direct, unjournaled runner.
-Current main journals tool-free Copilot agent and judge turns on embedded Sessions
+v0.9.0-rc.3 journals Copilot previews, including bound-tool calls, on embedded Sessions
 under `<kmx state>/local-preview/journals`, using the cleartext-content retention
 policy above, with one fresh Session per agent turn and judge sample. The provider
 owns pre-journal credential/content checks and captures one invocation-local
@@ -429,7 +429,7 @@ It accepts qualified CLI 1.0.86-2 or 1.0.102 and refuses unconfigured/mismatched
 roots or engine hashes; exercises real local
 install/list/skill discovery, cache byte/execute checks, exactly five original-server MCP
 tools (including `set_tool_state`), uninstall and reinstall. This checkout check
-requires a matching current-checkout engine/hash, not the rc.2 install above.
+requires a matching engine/hash; the older rc.2 engine lacks the fifth tool.
 Python is needed only for this checkout check,
 not for end-user installation. No authentication, inference or trust bypass is
 performed by this check.

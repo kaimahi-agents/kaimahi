@@ -10,10 +10,9 @@ kmx keeps the prompt and tests in one Markdown file. The Copilot app opens that
 file in a canvas where you can edit and test it. This path needs no Kubernetes
 cluster, Docker or local model download.
 
-**Experimental.** This page describes main. The install below pins the published
-v0.9.0-rc.2 binary; features merged after that release need a newer binary too.
-Updating the plugin alone does not update kmx. Do not assume a feature on main
-is in your installed release.
+**Experimental.** This page describes v0.9.0-rc.3. The install below pins that
+binary; updating the plugin alone does not update kmx. Features merged after
+rc.3 need a newer binary too.
 
 ## Install
 
@@ -24,7 +23,7 @@ for this path.
 1. In WSL, install kmx:
 
    ```sh
-   curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.2/install.sh | sudo sh -s -- --version=v0.9.0-rc.2 --bin-dir=/usr/local/bin
+   curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.3/install.sh | sudo sh -s -- --version=v0.9.0-rc.3 --bin-dir=/usr/local/bin
    ```
 
 2. In a Windows terminal, install the plugin:
@@ -67,9 +66,9 @@ Open a conversation in the Copilot app and ask:
 > It should turn a change summary into a short release note with a heading,
 > explain the user-visible change and omit internal issue numbers.
 
-Use a path in your own repository. On Windows, give the WSL path (`C:\work` is
-`/mnt/c/work`), not a Windows path. Files can live in different repositories;
-installation does not bind kmx to one folder.
+Use a path in your own repository. On Windows, kmx resolves drive-absolute paths
+such as `C:\work` through their WSL mounts (`/mnt/c/work`); WSL paths also work.
+Files can live in different repositories; installation does not bind kmx to one folder.
 
 The canvas shows **Prompt**, **Tools** and **Tests**. The saved `.agent.md` file
 holds the prompt, tool names and tests; you can keep it in version control with
@@ -80,7 +79,7 @@ cannot render the canvas, Copilot can still use kmx's tools in text.
 
 ## Choose tools for tests
 
-With a matching current-source plugin and binary, **Add tools** opens this app's
+With a matching rc.3 plugin and binary, **Add tools** opens this app's
 MCP servers. Tick tools to add them to the agent. A ticked tool's **Enabled** or
 **Disabled** word flips a draft; Disabled tools stay declared but do not run in tests.
 Enter saves edits, then tests. Esc discards Tools edits without discarding prompt
@@ -90,8 +89,8 @@ Tool names live in the agent file. Test settings live in `kmx.yaml` beside its
 physical target and also affect other agents in that folder. These are separate
 saves, not one transaction. If a save is partial or unconfirmed, tests do not run:
 keep the draft and deliberately reload to inspect what was saved. Do not retry
-an uncertain write. This switch needs `set_tool_state`, absent from the pinned
-v0.9.0-rc.2 binary above.
+an uncertain write. This switch uses `set_tool_state`, included in the pinned
+v0.9.0-rc.3 binary above.
 
 ## Add tests and run them
 
@@ -163,13 +162,13 @@ for supported file-preview routes and limits.
 ## Run the same tests in CI
 
 Commit the agent file, then run `kmx test FILE` in a GitHub Actions step after
-checkout. Use a file-preview-capable binary such as v0.9.0-rc.2, not v0.8.1.
+checkout. Use a file-preview-capable binary such as v0.9.0-rc.3, not v0.8.1.
 These steps install it on an Ubuntu runner and test `greeter.agent.md` using its
 authored `fake` model:
 
 ```yaml
 - name: Install kmx
-  run: curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.2/install.sh | sudo sh -s -- --version=v0.9.0-rc.2 --bin-dir=/usr/local/bin
+  run: curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.3/install.sh | sudo sh -s -- --version=v0.9.0-rc.3 --bin-dir=/usr/local/bin
 - name: Test the agent
   run: kmx test ./greeter.agent.md
 ```
