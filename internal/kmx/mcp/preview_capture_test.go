@@ -16,7 +16,7 @@ import (
 )
 
 func TestMCPPreviewCaptureThenOfflineFixtureAndStaleSave(t *testing.T) {
-	for _, scenario := range []string{"saved", "assertion-fail", "stale"} {
+	for _, scenario := range []string{"saved", "assertion-fail", "stale", "empty-description", "empty-description-space", "empty-description-uncalled", "empty-description-live"} {
 		t.Run(scenario, func(t *testing.T) {
 			files, _, source := canonicalFiles(t)
 			source = source[:strings.Index(source, "## Examples")] + "## Tools\n- ping\n\n## Examples\n```yaml\nexamples:\n  - id: capture\n    input: original\n    mocks:\n      tools:\n        - name: ping # keep this comment\n          mode: recorded\n          calls: [] # waiting\n    assertions:\n      - id: called\n        type: toolCalled\n        tool: ping\n```\n"
@@ -25,6 +25,13 @@ func TestMCPPreviewCaptureThenOfflineFixtureAndStaleSave(t *testing.T) {
 			begin := strings.Index(source, "## Accountable Responsibilities")
 			end := begin + strings.Index(source[begin+3:], "\n## ") + 3
 			source = source[:begin] + "## Accountable Responsibilities\nCall the tool `ping`. Reply with exactly `done`.\n" + source[end:]
+			if scenario == "empty-description-uncalled" {
+				source = strings.Replace(source, "Call the tool `ping`. Reply with exactly `done`.", "Reply with exactly `done`.", 1)
+				source = strings.Replace(source, "type: toolCalled", "type: toolNotCalled", 1)
+			}
+			if scenario == "empty-description-live" {
+				source = strings.Replace(source, "mode: recorded\n          calls: []", "mode: live", 1)
+			}
 			if scenario == "assertion-fail" {
 				source = strings.Replace(source, "type: toolCalled", "type: toolNotCalled", 1)
 			}
@@ -37,7 +44,14 @@ func TestMCPPreviewCaptureThenOfflineFixtureAndStaleSave(t *testing.T) {
 			calls, resolves := 0, 0
 			runner := localpreview.NewRunner(localpreview.RunnerOptions{JournalDir: func() (string, error) { return filepath.Join(filepath.Dir(home), "journals"), nil }, ResolveAvailableTools: func(context.Context, []string) (*localtools.Host, error) {
 				resolves++
-				return localtools.NewTrustedHost([]api.ToolDefinition{{Name: "ping", Description: "private-definition-canary", InputSchema: map[string]any{"type": "object"}}}, func(_ context.Context, _ controller.ToolCallContext, c api.ToolCall) (api.ToolResult, error) {
+				description := "private-definition-canary"
+				if strings.HasPrefix(scenario, "empty-description") {
+					description = ""
+					if scenario == "empty-description-space" {
+						description = " \t"
+					}
+				}
+				return localtools.NewTrustedHost([]api.ToolDefinition{{Name: "ping", Description: description, InputSchema: map[string]any{"type": "object"}}}, func(_ context.Context, _ controller.ToolCallContext, c api.ToolCall) (api.ToolResult, error) {
 					calls++
 					if scenario == "stale" {
 						if _, err := files.Edit(t.Context(), file.Path, file.Revision, []byte(strings.Replace(source, "input: original", "input: edited", 1))); err != nil {
@@ -49,12 +63,28 @@ func TestMCPPreviewCaptureThenOfflineFixtureAndStaleSave(t *testing.T) {
 			}})
 			cs := connectFixture(t, Operations(files, &app.App{FileRunner: runner}, nil))
 			first, response := previewCall(t, cs, "test", map[string]any{"schemaVersion": 1, "path": file.Path})
-			if calls != 1 || resolves != 1 || first.File.Revision != file.Revision {
+			wantCalls := 1
+			if scenario == "empty-description" || scenario == "empty-description-space" || scenario == "empty-description-uncalled" {
+				wantCalls = 0
+			}
+			if calls != wantCalls || resolves != 1 || first.File.Revision != file.Revision {
 				t.Fatalf("first %+v calls %d resolves %d", first, calls, resolves)
 			}
 			current, err := files.snapshot(t.Context(), file.Path)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if scenario == "empty-description-uncalled" || scenario == "empty-description-live" {
+				if response.IsError || first.SavedRevision != "" || !first.FullPass || current.Revision != file.Revision || len(current.Examples[0].Mocks.Tools[0].Calls) != 0 {
+					t.Fatalf("non-capture refused %+v", first)
+				}
+				return
+			}
+			if scenario == "empty-description" || scenario == "empty-description-space" {
+				if !response.IsError || first.ReasonCode != "recording_unrepresentable" || first.SavedRevision != "" || first.FullPass || current.Revision != file.Revision || len(current.Examples[0].Mocks.Tools[0].Calls) != 0 {
+					t.Fatalf("unrepresentable capture %+v", first)
+				}
+				return
 			}
 			if scenario == "stale" {
 				if !response.IsError || first.ReasonCode != "recording_source_changed" || first.FullPass || first.SavedRevision != "" || len(current.Examples[0].Mocks.Tools[0].Calls) != 0 || current.Examples[0].Input != "edited" {

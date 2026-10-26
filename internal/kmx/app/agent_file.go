@@ -453,6 +453,9 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	if errors.Is(cause, agentpreview.ErrRecordingMismatch) {
 		return fail("recording_mismatch", 1)
 	}
+	if errors.Is(cause, agentfile.ErrRecordingInvalid) {
+		return fail("recording_unrepresentable", 1)
+	}
 	if errors.Is(cause, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
 		r.State = "cancelled"
 		return fail("cancelled", 130)

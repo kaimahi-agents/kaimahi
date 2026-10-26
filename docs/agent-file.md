@@ -168,8 +168,10 @@ mocks:
           result: {greeting: "Hello"}
 ```
 
-A populated recording requires a description, an offline JSON parameter schema and exactly one saved call with
-object arguments/result. The result is model-visible JSON output, not an MCP envelope. Live entries have only name/mode.
+A populated recording requires a nonblank description, an offline JSON parameter schema and exactly one saved call with
+object arguments/result. A requested pending capture with a blank live description refuses before executing that tool;
+uncalled tools stay pending, and ordinary Live calls do not require a recording description. The result is model-visible
+JSON output, not an MCP envelope. Live entries have only name/mode.
 Recorded entries with `calls: []` use a live binding if present, otherwise an unavailable stub. A successful live
 call fills that entry after the invocation's journal closes successfully, even if an ordinary answer check fails.
 Uncalled or unavailable entries stay pending. Ordinary Live and ad-hoc calls are never saved. Omitted settings keep

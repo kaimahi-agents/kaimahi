@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
+	"strings"
 
 	"github.com/agent-primitives/sessions/api"
 	"github.com/agent-primitives/sessions/controller"
@@ -147,6 +148,15 @@ func makeToolPlan(names []string, ex agentfile.Example, host *localtools.Host, c
 			if source.Name == call.Tool {
 				switch source.Source {
 				case "live":
+					// A blank live description cannot populate the existing fixture format.
+					// Refuse only a requested capture, before spending a live call.
+					if source.Capturing {
+						for _, definition := range p.definitions {
+							if definition.Name == call.Tool && strings.TrimSpace(definition.Description) == "" {
+								return api.ToolResult{}, agentfile.ErrRecordingInvalid
+							}
+						}
+					}
 					if saved, ok := p.captured[call.Tool]; ok {
 						if saved.session != scope.SessionUID {
 							return api.ToolResult{}, errRunnerExecution

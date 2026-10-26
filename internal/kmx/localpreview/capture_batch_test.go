@@ -61,7 +61,7 @@ func TestCaptureFiveRequestsOncePerTestAndMismatchDiscardsAll(t *testing.T) {
 			calls := 0
 			dir := journalDir(t)
 			r := NewRunner(RunnerOptions{JournalDir: func() (string, error) { return dir, nil }, ResolveAvailableTools: func(context.Context, []string) (*localtools.Host, error) {
-				return localtools.NewTrustedHost([]api.ToolDefinition{{Name: "ping", InputSchema: map[string]any{"type": "object"}}}, func(_ context.Context, _ controller.ToolCallContext, c api.ToolCall) (api.ToolResult, error) {
+				return localtools.NewTrustedHost([]api.ToolDefinition{{Name: "ping", Description: "Read ping.", InputSchema: map[string]any{"type": "object"}}}, func(_ context.Context, _ controller.ToolCallContext, c api.ToolCall) (api.ToolResult, error) {
 					calls++
 					return api.ToolResult{ID: c.ID, Output: map[string]any{"snapshot": calls}}, nil
 				}, func(...string) error { return nil })
