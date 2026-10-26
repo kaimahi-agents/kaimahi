@@ -9,7 +9,8 @@ VIEW = "com.github.copilot/extensions/agent-view/"
 ASSETS = {VIEW + name for name in (
     "extension.mjs", "view.mjs", "open.mjs", "index.html", "app.js", "style.css", "authoring.mjs", "editor.mjs",
     "draft-controller.mjs", "action-controller.mjs", "observation-controller.mjs", "host-relay.mjs", "tool-catalog.mjs", "tools-view.mjs", "test-tools.mjs",
-    "dom.mjs", "results.mjs", "check-controls.mjs", "instruction-text.mjs")}
+    "dom.mjs", "results.mjs", "check-controls.mjs", "instruction-text.mjs",
+    "run-views.mjs", "view-resource.mjs")}
 SKILLS = {"skills/kmx/SKILL.md", "skills/kmx-agent-builder/SKILL.md"}
 
 
