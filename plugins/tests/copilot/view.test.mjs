@@ -4343,3 +4343,19 @@ test("after a capture the test shows that run's result and says the recording wa
   assert.deepEqual(rowLabels(root), ["Passed last run"]);
   app.dispose?.();
 });
+
+test("an Edit approval waiting while saving shows the same chat approval line", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let finish, approvalWaiting = true;
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: c18Examples(["a"]),
+    fetchProgress: async () => ({ run: undefined, ...(approvalWaiting ? { approvalWaiting } : {}) }),
+    respond: () => new Promise(resolve => { finish = resolve; }) });
+  t.after(() => h.app.dispose());
+  c18Edit(h.root); promptEnter(h.root); await tick();
+  assert.match(h.root.textContent, /Saving and running/);
+  t.mock.timers.tick(250); await tick(); await tick();
+  assert.match(h.root.textContent, /Copilot approval is waiting in chat\./);
+  approvalWaiting = false; t.mock.timers.tick(250); await tick(); await tick();
+  assert.doesNotMatch(h.root.textContent, /Copilot approval is waiting in chat\./);
+  finish({ view: h.view }); await tick(); await tick();
+});

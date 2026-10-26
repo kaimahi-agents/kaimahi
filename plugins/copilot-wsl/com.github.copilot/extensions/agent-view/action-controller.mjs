@@ -15,7 +15,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
   }
   const testing = () => state.busy && ["test", "save-and-test"].includes(state.pending?.operation);
   let progressTimer, activeRun, disposed = false;
-  const stopWatching = () => { clearTimeout(progressTimer); activeRun = undefined; };
+  const stopWatching = () => { clearTimeout(progressTimer); activeRun = undefined; state.saveApproval = false; };
   function watch(id) {
     if (!fetchProgress) return;
     const poll = async () => {
@@ -23,6 +23,9 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
         const response = await fetchProgress(id);
         if (!disposed && activeRun === id && response?.run?.id === id) {
           state.run = { ...response.run, ...(state.run?.state === "stopping" ? { state: "stopping", approvalWaiting: false } : {}) }; refresh();
+        } else if (!disposed && activeRun === id && !response?.run && state.saveApproval !== (response?.approvalWaiting === true)) {
+          // An Edit before the Test can wait for approval in chat.
+          state.saveApproval = response?.approvalWaiting === true; refresh();
         }
       } catch { /* Final Test reply remains authoritative when progress is unavailable. */ }
       if (!disposed && activeRun === id) { progressTimer = setTimeout(poll, 200); progressTimer.unref?.(); }

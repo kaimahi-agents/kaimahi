@@ -208,6 +208,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   function footText(scope) {
     if (testing() && state.run) return state.run.state === "stopping" ? "Saved · stopping Copilot turn…"
       : state.run.approvalWaiting ? "Copilot approval is waiting in chat." : `Saved · running ${state.pending.one ? "this test" : plural(total(), "test")}`;
+    if (state.busy && state.saveApproval) return "Copilot approval is waiting in chat.";
     return canvasFooterText({ editable: !!state.snap, n: state.snap ? total() : 0, busy: state.busy, pending: state.pending, blocked: state.blocked, savedUntested: state.savedUntested, settingsIncomplete: state.settingsIncomplete,
       invalid: invalidEditors.size, candidate: state.candidate, scope, promptDirty: sectionDrafts.size, testDirty: testDrafts.has(state.route.key), dirty: hasDrafts(), runAlert: state.runAlert });
   }
