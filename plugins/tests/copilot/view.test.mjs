@@ -4003,7 +4003,7 @@ test("tool settings: a stopped Test keeps its start settings, not a changed Stop
   t.after(() => h.app.dispose());
   run = { revision: h.view.file.revision, model: "fake", caseIds: ["a", "b"], totalCases: 2, state: "running", cases: [{ caseId: "a", verdict: "pass" }], elapsedMs: 200 };
   promptEnter(h.root); t.mock.timers.tick(250); await tick(); await tick();
-  const id = h.calls.at(-1).runId; click(byClass(h.root, "stop-run")[0]);
+  const id = h.calls.at(-1).runId; // Inject the retained stopped-state response; Stop has no UI control.
   finish({ stopped: true, saved: false, run: { ...run, id, state: "stopped", toolSettings: ENABLED("ping") }, view: { ...h.view, toolSettings: DISABLED("ping"), latest: { status: "none", badge: "none" } } });
   await tick(); await tick();
   assert.match(rowLabels(h.root)[0], /^Passed/);
