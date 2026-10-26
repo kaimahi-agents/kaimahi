@@ -15,6 +15,31 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+func TestResourceToolSettingsRefusalBecomesStaleAfterConfigRepair(t *testing.T) {
+	files, root, source := canonicalFiles(t)
+	source = strings.Replace(source, "## Examples", "## Tools\n- ping\n\n## Examples", 1)
+	if _, err := files.Create(t.Context(), "greeter.agent.md", []byte(source)); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(root, "kmx.yaml")
+	if err := os.WriteFile(config, []byte("tools: {ping: Ask}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	runner := &previewFixture{verdict: runtime.EvaluationPass}
+	cs := resourceClient(t, files, &app.App{FileRunner: runner})
+	out, call := previewCall(t, cs, "test", map[string]any{"schemaVersion": 1, "path": "greeter.agent.md"})
+	if !call.IsError || out.ReasonCode != "invalid_tool_settings" || runner.calls != 0 {
+		t.Fatalf("not a config refusal: %+v", out)
+	}
+	if err := os.WriteFile(config, []byte("tools: {ping: Disabled}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	view := readView(t, cs, "greeter.agent.md")
+	if view.Latest.Status != "stale" || view.Latest.Result != nil {
+		t.Fatalf("repaired settings still carry their old error: %+v", view.Latest)
+	}
+}
+
 func TestResourceToolSettingsDoNotHidePreExecutionRefusals(t *testing.T) {
 	for _, reason := range []string{"no_tests", "model_unavailable", "invalid_selection"} {
 		t.Run(reason, func(t *testing.T) {

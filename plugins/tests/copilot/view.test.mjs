@@ -3903,6 +3903,21 @@ test("tool settings: a valid response started before invalidation cannot restore
   h.app.dispose();
 });
 
+test("tool settings: recovery does not repeatedly redraw an unchanged source-conflict candidate", async () => {
+  const h = await toolCanvas();
+  c18Prompt(h.root).textContent = "My draft."; c18Prompt(h.root).listeners.input[0]();
+  h.app.observe({ error: "invalid_tool_settings" });
+  const source = h.source.replace("Reply briefly.", "Changed outside the canvas.");
+  assert.notEqual(source, h.source);
+  const incoming = await viewFor(source, h.examples, passing(ENABLED("ping")), "fake", { tools: ["ping"], toolSettings: ENABLED("ping") });
+  assert.equal(h.app.observe(incoming), true);
+  const first = h.app.observation();
+  assert.equal(h.app.observe(incoming), false, "the same conflict candidate must not clear undo or redraw on every poll");
+  assert.deepEqual(h.app.observation(), first);
+  assert.equal(c18Prompt(h.root).textContent, "My draft.");
+  h.app.dispose();
+});
+
 test("tool settings: a stopped Test keeps its start settings, not a changed Stop readback", async t => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   let finish, run;

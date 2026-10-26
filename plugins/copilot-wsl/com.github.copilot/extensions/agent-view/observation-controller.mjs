@@ -34,7 +34,7 @@ export function createObservationController(state, { path, options, drafts, clea
     const changedHistory = adoptable && !same(previousHistory, [history.pair(), history.attempt(incomingModel)]);
     view = modelChoice.view(view, view.latest.status !== "current" || preRouteRefusal(view.latest.result) || incomingModel === selected ? undefined : history.selected(view, selected));
     const recovering = !!state.base.settingsInvalid;
-    if (!changedHistory && !recovering && (same(view, state.base) || (state.candidate && same(view, state.candidate)))) return false;
+    if (!changedHistory && ((!recovering && same(view, state.base)) || (state.candidate && same(view, state.candidate)))) return false;
     clearUndo(); displayNames.clear(); state.runAlert = undefined;
     state.observationGeneration++;
     state.lastRun = undefined;

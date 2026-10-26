@@ -109,8 +109,10 @@ func AddAgentResource(server *sdk.Server, files *Files) {
 		if observation.path == target && observation.result != nil && observation.result.File.Revision != "" {
 			view.Latest.Status = "stale"
 			// Runtime model choices do not change the authored source revision.
-			// Settings-free refusals precede tool setup and are not execution evidence.
-			settingsMatch := slices.Equal(observation.result.ToolSettings, view.ToolSettings) || observation.result.State == "refused" && len(observation.result.ToolSettings) == 0
+			// These settings-independent refusals are not execution evidence. A
+			// config error must instead become stale when its file is repaired.
+			independent := observation.result.State == "refused" && len(observation.result.ToolSettings) == 0 && slices.Contains([]string{"no_tests", "model_unavailable", "invalid_selection"}, observation.result.ReasonCode)
+			settingsMatch := slices.Equal(observation.result.ToolSettings, view.ToolSettings) || independent
 			if observation.result.File.Revision == agent.Revision && settingsMatch {
 				view.Latest = AgentViewLatest{Status: "current", Result: observation.result}
 			}
