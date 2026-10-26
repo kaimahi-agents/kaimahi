@@ -26,7 +26,7 @@ The install checks each boundary before proceeding:
 |---|---|
 | Fetch the pinned chart | downloads `orka-0.2.0.tgz` from the v0.2.0 release and refuses bytes that do not hash to kmx's pinned SHA-256 |
 | Check for an existing installation | refuses an existing controller Deployment, Orka CRDs or a foreign/partial Helm release rather than attempting an upgrade; a pre-created `orka-system` namespace containing only Secrets or ServiceAccounts is allowed |
-| Apply CRDs and install | applies CRDs extracted from the verified chart before `helm install orka` with `--kube-context`, `controller.mode=harness-v2`, `fullnameOverride=orka-api` and `--wait`; no `helm upgrade --force` |
+| Apply CRDs and install | server-side applies CRDs extracted from the verified chart with field manager `kmx-orka`, waits for establishment, then runs `helm install orka` with `--kube-context`, `controller.mode=harness-v2`, `fullnameOverride=orka-api` and `--wait`; no `helm upgrade --force` |
 | Provision result reader and keyless Provider | installs the namespace-scoped Task-get result account, then a `Provider` pointing at the in-cluster model server, so no model key is needed on the local path |
 
 Check the selected cluster with `kmx orka status` and
@@ -52,6 +52,80 @@ render or chart hooks. It writes nothing and cannot prove chart-generated Secret
 controller readiness or Task execution. `--no-apply` does not check cluster
 compatibility.
 
+Both real CRD installation and server dry-run use server-side apply, without
+forced field ownership. This avoids client-side last-applied annotations exceeding
+Kubernetes' annotation limit for large schemas. A failed partial installation
+still requires explicit operator recovery; kmx does not adopt or retry it.
+
+### Installing an exact local candidate
+
+```console
+$ kmx orka install --chart ./orka-candidate.tgz --chart-sha256 <64-lowercase-hex> --provider -
+```
+
+Both flags are required together. kmx reads one regular local archive without
+following symlinks, verifies the operator-supplied SHA256 before extracting
+anything, and bounds compressed and expanded input. This is exact-byte selection,
+not a publisher signature or a claim of runtime/enforcement compatibility.
+Ordinary installation and local setup retain the shipped release pin.
+
+The candidate must be an Orka v2 chart with version/appVersion, harness-v2
+defaults, digest-pinned controller/workers/publisher and all four ACP runtimes.
+Dependencies must already be bundled without repository URLs. kmx passes the
+verified chart's exact image repositories/digests to Helm and records its archive
+SHA256 in release values. Repeat installation recognizes only that same owned,
+deployed archive and image set, including the live controller image. Changed,
+foreign or partial releases still refuse adoption, replacement or automatic
+upgrade. The local candidate flags do not enable enforcement or supply a Task
+policy; those remain separate runtime-owned configuration.
+
+For a candidate that actually bundles Guardd as `enforcement`, opt in with
+`--enforcement`. Its verified defaults must supply a digest-pinned Guardd image
+and a distinct, precreated Task namespace. Kaimahi delegates to that real chart,
+including waiting for installer Jobs; it does not implement a second provider
+installer. Ordinary fresh installs stay disabled. Omitting the flag on a repeat
+preserves existing enrollment. Explicit `--enforcement=false` disables new
+enrollment without retiring existing container bindings, authority or cleanup.
+Reenabling uses the same retained installation. An explicit change on an exact
+owned, deployed candidate uses only `helm upgrade` of the same verified archive
+with `--reuse-values` and the selected enrollment bit; it verifies the result.
+It cannot change chart/image identities, adopt a foreign release, retry a partial
+release, or force replacement. This is not automatic artifact upgrading.
+
+A verified candidate's `controller.watchNamespace` default selects its Task
+namespace; empty means `orka-system`. If different, precreate that namespace
+before installation. kmx requires its exact name, UID and nonterminating state
+before any writes and includes both namespaces in consent. It does not create
+or adopt a namespace implicitly. The result reader, Role/RoleBinding, keyless
+Provider and placeholder Secret all stay in the Task namespace; the controller,
+Helm release, management credentials and API remain in `orka-system`. Repeat checks
+also verify the stored namespace and the live controller's unambiguous joined
+`--watch-namespace=...` argument. `--no-apply` remains local inspection without
+cluster namespace access. This does not change local up/quickstart defaults.
+
+### Testing and deploying against that candidate
+
+Native Orka workspace `test` and explicit-digest `deploy` can select an already
+installed candidate with `--orka-chart PATH --orka-chart-sha256 SHA256`.
+Both flags are required together, and `--to-namespace` must match that chart's
+Task namespace. Selection does not install or upgrade anything. It verifies
+the exact kmx-owned deployed archive and images, then rechecks installed identity
+at each runtime observation. Helm must already be available; no tool is fetched.
+
+Passing evidence binds the candidate archive SHA256, version, controller/worker
+images and ordinary live controller/worker identities. Digest Deploy must select
+the matching candidate explicitly; a receipt never selects a runtime implicitly.
+The reviewed plan freezes that selection through apply and placement verification.
+Public evidence reports the actual candidate version and image digests, not
+the default release's identities. These remain unsigned observations, not publisher
+authentication or enforcement proof.
+
+File previews, other runtimes, development-host evaluation, composed workspace
+Deploy and release updates refuse these flags. Policy-bearing native suite
+evaluation remains unsupported. Without these flags, the original exact runtime
+pins, evidence bytes and quickstart behavior remain unchanged. A successful
+candidate install alone does not establish suite compatibility or a protected Task.
+
 ## The three things worth knowing
 
 ### The bytes are theirs, and the pin is ours
@@ -62,7 +136,8 @@ kmx fetches the [v0.2.0 release chart](https://github.com/orka-agents/orka/relea
 before extracting CRDs or passing it to Helm. A changed or corrupted chart is
 refused, not installed. This kmx-maintained digest is not an independent
 publisher signature. Offline agent creation separately embeds CRD schemas;
-those fixtures do not install Orka. Installing the chart requires a download.
+those fixtures do not install Orka. The default chart path requires a download;
+the explicit local candidate path does not.
 
 There is no `--version` flag. A version flag would either carry no
 verification or need a digest per version; moving the pin is an edit to this
@@ -121,7 +196,57 @@ execution or fresh suite evaluation. Ownership fences still prevent legacy
 adoption, copying and retirement. `task result` reads existing Task phase/answer
 without resending.
 
+For native Run/Chat, `--enforcement-file requirement.json` carries one complete
+Task-owned requirement, including base64 opaque policy bytes. Kaimahi requires
+the running controller's enforcement protocol and unchanged strict server
+admission. Capability order is part of that complete identity: Kaimahi preserves
+the submitted order and refuses reordered admission readback rather than
+normalizing it. A verified chart archive alone is not capability proof. Host
+inference and file previews refuse this input. See
+[Task execution](kmx.md#task-execution-and-results).
+
+The compatible Orka source includes
+`config/samples/enforcement/native-policy.json` for combined filesystem and
+network enforcement. Follow that directory's README to replace the explicit
+runtime endpoint tuples and encode the complete policy into
+`requirement.materialized.json`; the checked-in empty envelope is not runnable.
+The no-repository native profile protects its existing `/workspace`, not an
+assumed home mount. After ordinary native authoring, evaluation and digest
+Deploy, pass the same reviewed materialized native file used by standalone Orka to
+`kmx run --agent hello-world-agent --namespace <task-namespace>
+--prompt "What is 2+2? Answer with the single number."
+--enforcement-file <orka-checkout>/config/samples/enforcement/requirement.materialized.json`.
+Use the actual deployed Agent and selected context. This does not create a
+Provider or select a model, inherit Agent policy, evaluate a policy-bearing
+suite or add a Kaimahi ACP Task surface. The Orka example documents the complete
+decoded policy and its coverage; do not replace it with an enforcement-free
+Task if a capability is unsupported.
+
+Run, Chat and `task result` report enforcement observations on stderr, leaving
+answer-only stdout unchanged. The console's Task details use the same redacted
+projection. A current `EnforcementReady` condition and matching typed admission
+receipt identify the requirement digest and physical container binding. This is
+historical admission, not a live provider check; it remains readable after the
+container stops and its cleanup binding is retired. Missing/stale conditions or
+receipts never become a confirmed physical admission. Pending, refusal and
+uncertain communication remain distinct. A current-generation typed outcome
+adds fixed actionable guidance for known missing requirements or incompatibility;
+malformed or stale optional detail leaves the Task readable without promoting it
+to confirmed enforcement. Policy bytes, credentials and
+arbitrary condition messages are not displayed.
+
 ### Runtime and result access
+
+For an explicitly split installation, pass the watched Task namespace to
+`run`, `chat`, `test` and `task result`. Result credentials remain in that
+namespace. If it has no Orka API Service, kmx checks the existing management
+namespace `orka-system` and requires one non-terminating controller whose
+joined `--watch-namespace=<task-namespace>` configuration matches exactly.
+Only then does it mint the Task-namespace result token and forward the
+management API Service. Unreadable or ambiguous discovery refuses; it does
+not search all namespaces, copy credentials or grant management access.
+Ordinary colocated installations are unchanged. This routing is not proof
+of policy enforcement or support for a policy-bearing Task.
 
 Result reads require a separately provisioned namespaced Task-get account.
 KMX installation/local setup provisions `orka-result-reader`; upstream-installed
