@@ -23,6 +23,7 @@ var ErrReleaseLift = errors.New("release lift planning refused; no native admiss
 // FromLayout uses the digest in Reference; otherwise Reference is a registry ref.
 type ReleaseLiftOptions struct {
 	Reference, FromLayout, ToContext, ToNamespace, Inference, Evidence, Bindings string
+	OrkaChart, OrkaChartSHA256                                                   string
 	PlainHTTP, Promote, Update                                                   bool
 	// ExpectedRuntime is checked offline against the loaded package before GETs.
 	ExpectedRuntime string
@@ -91,6 +92,7 @@ type PreparedReleaseLift struct {
 	receipt       *suitePassingReceipt
 	summary       ReleaseLiftSummary
 	started       atomic.Bool
+	orkaCandidate *orkaInstallSpec
 }
 
 func (p *PreparedReleaseLift) Summary() ReleaseLiftSummary {
@@ -107,6 +109,12 @@ func (p *PreparedReleaseLift) Summary() ReleaseLiftSummary {
 // artifact retrieval and GETs, not server dry-run/admission, Tasks or placement.
 // Matching unsigned operator-selected observations do not authenticate a signer.
 func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (plan *PreparedReleaseLift, err error) {
+	if err := validateOrkaNativeChartSelection(opt.OrkaChart, opt.OrkaChartSHA256); err != nil {
+		return nil, errors.Join(ErrReleaseLift, err)
+	}
+	if opt.OrkaChart != "" && (opt.Update || opt.HarnessImage != "" || opt.Bindings != "" || opt.ExpectedRuntime != "" && opt.ExpectedRuntime != "orka") {
+		return nil, errors.Join(ErrReleaseLift, errors.New("local Orka chart selection requires create-only native Orka digest Deploy"))
+	}
 	if opt.Update {
 		prepared, err := a.prepareReleaseUpdate(ctx, opt)
 		if err != nil {
@@ -168,6 +176,9 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 		return nil, err
 	}
 	artifact, suite, receipt, evidence := inputs.artifact, inputs.suite, inputs.receipt, inputs.evidence
+	if opt.OrkaChart != "" && suite.Runtime.ID != "orka" {
+		return nil, ErrReleaseLift
+	}
 	if opt.ExpectedRuntime != "" && opt.ExpectedRuntime != suite.Runtime.ID {
 		return nil, ErrReleaseLift
 	}
@@ -191,6 +202,9 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 	}
 	if opt.ToNamespace == "" {
 		opt.ToNamespace = OrkaNamespace
+	}
+	if err := worker.selectOrkaNativeCandidate(ctx, opt.OrkaChart, opt.OrkaChartSHA256, opt.ToNamespace); err != nil {
+		return nil, err
 	}
 	native, err := worker.prepareSuiteNative(ctx, suite, opt.ToNamespace, provider)
 	if err != nil {
@@ -228,11 +242,17 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 		return nil, err
 	}
 	s.PlanDigest = godigest.FromBytes(review).String()
-	return &PreparedReleaseLift{options: opt, artifact: artifact, native: native, receipt: receipt, summary: s}, nil
+	return &PreparedReleaseLift{options: opt, artifact: artifact, native: native, receipt: receipt, summary: s, orkaCandidate: worker.orkaNativeCandidate}, nil
 }
 
 // ValidateReleaseLiftOptions checks selectors without config, retrieval or I/O.
 func ValidateReleaseLiftOptions(opt ReleaseLiftOptions) error {
+	if err := validateOrkaNativeChartSelection(opt.OrkaChart, opt.OrkaChartSHA256); err != nil {
+		return errors.Join(ErrReleaseLift, err)
+	}
+	if opt.OrkaChart != "" && (opt.Update || opt.HarnessImage != "" || opt.Bindings != "" || opt.ExpectedRuntime != "" && opt.ExpectedRuntime != "orka") {
+		return errors.Join(ErrReleaseLift, errors.New("local Orka chart selection supports create-only native Orka digest Deploy"))
+	}
 	if opt.Update && (opt.Bindings != "" || opt.ExpectedRuntime != "" && opt.ExpectedRuntime != "orka") {
 		return errors.Join(ErrReleaseLift, errors.New("updates support native Orka only; no enrollment or binding migration"))
 	}

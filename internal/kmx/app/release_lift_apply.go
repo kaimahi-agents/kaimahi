@@ -32,6 +32,7 @@ type ReleaseLiftResult struct {
 	ReleaseRecord   *ReleaseRecordObservation `json:"releaseRecord,omitempty"`
 	placement       *suiteNativePlacement
 	kagent          *releaseLiftKagentPlacement
+	orkaCandidate   *orkaInstallSpec
 }
 
 type releaseLiftInputs struct {
@@ -67,6 +68,7 @@ func readReleaseLiftInputs(ctx context.Context, opt ReleaseLiftOptions) (release
 
 func (a *App) releaseLiftWorker(ctx context.Context, opt ReleaseLiftOptions) *App {
 	worker := *a.withRunContext(ctx)
+	worker.orkaNativeCandidate = nil
 	cfg := *a.Cfg
 	cfg.KubeContext, cfg.ContextSource = opt.ToContext, config.SourceFlag
 	worker.Cfg = &cfg
@@ -245,6 +247,7 @@ func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, revi
 		return result, ErrReleaseLiftApply
 	}
 	worker = a.releaseLiftWorker(ctx, p.options)
+	worker.orkaNativeCandidate = p.orkaCandidate
 	if p.kagent != nil {
 		// Preserve the closed qualified profile, but use this invocation's App
 		// transports and context rather than a preparation-time worker.
@@ -390,6 +393,7 @@ func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, revi
 		result.Resources[1].Ready = true
 	}
 	result.State = "ready"
+	result.orkaCandidate = p.orkaCandidate
 	return result, nil
 }
 
@@ -456,5 +460,6 @@ func (a *App) VerifyReleaseLiftPlacement(ctx context.Context, result ReleaseLift
 		return k.bindings.recheck()
 	}
 	worker := a.releaseLiftWorker(ctx, ReleaseLiftOptions{ToContext: result.placement.Subject.Target.Context})
+	worker.orkaNativeCandidate = result.orkaCandidate
 	return worker.verifySuiteNative(ctx, result.placement)
 }

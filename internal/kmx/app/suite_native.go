@@ -48,6 +48,8 @@ type suiteNativeRuntime struct {
 	ControllerReplicas                                                       int32
 	Mode, WatchNamespace, AIWorkerImage, WorkerAccount, WorkerAccountUID     string
 	Helm                                                                     suiteNativeHelmIdentity
+	CandidateChartDigest                                                     string `json:",omitempty"`
+	CandidateVersion                                                         string `json:",omitempty"`
 }
 type suiteNativePrepared struct {
 	Subject   suiteNativeSubject
@@ -356,12 +358,29 @@ func suiteNativeControllerFlag(args []string, name string) (string, error) {
 }
 
 func suiteNativeControllerRuntime(controller orkaDeployment, namespace string) (suiteNativeRuntime, error) {
+	return suiteNativeControllerRuntimeFor(controller, namespace, nil)
+}
+
+func suiteNativeControllerRuntimeFor(controller orkaDeployment, namespace string, candidate *orkaInstallSpec) (suiteNativeRuntime, error) {
 	var out suiteNativeRuntime
 	if controller.Kind != "Deployment" || controller.Metadata.Namespace != OrkaNamespace || controller.Metadata.UID == "" || controller.Metadata.Generation < 1 || controller.Metadata.DeletionTimestamp != nil {
 		return out, fmt.Errorf("native suite requires a live chart controller identity")
 	}
 	out.Helm = suiteNativeHelm(controller.Metadata.Labels)
-	if !suiteNativePinnedHelm(out.Helm) || controller.Metadata.Labels["app.kubernetes.io/component"] != "controller" {
+	expectedController := "ghcr.io/orka-agents/orka@" + orkaControllerDigest
+	expectedWorker := "ghcr.io/orka-agents/orka/ai-worker@" + orkaAIWorkerDigest
+	helmMatches := suiteNativePinnedHelm(out.Helm)
+	if candidate != nil {
+		out.CandidateChartDigest = "sha256:" + candidate.archiveDigest
+		out.CandidateVersion = strings.TrimPrefix(candidate.appVersion, "v")
+		expectedController = candidate.controllerImage()
+		expectedWorker = candidate.images["workers.ai.image.repository"] + "@" + candidate.images["workers.ai.image.digest"]
+		helmMatches = out.Helm == (suiteNativeHelmIdentity{Chart: "orka-" + candidate.chartVersion, Instance: orkaRelease, App: "orka", ManagedBy: "Helm"})
+		if candidate.taskNamespace != namespace {
+			helmMatches = false
+		}
+	}
+	if !helmMatches || controller.Metadata.Labels["app.kubernetes.io/component"] != "controller" {
 		return out, fmt.Errorf("native suite requires the pinned Orka chart identity")
 	}
 	status, replicas := controller.Status, controller.Spec.Replicas
@@ -374,7 +393,7 @@ func suiteNativeControllerRuntime(controller orkaDeployment, namespace string) (
 			continue
 		}
 		controllers++
-		if container.Image != "ghcr.io/orka-agents/orka@"+orkaControllerDigest || len(container.Command) != 0 {
+		if container.Image != expectedController || len(container.Command) != 0 {
 			return out, fmt.Errorf("native suite requires the pinned controller image and entrypoint")
 		}
 		out.ControllerImage = container.Image
@@ -390,7 +409,7 @@ func suiteNativeControllerRuntime(controller orkaDeployment, namespace string) (
 		}
 	}
 	out.ControllerServiceAccount = controller.Spec.Template.Spec.ServiceAccountName
-	if controllers != 1 || !suiteNativePinnedRuntime(out, namespace) {
+	if controllers != 1 || out.AIWorkerImage != expectedWorker || !suiteNativePinnedRuntime(out, namespace) {
 		return out, fmt.Errorf("unsupported native controller mode, watch namespace, worker image or account")
 	}
 	out.ControllerName, out.ControllerUID, out.ControllerGeneration = controller.Metadata.Name, controller.Metadata.UID, controller.Metadata.Generation
@@ -403,11 +422,31 @@ func suiteNativePinnedHelm(h suiteNativeHelmIdentity) bool {
 }
 
 func suiteNativePinnedRuntime(r suiteNativeRuntime, namespace string) bool {
-	return suiteNativePinnedHelm(r.Helm) && r.ControllerImage == "ghcr.io/orka-agents/orka@"+orkaControllerDigest && r.Mode == "harness-v2" && r.WatchNamespace == namespace && r.AIWorkerImage == "ghcr.io/orka-agents/orka/ai-worker@"+orkaAIWorkerDigest && scaffold.ValidateObjectName(r.ControllerServiceAccount) == nil && scaffold.ValidateObjectName(r.WorkerAccount) == nil
+	if r.Mode != "harness-v2" || r.WatchNamespace != namespace ||
+		scaffold.ValidateObjectName(r.ControllerServiceAccount) != nil || scaffold.ValidateObjectName(r.WorkerAccount) != nil {
+		return false
+	}
+	if r.CandidateChartDigest == "" && r.CandidateVersion == "" {
+		return suiteNativePinnedHelm(r.Helm) && r.ControllerImage == "ghcr.io/orka-agents/orka@"+orkaControllerDigest && r.AIWorkerImage == "ghcr.io/orka-agents/orka/ai-worker@"+orkaAIWorkerDigest
+	}
+	return suitePrefixedDigest(r.CandidateChartDigest) && len(r.CandidateVersion) <= 128 &&
+		orkaChartVersionPattern.MatchString(r.CandidateVersion) && !strings.HasPrefix(r.CandidateVersion, "v") &&
+		r.Helm.Instance == orkaRelease && r.Helm.App == "orka" && r.Helm.ManagedBy == "Helm" &&
+		strings.HasPrefix(r.Helm.Chart, "orka-") && orkaChartVersionPattern.MatchString(strings.TrimPrefix(r.Helm.Chart, "orka-")) &&
+		orkaLiteralDigestImage(r.ControllerImage) && orkaLiteralDigestImage(r.AIWorkerImage)
 }
 
 func (a *App) readSuiteNativeRuntime(ctx context.Context, namespace string) (suiteNativeRuntime, error) {
 	var out suiteNativeRuntime
+	if a.orkaNativeCandidate != nil {
+		known, err := a.withRunContext(ctx).orkaInstallStateFor(*a.orkaNativeCandidate)
+		if err != nil {
+			return out, err
+		}
+		if !known {
+			return out, fmt.Errorf("native Orka candidate is no longer the exact owned deployed chart")
+		}
+	}
 	deployments, err := a.orkaDeployments(ctx)
 	if err != nil {
 		return out, err
@@ -416,11 +455,11 @@ func (a *App) readSuiteNativeRuntime(ctx context.Context, namespace string) (sui
 	if err != nil {
 		return out, err
 	}
-	out, err = suiteNativeControllerRuntime(controller, namespace)
+	out, err = suiteNativeControllerRuntimeFor(controller, namespace, a.orkaNativeCandidate)
 	if err != nil {
 		return out, err
 	}
-	worker, err := a.orkaAIWorkerAccount(ctx)
+	worker, err := a.orkaAIWorkerAccountIn(ctx, namespace)
 	if err != nil {
 		return out, err
 	}
@@ -430,7 +469,7 @@ func (a *App) readSuiteNativeRuntime(ctx context.Context, namespace string) (sui
 	// Existing discovery/trust remains authoritative; add only live UID,
 	// termination and fixed labels, not a second worker discovery mechanism.
 	const projection = `go-template={"Kind":{{printf "%q" .kind}},"Metadata":{"Name":{{printf "%q" .metadata.name}},"Namespace":{{printf "%q" .metadata.namespace}},"UID":{{printf "%q" .metadata.uid}},"Helm":{"Chart":{{printf "%q" (index .metadata.labels "helm.sh/chart")}},"Instance":{{printf "%q" (index .metadata.labels "app.kubernetes.io/instance")}},"App":{{printf "%q" (index .metadata.labels "app.kubernetes.io/name")}},"ManagedBy":{{printf "%q" (index .metadata.labels "app.kubernetes.io/managed-by")}}}},"Worker":{{printf "%q" (index .metadata.labels "orka.ai/worker")}},"Trust":{{printf "%q" (index .metadata.labels "orka.ai/worker-trust")}},"Terminating":{{if .metadata.deletionTimestamp}}true{{else}}false{{end}}}`
-	raw, err := a.orkaCapture(ctx, nil, "-n", OrkaNamespace, "get", "serviceaccount", worker, "-o", projection)
+	raw, err := a.orkaCapture(ctx, nil, "-n", namespace, "get", "serviceaccount", worker, "-o", projection)
 	if err != nil {
 		return out, err
 	}
@@ -443,7 +482,7 @@ func (a *App) readSuiteNativeRuntime(ctx context.Context, namespace string) (sui
 		Worker, Trust string
 		Terminating   bool
 	}
-	if suitecore.Unmarshal(raw, &account) != nil || account.Kind != "ServiceAccount" || account.Metadata.Name != worker || account.Metadata.Namespace != OrkaNamespace || account.Metadata.UID == "" || account.Terminating || account.Metadata.Helm != out.Helm || account.Worker != "true" || account.Trust != "ai" {
+	if suitecore.Unmarshal(raw, &account) != nil || account.Kind != "ServiceAccount" || account.Metadata.Name != worker || account.Metadata.Namespace != namespace || account.Metadata.UID == "" || account.Terminating || account.Metadata.Helm != out.Helm || account.Worker != "true" || account.Trust != "ai" {
 		return out, fmt.Errorf("Orka worker has no valid matching runtime identity")
 	}
 	// The reused trust helper reselects the controller. Compare only consumed
@@ -456,7 +495,7 @@ func (a *App) readSuiteNativeRuntime(ctx context.Context, namespace string) (sui
 	if err != nil {
 		return out, err
 	}
-	observed, err := suiteNativeControllerRuntime(again, namespace)
+	observed, err := suiteNativeControllerRuntimeFor(again, namespace, a.orkaNativeCandidate)
 	if err != nil {
 		return out, err
 	}
