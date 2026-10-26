@@ -270,6 +270,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 - Follow the Copilot app walkthrough to create and test agent files, try another model and run the same file tests in CI.
 
+- The canvas shows tool servers and counts between Prompt and Tests, with Add tools opening the app's server catalog. Tool selections stay as drafts until Enter saves and tests; Escape or discard cancels tool edits without dropping prompt or test drafts.
+
 - Deploy evaluated AgentSessions packages by digest as immutable Agents; new creates wait for registration, and the separate offline `--harness-image --plan` render remains available. Exact acknowledged deployments are read-only no-ops; use `--name` for changed inputs, and treat Registered as controller-observed admission rather than live availability or target evaluation.
 
 - File tests accept per-test Live/Recorded tool responses and Calls/Doesn't call checks. Recorded responses replay without a live tool, mismatched arguments stop without fallback, and results identify live, recorded or unavailable sources.
