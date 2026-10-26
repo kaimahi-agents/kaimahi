@@ -127,11 +127,11 @@ jobs:
           SYNTHETIC: ${{ steps.what.outputs.synthetic }}
         run: |
           set -euo pipefail
-          args=()
           if [ "$SYNTHETIC" != true ]; then
-            args+=(--version "$VERSION")
+            python3 plugins/copilot/source_release.py --version "$VERSION"
+          else
+            python3 plugins/copilot/source_release.py
           fi
-          python3 plugins/copilot/source_release.py "${args[@]}"
 
       - uses: actions/setup-go@v5
         with:
