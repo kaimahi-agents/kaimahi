@@ -111,7 +111,20 @@ func TestEvalKubectlHelper(t *testing.T) {
 			_, _ = os.Stdout.Write(raw)
 		case "serviceaccount":
 			fmt.Print("serviceaccount/" + name)
+		case "deploy":
+			raw := os.Getenv("KMX_EVAL_MANAGEMENT_DEPLOYMENTS")
+			if raw == "" {
+				fail()
+			}
+			fmt.Print(raw)
 		case "services":
+			namespace := args[slices.Index(args, "-n")+1]
+			if namespace == "orka-system" {
+				if raw := os.Getenv("KMX_EVAL_MANAGEMENT_SERVICES"); raw != "" {
+					fmt.Print(raw)
+					break
+				}
+			}
 			if raw := os.Getenv("KMX_EVAL_SERVICES"); raw != "" {
 				fmt.Print(raw)
 				break
@@ -189,6 +202,10 @@ func TestEvalKubectlHelper(t *testing.T) {
 		os.Exit(0)
 	}
 	if slices.Contains(args, "create") && call.Document != nil && call.Document["kind"] == "Task" {
+		if slices.Contains(args, "--dry-run=server") {
+			_ = json.NewEncoder(os.Stdout).Encode(call.Document)
+			os.Exit(0)
+		}
 		if os.Getenv("KMX_EVAL_CREATE_FAIL") == "1" {
 			fail()
 		}

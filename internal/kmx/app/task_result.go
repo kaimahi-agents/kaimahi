@@ -89,6 +89,7 @@ func (a *App) TaskResult(opt TaskResultOptions) error {
 	statusStarted := false
 	var lastPhase string
 	reportedPhase := false
+	lastEnforcement := ""
 	for {
 		task, err := worker.readOrkaObject(ctx, namespace, id)
 		if err != nil {
@@ -100,6 +101,9 @@ func (a *App) TaskResult(opt TaskResultOptions) error {
 		if !reportedPhase || task.Status.Phase != lastPhase {
 			worker.notef("Task %s phase: %s", opt.Task, task.Status.Phase)
 			lastPhase, reportedPhase = task.Status.Phase, true
+		}
+		if !orkaTaskSuccessful(task) {
+			worker.noteOrkaEnforcement(task, &lastEnforcement)
 		}
 		switch task.Status.Phase {
 		case "Failed", "Cancelled":

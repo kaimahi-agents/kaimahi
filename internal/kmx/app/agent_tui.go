@@ -81,6 +81,13 @@ func newAgentTUIModel(opt AgentTUIOptions) agentTUIModel {
 // AgentTUI releases terminal ownership before entering chat,
 // then restores the dashboard and refreshes both inventories on return.
 func (a *App) AgentTUI(opt AgentTUIOptions) error {
+	if opt.Demo && opt.EnforcementFile != "" {
+		return fmt.Errorf("--enforcement-file requires live native Orka chat, not --demo")
+	}
+	requirement, err := readOrkaTaskEnforcement(a.operationContext(), opt.EnforcementFile)
+	if err != nil {
+		return err
+	}
 	if a.Stdin == nil || !isTerminalFile(a.Stdin) || !isInteractiveTerminal(a.Out) || os.Getenv("TERM") == "dumb" {
 		return fmt.Errorf("kmx console requires an interactive terminal on stdin and stdout; use kmx orka list for piped output")
 	}
@@ -152,7 +159,7 @@ func (a *App) AgentTUI(opt AgentTUIOptions) error {
 		action := *m.action
 		m.action = nil
 		m.status = "Returned from " + action.kind
-		target, err := a.runAgentTUIAction(action)
+		target, err := a.runAgentTUIAction(action, requirement)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			m.status = action.kind + ": " + err.Error()
 		}

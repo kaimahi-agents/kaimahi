@@ -76,7 +76,7 @@ func TestConsoleInferenceSaveRefusesBeforeReadsAuthOrWrites(t *testing.T) {
 
 func TestConsoleToolActionRefusesBeforeMutation(t *testing.T) {
 	f := newOrkaFixture(t, nil)
-	_, err := f.app.runAgentTUIAction(agentTUIAction{kind: "tools", source: agentTUIEnvironment{Name: "local", Local: true}, agent: agentTUIAgent{Name: "sample", Namespace: "agents"}})
+	_, err := f.app.runAgentTUIAction(agentTUIAction{kind: "tools", source: agentTUIEnvironment{Name: "local", Local: true}, agent: agentTUIAgent{Name: "sample", Namespace: "agents"}}, nil)
 	if err == nil || !strings.Contains(err.Error(), "authored") {
 		t.Errorf("wrong refusal: %v", err)
 	}

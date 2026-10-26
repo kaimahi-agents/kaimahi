@@ -25,8 +25,8 @@ const (
 var ErrTaskPending = errors.New("Task result pending")
 
 type RunAgentOptions struct {
-	Agent, Namespace, Prompt, PromptFile, ResultPort string
-	Wait                                             time.Duration
+	Agent, Namespace, Prompt, PromptFile, ResultPort, EnforcementFile string
+	Wait                                                              time.Duration
 }
 
 type TaskResultOptions struct {
@@ -118,6 +118,10 @@ func (a *App) RunAgent(opt RunAgentOptions) error {
 	ctx := a.operationContext()
 	worker := *a
 	worker.guarded = false
+	worker.taskEnforcement, err = readOrkaTaskEnforcement(ctx, opt.EnforcementFile)
+	if err != nil {
+		return err
+	}
 	namespace := opt.Namespace
 	if namespace == "" {
 		namespace = OrkaNamespace
@@ -146,6 +150,9 @@ func (a *App) RunAgent(opt RunAgentOptions) error {
 	args := []string{"run", "--agent", name, "--namespace", namespace, "--wait", timeout.String()}
 	if port != "" {
 		args = append(args, "--result-port", port)
+	}
+	if opt.EnforcementFile != "" {
+		args = append(args, "--enforcement-file", opt.EnforcementFile)
 	}
 	worker.InvocationCommand = worker.operationCommand(append(args, "--prompt-file", "-")...)
 	if err := worker.guardOrkaMutation(ctx, CreateOptions{Name: name, Namespace: namespace}, "execute one AI Task against Agent "+name+" in "+namespace); err != nil {
@@ -201,7 +208,8 @@ func (a *App) RunAgent(opt RunAgentOptions) error {
 	}
 	defer session.close()
 	execCtx = session.ctx
-	if err := session.probe(execCtx, namespace, taskName); err != nil {
+	task := map[string]any{"apiVersion": "core.orka.ai/v1alpha1", "kind": "Task", "metadata": map[string]any{"name": taskName, "namespace": namespace}, "spec": map[string]any{"type": "ai", "prompt": prompt, "agentRef": map[string]any{"name": name, "namespace": namespace}, "resources": map[string]any{}}}
+	if err := worker.prepareOrkaTaskEnforcement(execCtx, namespace, task, session, "No resources created"); err != nil {
 		return err
 	}
 	// Session setup can outlive an Agent replacement or revision. Recheck
@@ -235,7 +243,6 @@ func (a *App) RunAgent(opt RunAgentOptions) error {
 	if err != nil {
 		return fmt.Errorf("Recovery command could not be written; no Task created: %w", err)
 	}
-	task := map[string]any{"apiVersion": "core.orka.ai/v1alpha1", "kind": "Task", "metadata": map[string]any{"name": taskName, "namespace": namespace}, "spec": map[string]any{"type": "ai", "prompt": prompt, "agentRef": map[string]any{"name": name, "namespace": namespace}, "resources": map[string]any{}}}
 	id, err := worker.createOrkaObject(execCtx, namespace, task)
 	if err != nil {
 		return fmt.Errorf("Task %s creation failed or was ambiguous; it may exist or be running, do not retry; recover with %s: %w", taskName, worker.taskRecovery(taskName, worker.Cfg.KubeContext, namespace), err)
