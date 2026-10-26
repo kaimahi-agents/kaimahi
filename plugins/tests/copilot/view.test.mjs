@@ -361,7 +361,7 @@ test("bridge serves only token-protected same-host requests", async () => {
     assert.equal(page.headers["x-content-type-options"], "nosniff");
     assert.equal(page.headers["cache-control"], "no-store");
     assert.equal(page.headers["access-control-allow-origin"], undefined);
-    for (const name of ["app.js", "authoring.mjs", "editor.mjs", "draft-controller.mjs", "action-controller.mjs", "observation-controller.mjs"]) {
+    for (const name of ["app.js", "authoring.mjs", "editor.mjs", "dom.mjs", "results.mjs", "check-controls.mjs", "instruction-text.mjs", "draft-controller.mjs", "action-controller.mjs", "observation-controller.mjs"]) {
       const asset = await get(base + name);
       assert.equal(asset.status, 200, name);
       assert.equal(asset.headers["content-type"].split(";")[0], "text/javascript", name);
@@ -1374,7 +1374,7 @@ test("UI hides a minimal prelude Purpose once while keeping three primary paragr
 
 test("frontend and provider sources avoid unsafe sinks and mutation surfaces", async () => {
   const [controller, html, css, ext, view, editor, authoring, ...controllers] = await Promise.all(
-    ["app.js", "index.html", "style.css", "extension.mjs", "view.mjs", "editor.mjs", "authoring.mjs", "draft-controller.mjs", "action-controller.mjs", "observation-controller.mjs"].map((f) => readFile(here(f), "utf8")),
+    ["app.js", "index.html", "style.css", "extension.mjs", "view.mjs", "editor.mjs", "authoring.mjs", "draft-controller.mjs", "action-controller.mjs", "observation-controller.mjs", "dom.mjs", "results.mjs", "check-controls.mjs", "instruction-text.mjs"].map((f) => readFile(here(f), "utf8")),
   );
   const app = [controller, editor, authoring, ...controllers].join("\n");
   const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
@@ -3944,7 +3944,7 @@ test("unsupported editor DOM is retained against observation and navigation unti
 });
 
 test("frontend never relies on array methods of live DOM collections", async () => {
-  for (const name of ["app.js", "editor.mjs", "authoring.mjs", "draft-controller.mjs", "action-controller.mjs", "observation-controller.mjs"]) {
+  for (const name of ["app.js", "editor.mjs", "dom.mjs", "results.mjs", "check-controls.mjs", "instruction-text.mjs", "authoring.mjs", "draft-controller.mjs", "action-controller.mjs", "observation-controller.mjs"]) {
     const app = await readFile(here(name), "utf8");
     assert.doesNotMatch(app, /\.(?:children|childNodes)\??\.(?:map|filter|find|some|every|forEach|flatMap|reduce)\(/, name);
   }
