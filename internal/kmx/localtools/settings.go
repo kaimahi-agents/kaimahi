@@ -152,6 +152,7 @@ func CopySettings(settings []ToolSetting, defs []api.ToolDefinition) ([]ToolSett
 	}
 	return append([]ToolSetting{}, settings...), nil
 }
+
 func IsDisabled(settings []ToolSetting, name string) bool {
 	for _, s := range settings {
 		if s.Name == name {

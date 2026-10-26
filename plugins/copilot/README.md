@@ -117,13 +117,14 @@ The existing native bundle builder below still produces the legacy
 to its configured directory; the new unbound server needs neither file nor a
 folder confirmation. Plugin installation is replaced separately.
 
-The bundled engine exposes exactly lowercase `create`, `edit`, `run` and
-`test`. Canonical branches require `schemaVersion: 1` and an agent `path`; Create
+The original engine exposes exactly lowercase `create`, `edit`, `run`,
+`test` and `set_tool_state`; internal preview children retain the first four. Canonical branches require `schemaVersion: 1` and an agent `path`; Create
 also needs canonical `content`, Edit needs `content` and `expectedRevision`.
 Run/Test accept `caseId`, `showContent` and `showFailedContent`; Run also accepts `input`.
 Use discovered schemas as authority. See the
 [real MCP contract](../../docs/kmx.md#local-stdio-mcp).
-No fifth bind/Explain/model/install tool is introduced.
+The fifth tool sets declared Enabled/Disabled folder state at agent/settings
+revisions; it is not a bind/Explain/model/install tool.
 
 The default package starts without provider overrides and supports the
 deterministic fake orientation in the skill. Arbitrary tasks need an explicitly
@@ -330,7 +331,8 @@ bounded excerpts; optional `showFailedContent` includes only failed saved exampl
 Completed non-pass Test results may report `retention.status: retained` with
 opaque diagnostic IDs, or `unavailable` when persistence could not be confirmed;
 Run and passing/error/cancelled Test remain `not_requested`. Offline inspection
-is the CLI-only `kmx test explain --file FILE`; Explain adds no MCP tool; the separate fifth tool is `set_tool_state` for folder settings.
+is the CLI-only `kmx test explain --file FILE`; Explain adds no MCP tool.
+The separate fifth tool is `set_tool_state` for folder settings.
 These results grant no native shipping evidence or Publish/Deploy authority.
 Squad placement alone does not register a team member.
 

@@ -522,14 +522,15 @@ directory; relative paths resolve against the server's working directory. Prefer
 absolute WSL paths from a Windows host. Authoring reads/writes only `*.agent.md` and
 `.squad/agents/<member>/charter.md`, checking both the requested and resolved
 path. The original-server fifth tool `set_tool_state` separately changes one declared
-Enabled/Disabled value in the physical agent folder’s `kmx.yaml`, with agent and
+Enabled/Disabled value in the physical agent folder's `kmx.yaml`, with agent and
 exact-byte settings revisions. Preserve other keys/comments; refuse invalid config.
 No arbitrary config path/content operands. Preview bridge children retain exactly
 Create/Edit/Run/Test and cannot discover or dispatch the settings writer. Ordinary folder names and links to agent files are supported; never use an
 agent-looking link to access a non-agent file. Keep descriptor-bound file IO and
 revision-checked edits. Optional `--root DIRECTORY` remains only for legacy
 plugins and the separately configured native Squad flow. Expose exactly
-Create/Edit/Run/Test/set_tool_state on the original role; execution calls canonical parsing and `App.PreviewAgentSnapshot`,
+Create/Edit/Run/Test/set_tool_state on the original role; execution calls canonical
+parsing and `App.PreviewAgentSnapshot`,
 never the path wrapper or shell CLI strings. Optional native v2 targets use
 explicit `App.PreviewSquadSnapshot` and revalidated native state, not auto-detection.
 Provider/endpoint selection comes from trusted startup configuration or the
