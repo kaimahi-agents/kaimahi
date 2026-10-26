@@ -350,7 +350,7 @@ class ProcessTests(unittest.TestCase):
                 self.assertEqual(initialized["result"]["serverInfo"]["name"], "kmx")
                 send({"jsonrpc": "2.0", "method": "notifications/initialized"})
                 tools = request(2, "tools/list", {})["result"]["tools"]
-                self.assertEqual({t["name"] for t in tools}, {"create", "edit", "run", "test"})
+                self.assertEqual({t["name"] for t in tools}, {"create", "edit", "run", "test", "set_tool_state"})
                 for tool in tools:
                     self.assertIn("path", tool["inputSchema"]["required"])
                     self.assertIn("schemaVersion", tool["inputSchema"]["required"])

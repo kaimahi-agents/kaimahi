@@ -15,7 +15,9 @@
 // init/cast, operation-owned starter observations and byte-preserving enrichment.
 // Reopened member operations revalidate native casting state, never infer origin
 // or persist kmx mapping. Preview shares App snapshots, not native dispatch.
-// Native partial effects remain explicit; no extra tool, downloader or canvas actions.
+// Native partial effects remain explicit; no extra native tool, downloader or canvas actions.
+// The original-server settings writer uses agent/config byte revisions and retained
+// physical parents; preview roles never advertise or dispatch this fifth tool.
 // Canonical Edit optionally retains bounded private source preimages. Retention
 // failure never blocks a valid save and is explicit in its successful result.
 // Source-only versions are read-only resources; restore uses the same Edit CAS.
@@ -60,6 +62,16 @@ func (e *Error) Error() string {
 		return "not_found: selected source does not exist beneath the root; Create never replaces an existing file"
 	case "already_exists":
 		return "already_exists: Create never replaces an existing target"
+	case "stale_settings_revision":
+		return "stale_settings_revision: folder settings changed; read them again before editing"
+	case "invalid_tool_settings":
+		return "invalid_tool_settings: folder settings are invalid"
+	case "undeclared_tool":
+		return "undeclared_tool: select a tool declared by this agent"
+	case "settings_unavailable":
+		return "settings_unavailable: folder settings cannot be safely read or written"
+	case "settings_write_unknown":
+		return "settings_write_unknown: settings publication is unconfirmed; read back before deciding what to do"
 	case "stale_revision":
 		return "stale_revision: source changed; review its current revision before editing"
 	case "busy":

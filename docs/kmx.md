@@ -379,7 +379,7 @@ See the [wire format and hash rules](agent-file.md#frozen-run-profile-export-unr
 
 ### Local stdio MCP
 
-`kmx mcp` serves exactly `create`, `edit`, `run` and `test`, using the canonical
+`kmx mcp` serves exactly `create`, `edit`, `run`, `test` and `set_tool_state`, using the canonical
 parser and the same App snapshot operation as file Run/Test. One server accepts
 agent files in any directory. Prefer an absolute WSL path when calling it from
 Windows; relative paths resolve against the server's working directory. In WSL,
@@ -402,8 +402,30 @@ frames are bounded to 2 MiB and source files to 256 KiB.
 |---|---|---|
 | `create` | `path`, `content` | Saved path and exact-byte revision |
 | `edit` | `path`, `content`, `expectedRevision` | Saved path and new revision |
+| `set_tool_state` | `path`, `expectedRevision`, `expectedSettingsRevision`, `name`, `state` | Revision-checked folder settings; Enabled/Disabled only |
 | `run` | `path`; optional `model`, `input`, `caseId`, `showContent`, `showFailedContent` | Shared `kmx.agent-file-preview` v1 result |
 | `test` | `path`; optional `model`, `caseId`, `showContent`, `showFailedContent` | Same shared result, no ad-hoc input |
+
+#### Folder tool settings
+
+`set_tool_state` changes one declared raw tool name to `Enabled` or `Disabled` in
+`kmx.yaml` beside the checked physical agent. Pass both the agent revision and
+`toolSettingsRevision` read from `kmx://agent/…`: the latter is opaque `absent` or
+`sha256:<64 lowercase hex>` over every config byte, including comments. Agents
+without tools omit that token; save declarations and read back before setting them.
+The operation has no arbitrary config path/content or v2 branch. Bridge preview
+children expose only Create/Edit/Run/Test and reject direct settings-tool calls.
+
+Complete results contain `file`, `toolSettingsRevision`, `toolSettings`, `state`,
+`changed` and `mayHaveWritten`. A checked no-op has both booleans false and leaves
+bytes/absence untouched. Changes retain other keys/comments and existing mode bits
+(not ownership/ACLs), while indentation/quoting/line endings may normalize. Invalid
+or stale config refuses without a write; the writer refuses multiply-linked files
+and folders the settings reader cannot use. Missing Enabled no-ops remain portable.
+Any unconfirmed publication reports `state: unknown`, `mayHaveWritten: true`,
+`reasonCode: settings_write_unknown`, without an invented revision/vector/changed
+value. This is conservative, not a claim a write likely occurred. Read back before
+deciding what to do; never retry automatically or assume agent/config atomicity.
 
 #### Optional native Squad chat flow
 
@@ -412,7 +434,8 @@ Trusted startup may add `--squad-program /absolute/qualified/squad --squad-relea
 it does not install, authenticate or upgrade it. With neither flag, discovery,
 canonical v1 validation/results and v2 refusal remain unchanged. With both flags,
 the same four tools advertise a flat object schema for model-host compatibility,
-with separately enforced closed v1/v2 validation; no fifth tool or shell runner.
+with separately enforced closed v1/v2 validation. The fifth settings tool stays v1-only;
+there is no shell runner.
 Startup/discovery does not initialize the project or run a model.
 
 | Native v2 target | Tool | Additional input |
@@ -569,8 +592,8 @@ A source parse failure instead returns a `kmx.agent-view-error` v1 envelope with
 Resource consumers must check the kind before using a view. Path and transport
 refusals remain errors.
 Encode the whole requested path as one component, including slashes.
-Only supported agent files are readable; there is no fifth tool, generic file
-read or directory listing. Authored content is visible without folder
+Only supported agent files are readable; the separate fifth `set_tool_state` tool
+has no generic file read or directory-listing operand. Authored content is visible without folder
 confirmation; answer excerpts
 require an explicit Run/Test disclosure option: `showContent` or failure-only
 `showFailedContent`. The optional authoring snapshot carries exact source from
@@ -655,7 +678,7 @@ Run/Test use the same
 CLI: fake/local and explicit Copilot routes use embedded Sessions and one private
 journal, with one Session per agent turn and per judge sample. A nil runner still returns `runner_unavailable`, never
 a fallback. Hermetic checks do not qualify real models or native Windows.
-There is no fifth Explain/model/install tool; offline Explain stays a CLI action.
+There is no additional Explain/model/install tool; offline Explain stays a CLI action.
 
 #### Saved source versions and restore
 

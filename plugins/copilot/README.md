@@ -117,13 +117,16 @@ The existing native bundle builder below still produces the legacy
 to its configured directory; the new unbound server needs neither file nor a
 folder confirmation. Plugin installation is replaced separately.
 
-The bundled engine exposes exactly lowercase `create`, `edit`, `run` and
-`test`. Canonical branches require `schemaVersion: 1` and an agent `path`; Create
+The matching current-checkout engine exposes exactly lowercase `create`, `edit`,
+`run`, `test` and `set_tool_state`; internal preview children retain the first four.
+The v0.9.0-rc.2 install pinned above exposes only those first four; installed use
+of the settings writer needs a newer release containing it, not rc.2. Canonical branches require `schemaVersion: 1` and an agent `path`; Create
 also needs canonical `content`, Edit needs `content` and `expectedRevision`.
 Run/Test accept `caseId`, `showContent` and `showFailedContent`; Run also accepts `input`.
 Use discovered schemas as authority. See the
 [real MCP contract](../../docs/kmx.md#local-stdio-mcp).
-No fifth bind/Explain/model/install tool is introduced.
+The fifth tool sets declared Enabled/Disabled folder state at agent/settings
+revisions; it is not a bind/Explain/model/install tool.
 
 The default package starts without provider overrides and supports the
 deterministic fake orientation in the skill. Arbitrary tasks need an explicitly
@@ -330,7 +333,8 @@ bounded excerpts; optional `showFailedContent` includes only failed saved exampl
 Completed non-pass Test results may report `retention.status: retained` with
 opaque diagnostic IDs, or `unavailable` when persistence could not be confirmed;
 Run and passing/error/cancelled Test remain `not_requested`. Offline inspection
-is the CLI-only `kmx test explain --file FILE`; no fifth MCP tool is added.
+is the CLI-only `kmx test explain --file FILE`; Explain adds no MCP tool.
+The separate fifth tool is `set_tool_state` for folder settings.
 These results grant no native shipping evidence or Publish/Deploy authority.
 Squad placement alone does not register a team member.
 
@@ -423,8 +427,10 @@ python3 plugins/copilot/check_install.py --plugin /configured/kmx-agent-builder 
 
 It accepts qualified CLI 1.0.86-2 or 1.0.102 and refuses unconfigured/mismatched
 roots or engine hashes; exercises real local
-install/list/skill discovery, cache byte/execute checks, exactly four real MCP
-tools, uninstall and reinstall. Python is needed only for this checkout check,
+install/list/skill discovery, cache byte/execute checks, exactly five original-server MCP
+tools (including `set_tool_state`), uninstall and reinstall. This checkout check
+requires a matching current-checkout engine/hash, not the rc.2 install above.
+Python is needed only for this checkout check,
 not for end-user installation. No authentication, inference or trust bypass is
 performed by this check.
 

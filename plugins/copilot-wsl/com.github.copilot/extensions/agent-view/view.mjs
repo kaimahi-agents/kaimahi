@@ -167,6 +167,8 @@ function parseView(json, path) {
   // An older server has no settings: every declared tool is Enabled by default.
   const toolSettings = raw.toolSettings === undefined ? tools.map((name) => ({ name, state: "Enabled" })) : cleanSettings(raw.toolSettings);
   if (!settingsMatch(toolSettings, tools)) invalid();
+  const token = raw.toolSettingsRevision;
+  if (token !== undefined && (typeof token !== "string" || !/^(?:absent|sha256:[a-f0-9]{64})$/.test(token))) invalid();
   const examples = list(raw.examples).map((e) => {
     if (!isObj(e) || typeof e.id !== "string") invalid();
     return {
@@ -190,6 +192,7 @@ function parseView(json, path) {
     title: clean(raw.title, 200),
     instructions: clean(raw.instructions, 60000, true),
     model, tools, toolSettings,
+    ...(token !== undefined ? { toolSettingsRevision: token } : {}),
     examples,
     ...(authoring ? { authoring } : {}),
     latest: { status: latest.status, badge, ...(result ? { result } : {}) },

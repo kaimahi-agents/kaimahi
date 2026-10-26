@@ -49,7 +49,7 @@ func (p progressConnection) Read(ctx context.Context) (jsonrpc.Message, error) {
 
 func connectProgressFixture(t *testing.T, ops map[string]Operation, setup ...func(*sdk.Server)) (*sdk.ClientSession, <-chan *sdk.ProgressNotificationParams) {
 	t.Helper()
-	s, err := NewServer("test-engine", ops)
+	s, err := NewServer("test-engine", ops, OriginalServer)
 	if err != nil {
 		t.Fatal(err)
 	}

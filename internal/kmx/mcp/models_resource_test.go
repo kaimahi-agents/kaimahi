@@ -25,7 +25,7 @@ func TestModelResourceIsLazyAndReadOnly(t *testing.T) {
 		})
 	})
 	tools, err := cs.ListTools(t.Context(), nil)
-	if err != nil || len(tools.Tools) != 4 || calls != 0 {
+	if err != nil || len(tools.Tools) != 5 || calls != 0 {
 		t.Fatal("model discovery added a tool or accessed auth at startup")
 	}
 	result, err := cs.ReadResource(t.Context(), &sdk.ReadResourceParams{URI: "kmx://models"})
