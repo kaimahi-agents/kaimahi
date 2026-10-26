@@ -41,7 +41,7 @@ const fieldValue = (a) => new Map(a.fields).get(operandKey(a.type)) ?? "";
 export const checkLabel = (a) => {
   const value = fieldValue(a);
   return a.type === "contains" ? `Contains ${quoted(value)}` : a.type === "notContains" ? `Not contains ${quoted(value)}`
-    : a.type === "regex" ? `Matches regex ${quoted(value)}` : a.type === "llmJudge" ? `${value} · judge` : `Condition: ${a.type}`;
+    : a.type === "toolCalled" ? `Calls ${value}` : a.type === "toolNotCalled" ? `Doesn't call ${value}` : a.type === "regex" ? `Matches regex ${quoted(value)}` : a.type === "llmJudge" ? `${value} · judge` : `Condition: ${a.type}`;
 };
 // Repair suggestions use only the actual excerpt. A differing reference is
 // named only when the answer holds exactly one same-anchored phrase, e.g. the
@@ -105,6 +105,8 @@ const PLAIN_REASONS = {
   recording_source_changed: "The agent file changed. The recording was not saved.",
   recording_unrepresentable: "The recording does not fit this agent file. Nothing was saved.",
   recording_save_failed: "The recording could not be saved.",
+  recording_missing: "A Recorded tool has no saved call. Change the test or tool mode before comparing.",
+  tool_settings_changed: "Tool settings changed. Reload before comparing.",
   copilot_auth_required: "Sign in to GitHub Copilot before running this agent.", copilot_auth_revoked: "Sign in to GitHub Copilot again before running this agent.",
   copilot_no_subscription: "An active GitHub Copilot subscription is needed for this run.", copilot_policy_denied: "Your Copilot policy does not allow this run.",
   copilot_quota: "Copilot's usage limit was reached.", copilot_model_unavailable: "Choose an available Copilot model.",
@@ -175,7 +177,7 @@ export function countText(rows) {
 export const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 // Last-run display is controller-local, never a current resource or write input.
 export function resultHistory(initial) {
-  let last, preferred, focused;
+  let last, preferred, focused, capturedModel;
   const records = new Map(), models = new Map(), attempts = new Map(), timings = new Map(), modelCases = new Map();
   const modelId = view => view.latest.result?.modelRoute.slice(view.latest.result.modelRoute.indexOf("/") + 1);
   const pruneAttempts = () => {
@@ -229,6 +231,8 @@ export function resultHistory(initial) {
       return matches.length === 1 ? { ...view, latest: matches[0].latest } : undefined;
     },
     pair: () => [...models.values()],
+    noteCapture: receipt => { capturedModel = receipt.model; },
+    comparisonModels(selected) { const candidates = [...models.values()].map(modelId).filter(id => id !== selected); const other = candidates.includes(preferred) ? preferred : candidates.at(-1) ?? (capturedModel !== selected ? capturedModel : undefined); return other ? [selected, other] : [selected]; },
     prefer: model => { preferred = model; },
     focus: model => { focused = model; },
     started: model => { attempts.delete(model); },
@@ -238,7 +242,7 @@ export function resultHistory(initial) {
       attempts.set(run.model, { run, view });
       pruneAttempts();
     },
-    reset() { attempts.clear(); models.clear(); records.clear(); modelCases.clear(); timings.clear(); last = undefined; },
+    reset() { capturedModel = undefined; attempts.clear(); models.clear(); records.clear(); modelCases.clear(); timings.clear(); last = undefined; },
     cases(view, selected) {
       const current = view.latest.status === "current", coherent = coherentSelection(view);
       const definitions = uniqueIndex(view.authoring?.examples ?? [], e => e.id), identities = uniqueIndex(view.examples, e => e.id);
@@ -302,7 +306,7 @@ export function growTextarea(input) {
   input.style.height = `${input.scrollHeight + 2}px`;
 }
 // A check's fields own only their input values; source mutation and key actions stay caller-owned.
-export function checkFields(doc, initial, index, change, fieldKeys, modelControl) {
+export function checkFields(doc, initial, index, change, fieldKeys, modelControl, toolNames = []) {
   const node = el(doc, "div", "check-fields");
   let inputs = [], first, targets = new Map(), advanced, judgeModel, disabled = false;
   const markIssue = issue => {
@@ -339,11 +343,12 @@ export function checkFields(doc, initial, index, change, fieldKeys, modelControl
         const wrap = el(doc, "div", "check-field", label); wrap.append(judgeModel.node, hint); node.append(wrap);
         continue;
       }
-      const input = el(doc, judge && key === "rubric" ? "textarea" : "input", `field check-value${key === "rubric" ? " judge-rubric" : ""}`);
+      const input = el(doc, key === "tool" ? "select" : judge && key === "rubric" ? "textarea" : "input", `field check-value${key === "rubric" ? " judge-rubric" : ""}`);
+      if (key === "tool") for (const name of new Set([assertion.tool, ...toolNames].filter(Boolean))) { const option = el(doc, "option", "", toolNames.includes(name) ? name : `${name} is not on this agent`); option.value = name; input.append(option); }
       input.value = assertion[key] ?? "";
       input.setAttribute("aria-label", `Check ${index + 1} ${key === "minScore" ? "minimum score" : label.toLowerCase()}`); input.setAttribute("spellcheck", "false");
       if (key === "minScore") { input.type = "number"; input.min = "0"; input.max = "100"; input.step = "1"; }
-      else if (input.tagName?.toLowerCase() !== "textarea" && key !== "rubric") input.type = "text";
+      else if (input.tagName?.toLowerCase() !== "textarea" && key !== "rubric" && key !== "tool") input.type = "text";
       if (!judge) input.setAttribute("placeholder", assertion.type === "contains" ? "Text the answer must contain" : assertion.type === "notContains" ? "Text the answer must not contain" : "Pattern the answer must match");
       if (key === "rubric") input.rows = 2;
       input.addEventListener("input", () => {
@@ -390,7 +395,7 @@ export function judgeDetails(doc) {
     node.hidden = !visible; node.className = old ? "judge-result old" : "judge-result";
   } };
 }
-export function checkTypeControl(doc, initial, change, cancel) {
+export function checkTypeControl(doc, initial, change, cancel, toolNames = []) {
   const node = el(doc, "div", "check-type"), trigger = el(doc, "button", "check-type-button"), menu = el(doc, "div", "check-type-menu");
   trigger.type = "button"; trigger.setAttribute("aria-haspopup", "menu"); menu.setAttribute("role", "menu");
   const open = value => { menu.hidden = !value; trigger.setAttribute("aria-expanded", String(value)); };
@@ -398,7 +403,7 @@ export function checkTypeControl(doc, initial, change, cancel) {
     trigger.replaceChildren(EDITABLE_TYPES.find(([id]) => id === type)[1], icon(doc, "down", 12, 2));
     trigger.setAttribute("aria-label", `Check type: ${trigger.textContent}`);
   };
-  const choices = EDITABLE_TYPES.map(([type, label], index) => {
+  const choices = EDITABLE_TYPES.filter(([type]) => toolNames.length || !["toolCalled", "toolNotCalled"].includes(type)).map(([type, label], index) => {
     const option = el(doc, "button", "check-type-option", label); option.type = "button"; option.setAttribute("role", "menuitemradio");
     option.setAttribute("aria-checked", String(type === initial));
     option.addEventListener("click", () => {

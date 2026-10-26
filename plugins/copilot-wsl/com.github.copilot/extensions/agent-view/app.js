@@ -1,4 +1,5 @@
 // Resource and authoring values are untrusted: render only inert DOM text.
+import { renderTestTools, setToolMode, toolUseText, duplicateTest } from "./test-tools.mjs";
 import { runtimeModelSelection, effectiveModel, readSnapshot, portableId, compareDrafts, same, preRouteRefusal } from "./authoring.mjs";
 import { el, inlineText, editorValue, instructionsContent, runtimeModelControl, testNameControl, icon, statusIcon,
   inspectCases, compareLabels, checkKey, uniqueIndex, clone, operandKey, EDITABLE_TYPES, quoted, checkLabel, oneLine, failureFacts, testRow, coherentSelection, ambiguousPassSet, countText, plural, resultHistory, resultPill, modelLabel, growTextarea, checkTypeControl, checkFields, convertCheck, inconclusiveJudge, judgeDetails, plainReason, isRefused, matchedAnswer, answerBlock, refusalContext,
@@ -428,6 +429,8 @@ export function renderView(doc, root, payload, execute = postAction, options = {
         open.append(el(doc, "span", "test-name", draftName(e)), el(doc, "span", "test-input-summary", summary), verdict);
         const line = el(doc, "span", e.draft ? "test-note unsaved" : "test-note", noteText); line.hidden = !noteText;
         open.append(line);
+        const toolText = toolUseText((e.c?.row?.tools ?? []).filter(t=>t.callCount>0||t.requestCount>0));
+        if (toolText) { const partner = pair.find(v => !v.latest.result.modelRoute.endsWith("/" + selectedModel())); const other = partner?.latest.result.examples.find(x=>x.id===id)?.tools; const different = other && toolUseText(other) !== toolText ? ` · ${modelLabel(partner.latest.result.modelRoute)}: ${toolUseText(other) || "used none"}` : ""; open.append(el(doc,"span","test-note",toolText + different)); }
         item.append(open); list.append(item);
       }
       if (hidden) {
@@ -534,9 +537,9 @@ export function renderView(doc, root, payload, execute = postAction, options = {
         const menu = el(doc, "div", "menu"); menu.setAttribute("role", "menu"); menu.setAttribute("aria-label", "More actions");
         const duplicate = button("Duplicate test", () => {
           clearUndo();
-          const copy = clone(current()), name = `${draftName(entry)} copy`; copy.id = portableId(name);
+          const copy = duplicateTest(current()), name = `${draftName(entry)} copy`; copy.id = portableId(name);
           const newKey = `new:${++state.newCount}`; testDrafts.set(newKey, { origin: null, name, raw: copy });
-          navigate({ name: "detail", key: newKey }); menuOpen = false; state.focusTestName = true; render();
+          navigate({ name: "detail", key: newKey }); menuOpen = false; state.focusTestName = true; state.message = "Copied test. Its Recorded tools will capture on the next run."; render();
         }, "mi");
         const remove = button("Delete test", () => {
           clearUndo();
@@ -598,6 +601,12 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       gets.append(label);
     } else gets.append(el(doc, "h2", "lbl", "The agent gets"), el(doc, "pre", "example-input literal", c.example.input));
     out.push(gets);
+    if (state.base.authoring?.recordingControls && editableTest && state.base.tools.length) {
+      const raw = current()?.mocks ? current() : entry.raw;
+      const observed = c?.row?.tools ?? state.lastCapture?.examples?.find(e => e.id === raw.id)?.tools ?? [];
+      out.push(renderTestTools(doc, { names: state.base.tools, raw, tools: observed.map(t => ({...t,settingDisabled:state.base.toolSettings.find(s=>s.name===t.name)?.state === "Disabled"})), details: state.base.authoring.recordingDetails?.filter(d=>d.exampleId===raw.id), disabled:state.busy||state.blocked||!!state.candidate,
+        onChange:(name,mode)=>{mutate(d=>{d.raw=setToolMode(raw,name,mode)});render()}, onReset:name=>{mutate(d=>{d.raw=setToolMode(raw,name,"recorded",true)});render()} }));
+    }
 
     // Passes if
     const checksSection = el(doc, "section", "detail-section checks-section");
@@ -630,7 +639,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
         const editKey = `${key}/${a.id}`, edit = el(doc, "div", "check-edit");
         const fields = checkFields(doc, a, index, (field, value) => {
           editingChecks.add(editKey); mutate(d => { d.raw.assertions[index][field] = value; });
-        }, fieldKeys, modelControl);
+        }, fieldKeys, modelControl, state.base.tools);
         const line = button("", () => { editingChecks.add(editKey); refresh(); fields.focus(); }, "check-line");
         line.append(checkState, el(doc, "span", "check-label", checkLabel({ type: a.type, fields: [[operandKey(a.type), a[operandKey(a.type)] ?? ""]] })));
         const choice = checkTypeControl(doc, a.type, chosen => {
@@ -639,7 +648,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
           if (wasJudge || chosen === "llmJudge") {
             render(); root.querySelectorAll(".check-type-button")[index]?.focus();
           } else { fields.show(current().assertions[index]); refresh(); }
-        }, cancelDraft);
+        }, cancelDraft, state.base.authoring?.recordingControls ? state.base.tools : []);
         const remove = button("", () => { mutate(d => { d.raw.assertions.splice(index, 1); }); render(); }, "ib remove-check");
         remove.setAttribute("aria-label", `Remove check ${index + 1}`); remove.append(icon(doc, "none", 14, 2));
         edit.append(remove, choice.node, fields.node, ...(judge ? [] : [verdict])); row.append(line, edit);

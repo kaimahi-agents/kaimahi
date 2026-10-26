@@ -59,7 +59,7 @@ func TestDisabledSettingsGateEverySelectedSource(t *testing.T) {
 				t.Fatalf("disabled dispatched or lost evidence: %+v, %v, live=%d", out, err, calls)
 			}
 			completion := out.Examples[0].Completion
-			if completion.ToolCalls != 0 || len(completion.Tools) != 1 || completion.Tools[0].Source != source || completion.Tools[0].CallCount != 0 {
+			if completion.ToolCalls != 0 || len(completion.Tools) != 1 || completion.Tools[0].Source != source || completion.Tools[0].CallCount != 0 || completion.Tools[0].RequestCount != 1 {
 				t.Fatalf("wrong policy/source provenance: %+v", completion)
 			}
 			replay, err := Inspect(testContext(t), dir, out.Journal)

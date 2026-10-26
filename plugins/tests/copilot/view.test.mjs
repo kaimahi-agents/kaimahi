@@ -503,6 +503,8 @@ test("plainReason translates every preview engine code and retains only validate
     recording_source_changed: "The agent file changed. The recording was not saved.",
     recording_unrepresentable: "The recording does not fit this agent file. Nothing was saved.",
     recording_save_failed: "The recording could not be saved.",
+  recording_missing: "A Recorded tool has no saved call. Change the test or tool mode before comparing.",
+  tool_settings_changed: "Tool settings changed. Reload before comparing.",
     copilot_auth_required: "Sign in to GitHub Copilot before running this agent.", copilot_auth_revoked: "Sign in to GitHub Copilot again before running this agent.",
     copilot_no_subscription: "An active GitHub Copilot subscription is needed for this run.", copilot_policy_denied: "Your Copilot policy does not allow this run.",
     copilot_quota: "Copilot's usage limit was reached.", copilot_model_unavailable: "Choose an available Copilot model.",

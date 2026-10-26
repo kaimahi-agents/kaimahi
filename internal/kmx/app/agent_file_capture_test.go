@@ -19,7 +19,7 @@ import (
 )
 
 func TestFileCaptureAcknowledgmentAndFailure(t *testing.T) {
-	for _, scenario := range []string{"saved", "assertion-fail", "stale", "bounds", "io", "invalid-ack", "no-capability", "preflight", "uncalled", "unavailable", "prepare-cancel", "save-cancel", "ad-hoc", "disabled"} {
+	for _, scenario := range []string{"saved", "assertion-fail", "stale", "bounds", "io", "invalid-ack", "no-capability", "preflight", "uncalled", "unavailable", "prepare-cancel", "save-cancel", "ad-hoc", "disabled", "replay-only", "settings-changed"} {
 		t.Run(scenario, func(t *testing.T) {
 			opt := directOptions(t, "fake", false)
 			parsed, err := agentfile.Load(opt.File)
@@ -43,6 +43,13 @@ func TestFileCaptureAcknowledgmentAndFailure(t *testing.T) {
 				input := "one-off"
 				opt.Operation, opt.Input = "run", &input
 				wantCalls = 2
+			}
+			if scenario == "replay-only" {
+				opt.RecordedReplayOnly = true
+			}
+			if scenario == "settings-changed" {
+				expected := []localtools.ToolSetting{{Name: "ping", State: localtools.Disabled}}
+				opt.ExpectedToolSettings = &expected
 			}
 			prepared, saved, called := 0, 0, 0
 			savedRevision := "sha256:" + strings.Repeat("b", 64)
@@ -119,7 +126,7 @@ func TestFileCaptureAcknowledgmentAndFailure(t *testing.T) {
 				if err == nil || result.FullPass || result.Verdict != runtime.EvaluationUnknown || result.SavedRevision != "" {
 					t.Fatalf("save refusal %+v %v", result, err)
 				}
-				if scenario == "preflight" || scenario == "no-capability" || scenario == "prepare-cancel" {
+				if scenario == "preflight" || scenario == "no-capability" || scenario == "prepare-cancel" || scenario == "replay-only" || scenario == "settings-changed" {
 					if called != 0 || saved != 0 {
 						t.Fatal("preflight had effects")
 					}
@@ -133,7 +140,10 @@ func TestFileCaptureAcknowledgmentAndFailure(t *testing.T) {
 			if scenario == "disabled" && (prepared != 0 || result.ToolSettings[0].State != localtools.Disabled) {
 				t.Fatal("disabled capture requested source write authority")
 			}
-			if scenario != "no-capability" && scenario != "disabled" && prepared != 1 {
+			if (scenario == "replay-only" || scenario == "settings-changed") && (prepared != 0 || result.ReasonCode != map[string]string{"replay-only": "recording_missing", "settings-changed": "tool_settings_changed"}[scenario]) {
+				t.Fatalf("precondition effects/reason %+v prepared%d", result, prepared)
+			}
+			if scenario != "replay-only" && scenario != "settings-changed" && scenario != "no-capability" && scenario != "disabled" && prepared != 1 {
 				t.Fatalf("prepared %d", prepared)
 			}
 			raw, _ := json.Marshal(result)

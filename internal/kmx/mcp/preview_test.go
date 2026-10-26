@@ -64,6 +64,20 @@ func (f *previewFixture) Run(_ context.Context, r agentpreview.Request) (agentpr
 	}
 	return out, f.cause
 }
+func TestPreviewExecutionRevisionPrecondition(t *testing.T) {
+	files, _, source := canonicalFiles(t)
+	file, err := files.Create(t.Context(), "greeter.agent.md", []byte(source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := &previewFixture{}
+	client := connectFixture(t, Operations(files, &app.App{FileRunner: runner}, nil))
+	response, err := client.CallTool(t.Context(), &sdk.CallToolParams{Name: "test", Arguments: map[string]any{"schemaVersion": 1, "path": file.Path, "expectedRevision": "sha256:" + strings.Repeat("0", 64), "recordedReplayOnly": true, "expectedToolSettings": []any{}}})
+	if err != nil || !response.IsError || !strings.Contains(fmt.Sprint(response.StructuredContent), "stale_revision") || runner.calls != 0 {
+		t.Fatalf("precondition %+v %v calls%d", response, err, runner.calls)
+	}
+}
+
 func TestPreviewDescriptionsDiscloseRecordingSave(t *testing.T) {
 	files, _, _ := canonicalFiles(t)
 	runner := &previewFixture{}

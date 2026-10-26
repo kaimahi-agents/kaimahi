@@ -257,6 +257,10 @@ input[readonly]{color:var(--muted)}
 @media (max-width:700px){.agent-header{grid-template-columns:minmax(0,1fr);gap:16px}.header-controls{padding-top:0;grid-template-columns:150px minmax(0,280px);justify-content:end}.canvas{padding:28px 16px}.canvas:has(.detail-view){padding-top:24px}.pinned-bar{padding:0 16px}.compare-cols{grid-template-columns:1fr}}
 @media (max-width:480px){.header-controls{grid-template-columns:minmax(0,1fr);justify-content:stretch}.test-row{grid-template-columns:minmax(0,1fr) auto}.test-input-summary{grid-column:1/-1;grid-row:2}.test-verdict{grid-column:2;grid-row:1}.check-edit{grid-template-columns:24px minmax(0,1fr) auto}.check-edit>.check-fields{grid-column:2/-1;grid-row:2}.judge-fields{grid-template-columns:minmax(0,1fr)}.check-verdict{grid-column:3;grid-row:1}}
 
+/* Per-test recording controls stay separate from the folder settings switch. */
+.test-tools .test-tool{display:block;padding:8px 0;border-bottom:1px solid var(--line)}
+.test-tools .tool-mode{white-space:nowrap}.test-tools .tool-status{margin:4px 0}.test-tools pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:24rem;overflow:auto}
+
 /* Tools: source rows reuse the test-row control; the server page is a plain tick list. */
 .tools-section{display:flex;flex-direction:column;gap:6px}
 .tools-head{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:4px 0}

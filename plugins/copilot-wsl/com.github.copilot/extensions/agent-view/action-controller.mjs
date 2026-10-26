@@ -44,6 +44,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     state.observationGeneration++; state.run = undefined;
     state.busy = true; state.pending = { operation, one: values.caseId !== undefined }; state.message = operation === "run" ? "Running…" : ""; state.runAlert = undefined; refresh();
     const action = { operation, ...values };
+    if (values.examples && state.base.authoring?.recordingControls) action.exampleOrigins = values.examples.map(raw => entries().find(e=>e.raw?.id===raw.id)?.origin?.id ?? (rawExamples().some(e=>e.id===raw.id) ? raw.id : null));
     if (!["reload", "suggest"].includes(operation)) action.expectedRevision = state.base.file.revision;
     const executing = ["save-and-test", "test", "run"].includes(operation);
     const hostedAttempt = executing && effectiveModel(state.base.model, modelChoice.override, state.base.chatModel) !== "fake";
@@ -52,6 +53,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
       if (modelChoice.override) action.model = modelChoice.override;
     }
     if (["test", "save-and-test"].includes(operation)) {
+      if (state.base.authoring?.recordingControls) { const models = state.history.comparisonModels(effectiveModel(state.base.model, modelChoice.override, state.base.chatModel)); if (models.length > 1) action.comparisonModels = models; }
       action.runId = `canvas-${Date.now().toString(36)}-${++runSequence}`; activeRun = action.runId; watch(activeRun);
     }
     let response;
@@ -67,6 +69,8 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     if (disposed) return;
     state.busy = false; state.pending = undefined; state.message = "";
     const latest = response?.view?.latest;
+    if (response?.capture) { state.history.noteCapture(response.capture); state.lastCapture = response.capture; }
+    for (const result of response?.comparison?.results ?? []) if (matches(result)) state.history.remember(result, true);
     if (hostedAttempt && !response?.settingsIncomplete && (UNKNOWN.includes(response?.error) || CONFLICTS.includes(response?.error) || latest?.status === "current" && latest.result && !isRefused(latest.result))) state.hostedSent = true;
     if (executing && !response?.settingsIncomplete && matches(response?.view) && !response.stopped) {
       state.history.remember(response.view, true, response.run?.elapsedMs, executing ? effectiveModel(state.base.model, modelChoice.override, state.base.chatModel) : undefined);
@@ -113,6 +117,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     } else if (matches(response?.view)) {
       adopt(response.view, submitted);
       if (tested) state.lastRun = { one: values.caseId };
+      if (response.capture?.savedRevision) state.message = "Recordings saved. The capture ran before that saved revision; comparison runs will replay them.";
     } else {
       state.blocked = true; state.message = "Outcome not confirmed. Do not resubmit. Reload deliberately to inspect the saved file.";
     }
@@ -154,7 +159,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     }
     let intended = clone(rawExamples());
     if (entry.draft) {
-      const raw = entry.draft.raw;
+      const raw = entry.raw;
       if (entry.draft.origin === null) intended.push(raw); else intended = intended.map((e) => e.id === entry.draft.origin ? raw : e);
       const problem = validate(entry.draft, intended);
       if (problem) { if (problem.check && checkProblem(key, entry.raw)) return; state.message = problem; refresh(); return; }

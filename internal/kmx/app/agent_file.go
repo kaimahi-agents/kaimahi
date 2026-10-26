@@ -30,6 +30,10 @@ type FilePreviewOptions struct {
 	Input             *string
 	ShowContent       bool
 	ShowFailedContent bool
+
+	RecordedReplayOnly   bool
+	ExpectedToolSettings *[]localtools.ToolSetting
+
 	// FullPath keeps MCP's requested identity inside the shared redaction boundary.
 	FullPath       bool
 	Progress       func(string) error
@@ -41,6 +45,8 @@ type FilePreviewOptions struct {
 }
 
 type FilePreviewResult struct {
+	RecordedReplayOnly bool `json:"recordedReplayOnly,omitempty"`
+
 	SchemaVersion int                       `json:"schemaVersion"`
 	SavedRevision string                    `json:"savedRevision,omitempty"`
 	Kind          string                    `json:"kind"`
@@ -186,6 +192,8 @@ func previewReason(code string) string {
 		"recording_source_changed":  "Agent file changed; recording was not saved.",
 		"recording_unrepresentable": "Recording cannot fit the agent file format and limits; no recording was saved.",
 		"recording_save_failed":     "Recording save failed.",
+		"recording_missing":         "A Recorded tool has no saved call. Change the test or tool mode before comparing.",
+		"tool_settings_changed":     "Tool settings changed. Reload before comparing.",
 		"unsafe_tool_content":       "Unsafe tool preview content was withheld; nothing was journaled.",
 		"credential_content":        "Credential-bearing preview content was withheld.",
 		"runner_unavailable":        "Embedded preview runner is not available; no inference was performed.",
@@ -369,6 +377,42 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 			}
 			return fail("invalid_tool_settings", 1)
 		}
+	}
+	if expected := opt.ExpectedToolSettings; expected != nil {
+		if len(*expected) != len(r.ToolSettings) {
+			return fail("tool_settings_changed", 1)
+		}
+		seen := map[string]bool{}
+		for _, setting := range *expected {
+			found := false
+			for _, actual := range r.ToolSettings {
+				if setting == actual {
+					found = true
+				}
+			}
+			if seen[setting.Name] || !found {
+				return fail("tool_settings_changed", 1)
+			}
+			seen[setting.Name] = true
+		}
+	}
+	if opt.RecordedReplayOnly {
+		for _, ex := range selected {
+			if ex.Mocks != nil {
+				for _, tool := range ex.Mocks.Tools {
+					disabled := false
+					for _, s := range r.ToolSettings {
+						if s.Name == tool.Name && s.State == localtools.Disabled {
+							disabled = true
+						}
+					}
+					if tool.Mode == "recorded" && !disabled && len(tool.Calls) == 0 {
+						return fail("recording_missing", 1)
+					}
+				}
+			}
+		}
+		r.RecordedReplayOnly = true
 	}
 	recordingSave, prepareErr := prepareRecordingSave(ctx, opt, parsed.Revision, selected, r.ToolSettings)
 	if prepareErr != nil {

@@ -7,6 +7,18 @@ import (
 	"testing"
 )
 
+func TestRecordingDetailsPreservesNumberLexemes(t *testing.T) {
+	source := blockWant(recordingSource(t, pendingTool), "\n")
+	source = strings.Replace(source, `"complete":true`, `"large":9007199254740992,"decimal":1.0`, 1)
+	if _, err := Parse("details.agent.md", []byte(source)); err != nil {
+		t.Fatal(err)
+	}
+	details := RecordingDetails([]byte(source))
+	if len(details) != 1 || !strings.Contains(details[0].Text, "9007199254740992") || !strings.Contains(details[0].Text, "1.0") {
+		t.Fatalf("numeric display changed %+v", details)
+	}
+}
+
 func TestExamplePatchPreservesFixtureBytes(t *testing.T) {
 	source := recordingSource(t, pendingTool)
 	saved, err := ApplyRecordings([]byte(source), []Recording{readRecording("greeting", nil)})
@@ -87,6 +99,58 @@ func TestExamplePatchModesAndReset(t *testing.T) {
 		}
 		if !change.Reset && change.Mode == "recorded" && !bytes.Equal(saved, got) {
 			t.Fatal("no-op changed bytes")
+		}
+	}
+}
+
+func TestExamplePatchDeleteAllAndEmpty(t *testing.T) {
+	source := []byte(recordingSource(t, pendingTool))
+	input := "second"
+	source, err := ApplyExampleEdits(source, []ExampleEdit{{ID: "second", Input: &input, Assertions: json.RawMessage(`[{"id":"a","type":"contains","value":"hi"}]`)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := ApplyExampleEdits(source, []ExampleEdit{{BeforeID: "greeting", Delete: true}, {BeforeID: "second", Delete: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := Parse("test.agent.md", got)
+	if err != nil || len(a.Examples) != 0 {
+		t.Fatalf("%v", err)
+	}
+	got, err = ApplyExampleEdits(got, []ExampleEdit{{ID: "new", Input: &input, Assertions: json.RawMessage(`[{"id":"a","type":"contains","value":"hi"}]`)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err = Parse("test.agent.md", got)
+	if err != nil || len(a.Examples) != 1 {
+		t.Fatalf("%v", err)
+	}
+}
+
+func TestExamplePatchReplaceLast(t *testing.T) {
+	for _, addSecond := range []bool{false, true} {
+		source := []byte(recordingSource(t, pendingTool))
+		input := "replacement"
+		assertions := json.RawMessage(`[{"id":"a","type":"contains","value":"hi"}]`)
+		if addSecond {
+			var err error
+			source, err = ApplyExampleEdits(source, []ExampleEdit{{ID: "second", Input: &input, Assertions: assertions}})
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		last := "greeting"
+		if addSecond {
+			last = "second"
+		}
+		got, err := ApplyExampleEdits(source, []ExampleEdit{{BeforeID: last, Delete: true}, {ID: "replacement", Input: &input, Assertions: assertions}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		a, err := Parse("test.agent.md", got)
+		if err != nil || a.Examples[len(a.Examples)-1].ID != "replacement" {
+			t.Fatalf("%v", err)
 		}
 	}
 }

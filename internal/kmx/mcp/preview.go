@@ -14,6 +14,7 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -39,17 +40,25 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 		if files != nil && files.root != nil {
 			schema.Properties["path"].MaxLength = new(256)
 		}
+		schema.Properties["expectedRevision"] = &jsonschema.Schema{Type: "string", Pattern: `^sha256:[a-f0-9]{64}$`}
+		if name == "test" {
+			schema.Properties["recordedReplayOnly"] = &jsonschema.Schema{Type: "boolean"}
+			schema.Properties["expectedToolSettings"] = &jsonschema.Schema{Type: "array", MaxItems: new(32), Items: &jsonschema.Schema{Type: "object", Required: []string{"name", "state"}, Properties: map[string]*jsonschema.Schema{"name": {Type: "string"}, "state": {Type: "string", Enum: []any{"Enabled", "Disabled"}}}, AdditionalProperties: &jsonschema.Schema{Not: &jsonschema.Schema{}}}}
+		}
 		if name == "run" {
 			schema.Properties["input"] = &jsonschema.Schema{Type: "string", MaxLength: new(agentfile.MaxInputBytes)}
 		}
 		ops[name] = Operation{Schema: schema, Description: "kmx local preview of this charter; saved examples, optionally one case (always partial). Returns the shared revision, route, state and verdict; never deployment evidence. A successful first live call for a pending Recorded tool saves its result in this file.", Handler: func(ctx context.Context, req *sdk.CallToolRequest) (*sdk.CallToolResult, error) {
 			var input struct {
-				Path              string  `json:"path"`
-				Model             string  `json:"model"`
-				CaseID            string  `json:"caseId"`
-				Input             *string `json:"input"`
-				ShowContent       bool    `json:"showContent"`
-				ShowFailedContent bool    `json:"showFailedContent"`
+				Path                 string                    `json:"path"`
+				Model                string                    `json:"model"`
+				CaseID               string                    `json:"caseId"`
+				Input                *string                   `json:"input"`
+				ShowContent          bool                      `json:"showContent"`
+				ShowFailedContent    bool                      `json:"showFailedContent"`
+				ExpectedRevision     string                    `json:"expectedRevision"`
+				RecordedReplayOnly   bool                      `json:"recordedReplayOnly"`
+				ExpectedToolSettings *[]localtools.ToolSetting `json:"expectedToolSettings"`
 			}
 			if json.Unmarshal(req.Params.Arguments, &input) != nil {
 				return nil, refusal("invalid_options")
@@ -74,6 +83,9 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 			if parseErr != nil && !errors.As(parseErr, &detail) {
 				return nil, parseErr
 			}
+			if input.ExpectedRevision != "" && (parsed == nil || parsed.Revision != input.ExpectedRevision) {
+				return nil, refusal("stale_revision")
+			}
 			executionRoute := selected
 			if executionRoute == nil && files.root == nil && parsed != nil {
 				model := parsed.Model
@@ -89,6 +101,7 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 			if retentionPath != "" && parsed != nil {
 				options = app.WithFilePreviewRetention(options, retentionPath, parsed.Revision)
 			}
+			options.RecordedReplayOnly, options.ExpectedToolSettings = input.RecordedReplayOnly, input.ExpectedToolSettings
 			options.PrepareRecordingSave = func(ctx context.Context, revision string) (app.RecordingSaver, error) {
 				save, err := files.RecordingSaver(ctx, path, revision)
 				return app.RecordingSaver(save), err

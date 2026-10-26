@@ -61,6 +61,7 @@ const ASSERTION_FIELDS = {
   contains: ["value"],
   notContains: ["value"],
   regex: ["pattern"],
+  toolCalled: ["tool"], toolNotCalled: ["tool"],
   llmJudge: ["rubric", "minScore", "judgeModel", "judgeVersion"],
 };
 
@@ -189,20 +190,30 @@ function uniqueID(id, seen) {
   seen.add(id);
 }
 
-function validateExamples(examples) {
+export function validateExamples(examples, recordings = false) {
   require(Array.isArray(examples) && examples.length <= 128, "Provide 0–128 examples.");
   const seen = new Set();
   for (const example of examples) {
-    objectFields(example, ["id", "input", "assertions"]);
+    objectFields(example, recordings ? ["id", "input", "assertions", "mocks"] : ["id", "input", "assertions"]);
+    if (example.mocks !== undefined) {
+      objectFields(example.mocks, ["tools"]);
+      require(Array.isArray(example.mocks.tools) && example.mocks.tools.length <= 32, "Invalid tool modes.");
+      const names = new Set();
+      for (const t of example.mocks.tools) {
+        objectFields(t, ["name", "mode", "description", "parameters", "calls"]);
+        require(typeof t.name === "string" && /^[A-Za-z_][A-Za-z0-9_-]{0,63}$/.test(t.name) && !names.has(t.name) && ["live", "recorded"].includes(t.mode), "Invalid tool mode."); names.add(t.name);
+      }
+    }
     uniqueID(example.id, seen);
     nonblank(example.input);
     require(Array.isArray(example.assertions) && example.assertions.length >= 1 && example.assertions.length <= 64, "Provide 1–64 checks per example.");
     const checkIDs = new Set();
     for (const check of example.assertions) {
-      objectFields(check, ["id", "type", "value", "pattern", "rubric", "minScore", "judgeModel", "judgeVersion"]);
+      objectFields(check, ["id", "type", "value", "pattern", "rubric", "minScore", "judgeModel", "judgeVersion", "tool"]);
       uniqueID(check.id, checkIDs);
       require(!check.id.startsWith("expectContains."), "Reserved assertion ID.");
       require(typeof check.type === "string" && Object.hasOwn(ASSERTION_FIELDS, check.type), "Unsupported assertion type.");
+      require(recordings || !["toolCalled", "toolNotCalled"].includes(check.type), "Tool checks require sparse edits.");
       const operands = ASSERTION_FIELDS[check.type];
       require(Object.keys(check).every((key) => key === "id" || key === "type" || operands.includes(key)), "Operand is not allowed for this assertion type.");
       for (const key of operands) {
@@ -247,9 +258,36 @@ export function uniqueIndex(items, key) {
   return map;
 }
 export const clone = (value) => JSON.parse(JSON.stringify(value));
+// Only sparse mode intents cross Edit. Existing fixture payload never makes a
+// numeric round trip, and a changed payload cannot impersonate a new capture.
+export function exampleEdits(before, after, origins) {
+  validateExamples(after, true);
+  const prior = new Map(before.map(e => [e.id, e])), edits = [];
+  origins ??= after.map(e => prior.has(e.id) ? e.id : null);
+  require(Array.isArray(origins) && origins.length === after.length && origins.every(id => id === null || prior.has(id)) && new Set(origins.filter(id=>id!==null)).size === origins.filter(id=>id!==null).length, "Invalid test origins.");
+  for (const old of before) if (!origins.includes(old.id)) edits.push({ beforeId: old.id, delete: true });
+  for (const [index,e] of after.entries()) {
+    const old = prior.get(origins[index]), change = old ? { beforeId: old.id } : { id: e.id };
+    if (old && e.id !== old.id) change.id = e.id;
+    for (const key of ["input", "assertions"]) if (!old || !same(old[key], e[key])) change[key] = e[key];
+    const tools = [];
+    for (const t of e.mocks?.tools ?? []) {
+      const prev = old?.mocks?.tools.find(x => x.name === t.name);
+      if (same(prev, t)) continue;
+      const pending = { name: t.name, mode: "recorded", calls: [] }, live = { name: t.name, mode: "live" };
+      require(same(t, t.mode === "live" ? live : pending), "Fixture payload is not an editable operand.");
+      tools.push({ name: t.name, mode: t.mode, ...(prev?.mode === "recorded" && t.mode === "recorded" ? { reset: true } : {}) });
+    }
+    require(!(old?.mocks?.tools ?? []).some(t => !e.mocks?.tools.some(x => x.name === t.name)), "Keep existing tool modes or explicitly choose Live.");
+    if (tools.length) change.tools = tools;
+    if (!old || Object.keys(change).length > 1) edits.push(change);
+  }
+  return edits;
+}
+
 export const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-export const operandKey = (type) => type === "regex" ? "pattern" : type === "llmJudge" ? "rubric" : "value";
-export const EDITABLE_TYPES = [["contains", "Contains"], ["notContains", "Not contains"], ["regex", "Regex"], ["llmJudge", "Judge"]];
+export const operandKey = (type) => ["toolCalled", "toolNotCalled"].includes(type) ? "tool" : type === "regex" ? "pattern" : type === "llmJudge" ? "rubric" : "value";
+export const EDITABLE_TYPES = [["contains", "Contains"], ["notContains", "Not contains"], ["regex", "Regex"], ["llmJudge", "Judge"], ["toolCalled", "Calls"], ["toolNotCalled", "Doesn't call"]];
 export const quoted = (text) => `“${text}”`;
 
 export function checkIssue(a) {

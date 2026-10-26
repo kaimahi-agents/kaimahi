@@ -395,6 +395,13 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 			}
 		}
 		completion = agentpreview.Completion{State: agentpreview.Complete, ID: execution.SessionUID, FileRevision: agent.Revision, Provider: request.Route.Provider, Model: request.Route.Model, Answer: execution.Answer, ToolCalls: execution.ToolCalls, Tools: plan.summaries(execution.ToolCallCounts)}
+		for i := range completion.Tools {
+			for _, exchange := range execution.ToolExchanges {
+				if exchange.Call.Tool == completion.Tools[i].Name {
+					completion.Tools[i].RequestCount++
+				}
+			}
+		}
 		return completion, assertions, nil
 	}
 	if request.Input != nil {

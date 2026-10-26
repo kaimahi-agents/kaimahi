@@ -187,7 +187,13 @@ func ApplyExampleEdits(source []byte, edits []ExampleEdit) ([]byte, error) {
 			add(at, at, encode(key)+": "+encode(value)+eol+strings.Repeat(" ", m.Column-1))
 		}
 	}
+	clearAll := false
+	var replacement []any
 	appendTo := func(s *yaml.Node, value any) {
+		if s == seq && clearAll {
+			replacement = append(replacement, value)
+			return
+		}
 		at := endOf(s)
 		if s.Style&yaml.FlowStyle != 0 {
 			at--
@@ -197,10 +203,16 @@ func ApplyExampleEdits(source []byte, edits []ExampleEdit) ([]byte, error) {
 			}
 			add(at, at, sep+encode(value))
 		} else {
-			add(at, at, eol+strings.Repeat(" ", s.Column-1)+"- "+encode(value))
+			at = limits[s]
+			add(at, at, strings.Repeat(" ", s.Column-1)+"- "+encode(value)+eol)
 		}
 	}
 	seen := map[string]bool{}
+	clearAll = len(seq.Content) > 0
+	for _, item := range seq.Content {
+		clearAll = clearAll && slices.ContainsFunc(edits, func(e ExampleEdit) bool { return e.Delete && e.BeforeID == field(item, "id").Value })
+	}
+
 	for _, edit := range edits {
 		identity := edit.BeforeID
 		if identity == "" {
@@ -222,6 +234,9 @@ func ApplyExampleEdits(source []byte, edits []ExampleEdit) ([]byte, error) {
 		if edit.Delete {
 			if edit.BeforeID == "" || edit.ID != "" || edit.Input != nil || edit.Assertions != nil || len(edit.Tools) > 0 {
 				return nil, ErrRecordingInvalid
+			}
+			if clearAll {
+				continue
 			}
 			if len(seq.Content) == 1 {
 				add(offset(seq), endOf(seq), "[]")
@@ -310,6 +325,12 @@ func ApplyExampleEdits(source []byte, edits []ExampleEdit) ([]byte, error) {
 			}
 			add(offset(entry), endOf(entry), encode(tools[i]))
 		}
+	}
+	if clearAll {
+		if replacement == nil {
+			replacement = []any{}
+		}
+		add(offset(seq), endOf(seq), encode(replacement))
 	}
 	// Coalesce insertions before sorting, otherwise two new fields/rows at one
 	// offset could reverse or overlap. All replacements remain non-overlapping.

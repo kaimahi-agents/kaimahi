@@ -203,6 +203,20 @@ The result's `file.revision` remains the revision that executed. A successful ca
 and marks only captured tools `recordingSaved: true`. Those answers are historical against the new bytes; they are
 not relabelled as a run on the saved revision. Saved output is plain file content and can enter Git history.
 
+In a matching current-source canvas, each test offers **⚡ Live** or **◉ Recorded** per tool. These choices and
+**Record again** are drafts until Enter saves and runs; changing to Live removes that tool's saved fixture.
+Recorded details show the saved call and result. Live details report actual source and counts, not saved payload.
+Model comparison captures pending Recorded tools at most once, then every compared model (including the capture
+model) replays the acknowledged saved source. A still-uncaptured Recorded tool stops comparison; Live tools remain
+live for each model. Modes never change silently. Source or effective-settings changes stop subsequent execution.
+
+The existing MCP Run/Test operations accept an optional `expectedRevision` precondition. Test additionally accepts
+`expectedToolSettings` (the complete named Enabled/Disabled vector) and `recordedReplayOnly`; the latter prevents
+new Recorded captures, not Live calls. Edit accepts bounded `exampleEdits` alongside `content` and its expected
+revision. With sparse edits the supplied content retains the original Examples bytes; only named test fields and
+mode/reset intents change, never caller-supplied fixture payload. Older backends keep fixture-bearing files
+inspection-only in the canvas. These source capabilities are not supplied by the pinned older release.
+
 Fixtures share all existing YAML/source bounds below, including the shallow 12-level nesting budget. They reject
 external schema references, duplicate keys, inexact JSON numbers and known credential shapes. Arbitrary private data
 can evade those checks: saved results are plain file content that the author may commit. Native Squad stays tool-free.

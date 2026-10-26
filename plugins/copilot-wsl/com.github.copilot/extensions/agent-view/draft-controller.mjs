@@ -1,6 +1,8 @@
 import { readSnapshot, effectiveModel } from "./authoring.mjs";
 import { uniqueIndex, isRefused, clone, same, friendlyName, checkIssue } from "./editor.mjs";
 
+import { defaultToolMode, setToolMode } from "./test-tools.mjs";
+
 export function createDraftController(state, { clearUndo, navigate, render, refresh }) {
   const { sectionDrafts, testDrafts, invalidEditors, history, editingChecks, displayNames, modelChoice } = state;
   state.settingsDraft ??= new Map();
@@ -31,7 +33,10 @@ export function createDraftController(state, { clearUndo, navigate, render, refr
       const key = raw ? `id:${raw.id}` : undefined, draft = key ? testDrafts.get(key) : undefined;
       return { key, c, raw: draft ? draft.raw : raw, origin: raw, draft, openable: !!raw || !state.snap && ids.get(c.example.id) === c.example };
     });
-    for (const [key, draft] of testDrafts) if (draft.origin === null) list.push({ key, raw: draft.raw, origin: undefined, draft, openable: true });
+    for (const [key, draft] of testDrafts) if (draft.origin === null) {
+      const raw = !draft.raw.mocks && state.base.authoring?.recordingControls ? toolNames().reduce((r, name) => setToolMode(r, name, defaultToolMode(r.assertions)), draft.raw) : draft.raw;
+      list.push({ key, raw, origin: undefined, draft, openable: true });
+    }
     return list;
   }
   const localExamples = () => entries().filter((e) => e.raw && !e.draft?.deleted).map((e) => clone(e.raw));
