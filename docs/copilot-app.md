@@ -77,9 +77,7 @@ cannot render the canvas, Copilot can still use kmx's tools in text.
 
 ![The release-notes prompt and tests during a run, with two tests passed and the third running](images/copilot-running.png)
 
-*Windows Copilot app with WSL, v0.9.0-rc.3 (`eddacc37`). The canvas is
-cropped to the prompt and tests. Results arrive one test at a time; this is not
-a completed run. The sample keeps public PR numbers, unlike the example above.*
+*Two tests have passed while the third is still running.*
 
 ## Choose tools for tests
 
@@ -98,9 +96,7 @@ v0.9.0-rc.3 binary above.
 
 ![Tools section showing one selected tool from the GitHub MCP server, with earlier test results marked out of date](images/copilot-tools.png)
 
-*Windows Copilot app with WSL, v0.9.0-rc.3 (`eddacc37`). This shows tool
-selection and the server count, not a successful GitHub tool call. The
-Enabled/Disabled switches are not pictured.*
+*One GitHub tool is selected, and earlier test results are out of date.*
 
 ## Add tests and run them
 
@@ -140,9 +136,7 @@ chat turn, even when the run has finished.
 
 ![A failed check requires the PR number at the end of a bullet; the answer puts it at the start](images/copilot-test-detail.png)
 
-*Windows Copilot app with WSL, v0.9.0-rc.3 (`eddacc37`). The supplied
-sample PR titles are test data. The failed check identifies the exact missing
-text; a plausible answer can still fail the authored requirement.*
+*The check fails because the answer puts the PR number at the start instead of the end.*
 
 ### Keep tool results with a test
 
@@ -154,9 +148,7 @@ Recorded details let you inspect the saved call and result.
 
 ![Test detail with an unsaved Recorded selection and a prior result labelled one live call](images/copilot-live-recorded.png)
 
-*Windows Copilot app with WSL, main build `db12f60a`, included in rc.3.
-The Recorded choice is an unsaved draft; “1 call · Live” describes the earlier
-run. This is not a screenshot of a saved recording or replay.*
+*Recorded is selected but unsaved, and the previous result shows one live call.*
 
 Saved tool output is cleartext in the agent file. Review it before committing
 or sharing. A recorded pass does not prove the live server works today. See
@@ -192,12 +184,13 @@ for supported file-preview routes and limits.
 
 ![Model picker set to Claude Haiku 4.5, with three of four tests passing](images/copilot-model-picker.png)
 
+*Claude Haiku 4.5 is selected, with three of four tests passing.*
+
 ![The same prompt's test verdicts on two models: Terra passed all four; Haiku failed the fix-note check](images/copilot-compare.png)
 
-*Windows Copilot app with WSL, pre-rc.3 main build `bde6ed25`. These two
-crops show the selected model and its comparison results, with the private file
-label omitted. They are not a successful comparison walk of the rc.3 binary.
-Model names and availability reflect this capture, not a supported-model list.*
+*Terra passes all four tests, while Haiku fails the fix-note check.*
+
+These comparison pictures are from a build before rc.3.
 
 ## Run the same tests in CI
 
