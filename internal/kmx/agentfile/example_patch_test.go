@@ -1,0 +1,124 @@
+package agentfile
+
+import (
+	"bytes"
+	"encoding/json"
+	"strings"
+	"testing"
+)
+
+func TestExamplePatchPreservesFixtureBytes(t *testing.T) {
+	source := recordingSource(t, pendingTool)
+	saved, err := ApplyRecordings([]byte(source), []Recording{readRecording("greeting", nil)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, eol := range []string{"\n", "\r\n"} {
+		original := strings.ReplaceAll(string(saved), "\n", eol)
+		input := "a different input é 🙂"
+		got, err := ApplyExampleEdits([]byte(original), []ExampleEdit{{BeforeID: "greeting", Input: &input}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		a, err := Parse("test.agent.md", got)
+		if err != nil || a.Examples[0].Input != input {
+			t.Fatalf("%v", err)
+		}
+		oldFixture := original[strings.Index(original, "    mocks:"):strings.Index(original, "    assertions:")]
+		if !bytes.Contains(got, []byte(oldFixture)) {
+			t.Fatalf("fixture changed: %s", got)
+		}
+		if !bytes.Contains(got, []byte("\"a different input é 🙂\"")) {
+			t.Fatal("input not patched")
+		}
+	}
+}
+
+func TestExamplePatchLayoutsAndComments(t *testing.T) {
+	for _, entry := range []string{pendingTool, `{name: read, mode: recorded, calls: []}`} {
+		source := recordingSource(t, entry)
+		source = strings.Replace(source, "    mocks:", "    # retained fixture comment é\n    mocks:", 1)
+		value := "changed"
+		got, err := ApplyExampleEdits([]byte(source), []ExampleEdit{{BeforeID: "greeting", Input: &value}})
+		if err != nil || !bytes.Contains(got, []byte("# retained fixture comment é")) {
+			t.Fatalf("lost comment: %v\n%s", err, got)
+		}
+	}
+	source := recordingSource(t, pendingTool)
+	a, _ := Parse("test.agent.md", []byte(source))
+	input := a.Examples[0].Input
+	// A flow example exercises scalar delimiters separately from flow tool rows.
+	start := strings.Index(source, "  - id:")
+	end := strings.LastIndex(source, "```")
+	flow := source[:start] + `  - {id: greeting, input: ` + string(mustJSON(t, input)) + `, assertions: [{id: word, type: contains, value: hello}], mocks: {tools: [{name: read, mode: recorded, calls: []}]}}` + "\n" + source[end:]
+	value := "changed"
+	if _, err := ApplyExampleEdits([]byte(flow), []ExampleEdit{{BeforeID: "greeting", Input: &value}}); err != nil {
+		t.Fatal("flow input:", err)
+	}
+}
+
+func mustJSON(t *testing.T, v any) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+func TestExamplePatchModesAndReset(t *testing.T) {
+	source := recordingSource(t, pendingTool)
+	saved, err := ApplyRecordings([]byte(source), []Recording{readRecording("greeting", nil)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range []ToolModeEdit{{Name: "read", Mode: "recorded"}, {Name: "read", Mode: "recorded", Reset: true}, {Name: "read", Mode: "live"}} {
+		got, err := ApplyExampleEdits(saved, []ExampleEdit{{BeforeID: "greeting", Tools: []ToolModeEdit{change}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		a, err := Parse("test.agent.md", got)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tool := a.Examples[0].Mocks.Tools[0]
+		if tool.Mode != change.Mode || len(tool.Calls) != map[bool]int{true: 0, false: 1}[change.Reset || change.Mode == "live"] {
+			t.Fatalf("tool %+v", tool)
+		}
+		if !change.Reset && change.Mode == "recorded" && !bytes.Equal(saved, got) {
+			t.Fatal("no-op changed bytes")
+		}
+	}
+}
+
+func TestExamplePatchCreateAndRefusal(t *testing.T) {
+	source := []byte(recordingSource(t, pendingTool))
+	input := "new input"
+	assertions := json.RawMessage(`[{"id":"called","type":"toolCalled","tool":"read"}]`)
+	got, err := ApplyExampleEdits(source, []ExampleEdit{{ID: "second", Input: &input, Assertions: assertions, Tools: []ToolModeEdit{{Name: "read", Mode: "recorded"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := Parse("test.agent.md", got)
+	if err != nil || len(a.Examples) != 2 {
+		t.Fatalf("%v", err)
+	}
+	removed, err := ApplyExampleEdits(got, []ExampleEdit{{BeforeID: "second", Delete: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err = Parse("test.agent.md", removed)
+	if err != nil || len(a.Examples) != 1 {
+		t.Fatalf("%v", err)
+	}
+	for _, edits := range [][]ExampleEdit{
+		{{BeforeID: "missing", Input: &input}},
+		{{BeforeID: "greeting", Tools: []ToolModeEdit{{Name: "read", Mode: "invalid"}}}},
+		{{BeforeID: "greeting", Input: &input}, {BeforeID: "missing", Delete: true}},
+		{{BeforeID: "greeting", Input: &input}, {BeforeID: "greeting", Delete: true}},
+	} {
+		if b, err := ApplyExampleEdits(source, edits); err == nil || b != nil {
+			t.Fatal("invalid patch produced bytes")
+		}
+	}
+}
