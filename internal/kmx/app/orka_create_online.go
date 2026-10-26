@@ -5,12 +5,44 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/guard"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/runview"
 	"os/exec"
 	"strings"
 	"time"
-
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/guard"
 )
+
+type orkaBoundedBuffer struct {
+	// Do not embed bytes.Buffer: its promoted ReadFrom would let io.Copy
+	// bypass Write and therefore bypass the subprocess response bound.
+	buffer    bytes.Buffer
+	remaining int
+}
+
+type orkaIdentity struct {
+	Kind, Name, UID string
+	Generation      int64
+}
+
+type orkaObject struct {
+	Enforcement *runview.Enforcement `json:"-"`
+	Kind        string               `json:"kind"`
+	Metadata    struct {
+		Name              string     `json:"name"`
+		Namespace         string     `json:"namespace"`
+		UID               string     `json:"uid"`
+		Generation        int64      `json:"generation"`
+		DeletionTimestamp *time.Time `json:"deletionTimestamp"`
+	} `json:"metadata"`
+	Status struct {
+		Ready      bool              `json:"ready"`
+		Conditions []serverCondition `json:"conditions"`
+		Phase      string            `json:"phase"`
+		ResultRef  struct {
+			Available bool `json:"available"`
+		} `json:"resultRef"`
+	} `json:"status"`
+}
 
 // All Orka API subprocesses have both Kubernetes and process deadlines. Raw
 // stderr is classified, never propagated: it may contain a TokenRequest or
@@ -53,13 +85,6 @@ func (a *App) orkaCapture(ctx context.Context, stdin []byte, args ...string) ([]
 		}
 	}
 	return out.buffer.Bytes(), nil
-}
-
-type orkaBoundedBuffer struct {
-	// Do not embed bytes.Buffer: its promoted ReadFrom would let io.Copy
-	// bypass Write and therefore bypass the subprocess response bound.
-	buffer    bytes.Buffer
-	remaining int
 }
 
 func (b *orkaBoundedBuffer) Write(p []byte) (int, error) {
@@ -152,30 +177,6 @@ func (a *App) orkaAbsent(ctx context.Context, namespace string, doc map[string]a
 		return fmt.Errorf("%s/%s already exists; refusing any collision, including identical/shared resources", kind, name)
 	}
 	return nil
-}
-
-type orkaIdentity struct {
-	Kind, Name, UID string
-	Generation      int64
-}
-
-type orkaObject struct {
-	Kind     string `json:"kind"`
-	Metadata struct {
-		Name              string     `json:"name"`
-		Namespace         string     `json:"namespace"`
-		UID               string     `json:"uid"`
-		Generation        int64      `json:"generation"`
-		DeletionTimestamp *time.Time `json:"deletionTimestamp"`
-	} `json:"metadata"`
-	Status struct {
-		Ready      bool              `json:"ready"`
-		Conditions []serverCondition `json:"conditions"`
-		Phase      string            `json:"phase"`
-		ResultRef  struct {
-			Available bool `json:"available"`
-		} `json:"resultRef"`
-	} `json:"status"`
 }
 
 func (a *App) createOrkaObject(ctx context.Context, namespace string, doc map[string]any) (orkaIdentity, error) {

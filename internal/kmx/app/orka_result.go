@@ -22,6 +22,8 @@ import (
 // Never retain arbitrary port-forward subprocess output in an application error.
 type orkaResultPortError struct{}
 
+var errOrkaAPIServiceAbsent = errors.New("no Orka API Service")
+
 func (*orkaResultPortError) Error() string {
 	return "result port-forward could not bind or confirm a loopback port; check port availability and Service access"
 }
@@ -152,9 +154,37 @@ func (a *App) orkaAPIService(ctx context.Context, namespace string) (string, err
 		match = service.Metadata.Name
 	}
 	if match == "" {
-		return "", fmt.Errorf("no Orka API Service in %s (expected a controller-selected Service on port 8080)", namespace)
+		return "", fmt.Errorf("%w in %s (expected a controller-selected Service on port 8080)", errOrkaAPIServiceAbsent, namespace)
 	}
 	return match, nil
+}
+
+// Split installations keep the API in kmx's management namespace, but the
+// result principal and all Task requests remain in the watched namespace.
+func (a *App) orkaResultAPI(ctx context.Context, namespace, service string) (string, string, error) {
+	if service != "" {
+		return namespace, service, nil
+	}
+	service, err := a.orkaAPIService(ctx, namespace)
+	if err == nil || !errors.Is(err, errOrkaAPIServiceAbsent) || namespace == OrkaNamespace {
+		return namespace, service, err
+	}
+	deployments, err := a.orkaDeployments(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	controller, _, err := selectOrkaController(deployments)
+	if err != nil {
+		return "", "", err
+	}
+	if controller.Metadata.Namespace != OrkaNamespace || controller.Metadata.UID == "" || controller.Metadata.DeletionTimestamp != nil {
+		return "", "", fmt.Errorf("management Orka controller has an invalid or terminating identity")
+	}
+	if err := orkaControllerWatches(controller, namespace); err != nil {
+		return "", "", err
+	}
+	service, err = a.orkaAPIService(ctx, OrkaNamespace)
+	return OrkaNamespace, service, err
 }
 
 func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*orkaResultSession, error) {
@@ -169,13 +199,11 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	if strings.TrimSpace(string(raw)) != "serviceaccount/"+opt.ResultServiceAccount {
 		return nil, fmt.Errorf("result ServiceAccount does not exist in the selected namespace")
 	}
-	if opt.OrkaAPIService == "" {
-		opt.OrkaAPIService, err = a.orkaAPIService(ctx, opt.Namespace)
-		if err != nil {
-			return nil, err
-		}
+	apiNamespace, apiService, err := a.orkaResultAPI(ctx, opt.Namespace, opt.OrkaAPIService)
+	if err != nil {
+		return nil, err
 	}
-	raw, err = a.orkaCapture(ctx, nil, "-n", opt.Namespace, "get", "service", opt.OrkaAPIService, "-o", "json")
+	raw, err = a.orkaCapture(ctx, nil, "-n", apiNamespace, "get", "service", apiService, "-o", "json")
 	if err != nil {
 		return nil, fmt.Errorf("cannot read the selected Orka API Service: %w", err)
 	}
@@ -228,7 +256,7 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	// started, exec.CommandContext retains it; later kubectl calls use their own
 	// request deadlines. This also cancels a forward still waiting to bind.
 	a.orkaForwardContext = forwardCtx
-	fwd, err := portforward.Start(a, opt.Namespace, "svc/"+opt.OrkaAPIService, opt.ResultPort, "8080")
+	fwd, err := portforward.Start(a, apiNamespace, "svc/"+apiService, opt.ResultPort, "8080")
 	a.orkaForwardContext = nil
 	portFailure := func() error {
 		return errors.Join(&orkaResultPortError{}, orkaPhaseError(ctx, forwardParent, forwardParent.Err()))
@@ -305,6 +333,10 @@ func (s *orkaResultSession) get(ctx context.Context, namespace, name string) (in
 }
 
 func (s *orkaResultSession) getTaskResource(ctx context.Context, namespace, name, resource string, query url.Values) (int, map[string]json.RawMessage, error) {
+	return s.readTaskResource(ctx, namespace, name, resource, query, nil)
+}
+
+func (s *orkaResultSession) readTaskResource(ctx context.Context, namespace, name, resource string, query url.Values, enforcementSupported *bool) (int, map[string]json.RawMessage, error) {
 	// Bind each caller's request to both its own deadline and the session's
 	// lifetime. The pinned connection, not this liveness check, prevents redial.
 	ctx, cancel := context.WithCancel(ctx)
@@ -344,6 +376,9 @@ func (s *orkaResultSession) getTaskResource(ctx context.Context, namespace, name
 		return 0, nil, withSuiteFailureClass(fmt.Errorf("Orka result request failed or timed out"), class)
 	}
 	defer response.Body.Close()
+	if enforcementSupported != nil {
+		*enforcementSupported = response.Header.Get("Orka-Task-Enforcement") == "container-v1"
+	}
 	mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
 	if err != nil || mediaType != "application/json" {
 		return response.StatusCode, nil, withSuiteFailureClass(fmt.Errorf("Orka result endpoint returned non-JSON content (HTTP %d)", response.StatusCode), suiteFailureClass(suiteHTTPDiagnostic("result", response.StatusCode)))
@@ -387,13 +422,21 @@ func (s *orkaResultSession) probe(ctx context.Context, namespace, name string) e
 }
 
 func (s *orkaResultSession) probeBeforeCreate(ctx context.Context, namespace, name, failureScope string) error {
-	status, envelope, err := s.get(ctx, namespace, name)
+	return s.probeTaskBeforeCreate(ctx, namespace, name, failureScope, false)
+}
+
+func (s *orkaResultSession) probeTaskBeforeCreate(ctx context.Context, namespace, name, failureScope string, requireEnforcement bool) error {
+	var enforcementSupported bool
+	status, envelope, err := s.readTaskResource(ctx, namespace, name, "result", nil, &enforcementSupported)
 	if err != nil {
 		return fmt.Errorf("%s: %w", failureScope, err)
 	}
 	code, message, valid := orkaResultError(envelope)
 	if status != http.StatusNotFound || !valid || code != 404 || message != "task not found" {
 		return withSuiteFailureClass(fmt.Errorf("Orka result access preflight refused (HTTP %d); expected the exact absent-Task JSON response. %s", status, failureScope), suiteFailureClass(suiteHTTPDiagnostic("result", status)))
+	}
+	if requireEnforcement && !enforcementSupported {
+		return fmt.Errorf("the running Orka API does not advertise container-v1 Task enforcement; %s", failureScope)
 	}
 	return nil
 }
@@ -412,6 +455,7 @@ func (a *App) readOrkaTaskResult(ctx context.Context, namespace string, id orkaI
 	parent := ctx
 	statusStarted := false
 	succeeded := false
+	lastEnforcement := ""
 	var before *orkaObject
 	defer func() {
 		if err != nil {
@@ -423,6 +467,7 @@ func (a *App) readOrkaTaskResult(ctx context.Context, namespace string, id orkaI
 		if err != nil {
 			return "", err
 		}
+		a.noteOrkaEnforcement(object, &lastEnforcement)
 		if object.Status.Phase == "Failed" || object.Status.Phase == "Cancelled" {
 			return "", &orkaTaskEndedError{Phase: object.Status.Phase}
 		}
@@ -493,6 +538,7 @@ func (a *App) readOrkaTaskResult(ctx context.Context, namespace string, id orkaI
 		if !orkaTaskSuccessful(after) {
 			return "", fmt.Errorf("Task changed successful terminal state during result retrieval")
 		}
+		a.noteOrkaEnforcement(after, &lastEnforcement)
 		if !retry {
 			if strings.Contains(answer, session.token) {
 				return "", fmt.Errorf("refusing result that echoes session credential material")

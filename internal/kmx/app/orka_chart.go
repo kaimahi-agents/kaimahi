@@ -26,30 +26,37 @@ const (
 )
 
 type orkaHelmImage struct {
-	Digest string `json:"digest"`
+	Repository string `json:"repository" yaml:"repository"`
+	Digest     string `json:"digest" yaml:"digest"`
 }
 type orkaHelmWorker struct {
-	Image orkaHelmImage `json:"image"`
+	Image orkaHelmImage `json:"image" yaml:"image"`
 }
 
 type orkaHelmValues struct {
+	InstallerSHA256  string            `json:"kmxInstallerSHA256" yaml:"kmxInstallerSHA256"`
 	Labels           map[string]string `json:"labels"`
 	FullnameOverride string            `json:"fullnameOverride"`
 	Controller       struct {
-		Mode       string        `json:"mode"`
-		Image      orkaHelmImage `json:"image"`
-		ACPRuntime struct {
-			CodexImage    string `json:"codexImage"`
-			ClaudeImage   string `json:"claudeImage"`
-			CopilotImage  string `json:"copilotImage"`
-			OpencodeImage string `json:"opencodeImage"`
-		} `json:"acpRuntime"`
-	} `json:"controller"`
+		Mode           string        `json:"mode" yaml:"mode"`
+		WatchNamespace string        `json:"watchNamespace" yaml:"watchNamespace"`
+		Image          orkaHelmImage `json:"image" yaml:"image"`
+		ACPRuntime     struct {
+			CodexImage    string `json:"codexImage" yaml:"codexImage"`
+			ClaudeImage   string `json:"claudeImage" yaml:"claudeImage"`
+			CopilotImage  string `json:"copilotImage" yaml:"copilotImage"`
+			OpencodeImage string `json:"opencodeImage" yaml:"opencodeImage"`
+		} `json:"acpRuntime" yaml:"acpRuntime"`
+	} `json:"controller" yaml:"controller"`
 	Workers struct {
-		AI      orkaHelmWorker `json:"ai"`
-		General orkaHelmWorker `json:"general"`
-	} `json:"workers"`
-	Publisher orkaHelmWorker `json:"publisher"`
+		AI      orkaHelmWorker `json:"ai" yaml:"ai"`
+		General orkaHelmWorker `json:"general" yaml:"general"`
+	} `json:"workers" yaml:"workers"`
+	Publisher   orkaHelmWorker `json:"publisher" yaml:"publisher"`
+	Enforcement struct {
+		Enabled *bool  `json:"enabled" yaml:"enabled"`
+		Image   string `json:"image" yaml:"image"`
+	} `json:"enforcement" yaml:"enforcement"`
 }
 
 // Installation refusals remain actionable without modifying cluster state.
@@ -100,6 +107,10 @@ func orkaChartCRDs(chart []byte) ([]byte, int, error) {
 // A tag alone does not prove kmx owns a release. Only its chart version,
 // release status, explicit harness mode and marker together allow a repeat.
 func (a *App) orkaInstallState() (bool, error) {
+	return a.orkaInstallStateFor(publishedOrkaInstallSpec())
+}
+
+func (a *App) orkaInstallStateFor(expected orkaInstallSpec) (bool, error) {
 	listArgs := []string{"list", "-n", OrkaNamespace, "--kube-context", a.Cfg.KubeContext,
 		"-o", "json", "-f", "^" + orkaRelease + "$",
 		// Helm 3's --all was removed in Helm 4. These filters are shared by
@@ -118,7 +129,7 @@ func (a *App) orkaInstallState() (bool, error) {
 	if err := json.Unmarshal([]byte(raw), &releases); err != nil {
 		return false, fmt.Errorf("invalid Orka Helm release list: %w", err)
 	}
-	if len(releases) == 1 && releases[0].Name == orkaRelease && releases[0].Chart == "orka-0.2.0" && strings.TrimPrefix(releases[0].AppVersion, "v") == "0.2.0" {
+	if len(releases) == 1 && releases[0].Name == orkaRelease && releases[0].Chart == "orka-"+expected.chartVersion && strings.TrimPrefix(releases[0].AppVersion, "v") == strings.TrimPrefix(expected.appVersion, "v") {
 		values, err := a.Run.Capture("helm", "get", "values", orkaRelease, "-n", OrkaNamespace, "--kube-context", a.Cfg.KubeContext, "-o", "json")
 		if err != nil {
 			// Helm stderr can include chart-controlled text. Refuse without
@@ -130,18 +141,19 @@ func (a *App) orkaInstallState() (bool, error) {
 			return false, fmt.Errorf("invalid Orka chart values: %w", err)
 		}
 		if installed.Labels[orkaChartLabel] == "true" && installed.Controller.Mode == "harness-v2" && installed.FullnameOverride == "orka-api" {
-			for _, image := range []struct{ value, pinned string }{
-				{installed.Controller.Image.Digest, orkaControllerDigest},
-				{installed.Workers.AI.Image.Digest, orkaAIWorkerDigest},
-				{installed.Workers.General.Image.Digest, orkaGeneralWorkerDigest},
-				{installed.Publisher.Image.Digest, orkaPublisherDigest},
-				{installed.Controller.ACPRuntime.CodexImage, orkaCodexImage},
-				{installed.Controller.ACPRuntime.ClaudeImage, orkaClaudeImage},
-				{installed.Controller.ACPRuntime.CopilotImage, orkaCopilotImage},
-				{installed.Controller.ACPRuntime.OpencodeImage, orkaOpencodeImage},
-			} {
-				if image.value != image.pinned {
+			if installed.InstallerSHA256 != expected.archiveDigest {
+				return false, fmt.Errorf("existing Orka release has a different local installer identity; refusing to adopt or overwrite it. %s", a.orkaInstallRecovery())
+			}
+			if expected.archiveDigest != "" && installed.Controller.WatchNamespace != expected.taskNamespace {
+				return false, fmt.Errorf("existing Orka release watches a different Task namespace; refusing to adopt or overwrite it")
+			}
+			actualImages := orkaInstallImageValues(installed)
+			for key, pinned := range expected.images {
+				if actualImages[key] != pinned {
 					return false, fmt.Errorf("kmx-owned Orka Helm release has changed or missing pinned image values; refusing to adopt or overwrite it. %s", a.orkaInstallRecovery())
+				}
+				if expected.enforcementBundled && (installed.Enforcement.Enabled == nil || installed.Enforcement.Image != expected.enforcementImage) {
+					return false, fmt.Errorf("existing bundled enforcement enrollment or image identity is missing or changed; refusing to adopt or overwrite it")
 				}
 			}
 			if releases[0].Status == "deployed" {
@@ -153,13 +165,21 @@ func (a *App) orkaInstallState() (bool, error) {
 				if err != nil {
 					return false, fmt.Errorf("cannot verify the live Orka controller image: %w", err)
 				}
+				if expected.archiveDigest != "" {
+					if controller.Metadata.Namespace != OrkaNamespace || controller.Metadata.UID == "" || controller.Metadata.DeletionTimestamp != nil {
+						return false, fmt.Errorf("local candidate controller has an invalid or terminating identity")
+					}
+					if err := orkaControllerWatches(controller, expected.taskNamespace); err != nil {
+						return false, err
+					}
+				}
 				matches := 0
 				for _, container := range controller.Spec.Template.Spec.Containers {
 					if container.Name != "controller" {
 						continue
 					}
 					matches++
-					if container.Image != "ghcr.io/orka-agents/orka@"+orkaControllerDigest {
+					if container.Image != expected.controllerImage() {
 						return false, fmt.Errorf("live Orka controller image differs from kmx's pinned digest; refusing to adopt the release. %s", a.orkaInstallRecovery())
 					}
 				}
@@ -174,7 +194,7 @@ func (a *App) orkaInstallState() (bool, error) {
 			default:
 				status = "not deployed"
 			}
-			return false, fmt.Errorf("kmx-owned Orka Helm release is %s; refusing automatic retry over a partial installation. Inspect `helm --kube-context %s -n %s status %s` and Pod events. After resolving any pending operation, an operator may explicitly retry the same SHA-256-verified chart with `helm --kube-context %s -n %s upgrade %s <verified-orka-0.2.0.tgz> --reuse-values --wait` (never --force), or clean the target before retrying kmx. %s", status, shellArg(a.Cfg.KubeContext), OrkaNamespace, orkaRelease, shellArg(a.Cfg.KubeContext), OrkaNamespace, orkaRelease, a.orkaInstallRecovery())
+			return false, fmt.Errorf("kmx-owned Orka Helm release is %s; refusing automatic retry over a partial installation. Inspect `helm --kube-context %s -n %s status %s` and Pod events. After resolving any pending operation, an operator may explicitly retry the same SHA-256-verified chart with `helm --kube-context %s -n %s upgrade %s <verified-orka-chart.tgz> --reuse-values --wait` (never --force), or clean the target before retrying kmx. %s", status, shellArg(a.Cfg.KubeContext), OrkaNamespace, orkaRelease, shellArg(a.Cfg.KubeContext), OrkaNamespace, orkaRelease, a.orkaInstallRecovery())
 		}
 		status := releases[0].Status
 		switch status {
@@ -182,10 +202,10 @@ func (a *App) orkaInstallState() (bool, error) {
 		default:
 			status = "an unrecognized state"
 		}
-		return false, fmt.Errorf("existing Orka %s Helm release is %s but lacks KMX's exact ownership marker or harness-v2/fullname configuration; refusing to adopt or overwrite it. Inspect `helm --kube-context %s -n %s get values %s` and `helm --kube-context %s -n %s status %s` before choosing an operator-managed repair or cleanup. %s", OrkaVersion, status, shellArg(a.Cfg.KubeContext), OrkaNamespace, orkaRelease, shellArg(a.Cfg.KubeContext), OrkaNamespace, orkaRelease, a.orkaInstallRecovery())
+		return false, fmt.Errorf("existing Orka %s Helm release is %s but lacks KMX's exact ownership marker or harness-v2/fullname configuration; refusing to adopt or overwrite it. Inspect `helm --kube-context %s -n %s get values %s` and `helm --kube-context %s -n %s status %s` before choosing an operator-managed repair or cleanup. %s", expected.appVersion, status, shellArg(a.Cfg.KubeContext), OrkaNamespace, orkaRelease, shellArg(a.Cfg.KubeContext), OrkaNamespace, orkaRelease, a.orkaInstallRecovery())
 	}
 	if len(releases) != 0 {
-		return false, fmt.Errorf("existing Orka Helm release is not kmx's %s harness-v2 chart; refusing to overwrite it. %s", OrkaVersion, a.orkaInstallRecovery())
+		return false, fmt.Errorf("existing Orka Helm release is not kmx's requested %s harness-v2 chart; refusing to overwrite it. %s", expected.appVersion, a.orkaInstallRecovery())
 	}
 	// An old kubectl install has no Helm release. Check both namespaced
 	// resources and cluster-scoped CRDs; an empty Deployment list alone is
@@ -219,41 +239,39 @@ func (a *App) orkaInstallState() (bool, error) {
 }
 
 func (a *App) applyOrkaChart(chart []byte) error {
-	known, err := a.orkaInstallState()
+	return a.applyOrkaChartFor(chart, publishedOrkaInstallSpec())
+}
+
+func (a *App) applyOrkaChartFor(chart []byte, expected orkaInstallSpec) error {
+	known, err := a.orkaInstallStateFor(expected)
 	if err != nil {
 		return err
 	}
 	if known {
-		if err := a.OrkaReady(); err != nil {
-			return fmt.Errorf("kmx-owned Orka %s is not ready; no reinstall attempted: %w", OrkaVersion, err)
+		if expected.enrollment != nil {
+			if err := a.setOrkaEnrollment(chart, expected); err != nil {
+				return err
+			}
 		}
-		a.notef("Orka %s harness-v2 is already installed by kmx; keeping its chart, data and snapshot key.", OrkaVersion)
+		if err := a.OrkaReady(); err != nil {
+			return fmt.Errorf("kmx-owned Orka %s is not ready; no reinstall attempted: %w", expected.appVersion, err)
+		}
+		a.notef("Orka %s harness-v2 is already installed by kmx; keeping its chart, data and snapshot key.", expected.appVersion)
 		return nil
 	}
 	crds, count, err := orkaChartCRDs(chart)
 	if err != nil {
 		return err
 	}
-	file, err := os.CreateTemp("", "kmx-orka-*.tgz")
+	filename, err := writeOrkaChartArchive(chart)
 	if err != nil {
 		return err
 	}
-	defer os.Remove(file.Name())
-	if err := file.Chmod(0o600); err != nil {
-		file.Close()
-		return err
-	}
-	if _, err := file.Write(chart); err != nil {
-		file.Close()
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
+	defer os.Remove(filename)
 	quiet := *a.Run
 	quiet.Echo = false
-	fmt.Fprintf(a.Err, "kubectl --context %s apply -f - # (%d CRDs from verified Orka chart)\n", a.Cfg.KubeContext, count)
-	if err := quiet.RunStdin(crds, "kubectl", a.kubectl("apply", "-f", "-")...); err != nil {
+	fmt.Fprintf(a.Err, "kubectl --context %s apply --server-side --field-manager=kmx-orka -f - # (%d CRDs from verified Orka chart)\n", a.Cfg.KubeContext, count)
+	if err := quiet.RunStdin(crds, "kubectl", a.kubectl("apply", "--server-side", "--field-manager=kmx-orka", "-f", "-")...); err != nil {
 		return fmt.Errorf("applying Orka CRDs before chart: %w", err)
 	}
 	if err := quiet.RunStdin(crds, "kubectl", a.kubectl("wait", "--for=condition=Established", "--timeout=120s", "-f", "-")...); err != nil {
@@ -263,19 +281,92 @@ func (a *App) applyOrkaChart(chart []byte) error {
 	// an appropriate place to expose generated Secret values in kmx logs.
 	quiet.Stdout, quiet.Stderr = io.Discard, io.Discard
 	fmt.Fprintf(a.Err, "helm install orka <verified chart> -n %s --kube-context %s --wait # (harness-v2)\n", OrkaNamespace, a.Cfg.KubeContext)
-	if err := quiet.Run("helm", "install", orkaRelease, file.Name(), "-n", OrkaNamespace,
+	args := []string{"install", orkaRelease, filename, "-n", OrkaNamespace,
 		"--kube-context", a.Cfg.KubeContext, "--create-namespace", "--wait", "--timeout", "10m",
 		"--set", "controller.mode=harness-v2", "--set", "fullnameOverride=orka-api",
-		"--set-string", "labels.kmx\\.kaimahi\\.dev/installed=true",
-		"--set-string", "controller.image.digest="+orkaControllerDigest,
-		"--set-string", "workers.ai.image.digest="+orkaAIWorkerDigest,
-		"--set-string", "workers.general.image.digest="+orkaGeneralWorkerDigest,
-		"--set-string", "publisher.image.digest="+orkaPublisherDigest,
-		"--set-string", "controller.acpRuntime.codexImage="+orkaCodexImage,
-		"--set-string", "controller.acpRuntime.claudeImage="+orkaClaudeImage,
-		"--set-string", "controller.acpRuntime.copilotImage="+orkaCopilotImage,
-		"--set-string", "controller.acpRuntime.opencodeImage="+orkaOpencodeImage); err != nil {
+		"--set-string", "labels.kmx\\.kaimahi\\.dev/installed=true"}
+	for _, key := range orkaInstallImageKeys {
+		args = append(args, "--set-string", key+"="+expected.images[key])
+	}
+	if expected.archiveDigest != "" {
+		args = append(args, "--set-string", "kmxInstallerSHA256="+expected.archiveDigest)
+		args = append(args, "--set-string", "controller.watchNamespace="+expected.taskNamespace)
+		for _, key := range orkaInstallRepositoryKeys {
+			args = append(args, "--set-string", key+"="+expected.images[key])
+		}
+		if expected.enforcementBundled {
+			enabled := false
+			if expected.enrollment != nil {
+				enabled = *expected.enrollment
+			}
+			args = append(args, "--set", fmt.Sprintf("enforcement.enabled=%t", enabled), "--wait-for-jobs")
+			if expected.enforcementImage != "" {
+				args = append(args, "--set-string", "enforcement.image="+expected.enforcementImage)
+			}
+		}
+	}
+	if err := quiet.Run("helm", args...); err != nil {
 		return fmt.Errorf("installing pinned Orka chart: %w\n  A failed release and CRDs may remain; kmx refuses to silently reinstall over them. Inspect without exposing Secrets:\n  helm --kube-context %s -n %s status %s\n  kubectl --context %s -n %s get pods,events", err, shellArg(a.Cfg.KubeContext), OrkaNamespace, orkaRelease, shellArg(a.Cfg.KubeContext), OrkaNamespace)
+	}
+	return nil
+}
+
+func writeOrkaChartArchive(chart []byte) (name string, err error) {
+	file, err := os.CreateTemp("", "kmx-orka-*.tgz")
+	if err != nil {
+		return "", err
+	}
+	name = file.Name()
+	defer func() {
+		if err != nil {
+			os.Remove(name)
+		}
+	}()
+	_, writeErr := file.Write(chart)
+	closeErr := file.Close()
+	if writeErr != nil {
+		return name, writeErr
+	}
+	return name, closeErr
+}
+
+func (a *App) setOrkaEnrollment(chart []byte, expected orkaInstallSpec) error {
+	if expected.archiveDigest == "" || !expected.enforcementBundled || expected.enrollment == nil {
+		return fmt.Errorf("enrollment changes require an exact verified bundled chart")
+	}
+	raw, err := a.Run.Capture("helm", "get", "values", orkaRelease, "-n", OrkaNamespace, "--kube-context", a.Cfg.KubeContext, "-o", "json")
+	if err != nil {
+		return fmt.Errorf("cannot read current enrollment; no change attempted")
+	}
+	var installed orkaHelmValues
+	if json.Unmarshal([]byte(raw), &installed) != nil || installed.Enforcement.Enabled == nil {
+		return fmt.Errorf("current enrollment is missing or invalid; refusing to infer or overwrite it")
+	}
+	if *installed.Enforcement.Enabled == *expected.enrollment {
+		return nil
+	}
+	if known, err := a.orkaInstallStateFor(expected); err != nil || !known {
+		return fmt.Errorf("cannot reverify the exact owned chart before enrollment change; no upgrade attempted")
+	}
+	filename, err := writeOrkaChartArchive(chart)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(filename)
+	quiet := *a.Run
+	quiet.Echo, quiet.Stdout, quiet.Stderr = false, io.Discard, io.Discard
+	a.notef("Explicit enrollment change: %t; same verified chart and retained provider installation. Existing bindings are not retired.", *expected.enrollment)
+	if err := quiet.Run("helm", "upgrade", orkaRelease, filename, "-n", OrkaNamespace,
+		"--kube-context", a.Cfg.KubeContext, "--reuse-values", "--wait", "--wait-for-jobs", "--timeout", "10m",
+		"--set", fmt.Sprintf("enforcement.enabled=%t", *expected.enrollment)); err != nil {
+		return fmt.Errorf("enrollment change failed or was ambiguous; inspect Helm status and installer Jobs before any retry; retained bindings must not be removed")
+	}
+	raw, err = a.Run.Capture("helm", "get", "values", orkaRelease, "-n", OrkaNamespace, "--kube-context", a.Cfg.KubeContext, "-o", "json")
+	if err != nil || json.Unmarshal([]byte(raw), &installed) != nil || installed.Enforcement.Enabled == nil || *installed.Enforcement.Enabled != *expected.enrollment {
+		return fmt.Errorf("enrollment upgrade completed but its requested state was not verified; do not retry or remove retained bindings")
+	}
+	if known, err := a.orkaInstallStateFor(expected); err != nil || !known {
+		return fmt.Errorf("enrollment upgrade completed but exact owned chart identity was not reverified")
 	}
 	return nil
 }

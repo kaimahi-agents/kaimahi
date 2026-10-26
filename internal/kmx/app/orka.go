@@ -7,9 +7,9 @@ package app
 // kmx never reads or prints that key.
 //
 // What this is NOT: a fork, a vendored copy, or a re-implementation. The
-// chart bytes are Orka's own release asset, refused unless they hash to
-// the pinned digest. Kaimahi builds
-// nothing here and owns none of it.
+// Default chart bytes are Orka's release asset, refused unless they hash to
+// the shipped pin. An explicit local chart instead requires its operator's
+// exact digest and digest-pinned image defaults. Kaimahi builds nothing here.
 
 import (
 	"bytes"
@@ -105,6 +105,14 @@ func (a *App) installerDigest() string {
 // key is somebody else's to mint, which is why the only Provider this
 // command offers to create is the keyless one.
 type OrkaOptions struct {
+	// Chart and ChartSHA256 select exact operator-supplied local chart bytes.
+	// Omission retains the shipped release pin.
+	Chart         string
+	ChartSHA256   string
+	taskNamespace string
+	// Nil preserves an existing enrollment state; explicit values change only
+	// enrollment in the same verified, kmx-owned bundled chart.
+	Enforcement *bool
 	// Provider names the keyless Provider to create against an in-cluster
 	// model server. "-" creates none.
 	Provider string
@@ -150,7 +158,7 @@ func (a *App) OrkaInstall(opt OrkaOptions) error {
 		return err
 	}
 	if opt.NoApply {
-		installer, err := a.fetchOrkaInstaller()
+		installer, _, err := a.loadOrkaInstaller(opt)
 		if err != nil {
 			return err
 		}
@@ -159,13 +167,8 @@ func (a *App) OrkaInstall(opt OrkaOptions) error {
 			return err
 		}
 		a.notef("--no-apply: nothing was written. %d chart CRDs would precede harness-v2 in %s.", count, OrkaNamespace)
-		a.notef("  Inspect after saving and SHA-256-verifying the chart: tar -tzf <verified-orka-0.2.0.tgz> | grep '^orka/crds/'")
+		a.notef("  Inspect the verified chart: tar -tzf <verified-orka-chart.tgz> | grep '^orka/crds/'")
 		return nil
-	}
-
-	if err := a.Guard(fmt.Sprintf("install Orka %s (chart CRDs, harness-v2 controller) into namespace %s",
-		OrkaVersion, OrkaNamespace), a.operationCommand("orka", "install")); err != nil {
-		return err
 	}
 
 	total := 4
@@ -177,17 +180,38 @@ func (a *App) OrkaInstall(opt OrkaOptions) error {
 	}
 
 	var installer []byte
-	if err := a.runPhase(phase{current: 1, total: total, name: "Fetch the pinned installer"}, func() error {
+	var installSpec orkaInstallSpec
+	readPhase := "Fetch the pinned installer"
+	if opt.Chart != "" {
+		readPhase = "Read the verified local chart"
+	}
+	if err := a.runPhase(phase{current: 1, total: total, name: readPhase}, func() error {
 		var err error
-		installer, err = a.fetchOrkaInstaller()
+		installer, installSpec, err = a.loadOrkaInstaller(opt)
 		return err
 	}); err != nil {
+		return err
+	}
+	opt.taskNamespace = installSpec.taskNamespace
+	source := OrkaVersion
+	if opt.Chart != "" {
+		source = "from operator-supplied chart (sha256 " + opt.ChartSHA256 + ")"
+	}
+	enrollment := "keep existing enforcement enrollment; fresh installs use disabled defaults"
+	if opt.Enforcement != nil {
+		enrollment = fmt.Sprintf("set privileged enforcement provider enrollment to %t", *opt.Enforcement)
+	}
+	if err := a.Guard(fmt.Sprintf("install Orka %s (chart CRDs, harness-v2 controller) into management namespace %s; Task setup in %s; %s",
+		source, OrkaNamespace, installSpec.taskNamespace, enrollment), a.operationCommand("orka", "install")); err != nil {
+		return err
+	}
+	if err := a.requireOrkaTaskNamespace(installSpec.taskNamespace); err != nil {
 		return err
 	}
 
 	if opt.DryRun {
 		if err := a.runPhase(phase{current: 2, total: total, name: "Validate chart CRDs"}, func() error {
-			if _, err := a.orkaInstallState(); err != nil {
+			if _, err := a.orkaInstallStateFor(installSpec); err != nil {
 				return err
 			}
 			crds, _, err := orkaChartCRDs(installer)
@@ -197,7 +221,7 @@ func (a *App) OrkaInstall(opt OrkaOptions) error {
 			quiet := *a.Run
 			quiet.Echo = false
 			quiet.Stdout, quiet.Stderr = io.Discard, io.Discard
-			return quiet.RunStdin(crds, "kubectl", a.kubectl("apply", "--dry-run=server", "-f", "-")...)
+			return quiet.RunStdin(crds, "kubectl", a.kubectl("apply", "--server-side", "--field-manager=kmx-orka", "--dry-run=server", "-f", "-")...)
 		}); err != nil {
 			return fmt.Errorf("this cluster would refuse Orka's installer: %w", err)
 		}
@@ -207,12 +231,14 @@ func (a *App) OrkaInstall(opt OrkaOptions) error {
 	}
 
 	if err := a.runPhase(phase{current: 2, total: total, name: "Apply chart CRDs and install Orka"}, func() error {
-		return a.applyOrkaInstaller(installer)
+		return a.applyOrkaChartFor(installer, installSpec)
 	}); err != nil {
 		return err
 	}
 
-	if err := a.runPhase(phase{current: 3, total: total, name: "Provision Task result reader"}, a.orkaResultReader); err != nil {
+	if err := a.runPhase(phase{current: 3, total: total, name: "Provision Task result reader"}, func() error {
+		return a.orkaResultReaderIn(installSpec.taskNamespace)
+	}); err != nil {
 		return err
 	}
 
@@ -224,7 +250,7 @@ func (a *App) OrkaInstall(opt OrkaOptions) error {
 		}
 	}
 
-	a.complete("Orka "+OrkaVersion+" is running", started)
+	a.complete("Orka "+installSpec.appVersion+" is running", started)
 	a.notef("  kmx orka status       # what is installed, and what it can resolve")
 	return nil
 }
@@ -238,7 +264,8 @@ func (a *App) OrkaInstall(opt OrkaOptions) error {
 // OrkaInstall here would nest a four-phase command inside one phase of
 // another and end it with a second "COMPLETE".
 func (a *App) stepOrka() error {
-	opt := orkaDefaults(OrkaOptions{Model: a.Cfg.Model})
+	namespace := a.orkaSetupTaskNamespace()
+	opt := orkaDefaults(OrkaOptions{Model: a.Cfg.Model, taskNamespace: namespace})
 	// A verified host model is already reachable FROM the cluster (that is
 	// what verifySelectedLocalModel proves), and it is the model this run
 	// deployed no in-cluster Ollama for. Pointing the Provider at the
@@ -258,7 +285,7 @@ func (a *App) stepOrka() error {
 	}
 	if current != nil && current.Endpoint != opt.ModelURL {
 		return fmt.Errorf("Provider %s/%s has a different endpoint:\n  - existing: %s\n  + requested: %s\n  Refusing to overwrite it. The following command explicitly replaces the host route:\n  %s",
-			OrkaNamespace, opt.Provider, current.Endpoint, opt.ModelURL,
+			namespace, opt.Provider, current.Endpoint, opt.ModelURL,
 			a.operationCommand("orka", "install", "--provider", opt.Provider, "--model", opt.Model, "--model-url", opt.ModelURL))
 	}
 	if err := a.orkaProvider(opt); err != nil {
@@ -269,17 +296,18 @@ func (a *App) stepOrka() error {
 		return err
 	}
 	if applied == nil {
-		return fmt.Errorf("Provider %s/%s is absent after apply; cannot prove it is Ready", OrkaNamespace, opt.Provider)
+		return fmt.Errorf("Provider %s/%s is absent after apply; cannot prove it is Ready", namespace, opt.Provider)
 	}
-	if err := a.waitOrkaReady(ctx, OrkaNamespace, applied.orkaIdentity); err != nil {
+	if err := a.waitOrkaReady(ctx, namespace, applied.orkaIdentity); err != nil {
 		return err
 	}
-	return a.orkaResultReader()
+	return a.orkaResultReaderIn(namespace)
 }
 
 // Native evaluation needs a separate inference binding. Existing local routes
 // are read-only; an absent Provider is created once, never applied over a race.
 func (a *App) stepQuickstartOrka() error {
+	namespace := a.orkaSetupTaskNamespace()
 	if err := a.prepareOrkaRuntime(); err != nil {
 		return err
 	}
@@ -293,7 +321,7 @@ func (a *App) stepQuickstartOrka() error {
 		return err
 	}
 	if current == nil {
-		opt := orkaDefaults(OrkaOptions{Model: a.Cfg.Model})
+		opt := orkaDefaults(OrkaOptions{Model: a.Cfg.Model, taskNamespace: namespace})
 		if a.selectedLocalModel != nil {
 			opt.Model, opt.ModelURL = a.selectedLocalModel.Model, strings.TrimSuffix(a.selectedLocalModel.Endpoint, "/")+"/v1"
 		}
@@ -301,19 +329,25 @@ func (a *App) stepQuickstartOrka() error {
 		if err := yaml.Unmarshal([]byte(orkaProviderManifest(opt)), &doc); err != nil {
 			return err
 		}
-		id, err := a.createOrkaObject(ctx, OrkaNamespace, doc)
+		id, err := a.createOrkaObject(ctx, namespace, doc)
 		if err != nil {
 			return err
 		}
 		current = &stepOrkaProvider{orkaIdentity: id}
 	}
-	if err := a.waitOrkaReady(ctx, OrkaNamespace, current.orkaIdentity); err != nil {
+	if err := a.waitOrkaReady(ctx, namespace, current.orkaIdentity); err != nil {
 		return err
 	}
-	return a.orkaResultReader()
+	return a.orkaResultReaderIn(namespace)
 }
 
 func (a *App) prepareOrkaRuntime() error {
+	if prepared := a.orkaSetup; prepared != nil {
+		if err := a.requireOrkaTaskNamespace(prepared.spec.taskNamespace); err != nil {
+			return err
+		}
+		return a.applyOrkaChartFor(prepared.chart, prepared.spec)
+	}
 	installer, err := a.fetchOrkaInstaller()
 	if err != nil {
 		return err
@@ -324,9 +358,10 @@ func (a *App) prepareOrkaRuntime() error {
 // readStepOrkaProvider distinguishes absence from an unreadable or malformed
 // Provider. After apply, its returned UID/generation pins the Ready wait.
 func (a *App) readStepOrkaProvider(ctx context.Context, name string) (*stepOrkaProvider, error) {
-	raw, err := a.orkaCapture(ctx, nil, "-n", OrkaNamespace, "get", orkaProviderKind, name, "--ignore-not-found=true", "-o", "json")
+	namespace := a.orkaSetupTaskNamespace()
+	raw, err := a.orkaCapture(ctx, nil, "-n", namespace, "get", orkaProviderKind, name, "--ignore-not-found=true", "-o", "json")
 	if err != nil {
-		return nil, fmt.Errorf("cannot read Provider %s/%s: %w", OrkaNamespace, name, err)
+		return nil, fmt.Errorf("cannot read Provider %s/%s: %w", namespace, name, err)
 	}
 	if len(raw) == 0 {
 		return nil, nil
@@ -344,8 +379,8 @@ func (a *App) readStepOrkaProvider(ctx context.Context, name string) (*stepOrkaP
 			BaseURL string `json:"baseURL"`
 		} `json:"spec"`
 	}
-	if err := json.Unmarshal(raw, &obj); err != nil || obj.Kind != "Provider" || obj.Metadata.Name != name || obj.Metadata.Namespace != OrkaNamespace || obj.Metadata.UID == "" || obj.Metadata.Generation < 1 || obj.Metadata.DeletionTimestamp != nil || obj.Spec.BaseURL == "" {
-		return nil, fmt.Errorf("Provider %s/%s has an invalid or terminating identity or endpoint; refusing to overwrite it", OrkaNamespace, name)
+	if err := json.Unmarshal(raw, &obj); err != nil || obj.Kind != "Provider" || obj.Metadata.Name != name || obj.Metadata.Namespace != namespace || obj.Metadata.UID == "" || obj.Metadata.Generation < 1 || obj.Metadata.DeletionTimestamp != nil || obj.Spec.BaseURL == "" {
+		return nil, fmt.Errorf("Provider %s/%s has an invalid or terminating identity or endpoint; refusing to overwrite it", namespace, name)
 	}
 	return &stepOrkaProvider{orkaIdentity: orkaIdentity{Kind: "Provider", Name: name, UID: obj.Metadata.UID, Generation: obj.Metadata.Generation}, Endpoint: obj.Spec.BaseURL}, nil
 }
@@ -364,11 +399,18 @@ type stepOrkaProvider struct {
 // state, not a guarantee the server enforces — which is why it is kept this
 // small.
 func (a *App) orkaResultReader() error {
+	return a.orkaResultReaderIn(OrkaNamespace)
+}
+
+func (a *App) orkaResultReaderIn(namespace string) error {
+	if err := scaffold.ValidateNamespace(namespace); err != nil {
+		return fmt.Errorf("invalid Task result namespace: %w", err)
+	}
 	manifest := `apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: ` + orkaResultAccount + `
-  namespace: ` + OrkaNamespace + `
+  namespace: ` + namespace + `
   labels:
     app.kubernetes.io/managed-by: kmx
 ---
@@ -376,7 +418,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: ` + orkaResultAccount + `
-  namespace: ` + OrkaNamespace + `
+  namespace: ` + namespace + `
   labels:
     app.kubernetes.io/managed-by: kmx
 rules:
@@ -388,7 +430,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: ` + orkaResultAccount + `
-  namespace: ` + OrkaNamespace + `
+  namespace: ` + namespace + `
   labels:
     app.kubernetes.io/managed-by: kmx
 roleRef:
@@ -398,17 +440,17 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: ` + orkaResultAccount + `
-    namespace: ` + OrkaNamespace + `
+    namespace: ` + namespace + `
 `
 	quiet := *a.Run
 	quiet.Echo = false
 	fmt.Fprintf(a.Err, "kubectl --context %s apply -f - # (ServiceAccount/Role/RoleBinding %s)\n",
 		a.Cfg.KubeContext, orkaResultAccount)
 	if err := quiet.RunStdin([]byte(manifest), "kubectl", a.kubectl("apply", "-f", "-")...); err != nil {
-		return fmt.Errorf("provisioning the Task result account %s/%s: %w", OrkaNamespace, orkaResultAccount, err)
+		return fmt.Errorf("provisioning the Task result account %s/%s: %w", namespace, orkaResultAccount, err)
 	}
 	a.notef("ServiceAccount %s may get Tasks in %s and nothing else. A result token carries\n"+
-		"  its full effective authority, so it is kept to that one verb.", orkaResultAccount, OrkaNamespace)
+		"  its full effective authority, so it is kept to that one verb.", orkaResultAccount, namespace)
 	return nil
 }
 
@@ -464,6 +506,10 @@ func (a *App) applyOrkaInstaller(installer []byte) error { return a.applyOrkaCha
 // so a placeholder is written to satisfy the schema. It is named for what it
 // is rather than dressed up as a credential.
 func (a *App) orkaProvider(opt OrkaOptions) error {
+	namespace := orkaSetupNamespace(opt)
+	if err := scaffold.ValidateNamespace(namespace); err != nil {
+		return fmt.Errorf("invalid Provider namespace: %w", err)
+	}
 	if err := scaffold.ValidateName(opt.Provider); err != nil {
 		return fmt.Errorf("--provider %q: %w", opt.Provider, err)
 	}
@@ -491,7 +537,7 @@ func (a *App) orkaProvider(opt OrkaOptions) error {
 		a.notef("Provider %q already matches; leaving its binding resourceVersion unchanged.", opt.Provider)
 		return nil
 	}
-	if err := a.orkaKeylessProviderSecret(opt.Provider); err != nil {
+	if err := a.orkaKeylessProviderSecretIn(opt.Provider, namespace); err != nil {
 		return err
 	}
 
@@ -511,41 +557,42 @@ func (a *App) orkaProvider(opt OrkaOptions) error {
 // apply after quickstart's CREATE would otherwise change binding identity merely
 // by adding bookkeeping, even when the Provider's behavior already matches.
 func (a *App) orkaProviderMatches(ctx context.Context, opt OrkaOptions, manifest string) (bool, error) {
-	raw, err := a.orkaCapture(ctx, nil, "-n", OrkaNamespace, "get", orkaProviderKind, opt.Provider, "--ignore-not-found=true", "-o", "json")
+	namespace := orkaSetupNamespace(opt)
+	raw, err := a.orkaCapture(ctx, nil, "-n", namespace, "get", orkaProviderKind, opt.Provider, "--ignore-not-found=true", "-o", "json")
 	if err != nil {
-		return false, fmt.Errorf("cannot inspect Provider %s/%s for runtime reuse: %w", OrkaNamespace, opt.Provider, err)
+		return false, fmt.Errorf("cannot inspect Provider %s/%s for runtime reuse: %w", namespace, opt.Provider, err)
 	}
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return false, nil
 	}
 	var live, desired map[string]any
 	if json.Unmarshal(raw, &live) != nil || yaml.Unmarshal([]byte(manifest), &desired) != nil {
-		return false, fmt.Errorf("invalid Provider %s/%s runtime reuse input", OrkaNamespace, opt.Provider)
+		return false, fmt.Errorf("invalid Provider %s/%s runtime reuse input", namespace, opt.Provider)
 	}
 	meta, _ := live["metadata"].(map[string]any)
 	uid, _ := meta["uid"].(string)
 	version, _ := meta["resourceVersion"].(string)
 	_, specObject := live["spec"].(map[string]any)
-	if live["apiVersion"] != desired["apiVersion"] || live["kind"] != "Provider" || meta["name"] != opt.Provider || meta["namespace"] != OrkaNamespace || uid == "" || version == "" || meta["deletionTimestamp"] != nil || !specObject {
-		return false, fmt.Errorf("invalid Provider %s/%s identity for runtime reuse", OrkaNamespace, opt.Provider)
+	if live["apiVersion"] != desired["apiVersion"] || live["kind"] != "Provider" || meta["name"] != opt.Provider || meta["namespace"] != namespace || uid == "" || version == "" || meta["deletionTimestamp"] != nil || !specObject {
+		return false, fmt.Errorf("invalid Provider %s/%s identity for runtime reuse", namespace, opt.Provider)
 	}
 	candidate := map[string]any{"apiVersion": desired["apiVersion"], "kind": "Provider", "metadata": meta, "spec": desired["spec"]}
 	body, err := json.Marshal(candidate)
 	if err != nil {
 		return false, err
 	}
-	raw, err = a.orkaCapture(ctx, body, "-n", OrkaNamespace, "replace", "--dry-run=server", "--validate=strict", "-f", "-", "-o", "json")
+	raw, err = a.orkaCapture(ctx, body, "-n", namespace, "replace", "--dry-run=server", "--validate=strict", "-f", "-", "-o", "json")
 	if err != nil {
-		return false, fmt.Errorf("cannot normalize Provider %s/%s for runtime reuse: %w", OrkaNamespace, opt.Provider, err)
+		return false, fmt.Errorf("cannot normalize Provider %s/%s for runtime reuse: %w", namespace, opt.Provider, err)
 	}
 	var admitted map[string]any
 	if json.Unmarshal(raw, &admitted) != nil {
-		return false, fmt.Errorf("invalid Provider %s/%s runtime normalization", OrkaNamespace, opt.Provider)
+		return false, fmt.Errorf("invalid Provider %s/%s runtime normalization", namespace, opt.Provider)
 	}
 	observed, _ := admitted["metadata"].(map[string]any)
 	_, specObject = admitted["spec"].(map[string]any)
-	if admitted["apiVersion"] != desired["apiVersion"] || admitted["kind"] != "Provider" || observed["name"] != opt.Provider || observed["namespace"] != OrkaNamespace || observed["uid"] != uid || observed["resourceVersion"] != version || !specObject {
-		return false, fmt.Errorf("Provider %s/%s identity changed during runtime normalization", OrkaNamespace, opt.Provider)
+	if admitted["apiVersion"] != desired["apiVersion"] || admitted["kind"] != "Provider" || observed["name"] != opt.Provider || observed["namespace"] != namespace || observed["uid"] != uid || observed["resourceVersion"] != version || !specObject {
+		return false, fmt.Errorf("Provider %s/%s identity changed during runtime normalization", namespace, opt.Provider)
 	}
 	return reflect.DeepEqual(live["spec"], admitted["spec"]), nil
 }
@@ -566,7 +613,7 @@ spec:
   secretRef:
     name: %s
     key: api-key
-`, opt.Provider, OrkaNamespace, opt.ModelURL, opt.Model, secret)
+`, opt.Provider, orkaSetupNamespace(opt), opt.ModelURL, opt.Model, secret)
 }
 
 // Reuse an existing Secret without replacing a host route's key. Only an
@@ -576,28 +623,62 @@ func (a *App) ensureQuickstartProviderSecret() error {
 	ctx, cancel := context.WithTimeout(a.operationContext(), 30*time.Second)
 	defer cancel()
 	secret := orkaDefaultProvider + "-provider-key"
-	marker, err := a.orkaCapture(ctx, nil, "-n", OrkaNamespace, "get", "secret", secret,
+	namespace := a.orkaSetupTaskNamespace()
+	marker, err := a.orkaCapture(ctx, nil, "-n", namespace, "get", "secret", secret,
 		"--ignore-not-found=true", "-o", "go-template=secret\n{{range $key, $_ := .data}}{{if eq $key \"api-key\"}}present{{end}}{{end}}")
 	if err != nil {
 		return fmt.Errorf("cannot inspect quickstart Provider Secret: %w", err)
 	}
 	switch string(marker) {
 	case "":
-		return a.orkaKeylessProviderSecret(orkaDefaultProvider)
+		return a.orkaKeylessProviderSecretIn(orkaDefaultProvider, namespace)
 	case "secret\npresent":
 		return nil
 	case "secret\n":
-		return fmt.Errorf("Provider Secret %s/%s exists without api-key; refusing to replace it", OrkaNamespace, secret)
+		return fmt.Errorf("Provider Secret %s/%s exists without api-key; refusing to replace it", namespace, secret)
 	default:
-		return fmt.Errorf("Provider Secret %s/%s returned an invalid key-presence marker", OrkaNamespace, secret)
+		return fmt.Errorf("Provider Secret %s/%s returned an invalid key-presence marker", namespace, secret)
 	}
 }
 
 func (a *App) orkaKeylessProviderSecret(provider string) error {
+	return a.orkaKeylessProviderSecretIn(provider, OrkaNamespace)
+}
+
+func (a *App) orkaKeylessProviderSecretIn(provider, namespace string) error {
 	secret := provider + "-provider-key"
-	body := secretManifest(secret, OrkaNamespace, map[string]string{"api-key": "not-used-by-this-endpoint"},
+	body := secretManifest(secret, namespace, map[string]string{"api-key": "not-used-by-this-endpoint"},
 		map[string]string{"app.kubernetes.io/managed-by": "kmx"})
-	return a.applySecretIn(OrkaNamespace, body, secret)
+	return a.applySecretIn(namespace, body, secret)
+}
+
+func orkaSetupNamespace(opt OrkaOptions) string {
+	if opt.taskNamespace != "" {
+		return opt.taskNamespace
+	}
+	return OrkaNamespace
+}
+
+func (a *App) requireOrkaTaskNamespace(namespace string) error {
+	if namespace == OrkaNamespace {
+		return nil
+	}
+	raw, err := a.orkaCapture(a.operationContext(), nil, "get", "namespace", namespace, "--ignore-not-found=true", "-o", "json")
+	if err != nil {
+		return fmt.Errorf("cannot inspect precreated Orka Task namespace %s: %w", namespace, err)
+	}
+	var ns struct {
+		Kind     string
+		Metadata struct {
+			Name, UID         string
+			DeletionTimestamp *string
+		}
+	}
+	if json.Unmarshal(raw, &ns) != nil || ns.Kind != "Namespace" || ns.Metadata.Name != namespace ||
+		ns.Metadata.UID == "" || ns.Metadata.DeletionTimestamp != nil {
+		return fmt.Errorf("Orka Task namespace %s must already exist with a valid nonterminating identity; nothing was applied", namespace)
+	}
+	return nil
 }
 
 // unreachable conservatively distinguishes a missing object from an API

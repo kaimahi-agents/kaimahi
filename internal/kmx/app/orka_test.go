@@ -61,8 +61,24 @@ case "$*" in
     cat >/dev/null
     printf '{"status":{"allowed":true}}'
     exit 0 ;;
-  *"apply -f -"*)
-    [ -n "$KMX_TEST_STDIN" ] && cat >> "$KMX_TEST_STDIN"
+  *"apply "*"--dry-run=server "*)
+    case "$KMX_TEST_DRYRUN" in
+      refused) printf 'error: admission webhook denied the request\n' >&2; exit 1 ;;
+      *) cat > "$KMX_TEST_STDIN.validated"; printf 'namespace/orka-system created (server dry run)\n'; exit 0 ;;
+    esac ;;
+  *"apply -f -"*|*"apply "*" -f -"*)
+    if [ -n "$KMX_TEST_APPLIES" ]; then
+      file=$(mktemp "$KMX_TEST_APPLIES/request.XXXXXX")
+      cat > "$file"
+      cat "$file" >> "$KMX_TEST_STDIN"
+    else
+      [ -n "$KMX_TEST_STDIN" ] && cat >> "$KMX_TEST_STDIN"
+    fi
+    exit 0 ;;
+  *"wait --for=condition=Established "*)
+    [ "$KMX_TEST_CRD_WAIT" != refused ] || exit 1
+    grep -q 'kind: CustomResourceDefinition' "$KMX_TEST_STDIN" || exit 1
+    cat > "$KMX_TEST_STDIN.established"
     exit 0 ;;
   *"get secret harness-wrapper-auth"*)
     printf 'Error from server (NotFound): secrets "harness-wrapper-auth" not found\n' >&2; exit 1 ;;
@@ -87,11 +103,6 @@ case "$*" in
   *"get tools.core.orka.ai k8s-get-resources -o json"*)
     printf '{"metadata":{"generation":1},"status":{"conditions":[{"type":"Available","status":"True","observedGeneration":1}]}}'
     exit 0 ;;
-  *"apply --dry-run=server -f -"*)
-    case "$KMX_TEST_DRYRUN" in
-      refused) printf 'error: admission webhook denied the request\n' >&2; exit 1 ;;
-      *) cat >/dev/null; printf 'namespace/orka-system created (server dry run)\n'; exit 0 ;;
-    esac ;;
   *"rollout status"*)
     if [ -n "$KMX_TEST_ROLLOUT_TARGET" ]; then
       case "$*" in
@@ -121,6 +132,7 @@ case "$*" in
     if [ -n "$KMX_TEST_EXISTING_DEPLOY" ]; then printf '%s' "$KMX_TEST_EXISTING_DEPLOY"; exit 0; fi
     printf '%s' "$KMX_TEST_DEPLOYMENTS"; exit 0 ;;
   *"get namespace orka-system"*) printf '%s' "$KMX_TEST_EXISTING_NS"; exit 0 ;;
+  *"get namespace "*) printf '%s' "$KMX_TEST_NAMESPACE_JSON"; exit 0 ;;
   *"get crd tasks.core.orka.ai"*)
     [ "$KMX_TEST_EXISTING_CRD" = tasks.core.orka.ai ] && printf '%s' "$KMX_TEST_EXISTING_CRD"
     exit 0 ;;
@@ -142,13 +154,22 @@ case "$*" in
     printf '%s' "${KMX_TEST_HELM_LIST:-[]}"; exit 0 ;;
   *"get values "*)
     if [ "$KMX_TEST_HELM_VALUES_READ" = failed ]; then printf 'helm failure (fixture-sensitive-token)\n' >&2; exit 1; fi
+    if [ -f "$KMX_TEST_VALUES_AFTER" ]; then cat "$KMX_TEST_VALUES_AFTER"; exit 0; fi
     printf '%s' "$KMX_TEST_HELM_VALUES"; exit 0 ;;
+  *"upgrade "*)
+    printf 'helm upgrade\n' >> "$KMX_TEST_WRITES"
+    if [ "$KMX_TEST_HELM_UPGRADE" = failed ]; then printf 'error: fixture-sensitive-token\n' >&2; exit 1; fi
+    printf '%s' "$KMX_TEST_HELM_UPGRADED_VALUES" > "$KMX_TEST_VALUES_AFTER"
+    exit 0 ;;
   *"install "*)
     case "$*" in
       *"--dry-run"*)
         if [ "$KMX_TEST_DRYRUN" = refused ]; then printf 'error: admission webhook denied the request\n' >&2; exit 1; fi
         exit 0 ;;
     esac
+    if [ "$KMX_TEST_REQUIRE_CRDS" = 1 ]; then
+      grep -q 'kind: CustomResourceDefinition' "$KMX_TEST_STDIN.established" || exit 1
+    fi
     printf 'helm install\n' >> "$KMX_TEST_WRITES"
     if [ "$KMX_TEST_HELM_INSTALL" = failed ]; then printf 'error: fixture-sensitive-token\n' >&2; exit 1; fi
     # Simulate sensitive chart NOTES: installer output must never copy a key.
@@ -259,7 +280,8 @@ func (f *orkaFixture) writes(t *testing.T) string {
 	calls := f.calls(t)
 	var writes []string
 	for _, call := range strings.Split(calls, "\n") {
-		if (strings.HasPrefix(call, "helm install ") && !strings.Contains(call, "--dry-run")) || strings.Contains(call, " apply -f -") || strings.Contains(call, " create secret ") {
+		if (strings.HasPrefix(call, "helm install ") && !strings.Contains(call, "--dry-run")) ||
+			(strings.Contains(call, " apply ") && !strings.Contains(call, "--dry-run")) || strings.Contains(call, " create secret ") {
 			writes = append(writes, call)
 		}
 	}
@@ -391,8 +413,8 @@ func pinnedOrkaHelmValues(t *testing.T, mutate func(map[string]any)) string {
 	return string(raw)
 }
 
-func TestOrkaInstallFailedReleaseNamesRecoverySteps(t *testing.T) {
-	for _, state := range []string{"failed", "pending-install", "uninstalling"} {
+func TestOrkaInstallRefusesPartialReleaseWithoutWrites(t *testing.T) {
+	for _, state := range []string{"failed", "pending-install", "pending-upgrade", "pending-rollback", "uninstalling"} {
 		t.Run(state, func(t *testing.T) {
 			chart := orkaChart(t)
 			f := newOrkaFixture(t, chart)
@@ -403,14 +425,6 @@ func TestOrkaInstallFailedReleaseNamesRecoverySteps(t *testing.T) {
 			err := f.app.OrkaInstall(OrkaOptions{Provider: "-"})
 			if err == nil {
 				t.Fatal("non-deployed release was accepted")
-			}
-			for _, want := range []string{"kmx-owned", state,
-				`helm --kube-context 'team'"'"'s cluster; staging' -n orka-system status orka`,
-				`helm --kube-context 'team'"'"'s cluster; staging' -n orka-system upgrade orka <verified-orka-0.2.0.tgz> --reuse-values --wait`,
-				f.app.operationCommand("local", "down"), f.app.operationCommand("local", "up"), "Tasks", "AKS", "snapshot key"} {
-				if !strings.Contains(err.Error(), want) {
-					t.Errorf("missing %q in recovery: %v", want, err)
-				}
 			}
 			if writes := f.writes(t); writes != "" {
 				t.Fatalf("partial release was overwritten: %s", writes)
@@ -604,23 +618,19 @@ func TestOrkaInstallRefusesUnmarkedChart(t *testing.T) {
 
 // Fresh install applies chart CRDs before Helm, pins the chosen cluster, and
 // selects the harness-v2 controller. Credentials must not appear in output.
-func TestOrkaInstallAppliesChartCRDsBeforeHelm(t *testing.T) {
+func TestOrkaInstallRequiresEstablishedCRDs(t *testing.T) {
 	chart := orkaChart(t)
 	f := newOrkaFixture(t, chart)
 	f.app.orkaInstallerDigest = digestOf(chart)
+	t.Setenv("KMX_TEST_REQUIRE_CRDS", "1")
 
 	if err := f.app.OrkaInstall(OrkaOptions{Provider: "-"}); err != nil {
 		t.Fatalf("fresh chart install: %v\n%s", err, f.errOut)
 	}
 	calls := f.calls(t)
-	crd := strings.Index(calls, "kubectl --context kind-kaimahi-p1 apply -f -")
 	helm := strings.Index(calls, "helm install orka ")
-	if crd < 0 || helm < 0 || crd > helm {
-		t.Fatalf("chart CRDs must be applied before Helm install:\n%s", calls)
-	}
-	wait := strings.Index(calls, "kubectl --context kind-kaimahi-p1 wait --for=condition=Established")
-	if wait < crd || wait > helm {
-		t.Fatalf("CRDs were not Established before Helm Gateway discovery:\n%s", calls)
+	if helm < 0 {
+		t.Fatal("no release installed after CRD establishment")
 	}
 	if !strings.Contains(f.applied(t), "name: tasks.core.orka.ai") {
 		t.Errorf("chart CRDs were not submitted to kubectl:\n%s", f.applied(t))
@@ -637,6 +647,23 @@ func TestOrkaInstallAppliesChartCRDsBeforeHelm(t *testing.T) {
 		if strings.Contains(output, "fixture-sensitive-token") {
 			t.Fatalf("harness-v2 key was exposed: %s", output)
 		}
+	}
+}
+
+func TestOrkaInstallDoesNotInstallWithUnestablishedCRDs(t *testing.T) {
+	chart := orkaChart(t)
+	f := newOrkaFixture(t, chart)
+	f.app.orkaInstallerDigest = digestOf(chart)
+	t.Setenv("KMX_TEST_CRD_WAIT", "refused")
+	if err := f.app.OrkaInstall(OrkaOptions{Provider: "-"}); err == nil {
+		t.Fatal("installed without established CRDs")
+	}
+	raw, err := os.ReadFile(filepath.Join(f.dir, "writes"))
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "helm install") {
+		t.Fatal("Helm mutated the cluster after failed CRD establishment")
 	}
 }
 

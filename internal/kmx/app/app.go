@@ -9,6 +9,10 @@
 // remain diagnostics only and file records never become evaluation evidence.
 // File previews bind omitted judge models on execution copies and expose valid
 // two-sample scores and sanitized transient reasons only with content disclosure.
+// Native Run/Chat freeze explicit Task enforcement input per invocation, require
+// the running controller's protocol support and verify exact admission/readback.
+// Shared Run/Chat/result and run-view presentation projects typed historical
+// enforcement admission, never raw policy, status prose or live provider proof.
 package app
 
 import (
@@ -54,7 +58,11 @@ type App struct {
 	FileRunner      agentpreview.Runner
 	chatClusterName string
 	// kagentProfile is invocation-local; nil keeps the exact create profile.
-	kagentProfile *kagentProfile
+	kagentProfile       *kagentProfile
+	taskEnforcement     *orkaTaskEnforcement
+	taskEnforcementNote func(string)
+	orkaNativeCandidate *orkaInstallSpec
+	orkaSetup           *preparedOrkaSetup
 	// operationProgress reports real stage transitions to an owning deployment UI.
 	operationProgress func(name, status string, err error)
 	Cfg               *config.Config

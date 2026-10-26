@@ -24,6 +24,13 @@ const (
 // The controller's configured worker account is authoritative; matching chart
 // identity and AI trust labels keep an unrelated account from gaining access.
 func (a *App) orkaAIWorkerAccount(ctx context.Context) (string, error) {
+	return a.orkaAIWorkerAccountIn(ctx, OrkaNamespace)
+}
+
+func (a *App) orkaAIWorkerAccountIn(ctx context.Context, namespace string) (string, error) {
+	if err := scaffold.ValidateNamespace(namespace); err != nil {
+		return "", err
+	}
 	deployments, err := a.orkaDeployments(ctx)
 	if err != nil {
 		return "", err
@@ -37,6 +44,11 @@ func (a *App) orkaAIWorkerAccount(ctx context.Context) (string, error) {
 		labels["app.kubernetes.io/instance"] == "" ||
 		labels["app.kubernetes.io/managed-by"] != "Helm" {
 		return "", fmt.Errorf("Orka controller Deployment must have nonempty chart and instance, app name=orka and managed-by=Helm labels")
+	}
+	if namespace != OrkaNamespace {
+		if err := orkaControllerWatches(controller, namespace); err != nil {
+			return "", err
+		}
 	}
 	const flag = "--ai-worker-service-account-name="
 	const flagName = "ai-worker-service-account-name"
@@ -80,15 +92,15 @@ func (a *App) orkaAIWorkerAccount(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("Orka controller has invalid %s account name", flag)
 	}
 
-	data, err := a.orkaCapture(ctx, nil, "-n", OrkaNamespace, "get", "serviceaccounts", "-o", "json")
+	data, err := a.orkaCapture(ctx, nil, "-n", namespace, "get", "serviceaccounts", "-o", "json")
 	if err != nil {
-		return "", fmt.Errorf("cannot list Orka ServiceAccounts in %s: %w", OrkaNamespace, err)
+		return "", fmt.Errorf("cannot list Orka ServiceAccounts in %s: %w", namespace, err)
 	}
 	var list struct {
 		Items []json.RawMessage `json:"items"`
 	}
 	if err := json.Unmarshal(data, &list); err != nil || list.Items == nil {
-		return "", fmt.Errorf("cannot read Orka ServiceAccounts in %s: malformed list", OrkaNamespace)
+		return "", fmt.Errorf("cannot read Orka ServiceAccounts in %s: malformed list", namespace)
 	}
 	type workerMetadata struct {
 		Name      string            `json:"name"`
@@ -102,7 +114,7 @@ func (a *App) orkaAIWorkerAccount(ctx context.Context) (string, error) {
 			Metadata workerMetadata `json:"metadata"`
 		}
 		if len(raw) == 0 || string(raw) == "null" || json.Unmarshal(raw, &account) != nil || account.Metadata.Name == "" {
-			return "", fmt.Errorf("cannot read Orka ServiceAccounts in %s: malformed item", OrkaNamespace)
+			return "", fmt.Errorf("cannot read Orka ServiceAccounts in %s: malformed item", namespace)
 		}
 		if account.Metadata.Name != worker {
 			continue
@@ -111,13 +123,13 @@ func (a *App) orkaAIWorkerAccount(ctx context.Context) (string, error) {
 		identity = account.Metadata
 	}
 	if matches > 1 {
-		return "", fmt.Errorf("multiple Orka ServiceAccounts named %s in %s; refusing ambiguous worker identity", worker, OrkaNamespace)
+		return "", fmt.Errorf("multiple Orka ServiceAccounts named %s in %s; refusing ambiguous worker identity", worker, namespace)
 	}
 	if matches == 0 {
-		return "", fmt.Errorf("Orka worker ServiceAccount %s not found in %s", worker, OrkaNamespace)
+		return "", fmt.Errorf("Orka worker ServiceAccount %s not found in %s", worker, namespace)
 	}
 	switch {
-	case identity.Namespace != OrkaNamespace:
+	case identity.Namespace != namespace:
 		return "", fmt.Errorf("Orka worker ServiceAccount %s has wrong namespace", worker)
 	case identity.Labels["orka.ai/worker"] != "true":
 		return "", fmt.Errorf("Orka worker ServiceAccount %s lacks worker=true label", worker)
