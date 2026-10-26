@@ -2,7 +2,7 @@
 // File changes and previews use only the session's existing kmx MCP tools.
 import { CanvasError, createCanvas, joinSession } from "@github/copilot-sdk/extension";
 import { CANVAS_ID, ViewError, createViewController } from "./view.mjs";
-import { OPEN_TOOL_NAME, OPEN_TOOL_PARAMETERS, createOpenHandler, readOpenView } from "./open.mjs";
+import { OPEN_TOOL_NAME, OPEN_TOOL_PARAMETERS, createOpenHandler, createOpenCommand, readOpenView } from "./open.mjs";
 
 let session;
 const controller = createViewController({ getSession: () => session });
@@ -45,6 +45,11 @@ session = await joinSession({
       name: "agent-view",
       description: "Show a kmx agent charter as text: /agent-view <path>",
       handler: (ctx) => controller.command(ctx),
+    },
+    {
+      name: "kmx-canvas",
+      description: "Open an agent canvas without a model turn: /kmx-canvas open <path>",
+      handler: createOpenCommand({ getSession: () => session, extensionId: "plugin:kmx-agent-builder:agent-view" }),
     },
   ],
 });

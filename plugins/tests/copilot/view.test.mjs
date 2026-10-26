@@ -494,6 +494,7 @@ test("plainReason translates every preview engine code and retains only validate
     invalid_file: "This agent file needs fixing before it can run.", no_tests: "No tests yet — add or suggest one",
     invalid_selection: "This test is no longer in the agent file.", invalid_options: "This run's settings are not supported.",
     model_unavailable: "The selected model is not available for this run.", tools_unavailable: "This run cannot use the agent's tools.",
+  invalid_tool_settings: "The tool settings in kmx.yaml are invalid. Fix them before running this agent.",
     unsafe_tool_content: "Tool content was withheld before it could be saved.", credential_content: "Content containing credentials was withheld.",
     runner_unavailable: "The agent could not start. No model was called.", execution_failed: "The agent could not finish this run.",
     invalid_completion: "The answer could not be confirmed for this run.", diagnostics_failed: "Run details could not be saved.",
@@ -1393,13 +1394,13 @@ test("frontend and provider sources avoid unsafe sinks and mutation surfaces", a
   assert.doesNotMatch(strip(ext), /actions\s*:/);
   assert.match(strip(ext), /name:\s*"agent-view"/);
 });
-async function viewFor(source, examples, latest = { status: "none" }, model = "fake") {
+async function viewFor(source, examples, latest = { status: "none" }, model = "fake", extra = {}) {
   const revision = "sha256:" + createHash("sha256").update(source).digest("hex");
   return readView(stubSession(resource(MINIMAL, {
     file: { path: MINIMAL, revision }, instructions: source, model, examples,
     tools: [...(source.match(/## Tools\r?\n([\s\S]*?)## Examples/)?.[1] ?? "").matchAll(/^- ([A-Za-z_][A-Za-z0-9_-]{0,63})\r?$/gm)].map(m => m[1]),
     latest: typeof latest === "function" ? latest(revision, examples) : latest,
-    authoring: { source, editable: true },
+    authoring: { source, editable: true }, ...extra,
   })), MINIMAL);
 }
 async function editableCanvas(body, eol, options = {}) {
@@ -1420,7 +1421,7 @@ async function editableCanvas(body, eol, options = {}) {
     result.examples = [{ id: "greeting", state: "complete", verdict: "pass", assertions: [{ id: "greeting-text", type: "contains", verdict: "pass" }] }];
     latest = { status: "current", result };
   }
-  const view = await viewFor(source, examples, latest, options.omitModel ? "" : "fake");
+  const view = await viewFor(source, examples, latest, options.omitModel ? "" : "fake", options.extra);
   if (options.chatModel) view.chatModel = options.chatModel;
   const doc = fakeDoc(options.defaultView), root = doc.createElement("main"), calls = [];
   const app = renderView(doc, root, view, async (action) => {
@@ -3978,4 +3979,228 @@ test("ADVERSARIAL Esc discards only the current test and never the prompt or ano
   goBack(h.root);promptEnter(h.root);await tick();
   assert.equal(h.calls[0].sections.length,1);
   assert.deepEqual(h.calls[0].examples.map(e=>e.input),["My A","Name b"]);
+});
+
+// --- folder tool settings (read-only provenance) -----------------------------
+const ENABLED = (...names) => names.map((name) => ({ name, state: "Enabled" }));
+const settingsOf = (result) => (result?.toolSettings ?? []).map((t) => `${t.name}:${t.state}`);
+const readWith = (over) => readView(stubSession(resource(MINIMAL, { model: "fake", ...over })), MINIMAL);
+const toolLabels = (root) => byClass(root, "tool-settings").flatMap((n) => byClass(n, "tool-setting").map((l) => l.textContent));
+
+test("tool settings: a legacy view defaults declared tools to Enabled without inventing result provenance", async () => {
+  const view = await readWith({ tools: ["ping", "lookup"], latest: { status: "current", result: result() } });
+  assert.deepEqual(view.tools, ["ping", "lookup"], "source declarations stay names only");
+  assert.deepEqual(view.toolSettings, ENABLED("ping", "lookup"));
+  assert.equal(Object.hasOwn(view.latest.result, "toolSettings"), false, "an old result did not record settings");
+  assert.deepEqual((await readWith({})).toolSettings, []);
+});
+
+test("tool settings: ordered view and result settings are preserved as detached clean data", async () => {
+  const raw = [{ name: "ping", state: "Disabled" }, { name: "lookup", state: "Enabled" }];
+  const view = await readWith({ tools: ["ping", "lookup"], toolSettings: raw, latest: { status: "current", result: result({ toolSettings: raw }) } });
+  assert.deepEqual(view.toolSettings, raw);
+  assert.deepEqual(view.latest.result.toolSettings, raw);
+  assert.deepEqual(Object.keys(view.toolSettings[0]), ["name", "state"]);
+  assert.notEqual(view.latest.result.toolSettings, view.toolSettings);
+});
+
+test("tool settings: malformed vectors refuse the whole resource without echoing content", async () => {
+  const latest = (toolSettings) => ({ status: "current", result: result({ toolSettings }) });
+  const good = [{ name: "ping", state: "Enabled" }];
+  const bad = [
+    "ping", {}, [{ name: "ping" }], [{ name: "ping", state: "Ask" }], [{ name: "ping", state: "enabled" }], [{ name: "ping", state: "Enabled", extra: 1 }],
+    [{ name: "ping", state: "Enabled" }, { name: "ping", state: "Disabled" }], [{ name: "other", state: "Enabled" }], [],
+    [{ name: "a b", state: "Enabled" }], [null], [["ping", "Enabled"]], Array.from({ length: 33 }, (_, i) => ({ name: `t${i}`, state: "Enabled" })),
+  ];
+  for (const toolSettings of bad) {
+    await assert.rejects(readWith({ tools: ["ping"], toolSettings }), { code: "invalid-resource" }, JSON.stringify(toolSettings));
+    if (Array.isArray(toolSettings)) await assert.rejects(readWith({ tools: ["ping"], toolSettings: good, latest: latest(toolSettings) }), { code: "invalid-resource" }, "result " + JSON.stringify(toolSettings));
+  }
+  await assert.rejects(readWith({ tools: ["ping", "lookup"], toolSettings: ENABLED("lookup", "ping") }), { code: "invalid-resource" }, "order is the declared order");
+  await assert.rejects(readWith({ tools: ["ping"], toolSettings: good, latest: latest(ENABLED("lookup")) }), { code: "invalid-resource" }, "a current result describes the same declarations");
+});
+
+test("tool settings: Tests shows read-only text labels, not controls or HTML disabled semantics", async () => {
+  const h = await editableCanvas("Reply briefly.", undefined, { extra: { tools: ["ping", "lookup"], toolSettings: [{ name: "ping", state: "Enabled" }, { name: "lookup", state: "Disabled" }] } });
+  const tests = byClass(h.root, "tests-section")[0];
+  assert.deepEqual(toolLabels(tests), ["ping · Enabled", "lookup · Disabled"]);
+  const area = byClass(tests, "tool-settings")[0];
+  assert.equal(area.tag, "ul");
+  const nodes = all(area);
+  assert.ok(nodes.every((n) => n.tag !== "button" && n.tag !== "input" && Object.keys(n.listeners).length === 0), "no controls or handlers");
+  assert.ok(nodes.every((n) => !Object.keys(n.attrs).some((k) => /^(?:disabled|aria-disabled|aria-checked|aria-pressed|role|tabindex)$/.test(k))), "labels are plain text");
+  assert.equal(byClass(h.root, "tool-settings").length, 1);
+  assert.equal(all(h.root).some((n) => n.className.includes("switch")), false);
+  assert.deepEqual(all(h.root).filter((n) => n.tag === "button").map((n) => n.textContent).filter((t) => /ping|lookup|Enabled|Disabled|Ask/.test(t)), []);
+  h.app.dispose();
+});
+
+test("tool settings: read-only views and views without tools render no labels", async () => {
+  assert.deepEqual(toolLabels(await rendered({ tools: ["ping"], toolSettings: [{ name: "ping", state: "Disabled" }] })), ["ping · Disabled"]);
+  assert.deepEqual(toolLabels(await rendered({})), []);
+  const legacy = await rendered({ tools: ["ping"] });
+  assert.deepEqual(toolLabels(legacy), ["ping · Enabled"]);
+  assertTrustedControls(legacy);
+});
+
+// Settings are per run, not part of the file revision, so a retained result is
+// current only when its recorded vector still matches the current one.
+async function toolCompare({ settings = ENABLED("ping"), legacy = false } = {}) {
+  const examples = c18Examples(["a", "b"]);
+  const h = await editableCanvas("Reply briefly.", undefined, { examples, extra: legacy ? { tools: ["ping"] } : { tools: ["ping"], toolSettings: settings },
+    latest: (rev, ex) => { const latest = bLatest({ a: "pass", b: "pass" })(rev, ex); if (!legacy) latest.result.toolSettings = settings; return latest; },
+    fetchModels: async () => ({ models: ["fake", "claude-sonnet-5.5"] }) });
+  const onSonnet = (vector) => (rev, ex) => {
+    const latest = bLatest({ a: "pass", b: "pass" })(rev, ex);
+    latest.result.modelRoute = { provider: "copilot", model: "claude-sonnet-5.5" };
+    if (vector) latest.result.toolSettings = vector; return latest;
+  };
+  const observe = async (latest, toolSettings) => h.app.observe(await viewFor(h.source, h.examples, latest, "fake", { tools: ["ping"], ...(toolSettings ? { toolSettings } : {}) }));
+  await observe(onSonnet(legacy ? undefined : settings), legacy ? undefined : settings);
+  return { h, observe, onSonnet };
+}
+const slotKinds = (root) => byClass(root, "verdict-slot").map((n) => n.className.split(/\s+/).filter((c) => c !== "verdict-slot").join());
+
+test("tool settings: a config-only change does not leave retained comparison results current", async () => {
+  const { h, observe } = await toolCompare();
+  assert.deepEqual(slotKinds(h.root).slice(0, 2), ["pass", "old-pass"], "before the change the selected slot is current and its partner older");
+  const changed = [{ name: "ping", state: "Disabled" }];
+  assert.equal(await observe({ status: "stale", badge: "stale" }, changed), true);
+  assert.deepEqual(toolLabels(h.root), ["ping · Disabled"]);
+  assert.deepEqual(slotKinds(h.root).slice(0, 2), ["old-pass", "old-pass"], "both retained slots are old after the vector changed");
+  assert.match(c18Text(h.root, "tests-meta"), /Out of date/);
+  assert.doesNotMatch(c18Text(h.root, "tests-meta"), /earlier/);
+  h.app.dispose();
+});
+
+test("tool settings: choosing a model never restores a retained result from different settings", async () => {
+  const { h, observe } = await toolCompare();
+  await observe({ status: "stale", badge: "stale" }, [{ name: "ping", state: "Disabled" }]);
+  await chooseModel(h, "claude-sonnet-5.5");
+  assert.doesNotMatch(c18Text(h.root, "result-pill"), /passing/, "the old Sonnet result is not current under changed settings");
+  assert.deepEqual(rowLabels(h.root).map((l) => /^Passed/.test(l)), [false, false]);
+  h.app.dispose();
+});
+
+test("tool settings: unchanged and legacy settings still restore a retained model result", async () => {
+  for (const legacy of [false, true]) {
+    const { h } = await toolCompare({ legacy });
+    await chooseModel(h, "claude-sonnet-5.5");
+    assert.equal(c18Text(h.root, "result-pill"), "2 of 2 passing", legacy ? "legacy results ran with every tool Enabled" : "same vector");
+    h.app.dispose();
+  }
+});
+
+test("tool settings: invalid_tool_settings is explained plainly, never as a generic or raw reason", async () => {
+  const refused = result({ state: "refused", verdict: "unknown", fullPass: false, modelRoute: { provider: "fake", model: "fake" }, reasonCode: "invalid_tool_settings",
+    reason: "name: [unclosed\nsecret: yaml", examples: [], selection: { scope: "full", caseIds: ["hello"], totalCases: 1 } });
+  const root = await rendered({ tools: ["ping"], latest: { status: "current", result: refused } });
+  const shown = all(root).map((n) => n.textContent).join("\n");
+  assert.match(shown, /tool settings.*kmx\.yaml/i);
+  assert.doesNotMatch(shown, /secret|unclosed|could not be confirmed/);
+});
+
+// --- tool settings: freshness regressions ------------------------------------
+const DISABLED = (...names) => names.map((name) => ({ name, state: "Disabled" }));
+const INVALID_MESSAGE = /tool settings.*kmx\.yaml/i;
+const passing = (settings) => (rev, ex) => { const latest = bLatest({ a: "pass", b: "pass" })(rev, ex); latest.result.toolSettings = settings; return latest; };
+const toolCanvas = (settings = ENABLED("ping"), options = {}) => editableCanvas("Reply briefly.", undefined, { examples: c18Examples(["a", "b"]),
+  extra: { tools: ["ping"], toolSettings: settings }, latest: passing(settings), ...options });
+
+test("tool settings: an invalid_tool_settings poll after a pass makes the old pass old, keeps drafts and recovers on a valid read", async () => {
+  for (const mode of ["thrown", "payload"]) {
+    const h = await toolCanvas();
+    c18Prompt(h.root).textContent = "My draft."; c18Prompt(h.root).listeners.input[0]();
+    assert.deepEqual(toolLabels(h.root), ["ping · Enabled"]);
+    const typed = new ViewError("invalid_tool_settings");
+    if (mode === "thrown") h.app.observeFailure(typed); else h.app.observe({ error: typed.code, message: typed.message });
+    assert.deepEqual(toolLabels(h.root), [], mode + ": the old Enabled labels are not claimed");
+    assert.match(all(h.root).map((n) => n.textContent).join("\n"), INVALID_MESSAGE);
+    assert.deepEqual(items(h.root).map((i) => /old-pass/.test(byClass(i, "test-verdict")[0].className)), [true, true], mode + ": the old pass is not current");
+    assert.equal(c18Text(h.root, "result-pill").includes("2 of 2 passing"), false);
+    assert.equal(c18Prompt(h.root).textContent, "My draft.", "drafts are kept");
+    // A transient (untyped) failure changes nothing.
+    h.app.observeFailure(new Error("network"));
+    assert.match(all(h.root).map((n) => n.textContent).join("\n"), INVALID_MESSAGE);
+    h.app.observe(await viewFor(h.source, h.examples, passing(ENABLED("ping")), "fake", { tools: ["ping"], toolSettings: ENABLED("ping") }));
+    assert.deepEqual(toolLabels(h.root), ["ping · Enabled"], mode + ": a valid same-revision read recovers");
+    assert.doesNotMatch(all(h.root).map((n) => n.textContent).join("\n"), INVALID_MESSAGE);
+    assert.equal(c18Prompt(h.root).textContent, "My draft.");
+    h.app.dispose();
+  }
+});
+
+test("tool settings: a valid response started before invalidation cannot restore an old pass", async () => {
+  const h = await toolCanvas();
+  const before = h.app.observation();
+  const old = await viewFor(h.source, h.examples, passing(ENABLED("ping")), "fake", { tools: ["ping"], toolSettings: ENABLED("ping") });
+  h.app.observe({ error: "invalid_tool_settings" }, before);
+  assert.equal(h.app.observe(old, before), false, "invalidation fences older in-flight reads");
+  assert.deepEqual(toolLabels(h.root), []);
+  assert.match(all(h.root).map(n => n.textContent).join("\n"), INVALID_MESSAGE);
+  h.app.dispose();
+});
+
+test("tool settings: recovery does not repeatedly redraw an unchanged source-conflict candidate", async () => {
+  const h = await toolCanvas();
+  c18Prompt(h.root).textContent = "My draft."; c18Prompt(h.root).listeners.input[0]();
+  h.app.observe({ error: "invalid_tool_settings" });
+  const source = h.source.replace("Reply briefly.", "Changed outside the canvas.");
+  assert.notEqual(source, h.source);
+  const incoming = await viewFor(source, h.examples, passing(ENABLED("ping")), "fake", { tools: ["ping"], toolSettings: ENABLED("ping") });
+  assert.equal(h.app.observe(incoming), true);
+  const first = h.app.observation();
+  assert.equal(h.app.observe(incoming), false, "the same conflict candidate must not clear undo or redraw on every poll");
+  assert.deepEqual(h.app.observation(), first);
+  assert.equal(c18Prompt(h.root).textContent, "My draft.");
+  h.app.dispose();
+});
+
+test("tool settings: a stopped Test keeps its start settings, not a changed Stop readback", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let finish, run;
+  const h = await toolCanvas(ENABLED("ping"), { latest: undefined, fetchProgress: async id => ({ run: { ...run, id } }),
+    respond: action => action.operation === "stop" ? { stopping: true } : new Promise(resolve => { finish = resolve; }) });
+  t.after(() => h.app.dispose());
+  run = { revision: h.view.file.revision, model: "fake", caseIds: ["a", "b"], totalCases: 2, state: "running", cases: [{ caseId: "a", verdict: "pass" }], elapsedMs: 200 };
+  promptEnter(h.root); t.mock.timers.tick(250); await tick(); await tick();
+  const id = h.calls.at(-1).runId; // Inject the retained stopped-state response; Stop has no UI control.
+  finish({ stopped: true, saved: false, run: { ...run, id, state: "stopped", toolSettings: ENABLED("ping") }, view: { ...h.view, toolSettings: DISABLED("ping"), latest: { status: "none", badge: "none" } } });
+  await tick(); await tick();
+  assert.match(rowLabels(h.root)[0], /^Passed/);
+  assert.equal(c18Text(h.root, "result-pill"), "Out of date", "changed during the run, before Stop readback");
+  const changed = await viewFor(h.source, h.examples, { status: "stale", badge: "stale" }, "fake", { tools: ["ping"], toolSettings: DISABLED("ping") });
+  assert.equal(h.app.observe(changed), true);
+  assert.deepEqual(toolLabels(h.root), ["ping · Disabled"]);
+  assert.equal(byClass(items(h.root)[0], "test-verdict")[0].className.includes("old-pass"), true, "the stopped pass is old under Disabled");
+  assert.equal(c18Text(h.root, "result-pill"), "Out of date");
+});
+
+test("tool settings: selecting a model restores its cached settings-free refusal, not an old pass", async () => {
+  let h;
+  const refused = rev => ({ status: "current", result: result({ file: { path: MINIMAL, revision: rev }, state: "refused", verdict: "unknown", fullPass: false,
+    reasonCode: "model_unavailable", modelRoute: {}, examples: [], selection: { scope: "full", totalCases: 2, caseIds: ["a", "b"] } }) });
+  h = await toolCanvas(DISABLED("ping"), { fetchModels: async () => ({ models: ["fake", "claude-sonnet-5.5"] }),
+    respond: async () => ({ view: await viewFor(h.source, h.examples, refused, "fake", { tools: ["ping"], toolSettings: DISABLED("ping") }) }) });
+  promptEnter(h.root); await tick(); await tick();
+  assert.match(c18Text(h.root, "tests-meta"), /refused/i);
+  await chooseModel(h, "claude-sonnet-5.5");
+  await chooseModel(h, "fake");
+  assert.match(c18Text(h.root, "tests-meta"), /refused/i);
+  assert.doesNotMatch(c18Text(h.root, "result-pill"), /passing/);
+  h.app.dispose();
+});
+
+test("tool settings: route-less pre-execution refusals are not made stale by Disabled settings", async () => {
+  for (const reasonCode of ["no_tests", "model_unavailable", "invalid_selection"]) {
+    const refused = (rev) => ({ status: "current", badge: "none", result: result({ file: { path: MINIMAL, revision: rev }, state: "refused", verdict: "unknown", fullPass: false,
+      reasonCode, modelRoute: {}, examples: [], selection: { scope: "full", totalCases: 2, caseIds: ["a", "b"] } }) });
+    const h = await toolCanvas(DISABLED("ping"), { latest: refused });
+    assert.equal(h.view.latest.result.modelRoute, "/");
+    assert.equal(Object.hasOwn(h.view.latest.result, "toolSettings"), false);
+    assert.doesNotMatch(c18Text(h.root, "tests-meta"), /Out of date/, reasonCode);
+    assert.notEqual(c18Text(h.root, "result-pill"), "Out of date", reasonCode);
+    // A legacy executed result without provenance still runs against the Enabled default.
+    h.app.dispose();
+  }
 });

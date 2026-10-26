@@ -180,11 +180,20 @@ or cross-compilation do not qualify Squad on Windows/macOS.
 
 Ask Copilot to make an agent. The builder skill creates it through kmx and then
 opens the successful Create result's exact path in the canvas. To open an
-existing agent, select **kmx** in the app's slash menu and enter
-`/kmx open /home/me/project/greeter.agent.md`. Nested agent and canonical Squad
-paths work too. `/kmx` or `/kmx help` shows usage without opening anything.
+existing agent **without a model turn**, select the native **kmx-canvas** command:
+`/kmx-canvas open /home/me/project/greeter.agent.md`. It opens or focuses the
+same file's canvas; without a renderer it displays the existing text view.
+`/kmx-canvas` or `/kmx-canvas help` shows usage without reading a file.
+Native commands require extension support (experimental mode in the CLI).
 
-This is a host-model skill turn, not a model-free native slash command. The skill
+After `open`, one space or tab separates the action from the literal path.
+The remaining path is not trimmed, split or shell-unquoted: keep spaces within
+filenames, omit surrounding quotes and avoid accidental trailing spaces.
+Nested agent and canonical Squad paths work too.
+
+The separate **kmx** skill still accepts `/kmx open PATH` and `/kmx help`.
+Unlike **kmx-canvas**, it uses a host-model turn. The distinct native name avoids
+selecting that skill's `/kmx` menu alias by mistake. The skill
 asks for one built-in `open_canvas` call with the installed provider and a stable
 instance ID. The provider checks the agent resource before every open, including
 reopening an existing instance. Full paths distinguish same-named agents in

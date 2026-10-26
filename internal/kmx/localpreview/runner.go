@@ -128,6 +128,9 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 			return abort(agentpreview.ErrToolsUnavailable)
 		}
 	}
+	if len(declared) == 0 && len(request.ToolSettings) > 0 {
+		return abort(agentpreview.ErrToolsUnavailable)
+	}
 	if len(declared) > 0 || request.ToolBindings != "" {
 		var bindErr error
 		toolHost, bindErr = r.resolveTools(ctx, request, neededLiveTools(declared, examples, request.Input != nil))
@@ -138,6 +141,7 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 			return agentpreview.Outcome{State: agentpreview.Failed}, agentpreview.ErrUnsafeToolContent
 		}
 		agent.Tools = nil
+
 	}
 
 	var providerRoutes []modelaccess.Route
@@ -263,12 +267,12 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 	}
 	plans := make([]toolPlan, len(examples))
 	for i, ex := range examples {
-		plans[i], err = makeToolPlan(declared, ex, toolHost, checkContent, validate)
+		plans[i], err = makeToolPlan(declared, ex, toolHost, checkContent, validate, request.ToolSettings)
 		if err != nil {
 			return abort(err)
 		}
 	}
-	adHocPlan, planErr := makeToolPlan(declared, agentfile.Example{}, toolHost, checkContent, validate)
+	adHocPlan, planErr := makeToolPlan(declared, agentfile.Example{}, toolHost, checkContent, validate, request.ToolSettings)
 	if request.Input != nil && planErr != nil {
 		return abort(planErr)
 	}
@@ -335,7 +339,7 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 		if index >= 0 {
 			plan = plans[index]
 		}
-		execution, execErr := executor.Execute(turnCtx, Turn{AgentID: agent.Identity.ID, Revision: agent.Revision, ExampleID: ex.ID, Instructions: agent.Instructions, Input: ex.Input, Model: p.route.model, Call: call, Tool: plan.execute, ToolDefinitions: plan.definitions, ToolSources: plan.sources})
+		execution, execErr := executor.Execute(turnCtx, Turn{AgentID: agent.Identity.ID, Revision: agent.Revision, ExampleID: ex.ID, Instructions: agent.Instructions, Input: ex.Input, Model: p.route.model, Call: call, Tool: plan.execute, ToolDefinitions: plan.definitions, ToolSources: plan.sources, ToolSettings: plan.settings})
 		reason := "complete"
 		if execErr != nil || turnCtx.Err() != nil {
 			reason = "execution_failed"

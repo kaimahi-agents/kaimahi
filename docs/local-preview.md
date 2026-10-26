@@ -99,6 +99,39 @@ builds refuse the new source metadata rather than reinterpret it. There is no ge
 CLI binding below remains the fixed read. Copilot's runtime-owned binding is
 separate and requires no hand-edited file.
 
+## Folder tool settings
+
+File Run/Test reads `kmx.yaml` beside the agent's physical file, never from a
+parent folder or the current workspace. Settings are committed with the folder,
+not written into the agent file. Missing settings mean **Enabled**:
+
+```yaml
+tools:
+  github_list_merged_prs: Disabled
+  ping: Enabled
+```
+
+The canvas shows each declared tool's **Enabled** or **Disabled** state next to
+Tests, without a switch. Edit `kmx.yaml` to change it. Other keys and comments
+are not rewritten. Invalid or ambiguous YAML and unsupported states refuse the
+preview before execution; the canvas also refuses to load that agent view until
+the YAML is fixed. **Ask** is not supported yet.
+
+Bindings and schemas still resolve as before. A Disabled request returns
+"This tool is disabled for this test." to the model instead of calling the
+native tool. It still consumes one of the five batch slots. Enabled app calls
+continue through the app's unchanged permission handling.
+
+Execution results' `toolSettings` record every declared tool's state frozen at run
+start. Pre-execution refusals have no execution provenance. `toolCalls` counts
+Enabled dispatches, not Disabled answers. Per-case tool sources distinguish live,
+recorded and unavailable dispatch; a selected source alone is not proof of a live
+call. Disabled also bypasses saved-recording matching and unavailable stubs. Changing
+the effective settings makes an earlier result out of date even when the agent
+file is unchanged. Offline replay uses the journaled settings and results,
+never today's YAML or a live executor. Older journals without settings retain
+Enabled semantics; older readers can refuse new settings-bearing journals.
+
 ## Copilot host tools
 
 With a capable Copilot SDK host, the extension runtime binds names to its actual
@@ -200,7 +233,7 @@ it is not real-LLM tool-selection qualification. Ordinary tests use owned TLS
 MCP fixtures and a test-only bridge excluded from shipped builds.
 
 A distinct `kmx-local-tools-v1` harness permits zero to five model-selected tool
-calls in one batch and at most two agent-model calls. Calls execute in order;
+requests in one batch and at most two agent-model calls. Calls execute in order;
 failure or cancellation stops later dispatch and prevents a full pass. There is
 no forced call, parallel execution, adaptive tool round, automatic resend or
 fallback. Each fixed GitHub read is one unpaginated query and never writes. A text Test can pass without a

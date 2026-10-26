@@ -18,6 +18,9 @@ import (
 
 type FilePreviewOptions struct {
 	File, Operation, CaseID string
+	// SourceFile is the trusted physical filename when File is only a display label.
+	// CLI callers omit it and use their already-loaded File.
+	SourceFile string
 	// RetentionFile requests checked retention for a target separate from File's
 	// display label. Snapshot callers must use WithFilePreviewRetention.
 	RetentionFile     string
@@ -53,6 +56,7 @@ type FilePreviewResult struct {
 	Examples      []FilePreviewExample      `json:"examples"`
 	AdHoc         *FilePreviewCompletion    `json:"adHoc,omitempty"`
 	Retention     FilePreviewRetention      `json:"retention"`
+	ToolSettings  []localtools.ToolSetting  `json:"toolSettings,omitempty"`
 }
 type FilePreviewDiagnostic struct {
 	Field  string `json:"field"`
@@ -172,13 +176,14 @@ func previewReason(code string) string {
 		"invalid_file":      "Invalid agent file; use the canonical charter format with required fields and an Examples section.",
 		"no_tests":          "No tests yet — add or suggest one",
 		"invalid_selection": "Unknown example ID; select an authored example ID.", "invalid_options": "Invalid file preview options.",
-		"model_unavailable":   "Selected model route is unavailable or does not match the file model; select an exact trusted route.",
-		"tools_unavailable":   "Host-bound tools are unavailable for the declared names.",
-		"recording_mismatch":  "Recording mismatch: tool arguments differ from the saved call. Update the saved call before retrying.",
-		"unsafe_tool_content": "Unsafe tool preview content was withheld; nothing was journaled.",
-		"credential_content":  "Credential-bearing preview content was withheld.",
-		"runner_unavailable":  "Embedded preview runner is not available; no inference was performed.",
-		"execution_failed":    "Local preview execution failed.", "invalid_completion": "Runner returned incomplete or mismatched execution metadata.",
+		"model_unavailable":     "Selected model route is unavailable or does not match the file model; select an exact trusted route.",
+		"tools_unavailable":     "Host-bound tools are unavailable for the declared names.",
+		"invalid_tool_settings": "Tool settings in the agent folder's kmx.yaml are invalid.",
+		"recording_mismatch":    "Recording mismatch: tool arguments differ from the saved call. Update the saved call before retrying.",
+		"unsafe_tool_content":   "Unsafe tool preview content was withheld; nothing was journaled.",
+		"credential_content":    "Credential-bearing preview content was withheld.",
+		"runner_unavailable":    "Embedded preview runner is not available; no inference was performed.",
+		"execution_failed":      "Local preview execution failed.", "invalid_completion": "Runner returned incomplete or mismatched execution metadata.",
 		"diagnostics_failed": "Cannot write local preview diagnostics.",
 		"journal_failed":     "Preview journal finalization failed; the result is unknown.",
 	}
@@ -333,7 +338,26 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	if opt.retentionScope != nil && opt.retentionScope.filename != opt.RetentionFile {
 		return fail("invalid_options", 1)
 	}
-	request := agentpreview.Request{Agent: parsed, Examples: selected, Route: route, JudgeRoute: opt.JudgeRoute, Input: opt.Input, Progress: opt.Progress, ToolBindings: opt.ToolBindings, FileLabel: r.File.Path}
+	if len(parsed.Tools) > 0 {
+		source := opt.SourceFile
+		if source == "" {
+			source = opt.File
+		}
+		var settingsErr error
+		r.ToolSettings, settingsErr = localtools.LoadSettings(ctx, source, parsed.Tools)
+		if settingsErr != nil {
+			if cause := ctx.Err(); cause != nil {
+				r.State = "error"
+				if errors.Is(cause, context.Canceled) {
+					r.State = "cancelled"
+					return fail("cancelled", 130)
+				}
+				return fail("deadline_exceeded", 1)
+			}
+			return fail("invalid_tool_settings", 1)
+		}
+	}
+	request := agentpreview.Request{Agent: parsed, Examples: selected, Route: route, JudgeRoute: opt.JudgeRoute, Input: opt.Input, Progress: opt.Progress, ToolBindings: opt.ToolBindings, FileLabel: r.File.Path, ToolSettings: append([]localtools.ToolSetting(nil), r.ToolSettings...)}
 	request.ExampleFinished = previewCaseObserver(ctx, selected, parsed, route, opt.CaseFinished)
 	judgeCtx, judgeNotes := newFileJudgeContext(ctx)
 	outcome, cause := a.FileRunner.Run(judgeCtx, request)
@@ -341,6 +365,7 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		r.File = FilePreviewIdentity{Path: "[agent file]"}
 		r.ModelRoute = FilePreviewRoute{}
 		r.JudgeRoute = nil
+		r.ToolSettings = nil
 		r.Selection = FilePreviewSelection{CaseIDs: []string{}}
 		r.Examples = []FilePreviewExample{}
 		r.AdHoc = nil

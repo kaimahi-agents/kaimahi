@@ -7,8 +7,21 @@ export function createObservationController(state, { path, options, drafts, clea
   const observation = () => ({ generation: state.observationGeneration, revision: state.base.file.revision });
   const matches = (view) => view && !view.error && view.file?.path === path;
 
+  // Only the fixed typed error invalidates; any other failure stays best effort.
+  const settingsError = (e) => e?.code === "invalid_tool_settings" || e?.error === "invalid_tool_settings";
+  // Retained results stay visible as old, drafts are untouched, and a valid read recovers.
+  function invalidate(started) {
+    if (started.generation !== state.observationGeneration || started.revision !== state.base.file.revision
+      || state.busy || state.blocked || invalidEditors.size || state.base.settingsInvalid) return false;
+    const { latest } = state.base;
+    state.base = { ...state.base, settingsInvalid: true, latest: latest.status === "current" ? { ...latest, status: "stale", badge: "stale" } : latest };
+    state.observationGeneration++;
+    render(); return true;
+  }
+  function observeFailure(error, started = observation()) { return settingsError(error) ? invalidate(started) : false; }
   // Observation never writes or clears a lock.
   function observe(view, started = observation()) {
+    if (settingsError(view)) return invalidate(started);
     if (started.generation !== state.observationGeneration || started.revision !== state.base.file.revision
       || !matches(view) || state.busy || state.blocked || invalidEditors.size) return false;
     const observed = view;
@@ -20,7 +33,8 @@ export function createObservationController(state, { path, options, drafts, clea
     if (adoptable) { history.focus(selected); if (!stopped) history.remember(observed); }
     const changedHistory = adoptable && !same(previousHistory, [history.pair(), history.attempt(incomingModel)]);
     view = modelChoice.view(view, view.latest.status !== "current" || preRouteRefusal(view.latest.result) || incomingModel === selected ? undefined : history.selected(view, selected));
-    if (!changedHistory && (same(view, state.base) || (state.candidate && same(view, state.candidate)))) return false;
+    const recovering = !!state.base.settingsInvalid;
+    if (!changedHistory && ((!recovering && same(view, state.base)) || (state.candidate && same(view, state.candidate)))) return false;
     clearUndo(); displayNames.clear(); state.runAlert = undefined;
     state.observationGeneration++;
     state.lastRun = undefined;
@@ -36,7 +50,7 @@ export function createObservationController(state, { path, options, drafts, clea
   async function checkNow() {
     if (typeof options.fetchView !== "function") return;
     const started = observation();
-    try { observe(await options.fetchView(), started); } catch { /* Polling is best effort and never changes state on failure. */ }
+    try { observe(await options.fetchView(), started); } catch (e) { observeFailure(e, started); /* Other failures change nothing. */ }
   }
   function useTheirs() {
     if (!state.candidate) return;
@@ -70,5 +84,5 @@ export function createObservationController(state, { path, options, drafts, clea
     pruneDrafts(); state.message = "Kept your edits on top of the new version. Enter saves them."; render();
   }
 
-  return { observation, matches, observe, checkNow, useTheirs, keepMine };
+  return { observation, matches, observe, observeFailure, checkNow, useTheirs, keepMine };
 }

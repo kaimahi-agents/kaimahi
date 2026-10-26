@@ -24,15 +24,43 @@ const MaxCalls = 5
 // Harness is the versioned, secret-free bounded preview contract. Bindings and
 // credentials belong exclusively to the host's executor, never this config.
 type Harness struct {
-	Model       string
-	Definitions []api.ToolDefinition
-	Sources     *SourceConfig
+	Model        string
+	Definitions  []api.ToolDefinition
+	ToolSettings []ToolSetting
+	Sources      *SourceConfig
 }
 
 type Config struct {
 	Instructions string               `json:"instructions"`
 	Definitions  []api.ToolDefinition `json:"definitions,omitempty"`
+	ToolSettings []ToolSetting        `json:"toolSettings,omitempty"`
 	Sources      *SourceConfig        `json:"sources,omitempty"`
+}
+
+func decodeConfig(raw []byte) (Config, []api.ToolDefinition, error) {
+	var config Config
+	d := json.NewDecoder(bytes.NewReader(raw))
+	d.DisallowUnknownFields()
+	if !runtime.JSONKeysUnique(raw) || d.Decode(&config) != nil || config.Instructions == "" {
+		return Config{}, nil, errTrace
+	}
+	defs := []api.ToolDefinition{Definition()}
+	if config.Definitions != nil {
+		var err error
+		defs, err = CopyDefinitions(config.Definitions)
+		if err != nil {
+			return Config{}, nil, errTrace
+		}
+	}
+	settings, err := CopySettings(config.ToolSettings, defs)
+	if err != nil {
+		return Config{}, nil, errTrace
+	}
+	if config.Sources.Validate(defs) != nil {
+		return Config{}, nil, errTrace
+	}
+	config.ToolSettings = settings
+	return config, defs, nil
 }
 
 func (h Harness) Describe(context.Context) (api.Descriptor, error) {
@@ -48,22 +76,12 @@ func (h Harness) Describe(context.Context) (api.Descriptor, error) {
 }
 
 func (h Harness) Run(ctx context.Context, s *api.Start, sink api.EventSink) error {
-	if s == nil || s.ExecutionID == "" || len(s.History) != 0 || len(s.Inputs) != 1 || !textMessage(&s.Inputs[0], "user") || !runtime.JSONKeysUnique(s.Config) {
+	if s == nil || s.ExecutionID == "" || len(s.History) != 0 || len(s.Inputs) != 1 || !textMessage(&s.Inputs[0], "user") {
 		return errTrace
 	}
-	var config Config
-	d := json.NewDecoder(bytes.NewReader(s.Config))
-	d.DisallowUnknownFields()
-	if d.Decode(&config) != nil || config.Instructions == "" {
-		return errTrace
-	}
-	defs := []api.ToolDefinition{Definition()}
-	if config.Definitions != nil {
-		var err error
-		defs, err = CopyDefinitions(config.Definitions)
-		if err != nil {
-			return errTrace
-		}
+	config, defs, err := decodeConfig(s.Config)
+	if err != nil {
+		return err
 	}
 	if h.Definitions != nil {
 		trusted, err := CopyDefinitions(h.Definitions)
@@ -71,7 +89,14 @@ func (h Harness) Run(ctx context.Context, s *api.Start, sink api.EventSink) erro
 			return errTrace
 		}
 	}
-	if config.Sources.Validate(defs) != nil || h.Sources != nil && !reflect.DeepEqual(h.Sources, config.Sources) {
+	if h.ToolSettings != nil {
+		trusted, err := CopySettings(h.ToolSettings, defs)
+		if err != nil || !reflect.DeepEqual(trusted, config.ToolSettings) {
+			return errTrace
+		}
+	}
+	// Sources record dispatch selection only; this is not execution proof.
+	if h.Sources != nil && !reflect.DeepEqual(h.Sources, config.Sources) {
 		return errTrace
 	}
 	messages := []api.Message{*api.TextMessage("system", config.Instructions), s.Inputs[0]}
@@ -145,19 +170,30 @@ type Trace struct {
 // it on an isolated log. No credential or live provider is available on replay.
 func VerifyTrace(ctx context.Context, records []eventlog.Record, model string) (Trace, error) {
 	var out Trace
+	if len(records) < 5 || len(records) > 7+2*MaxCalls || records[0].Event.ExecutionStart == nil || len(records[0].Event.ExecutionStart.Config) > 4*1024*1024 {
+		return out, errTrace
+	}
+	config, _, err := decodeConfig(records[0].Event.ExecutionStart.Config)
+	if err != nil {
+		return out, errTrace
+	}
+	requests := 0
 	kinds := []api.EventKind{api.EventExecutionStart, api.EventInput, api.EventModelCall, api.EventOutput, api.EventEnd}
 	if len(records) >= 9 && len(records) <= 7+2*MaxCalls && len(records)%2 == 1 {
-		out.ToolCalls = (len(records) - 7) / 2
+		requests = (len(records) - 7) / 2
 		out.CallsByName = map[string]int{}
 		kinds = kinds[:4]
 		seen := map[string]bool{}
-		for i := 0; i < out.ToolCalls; i++ {
+		for i := 0; i < requests; i++ {
 			call, result := records[4+2*i].Event.ToolCall, records[5+2*i].Event.Result
 			if call == nil || result == nil || !callID.MatchString(call.ID) || seen[call.ID] || result.ID != call.ID {
 				return Trace{}, errTrace
 			}
 			seen[call.ID] = true
-			out.CallsByName[call.Tool]++
+			if !IsDisabled(config.ToolSettings, call.Tool) {
+				out.CallsByName[call.Tool]++
+				out.ToolCalls++
+			}
 			kinds = append(kinds, api.EventToolCall, api.EventToolResult)
 		}
 		kinds = append(kinds, api.EventModelCall, api.EventOutput, api.EventEnd)
@@ -208,14 +244,10 @@ func VerifyTrace(ctx context.Context, records []eventlog.Record, model string) (
 		return Trace{}, ctx.Err()
 	}
 	wantOutputs := 1
-	if out.ToolCalls > 0 {
+	if requests > 0 {
 		wantOutputs = 2
 	}
 	if err != nil || calls != 0 || replay.ModelInvocations() != 0 || len(outputs) != wantOutputs || outputs[len(outputs)-1] != final.Text() {
-		return Trace{}, errTrace
-	}
-	var config Config
-	if json.Unmarshal(s.Config, &config) != nil {
 		return Trace{}, errTrace
 	}
 	out.Sources = config.Sources

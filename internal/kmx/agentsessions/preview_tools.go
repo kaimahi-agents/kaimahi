@@ -27,7 +27,18 @@ func (c *Client) RunToolPreviewCase(ctx context.Context, r PreviewCaseRequest) (
 	if !ok || !safeIdentity(r.Model) || !safeIdentity(r.Agent) || len(r.Revision) != 71 || r.Revision[:7] != "sha256:" || !verifyDigest(r.Revision[7:]) || r.Example != "" && !safeIdentity(r.Example) {
 		return out, status.Error(codes.InvalidArgument, "agentsessions: valid tool preview request and deadline required")
 	}
-	config, err := json.Marshal(localtools.Config{Instructions: r.Instructions, Definitions: r.ToolDefinitions, Sources: r.ToolSources})
+	settings, err := localtools.CopySettings(r.ToolSettings, r.ToolDefinitions)
+	if err != nil {
+		return out, status.Error(codes.InvalidArgument, "agentsessions: invalid tool settings")
+	}
+	defs := r.ToolDefinitions
+	if defs == nil {
+		defs = []api.ToolDefinition{localtools.Definition()}
+	}
+	if r.ToolSources.Validate(defs) != nil {
+		return out, status.Error(codes.InvalidArgument, "agentsessions: invalid tool sources")
+	}
+	config, err := json.Marshal(localtools.Config{Instructions: r.Instructions, Definitions: r.ToolDefinitions, ToolSettings: settings, Sources: r.ToolSources})
 	if err != nil || len(config) > 1<<20 || len(r.Input) > 16<<10 {
 		return out, status.Error(codes.InvalidArgument, "agentsessions: tool preview exceeds bounds")
 	}

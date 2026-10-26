@@ -47,6 +47,7 @@ type PreviewCaseRequest struct {
 	// RunSuiteCase.
 	UsedSessionUIDs map[string]bool
 	ToolDefinitions []api.ToolDefinition
+	ToolSettings    []localtools.ToolSetting
 	ToolSources     *localtools.SourceConfig
 }
 
