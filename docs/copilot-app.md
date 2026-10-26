@@ -75,7 +75,11 @@ holds the prompt, tool names and tests; you can keep it in version control with
 the code it describes. If your host
 cannot render the canvas, Copilot can still use kmx's tools in text.
 
-*Screenshot to add: a newly created agent with Prompt and Tests visible.*
+![The release-notes prompt and tests during a run, with two tests passed and the third running](images/copilot-running.png)
+
+*Windows Copilot app with WSL, v0.9.0-rc.3 (`eddacc37`). The canvas is
+cropped to the prompt and tests. Results arrive one test at a time; this is not
+a completed run. The sample keeps public PR numbers, unlike the example above.*
 
 ## Choose tools for tests
 
@@ -91,6 +95,12 @@ saves, not one transaction. If a save is partial or unconfirmed, tests do not ru
 keep the draft and deliberately reload to inspect what was saved. Do not retry
 an uncertain write. This switch uses `set_tool_state`, included in the pinned
 v0.9.0-rc.3 binary above.
+
+![Tools section showing one selected tool from the GitHub MCP server, with earlier test results marked out of date](images/copilot-tools.png)
+
+*Windows Copilot app with WSL, v0.9.0-rc.3 (`eddacc37`). This shows tool
+selection and the server count, not a successful GitHub tool call. The
+Enabled/Disabled switches are not pictured.*
 
 ## Add tests and run them
 
@@ -128,7 +138,30 @@ full Test reply confirms the run. A running indicator does not mean a test has p
 Known issue: Copilot may keep showing “Working” after a canvas run until the next
 chat turn, even when the run has finished.
 
-*Screenshot to add: a completed test and its check explanations.*
+![A failed check requires the PR number at the end of a bullet; the answer puts it at the start](images/copilot-test-detail.png)
+
+*Windows Copilot app with WSL, v0.9.0-rc.3 (`eddacc37`). The supplied
+sample PR titles are test data. The failed check identifies the exact missing
+text; a plausible answer can still fail the authored requirement.*
+
+### Keep tool results with a test
+
+Open a test and choose **Live** or **Recorded** for each tool. Live calls the
+tool on each run. Recorded captures the first successful call and saves its
+arguments and result with the test; later runs replay that saved result. Press
+**Enter** to save the choice and run. Use **Record again** to capture fresh data.
+Recorded details let you inspect the saved call and result.
+
+![Test detail with an unsaved Recorded selection and a prior result labelled one live call](images/copilot-live-recorded.png)
+
+*Windows Copilot app with WSL, main build `db12f60a`, included in rc.3.
+The Recorded choice is an unsaved draft; “1 call · Live” describes the earlier
+run. This is not a screenshot of a saved recording or replay.*
+
+Saved tool output is cleartext in the agent file. Review it before committing
+or sharing. A recorded pass does not prove the live server works today. See
+[per-test recorded tools](agent-file.md#per-test-recorded-tools) for matching
+rules and **Calls** / **Doesn't call** checks.
 
 ## Change the prompt and rerun
 
@@ -157,7 +190,14 @@ binding path. An unbound tool gives one plain reason; judges remain tool-free.
 See the [CLI reference](kmx.md#agent-file-local-preview-unreleased-integration)
 for supported file-preview routes and limits.
 
-*Screenshot to add: the model picker and a rerun on a second model.*
+![Model picker set to Claude Haiku 4.5, with three of four tests passing](images/copilot-model-picker.png)
+
+![The same prompt's test verdicts on two models: Terra passed all four; Haiku failed the fix-note check](images/copilot-compare.png)
+
+*Windows Copilot app with WSL, pre-rc.3 main build `bde6ed25`. These two
+crops show the selected model and its comparison results, with the private file
+label omitted. They are not a successful comparison walk of the rc.3 binary.
+Model names and availability reflect this capture, not a supported-model list.*
 
 ## Run the same tests in CI
 
