@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,7 +19,7 @@ import (
 )
 
 func TestFileCaptureAcknowledgmentAndFailure(t *testing.T) {
-	for _, scenario := range []string{"saved", "assertion-fail", "stale", "bounds", "io", "invalid-ack", "no-capability", "preflight", "uncalled", "unavailable", "prepare-cancel", "save-cancel", "ad-hoc"} {
+	for _, scenario := range []string{"saved", "assertion-fail", "stale", "bounds", "io", "invalid-ack", "no-capability", "preflight", "uncalled", "unavailable", "prepare-cancel", "save-cancel", "ad-hoc", "disabled"} {
 		t.Run(scenario, func(t *testing.T) {
 			opt := directOptions(t, "fake", false)
 			parsed, err := agentfile.Load(opt.File)
@@ -76,8 +77,14 @@ func TestFileCaptureAcknowledgmentAndFailure(t *testing.T) {
 					return savedRevision, nil
 				}, nil
 			}
-			if scenario == "no-capability" {
+			if scenario == "no-capability" || scenario == "disabled" {
 				opt.PrepareRecordingSave = nil
+			}
+			if scenario == "disabled" {
+				if err := os.WriteFile(filepath.Join(filepath.Dir(opt.File), "kmx.yaml"), []byte("tools:\n  ping: Disabled\n"), 0644); err != nil {
+					t.Fatal(err)
+				}
+				parsed.Examples[0].Assertions[0].Type = "toolNotCalled"
 			}
 			base, err := filepath.EvalSymlinks(t.TempDir())
 			if err != nil {
@@ -104,7 +111,7 @@ func TestFileCaptureAcknowledgmentAndFailure(t *testing.T) {
 				if scenario == "ad-hoc" && (result.AdHoc == nil || result.AdHoc.Tools[0].Mode != "live" || result.AdHoc.Tools[0].RecordingSaved) {
 					t.Fatal("ad-hoc borrowed test capture")
 				}
-			} else if scenario == "uncalled" || scenario == "unavailable" {
+			} else if scenario == "uncalled" || scenario == "unavailable" || scenario == "disabled" {
 				if err != nil || saved != 0 || called != 0 || result.SavedRevision != "" {
 					t.Fatalf("unobserved capture %+v %v", result, err)
 				}
@@ -120,7 +127,10 @@ func TestFileCaptureAcknowledgmentAndFailure(t *testing.T) {
 					t.Fatal("save failure retried")
 				}
 			}
-			if scenario != "no-capability" && prepared != 1 {
+			if scenario == "disabled" && (prepared != 0 || result.ToolSettings[0].State != localtools.Disabled) {
+				t.Fatal("disabled capture requested source write authority")
+			}
+			if scenario != "no-capability" && scenario != "disabled" && prepared != 1 {
 				t.Fatalf("prepared %d", prepared)
 			}
 			raw, _ := json.Marshal(result)

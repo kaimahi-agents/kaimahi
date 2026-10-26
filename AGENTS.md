@@ -554,8 +554,13 @@ bridge, without mutations or direct agent-file reads.
 The repository-installable WSL plugin lives in `plugins/copilot-wsl`, including
 shared skills and canvas runtime assets. Legacy native packaging copies these
 same sources; do not maintain a second canvas/skill implementation. The macOS/PATH
-plugin in `plugins/copilot` links to those shared sources; its MCP command is
-`kmx mcp`. Keep the WSL MCP command exactly `wsl.exe -e /usr/local/bin/kmx mcp`,
+plugin in `plugins/copilot` links to those shared sources except for generated
+provider-identity copies of both skills and `extension.mjs`. Regenerate these
+with `python3 plugins/copilot/source_release.py --write` in every PR that changes
+their canonical inputs; CI checks parity without writing. Its source plugin name
+is `kmx-agent-builder-path`; WSL/native bundles keep `kmx-agent-builder`, and the
+MCP server key remains unchanged. Its MCP command is `kmx mcp`.
+Keep the WSL MCP command exactly `wsl.exe -e /usr/local/bin/kmx mcp`,
 without a bundled engine, root/model configuration or installation helper.
 Node tests stay outside both installable trees under `plugins/tests/copilot`.
 Legacy bundle tooling retains its separate `native-mcp.json` template.
@@ -669,6 +674,13 @@ workspace v1 bytes/partition keys remain unchanged. This store is separate from
 Sessions journal replay and grants no evidence, Publish or Deploy authority.
 The additive `kmx-local-tools-v1` host-bound harness has a separate bounded
 converter and complete-invocation replay proof, never a relaxed suite/chat check.
+Folder test settings come only from `kmx.yaml` beside the physical agent target,
+never ancestor discovery or source declarations. `tools` maps names to Enabled
+(default) or Disabled; unknown states refuse. Read without rewriting other keys,
+freeze for execution/results/journals, and stale prior results on effective-setting
+changes. Disabled answers consume a request slot but do not count as live calls;
+Enabled calls retain native permissions. Canvas states are read-only; Ask is not
+implemented. Historical settings-free journals retain Enabled semantics.
 Its optional first-response batch of up to five calls is host-enforced against
 trusted definitions and schemas, validated as a whole before serial dispatch;
 arguments are bounded to 8 KiB and results to 32 KiB per call; at most two agent model calls,

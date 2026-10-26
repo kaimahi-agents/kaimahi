@@ -113,7 +113,7 @@ func TestPendingAndUnavailableRunnerSources(t *testing.T) {
 func TestReplayReturnsExactlySavedOutput(t *testing.T) {
 	req := recordingRequest(t)
 	saved := req.Examples[0].Mocks.Tools[0].Calls[0]
-	plan, err := makeToolPlan(req.Agent.Tools, req.Examples[0], nil, func(...string) error { return nil }, func(ctx context.Context) error { return ctx.Err() })
+	plan, err := makeToolPlan(req.Agent.Tools, req.Examples[0], nil, func(...string) error { return nil }, func(ctx context.Context) error { return ctx.Err() }, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

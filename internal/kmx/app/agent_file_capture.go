@@ -8,6 +8,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 )
 
 // RecordingSaver is trusted authoring authority, never derived from a display path.
@@ -25,13 +26,13 @@ func pendingRecording(ex agentfile.Example, name string) bool {
 	return false
 }
 
-func prepareRecordingSave(ctx context.Context, opt FilePreviewOptions, revision string, selected []agentfile.Example) (RecordingSaver, error) {
+func prepareRecordingSave(ctx context.Context, opt FilePreviewOptions, revision string, selected []agentfile.Example, settings []localtools.ToolSetting) (RecordingSaver, error) {
 	for _, ex := range selected {
 		if ex.Mocks == nil {
 			continue
 		}
 		for _, tool := range ex.Mocks.Tools {
-			if !pendingRecording(ex, tool.Name) {
+			if !pendingRecording(ex, tool.Name) || localtools.IsDisabled(settings, tool.Name) {
 				continue
 			}
 			if opt.PrepareRecordingSave == nil {
@@ -66,7 +67,7 @@ func saveFileRecordings(ctx context.Context, save RecordingSaver, outcome agentp
 	expected := map[[2]string]bool{}
 	for i, row := range result.Examples {
 		for _, tool := range row.Tools {
-			if pendingRecording(selected[i], tool.Name) && tool.Source == "live" && tool.CallCount > 0 {
+			if pendingRecording(selected[i], tool.Name) && !localtools.IsDisabled(result.ToolSettings, tool.Name) && tool.Source == "live" && tool.CallCount > 0 {
 				expected[[2]string{row.ID, tool.Name}] = true
 			}
 		}

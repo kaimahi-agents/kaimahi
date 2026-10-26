@@ -121,6 +121,18 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "building $version (dry_run=$dry_run, prerelease=$prerelease, synthetic=$synthetic)"
 
+      - name: Check source plugin release and PATH copies
+        env:
+          VERSION: ${{ steps.what.outputs.version }}
+          SYNTHETIC: ${{ steps.what.outputs.synthetic }}
+        run: |
+          set -euo pipefail
+          if [ "$SYNTHETIC" != true ]; then
+            python3 plugins/copilot/source_release.py --version "$VERSION"
+          else
+            python3 plugins/copilot/source_release.py
+          fi
+
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod

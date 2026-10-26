@@ -118,6 +118,8 @@ def build(*, binary: Path, sha256: str, target: str, root: Path | None,
     if server != {"type": "stdio", "command": "./bin/kmx",
                   "args": ["mcp", "--root", "__SELECTED_ROOT__"]}:
         raise ValueError("unexpected MCP template; review the startup contract")
+    # Native bundles use canonical WSL assets, not the PATH source provider.
+    manifest["name"] = "kmx-agent-builder"
     manifest["version"] = version
     name = "kmx.exe" if target.startswith("windows/") else "kmx"
     server["command"] = "./bin/" + name

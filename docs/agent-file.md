@@ -182,8 +182,8 @@ Schema-valid calls match canonical JSON arguments, independent of key order or m
 with a recording-mismatch message and no live fallback. Schema-invalid model requests are refused before dispatch,
 like invalid live requests. The same saved response can answer repeated identical
 requests within the existing five-call first-response batch. Saved-but-unused data is not an implicit Calls check.
-Both call checks count validated requests, including recorded and unavailable requests; incomplete execution
-cannot pass a Doesn't call check. Results report configured mode, selected source and actual count; zero means
+Both call checks count validated Enabled requests, including recorded and unavailable requests. Disabled answers
+consume a request slot but do not count as calls and never become recordings; incomplete execution cannot pass a Doesn't call check. Results report configured mode, selected source and actual count; zero means
 **Not called**, not proof that a live tool worked. A first capture says **recorded just now**, with source `live`,
 not replayed. A recorded pass does not qualify today's server.
 

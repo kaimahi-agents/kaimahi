@@ -27,6 +27,9 @@ func WriteFilePreview(w io.Writer, r FilePreviewResult, format string) error {
 	if r.SavedRevision != "" {
 		fmt.Fprintf(&b, "saved revision: %s (results use the executed revision above)\n", r.SavedRevision)
 	}
+	for _, tool := range r.ToolSettings {
+		fmt.Fprintf(&b, "tool setting %s: %s\n", tool.Name, tool.State)
+	}
 	if r.Diagnostic != nil {
 		fmt.Fprintf(&b, "%s:%d:%d: %s\n", r.Diagnostic.Field, r.Diagnostic.Line, r.Diagnostic.Column, r.Diagnostic.Repair)
 	}

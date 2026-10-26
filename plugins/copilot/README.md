@@ -22,8 +22,11 @@ for rc.2. Homebrew is the install path for final v0.9.0.
 
 The plugin starts `kmx mcp` from PATH; `/usr/local/bin` must be on Copilot's PATH.
 No root, model or binary is configured inside the plugin. The MCP schema has no
-per-OS command selector, so Windows keeps its separate WSL manifest. Both
-plugins have the name `kmx-agent-builder`; installing one replaces the other.
+per-OS command selector, so Windows keeps its separate WSL manifest. The PATH
+source plugin is named `kmx-agent-builder-path`; WSL and legacy native bundles
+keep `kmx-agent-builder`. Use only one variant per host profile: their MCP server
+and skill names are still shared. An existing direct install under the old PATH
+name must be uninstalled as `kmx-agent-builder` before installing this variant.
 Direct repository installs currently work but Copilot warns that they are
 deprecated; a marketplace install will come later.
 
@@ -37,8 +40,14 @@ login step. An unknown model fails without silently switching models.
 ## Shared assets and verification
 
 The skills and canvas have one source in `plugins/copilot-wsl`. This directory
-links to those sources; Copilot copies them into a self-contained installed
-cache. No second canvas implementation or bundled kmx is maintained here.
+links to those sources except for three generated provider-identity copies:
+both `SKILL.md` files and `extension.mjs`. Whenever a PR changes their canonical
+inputs, run `python3 plugins/copilot/source_release.py --write` from the repo
+root and commit the regenerated copies in that PR. CI rejects drift. Copilot
+copies the files into a self-contained installed cache. No second editable
+canvas implementation or bundled kmx is maintained here. Source manifest
+versions follow release preparation; a direct install from main is still
+moving content, not a release pin.
 The existing Python developer tools and legacy templates below are inert files
 in the source plugin, not additional extensions or installation steps. Node
 tests live separately under `plugins/tests/copilot`.

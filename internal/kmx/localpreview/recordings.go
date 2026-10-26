@@ -17,6 +17,7 @@ import (
 type toolPlan struct {
 	definitions []api.ToolDefinition
 	sources     *localtools.SourceConfig
+	settings    []localtools.ToolSetting
 	execute     controller.ToolFunc
 	captured    map[string]captureObservation
 }
@@ -92,7 +93,7 @@ func (r *runner) resolveTools(ctx context.Context, request agentpreview.Request,
 }
 
 // Fixture definitions stay on this dispatch path, never in a trusted live Host.
-func makeToolPlan(names []string, ex agentfile.Example, host *localtools.Host, check func(...string) error, validate func(context.Context) error) (toolPlan, error) {
+func makeToolPlan(names []string, ex agentfile.Example, host *localtools.Host, check func(...string) error, validate func(context.Context) error, settings []localtools.ToolSetting) (toolPlan, error) {
 	p := toolPlan{sources: &localtools.SourceConfig{Version: 1}, captured: map[string]captureObservation{}}
 	if len(names) == 0 {
 		return p, nil
@@ -125,14 +126,18 @@ func makeToolPlan(names []string, ex agentfile.Example, host *localtools.Host, c
 			}
 		}
 		p.definitions = append(p.definitions, def)
-		p.sources.Tools = append(p.sources.Tools, localtools.ToolSource{Name: name, Mode: tool.Mode, Source: source, Capturing: tool.Mode == "recorded" && source == "live"})
+		p.sources.Tools = append(p.sources.Tools, localtools.ToolSource{Name: name, Mode: tool.Mode, Source: source, Capturing: tool.Mode == "recorded" && source == "live" && !localtools.IsDisabled(settings, name)})
 	}
 	var err error
 	p.definitions, err = localtools.CopyDefinitions(p.definitions)
 	if err != nil || p.sources.Validate(p.definitions) != nil {
 		return p, agentpreview.ErrToolsUnavailable
 	}
-	if localtools.CheckJSON(ex.Mocks, check) != nil || localtools.CheckJSON(p.definitions, check) != nil {
+	p.settings, err = localtools.CopySettings(settings, p.definitions)
+	if err != nil {
+		return p, agentpreview.ErrToolsUnavailable
+	}
+	if localtools.CheckJSON(ex.Mocks, check) != nil || localtools.CheckJSON(localtools.Config{Definitions: p.definitions, ToolSettings: p.settings, Sources: p.sources}, check) != nil {
 		return p, agentpreview.ErrUnsafeToolContent
 	}
 	p.execute = func(ctx context.Context, scope controller.ToolCallContext, call api.ToolCall) (api.ToolResult, error) {
@@ -144,51 +149,55 @@ func makeToolPlan(names []string, ex agentfile.Example, host *localtools.Host, c
 		}
 		result := api.ToolResult{ID: call.ID, Output: map[string]any{"text": "not available in this test"}}
 		capturing := false
-		for _, source := range p.sources.Tools {
-			if source.Name == call.Tool {
-				switch source.Source {
-				case "live":
-					// A blank live description cannot populate the existing fixture format.
-					// Refuse only a requested capture, before spending a live call.
-					if source.Capturing {
-						for _, definition := range p.definitions {
-							if definition.Name == call.Tool && strings.TrimSpace(definition.Description) == "" {
-								return api.ToolResult{}, agentfile.ErrRecordingInvalid
+		if localtools.IsDisabled(p.settings, call.Tool) {
+			result = localtools.DisabledResult(call.ID)
+		} else {
+			for _, source := range p.sources.Tools {
+				if source.Name == call.Tool {
+					switch source.Source {
+					case "live":
+						// A blank live description cannot populate the existing fixture format.
+						// Refuse only a requested capture, before spending a live call.
+						if source.Capturing {
+							for _, definition := range p.definitions {
+								if definition.Name == call.Tool && strings.TrimSpace(definition.Description) == "" {
+									return api.ToolResult{}, agentfile.ErrRecordingInvalid
+								}
 							}
 						}
-					}
-					if saved, ok := p.captured[call.Tool]; ok {
-						if saved.session != scope.SessionUID {
-							return api.ToolResult{}, errRunnerExecution
+						if saved, ok := p.captured[call.Tool]; ok {
+							if saved.session != scope.SessionUID {
+								return api.ToolResult{}, errRunnerExecution
+							}
+							var err error
+							result, err = replayCapture(call, saved.exchange.Call.Args, saved.exchange.Result.Output)
+							if err != nil {
+								return api.ToolResult{}, err
+							}
+							break
 						}
+						capturing = source.Capturing
 						var err error
-						result, err = replayCapture(call, saved.exchange.Call.Args, saved.exchange.Result.Output)
+						result, err = host.Execute(ctx, scope, call)
 						if err != nil {
 							return api.ToolResult{}, err
 						}
-						break
-					}
-					capturing = source.Capturing
-					var err error
-					result, err = host.Execute(ctx, scope, call)
-					if err != nil {
-						return api.ToolResult{}, err
-					}
-				case "recorded":
-					saved := fixtures[call.Tool].Calls[0]
-					args := call.Args
-					if args == nil {
-						args = map[string]any{}
-					}
-					actual, _ := json.Marshal(args)
-					expected, _ := json.Marshal(saved.Arguments)
-					if string(actual) != string(expected) {
-						return api.ToolResult{}, agentpreview.ErrRecordingMismatch
-					}
-					raw, _ := json.Marshal(saved.Result)
-					result.Output = nil // Decode into a fresh map, not the unavailable stub's map.
-					if len(raw) > 32*1024 || !runtime.JSONNumbersExact(raw) || json.Unmarshal(raw, &result.Output) != nil {
-						return api.ToolResult{}, agentpreview.ErrUnsafeToolContent
+					case "recorded":
+						saved := fixtures[call.Tool].Calls[0]
+						args := call.Args
+						if args == nil {
+							args = map[string]any{}
+						}
+						actual, _ := json.Marshal(args)
+						expected, _ := json.Marshal(saved.Arguments)
+						if string(actual) != string(expected) {
+							return api.ToolResult{}, agentpreview.ErrRecordingMismatch
+						}
+						raw, _ := json.Marshal(saved.Result)
+						result.Output = nil // Decode into a fresh map, not the unavailable stub's map.
+						if len(raw) > 32*1024 || !runtime.JSONNumbersExact(raw) || json.Unmarshal(raw, &result.Output) != nil {
+							return api.ToolResult{}, agentpreview.ErrUnsafeToolContent
+						}
 					}
 				}
 			}

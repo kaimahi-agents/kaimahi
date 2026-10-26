@@ -104,7 +104,7 @@ func TestCaptureSnapshotReuseAndIndependentJournalProof(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan, err := makeToolPlan(req.Agent.Tools, req.Examples[0], host, func(...string) error { return nil }, func(ctx context.Context) error { return ctx.Err() })
+	plan, err := makeToolPlan(req.Agent.Tools, req.Examples[0], host, func(...string) error { return nil }, func(ctx context.Context) error { return ctx.Err() }, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

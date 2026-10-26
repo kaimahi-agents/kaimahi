@@ -22,35 +22,45 @@ class PlainPluginTests(unittest.TestCase):
         self.assertEqual(config["mcpServers"], {"kmx-agent-builder": {
             "type": "stdio", "command": "kmx", "args": ["mcp"]}})
         self.assertFalse((HERE / "bin").exists())
+        self.assertEqual(json.loads((HERE / "plugin.json").read_text())["name"], "kmx-agent-builder-path")
+        derived = {"skills/kmx/SKILL.md", "skills/kmx-agent-builder/SKILL.md",
+                   "com.github.copilot/extensions/agent-view/extension.mjs"}
         for name in ASSETS | SKILLS:
             with self.subTest(name=name):
-                self.assertEqual((HERE / name).resolve(), (SHARED / name).resolve())
-                self.assertEqual((HERE / name).read_bytes(), (SHARED / name).read_bytes())
+                if name in derived:
+                    self.assertFalse((HERE / name).is_symlink())
+                    self.assertEqual((HERE / name).read_bytes(), (SHARED / name).read_bytes().replace(
+                        b"plugin:kmx-agent-builder:agent-view", b"plugin:kmx-agent-builder-path:agent-view"))
+                else:
+                    self.assertEqual((HERE / name).resolve(), (SHARED / name).resolve())
+                    self.assertEqual((HERE / name).read_bytes(), (SHARED / name).read_bytes())
 
     @unittest.skipUnless(os.environ.get("KMX_PLAIN_COPILOT"), "opt-in pinned Copilot install check")
     def test_installed_cache_is_self_contained(self):
         copilot = os.environ["KMX_PLAIN_COPILOT"]
         with tempfile.TemporaryDirectory(prefix="plain copilot ") as temp:
             home = Path(temp)
-            env = {**os.environ, "COPILOT_HOME": str(home)}
+            env = {**os.environ, "COPILOT_HOME": str(home), "COPILOT_CACHE_HOME": str(home / "cache")}
             def host(*args):
                 return subprocess.run([copilot, "--no-auto-update", *args], env=env,
                                       capture_output=True, text=True, check=True, timeout=120).stdout
             self.assertIn("1.0.102", host("--version"))
             host("plugin", "install", os.environ.get("KMX_PLAIN_SOURCE", str(HERE)))
-            self.assertIn("kmx-agent-builder", host("plugin", "list"))
+            host("plugin", "list")
             manifests = list((home / "installed-plugins").rglob("plugin.json"))
             self.assertEqual(len(manifests), 1)
             cache = manifests[0].parent
+            self.assertEqual(json.loads(manifests[0].read_text())["name"], "kmx-agent-builder-path")
             self.assertEqual(json.loads((cache / "mcp.json").read_text()),
                              json.loads((HERE / "mcp.json").read_text()))
             self.assertFalse((cache / "bin").exists())
             for name in ASSETS | SKILLS:
-                self.assertEqual((cache / name).read_bytes(), (SHARED / name).read_bytes(), name)
+                self.assertEqual((cache / name).read_bytes(), (HERE / name).read_bytes(), name)
             self.assertFalse(any(p.is_symlink() for p in cache.rglob("*")))
             self.assertFalse(list(cache.rglob("*.test.mjs")))
-            host("plugin", "uninstall", "kmx-agent-builder")
-            self.assertNotIn("kmx-agent-builder", host("plugin", "list"))
+            host("plugin", "uninstall", "kmx-agent-builder-path")
+            host("plugin", "list")
+            self.assertFalse(list((home / "installed-plugins").rglob("plugin.json")))
 
     def test_path_mcp_create_cli_test_edit_and_rerun_offline(self):
         with tempfile.TemporaryDirectory(prefix="plain kmx ") as temp:

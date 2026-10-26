@@ -14,7 +14,8 @@ import (
 
 type captureBatchExecutor struct {
 	Executor
-	mismatch bool
+	mismatch  bool
+	requested []string
 }
 
 func (e captureBatchExecutor) Execute(ctx context.Context, turn Turn) (Execution, error) {
@@ -22,13 +23,17 @@ func (e captureBatchExecutor) Execute(ctx context.Context, turn Turn) (Execution
 	turn.Call = func(_ context.Context, request api.ModelRequest) (api.ModelResponse, error) {
 		sends++
 		if sends == 1 {
-			parts := make([]api.Part, localtools.MaxCalls)
+			names := e.requested
+			if len(names) == 0 {
+				names = []string{"ping", "ping", "ping", "ping", "ping"}
+			}
+			parts := make([]api.Part, len(names))
 			for i := range parts {
 				args := map[string]any{}
 				if e.mismatch && i == len(parts)-1 {
 					args["changed"] = true
 				}
-				parts[i] = api.Part{ToolCall: &api.ToolCall{ID: fmt.Sprintf("call-%d", i), Tool: "ping", Args: args}}
+				parts[i] = api.Part{ToolCall: &api.ToolCall{ID: fmt.Sprintf("call-%d", i), Tool: names[i], Args: args}}
 			}
 			return api.ModelResponse{Message: api.Message{Role: "assistant", Parts: parts}}, nil
 		}
@@ -69,7 +74,7 @@ func TestCaptureFiveRequestsOncePerTestAndMismatchDiscardsAll(t *testing.T) {
 			open := r.open
 			r.open = func(d, m string) (Executor, string, error) {
 				e, path, err := open(d, m)
-				return captureBatchExecutor{e, mismatch}, path, err
+				return captureBatchExecutor{Executor: e, mismatch: mismatch}, path, err
 			}
 			out, err := r.Run(testContext(t), req)
 			if mismatch {

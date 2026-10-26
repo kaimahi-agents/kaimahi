@@ -19,7 +19,7 @@ func TestToolJournalExecutionAndOfflineInspection(t *testing.T) {
 		tools++
 		return api.ToolResult{ID: c.ID, Output: map[string]any{"pullRequests": []any{}}}, nil
 	}
-	e, run, err := openToolJournalExecutor(dir, "unit", execute)
+	e, run, err := openToolJournalExecutor(dir, "unit", execute, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
