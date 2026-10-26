@@ -274,13 +274,9 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 - The canvas shows tool servers and counts between Prompt and Tests, with Add tools opening the app's server catalog. Tool selections stay as drafts until Enter saves and tests; Escape or discard cancels tool edits without dropping prompt or test drafts.
 
-- Native `/kmx-canvas open PATH` opens or focuses an agent canvas without a model turn, or shows its text view when no renderer is available. It requires host extension support; `/kmx-canvas help` shows usage, and the distinct name avoids the model-backed `/kmx` skill alias.
-
 - The canvas drafts Enabled/Disabled test-tool settings, saves them with revision checks and shows disabled counts per server. Partial or unconfirmed saves stop before testing and retain drafts.
 
 - Each canvas test offers Live/Recorded controls, saved recording details and Calls/Doesn't call checks. Record again remains a draft until saved and run.
-
-- Model comparison captures pending Recorded tools once, then replays the saved source for every model; Live tools remain live. Missing recordings, changed source or settings, and unconfirmed saves stop comparison without silently changing modes or retrying captures.
 
 - Deploy evaluated AgentSessions packages by digest as immutable Agents; new creates wait for registration, and the separate offline `--harness-image --plan` render remains available. Exact acknowledged deployments are read-only no-ops; use `--name` for changed inputs, and treat Registered as controller-observed admission rather than live availability or target evaluation.
 
@@ -533,6 +529,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 For v0.9.0-rc.3 on Windows, [install kmx at `/usr/local/bin/kmx` in WSL](plugins/copilot-wsl/README.md#install), then run `copilot plugin install kaimahi-agents/kaimahi:plugins/copilot-wsl` in Windows. On macOS, [install the Darwin binary and plugin](plugins/copilot/README.md#install-on-macos) with the two commands in that guide.
 
 Known gaps in this preview:
+- On some models, a comparison run can stop without a reason, and the next run may then ask you to reload the canvas.
+- `/kmx-canvas open PATH` appears in the menu but does not open the canvas yet. Ask Copilot to open the agent instead.
 - The Copilot CLI marks direct plugin installs as deprecated, though this install still works. A marketplace install will come later.
 - Copilot may keep showing “Working” after a canvas run until the next chat turn. Test rows and the final Test reply show the observed results.
 - AgentSessions deployment is create-only by digest. Registered reports controller-observed admission, not live availability or destination evaluation.
