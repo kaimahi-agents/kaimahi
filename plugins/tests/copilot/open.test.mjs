@@ -135,20 +135,22 @@ test("explicit provider disambiguates two extensions with the same canvas ID", a
   assert.equal(f.calls[1][1].extensionId, PROVIDER);
 });
 
-test("actual extension registers one explicit opener and the kmx skill, with no load-time open", async () => {
+for (const [variant, provider] of [["copilot-wsl", PROVIDER], ["copilot", "plugin:kmx-agent-builder-path:agent-view"]])
+test(`actual ${variant} extension opens its own provider and registers the kmx skill, with no load-time open`,
+  { skip: variant === "copilot" && process.platform === "win32" }, async () => {
   const f = setup(); let registration;
   globalThis.__kmxJoin = async (config) => { registration = config; return f.session; };
   const stub = 'data:text/javascript,' + encodeURIComponent('export class CanvasError extends Error { constructor(code,message){super(message);this.code=code;} }; export const createCanvas=(config)=>config; export const joinSession=(config)=>globalThis.__kmxJoin(config);');
   const hooks = registerHooks({ resolve(specifier, context, next) { return specifier === "@github/copilot-sdk/extension" ? { url: stub, shortCircuit: true } : next(specifier, context); } });
   try {
-    await import("../../copilot-wsl/com.github.copilot/extensions/agent-view/extension.mjs");
+    await import(`../../${variant}/com.github.copilot/extensions/agent-view/extension.mjs`);
     assert.deepEqual(f.calls, [], "joining must not read an agent or open a canvas");
     assert.deepEqual(registration.tools.map(t => t.name), ["open_kmx_canvas"]);
     assert.deepEqual(registration.commands.map(c => c.name), ["agent-view", "kmx-canvas"]);
     assert.equal(registration.canvases[0].id, "kmx-agent-view");
     assert.equal((await registration.tools[0].handler({ path: PATH })).opened, true);
     assert.deepEqual(f.calls.map(c => c[0]), ["read", "open"]);
-    assert.equal(f.calls[1][1].extensionId, PROVIDER);
+    assert.equal(f.calls[1][1].extensionId, provider);
     const canvas = registration.canvases[0];
     const ctx = { instanceId: "direct-provider-proof", input: { path: PATH } };
     f.calls.length = 0;
@@ -179,7 +181,7 @@ test("actual extension registers one explicit opener and the kmx skill, with no 
     await command({ args: "open greeter.agent.md" });
     await command({ args: "open greeter.agent.md" });
     assert.deepEqual(f.calls.map(c => c[0]), ["read", "open", "read", "open"]);
-    assert.deepEqual(f.calls[1][1], { extensionId: PROVIDER, canvasId: "kmx-agent-view", instanceId: "kmx-agent-greeter", input: { path: PATH } });
+    assert.deepEqual(f.calls[1][1], { extensionId: provider, canvasId: "kmx-agent-view", instanceId: "kmx-agent-greeter", input: { path: PATH } });
     assert.deepEqual(f.calls[1], f.calls[3], "native reopen focuses the same instance");
     const nativeRead = f.session.rpc.mcp.resources.read;
     try {
@@ -218,17 +220,17 @@ test("actual extension registers one explicit opener and the kmx skill, with no 
         assert.doesNotMatch(f.calls.at(-1)[1], /private|token|http/);
       }
     } finally { f.session.rpc.mcp.resources.read = nativeRead; f.session.rpc.canvas.open = nativeOpen; }
-    const skill = await readFile(new URL("../../copilot-wsl/skills/kmx/SKILL.md", import.meta.url), "utf8");
+    const skill = await readFile(new URL(`../../${variant}/skills/kmx/SKILL.md`, import.meta.url), "utf8");
     for (const eol of ["\n", "\r\n"]) {
       assert.match(skill.replace(/\r?\n/g, eol), /^---\r?\nname: kmx\r?\n/);
     }
     assert.match(skill, /built-in `open_canvas` exactly once/);
     const payload = JSON.parse(skill.match(/```json\s*([\s\S]*?)```/)[1]);
-    assert.deepEqual(payload, { extensionId: PROVIDER, canvasId: "kmx-agent-view", instanceId: "<INSTANCE>", input: { path: "<PATH>" } });
+    assert.deepEqual(payload, { extensionId: provider, canvasId: "kmx-agent-view", instanceId: "<INSTANCE>", input: { path: "<PATH>" } });
     assert.match(skill, /`<id>\.agent\.md`[^\n]*`kmx-agent-<id>`/);
     assert.match(skill, /`\.squad\/agents\/<id>\/charter\.md`[^\n]*`kmx-squad-<id>`/);
     assert.doesNotMatch(skill, /\"root\"\s*:/);
-    const builder = await readFile(new URL("../../copilot-wsl/skills/kmx-agent-builder/SKILL.md", import.meta.url), "utf8");
+    const builder = await readFile(new URL(`../../${variant}/skills/kmx-agent-builder/SKILL.md`, import.meta.url), "utf8");
     assert.match(builder, /After (?:a )?successful Create/);
     assert.match(builder, /structuredContent\.file\.path/);
     assert.match(builder, /unbound server uses Copilot/);

@@ -84,12 +84,21 @@ jobs:
       - name: Exercise the public install command (transport only before merge)
         env:
           COPILOT_HOME: ${{ runner.temp }}/public-plugin-profile
+          COPILOT_CACHE_HOME: ${{ runner.temp }}/public-plugin-cache
         run: |
           set -euo pipefail
           export PATH="$RUNNER_TEMP/copilot/node_modules/.bin:$PATH"
           copilot --no-auto-update plugin install kaimahi-agents/kaimahi:plugins/copilot
           copilot --no-auto-update plugin list
-          copilot --no-auto-update plugin uninstall kmx-agent-builder
+          # Main may still have the old identity while a PR tests its renamed copy.
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess
+          manifests = list((pathlib.Path(os.environ["COPILOT_HOME"]) / "installed-plugins").rglob("plugin.json"))
+          assert len(manifests) == 1, "expected one isolated public-source install"
+          name = json.loads(manifests[0].read_text())["name"]
+          assert name in ("kmx-agent-builder", "kmx-agent-builder-path"), name
+          subprocess.run(["copilot", "--no-auto-update", "plugin", "uninstall", name], check=True)
+          PY
       - name: Check cached assets and offline create, test, edit, rerun
         env:
           KMX_PLAIN_COPILOT: ${{ runner.temp }}/copilot/node_modules/.bin/copilot
