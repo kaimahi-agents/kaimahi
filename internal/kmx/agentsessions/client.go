@@ -18,6 +18,7 @@ import (
 	sdk "github.com/agent-primitives/sessions/client"
 	"github.com/agent-primitives/sessions/eventlog"
 	"github.com/agent-primitives/sessions/wire"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -47,6 +48,7 @@ type CaseResult struct {
 	Output               string
 	ToolCalls            map[string]int
 	ToolEvidenceComplete bool
+	ToolExchanges        []localtools.ToolExchange
 }
 type Client struct{ sdk *sdk.Client }
 

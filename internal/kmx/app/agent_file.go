@@ -33,10 +33,13 @@ type FilePreviewOptions struct {
 	retentionScope *fileFailureScope
 	// CaseFinished receives a safe provisional row, never answer or judge content.
 	CaseFinished func(FilePreviewCaseProgress)
+	// PrepareRecordingSave freezes authoring authority after Load, before execution.
+	PrepareRecordingSave func(context.Context, string) (RecordingSaver, error)
 }
 
 type FilePreviewResult struct {
 	SchemaVersion int                       `json:"schemaVersion"`
+	SavedRevision string                    `json:"savedRevision,omitempty"`
 	Kind          string                    `json:"kind"`
 	Runner        string                    `json:"runner,omitempty"`
 	Operation     string                    `json:"operation"`
@@ -172,13 +175,16 @@ func previewReason(code string) string {
 		"invalid_file":      "Invalid agent file; use the canonical charter format with required fields and an Examples section.",
 		"no_tests":          "No tests yet — add or suggest one",
 		"invalid_selection": "Unknown example ID; select an authored example ID.", "invalid_options": "Invalid file preview options.",
-		"model_unavailable":   "Selected model route is unavailable or does not match the file model; select an exact trusted route.",
-		"tools_unavailable":   "Host-bound tools are unavailable for the declared names.",
-		"recording_mismatch":  "Recording mismatch: tool arguments differ from the saved call. Update the saved call before retrying.",
-		"unsafe_tool_content": "Unsafe tool preview content was withheld; nothing was journaled.",
-		"credential_content":  "Credential-bearing preview content was withheld.",
-		"runner_unavailable":  "Embedded preview runner is not available; no inference was performed.",
-		"execution_failed":    "Local preview execution failed.", "invalid_completion": "Runner returned incomplete or mismatched execution metadata.",
+		"model_unavailable":         "Selected model route is unavailable or does not match the file model; select an exact trusted route.",
+		"tools_unavailable":         "Host-bound tools are unavailable for the declared names.",
+		"recording_mismatch":        "Recording mismatch: tool arguments differ from the saved call. Update the saved call before retrying.",
+		"recording_source_changed":  "Agent file changed; recording was not saved.",
+		"recording_unrepresentable": "Recording cannot fit the agent file format and limits; no recording was saved.",
+		"recording_save_failed":     "Recording save failed; results still refer to the executed source revision.",
+		"unsafe_tool_content":       "Unsafe tool preview content was withheld; nothing was journaled.",
+		"credential_content":        "Credential-bearing preview content was withheld.",
+		"runner_unavailable":        "Embedded preview runner is not available; no inference was performed.",
+		"execution_failed":          "Local preview execution failed.", "invalid_completion": "Runner returned incomplete or mismatched execution metadata.",
 		"diagnostics_failed": "Cannot write local preview diagnostics.",
 		"journal_failed":     "Preview journal finalization failed; the result is unknown.",
 	}
@@ -220,6 +226,13 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		r.ReasonCode = code
 		r.Reason = previewReason(code)
 		return r, &FilePreviewError{code: code, exit: exit}
+	}
+	recordingFail := func(err error) (FilePreviewResult, *FilePreviewError) {
+		if errors.Is(err, context.Canceled) {
+			r.State = "cancelled"
+			return fail("cancelled", 130)
+		}
+		return fail(recordingReason(err), 1)
 	}
 	if opt.Operation != "run" && opt.Operation != "test" || opt.Operation == "test" && opt.Input != nil || opt.Input != nil && (len(*opt.Input) > agentfile.MaxInputBytes || !utf8.ValidString(*opt.Input)) {
 		return fail("invalid_options", 1)
@@ -332,6 +345,10 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	}
 	if opt.retentionScope != nil && opt.retentionScope.filename != opt.RetentionFile {
 		return fail("invalid_options", 1)
+	}
+	recordingSave, prepareErr := prepareRecordingSave(ctx, opt, parsed.Revision, selected)
+	if prepareErr != nil {
+		return recordingFail(prepareErr)
 	}
 	request := agentpreview.Request{Agent: parsed, Examples: selected, Route: route, JudgeRoute: opt.JudgeRoute, Input: opt.Input, Progress: opt.Progress, ToolBindings: opt.ToolBindings, FileLabel: r.File.Path}
 	request.ExampleFinished = previewCaseObserver(ctx, selected, parsed, route, opt.CaseFinished)
@@ -473,6 +490,9 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	}
 	if r.AdHoc != nil && r.AdHoc.State != "complete" {
 		return fail("invalid_completion", 1)
+	}
+	if saveErr := saveFileRecordings(ctx, recordingSave, outcome, selected, &r); saveErr != nil {
+		return recordingFail(saveErr)
 	}
 	if opt.Operation == "test" && opt.retentionScope != nil {
 		retainFilePreviewFailures(ctx, *opt.retentionScope, parsed, selected, route, judge, r.Selection.Scope, outcome.Examples, &r)

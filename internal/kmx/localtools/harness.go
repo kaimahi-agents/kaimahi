@@ -133,12 +133,19 @@ func textMessage(m *api.Message, role string) bool {
 	return p.Text != nil && p.File == nil && p.Data == nil && p.Reasoning == nil && p.ToolCall == nil && p.ToolResult == nil && len(p.Text.Text) > 0 && len(p.Text.Text) <= 256*1024 && utf8.ValidString(p.Text.Text)
 }
 
+// ToolExchange is correlated model-visible content from one verified tool request.
+type ToolExchange struct {
+	Call   api.ToolCall
+	Result api.ToolResult
+}
+
 // Trace is preview-only content and safe counts, not portable suite evidence.
 type Trace struct {
 	Answer      string
 	ToolCalls   int
 	CallsByName map[string]int
 	Sources     *SourceConfig
+	Exchanges   []ToolExchange
 }
 
 // VerifyTrace accepts only one complete bounded invocation, then reconstructs
@@ -217,6 +224,9 @@ func VerifyTrace(ctx context.Context, records []eventlog.Record, model string) (
 	var config Config
 	if json.Unmarshal(s.Config, &config) != nil {
 		return Trace{}, errTrace
+	}
+	for i := 0; i < out.ToolCalls; i++ {
+		out.Exchanges = append(out.Exchanges, ToolExchange{Call: *records[4+2*i].Event.ToolCall, Result: *records[5+2*i].Event.Result})
 	}
 	out.Sources = config.Sources
 	out.Answer = final.Text()

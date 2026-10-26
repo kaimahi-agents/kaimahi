@@ -52,6 +52,7 @@ type Execution struct {
 	ToolCalls            int
 	ToolCallCounts       map[string]int
 	ToolEvidenceComplete bool
+	ToolExchanges        []localtools.ToolExchange
 	// SessionUID identifies the journaled Session; empty for an Executor that
 	// does not journal.
 	SessionUID string
@@ -545,6 +546,7 @@ func (e *journalExecutor) Execute(ctx context.Context, turn Turn) (execution Exe
 	}
 	execution.Answer = result.Output
 	execution.ToolCallCounts, execution.ToolEvidenceComplete = result.ToolCalls, result.ToolEvidenceComplete
+	execution.ToolExchanges = result.ToolExchanges
 	for _, count := range result.ToolCalls {
 		execution.ToolCalls += count
 	}

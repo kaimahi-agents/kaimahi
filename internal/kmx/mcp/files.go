@@ -107,6 +107,9 @@ type Files struct {
 	latest      previewObservation
 	historyDir  func() (string, error)
 	historyGate chan struct{}
+	// exact is a private rootless capability for one CLI-selected physical file.
+	// OpenFiles and inbound MCP never set it.
+	exact string
 }
 
 func OpenFiles(root string, validate func(string, []byte) error) (*Files, error) {
@@ -161,7 +164,7 @@ func (f *Files) rootRelative(p string) (string, error) {
 		return "", err
 	}
 	if f.root == nil {
-		if !agentPath(p) {
+		if f.exact == "" && !agentPath(p) {
 			return "", refusal("unsafe_path")
 		}
 		var err error
@@ -198,7 +201,7 @@ func (f *Files) rootRelative(p string) (string, error) {
 		resolved = filepath.Join(resolved, suffix)
 	}
 	if f.root == nil {
-		if !agentPath(resolved) {
+		if f.exact != "" && resolved != f.exact || f.exact == "" && !agentPath(resolved) {
 			return "", refusal("unsafe_path")
 		}
 		return resolved, nil
@@ -256,6 +259,9 @@ func agentPath(p string) bool {
 }
 
 func (f *Files) allowedPath(p string) bool {
+	if f.exact != "" {
+		return p == f.exact
+	}
 	if f.root == nil {
 		return agentPath(p)
 	}

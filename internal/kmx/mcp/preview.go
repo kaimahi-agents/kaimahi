@@ -87,6 +87,10 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 			if retentionPath != "" && parsed != nil {
 				options = app.WithFilePreviewRetention(options, retentionPath, parsed.Revision)
 			}
+			options.PrepareRecordingSave = func(ctx context.Context, revision string) (app.RecordingSaver, error) {
+				save, err := files.RecordingSaver(ctx, path, revision)
+				return app.RecordingSaver(save), err
+			}
 			result, err := application.PreviewAgentSnapshot(ctx, parsed, options)
 			if detail != nil && result.ReasonCode == "invalid_file" {
 				result.Diagnostic = &app.FilePreviewDiagnostic{Field: detail.Field, Line: detail.Location.Line, Column: detail.Location.Column, Repair: detail.Problem}

@@ -24,6 +24,9 @@ func WriteFilePreview(w io.Writer, r FilePreviewResult, format string) error {
 		scope = "partial"
 	}
 	fmt.Fprintf(&b, "kmx local preview of this charter (%s): %s\nrevision: %s\nmodel: %s/%s\n%s %s: %s\n", scope, r.File.Path, r.File.Revision, r.ModelRoute.Provider, r.ModelRoute.Model, r.State, r.Verdict, r.Reason)
+	if r.SavedRevision != "" {
+		fmt.Fprintf(&b, "saved revision: %s (results use the executed revision above)\n", r.SavedRevision)
+	}
 	if r.Diagnostic != nil {
 		fmt.Fprintf(&b, "%s:%d:%d: %s\n", r.Diagnostic.Field, r.Diagnostic.Line, r.Diagnostic.Column, r.Diagnostic.Repair)
 	}
@@ -62,6 +65,9 @@ func writeFileTools(b *strings.Builder, c FilePreviewCompletion) {
 		usage := "Not called"
 		if tool.CallCount > 0 {
 			usage = fmt.Sprintf("%d call(s)", tool.CallCount)
+		}
+		if tool.RecordingSaved {
+			usage += "; recorded just now"
 		}
 		fmt.Fprintf(b, "  tool %s: %s; mode=%s source=%s\n", tool.Name, usage, tool.Mode, tool.Source)
 	}
