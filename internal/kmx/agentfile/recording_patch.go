@@ -3,6 +3,7 @@ package agentfile
 import (
 	"bytes"
 	"encoding/json"
+	"regexp"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -15,7 +16,15 @@ import (
 // source bytes. It only inserts JSON-quoted text, so comments, layout, tags and
 // each target line's ending survive, then reparses the whole candidate under the
 // unchanged bounds. All recordings apply or none do. It grants no write authority.
+// A block-style entry gets block YAML instead when that form passes the same check.
 func ApplyRecordings(source []byte, recordings []Recording) ([]byte, error) {
+	if block, err := applyRecordings(source, recordings, true); err == nil {
+		return block, nil
+	}
+	return applyRecordings(source, recordings, false)
+}
+
+func applyRecordings(source []byte, recordings []Recording, block bool) ([]byte, error) {
 	before, err := Parse("recording.agent.md", source)
 	if err != nil {
 		return nil, ErrRecordingChanged
@@ -63,8 +72,8 @@ func ApplyRecordings(source []byte, recordings []Recording) ([]byte, error) {
 		return nil, nil
 	}
 	type edit struct {
-		at   int
-		text string
+		at, end int
+		text    string
 	}
 	var edits []edit
 	seen := map[[2]string]bool{}
@@ -81,7 +90,7 @@ func ApplyRecordings(source []byte, recordings []Recording) ([]byte, error) {
 		if err1 != nil || err2 != nil || err3 != nil || !runtime.JSONNumbersExact(parameters) || !runtime.JSONNumbersExact(call) {
 			return nil, ErrRecordingInvalid
 		}
-		var key, calls *yaml.Node
+		var key, calls, entry *yaml.Node
 		_, examples := value(root.Content[0], "examples")
 		for i, e := range before.Examples {
 			if e.ID != r.ExampleID || e.Mocks == nil {
@@ -92,6 +101,7 @@ func ApplyRecordings(source []byte, recordings []Recording) ([]byte, error) {
 			for j, saved := range e.Mocks.Tools {
 				if saved.Name == tool.Name && saved.Mode == "recorded" && len(saved.Calls) == 0 {
 					key, calls = value(entries.Content[j], "calls")
+					entry = entries.Content[j]
 					before.Examples[i].Mocks.Tools[j] = tool
 					separator := ", "
 					if entries.Content[j].Style&yaml.FlowStyle == 0 {
@@ -101,7 +111,9 @@ func ApplyRecordings(source []byte, recordings []Recording) ([]byte, error) {
 						}
 						separator = eol + strings.Repeat(" ", key.Column-1)
 					}
-					edits = append(edits, edit{offset(key), `"description": ` + string(description) + separator + `"parameters": ` + string(parameters) + separator})
+					if !block {
+						edits = append(edits, edit{offset(key), offset(key), `"description": ` + string(description) + separator + `"parameters": ` + string(parameters) + separator})
+					}
 				}
 			}
 		}
@@ -123,11 +135,26 @@ func ApplyRecordings(source []byte, recordings []Recording) ([]byte, error) {
 		if at >= len(text) || text[at] != '[' {
 			return nil, ErrRecordingInvalid
 		}
-		edits = append(edits, edit{at + 1, string(call)})
+		if block {
+			// Replace `calls: []` with the three fields; refuse anything less plain.
+			end := at + 1 + strings.IndexByte(text[at+1:], ']')
+			fields := ordered{"description", tool.Description, "parameters", json.RawMessage(parameters), "calls", []any{json.RawMessage(call)}}
+			value, err := blockYAML(fields, strings.Repeat(" ", key.Column-1), "\n")
+			if entry.Style&yaml.FlowStyle != 0 || end <= at || strings.TrimSpace(text[at+1:end]) != "" || err != nil || !plainCalls.MatchString(text[offset(key):at]) {
+				return nil, ErrRecordingInvalid
+			}
+			eol := "\n"
+			if strings.HasSuffix(lines[open+key.Line], "\r\n") {
+				eol = "\r\n"
+			}
+			edits = append(edits, edit{offset(key), end + 1, strings.ReplaceAll(value, "\n", eol)})
+			continue
+		}
+		edits = append(edits, edit{at + 1, at + 1, string(call)})
 	}
 	slices.SortFunc(edits, func(a, b edit) int { return b.at - a.at })
 	for _, e := range edits {
-		text = text[:e.at] + e.text + text[e.at:]
+		text = text[:e.at] + e.text + text[e.end:]
 	}
 	after, err := Parse("recording.agent.md", []byte(text))
 	if want := projectAgent(before); err != nil || want == nil || !bytes.Equal(want, projectAgent(after)) {
@@ -135,6 +162,9 @@ func ApplyRecordings(source []byte, recordings []Recording) ([]byte, error) {
 	}
 	return []byte(text), nil
 }
+
+// plainCalls is an untagged, uncommented `calls:` key before its empty list.
+var plainCalls = regexp.MustCompile(`^(calls|"calls"|'calls')[ \t]*:[ \t]*$`)
 
 // decodedJSON admits only decoded JSON shapes with valid UTF-8 text, which
 // encoding/json would otherwise coerce on both sides of the final comparison.

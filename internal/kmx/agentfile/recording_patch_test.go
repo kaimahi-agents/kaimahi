@@ -78,8 +78,31 @@ func refused(t *testing.T, source string, want error, recordings ...Recording) {
 	}
 }
 
-func blockWant(source, eol string) string {
+// jsonWant is the JSON-inserted form, still written into flow entries.
+func jsonWant(source, eol string) string {
 	return strings.Replace(source, "        calls: []", "        "+readDefinitions+eol+`        "parameters": `+readParamsJSON+eol+"        calls: ["+readCallJSON+"]", 1)
+}
+
+// blockRecorded is the saved recording in a block entry, as people write it.
+func blockRecorded(eol string) string {
+	return strings.ReplaceAll(`description: Read rows
+        parameters:
+          additionalProperties: false
+          properties:
+            query:
+              type: string
+          required:
+            - query
+          type: object
+        calls:
+          - arguments:
+              query: release
+            result:
+              complete: true`, "\n", eol)
+}
+
+func blockWant(source, eol string) string {
+	return strings.Replace(source, "        calls: []", "        "+blockRecorded(eol), 1)
 }
 
 func TestApplyRecordingsBlockPreservesBytes(t *testing.T) {
@@ -91,7 +114,7 @@ func TestApplyRecordingsBlockPreservesBytes(t *testing.T) {
 
 func TestApplyRecordingsFirstKeyLayout(t *testing.T) {
 	source := recordingSource(t, "calls: [] # waiting\n        name: read\n        mode: recorded")
-	want := strings.Replace(source, "      - calls: [] # waiting", "      - "+readDefinitions+"\n"+`        "parameters": `+readParamsJSON+"\n        calls: ["+readCallJSON+"] # waiting", 1)
+	want := strings.Replace(source, "      - calls: [] # waiting", "      - "+blockRecorded("\n")+" # waiting", 1)
 	applyExact(t, source, want, readRecording("greeting", nil))
 }
 

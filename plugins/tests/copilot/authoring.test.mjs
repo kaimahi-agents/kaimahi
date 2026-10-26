@@ -351,3 +351,15 @@ test("zero examples serialize as an explicit empty sequence", () => {
   assert.equal(replaceExamples(source, []), prefix + "## Examples\r\n```yaml\r\nexamples: []\r\n```\r\n");
   assert.deepEqual(instructionSections(replaceExamples(SOURCE, [])), instructionSections(SOURCE));
 });
+
+test("test IDs keep typed capitals and stay unique ignoring case", async () => {
+  const { portableId, validateDraft } = await import("../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs");
+  assert.equal(portableId("Leaves out dependency and CI changes"), "leaves-out-dependency-and-CI-changes");
+  assert.equal(portableId("CI changes"), "CI-changes");
+  assert.equal(portableId("greets ada"), "greets-ada");
+  const draft = name => ({ origin: null, name, raw: { id: "", input: "x", assertions: [{ id: "a", type: "contains", value: "x" }] } });
+  const ci = draft("CI"), dupe = draft("ci");
+  assert.equal(validateDraft(ci, [ci.raw]), undefined);
+  assert.equal(validateDraft(dupe, [{ id: "CI" }, dupe.raw]), "Another test already has this name.");
+  assert.match(validateDraft(draft("Con"), []), /starts with a letter/);
+});

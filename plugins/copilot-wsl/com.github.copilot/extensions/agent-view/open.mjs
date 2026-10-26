@@ -1,6 +1,6 @@
 // Read-only native UI tool; independent of skill text and slash registration.
 import { createHash } from "node:crypto";
-import { CANVAS_ID, ViewError, normalizePath, readView, formatView } from "./view.mjs";
+import { CANVAS_ID, SERVER_NAME, ViewError, normalizePath, readView, formatView } from "./view.mjs";
 
 export const OPEN_TOOL_NAME = "open_kmx_canvas";
 export const OPEN_TOOL_PARAMETERS = {
@@ -53,6 +53,21 @@ export function createOpenHandler({ getSession, extensionId }) {
   };
 }
 
+// A typed relative path means the session folder, not the kmx server's own
+// directory. Without the host's folder the path is used as typed.
+async function sessionPath(session, path) {
+  if (/^(?:\/|[A-Za-z]:[\\/])/.test(path)) return path;
+  let folder;
+  try { folder = (await session.rpc?.metadata?.snapshot?.())?.workingDirectory; } catch { return path; }
+  if (typeof folder !== "string" || !/^(?:\/|[A-Za-z]:[\\/])/.test(folder)) return path;
+  const windows = /^[A-Za-z]:/.test(folder);
+  return folder.replace(/[\\/]+$/, "") + (windows ? "\\" + path.replace(/\//g, "\\") : "/" + path);
+}
+
+async function kmxServerListed(session) {
+  try { return (await session.rpc.tools.getCurrentMetadata()).tools?.some(t => t.mcpServerName === SERVER_NAME) === true; } catch { return false; }
+}
+
 export function createOpenCommand(options) {
   const open = createOpenHandler(options);
   return async ({ args }) => {
@@ -63,8 +78,12 @@ export function createOpenCommand(options) {
       await session.log("Usage: /kmx-canvas open <path>\nExample: /kmx-canvas open greeter.agent.md");
       return;
     }
-    const result = await open({ path: match[1] });
+    const result = await open({ path: await sessionPath(session, match[1]) });
     if (result.mode === "text") await session.log(result.text);
-    else if (!result.opened) await session.log(result.message, { level: "error" });
+    else if (result.opened) await session.log(`Opened ${result.path.split(/[\\/]/).at(-1)} in the agent canvas.`);
+    else if (result.reasonCode === "unavailable" && await kmxServerListed(session)) {
+      // The host drops the server's reason; a listed server means the file is missing.
+      await session.log(`File not found: ${match[1]}. Check the name, or give the full path.`, { level: "error" });
+    } else await session.log(result.message, { level: "error" });
   };
 }

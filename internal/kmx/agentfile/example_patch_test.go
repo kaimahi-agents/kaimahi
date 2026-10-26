@@ -8,7 +8,7 @@ import (
 )
 
 func TestRecordingDetailsPreservesNumberLexemes(t *testing.T) {
-	source := blockWant(recordingSource(t, pendingTool), "\n")
+	source := jsonWant(recordingSource(t, pendingTool), "\n")
 	source = strings.Replace(source, `"complete":true`, `"large":9007199254740992,"decimal":1.0`, 1)
 	if _, err := Parse("details.agent.md", []byte(source)); err != nil {
 		t.Fatal(err)
@@ -40,8 +40,8 @@ func TestExamplePatchPreservesFixtureBytes(t *testing.T) {
 		if !bytes.Contains(got, []byte(oldFixture)) {
 			t.Fatalf("fixture changed: %s", got)
 		}
-		if !bytes.Contains(got, []byte("\"a different input é 🙂\"")) {
-			t.Fatal("input not patched")
+		if !bytes.Contains(got, []byte(`input: "a different input é 🙂"`+eol)) {
+			t.Fatalf("input not patched:\n%s", got)
 		}
 	}
 }

@@ -3606,12 +3606,12 @@ test("Board E Enter or save without a name focuses the name and gives one inline
     edited(name, "Greets Ada");
     assert.equal(name.attrs["aria-invalid"], "false"); assert.equal(hint.hidden, true);
     enterOn(name); await tick();
-    assert.equal(h.calls.length, 1); assert.equal(h.calls[0].caseId, "greets-ada");
+    assert.equal(h.calls.length, 1); assert.equal(h.calls[0].caseId, "greets-Ada");
     assert.equal(h.calls[0].operation, "save-and-test");
   }
 });
 
-test("a typed test name keeps its case after saving in this canvas, without adding a file field", async () => {
+test("a typed test name keeps its case after saving and reloading, without adding a file field", async () => {
   let h, saved;
   h = await editableCanvas("Reply briefly.", undefined, { respond: async action => {
     if (action.operation === "reload") return { view: saved };
@@ -3626,7 +3626,8 @@ test("a typed test name keeps its case after saving in this canvas, without addi
   assert.deepEqual(Object.keys(h.calls[0].examples.at(-1)).sort(), ["assertions", "id", "input"]);
   goBack(h.root); assert.equal(byClass(items(h.root).at(-1), "test-name")[0].textContent, "Two merged PRs");
   click(btn(h.root, "Reload and discard draft")); await new Promise(setImmediate);
-  assert.equal(byClass(items(h.root).at(-1), "test-name")[0].textContent, "Two merged prs", "reload uses file IDs; display names are not a new persisted format");
+  assert.equal(h.calls[0].examples.at(-1).id, "two-merged-PRs");
+  assert.equal(byClass(items(h.root).at(-1), "test-name")[0].textContent, "Two merged PRs", "the file ID keeps the typed capitals; no new field");
 });
 test("an incomplete Judge focuses its inline score hint and navigation clears ordinary validation", async () => {
   const assertion = { id: "why", type: "llmJudge", rubric: "Says why.", minScore: 70, judgeVersion: "v1" };

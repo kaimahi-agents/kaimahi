@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { registerHooks } from "node:module";
-import { createOpenHandler, readOpenView, viewInstanceId, OPEN_TOOL_NAME, OPEN_TOOL_PARAMETERS } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/open.mjs";
+import { createOpenHandler, createOpenCommand, readOpenView, viewInstanceId, OPEN_TOOL_NAME, OPEN_TOOL_PARAMETERS } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/open.mjs";
 
 const PATH = "greeter.agent.md";
 const PROVIDER = "plugin:kmx-agent-builder:agent-view";
@@ -180,9 +180,10 @@ test(`actual ${variant} extension opens its own provider and registers the kmx s
     f.calls.length = 0;
     await command({ args: "open greeter.agent.md" });
     await command({ args: "open greeter.agent.md" });
-    assert.deepEqual(f.calls.map(c => c[0]), ["read", "open", "read", "open"]);
+    assert.deepEqual(f.calls.map(c => c[0]), ["read", "open", "log", "read", "open", "log"]);
     assert.deepEqual(f.calls[1][1], { extensionId: provider, canvasId: "kmx-agent-view", instanceId: "kmx-agent-greeter", input: { path: PATH } });
-    assert.deepEqual(f.calls[1], f.calls[3], "native reopen focuses the same instance");
+    assert.deepEqual(f.calls[1], f.calls[4], "native reopen focuses the same instance");
+    assert.equal(f.calls[2][1], "Opened greeter.agent.md in the agent canvas.");
     const nativeRead = f.session.rpc.mcp.resources.read;
     try {
       for (const path of ["/repo Māori/Release Notes.agent.md", " greeter.agent.md", "\tgreeter.agent.md"]) {
@@ -248,4 +249,31 @@ test(`actual ${variant} extension opens its own provider and registers the kmx s
       assert.doesNotMatch(ordinary, /ask.*(?:approval|confirmation)|obtain.*approval/i);
     }
   } finally { hooks.deregister(); delete globalThis.__kmxJoin; }
+});
+
+test("/kmx-canvas open resolves a relative path in the session folder and says what happened", async () => {
+  for (const [folder, want] of [["C:\\Users\\ada\\walk", "C:\\Users\\ada\\walk\\team\\count.agent.md"], ["/home/ada/walk/", "/home/ada/walk/team/count.agent.md"]]) {
+    const f = setup({ path: want });
+    f.session.rpc.metadata = { snapshot: async () => ({ workingDirectory: folder }) };
+    const command = createOpenCommand({ getSession: () => f.session, extensionId: PROVIDER });
+    await command({ args: "open team/count.agent.md" });
+    assert.deepEqual(f.calls[0], ["read", { serverName: "kmx-agent-builder", uri: "kmx://agent/" + encodeURIComponent(want) }]);
+    assert.equal(f.calls[1][1].input.path, want);
+    assert.deepEqual(f.calls[2], ["log", "Opened count.agent.md in the agent canvas.", undefined]);
+  }
+  const full = setup({ path: "/mnt/c/walk/count.agent.md" });
+  full.session.rpc.metadata = { snapshot: async () => ({ workingDirectory: "C:\\walk" }) };
+  await createOpenCommand({ getSession: () => full.session, extensionId: PROVIDER })({ args: "open /mnt/c/walk/count.agent.md" });
+  assert.equal(full.calls[1][1].input.path, "/mnt/c/walk/count.agent.md", "a full path is used as typed");
+});
+
+test("/kmx-canvas open says file not found when the kmx server answers but the file is missing", async () => {
+  const f = setup({ readError: new Error("unsafe_path") });
+  f.session.rpc.metadata = { snapshot: async () => { throw new Error("not supported"); } };
+  f.session.rpc.tools = { getCurrentMetadata: async () => ({ tools: [{ name: "kmx-agent-builder:create", mcpServerName: "kmx-agent-builder", mcpToolName: "create" }] }) };
+  await createOpenCommand({ getSession: () => f.session, extensionId: PROVIDER })({ args: "open missing.agent.md" });
+  assert.deepEqual(f.calls.at(-1), ["log", "File not found: missing.agent.md. Check the name, or give the full path.", { level: "error" }]);
+  f.session.rpc.tools.getCurrentMetadata = async () => ({ tools: [] });
+  await createOpenCommand({ getSession: () => f.session, extensionId: PROVIDER })({ args: "open missing.agent.md" });
+  assert.match(f.calls.at(-1)[1], /MCP server is running/);
 });

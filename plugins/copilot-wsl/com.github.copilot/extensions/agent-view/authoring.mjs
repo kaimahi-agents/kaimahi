@@ -317,16 +317,18 @@ export const readSnapshot = (view) => {
   } catch { /* Old or noncanonical resources remain inspection-only. */ }
 };
 
-const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/;
-export const portableId = (name) => name.trim().toLowerCase().replace(/\s+/g, "-");
+const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+// IDs keep typed capitals ("CI"); only a sentence-case first letter is lowered,
+// since the shown name capitalizes it again. Uniqueness ignores case.
+export const portableId = (name) => name.trim().replace(/\s+/g, "-").replace(/^[A-Z](?![A-Z])/, c => c.toLowerCase());
 
 export function validateDraft(draft, intended) {
   const raw = draft.raw;
   if (draft.origin === null && !draft.fixedId) {
     raw.id = portableId(draft.name);
-    if (!/^[a-z][a-z0-9-]{0,62}$/.test(raw.id) || RESERVED.test(raw.id)) return "Use a name that starts with a letter, then letters, numbers, spaces or hyphens.";
+    if (!/^[A-Za-z][A-Za-z0-9-]{0,62}$/.test(raw.id) || RESERVED.test(raw.id)) return "Use a name that starts with a letter, then letters, numbers, spaces or hyphens.";
   }
-  if (intended.filter((e) => e.id === raw.id).length !== 1) return "Another test already has this name.";
+  if (intended.filter((e) => e.id.toLowerCase() === raw.id.toLowerCase()).length !== 1) return "Another test already has this name.";
   if (!raw.input.trim()) return "Say what the agent gets.";
   if (!raw.assertions.length) return "Keep at least one check.";
   if (raw.assertions.some(a => !checkComplete(a))) return { check: true };

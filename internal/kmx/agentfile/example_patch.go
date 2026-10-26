@@ -30,7 +30,26 @@ type sourcePatch struct {
 
 // ApplyExampleEdits changes only explicitly selected fields. Existing fixtures
 // never pass through JSON serialization, including when an unrelated input changes.
+// New values are written as block YAML when they read back exactly like the
+// JSON-only form; flow layouts and anything else keep that JSON form.
 func ApplyExampleEdits(source []byte, edits []ExampleEdit) ([]byte, error) {
+	exact, err := applyExampleEdits(source, edits, false)
+	if err != nil {
+		return nil, err
+	}
+	if block, err := applyExampleEdits(source, edits, true); err == nil && sameAuthoring(exact, block) {
+		return block, nil
+	}
+	return exact, nil
+}
+
+func sameAuthoring(a, b []byte) bool {
+	x, err1 := Parse("edit.agent.md", a)
+	y, err2 := Parse("edit.agent.md", b)
+	return err1 == nil && err2 == nil && bytes.Equal(projectAgent(x), projectAgent(y)) && projectAgent(x) != nil
+}
+
+func applyExampleEdits(source []byte, edits []ExampleEdit, block bool) ([]byte, error) {
 	before, err := Parse("edit.agent.md", source)
 	if err != nil || len(edits) == 0 || len(edits) > 128 {
 		return nil, ErrRecordingInvalid
@@ -174,13 +193,31 @@ func ApplyExampleEdits(source []byte, edits []ExampleEdit) ([]byte, error) {
 	if strings.HasSuffix(lines[open], "\r\n") {
 		eol = "\r\n"
 	}
+	indent := func(n *yaml.Node) string { return strings.Repeat(" ", n.Column-1) }
+	// pair renders `key: value` as block YAML for a block mapping, or "" if not.
+	pair := func(m *yaml.Node, key string, value any) string {
+		if !block || m.Style&yaml.FlowStyle != 0 {
+			return ""
+		}
+		text, _ := blockYAML(ordered{key, value}, indent(m), eol)
+		return text
+	}
 	set := func(m *yaml.Node, key string, value any) {
+		text := pair(m, key, value)
 		if v := field(m, key); v != nil {
+			if text != "" {
+				add(offset(m.Content[slices.Index(m.Content, v)-1]), endOf(v), text)
+				return
+			}
 			add(offset(v), endOf(v), encode(value))
 			return
 		}
 		at := offset(m)
-		if m.Style&yaml.FlowStyle != 0 {
+		if text != "" {
+			// After the last value, so it never meets a replaced first key.
+			at = endOf(m.Content[len(m.Content)-1])
+			add(at, at, eol+indent(m)+text)
+		} else if m.Style&yaml.FlowStyle != 0 {
 			at = endOf(m) - 1
 			sep := ", "
 			if len(m.Content) == 0 {
@@ -206,6 +243,9 @@ func ApplyExampleEdits(source []byte, edits []ExampleEdit) ([]byte, error) {
 				sep = ""
 			}
 			add(at, at, sep+encode(value))
+		} else if text, err := blockYAML([]any{value}, indent(s), eol); block && err == nil {
+			at = limits[s]
+			add(at, at, indent(s)+text+eol)
 		} else {
 			at = limits[s]
 			add(at, at, strings.Repeat(" ", s.Column-1)+"- "+encode(value)+eol)
@@ -278,9 +318,9 @@ func ApplyExampleEdits(source []byte, edits []ExampleEdit) ([]byte, error) {
 				return nil, ErrRecordingInvalid
 			}
 			names[change.Name] = true
-			value := map[string]any{"name": change.Name, "mode": change.Mode}
+			value := ordered{"name", change.Name, "mode", change.Mode}
 			if change.Mode == "recorded" {
-				value["calls"] = []any{}
+				value = append(value, "calls", []any{})
 			}
 			tools = append(tools, value)
 		}
@@ -288,9 +328,9 @@ func ApplyExampleEdits(source []byte, edits []ExampleEdit) ([]byte, error) {
 			if edit.ID == "" || edit.Input == nil || edit.Assertions == nil {
 				return nil, ErrRecordingInvalid
 			}
-			value := map[string]any{"id": edit.ID, "input": *edit.Input, "assertions": assertions}
+			value := ordered{"id", edit.ID, "input", *edit.Input, "assertions", edit.Assertions}
 			if len(tools) > 0 {
-				value["mocks"] = map[string]any{"tools": tools}
+				value = append(value, "mocks", ordered{"tools", tools})
 			}
 			appendTo(seq, value)
 			continue
@@ -302,14 +342,14 @@ func ApplyExampleEdits(source []byte, edits []ExampleEdit) ([]byte, error) {
 			set(node, "input", *edit.Input)
 		}
 		if edit.Assertions != nil {
-			set(node, "assertions", assertions)
+			set(node, "assertions", edit.Assertions)
 		}
 		if len(tools) == 0 {
 			continue
 		}
 		mocks := field(node, "mocks")
 		if mocks == nil {
-			set(node, "mocks", map[string]any{"tools": tools})
+			set(node, "mocks", ordered{"tools", tools})
 			continue
 		}
 		entries := field(mocks, "tools")
@@ -327,14 +367,22 @@ func ApplyExampleEdits(source []byte, edits []ExampleEdit) ([]byte, error) {
 			if field(entry, "mode").Value == change.Mode && !change.Reset {
 				continue
 			}
-			add(offset(entry), endOf(entry), encode(tools[i]))
+			if text, err := blockYAML(tools[i], indent(entry), eol); block && err == nil && entry.Style&yaml.FlowStyle == 0 {
+				add(offset(entry), endOf(entry), text)
+			} else {
+				add(offset(entry), endOf(entry), encode(tools[i]))
+			}
 		}
 	}
 	if clearAll {
 		if replacement == nil {
 			replacement = []any{}
 		}
-		add(offset(seq), endOf(seq), encode(replacement))
+		if text := pair(root.Content[0], "examples", replacement); text != "" {
+			add(offset(root.Content[0].Content[slices.Index(root.Content[0].Content, seq)-1]), endOf(seq), text)
+		} else {
+			add(offset(seq), endOf(seq), encode(replacement))
+		}
 	}
 	// Coalesce insertions before sorting, otherwise two new fields/rows at one
 	// offset could reverse or overlap. All replacements remain non-overlapping.
