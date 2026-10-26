@@ -194,7 +194,8 @@ Ask Copilot to make an agent. The builder skill creates it through kmx and then
 opens the successful Create result's exact path in the canvas. To open an
 existing agent **without a model turn**, select the native **kmx-canvas** command:
 `/kmx-canvas open /home/me/project/greeter.agent.md`. It opens or focuses the
-same file's canvas; without a renderer it displays the existing text view.
+same file's canvas; a relative path is read in the session folder. If the canvas
+can't open, it says so and displays the existing text view.
 `/kmx-canvas` or `/kmx-canvas help` shows usage without reading a file.
 Native commands require extension support (experimental mode in the CLI).
 

@@ -42,8 +42,19 @@ export function createOpenHandler({ getSession, extensionId }) {
     try {
       const session = getSession();
       const { path, view } = await readOpenView(session, input);
-      if (session.capabilities?.ui?.canvases !== true) return { opened: false, mode: "text", path, text: formatView(view) };
-      await session.rpc.canvas.open({ extensionId, canvasId: CANVAS_ID, instanceId: viewInstanceId(path), input: { path } });
+      const advertised = session.capabilities?.ui?.canvases === true;
+      if (typeof session.rpc?.canvas?.open !== "function") {
+        if (advertised) throw new ViewError("unavailable");
+        return { opened: false, mode: "text", path, text: formatView(view) };
+      }
+      // Try even when not advertised: a resumed app session can omit the
+      // capability although its canvases work. Text only if opening fails.
+      try {
+        await session.rpc.canvas.open({ extensionId, canvasId: CANVAS_ID, instanceId: viewInstanceId(path), input: { path } });
+      } catch (error) {
+        if (advertised) throw error;
+        return { opened: false, mode: "text", canvasFailed: true, path, text: formatView(view) };
+      }
       // The host response contains the bridge's private URL; do not expose it
       // in this tool's model-facing result.
       return { opened: true, mode: "canvas", path };
@@ -74,11 +85,13 @@ export function createOpenCommand(options) {
     const session = options.getSession();
     // Consume one horizontal delimiter; every following path byte is literal.
     const match = /^[ \t]*open[ \t]([\s\S]+)$/.exec(args);
+    // The app shows only error-level command output, so usage and problems use it.
     if (!match) {
-      await session.log("Usage: /kmx-canvas open <path>\nExample: /kmx-canvas open greeter.agent.md");
+      await session.log("Usage: /kmx-canvas open <path>\nExample: /kmx-canvas open greeter.agent.md", { level: "error" });
       return;
     }
     const result = await open({ path: await sessionPath(session, match[1]) });
+    if (result.canvasFailed) await session.log("The canvas couldn't open here, so the agent is shown as text.", { level: "error" });
     if (result.mode === "text") await session.log(result.text);
     else if (result.opened) await session.log(`Opened ${result.path.split(/[\\/]/).at(-1)} in the agent canvas.`);
     else if (result.reasonCode === "unavailable" && await kmxServerListed(session)) {

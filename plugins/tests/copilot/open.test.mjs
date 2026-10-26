@@ -102,13 +102,22 @@ test("invalid check resource explains the file needs fixing without exposing par
   assert.equal((await malformed.run({ path: PATH })).reasonCode, "invalid-resource");
 });
 
-test("no renderer yields existing text projection with no canvas call", async () => {
+test("an unadvertised renderer is still tried; text only when the canvas can't open", async () => {
+  // A resumed app session can omit the canvas capability while canvas.open works.
   for (const renderer of [false, undefined]) {
     const f = setup({ renderer });
     if (renderer === undefined) delete f.session.capabilities.ui;
-    const result = await f.run({ path: PATH });
-    assert.equal(result.mode, "text"); assert.match(result.text, /Title: Greeter/);
-    assert.match(result.text, /Latest: none/); assert.deepEqual(f.calls.map(c => c[0]), ["read"]);
+    assert.equal((await f.run({ path: PATH })).mode, "canvas");
+    assert.deepEqual(f.calls.map(c => c[0]), ["read", "open"]);
+    const failing = setup({ renderer, openError: new Error("no renderer") });
+    if (renderer === undefined) delete failing.session.capabilities.ui;
+    const result = await failing.run({ path: PATH });
+    assert.equal(result.mode, "text"); assert.equal(result.canvasFailed, true); assert.match(result.text, /Title: Greeter/);
+    assert.match(result.text, /Latest: none/); assert.deepEqual(failing.calls.map(c => c[0]), ["read", "open"]);
+    const missing = setup({ renderer }); delete missing.session.rpc.canvas;
+    if (renderer === undefined) delete missing.session.capabilities.ui;
+    assert.equal((await missing.run({ path: PATH })).mode, "text");
+    assert.deepEqual(missing.calls.map(c => c[0]), ["read"]);
   }
 });
 test("advertised renderer failure is a safe refusal, never a retry or text substitute", async () => {
@@ -176,6 +185,7 @@ test(`actual ${variant} extension opens its own provider and registers the kmx s
       assert.equal(f.calls.length, 1, "help and malformed commands must not read or open");
       assert.equal(f.calls[0][0], "log");
       assert.match(f.calls[0][1], /Usage: \/kmx-canvas open <path>/);
+      assert.deepEqual(f.calls[0][2], { level: "error" }, "the app shows only error-level command output");
     }
     f.calls.length = 0;
     await command({ args: "open greeter.agent.md" });
@@ -203,10 +213,14 @@ test(`actual ${variant} extension opens its own provider and registers the kmx s
       assert.deepEqual([f.calls[0][0], f.calls[0][2]], ["log", { level: "error" }]);
     }
     f.session.capabilities.ui.canvases = false;
+    const advertisedOpen = f.session.rpc.canvas.open;
+    f.session.rpc.canvas.open = async () => { throw new Error("no renderer"); };
     f.calls.length = 0;
     await command({ args: "open greeter.agent.md" });
-    assert.deepEqual(f.calls.map(c => c[0]), ["read", "log"]);
-    assert.match(f.calls[1][1], /Title: Greeter/);
+    assert.deepEqual(f.calls.map(c => c[0]), ["read", "log", "log"]);
+    assert.deepEqual(f.calls[1].slice(1), ["The canvas couldn't open here, so the agent is shown as text.", { level: "error" }]);
+    assert.match(f.calls[2][1], /Title: Greeter/);
+    f.session.rpc.canvas.open = advertisedOpen;
     f.session.capabilities.ui.canvases = true;
     const nativeOpen = f.session.rpc.canvas.open;
     try {
