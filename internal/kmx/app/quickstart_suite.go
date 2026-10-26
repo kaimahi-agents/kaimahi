@@ -117,7 +117,7 @@ func (a *App) prepareQuickstartSuite(ctx context.Context, inference, resultPort 
 	if err != nil {
 		return nil, err
 	}
-	return a.prepareWorkspaceSuiteLift(ctx, suiteWorkspaceLiftOptions{Workspace: root, ExpectedSuite: expectedS, Namespace: OrkaNamespace, Inference: inference, ResultPort: resultPort, StrictReuse: true})
+	return a.prepareWorkspaceSuiteLift(ctx, suiteWorkspaceLiftOptions{Workspace: root, ExpectedSuite: expectedS, Namespace: a.orkaSetupTaskNamespace(), Inference: inference, ResultPort: resultPort, StrictReuse: true})
 }
 
 type suiteWorkspaceLiftOptions struct {
@@ -148,6 +148,8 @@ func (a *App) prepareWorkspaceSuiteLift(ctx context.Context, opt suiteWorkspaceL
 	// Intermediate operation summaries belong to diagnostics, not the answer or
 	// single JSON result. The subprocess runner follows the same stream rule.
 	worker := *a.withRunContext(ctx)
+	// The first-answer requirement does not authorize protected suite evaluation.
+	worker.taskEnforcement = nil
 	worker.Out = worker.Err
 	if worker.Out == nil {
 		worker.Out, worker.Err = io.Discard, io.Discard

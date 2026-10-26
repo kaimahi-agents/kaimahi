@@ -20,9 +20,11 @@ import (
 // QuickstartWizardOptions configures the experimental path from an empty
 // machine to a user-authored Orka agent.
 type QuickstartWizardOptions struct {
-	Create    CreateOptions
-	Verbose   bool
-	Inference string
+	Create          CreateOptions
+	Verbose         bool
+	Inference       string
+	Orka            OrkaSetupOptions
+	EnforcementFile string
 }
 
 type quickstartExistingAgent struct {
@@ -42,6 +44,13 @@ func (a *App) QuickstartWizard(opt QuickstartWizardOptions) error {
 	}
 	if err := validateQuickstartSourceOptions(opt.Create); err != nil {
 		return err
+	}
+	if err := a.prepareQuickstartEnforcement(opt.Orka, opt.EnforcementFile); err != nil {
+		return err
+	}
+	if opt.Create.Namespace != "" && a.orkaSetup != nil &&
+		opt.Create.Namespace != a.orkaSetupTaskNamespace() {
+		return fmt.Errorf("guided Agent namespace must match the selected Orka chart's Task namespace")
 	}
 	if _, err := quickstartInference(opt.Inference, "detected-later"); err != nil {
 		return err
@@ -65,7 +74,7 @@ func (a *App) QuickstartWizard(opt QuickstartWizardOptions) error {
 	create := opt.Create
 	create.descriptionDefault = "Hello world agent"
 	if create.Namespace == "" {
-		create.Namespace = OrkaNamespace
+		create.Namespace = a.orkaSetupTaskNamespace()
 	}
 	existing := a.quickstartExistingAgents()
 
@@ -177,7 +186,7 @@ func (a *App) quickstartWizardTarget() (quickstartTarget, error) {
 	// Only the already-safe local path moves its banner into the TUI. A remote
 	// or unverified target retains GuardCreate's visible confirmation flow.
 	if !posture.Local {
-		if err := a.GuardCreateIn(action, a.operationCommand("quickstart", "--interactive"), OrkaPathNamespaces); err != nil {
+		if err := a.GuardCreateIn(action, a.operationCommand("quickstart", "--interactive"), a.orkaSetupNamespaces()); err != nil {
 			return quickstartTarget{}, err
 		}
 	} else {
@@ -189,12 +198,12 @@ func (a *App) quickstartWizardTarget() (quickstartTarget, error) {
 	}
 	return quickstartTarget{
 		Action: action, Context: posture.Context, Source: a.Cfg.ContextSource,
-		Server: server, Namespaces: OrkaPathNamespaces, Posture: posture.Label,
+		Server: server, Namespaces: a.orkaSetupNamespaces(), Posture: posture.Label,
 	}, nil
 }
 
 func (a *App) quickstartExistingAgents() []quickstartExistingAgent {
-	raw, err := a.kubectlCapture("-n", OrkaNamespace, "get", "agents.core.orka.ai", "-o", "json")
+	raw, err := a.kubectlCapture("-n", a.orkaSetupTaskNamespace(), "get", "agents.core.orka.ai", "-o", "json")
 	if err != nil {
 		return nil
 	}
@@ -280,6 +289,12 @@ func (a *App) quickstartWizardSetup(modelPick <-chan *localModel, report func(qu
 	a.chatInference = "local"
 	if choice.Provider == "existing" {
 		for step := 1; step <= 5; step++ {
+			if step == 5 && a.orkaSetup != nil {
+				if err := run(step, a.prepareOrkaRuntime); err != nil {
+					return err
+				}
+				continue
+			}
 			report(quickstartSetupEvent{step: step, status: "skipped", note: "Using the existing Agent Provider without changing tool references."})
 		}
 		return nil
@@ -1052,5 +1067,8 @@ func runQuickstartReadyScreen(in io.Reader, out io.Writer, name string, location
 }
 
 func (a *App) quickstartOrkaChat(agent, namespace string) error {
-	return a.ChatWithOptions(ChatOptions{Agent: agent, Namespace: namespace, Runtime: "orka", Verbose: a.chatVerbose})
+	worker := *a
+	return worker.chatWithPreparedEnforcement(
+		ChatOptions{Agent: agent, Namespace: namespace, Runtime: "orka", Verbose: a.chatVerbose},
+		a.taskEnforcement)
 }

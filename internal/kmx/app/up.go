@@ -34,6 +34,10 @@ var UpDefaultSteps = []string{"cluster", "ollama", "model", "orka"}
 // Orka phases. RUNTIME ONLY: `kmx local up` does not deploy an agent or a
 // model plane. Agents use native Orka Providers directly.
 func (a *App) Up(step string) error {
+	return a.UpWithOptions(step, OrkaSetupOptions{})
+}
+
+func (a *App) UpWithOptions(step string, opt OrkaSetupOptions) error {
 	started := a.timeNow()
 	steps := UpDefaultSteps
 	if step != "" {
@@ -47,6 +51,13 @@ func (a *App) Up(step string) error {
 		if !found {
 			return fmt.Errorf("unknown step %q — one of: %s", step, strings.Join(UpSteps, ", "))
 		}
+	}
+	if step != "" && step != "orka" &&
+		(opt.Chart != "" || opt.ChartSHA256 != "" || opt.Enforcement != nil) {
+		return fmt.Errorf("Orka setup options require local up or local up --step orka")
+	}
+	if err := a.prepareOrkaSetup(opt); err != nil {
+		return err
 	}
 	if step == "" || step == "cluster" {
 		if err := a.validateKindTarget(); err != nil {
@@ -73,7 +84,7 @@ func (a *App) Up(step string) error {
 	// of its own as well, and naming a namespace nothing is written to is its
 	// own untruth.
 	guard := func(action, command string) error {
-		return a.GuardCreateIn(action, command, OrkaPathNamespaces)
+		return a.GuardCreateIn(action, command, a.orkaSetupNamespaces())
 	}
 	if step == "cluster" {
 		guard = a.GuardCreate
@@ -137,7 +148,11 @@ func (a *App) upDefault() error {
 	}
 	// Refuse unsupported Orka state before an expensive model pull. A fresh
 	// cluster is safe to inspect here; the check never installs or repairs it.
-	known, err := a.orkaInstallState()
+	expected := publishedOrkaInstallSpec()
+	if a.orkaSetup != nil {
+		expected = a.orkaSetup.spec
+	}
+	known, err := a.orkaInstallStateFor(expected)
 	if err != nil {
 		return fmt.Errorf("Orka preflight: %w", err)
 	}
