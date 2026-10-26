@@ -89,6 +89,20 @@ func TestAgentResourceShapesAndConfinement(t *testing.T) {
 		t.Fatal("oversized resource accepted")
 	}
 }
+func TestAgentResourceInvalidCheckIsClassifiedWithoutSource(t *testing.T) {
+	f, root, source := canonicalFiles(t)
+	// A regex uses pattern, not value. Keep private source and paths out of errors.
+	source = strings.ReplaceAll(source, "type: contains", "type: regex")
+	if err := os.WriteFile(filepath.Join(root, "broken.agent.md"), []byte(source+"\nPRIVATE SOURCE /private/source/path\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cs := resourceClient(t, f, &app.App{})
+	result, err := cs.ReadResource(t.Context(), &sdk.ReadResourceParams{URI: agentResourceURI("broken.agent.md")})
+	if err != nil || len(result.Contents) != 1 || result.Contents[0].Text != `{"schemaVersion":1,"kind":"kmx.agent-view-error","reasonCode":"invalid_file"}` {
+		t.Fatalf("missing fixed resource refusal: %+v %v", result, err)
+	}
+}
+
 func TestAgentResourceLatestResult(t *testing.T) {
 	f, root, source := canonicalFiles(t)
 	saved, err := f.Create(t.Context(), "greeter.agent.md", []byte(source))

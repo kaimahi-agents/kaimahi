@@ -2042,7 +2042,7 @@ for (const operation of ["test", "run"]) test(`${operation} execution failure in
 });
 
 test("saved preview with an unknown test outcome keeps drafts and requires reload", async () => {
-  const h = await editableCanvas("Reply briefly.", undefined, { response: { error: "outcome-unknown", saved: true } });
+  const h = await editableCanvas("Reply briefly.", undefined, { response: { error: "outcome-unknown", message: "The action outcome could not be confirmed. Do not retry; reload the source first.", saved: true } });
   const prompt = c18Prompt(h.root); prompt.textContent = "Draft prompt."; prompt.listeners.input[0]();
   await h.clickTest();
   assert.equal(h.calls[0].operation, "save-and-test");
@@ -2882,13 +2882,56 @@ test("third-model partial does not evict a full pair and a later full run keeps 
   assert.equal(history.selected(completed, "third").latest.result.selection.scope, "full", "a newer outside full run supersedes the transient subset");
 });
 
+test("canvas offers no Stop control in main or detail before, during or awaiting approval", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let finish, approvalWaiting = false;
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: c18Examples(["a"]),
+    fetchProgress: async id => ({ run: { id, revision: h.view.file.revision, model: "fake", caseIds: ["a"], cases: [], state: "running", approvalWaiting } }),
+    respond: () => new Promise(resolve => { finish = resolve; }) });
+  t.after(() => h.app.dispose());
+  const noStop = () => {
+    assert.equal(byClass(h.root, "stop-run").length, 0);
+    for (const button of all(h.root).filter(e => e.tag === "button")) {
+      assert.doesNotMatch([button.textContent, button.attrs["aria-label"], button.attrs.title].join(" "), /\bstop\b/i);
+    }
+  };
+  noStop(); openTest(h.root, "a"); noStop(); goBack(h.root);
+  promptEnter(h.root); t.mock.timers.tick(250); await tick(); await tick();
+  noStop(); openTest(h.root, "a"); noStop(); goBack(h.root);
+  approvalWaiting = true; t.mock.timers.tick(250); await tick(); await tick();
+  noStop(); openTest(h.root, "a"); noStop(); goBack(h.root);
+  assert.match(h.root.textContent, /Copilot approval is waiting in chat\./);
+  assert.equal(h.calls.some(call => call.operation === "stop"), false);
+  finish({ view: h.view }); await tick(); await tick(); noStop();
+});
+
+test("approval waiting uses fixed words and reports the deadline without a Stop control", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let finish, run;
+  const h = await editableCanvas("Reply briefly.", undefined, {
+    examples: c18Examples(["a"]),
+    fetchProgress: async id => ({ run: { ...run, id } }),
+    respond: () => new Promise(resolve => { finish = resolve; }),
+  });
+  t.after(() => h.app.dispose());
+  run = { revision: h.view.file.revision, model: "fake", caseIds: ["a"], totalCases: 1, cases: [], state: "running", elapsedMs: 100, approvalWaiting: true };
+  promptEnter(h.root); t.mock.timers.tick(250); await tick(); await tick();
+  assert.match(h.root.textContent, /Copilot approval is waiting in chat\./);
+  assert.equal(byClass(h.root, "stop-run").length, 0);
+  finish({ error: "outcome-unknown", approvalTimeout: true, message: "This test timed out waiting for Copilot approval. The tool may still execute if approval is granted in chat. Reload to inspect the saved file before continuing.", saved: true });
+  await tick(); await tick();
+  assert.match(h.root.textContent, /timed out waiting for Copilot approval/);
+  assert.equal((c18Text(h.root, "action-message").match(/Reload/g) ?? []).length, 1);
+  assert.doesNotMatch(h.root.textContent, /This test did not run/);
+});
+
 test("B1 progress lands rows and B2 survives polls and picker return without reviving a full pass", async t => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
-  let finish, run, lateProgress, delayProgress = false;
+  let finish, run;
   const h = await editableCanvas("Reply briefly.", undefined, {
     examples: c18Examples(["a", "b", "c"]), latest: bLatest({ a: "pass", b: "pass", c: "pass" }),
     fetchModels: async () => ({ models: ["fake", "other"] }),
-    fetchProgress: async id => delayProgress ? new Promise(resolve => { lateProgress = () => resolve({ run: { ...run, id } }); }) : { run: { ...run, id } },
+    fetchProgress: async id => ({ run: { ...run, id } }),
     respond: action => action.operation === "stop" ? { stopping: true } : new Promise(resolve => { finish = resolve; }),
   });
   t.after(() => h.app.dispose());
@@ -2897,14 +2940,11 @@ test("B1 progress lands rows and B2 survives polls and picker return without rev
   promptEnter(h.root); t.mock.timers.tick(250); await tick(); await tick();
   assert.equal(c18Text(h.root, "result-pill"), "Running · 1 of 3 done");
   assert.deepEqual(c18Status(h.root), ["fail", "running", "old-pass"]);
-  const stop = byClass(h.root, "stop-run")[0]; assert.equal(stop.hidden, false); assert.equal(stop.disabled, false);
-  delayProgress = true; t.mock.timers.tick(250); await tick();
-  assert.match(stop.textContent, /Stop Copilot turn/); click(stop); await tick();
-  lateProgress(); await tick();
-  assert.equal(stop.disabled, true, "late running snapshot must not re-enable Stop");
+  run = { ...run, state: "stopping" };
+  t.mock.timers.tick(250); await tick(); await tick();
   assert.equal(c18Text(h.root, "result-pill"), "Stopping…");
   const id = h.calls[0].runId;
-  assert.deepEqual(h.calls[1], { operation: "stop", runId: id });
+  assert.equal(h.calls.some(call => call.operation === "stop"), false);
   const stopped = { ...run, id, state: "stopped" };
   finish({ stopped: true, run: stopped, view: { ...h.view, latest: { status: "none", badge: "none" } }, saved: false });
   await tick(); await tick();
@@ -2917,6 +2957,44 @@ test("B1 progress lands rows and B2 survives polls and picker return without rev
   await chooseModel(h, "other"); await chooseModel(h, "fake");
   assert.equal(c18Text(h.root, "result-pill"), "0 passing, 1 failing · 1 of 3 ran");
   assert.deepEqual(rowLabels(h.root), ["Failed", "Not run", "Not run"]);
+});
+
+test("Stop pending rows wait even when the previous run did not finish", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let finish, state = "running";
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: c18Examples(["a", "b"]),
+    latest: (revision, examples) => { const value = bLatest({ a: "unknown", b: "unknown" })(revision, examples); value.result.state = "cancelled"; for (const row of value.result.examples) row.state = "not_run"; return value; },
+    fetchProgress: async id => ({ run: { id, revision: h.view.file.revision, model: "fake", caseIds: ["a", "b"], cases: [], state } }),
+    respond: action => action.operation === "stop" ? { stopping: true } : new Promise(resolve => { finish = resolve; }) });
+  t.after(() => h.app.dispose());
+  promptEnter(h.root); t.mock.timers.tick(250); await tick(); await tick();
+  state = "stopping"; t.mock.timers.tick(250); await tick(); await tick();
+  assert.deepEqual(rowLabels(h.root), ["Waiting", "Waiting"]);
+  finish({ stopped: true, run: { id: h.calls[0].runId, revision: h.view.file.revision, model: "fake", caseIds: ["a", "b"], cases: [], state: "stopped" }, view: { ...h.view, latest: { status: "none", badge: "none" } } });
+  await tick(); await tick();
+  assert.deepEqual(rowLabels(h.root), ["Not run", "Not run"]);
+});
+
+test("live failure uses the identified authored check before the final reply", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let finish;
+  const examples = [{ id: "a", input: "A", assertions: [
+    { id: "first", type: "contains", value: "## Features" },
+    { id: "second", type: "contains", value: "## Fixes" },
+  ] }];
+  const h = await editableCanvas("Reply briefly.", undefined, { examples,
+    fetchProgress: async id => ({ run: { id, revision: h.view.file.revision, model: "fake", caseIds: ["a"], cases: [{ caseId: "a", verdict: "fail", reason: "Assertion not satisfied.", failedAssertionId: "second" }], state: "running" } }),
+    respond: () => new Promise(resolve => { finish = resolve; }) });
+  t.after(() => h.app.dispose());
+  promptEnter(h.root); t.mock.timers.tick(250); await tick(); await tick();
+  assert.equal(noteOf(items(h.root)[0]), 'Missing "## Fixes"');
+  const final = await viewFor(h.source, examples, (revision, cases) => {
+    const latest = bLatest({ a: "fail" })(revision, cases);
+    latest.result.examples[0].assertions[0].verdict = "pass";
+    return latest;
+  });
+  finish({ view: final, saved: false }); await tick(); await tick();
+  assert.equal(noteOf(items(h.root)[0]), 'Missing "## Fixes"');
 });
 
 test("B3 and B5 retain two models and picker return uses no inference", async () => {
@@ -2959,7 +3037,6 @@ test("third model's active and stopped attempts are visible without evicting the
   promptEnter(h.root); t.mock.timers.tick(250); await tick(); await tick();
   assert.deepEqual(rowLabels(h.root), ["Failed", "Running"]);
   const id = h.calls.at(-1).runId;
-  click(byClass(h.root, "stop-run")[0]); await tick();
   finish({ stopped: true, saved: false, run: { ...run, id, state: "stopped" }, view: { ...h.view, latest: { status: "none", badge: "none" } } });
   await tick(); await tick(); assert.deepEqual(rowLabels(h.root), ["Failed", "Not run"]);
   await chooseModel(h, "fake"); assert.equal(c18Text(h.root, "result-pill"), "2 of 2 passing");
@@ -3014,7 +3091,7 @@ test("a rerun awaiting dispatch keeps the selected model's older full slot grey 
   await chooseModel(h, "fake"); block = true;
   run = { revision: h.view.file.revision, model: "fake", caseIds: ["a", "b"], totalCases: 2, state: "running", cases: [], elapsedMs: 200 };
   promptEnter(h.root); t.mock.timers.tick(250); await tick(); await tick();
-  const id = h.calls.at(-1).runId; click(byClass(h.root, "stop-run")[0]);
+  const id = h.calls.at(-1).runId;
   finish({ stopped: true, saved: false, run: { ...run, id, state: "stopped" }, view: { ...h.view, latest: { status: "none", badge: "none" } } });
   await tick(); await tick(); promptEnter(h.root);
   openTest(h.root, "a"); goBack(h.root);
@@ -3035,7 +3112,7 @@ test("a partner's newer stopped verdicts and summary replace its old full pass",
   run = { revision: h.view.file.revision, model: "claude-sonnet-5.5", caseIds: ["a", "b"], totalCases: 2, state: "running", elapsedMs: 200,
     cases: [{ caseId: "a", verdict: "fail", reason: "Check not met." }] };
   promptEnter(h.root); t.mock.timers.tick(250); await tick(); await tick();
-  const id = h.calls.at(-1).runId; click(byClass(h.root, "stop-run")[0]);
+  const id = h.calls.at(-1).runId;
   finish({ stopped: true, saved: false, run: { ...run, id, state: "stopped" }, view: { ...h.view, latest: { status: "none", badge: "none" } } });
   await tick(); await tick(); await chooseModel(h, "fake");
   assert.deepEqual(rowLabels(h.root), ["fake Passed · Sonnet Failed", "fake Passed · Sonnet Not run"]);

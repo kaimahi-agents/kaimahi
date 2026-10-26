@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createPublicKey, generateKeyPairSync, sign, verify } from 'node:crypto';
+import { createHash, createPublicKey, generateKeyPairSync, sign, verify } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import http from 'node:http';
-import { createViewController, readView } from '../../copilot-wsl/com.github.copilot/extensions/agent-view/view.mjs';
+import { createActionHandler, createViewController, readView } from '../../copilot-wsl/com.github.copilot/extensions/agent-view/view.mjs';
 import { once } from 'node:events';
 import { spawn } from 'node:child_process';
+import * as relay from '../../copilot-wsl/com.github.copilot/extensions/agent-view/host-relay.mjs';
 import { freezeTools, launchConfig, requestPayload, responsePayload, wslRequest, ensureHostRuntime, closeHostRuntime, previewServer, beginPreview } from '../../copilot-wsl/com.github.copilot/extensions/agent-view/host-relay.mjs';
 
 const base = 'kmx-agent-builder';
@@ -75,10 +76,11 @@ test('canonical signed bytes pin exact method/path/time/nonce/body and response 
 async function fixture(t, { corrupt = false, stale = false, denied = false, unsafe = false, expired = false } = {}) {
   const keys = generateKeyPairSync('ed25519');
   const jobs = [{ id: 'a'.repeat(32), runId: 'b'.repeat(32), kind: 'resolve', names: ['ping'] }, { id: 'c'.repeat(32), runId: 'b'.repeat(32), kind: 'call', name: 'ping', arguments: {}, callId: 'call' }];
-  const results = [], claims = [], calls = [], configs = [], stopped = []; let clientKey, reads = 0;
+  const results = [], claims = [], calls = [], configs = [], stopped = [], events = new Map(); let clientKey, reads = 0;
+  const emit = (name, data) => { for (const listener of events.get(name) ?? []) listener({ data }); };
   const native = { ...descriptor, goos: ({ linux: 'linux', darwin: 'darwin', win32: 'windows' })[process.platform],
     ...(process.platform === 'win32' ? { executable: 'C:\\kmx.exe', cwd: 'C:\\work' } : {}) };
-  const session = { rpc: { mcp: {
+  const session = { on: (name, listener) => { const set = events.get(name) ?? new Set(); events.set(name, set); set.add(listener); return () => set.delete(listener); }, rpc: { mcp: {
     resources: { read: async ({ serverName }) => ({ contents: [{ text: JSON.stringify(serverName === base ? native : { ...native, broker: { url, publicKey: keys.publicKey.export({ format: 'der', type: 'spki' }).toString('base64') } }) }] }) },
     listConfigured: async () => ({ servers: [{ name: base }] }),
     startServer: async (value) => { configs.push(value); const key = value.config.args.at(-1); clientKey = createPublicKey({ key: Buffer.from(key, 'base64'), format: 'der', type: 'spki' }); },
@@ -103,13 +105,120 @@ async function fixture(t, { corrupt = false, stale = false, denied = false, unsa
   });
   server.listen(0, '127.0.0.1'); await once(server, 'listening'); const url = `http://127.0.0.1:${server.address().port}`;
   t.after(async () => { await closeHostRuntime(session); server.closeAllConnections(); await new Promise(r => server.close(r)); });
-  return { session, configs, stopped, results, claims, calls };
+  return { session, configs, stopped, results, claims, calls, emit, events, jobs };
 }
 
 async function until(predicate) {
   const end = Date.now() + 3000;
   while (!predicate()) { if (Date.now() > end) assert.fail('relay did not finish'); await new Promise(r => setTimeout(r, 10)); }
 }
+
+test('nested approval attribution uses exact outer progress and actual relay job, not a prefix or active lease', async t => {
+  const f = await fixture(t); let finish;
+  const done = new Promise(resolve => { finish = resolve; });
+  f.session.rpc.tools.execute = async call => { f.calls.push(call); await done; return { resultType: 'success', structuredContent: { pong: true } }; };
+  const a = relay.observePreview?.(f.session, 'outer-a'), b = relay.observePreview?.(f.session, 'chat-test');
+  t.after(() => { a?.clear(); b?.clear(); finish(); });
+  const progress = (tracker, phase, extra = {}) => tracker?.progress({ kind: 'kmx.host-progress', schemaVersion: 1, phase, runId: 'b'.repeat(32), jobId: 'c'.repeat(32), ...extra });
+  progress(a, 'call');
+  await ensureHostRuntime(f.session); await until(() => f.calls.length === 1);
+  const toolCallId = f.calls[0].toolCallId;
+  for (const data of [{ requestId: 'prefix', permissionRequest: { toolCallId: 'kmx-preview-' + 'd'.repeat(32) } }, { requestId: 'missing', permissionRequest: {} }, { requestId: 'hook', permissionRequest: { toolCallId }, resolvedByHook: true }]) f.emit('permission.requested', data);
+  assert.notEqual(a?.waiting(), true);
+  f.emit('permission.requested', { requestId: 'pending', permissionRequest: { toolCallId } });
+  assert.equal(a?.waiting(), true); assert.equal(b?.waiting(), false);
+  progress(a, 'deadline', { jobId: 'd'.repeat(32) }); assert.equal(a?.timedOut(), false);
+  f.emit('permission.completed', { requestId: 'pending', toolCallId: 'foreign' }); assert.equal(a?.waiting(), true);
+  f.emit('permission.completed', { requestId: 'pending' });
+  progress(a, 'deadline'); assert.equal(a?.timedOut(), false, 'completed approval cannot explain deadline');
+  f.emit('permission.requested', { requestId: 'pending-2', permissionRequest: { toolCallId } });
+  progress(a, 'deadline'); assert.equal(a?.timedOut(), true, 'exact deadline while correlated approval is pending');
+  finish(); await until(() => f.results.length === 2);
+  assert.equal(a?.waiting(), false, 'native completion clears waiting, even without permission.completed');
+  f.emit('permission.requested', { requestId: 'late', permissionRequest: { toolCallId } }); assert.equal(a?.waiting(), false);
+  a?.clear(); b?.clear(); assert.ok([...f.events.values()].every(set => set.size === 0));
+});
+
+test('approval ownership survives more than 128 completed calls in a supported full Test', async t => {
+  const f = await fixture(t), runId = 'b'.repeat(32);
+  const tracker = relay.observePreview(f.session, 'outer-test');
+  let finish;
+  t.after(() => { tracker.clear(); finish?.(); });
+  for (let i = 1; i <= 128; i++) {
+    const id = i.toString(16).padStart(32, '0');
+    tracker.progress({ kind: 'kmx.host-progress', schemaVersion: 1, phase: 'call', runId, jobId: id });
+    tracker.complete(`kmx-preview-${id}`);
+  }
+  tracker.progress({ kind: 'kmx.host-progress', schemaVersion: 1, phase: 'call', runId, jobId: 'c'.repeat(32) });
+  f.session.rpc.tools.execute = async call => {
+    f.calls.push(call);
+    f.emit('permission.requested', { requestId: 'last-approval', permissionRequest: { toolCallId: call.toolCallId } });
+    await new Promise(resolve => { finish = resolve; });
+    return { resultType: 'success', structuredContent: { pong: true } };
+  };
+  await ensureHostRuntime(f.session); await until(() => f.calls.length === 1);
+  assert.equal(tracker.waiting(), true);
+  assert.equal(tracker.pendingTool(), true);
+  tracker.progress({ kind: 'kmx.host-progress', schemaVersion: 1, phase: 'deadline', runId, jobId: 'c'.repeat(32) });
+  assert.equal(tracker.timedOut(), true);
+});
+
+test('foreign/malformed host metadata and native timeout without deadline evidence cannot attest approval timeout', async t => {
+  const f = await fixture(t); let finish;
+  f.session.rpc.tools.execute = async call => { f.calls.push(call); await new Promise(resolve => { finish = resolve; }); return { resultType: 'timeout' }; };
+  const a = relay.observePreview?.(f.session, 'outer-a'); t.after(() => { a?.clear(); finish?.(); });
+  for (const value of [{ kind: 'wrong', schemaVersion: 1 }, { kind: 'kmx.host-progress', schemaVersion: 2 }, { kind: 'kmx.host-progress', schemaVersion: 1, runId: 'b'.repeat(32), jobId: 'c'.repeat(32), phase: 'deadline' }]) a?.progress(value);
+  await ensureHostRuntime(f.session); await until(() => f.calls.length === 1);
+  f.emit('permission.requested', { requestId: 'unowned', permissionRequest: { toolCallId: f.calls[0].toolCallId } });
+  assert.equal(a?.waiting(), false); assert.equal(a?.timedOut(), false);
+  finish(); await until(() => f.results.length === 2);
+});
+
+for (const ending of ['pending-deadline', 'completed-deadline', 'no-deadline', 'foreign-progress', 'completed-call', 'throw-after-deadline']) test('claimed native tool outcome stays honest: ' + ending, async t => {
+  const f = await fixture(t), queued = f.jobs.splice(0);
+  const source = readFileSync(new URL('../../../internal/kmx/agentfile/testdata/greeter.agent.md', import.meta.url), 'utf8');
+  const revision = 'sha256:' + createHash('sha256').update(source).digest('hex'), file = { path: 'greeter.agent.md', revision };
+  const examples = [{ id: 'greeting', input: 'Ada', assertions: [{ id: 'greeting-text', type: 'contains', value: 'Hello, Ada' }] }];
+  const proof = { schemaVersion: 1, kind: 'kmx.agent-file-preview', file, operation: 'test', state: 'error', verdict: 'unknown', fullPass: false,
+    modelRoute: { provider: 'fake', model: 'fake' }, selection: { scope: 'full', totalCases: 1, caseIds: ['greeting'] },
+    reasonCode: 'execution_failed', reason: 'Local preview execution failed.', examples: [{ id: 'greeting', state: 'not_run', verdict: 'unknown', assertions: [] }] };
+  let latest = { status: 'none' }, outer, finishOuter, finishInner;
+  const read = f.session.rpc.mcp.resources.read, metadata = f.session.rpc.tools.getCurrentMetadata;
+  f.session.rpc.mcp.resources.read = args => args.uri?.startsWith('kmx://agent/') ? Promise.resolve({ contents: [{ text: JSON.stringify({
+    schemaVersion: 1, kind: 'kmx.agent-view', file, title: 'Greeter', instructions: source, model: 'fake', tools: ['ping'], examples, authoring: { source, editable: true }, latest,
+  }) }] }) : read(args);
+  f.session.rpc.tools.getCurrentMetadata = async () => ({ tools: [...(await metadata()).tools, { name: 'child-test', mcpToolName: 'test', mcpServerName: previewServer(f.session) }] });
+  const event = (phase, id = outer) => f.emit('tool.execution_progress', { toolCallId: id, progressMessage: '1.0: ' + JSON.stringify({
+    kind: 'kmx.host-progress', schemaVersion: 1, phase, runId: 'b'.repeat(32), jobId: 'c'.repeat(32),
+  }) });
+  f.session.rpc.tools.execute = async call => {
+    if (call.name === 'child-test') {
+      outer = call.toolCallId; event('call', ending === 'foreign-progress' ? 'another-chat-test' : outer); f.jobs.push(...queued);
+      return new Promise((resolve, reject) => { finishOuter = () => ending === 'throw-after-deadline' ? reject(Error('private-native-canary')) : resolve({ resultType: 'failure', structuredContent: proof }); });
+    }
+    f.calls.push(call);
+    f.emit('permission.requested', { requestId: 'permission-1', permissionRequest: { toolCallId: call.toolCallId, private: 'private-permission-canary' } });
+    if (ending === 'completed-deadline') f.emit('permission.completed', { requestId: 'permission-1' });
+    if (!['no-deadline', 'completed-call'].includes(ending)) event('deadline', ending === 'foreign-progress' ? 'another-chat-test' : outer);
+    latest = { status: 'current', result: proof };
+    if (ending === 'completed-call') { setImmediate(() => finishOuter()); return { resultType: 'success', structuredContent: { pong: true } }; }
+    finishOuter();
+    await new Promise(resolve => { finishInner = resolve; });
+    return { resultType: 'success', structuredContent: { pong: true } };
+  };
+  const act = createActionHandler({ session: f.session, path: file.path });
+  t.after(() => { act.dispose(); finishInner?.(); });
+  const result = await act({ operation: 'test', runId: 'test-run', expectedRevision: revision });
+  const confirmed = ['foreign-progress', 'completed-call'].includes(ending);
+  assert.equal(result.error, confirmed ? 'action-failed' : 'outcome-unknown');
+  if (!confirmed) assert.equal(result.view, undefined, 'pending native execution cannot be presented as a not-run preview');
+  else assert.ok(result.view, 'completed native work does not make an attested failed preview uncertain');
+  if (['pending-deadline', 'throw-after-deadline'].includes(ending)) assert.match(result.message, /timed out waiting for Copilot approval/);
+  else assert.doesNotMatch(result.message, /timed out/);
+  assert.doesNotMatch(JSON.stringify(result), /private-.*canary|did not run|did not execute/);
+  assert.equal(f.calls.length, 1);
+  if (!confirmed) assert.equal((await act({ operation: 'test', expectedRevision: revision })).error, 'outcome-unknown');
+});
 
 test('session relay executes the frozen actual host tool once and strips SDK metadata', async t => {
   const f = await fixture(t); await ensureHostRuntime(f.session);

@@ -28,6 +28,7 @@ import (
 )
 
 var errHostBridge = errors.New("host tools unavailable")
+var errHostBridgeDeadline = errors.New("host broker deadline")
 
 type HostBridgeDescriptor struct {
 	URL       string `json:"url"`
@@ -258,8 +259,16 @@ func (b *HostBridge) serve(w http.ResponseWriter, r *http.Request) {
 	}
 }
 func (b *HostBridge) rpc(ctx context.Context, job hostJob, result any) error {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	parent := ctx
+	ctx, cancel := context.WithTimeoutCause(ctx, 30*time.Second, errHostBridgeDeadline)
 	defer cancel()
+	notify := func(phase string) {
+		if job.Kind == "call" {
+			if progress, ok := parent.Value(hostProgressKey{}).(func(any)); ok {
+				progress(map[string]any{"kind": "kmx.host-progress", "schemaVersion": 1, "phase": phase, "runId": job.RunID, "jobId": job.ID})
+			}
+		}
+	}
 	if ctx.Err() != nil || b.ctx.Err() != nil {
 		return errHostBridge
 	}
@@ -272,6 +281,7 @@ func (b *HostBridge) rpc(ctx context.Context, job hostJob, result any) error {
 	}
 	b.pending[job.ID] = pending
 	b.mu.Unlock()
+	notify("call")
 	defer func() { b.mu.Lock(); delete(b.pending, job.ID); b.mu.Unlock() }()
 	select {
 	case b.queue <- job:
@@ -288,6 +298,9 @@ func (b *HostBridge) rpc(ctx context.Context, job hostJob, result any) error {
 		}
 		return nil
 	case <-ctx.Done():
+		if context.Cause(ctx) == errHostBridgeDeadline && parent.Err() == nil && b.ctx.Err() == nil {
+			notify("deadline")
+		}
 		return errHostBridge
 	case <-b.ctx.Done():
 		return errHostBridge
@@ -334,6 +347,10 @@ func (b *HostBridge) ResolveTools(ctx context.Context, names []string) (*localto
 		return nil, errHostBridge
 	}
 	execute := func(callCtx context.Context, _ controller.ToolCallContext, call api.ToolCall) (api.ToolResult, error) {
+		// Sessions owns the call context; attribution belongs to the frozen outer invocation.
+		if notify := ctx.Value(hostProgressKey{}); notify != nil {
+			callCtx = context.WithValue(callCtx, hostProgressKey{}, notify)
+		}
 		callCtx, cancel := context.WithCancel(callCtx)
 		defer cancel()
 		stop := context.AfterFunc(ctx, cancel)

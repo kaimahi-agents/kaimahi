@@ -101,7 +101,7 @@ func TestPreviewCaseProgressPreservesFailureRetention(t *testing.T) {
 		if progress {
 			select {
 			case n := <-notifications:
-				if n.Progress != 1 || n.Message != `{"caseId":"greeting","verdict":"fail","reason":"Assertion not satisfied."}` {
+				if n.Progress != 1 || n.Message != `{"caseId":"greeting","verdict":"fail","reason":"Assertion not satisfied.","failedAssertionId":"greeting-text"}` {
 					t.Fatalf("retained case progress: %+v", n)
 				}
 			default:
@@ -172,7 +172,7 @@ func TestPreviewCaseProgressProtocol(t *testing.T) {
 		if !bytes.Equal(resultBytes, baselineBytes) {
 			t.Fatalf("progress changed result bytes:\n%s\n%s", baselineBytes, resultBytes)
 		}
-		for i, want := range []string{`{"caseId":"first","verdict":"pass","reason":""}`, `{"caseId":"second","verdict":"fail","reason":"Assertion not satisfied."}`} {
+		for i, want := range []string{`{"caseId":"first","verdict":"pass","reason":""}`, `{"caseId":"second","verdict":"fail","reason":"Assertion not satisfied.","failedAssertionId":"missing"}`} {
 			select {
 			case n := <-notifications:
 				gotToken, _ := json.Marshal(n.ProgressToken)
