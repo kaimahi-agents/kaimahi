@@ -117,8 +117,10 @@ The existing native bundle builder below still produces the legacy
 to its configured directory; the new unbound server needs neither file nor a
 folder confirmation. Plugin installation is replaced separately.
 
-The original engine exposes exactly lowercase `create`, `edit`, `run`,
-`test` and `set_tool_state`; internal preview children retain the first four. Canonical branches require `schemaVersion: 1` and an agent `path`; Create
+The matching current-checkout engine exposes exactly lowercase `create`, `edit`,
+`run`, `test` and `set_tool_state`; internal preview children retain the first four.
+The v0.9.0-rc.2 install pinned above exposes only those first four; installed use
+of the settings writer needs a newer release containing it, not rc.2. Canonical branches require `schemaVersion: 1` and an agent `path`; Create
 also needs canonical `content`, Edit needs `content` and `expectedRevision`.
 Run/Test accept `caseId`, `showContent` and `showFailedContent`; Run also accepts `input`.
 Use discovered schemas as authority. See the
@@ -426,7 +428,9 @@ python3 plugins/copilot/check_install.py --plugin /configured/kmx-agent-builder 
 It accepts qualified CLI 1.0.86-2 or 1.0.102 and refuses unconfigured/mismatched
 roots or engine hashes; exercises real local
 install/list/skill discovery, cache byte/execute checks, exactly five original-server MCP
-tools (including `set_tool_state`), uninstall and reinstall. Python is needed only for this checkout check,
+tools (including `set_tool_state`), uninstall and reinstall. This checkout check
+requires a matching current-checkout engine/hash, not the rc.2 install above.
+Python is needed only for this checkout check,
 not for end-user installation. No authentication, inference or trust bypass is
 performed by this check.
 

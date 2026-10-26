@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Opt-in installed-Copilot check in a new private profile; no chat or sign-in."""
+"""Check a matching current-checkout engine in a private profile; no chat/sign-in.
+
+The released v0.9.0-rc.2 four-tool engine is not the five-tool checkout contract.
+"""
 from __future__ import annotations
 
 import argparse
@@ -72,7 +75,7 @@ def discovery(binary: Path, root: Path, env: dict, arguments: list[str] | None =
         process.stdin.flush()
         tools = request(2, "tools/list", {})["tools"]
         if len(tools) != 5 or {t["name"] for t in tools} != {"create", "edit", "run", "test", "set_tool_state"}:
-            raise ValueError("unexpected MCP tool inventory")
+            raise ValueError("unexpected MCP tool inventory: this checkout requires its matching five-tool engine, not v0.9.0-rc.2")
         process.stdin.close()
         process.wait(timeout=5)
         if process.returncode or process.stdout.read() or process.stderr.read():
