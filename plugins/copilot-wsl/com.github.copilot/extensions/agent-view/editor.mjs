@@ -232,16 +232,15 @@ export function resultHistory(initial) {
       return matches.length === 1 ? { ...view, latest: matches[0].latest } : undefined;
     },
     pair: () => [...models.values()],
-    // Keep a capture's results once its recordings are saved.
     noteCapture: (receipt, saved) => {
       capturedModel = receipt.model;
       const defs = uniqueIndex(saved?.authoring?.examples ?? [], e => e.id), route = receipt.modelRoute;
-      if (saved) for (const c of inspectCases({ ...saved, latest: { status: "current", result: receipt } })) if (defs.get(c.example.id) && c.row) {
-        const record = { definition: defs.get(c.example.id), c: { ...c, capturedRevision: saved.file.revision }, model: route };
-        records.set(c.example.id, record); modelCases.set(`${route}\0${c.example.id}`, record);
+      if (saved) for (const c of inspectCases({ ...saved, latest: { status: "current", result: receipt } })) {
+        const id = c.example.id, record = { definition: defs.get(id), c: { ...c, capturedRevision: saved.file.revision }, model: route };
+        if (record.definition && c.row) { records.set(id, record); modelCases.set(`${route}\0${id}`, record); }
       }
     },
-    comparisonModels(selected) { const candidates = [...models.values()].filter(v => v.latest.result.state === "complete").map(modelId).filter(id => id !== selected); const other = candidates.includes(preferred) ? preferred : candidates.at(-1) ?? (capturedModel !== selected ? capturedModel : undefined); return other ? [selected, other] : [selected]; },
+    comparisonModels(selected) { const kept = [...models.values()], candidates = kept.filter(v => v.latest.result.state === "complete").map(modelId).filter(id => id !== selected); const other = candidates.includes(preferred) ? preferred : candidates.at(-1) ?? (capturedModel !== selected && !attempts.has(capturedModel) && !kept.some(v => modelId(v) === capturedModel) ? capturedModel : undefined); return other ? [selected, other] : [selected]; },
     prefer: model => { preferred = model; },
     focus: model => { focused = model; },
     started: model => { attempts.delete(model); },

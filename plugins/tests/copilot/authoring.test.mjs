@@ -191,6 +191,15 @@ test("a model whose last run didn't finish is not the next comparison partner", 
   assert.deepEqual(history.comparisonModels("haiku-old"), ["haiku-old", "terra"]);
 });
 
+test("a captured model that then didn't finish is not brought back as the partner", () => {
+  const before = historyView("haiku-new"), history = resultHistory(before);
+  history.reset(); history.noteCapture({ model: "haiku-new" });
+  const failed = historyView("haiku-new");
+  failed.latest.result.state = "error"; failed.latest.result.reasonCode = "execution_failed";
+  history.remember(failed, true);
+  assert.deepEqual(history.comparisonModels("haiku-old"), ["haiku-old"]);
+});
+
 test("a capture's result stays shown after its recording is saved", () => {
   const before = historyView("terra"), history = resultHistory(before);
   const receipt = { ...before.latest.result, model: "terra", savedRevision: "saved-revision" };
