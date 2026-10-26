@@ -9,7 +9,7 @@ skills, a canvas and MCP configuration, not an engine or a fixed working folder.
 With Copilot installed, run these two commands in a Mac terminal:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.2/install.sh | sudo sh -s -- --version=v0.9.0-rc.2 --bin-dir=/usr/local/bin
+curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.3/install.sh | sudo sh -s -- --version=v0.9.0-rc.3 --bin-dir=/usr/local/bin
 copilot plugin install kaimahi-agents/kaimahi:plugins/copilot
 ```
 
@@ -18,7 +18,7 @@ The first command selects `kmx-darwin-arm64` on Apple Silicon and
 and installs it at `/usr/local/bin/kmx`. It uses the same binary installer as WSL,
 not a plugin setup script. It does not verify the separate signature bundle.
 The Homebrew tap tracks final releases, not release candidates; use this binary
-for rc.2. Homebrew is the install path for final v0.9.0.
+for rc.3. Homebrew is the install path for final v0.9.0.
 
 The plugin starts `kmx mcp` from PATH; `/usr/local/bin` must be on Copilot's PATH.
 No root, model or binary is configured inside the plugin. The MCP schema has no
@@ -131,7 +131,7 @@ uses existing runtime credentials and an exact listed
 `Model.Preferred`, with a fixed endpoint. This sends instructions/inputs and
 any judge answers/rubrics to Copilot. Startup does not sign in or access credentials.
 In v0.9.0-rc.2 native bundles, Copilot previews use a direct, unjournaled runner.
-Current main journals tool-free Copilot agent and judge turns on embedded Sessions
+v0.9.0-rc.3 journals Copilot previews, including bound-tool calls, on embedded Sessions
 under `<kmx state>/local-preview/journals`, using the cleartext-content retention
 policy above, with one fresh Session per agent turn and judge sample. The provider
 owns pre-journal credential/content checks and captures one invocation-local

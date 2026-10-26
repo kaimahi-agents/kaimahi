@@ -5,10 +5,10 @@ Linux kmx binary in your default WSL distribution; it does not bundle an engine.
 
 ## Install
 
-1. In WSL, install the v0.9.0-rc.2 Linux kmx binary at `/usr/local/bin/kmx`:
+1. In WSL, install the v0.9.0-rc.3 Linux kmx binary at `/usr/local/bin/kmx`:
 
    ```sh
-   curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.2/install.sh | sudo sh -s -- --version=v0.9.0-rc.2 --bin-dir=/usr/local/bin
+   curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.3/install.sh | sudo sh -s -- --version=v0.9.0-rc.3 --bin-dir=/usr/local/bin
    ```
 
    The installer downloads the binary and checks its published SHA256 over HTTPS;
