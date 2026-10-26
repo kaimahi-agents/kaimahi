@@ -99,7 +99,12 @@ func newMCPCommand(state *commandState) *cobra.Command {
 				operations = kmxmcp.WithSquadOperations(operations, squad, application, route)
 			}
 			info, ok := state.deps.buildInfo()
-			server, err := kmxmcp.NewServer(version.Resolve(info, ok).Version, operations)
+			role := kmxmcp.OriginalServer
+			if bridge != nil {
+				role = kmxmcp.PreviewServer
+				delete(operations, "set_tool_state")
+			}
+			server, err := kmxmcp.NewServer(version.Resolve(info, ok).Version, operations, role)
 			if err != nil {
 				return err
 			}

@@ -3,6 +3,7 @@ package mcp
 import (
 	"os"
 	"path"
+	"path/filepath"
 )
 
 // sourceIdentity is operation-owned, never a client-supplied revision capability.
@@ -22,6 +23,16 @@ func squadEnrichmentError(cause error) error {
 }
 
 func (f *Files) observedParent(p string, parent *os.Root, observed *sourceIdentity) bool {
+	if f.root == nil {
+		// Rootless targets are canonical absolute paths: the named parent must
+		// still be the pinned directory, not a replacement or link.
+		pinned, err := parent.Stat(".")
+		if err != nil || !os.SameFile(observed.parent, pinned) {
+			return false
+		}
+		current, err := os.Lstat(filepath.Dir(p))
+		return err == nil && current.IsDir() && current.Mode()&(os.ModeSymlink|os.ModeIrregular) == 0 && os.SameFile(current, pinned)
+	}
 	openedRoot, err := f.root.Stat(".")
 	if err != nil {
 		return false

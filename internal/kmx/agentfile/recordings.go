@@ -29,7 +29,18 @@ type MockCall struct {
 	Result    map[string]any `json:"result"`
 }
 
-var errRecording = errors.New("invalid tool fixture")
+// Recording is verified pending fixture content; it grants no file-write authority.
+type Recording struct {
+	ExampleID string
+	Tool      MockTool
+}
+
+var (
+	ErrRecordingChanged = errors.New("recording source changed")
+	ErrRecordingInvalid = errors.New("recording cannot fit the agent file format and limits")
+	ErrRecordingSave    = errors.New("recording save failed")
+	errRecording        = errors.New("invalid tool fixture")
+)
 
 func parseMocks(node *yaml.Node) (*Mocks, error) {
 	// Convert before decoding the closed shape: YAML's permissive scalar-to-string

@@ -15,6 +15,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
+	kmxmcp "github.com/kaimahi-agents/kaimahi/internal/kmx/mcp"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
 )
 
@@ -129,6 +130,10 @@ func runFileCommand(cmd *cobra.Command, state *commandState, file string, f file
 	defer stop()
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
+	opt.PrepareRecordingSave = func(ctx context.Context, revision string) (app.RecordingSaver, error) {
+		save, err := kmxmcp.FileRecordingSaver(ctx, file, revision)
+		return app.RecordingSaver(save), err
+	}
 	a := &app.App{FileRunner: state.deps.fileRunner}
 	start := time.Now()
 	result, err := a.PreviewAgentFile(ctx, opt)

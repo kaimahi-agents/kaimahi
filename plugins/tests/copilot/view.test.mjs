@@ -500,6 +500,11 @@ test("plainReason translates every preview engine code and retains only validate
     invalid_completion: "The answer could not be confirmed for this run.", diagnostics_failed: "Run details could not be saved.",
     journal_failed: "The run could not be saved, so its result is unconfirmed.",
     recording_mismatch: "Recording mismatch: tool arguments differ from the saved call. Update the saved call before retrying.",
+    recording_source_changed: "The agent file changed. The recording was not saved.",
+    recording_unrepresentable: "The recording does not fit this agent file. Nothing was saved.",
+    recording_save_failed: "The recording could not be saved.",
+  recording_missing: "A Recorded tool has no saved call. Change the test or tool mode before comparing.",
+  tool_settings_changed: "Tool settings changed. Reload before comparing.",
     copilot_auth_required: "Sign in to GitHub Copilot before running this agent.", copilot_auth_revoked: "Sign in to GitHub Copilot again before running this agent.",
     copilot_no_subscription: "An active GitHub Copilot subscription is needed for this run.", copilot_policy_denied: "Your Copilot policy does not allow this run.",
     copilot_quota: "Copilot's usage limit was reached.", copilot_model_unavailable: "Choose an available Copilot model.",
@@ -644,7 +649,7 @@ function assertTrustedControls(root) {
 }
 // Main shows one line per test; a test's details live behind its row.
 const summaryOf = (root) => byClass(root, "tests-summary")[0].textContent;
-const items = (root) => byClass(root, "test-item");
+const items = (root) => byClass(root, "test-item").filter(n => n.getAttribute("data-test-id") !== null);
 const rowLabels = (root) => items(root).map((i) => byClass(i, "test-verdict")[0].textContent);
 const noteOf = (item) => byClass(item, "test-note")[0].textContent;
 function openTest(root, id) {
@@ -1591,6 +1596,107 @@ test("a 33rd tick leaves the existing 32 names intact and reports the canonical 
   assert.match(h.root.textContent,/Keep at most 32 tools/);
   assert.equal(byClass(h.root,"tool-choice").filter(n=>n.checked).length,32);
   assert.equal(h.calls.length,0);
+});
+
+const SWITCH_TOKEN = "sha256:" + "a".repeat(64), NEXT_SWITCH_TOKEN = "sha256:" + "b".repeat(64);
+const switchStates = () => [{ name: "search", state: "Enabled" }, { name: "list_tags", state: "Disabled" }];
+const switchCanvas = (over = {}) => editableCanvas("Before.", undefined, { tools: ["search", "list_tags"], fetchTools: async () => toolsCatalog(), extra: { toolSettings: switchStates(), toolSettingsRevision: SWITCH_TOKEN }, ...over });
+const stateWord = (h, name = "search") => byClass(h.root, "tool-state").find(n => n.attrs["data-tool-state"] === name);
+const flipState = (h, name) => stateWord(h, name).listeners.click[0]();
+test("switch drafts: word flip preserves filter, order and focus; T1 saved count differs from T2 draft count", async t => {
+  const h = await switchCanvas(); t.after(() => h.app.dispose()); await openServer(h);
+  const filter = byClass(h.root, "tool-filter")[0]; filter.value = "Find"; filter.listeners.input[0]();
+  const order = byClass(h.root, "tool-choice").map(n => n.attrs["data-tool-name"]);
+  const word = stateWord(h); word.focus(); let prevented = false;
+  h.root.children[0].listeners.keydown[0]({ key: "Enter", target: word, preventDefault() { prevented = true; } });
+  assert.equal(prevented, false); flipState(h, "search");
+  assert.equal(stateWord(h).textContent, "Disabled"); assert.equal(h.doc.activeElement, stateWord(h));
+  assert.equal(byClass(h.root, "tool-filter")[0].value, "Find"); assert.deepEqual(byClass(h.root, "tool-choice").map(n => n.attrs["data-tool-name"]), order);
+  assert.match(byClass(h.root, "detail-status")[0].textContent, /2 disabled for tests/); assert.equal(h.calls.length, 0);
+  byClass(h.root, "back")[0].listeners.click[0](); assert.match(byClass(h.root, "tool-source")[0].textContent, /1 disabled for tests/);
+  await openServer(h); byClass(h.root, "tools-save")[0].listeners.click[0](); await settleTools();
+  assert.equal(h.calls.length, 1); assert.equal(h.calls[0].operation, "save-and-test");
+  assert.deepEqual(h.calls[0].toolSettings, [{ name: "search", state: "Disabled" }]); assert.equal(h.calls[0].expectedSettingsRevision, SWITCH_TOKEN); assert.equal(h.calls[0].tools, undefined);
+});
+test("switch drafts: Esc discards ticks and flips but preserves unrelated prompt edits", async t => {
+  const h = await switchCanvas(); t.after(() => h.app.dispose());
+  c18Prompt(h.root).textContent = "Keep this prompt."; c18Prompt(h.root).listeners.input[0]();
+  await openServer(h); flipState(h, "search"); chooseTool(h, "list_tags", false);
+  h.root.children[0].listeners.keydown[0]({ key: "Escape", preventDefault() {} });
+  assert.equal(stateWord(h).textContent, "Enabled"); assert.equal(stateWord(h, "list_tags").textContent, "Disabled");
+  h.root.children[0].listeners.keydown[0]({ key: "Enter", preventDefault() {} }); await settleTools();
+  assert.equal(h.calls[0].sections[0].text, "Keep this prompt."); assert.equal(h.calls[0].toolSettings, undefined); assert.equal(h.calls[0].expectedSettingsRevision, undefined); assert.equal(h.calls[0].tools, undefined);
+});
+test("switch drafts: token-only outside change is a conflict and Keep mine uses the observed token", async t => {
+  const h = await switchCanvas(); t.after(() => h.app.dispose()); await openServer(h); flipState(h, "search");
+  h.app.observe(await viewFor(h.source, h.examples, { status: "none" }, "fake", { toolSettings: switchStates(), toolSettingsRevision: NEXT_SWITCH_TOKEN }));
+  assert.ok(btn(h.root, "Keep my edits")); assert.equal(stateWord(h).disabled, true);
+  click(btn(h.root, "Compare")); assert.match(h.root.textContent, /Tool settings revision/);
+  click(btn(h.root, "Keep my edits")); assert.equal(stateWord(h).textContent, "Disabled");
+  click(byClass(h.root, "tools-save")[0]); await settleTools();
+  assert.equal(h.calls[0].expectedSettingsRevision, NEXT_SWITCH_TOKEN); assert.deepEqual(h.calls[0].toolSettings, [{ name: "search", state: "Disabled" }]); assert.equal(h.calls[0].tools, undefined);
+});
+test("switch drafts: Keep mine retains a flipped declaration removed outside; Use theirs discards switches", async t => {
+  for (const mine of [true, false]) {
+    const h = await switchCanvas(); t.after(() => h.app.dispose()); await openServer(h); flipState(h, "search");
+    h.app.observe(await viewFor(replaceTools(h.source, []), h.examples));
+    click(btn(h.root, mine ? "Keep my edits" : "Use the new version")); await settleTools();
+    if (!mine) { assert.ok(byClass(h.root, "tool-choice").every(n => !n.checked)); assert.equal(byClass(h.root, "tool-state").length, 0); continue; }
+    assert.equal(stateWord(h).textContent, "Disabled"); click(byClass(h.root, "tools-save")[0]); await settleTools();
+    assert.deepEqual(h.calls[0].tools, ["search"]); assert.equal(h.calls[0].expectedSettingsRevision, undefined); assert.deepEqual(h.calls[0].toolSettings, [{ name: "search", state: "Disabled" }]);
+  }
+});
+for (const error of ["stale_revision", "stale_settings_revision", "permission_required", "outcome-unknown"]) test("switch drafts: partial " + error + " keeps drafts, blocks and claims no Test", async t => {
+  const h = await switchCanvas({ response: { error, saved: true, settingsIncomplete: true } }); t.after(() => h.app.dispose());
+  await openServer(h); flipState(h, "search"); click(byClass(h.root, "tools-save")[0]); await settleTools();
+  assert.match(h.root.textContent, /Tests did not run/); assert.doesNotMatch(h.root.textContent, /test result unconfirmed/i);
+  assert.equal(stateWord(h).textContent, "Disabled"); assert.equal(stateWord(h).disabled, true); assert.equal(h.calls.length, 1);
+  h.root.children[0].listeners.keydown[0]({ key: "Escape", preventDefault() {} }); assert.equal(stateWord(h).textContent, "Disabled");
+});
+for (const page of ["main", "detail"]) for (const saved of [true, false]) test(`switch drafts: ${page} footer distinguishes ${saved ? "partially saved" : "unconfirmed"} settings from a started Test`, async t => {
+  let h, reloads = 0;
+  h = await switchCanvas({ respond: async action => {
+    if (action.operation !== "reload") return { error: saved ? "stale_settings_revision" : "outcome-unknown", saved, settingsIncomplete: true };
+    if (++reloads === 1) return { error: "unavailable", message: "Read did not complete." };
+    return { view: await viewFor(replaceTools(h.source, ["search"]), h.examples, { status: "none" }, "fake", { toolSettings: [{ name: "search", state: "Enabled" }], toolSettingsRevision: NEXT_SWITCH_TOKEN }) };
+  } });
+  t.after(() => h.app.dispose());
+  await openServer(h); chooseTool(h, "list_tags", false); flipState(h, "search"); byClass(h.root, "back")[0].listeners.click[0]();
+  if (page === "detail") openTest(h.root, "greeting");
+  click(byClass(h.root, "save-run")[0]); await settleTools();
+  assert.equal(h.calls[0].operation, "save-and-test"); assert.deepEqual(h.calls[0].tools, ["search"]);
+  const footer = saved ? "Some changes saved · tests did not run" : "Reload required · tests did not run";
+  assert.equal(c18Text(h.root, "prompt-status"), footer); assert.doesNotMatch(h.root.textContent, /test result unconfirmed/i);
+  click(btn(h.root, "Reload and discard draft")); await settleTools();
+  assert.equal(c18Text(h.root, "prompt-status"), footer, "failed Reload cannot erase the known Test-not-started outcome");
+  click(btn(h.root, "Reload and discard draft")); await settleTools();
+  assert.doesNotMatch(c18Text(h.root, "prompt-status"), /tests did not run|unconfirmed/i, "confirmed Reload clears the incomplete-settings state");
+  assert.deepEqual(h.calls.map(a => a.operation), ["save-and-test", "reload", "reload"], "no automatic Test or retry");
+});
+test("switch drafts: source-only prompt draft accepts a settings-only observation without false conflict", async t => {
+  const h = await switchCanvas(); t.after(() => h.app.dispose()); c18Prompt(h.root).textContent = "Prompt kept."; c18Prompt(h.root).listeners.input[0]();
+  h.app.observe(await viewFor(h.source, h.examples, { status: "none" }, "fake", { toolSettings: switchStates(), toolSettingsRevision: NEXT_SWITCH_TOKEN }));
+  assert.equal(btn(h.root, "Keep my edits"), undefined); assert.equal(c18Prompt(h.root).textContent, "Prompt kept.");
+  promptEnter(h.root); await settleTools(); assert.equal(h.calls[0].toolSettings, undefined); assert.equal(h.calls[0].expectedSettingsRevision, undefined);
+});
+test("switch drafts: new explicit Enabled intent survives toggling twice and uses no invented absence token", async t => {
+  const h = await switchCanvas({ tools: [], extra: {} }); t.after(() => h.app.dispose()); await openServer(h); chooseTool(h, "search", true);
+  flipState(h, "search"); flipState(h, "search"); click(byClass(h.root, "tools-save")[0]); await settleTools();
+  assert.deepEqual(h.calls[0].toolSettings, [{ name: "search", state: "Enabled" }]); assert.equal(h.calls[0].expectedSettingsRevision, undefined);
+});
+test("switch drafts: saving ticks with a retained Disabled override adopts the readback count, not a guessed default", async t => {
+  let h; h = await switchCanvas({ tools: [], extra: {}, respond: async a => ({ saved: true, view: await viewFor(replaceTools(h.source, a.tools), h.examples, { status: "none" }, "fake", { toolSettings: [{ name: "search", state: "Disabled" }], toolSettingsRevision: NEXT_SWITCH_TOKEN }) }) });
+  t.after(() => h.app.dispose()); await openServer(h); chooseTool(h, "search", true);
+  assert.equal(stateWord(h).textContent, "Enabled"); click(byClass(h.root, "tools-save")[0]); await settleTools();
+  assert.equal(h.calls[0].toolSettings, undefined); assert.equal(stateWord(h).textContent, "Disabled"); assert.match(byClass(h.root, "detail-status")[0].textContent, /1 disabled for tests/);
+  byClass(h.root, "back")[0].listeners.click[0](); assert.match(byClass(h.root, "tool-source")[0].textContent, /1 disabled for tests/);
+});
+test("switch drafts: settings-only detail submit saves and unknown settings do not claim a hosted Test", async t => {
+  const h = await switchCanvas({ omitModel: true, chatModel: "gpt-4.1", response: { error: "outcome-unknown", settingsIncomplete: true, saved: false } }); t.after(() => h.app.dispose());
+  await openServer(h); flipState(h, "search"); byClass(h.root, "back")[0].listeners.click[0]();
+  openTest(h.root, "greeting"); click(byClass(h.root, "save-run")[0]); await settleTools();
+  assert.equal(h.calls[0].operation, "save-and-test"); assert.deepEqual(h.calls[0].toolSettings, [{ name: "search", state: "Disabled" }]);
+  assert.equal(byClass(h.root, "hosted-notice")[0].hidden, false); assert.match(h.root.textContent, /Tests did not run/);
 });
 
 test("stale_revision checks the supplied view and retains the draft as a conflict without resubmitting", async t => {
@@ -3985,7 +4091,7 @@ test("ADVERSARIAL Esc discards only the current test and never the prompt or ano
 const ENABLED = (...names) => names.map((name) => ({ name, state: "Enabled" }));
 const settingsOf = (result) => (result?.toolSettings ?? []).map((t) => `${t.name}:${t.state}`);
 const readWith = (over) => readView(stubSession(resource(MINIMAL, { model: "fake", ...over })), MINIMAL);
-const toolLabels = (root) => byClass(root, "tool-settings").flatMap((n) => byClass(n, "tool-setting").map((l) => l.textContent));
+const pingCatalog = async () => ({ servers: [{ name: "host", label: "Host", tools: [{ name: "ping", selectable: true, description: "" }] }] });
 
 test("tool settings: a legacy view defaults declared tools to Enabled without inventing result provenance", async () => {
   const view = await readWith({ tools: ["ping", "lookup"], latest: { status: "current", result: result() } });
@@ -3993,6 +4099,16 @@ test("tool settings: a legacy view defaults declared tools to Enabled without in
   assert.deepEqual(view.toolSettings, ENABLED("ping", "lookup"));
   assert.equal(Object.hasOwn(view.latest.result, "toolSettings"), false, "an old result did not record settings");
   assert.deepEqual((await readWith({})).toolSettings, []);
+});
+
+test("tool settings: byte revision token is preserved for callers without being synthesized", async () => {
+  for (const token of ["absent", "sha256:" + "a".repeat(64)]) {
+    assert.equal((await readWith({ tools: ["ping"], toolSettingsRevision: token })).toolSettingsRevision, token);
+  }
+  assert.equal(Object.hasOwn(await readWith({}), "toolSettingsRevision"), false);
+  for (const token of [null, "", "sha256:nope", "private raw config", {}]) {
+    await assert.rejects(readWith({ tools: ["ping"], toolSettingsRevision: token }), { code: "invalid-resource" });
+  }
 });
 
 test("tool settings: ordered view and result settings are preserved as detached clean data", async () => {
@@ -4020,26 +4136,21 @@ test("tool settings: malformed vectors refuse the whole resource without echoing
   await assert.rejects(readWith({ tools: ["ping"], toolSettings: good, latest: latest(ENABLED("lookup")) }), { code: "invalid-resource" }, "a current result describes the same declarations");
 });
 
-test("tool settings: Tests shows read-only text labels, not controls or HTML disabled semantics", async () => {
-  const h = await editableCanvas("Reply briefly.", undefined, { extra: { tools: ["ping", "lookup"], toolSettings: [{ name: "ping", state: "Enabled" }, { name: "lookup", state: "Disabled" }] } });
-  const tests = byClass(h.root, "tests-section")[0];
-  assert.deepEqual(toolLabels(tests), ["ping · Enabled", "lookup · Disabled"]);
-  const area = byClass(tests, "tool-settings")[0];
-  assert.equal(area.tag, "ul");
-  const nodes = all(area);
-  assert.ok(nodes.every((n) => n.tag !== "button" && n.tag !== "input" && Object.keys(n.listeners).length === 0), "no controls or handlers");
-  assert.ok(nodes.every((n) => !Object.keys(n.attrs).some((k) => /^(?:disabled|aria-disabled|aria-checked|aria-pressed|role|tabindex)$/.test(k))), "labels are plain text");
-  assert.equal(byClass(h.root, "tool-settings").length, 1);
-  assert.equal(all(h.root).some((n) => n.className.includes("switch")), false);
-  assert.deepEqual(all(h.root).filter((n) => n.tag === "button").map((n) => n.textContent).filter((t) => /ping|lookup|Enabled|Disabled|Ask/.test(t)), []);
+test("tool settings: Tests no longer duplicates per-tool settings; T1 owns saved counts", async () => {
+  const h = await editableCanvas("Reply briefly.", undefined, { tools: ["search", "list_tags"], fetchTools: async () => toolsCatalog(), extra: { toolSettings: switchStates(), toolSettingsRevision: SWITCH_TOKEN } });
+  await settleTools();
+  assert.equal(byClass(h.root, "tool-settings").length, 0);
+  assert.equal(byClass(h.root, "tool-state").length, 0, "state words belong only on T2");
+  assert.match(c18Text(h.root, "tools-section"), /2 of 2 tools · 1 disabled for tests/);
+  assert.doesNotMatch(c18Text(h.root, "tests-section"), /search|list_tags|Enabled|Disabled/);
   h.app.dispose();
 });
 
 test("tool settings: read-only views and views without tools render no labels", async () => {
-  assert.deepEqual(toolLabels(await rendered({ tools: ["ping"], toolSettings: [{ name: "ping", state: "Disabled" }] })), ["ping · Disabled"]);
-  assert.deepEqual(toolLabels(await rendered({})), []);
+  assert.equal(byClass(await rendered({ tools: ["ping"], toolSettings: [{ name: "ping", state: "Disabled" }] }), "tool-settings").length, 0);
+  assert.equal(byClass(await rendered({}), "tool-settings").length, 0);
   const legacy = await rendered({ tools: ["ping"] });
-  assert.deepEqual(toolLabels(legacy), ["ping · Enabled"]);
+  assert.equal(byClass(legacy, "tool-settings").length, 0);
   assertTrustedControls(legacy);
 });
 
@@ -4049,7 +4160,8 @@ async function toolCompare({ settings = ENABLED("ping"), legacy = false } = {}) 
   const examples = c18Examples(["a", "b"]);
   const h = await editableCanvas("Reply briefly.", undefined, { examples, extra: legacy ? { tools: ["ping"] } : { tools: ["ping"], toolSettings: settings },
     latest: (rev, ex) => { const latest = bLatest({ a: "pass", b: "pass" })(rev, ex); if (!legacy) latest.result.toolSettings = settings; return latest; },
-    fetchModels: async () => ({ models: ["fake", "claude-sonnet-5.5"] }) });
+    fetchModels: async () => ({ models: ["fake", "claude-sonnet-5.5"] }), fetchTools: pingCatalog });
+  await settleTools();
   const onSonnet = (vector) => (rev, ex) => {
     const latest = bLatest({ a: "pass", b: "pass" })(rev, ex);
     latest.result.modelRoute = { provider: "copilot", model: "claude-sonnet-5.5" };
@@ -4066,7 +4178,7 @@ test("tool settings: a config-only change does not leave retained comparison res
   assert.deepEqual(slotKinds(h.root).slice(0, 2), ["pass", "old-pass"], "before the change the selected slot is current and its partner older");
   const changed = [{ name: "ping", state: "Disabled" }];
   assert.equal(await observe({ status: "stale", badge: "stale" }, changed), true);
-  assert.deepEqual(toolLabels(h.root), ["ping · Disabled"]);
+  assert.match(c18Text(h.root, "tools-section"), /1 disabled for tests/);
   assert.deepEqual(slotKinds(h.root).slice(0, 2), ["old-pass", "old-pass"], "both retained slots are old after the vector changed");
   assert.match(c18Text(h.root, "tests-meta"), /Out of date/);
   assert.doesNotMatch(c18Text(h.root, "tests-meta"), /earlier/);
@@ -4104,17 +4216,20 @@ test("tool settings: invalid_tool_settings is explained plainly, never as a gene
 const DISABLED = (...names) => names.map((name) => ({ name, state: "Disabled" }));
 const INVALID_MESSAGE = /tool settings.*kmx\.yaml/i;
 const passing = (settings) => (rev, ex) => { const latest = bLatest({ a: "pass", b: "pass" })(rev, ex); latest.result.toolSettings = settings; return latest; };
-const toolCanvas = (settings = ENABLED("ping"), options = {}) => editableCanvas("Reply briefly.", undefined, { examples: c18Examples(["a", "b"]),
-  extra: { tools: ["ping"], toolSettings: settings }, latest: passing(settings), ...options });
+const toolCanvas = async (settings = ENABLED("ping"), options = {}) => {
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: c18Examples(["a", "b"]),
+    extra: { tools: ["ping"], toolSettings: settings }, latest: passing(settings), fetchTools: pingCatalog, ...options });
+  await settleTools(); return h;
+};
 
 test("tool settings: an invalid_tool_settings poll after a pass makes the old pass old, keeps drafts and recovers on a valid read", async () => {
   for (const mode of ["thrown", "payload"]) {
     const h = await toolCanvas();
     c18Prompt(h.root).textContent = "My draft."; c18Prompt(h.root).listeners.input[0]();
-    assert.deepEqual(toolLabels(h.root), ["ping · Enabled"]);
+    assert.doesNotMatch(c18Text(h.root, "tools-section"), /disabled for tests/);
     const typed = new ViewError("invalid_tool_settings");
     if (mode === "thrown") h.app.observeFailure(typed); else h.app.observe({ error: typed.code, message: typed.message });
-    assert.deepEqual(toolLabels(h.root), [], mode + ": the old Enabled labels are not claimed");
+    assert.equal(byClass(h.root, "tool-settings").length, 0, mode + ": no stale per-tool state labels");
     assert.match(all(h.root).map((n) => n.textContent).join("\n"), INVALID_MESSAGE);
     assert.deepEqual(items(h.root).map((i) => /old-pass/.test(byClass(i, "test-verdict")[0].className)), [true, true], mode + ": the old pass is not current");
     assert.equal(c18Text(h.root, "result-pill").includes("2 of 2 passing"), false);
@@ -4123,7 +4238,7 @@ test("tool settings: an invalid_tool_settings poll after a pass makes the old pa
     h.app.observeFailure(new Error("network"));
     assert.match(all(h.root).map((n) => n.textContent).join("\n"), INVALID_MESSAGE);
     h.app.observe(await viewFor(h.source, h.examples, passing(ENABLED("ping")), "fake", { tools: ["ping"], toolSettings: ENABLED("ping") }));
-    assert.deepEqual(toolLabels(h.root), ["ping · Enabled"], mode + ": a valid same-revision read recovers");
+    assert.doesNotMatch(c18Text(h.root, "tools-section"), /disabled for tests/, mode + ": a valid same-revision read recovers");
     assert.doesNotMatch(all(h.root).map((n) => n.textContent).join("\n"), INVALID_MESSAGE);
     assert.equal(c18Prompt(h.root).textContent, "My draft.");
     h.app.dispose();
@@ -4136,7 +4251,7 @@ test("tool settings: a valid response started before invalidation cannot restore
   const old = await viewFor(h.source, h.examples, passing(ENABLED("ping")), "fake", { tools: ["ping"], toolSettings: ENABLED("ping") });
   h.app.observe({ error: "invalid_tool_settings" }, before);
   assert.equal(h.app.observe(old, before), false, "invalidation fences older in-flight reads");
-  assert.deepEqual(toolLabels(h.root), []);
+  assert.equal(byClass(h.root, "tool-settings").length, 0);
   assert.match(all(h.root).map(n => n.textContent).join("\n"), INVALID_MESSAGE);
   h.app.dispose();
 });
@@ -4171,7 +4286,7 @@ test("tool settings: a stopped Test keeps its start settings, not a changed Stop
   assert.equal(c18Text(h.root, "result-pill"), "Out of date", "changed during the run, before Stop readback");
   const changed = await viewFor(h.source, h.examples, { status: "stale", badge: "stale" }, "fake", { tools: ["ping"], toolSettings: DISABLED("ping") });
   assert.equal(h.app.observe(changed), true);
-  assert.deepEqual(toolLabels(h.root), ["ping · Disabled"]);
+  assert.match(c18Text(h.root, "tools-section"), /1 disabled for tests/);
   assert.equal(byClass(items(h.root)[0], "test-verdict")[0].className.includes("old-pass"), true, "the stopped pass is old under Disabled");
   assert.equal(c18Text(h.root, "result-pill"), "Out of date");
 });

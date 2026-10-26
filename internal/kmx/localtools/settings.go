@@ -1,9 +1,10 @@
 package localtools
 
 import (
-	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -11,9 +12,6 @@ import (
 
 	"github.com/agent-primitives/sessions/api"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
-	"go.yaml.in/yaml/v3"
-	"oras.land/oras-go/v2/registry"
 )
 
 type ToolState string
@@ -30,42 +28,62 @@ type ToolSetting struct {
 
 var ErrSettings = errors.New("invalid tool settings in the agent folder's kmx.yaml")
 
+// SettingsSnapshot binds effective states to the exact bytes read, not to an agent revision.
+// Empty Revision means no declared tools; absent means an observed missing config.
+type SettingsSnapshot struct {
+	Settings []ToolSetting
+	Revision string
+}
+
 // LoadSettings reads only beside the caller's checked physical agent filename.
 // It never searches ancestors, creates a file or rewrites unrelated YAML keys.
 func LoadSettings(ctx context.Context, filename string, names []string) ([]ToolSetting, error) {
 	return loadSettings(ctx, filename, names, fileaccess.OpenDirectory)
 }
-
-// loadSettings takes the directory opener only so a test can prove the boundary.
 func loadSettings(ctx context.Context, filename string, names []string, openDirectory func(context.Context, string) (*fileaccess.Directory, error)) ([]ToolSetting, error) {
-	settings := make([]ToolSetting, len(names))
-	seen := map[string]bool{}
-	for i, name := range names {
-		if !ValidToolName(name) || seen[name] || len(names) > 32 {
-			return nil, ErrSettings
-		}
-		settings[i] = ToolSetting{Name: name, State: Enabled}
-		seen[name] = true
+	snapshot, err := readSettingsSnapshot(ctx, filename, names, openDirectory)
+	return snapshot.Settings, err
+}
+
+// ReadSettingsSnapshot projects states and the opaque revision from one checked read.
+func ReadSettingsSnapshot(ctx context.Context, filename string, names []string) (SettingsSnapshot, error) {
+	return readSettingsSnapshot(ctx, filename, names, fileaccess.OpenDirectory)
+}
+func readSettingsSnapshot(ctx context.Context, filename string, names []string, openDirectory func(context.Context, string) (*fileaccess.Directory, error)) (SettingsSnapshot, error) {
+	if _, err := ParseSettings(nil, names); err != nil {
+		return SettingsSnapshot{}, err
 	}
 	if len(names) == 0 {
-		return nil, nil
+		return SettingsSnapshot{}, nil
 	}
+	raw, err := readSettingsBytes(ctx, filename, openDirectory)
+	if err != nil {
+		return SettingsSnapshot{}, err
+	}
+	settings, err := ParseSettings(raw, names)
+	if err != nil {
+		return SettingsSnapshot{}, err
+	}
+	token := "absent"
+	if raw != nil {
+		token = fmt.Sprintf("sha256:%x", sha256.Sum256(raw))
+	}
+	return SettingsSnapshot{Settings: settings, Revision: token}, nil
+}
+func readSettingsBytes(ctx context.Context, filename string, openDirectory func(context.Context, string) (*fileaccess.Directory, error)) ([]byte, error) {
 	absolute, err := filepath.Abs(filename)
 	if err != nil {
 		return nil, ErrSettings
 	}
-	// Cancellation outranks an invalid-config verdict so callers keep it.
-	refuse := func() ([]ToolSetting, error) {
+	refuse := func() ([]byte, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		return nil, ErrSettings
 	}
 	folder := filepath.Dir(absolute)
-	// An absent optional file in an existing source folder must not trigger the
-	// private-state filesystem qualification (Windows accepts only local NTFS).
-	// Lstat sees a dangling final symlink as present, so it still reaches the
-	// checked no-follow open below and is refused.
+	// Absence is not authority to impose private-state volume qualification on source.
+	// Lstat keeps a dangling final symlink on the checked no-follow path.
 	if _, statErr := os.Lstat(filepath.Join(folder, "kmx.yaml")); statErr != nil {
 		if !errors.Is(statErr, fs.ErrNotExist) {
 			return refuse()
@@ -74,7 +92,7 @@ func loadSettings(ctx context.Context, filename string, names []string, openDire
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
-			return settings, nil
+			return nil, nil
 		}
 	}
 	dir, err := openDirectory(ctx, folder)
@@ -87,7 +105,7 @@ func loadSettings(ctx context.Context, filename string, names []string, openDire
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		return settings, nil
+		return nil, nil
 	}
 	if err != nil {
 		return refuse()
@@ -95,77 +113,18 @@ func loadSettings(ctx context.Context, filename string, names []string, openDire
 	defer file.Close()
 	before, err := file.Stat()
 	if err != nil || before.Size() > 256*1024 {
-		return nil, ErrSettings
+		return refuse()
 	}
 	raw, err := io.ReadAll(io.LimitReader(file, 256*1024+1))
 	after, statErr := file.Stat()
-	if err != nil || statErr != nil || len(raw) > 256*1024 || int64(len(raw)) != before.Size() || after.Size() != before.Size() || after.Mode() != before.Mode() || !after.ModTime().Equal(before.ModTime()) || secretshapes.Match(string(raw)) != nil {
-		return nil, ErrSettings
+	if err != nil || statErr != nil || len(raw) > 256*1024 || int64(len(raw)) != before.Size() || after.Size() != before.Size() || after.Mode() != before.Mode() || !after.ModTime().Equal(before.ModTime()) {
+		return refuse()
 	}
-	var doc, extra yaml.Node
-	decoder := yaml.NewDecoder(bytes.NewReader(raw))
-	if decoder.Decode(&doc) != nil || len(doc.Content) != 1 || doc.Content[0].Kind != yaml.MappingNode || !settingsNode(doc.Content[0], 0) || decoder.Decode(&extra) != io.EOF {
-		return nil, ErrSettings
+	// A present empty file is invalid, not the absent-file sentinel.
+	if raw == nil {
+		raw = []byte{}
 	}
-	root := doc.Content[0]
-	for i := 0; i < len(root.Content); i += 2 {
-		key, value := root.Content[i].Value, root.Content[i+1]
-		switch key {
-		case "schemaVersion":
-			var version int
-			if value.Tag != "!!int" || value.Decode(&version) != nil || version != 1 {
-				return nil, ErrSettings
-			}
-		case "publishRepository":
-			ref, parseErr := registry.ParseReference(value.Value)
-			if value.Kind != yaml.ScalarNode || value.Tag != "!!str" || parseErr != nil || ref.Reference != "" {
-				return nil, ErrSettings
-			}
-		case "tools":
-			if value.Kind != yaml.MappingNode {
-				return nil, ErrSettings
-			}
-			overrides := map[string]ToolState{}
-			for j := 0; j < len(value.Content); j += 2 {
-				name, state := value.Content[j].Value, value.Content[j+1]
-				if !ValidToolName(name) || state.Kind != yaml.ScalarNode || state.Tag != "!!str" || ToolState(state.Value) != Enabled && ToolState(state.Value) != Disabled {
-					return nil, ErrSettings
-				}
-				overrides[name] = ToolState(state.Value)
-			}
-			for j := range settings {
-				if state, ok := overrides[settings[j].Name]; ok {
-					settings[j].State = state
-				}
-			}
-		}
-	}
-	return settings, nil
-}
-
-func settingsNode(n *yaml.Node, depth int) bool {
-	if n == nil || depth > 32 || n.Kind == yaml.AliasNode || n.Anchor != "" {
-		return false
-	}
-	if n.Kind == yaml.MappingNode {
-		if n.Tag != "!!map" || len(n.Content)%2 != 0 {
-			return false
-		}
-		seen := map[string]bool{}
-		for i := 0; i < len(n.Content); i += 2 {
-			k := n.Content[i]
-			if k.Kind != yaml.ScalarNode || k.Tag != "!!str" || k.Value == "<<" || seen[k.Value] {
-				return false
-			}
-			seen[k.Value] = true
-		}
-	}
-	for _, child := range n.Content {
-		if !settingsNode(child, depth+1) {
-			return false
-		}
-	}
-	return true
+	return raw, nil
 }
 
 // CopySettings validates exact definition coverage; nil is the legacy Enabled default.

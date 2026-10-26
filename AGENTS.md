@@ -519,13 +519,18 @@ See [file preview](docs/kmx.md#agent-file-local-preview-unreleased-integration).
 
 `kmx mcp` is stdio-only and config-free at startup. It accepts agent paths in any
 directory; relative paths resolve against the server's working directory. Prefer
-absolute WSL paths from a Windows host. Read/write only `*.agent.md` and
+absolute WSL paths from a Windows host. Authoring reads/writes only `*.agent.md` and
 `.squad/agents/<member>/charter.md`, checking both the requested and resolved
-path. Ordinary folder names and links to agent files are supported; never use an
+path. The original-server fifth tool `set_tool_state` separately changes one declared
+Enabled/Disabled value in the physical agent folder's `kmx.yaml`, with agent and
+exact-byte settings revisions. Preserve other keys/comments; refuse invalid config.
+No arbitrary config path/content operands. Preview bridge children retain exactly
+Create/Edit/Run/Test and cannot discover or dispatch the settings writer. Ordinary folder names and links to agent files are supported; never use an
 agent-looking link to access a non-agent file. Keep descriptor-bound file IO and
 revision-checked edits. Optional `--root DIRECTORY` remains only for legacy
 plugins and the separately configured native Squad flow. Expose exactly
-Create/Edit/Run/Test; call canonical parsing and `App.PreviewAgentSnapshot`,
+Create/Edit/Run/Test/set_tool_state on the original role; execution calls canonical
+parsing and `App.PreviewAgentSnapshot`,
 never the path wrapper or shell CLI strings. Optional native v2 targets use
 explicit `App.PreviewSquadSnapshot` and revalidated native state, not auto-detection.
 Provider/endpoint selection comes from trusted startup configuration or the
@@ -539,7 +544,11 @@ paths after it returns. Fixture runners are not production execution. Edit prese
 ownership/ACLs/xattrs; normal directory inheritance is the day-0 own-file contract.
 No new runner, Explain tool or MCP network listener. The read-only
 `kmx://agent/{path}` resource projects the requested supported agent file;
-it is not a fifth tool or generic file reader. Read-only `kmx://models` lazily
+it is not an additional tool or generic file reader. Declared-tool resources include
+opaque `toolSettingsRevision` (`absent` or exact-byte sha256), from the same checked
+read as `toolSettings`. Zero-tool resources omit the token. Mutating settings qualifies
+the folder for the reader; an absent Enabled no-op preserves absence without it.
+Publication errors report explicit unknown/mayHaveWritten, never automatic retries. Read-only `kmx://models` lazily
 projects validated Copilot IDs/default for the picker, without startup auth or
 inference. Model selection is memory-only, never source/history. Fence model
 changes as well as revisions; never attribute another model's result as current. No folder confirmation is needed
@@ -679,8 +688,10 @@ never ancestor discovery or source declarations. `tools` maps names to Enabled
 (default) or Disabled; unknown states refuse. Read without rewriting other keys,
 freeze for execution/results/journals, and stale prior results on effective-setting
 changes. Disabled answers consume a request slot but do not count as live calls;
-Enabled calls retain native permissions. Canvas states are read-only; Ask is not
-implemented. Historical settings-free journals retain Enabled semantics.
+Enabled calls retain native permissions. Canvas switches draft Enabled/Disabled
+and save through the original-server revision-checked setter before Test; partial
+or uncertain saves retain drafts and never run Test. Ask is not implemented.
+Historical settings-free journals retain Enabled semantics.
 Its optional first-response batch of up to five calls is host-enforced against
 trusted definitions and schemas, validated as a whole before serial dispatch;
 arguments are bounded to 8 KiB and results to 32 KiB per call; at most two agent model calls,

@@ -18,7 +18,7 @@ import (
 
 func protocolFixture() map[string]Operation {
 	ops := map[string]Operation{}
-	for _, name := range []string{"create", "edit", "run", "test"} {
+	for _, name := range []string{"create", "edit", "run", "test", "set_tool_state"} {
 		ops[name] = Operation{Schema: &jsonschema.Schema{Type: "object"}, Handler: func(context.Context, *sdk.CallToolRequest) (*sdk.CallToolResult, error) {
 			return &sdk.CallToolResult{Content: []sdk.Content{&sdk.TextContent{Text: "fixture"}}}, nil
 		}}
@@ -27,7 +27,7 @@ func protocolFixture() map[string]Operation {
 }
 func connectFixture(t *testing.T, ops map[string]Operation, setup ...func(*sdk.Server)) *sdk.ClientSession {
 	t.Helper()
-	s, err := NewServer("test-engine", ops)
+	s, err := NewServer("test-engine", ops, OriginalServer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,14 +59,14 @@ func TestProtocolDiscoveryAndVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	names := []string{}
-	titles := map[string]string{"create": "Create agent", "edit": "Edit agent", "run": "Run agent", "test": "Test agent"}
+	titles := map[string]string{"create": "Create agent", "edit": "Edit agent", "run": "Run agent", "test": "Test agent", "set_tool_state": "Set tool state"}
 	for _, tool := range list.Tools {
 		names = append(names, tool.Name)
 		if tool.Title != titles[tool.Name] {
 			t.Fatalf("display title for %s: %q", tool.Name, tool.Title)
 		}
 	}
-	if strings.Join(names, ",") != "create,edit,run,test" {
+	if strings.Join(names, ",") != "create,edit,run,set_tool_state,test" {
 		t.Fatalf("tools: %v", names)
 	}
 	_, err = cs.CallTool(t.Context(), &sdk.CallToolParams{Name: "secret-tool-value", Arguments: map[string]any{"schemaVersion": 1}})
@@ -134,7 +134,7 @@ func TestProtocolRegistrationAndSafeErrors(t *testing.T) {
 			op.Schema = nil
 			ops["run"] = op
 		}
-		if _, err := NewServer("1", ops); err == nil {
+		if _, err := NewServer("1", ops, OriginalServer); err == nil {
 			t.Fatalf("accepted %s", kind)
 		}
 	}
@@ -203,7 +203,7 @@ type protocolOutput struct{ bytes.Buffer }
 func (*protocolOutput) Close() error { return nil }
 
 func TestProtocolOversizedFrame(t *testing.T) {
-	s, err := NewServer("1", protocolFixture())
+	s, err := NewServer("1", protocolFixture(), OriginalServer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +225,7 @@ func TestProtocolAuthoringOverPipes(t *testing.T) {
 	for name, op := range AuthoringOperations(f) {
 		ops[name] = op
 	}
-	s, err := NewServer("1", ops)
+	s, err := NewServer("1", ops, OriginalServer)
 	if err != nil {
 		t.Fatal(err)
 	}

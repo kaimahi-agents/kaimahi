@@ -20,7 +20,7 @@ MAX_BINARY = 512 << 20
 NATIVE_DIRECTORY = "com.github.copilot/extensions/agent-view"
 NATIVE_FILES = tuple(f"{NATIVE_DIRECTORY}/{name}" for name in
                      ("extension.mjs", "view.mjs", "open.mjs", "index.html", "app.js", "style.css", "authoring.mjs", "editor.mjs",
-                      "draft-controller.mjs", "action-controller.mjs", "observation-controller.mjs", "host-relay.mjs", "tool-catalog.mjs", "tools-view.mjs"))
+                      "draft-controller.mjs", "action-controller.mjs", "observation-controller.mjs", "host-relay.mjs", "tool-catalog.mjs", "tools-view.mjs", "test-tools.mjs"))
 SKILL_FILES = ("skills/kmx-agent-builder/SKILL.md", "skills/kmx/SKILL.md")
 SAMPLE_FILES = ("samples/release-writer.agent.md",)
 

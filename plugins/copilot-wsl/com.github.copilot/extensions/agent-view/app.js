@@ -1,4 +1,5 @@
 // Resource and authoring values are untrusted: render only inert DOM text.
+import { renderTestTools, setToolMode, withToolModes, toolUseText, duplicateTest } from "./test-tools.mjs";
 import { runtimeModelSelection, effectiveModel, readSnapshot, portableId, compareDrafts, same, preRouteRefusal } from "./authoring.mjs";
 import { el, inlineText, editorValue, instructionsContent, runtimeModelControl, testNameControl, icon, statusIcon,
   inspectCases, compareLabels, checkKey, uniqueIndex, clone, operandKey, EDITABLE_TYPES, quoted, checkLabel, oneLine, failureFacts, testRow, coherentSelection, ambiguousPassSet, countText, plural, resultHistory, resultPill, modelLabel, growTextarea, checkTypeControl, checkFields, convertCheck, inconclusiveJudge, judgeDetails, plainReason, isRefused, matchedAnswer, answerBlock, refusalContext,
@@ -40,7 +41,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   const state = {
     base: payload, snap: readSnapshot(payload), candidate: undefined, compareOpen: false,
     sectionDrafts: new Map(), testDrafts: new Map(), invalidEditors: new Set(),
-    route: { name: "main" }, busy: false, pending: undefined, blocked: false, savedUntested: false, message: "", runAlert: undefined, lastRun: undefined,
+    route: { name: "main" }, busy: false, pending: undefined, blocked: false, savedUntested: false, settingsIncomplete: false, message: "", runAlert: undefined, lastRun: undefined,
     newCount: 0, history: settingsGuard(resultHistory(payload)), editingChecks: new Set(),
     focusTestName: false, nameHintKey: undefined, promptUndo: undefined, undoTimer: undefined, hostedSent: false,
     displayNames: new Map(),
@@ -56,7 +57,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   history.focus(effectiveModel(state.base.model, modelChoice.override, state.base.chatModel));
   let actions;
   const drafts = createDraftController(state, { clearUndo: () => actions.clearUndo(), navigate, render, refresh: () => refresh() });
-  const { hasDrafts, toolNames, noteTools, sectionText, entries, localExamples, draftName, noteDraft, addTest } = drafts;
+  const { hasDrafts, toolNames, toolState, noteTools, noteSetting, sectionText, entries, localExamples, draftName, noteDraft, addTest } = drafts;
   const { observation, matches, observe, observeFailure, checkNow, useTheirs, keepMine } = createObservationController(state,
     { path: payload.file.path, options, drafts, clearUndo: () => actions.clearUndo(), render, refresh: () => refresh() });
   actions = createActionController(state, { execute, fetchProgress: options.fetchProgress, drafts, matches, checkNow, render, refresh: () => refresh(), focusName: () => activeTestName?.focus() });
@@ -66,7 +67,8 @@ export function renderView(doc, root, payload, execute = postAction, options = {
 
   // DOM
   function render() {
-    const focusedTool = state.route.name === "tools" && root.contains(doc.activeElement) ? doc.activeElement?.getAttribute?.("data-tool-name") : undefined;
+    const active = state.route.name === "tools" && root.contains(doc.activeElement) ? doc.activeElement : undefined;
+    const focusedTool = active?.getAttribute?.("data-tool-name"), focusedState = active?.getAttribute?.("data-tool-state");
     for (const cleanup of cleanups.splice(0)) cleanup();
     invalidEditors.clear();
     const content = el(doc, "div", state.route.name === "detail" ? "content detail-view" : "content");
@@ -84,7 +86,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       for (const u of updates) u();
       for (const { node, guard } of controls) {
         node.disabled = guard === "reload" ? state.busy : invalidEditors.size > 0 || (guard === "nav" ? false
-          : state.busy || state.blocked || (guard === "save" && !!state.candidate) || (guard === "clean" && hasDrafts()));
+          : state.busy || state.blocked || (["save", "settings"].includes(guard) && !!state.candidate) || (guard === "clean" && hasDrafts()));
       }
     };
     const declaredTools = JSON.stringify(state.base.tools ?? []);
@@ -94,7 +96,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     if (tools) content.addEventListener("keydown", event => {
       if (event.defaultPrevented || event.isComposing || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return;
       if (event.key === "Enter" && event.target?.tagName !== "BUTTON" && !event.target?.closest?.("button")) { event.preventDefault(); submitAll(); }
-      else if (event.key === "Escape" && !state.busy && !state.blocked && !state.candidate) { event.preventDefault(); state.toolsDraft = undefined; render(); }
+      else if (event.key === "Escape" && !state.busy && !state.blocked && !state.candidate) { event.preventDefault(); state.toolsDraft = undefined; state.settingsDraft.clear(); render(); }
     });
     const line = el(doc, "div", "message-line");
     line.append(messageNode);
@@ -107,15 +109,15 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     const tests = parts.find(part => part.className === "tests-section");
     if (tests && state.message === "Asked Copilot to add tests in chat.") tests.append(line);
     else parts.splice(detail || tools ? 1 : Math.min(2, parts.length), 0, line);
-    if (state.candidate) parts.splice(detail ? 1 : 1, 0, conflictNotice(doc, button, compareDrafts(state.base, state.candidate, state.snap, sectionDrafts, testDrafts, state.toolsDraft), state.compareOpen,
+    if (state.candidate) parts.splice(detail ? 1 : 1, 0, conflictNotice(doc, button, compareDrafts(state.base, state.candidate, state.snap, sectionDrafts, testDrafts, state.toolsDraft, state.settingsDraft), state.compareOpen,
       () => { state.compareOpen = !state.compareOpen; render(); }, keepMine, useTheirs));
     content.append(...parts);
     root.replaceChildren(content);
     refresh();
     if (state.focusTestName) { activeTestName?.focus(); state.focusTestName = false; }
     if (state.focusIssue) { issueInput?.focus(); state.focusIssue = false; }
-    if (focusedTool) {
-      const replacement = Array.from(root.querySelectorAll(".tool-choice")).find(node => node.getAttribute("data-tool-name") === focusedTool);
+    if (focusedTool || focusedState) {
+      const replacement = Array.from(root.querySelectorAll(focusedState ? ".tool-state" : ".tool-choice")).find(node => node.getAttribute(focusedState ? "data-tool-state" : "data-tool-name") === (focusedState ?? focusedTool));
       (replacement && !replacement.disabled ? replacement : root.querySelector(".tool-filter"))?.focus();
     }
     if ((state.base.tools ?? []).length && !toolsLoaded && !toolsLoading && !toolsError) loadTools();
@@ -206,7 +208,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   function footText(scope) {
     if (testing() && state.run) return state.run.state === "stopping" ? "Saved · stopping Copilot turn…"
       : state.run.approvalWaiting ? "Copilot approval is waiting in chat." : `Saved · running ${state.pending.one ? "this test" : plural(total(), "test")}`;
-    return canvasFooterText({ editable: !!state.snap, n: state.snap ? total() : 0, busy: state.busy, pending: state.pending, blocked: state.blocked, savedUntested: state.savedUntested,
+    return canvasFooterText({ editable: !!state.snap, n: state.snap ? total() : 0, busy: state.busy, pending: state.pending, blocked: state.blocked, savedUntested: state.savedUntested, settingsIncomplete: state.settingsIncomplete,
       invalid: invalidEditors.size, candidate: state.candidate, scope, promptDirty: sectionDrafts.size, testDirty: testDrafts.has(state.route.key), dirty: hasDrafts(), runAlert: state.runAlert });
   }
   function spinnerStatus(status, scope, updates) {
@@ -250,7 +252,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
 
     sourceActions(button, info, updates);
     const tests = testsSection(button, updates);
-    const tools = toolsSection(doc, button, { servers: toolServers, names: state.base.tools ?? [], editable: !!state.snap,
+    const tools = toolsSection(doc, button, { servers: toolServers, names: state.base.tools ?? [], settings: state.base.settingsInvalid ? null : state.base.toolSettings, editable: !!state.snap,
       loading: toolsLoading, loaded: toolsLoaded, error: toolsError, menuOpen: toolsMenu, onToggleMenu: () => {
         toolsMenu = !toolsMenu;
         if (toolsMenu) loadTools(); else render();
@@ -281,7 +283,8 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     updates.push(() => { status.textContent = !state.snap || state.busy ? footText("all") : !total()
       ? hasDrafts() ? "Edited · Enter saves" : "Saved · add a test to run it"
       : `${hasDrafts() ? "Edited · Enter saves and runs" : "Saved · Enter runs"} ${plural(total(), "test")}`; });
-    const parts = serverToolsView(doc, button, { agentName: state.base.title.split(" — ")[0], server: route.server, servers: toolServers, rows: route.rows, names: toolNames(), filter: route.filter, editable: !!state.snap,
+    const parts = serverToolsView(doc, button, { agentName: state.base.title.split(" — ")[0], server: route.server, servers: toolServers, rows: route.rows, names: toolNames(), settings: state.base.settingsInvalid ? null : toolNames().map(name => ({ name, state: toolState(name) })), filter: route.filter, editable: !!state.snap,
+      settingsEditable: !!state.snap && (state.base.toolSettingsRevision !== undefined || !(state.base.tools ?? []).length),
       onFilter: value => { route.filter = value; }, busy: !state.snap || state.busy || state.blocked || !!state.candidate,
       onBack: () => { navigate({ name: "main" }); render(); },
       onToggle: (name, checked) => {
@@ -289,8 +292,11 @@ export function renderView(doc, root, payload, execute = postAction, options = {
         const current = toolNames();
         if (checked && current.length >= 32 && !current.includes(name)) { state.message = "Keep at most 32 tools for this agent."; render(); return; }
         noteTools(checked ? [...new Set([...current, name])] : current.filter(value => value !== name)); render();
-      }, onDiscard: () => { if (state.busy || state.blocked || state.candidate) return; state.toolsDraft = undefined; state.message = ""; render(); }, onSubmit: submitAll,
-      dirty: state.toolsDraft !== undefined, footer: status });
+      }, onStateToggle: name => {
+        if (!state.snap || state.busy || state.blocked || state.candidate || !toolNames().includes(name)) return;
+        noteSetting(name, toolState(name) === "Enabled" ? "Disabled" : "Enabled"); render();
+      }, onDiscard: () => { if (state.busy || state.blocked || state.candidate) return; state.toolsDraft = undefined; state.settingsDraft.clear(); state.message = ""; render(); }, onSubmit: submitAll,
+      dirty: state.toolsDraft !== undefined || state.settingsDraft.size > 0, footer: status });
     for (const node of parts.flatMap(part => Array.from(part.querySelectorAll("input")))) updates.push(() => {
       const name = node.getAttribute("data-tool-name");
       node.disabled = !state.snap || state.busy || state.blocked || !!state.candidate || (name !== null && !node.checked && !route.rows.find(tool => tool.name === name)?.selectable);
@@ -346,13 +352,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       head.append(actions);
     }
     section.append(head);
-    // Read-only: settings come from the agent folder's kmx.yaml and are not edited here.
     if (state.base.settingsInvalid) section.append(el(doc, "p", "meta tool-settings-error", plainReason({ reasonCode: "invalid_tool_settings" })));
-    else if (state.base.toolSettings?.length) {
-      const settings = el(doc, "ul", "tool-settings");
-      for (const { name, state: value } of state.base.toolSettings) settings.append(el(doc, "li", "meta tool-setting", `${name} · ${value}`));
-      section.append(settings);
-    }
     if (state.runAlert && (!state.runAlert.one || state.runAlert.refused)) section.append(runAlertNode(button, "all"));
     else if (!state.runAlert && refusedAlert()) section.append(runAlertNode(button, "all", refusedAlert()));
     const empty = el(doc, "div", "empty-tests");
@@ -429,6 +429,8 @@ export function renderView(doc, root, payload, execute = postAction, options = {
         open.append(el(doc, "span", "test-name", draftName(e)), el(doc, "span", "test-input-summary", summary), verdict);
         const line = el(doc, "span", e.draft ? "test-note unsaved" : "test-note", noteText); line.hidden = !noteText;
         open.append(line);
+        const toolText = toolUseText((e.c?.row?.tools ?? []).filter(t=>t.callCount>0||t.requestCount>0));
+        if (toolText) { const partner = pair.find(v => !v.latest.result.modelRoute.endsWith("/" + selectedModel())); const other = partner?.latest.result.examples.find(x=>x.id===id)?.tools; const different = other && toolUseText(other) !== toolText ? ` · ${modelLabel(partner.latest.result.modelRoute)}: ${toolUseText(other) || "used none"}` : ""; open.append(el(doc,"span","test-note",toolText + different)); }
         item.append(open); list.append(item);
       }
       if (hidden) {
@@ -535,9 +537,9 @@ export function renderView(doc, root, payload, execute = postAction, options = {
         const menu = el(doc, "div", "menu"); menu.setAttribute("role", "menu"); menu.setAttribute("aria-label", "More actions");
         const duplicate = button("Duplicate test", () => {
           clearUndo();
-          const copy = clone(current()), name = `${draftName(entry)} copy`; copy.id = portableId(name);
+          const copy = duplicateTest(current()), name = `${draftName(entry)} copy`; copy.id = portableId(name);
           const newKey = `new:${++state.newCount}`; testDrafts.set(newKey, { origin: null, name, raw: copy });
-          navigate({ name: "detail", key: newKey }); menuOpen = false; state.focusTestName = true; render();
+          navigate({ name: "detail", key: newKey }); menuOpen = false; state.focusTestName = true; state.message = "Copied test. Its Recorded tools will capture on the next run."; render();
         }, "mi");
         const remove = button("Delete test", () => {
           clearUndo();
@@ -599,6 +601,12 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       gets.append(label);
     } else gets.append(el(doc, "h2", "lbl", "The agent gets"), el(doc, "pre", "example-input literal", c.example.input));
     out.push(gets);
+    if (state.base.authoring?.recordingControls && editableTest && state.base.tools.length) {
+      const raw = current()?.mocks ? current() : entry.raw;
+      const observed = c?.row?.tools ?? state.lastCapture?.examples?.find(e => e.id === raw.id)?.tools ?? [];
+      out.push(renderTestTools(doc, { names: state.base.tools, raw, tools: observed.map(t => ({...t,settingDisabled:state.base.toolSettings.find(s=>s.name===t.name)?.state === "Disabled"})), details: state.base.authoring.recordingDetails?.filter(d=>d.exampleId===raw.id), disabled:()=>state.busy||state.blocked||!!state.candidate, updates,
+        onChange:(name,mode)=>{mutate(d=>{d.raw=setToolMode(withToolModes(d.raw,raw),name,mode)});render()}, onReset:name=>{mutate(d=>{d.raw=setToolMode(withToolModes(d.raw,raw),name,"recorded",true)});render()} }));
+    }
 
     // Passes if
     const checksSection = el(doc, "section", "detail-section checks-section");
@@ -631,7 +639,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
         const editKey = `${key}/${a.id}`, edit = el(doc, "div", "check-edit");
         const fields = checkFields(doc, a, index, (field, value) => {
           editingChecks.add(editKey); mutate(d => { d.raw.assertions[index][field] = value; });
-        }, fieldKeys, modelControl);
+        }, fieldKeys, modelControl, state.base.tools);
         const line = button("", () => { editingChecks.add(editKey); refresh(); fields.focus(); }, "check-line");
         line.append(checkState, el(doc, "span", "check-label", checkLabel({ type: a.type, fields: [[operandKey(a.type), a[operandKey(a.type)] ?? ""]] })));
         const choice = checkTypeControl(doc, a.type, chosen => {
@@ -640,7 +648,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
           if (wasJudge || chosen === "llmJudge") {
             render(); root.querySelectorAll(".check-type-button")[index]?.focus();
           } else { fields.show(current().assertions[index]); refresh(); }
-        }, cancelDraft);
+        }, cancelDraft, state.base.authoring?.recordingControls ? state.base.tools : []);
         const remove = button("", () => { mutate(d => { d.raw.assertions.splice(index, 1); }); render(); }, "ib remove-check");
         remove.setAttribute("aria-label", `Remove check ${index + 1}`); remove.append(icon(doc, "none", 14, 2));
         edit.append(remove, choice.node, fields.node, ...(judge ? [] : [verdict])); row.append(line, edit);

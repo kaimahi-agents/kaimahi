@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
+	"strings"
 
 	"github.com/agent-primitives/sessions/api"
 	"github.com/agent-primitives/sessions/controller"
@@ -18,6 +19,7 @@ type toolPlan struct {
 	sources     *localtools.SourceConfig
 	settings    []localtools.ToolSetting
 	execute     controller.ToolFunc
+	captured    map[string]captureObservation
 }
 
 func toolSetting(ex agentfile.Example, name string) agentfile.MockTool {
@@ -92,7 +94,7 @@ func (r *runner) resolveTools(ctx context.Context, request agentpreview.Request,
 
 // Fixture definitions stay on this dispatch path, never in a trusted live Host.
 func makeToolPlan(names []string, ex agentfile.Example, host *localtools.Host, check func(...string) error, validate func(context.Context) error, settings []localtools.ToolSetting) (toolPlan, error) {
-	p := toolPlan{sources: &localtools.SourceConfig{Version: 1}}
+	p := toolPlan{sources: &localtools.SourceConfig{Version: 1}, captured: map[string]captureObservation{}}
 	if len(names) == 0 {
 		return p, nil
 	}
@@ -124,7 +126,7 @@ func makeToolPlan(names []string, ex agentfile.Example, host *localtools.Host, c
 			}
 		}
 		p.definitions = append(p.definitions, def)
-		p.sources.Tools = append(p.sources.Tools, localtools.ToolSource{Name: name, Mode: tool.Mode, Source: source})
+		p.sources.Tools = append(p.sources.Tools, localtools.ToolSource{Name: name, Mode: tool.Mode, Source: source, Capturing: tool.Mode == "recorded" && source == "live" && !localtools.IsDisabled(settings, name)})
 	}
 	var err error
 	p.definitions, err = localtools.CopyDefinitions(p.definitions)
@@ -146,6 +148,7 @@ func makeToolPlan(names []string, ex agentfile.Example, host *localtools.Host, c
 			return api.ToolResult{}, agentpreview.ErrUnsafeToolContent
 		}
 		result := api.ToolResult{ID: call.ID, Output: map[string]any{"text": "not available in this test"}}
+		capturing := false
 		if localtools.IsDisabled(p.settings, call.Tool) {
 			result = localtools.DisabledResult(call.ID)
 		} else {
@@ -153,6 +156,27 @@ func makeToolPlan(names []string, ex agentfile.Example, host *localtools.Host, c
 				if source.Name == call.Tool {
 					switch source.Source {
 					case "live":
+						// A blank live description cannot populate the existing fixture format.
+						// Refuse only a requested capture, before spending a live call.
+						if source.Capturing {
+							for _, definition := range p.definitions {
+								if definition.Name == call.Tool && strings.TrimSpace(definition.Description) == "" {
+									return api.ToolResult{}, agentfile.ErrRecordingInvalid
+								}
+							}
+						}
+						if saved, ok := p.captured[call.Tool]; ok {
+							if saved.session != scope.SessionUID {
+								return api.ToolResult{}, errRunnerExecution
+							}
+							var err error
+							result, err = replayCapture(call, saved.exchange.Call.Args, saved.exchange.Result.Output)
+							if err != nil {
+								return api.ToolResult{}, err
+							}
+							break
+						}
+						capturing = source.Capturing
 						var err error
 						result, err = host.Execute(ctx, scope, call)
 						if err != nil {
@@ -183,6 +207,13 @@ func makeToolPlan(names []string, ex agentfile.Example, host *localtools.Host, c
 		}
 		if localtools.CheckJSON(result, check) != nil {
 			return api.ToolResult{}, agentpreview.ErrUnsafeToolContent
+		}
+		if capturing {
+			exchange, err := copyExchange(localtools.ToolExchange{Call: call, Result: result})
+			if err != nil {
+				return api.ToolResult{}, err
+			}
+			p.captured[call.Tool] = captureObservation{session: scope.SessionUID, exchange: exchange}
 		}
 		return result, nil
 	}

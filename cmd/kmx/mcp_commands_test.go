@@ -131,7 +131,7 @@ func TestMCPCommandUnboundStartup(t *testing.T) {
 	}
 	defer cs.Close()
 	tools, err := cs.ListTools(ctx, nil)
-	if err != nil || len(tools.Tools) != 4 || runner.calls != 0 || *loads != 0 {
+	if err != nil || len(tools.Tools) != 5 || runner.calls != 0 || *loads != 0 {
 		t.Fatalf("startup effects: tools=%+v, err=%v, calls=%d, loads=%d", tools, err, runner.calls, *loads)
 	}
 	source, err := os.ReadFile(cliPreviewFile(t))

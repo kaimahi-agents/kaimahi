@@ -52,7 +52,7 @@ func TestAgentResourceShapesAndConfinement(t *testing.T) {
 		t.Fatal("resource not discoverable", err)
 	}
 	tools, err := cs.ListTools(t.Context(), nil)
-	if err != nil || len(tools.Tools) != 4 {
+	if err != nil || len(tools.Tools) != 5 {
 		t.Fatal("resource added a tool")
 	}
 	for _, p := range []string{"minimal.agent.md", saved.Path} {
@@ -220,7 +220,7 @@ func TestAgentResourceAuthoringSnapshot(t *testing.T) {
 	}
 }
 
-func TestAgentResourceRecordingPreservesDataAndRefusesLossyCanvasEdit(t *testing.T) {
+func TestAgentResourceRecordingPreservesDataAndSupportsSparseCanvasEdit(t *testing.T) {
 	f, _, source := canonicalFiles(t)
 	source = strings.Replace(source, "## Examples", "## Tools\n- ping\n\n## Examples", 1)
 	source = strings.Replace(source, "    assertions:", "    mocks:\n      tools: [{name: ping, mode: recorded, calls: []}]\n    assertions:", 1)
@@ -229,7 +229,7 @@ func TestAgentResourceRecordingPreservesDataAndRefusesLossyCanvasEdit(t *testing
 		t.Fatal(err)
 	}
 	view := readView(t, resourceClient(t, f, &app.App{}), saved.Path)
-	if view.Authoring == nil || view.Authoring.Editable || view.Authoring.Source != source || view.Examples[0].Mocks == nil {
+	if view.Authoring == nil || !view.Authoring.Editable || !view.Authoring.RecordingControls || view.Authoring.Source != source || view.Examples[0].Mocks == nil {
 		t.Fatalf("lossy recording projection %+v", view)
 	}
 }

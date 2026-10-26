@@ -86,6 +86,8 @@ type Completion struct {
 
 // ToolSummary is content-free; a zero count means the selected source was not exercised.
 type ToolSummary struct {
+	RequestCount int `json:"requestCount,omitempty"`
+
 	Name           string `json:"name"`
 	Mode           string `json:"mode"`
 	Source         string `json:"source"`
@@ -105,4 +107,6 @@ type Outcome struct {
 	AdHoc     *Completion
 	Examples  []ExampleOutcome
 	Journal   string
+	// Recordings is private verified content, never a default result projection.
+	Recordings []agentfile.Recording
 }

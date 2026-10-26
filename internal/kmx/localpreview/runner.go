@@ -286,6 +286,7 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 	if openErr != nil {
 		return abort(fmt.Errorf("%w: %w", agentpreview.ErrJournalFailed, openErr))
 	}
+	var recordings []agentfile.Recording
 	defer func() {
 		if closeErr := executor.Close(); closeErr != nil {
 			out.State = agentpreview.Failed
@@ -301,6 +302,7 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 		}
 		if err == nil && out.State == agentpreview.Complete && journal != "" {
 			out.Journal = journal
+			out.Recordings = recordings
 		}
 		if err == nil && out.Journal == "" {
 			out.State = agentpreview.Failed
@@ -363,6 +365,11 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 		}
 		used[execution.SessionUID] = true
 		if index >= 0 {
+			captured, captureErr := plan.recordings(ex.ID, execution)
+			if captureErr != nil {
+				return completion, nil, captureErr
+			}
+			recordings = append(recordings, captured...)
 			evidence := agentruntime.EvaluationEvidence{Answer: execution.Answer, AnswerAvailable: true, ToolSupported: len(declared) > 0, ToolEvidenceComplete: execution.ToolEvidenceComplete, ToolCalls: execution.ToolCallCounts}
 			if p.judge != nil {
 				assertions = p.judge(turnCtx, p.cases[index], evidence)
@@ -388,6 +395,13 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 			}
 		}
 		completion = agentpreview.Completion{State: agentpreview.Complete, ID: execution.SessionUID, FileRevision: agent.Revision, Provider: request.Route.Provider, Model: request.Route.Model, Answer: execution.Answer, ToolCalls: execution.ToolCalls, Tools: plan.summaries(execution.ToolCallCounts)}
+		for i := range completion.Tools {
+			for _, exchange := range execution.ToolExchanges {
+				if exchange.Call.Tool == completion.Tools[i].Name {
+					completion.Tools[i].RequestCount++
+				}
+			}
+		}
 		return completion, assertions, nil
 	}
 	if request.Input != nil {

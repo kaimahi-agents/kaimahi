@@ -27,7 +27,8 @@ export function createObservationController(state, { path, options, drafts, clea
     const observed = view;
     const selected = effectiveModel(view.model, modelChoice.override, view.chatModel);
     const route = view.latest.result?.modelRoute, incomingModel = route?.slice(route.indexOf("/") + 1);
-    const adoptable = view.file.revision === state.base.file.revision || !hasDrafts();
+    const sameBaseline = view.file.revision === state.base.file.revision && (!state.settingsDraft.size || view.toolSettingsRevision === state.base.toolSettingsRevision);
+    const adoptable = sameBaseline || !hasDrafts();
     const stopped = history.attempt(incomingModel)?.run?.revision === view.file.revision;
     const previousHistory = [history.pair(), history.attempt(incomingModel)];
     if (adoptable) { history.focus(selected); if (!stopped) history.remember(observed); }
@@ -38,7 +39,7 @@ export function createObservationController(state, { path, options, drafts, clea
     clearUndo(); displayNames.clear(); state.runAlert = undefined;
     state.observationGeneration++;
     state.lastRun = undefined;
-    if (view.file.revision === state.base.file.revision || !hasDrafts()) {
+    if (adoptable) {
       state.base = view; state.snap = readSnapshot(view); state.candidate = undefined; state.compareOpen = false;
       // New results need new DOM; local edits refresh styling without losing focus.
       pruneDrafts(); render();
@@ -56,7 +57,7 @@ export function createObservationController(state, { path, options, drafts, clea
     if (!state.candidate) return;
     state.invalidCheck = undefined; clearUndo(); displayNames.clear();
     state.observationGeneration++;
-    sectionDrafts.clear(); testDrafts.clear(); invalidEditors.clear(); state.toolsDraft = undefined;
+    sectionDrafts.clear(); testDrafts.clear(); invalidEditors.clear(); state.toolsDraft = undefined; state.settingsDraft.clear();
     history.remember(state.candidate);
     state.base = state.candidate; state.snap = readSnapshot(state.base); state.candidate = undefined; state.compareOpen = false; state.lastRun = undefined;
     pruneDrafts(); state.message = "Using the new version. Your edits were discarded."; render();
@@ -79,6 +80,8 @@ export function createObservationController(state, { path, options, drafts, clea
       const previous = state.base.tools ?? [], removed = previous.filter(name => !state.toolsDraft.includes(name));
       state.toolsDraft = [...new Set([...(state.candidate.tools ?? []).filter(name => !removed.includes(name)), ...state.toolsDraft.filter(name => !previous.includes(name))])];
     }
+    // Keeping a flip also keeps its declaration if it was removed outside.
+    if (state.settingsDraft.size) state.toolsDraft = [...new Set([...(state.toolsDraft ?? state.candidate.tools ?? []), ...state.settingsDraft.keys()])];
     history.remember(state.candidate);
     state.base = state.candidate; state.snap = next; state.candidate = undefined; state.compareOpen = false; state.lastRun = undefined;
     pruneDrafts(); state.message = "Kept your edits on top of the new version. Enter saves them."; render();

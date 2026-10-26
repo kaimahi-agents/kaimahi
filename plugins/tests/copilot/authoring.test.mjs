@@ -3,6 +3,26 @@ import test from "node:test";
 import { resultHistory } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/editor.mjs";
 import { instructionSections, replaceInstructions, replaceExamples, effectiveModel, runtimeModelSelection } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs";
 
+test("sparse recording edits preserve payload and reject fixture injection", async () => {
+  const { exampleEdits } = await import("../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs");
+  const tool = { name: "read", mode: "recorded", description: "private", parameters: { type: "object" }, calls: [{ arguments: {}, result: { value: 1152921504606846976 } }] };
+  const before = [{ id: "one", input: "old", assertions: [{ id: "a", type: "contains", value: "hello" }], mocks: { tools: [tool] } }];
+  const after = structuredClone(before); after[0].input = "new";
+  assert.deepEqual(exampleEdits(before,after), [{beforeId:"one",input:"new"}]);
+  after[0].mocks.tools[0].calls[0].result.value = 3;
+  assert.throws(() => exampleEdits(before,after));
+  after[0].mocks.tools = [{name:"read",mode:"recorded",calls:[]}];
+  assert.deepEqual(exampleEdits(before,after), [{beforeId:"one",input:"new",tools:[{name:"read",mode:"recorded",reset:true}]}]);
+});
+
+test("rename carries source identity without resubmitting saved fixtures", async () => {
+ const {exampleEdits}=await import("../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs");
+ const saved={name:"read",mode:"recorded",description:"read",parameters:{type:"object"},calls:[{arguments:{},result:{ok:true}}]};
+ const before=[{id:"old",input:"a",assertions:[{id:"a",type:"contains",value:"b"}],mocks:{tools:[saved]}}];
+ const after=structuredClone(before);after[0].id="new";
+ assert.deepEqual(exampleEdits(before,after,["old"]),[{beforeId:"old",id:"new"}]);
+});
+
 const KEYS = ["Accountable Responsibilities", "Non-Responsibilities", "Collaboration and Review Authority"];
 const SOURCE = `# Greeter — Greeting 🌱
 

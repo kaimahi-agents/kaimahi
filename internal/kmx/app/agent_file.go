@@ -30,16 +30,25 @@ type FilePreviewOptions struct {
 	Input             *string
 	ShowContent       bool
 	ShowFailedContent bool
+
+	RecordedReplayOnly   bool
+	ExpectedToolSettings *[]localtools.ToolSetting
+
 	// FullPath keeps MCP's requested identity inside the shared redaction boundary.
 	FullPath       bool
 	Progress       func(string) error
 	retentionScope *fileFailureScope
 	// CaseFinished receives a safe provisional row, never answer or judge content.
 	CaseFinished func(FilePreviewCaseProgress)
+	// PrepareRecordingSave freezes authoring authority after Load, before execution.
+	PrepareRecordingSave func(context.Context, string) (RecordingSaver, error)
 }
 
 type FilePreviewResult struct {
+	RecordedReplayOnly bool `json:"recordedReplayOnly,omitempty"`
+
 	SchemaVersion int                       `json:"schemaVersion"`
+	SavedRevision string                    `json:"savedRevision,omitempty"`
 	Kind          string                    `json:"kind"`
 	Runner        string                    `json:"runner,omitempty"`
 	Operation     string                    `json:"operation"`
@@ -176,14 +185,19 @@ func previewReason(code string) string {
 		"invalid_file":      "Invalid agent file; use the canonical charter format with required fields and an Examples section.",
 		"no_tests":          "No tests yet — add or suggest one",
 		"invalid_selection": "Unknown example ID; select an authored example ID.", "invalid_options": "Invalid file preview options.",
-		"model_unavailable":     "Selected model route is unavailable or does not match the file model; select an exact trusted route.",
-		"tools_unavailable":     "Host-bound tools are unavailable for the declared names.",
-		"invalid_tool_settings": "Tool settings in the agent folder's kmx.yaml are invalid.",
-		"recording_mismatch":    "Recording mismatch: tool arguments differ from the saved call. Update the saved call before retrying.",
-		"unsafe_tool_content":   "Unsafe tool preview content was withheld; nothing was journaled.",
-		"credential_content":    "Credential-bearing preview content was withheld.",
-		"runner_unavailable":    "Embedded preview runner is not available; no inference was performed.",
-		"execution_failed":      "Local preview execution failed.", "invalid_completion": "Runner returned incomplete or mismatched execution metadata.",
+		"invalid_tool_settings":     "Tool settings in the agent folder's kmx.yaml are invalid.",
+		"model_unavailable":         "Selected model route is unavailable or does not match the file model; select an exact trusted route.",
+		"tools_unavailable":         "Host-bound tools are unavailable for the declared names.",
+		"recording_mismatch":        "Recording mismatch: tool arguments differ from the saved call. Update the saved call before retrying.",
+		"recording_source_changed":  "Agent file changed; recording was not saved.",
+		"recording_unrepresentable": "Recording cannot fit the agent file format and limits; no recording was saved.",
+		"recording_save_failed":     "Recording save failed.",
+		"recording_missing":         "A Recorded tool has no saved call. Change the test or tool mode before comparing.",
+		"tool_settings_changed":     "Tool settings changed. Reload before comparing.",
+		"unsafe_tool_content":       "Unsafe tool preview content was withheld; nothing was journaled.",
+		"credential_content":        "Credential-bearing preview content was withheld.",
+		"runner_unavailable":        "Embedded preview runner is not available; no inference was performed.",
+		"execution_failed":          "Local preview execution failed.", "invalid_completion": "Runner returned incomplete or mismatched execution metadata.",
 		"diagnostics_failed": "Cannot write local preview diagnostics.",
 		"journal_failed":     "Preview journal finalization failed; the result is unknown.",
 	}
@@ -225,6 +239,13 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		r.ReasonCode = code
 		r.Reason = previewReason(code)
 		return r, &FilePreviewError{code: code, exit: exit}
+	}
+	recordingFail := func(err error) (FilePreviewResult, *FilePreviewError) {
+		if errors.Is(err, context.Canceled) {
+			r.State = "cancelled"
+			return fail("cancelled", 130)
+		}
+		return fail(recordingReason(err), 1)
 	}
 	if opt.Operation != "run" && opt.Operation != "test" || opt.Operation == "test" && opt.Input != nil || opt.Input != nil && (len(*opt.Input) > agentfile.MaxInputBytes || !utf8.ValidString(*opt.Input)) {
 		return fail("invalid_options", 1)
@@ -357,6 +378,46 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 			return fail("invalid_tool_settings", 1)
 		}
 	}
+	if expected := opt.ExpectedToolSettings; expected != nil {
+		if len(*expected) != len(r.ToolSettings) {
+			return fail("tool_settings_changed", 1)
+		}
+		seen := map[string]bool{}
+		for _, setting := range *expected {
+			found := false
+			for _, actual := range r.ToolSettings {
+				if setting == actual {
+					found = true
+				}
+			}
+			if seen[setting.Name] || !found {
+				return fail("tool_settings_changed", 1)
+			}
+			seen[setting.Name] = true
+		}
+	}
+	if opt.RecordedReplayOnly {
+		for _, ex := range selected {
+			if ex.Mocks != nil {
+				for _, tool := range ex.Mocks.Tools {
+					disabled := false
+					for _, s := range r.ToolSettings {
+						if s.Name == tool.Name && s.State == localtools.Disabled {
+							disabled = true
+						}
+					}
+					if tool.Mode == "recorded" && !disabled && len(tool.Calls) == 0 {
+						return fail("recording_missing", 1)
+					}
+				}
+			}
+		}
+		r.RecordedReplayOnly = true
+	}
+	recordingSave, prepareErr := prepareRecordingSave(ctx, opt, parsed.Revision, selected, r.ToolSettings)
+	if prepareErr != nil {
+		return recordingFail(prepareErr)
+	}
 	request := agentpreview.Request{Agent: parsed, Examples: selected, Route: route, JudgeRoute: opt.JudgeRoute, Input: opt.Input, Progress: opt.Progress, ToolBindings: opt.ToolBindings, FileLabel: r.File.Path, ToolSettings: append([]localtools.ToolSetting(nil), r.ToolSettings...)}
 	request.ExampleFinished = previewCaseObserver(ctx, selected, parsed, route, opt.CaseFinished)
 	judgeCtx, judgeNotes := newFileJudgeContext(ctx)
@@ -461,6 +522,9 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	if errors.Is(cause, agentpreview.ErrRecordingMismatch) {
 		return fail("recording_mismatch", 1)
 	}
+	if errors.Is(cause, agentfile.ErrRecordingInvalid) {
+		return fail("recording_unrepresentable", 1)
+	}
 	if errors.Is(cause, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
 		r.State = "cancelled"
 		return fail("cancelled", 130)
@@ -498,6 +562,9 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	}
 	if r.AdHoc != nil && r.AdHoc.State != "complete" {
 		return fail("invalid_completion", 1)
+	}
+	if saveErr := saveFileRecordings(ctx, recordingSave, outcome, selected, &r); saveErr != nil {
+		return recordingFail(saveErr)
 	}
 	if opt.Operation == "test" && opt.retentionScope != nil {
 		retainFilePreviewFailures(ctx, *opt.retentionScope, parsed, selected, route, judge, r.Selection.Scope, outcome.Examples, &r)

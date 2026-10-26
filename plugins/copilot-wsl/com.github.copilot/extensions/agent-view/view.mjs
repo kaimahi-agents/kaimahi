@@ -1,7 +1,7 @@
 // Agent canvas. Files and previews are accessed only through the
 // same session's existing kmx MCP resource and Edit/Run/Test operations.
 import { randomBytes, timingSafeEqual, createHash } from "node:crypto";
-import { instructionSections, replaceInstructions, replaceExamples, replaceTools, effectiveModel, preRouteRefusal, agentName, fileLocation } from "./authoring.mjs";
+import { instructionSections, replaceInstructions, replaceExamples, replaceTools, exampleEdits, validateExamples, effectiveModel, preRouteRefusal, agentName, fileLocation } from "./authoring.mjs";
 import { readFile } from "node:fs/promises";
 import http from "node:http";
 import { ensureHostRuntime, previewServer, beginPreview, closeHostRuntime, observePreview, HostRuntimeUnavailable } from "./host-relay.mjs";
@@ -28,11 +28,14 @@ const MESSAGES = {
   "read-only": "This file is available for inspection only. Editing and testing require a complete canonical charter.",
   busy: "Another canvas action is still running.",
   stale_revision: "Changed elsewhere. Your draft is still here; reload before saving or testing.",
+  stale_settings_revision: "Tool settings changed elsewhere. Your draft is still here; compare the new settings before saving.",
+  "settings-failed": "The tool settings could not be saved. Your draft is still here; tests did not run.",
   revision_mismatch: "The file changed during testing. These results do not test your draft; reload to continue.",
   permission_required: "Copilot did not permit this action. No permission settings were changed.",
   "action-failed": "The action couldn't be confirmed. Reload the saved file before trying again.",
   "outcome-unknown": "The action outcome could not be confirmed. Do not retry; reload the source first.",
   "no-tests": "No tests yet — add or suggest one",
+  tool_settings_changed: "Tool settings changed. Reload before comparing.",
   invalid_tool_settings: "The tool settings in kmx.yaml are invalid. Fix them before running this agent.",
 };
 
@@ -119,12 +122,19 @@ function cleanResult(r, status, revision) {
     state: text(c.state), verdict: text(c.verdict), reasonCode: text(c.reasonCode), reason: text(c.reason, c.reasonCode === "copilot_model_unavailable" ? MAX_RESOURCE_BYTES : 500),
     ...(typeof c.answerExcerpt === "string" ? { answerExcerpt: clean(c.answerExcerpt, 2000, true) } : {}),
     truncated: c.truncated === true,
+    ...(c.toolCalls !== undefined ? { toolCalls: c.toolCalls } : {}),
+    ...(Array.isArray(c.tools) ? { tools: c.tools.map(t => {
+      if (!isObj(t) || !TOOL_NAME.test(t.name) || !["live", "recorded"].includes(t.mode) || !["live", "recorded", "unavailable"].includes(t.source) || !Number.isInteger(t.callCount) || t.callCount < 0) invalid();
+      return { name: t.name, mode: t.mode, source: t.source, callCount: t.callCount, ...(t.recordingSaved === true ? { recordingSaved: true } : {}), ...(Number.isInteger(t.requestCount) && t.requestCount >= t.callCount ? { requestCount: t.requestCount } : {}) };
+    }) } : {}),
   });
   const sel = isObj(r.selection) ? r.selection : {};
   const route = isObj(r.modelRoute) ? r.modelRoute : {};
   return {
     ...completion(r),
     fullPass: r.fullPass,
+    ...(r.savedRevision !== undefined ? { savedRevision: /^sha256:[a-f0-9]{64}$/.test(r.savedRevision) ? r.savedRevision : invalid() } : {}),
+    ...(r.recordedReplayOnly === true ? { recordedReplayOnly: true } : {}),
     operation: text(r.operation),
     modelRoute: `${text(route.provider, 80)}/${text(route.model, 256)}`,
     selection: { scope: text(sel.scope, 40), totalCases: Number.isInteger(sel.totalCases) ? sel.totalCases : 0, caseIds: list(sel.caseIds).map((i) => text(i, 80)) },
@@ -167,6 +177,8 @@ function parseView(json, path) {
   // An older server has no settings: every declared tool is Enabled by default.
   const toolSettings = raw.toolSettings === undefined ? tools.map((name) => ({ name, state: "Enabled" })) : cleanSettings(raw.toolSettings);
   if (!settingsMatch(toolSettings, tools)) invalid();
+  const token = raw.toolSettingsRevision;
+  if (token !== undefined && (typeof token !== "string" || !/^(?:absent|sha256:[a-f0-9]{64})$/.test(token))) invalid();
   const examples = list(raw.examples).map((e) => {
     if (!isObj(e) || typeof e.id !== "string") invalid();
     return {
@@ -190,6 +202,7 @@ function parseView(json, path) {
     title: clean(raw.title, 200),
     instructions: clean(raw.instructions, 60000, true),
     model, tools, toolSettings,
+    ...(token !== undefined ? { toolSettingsRevision: token } : {}),
     examples,
     ...(authoring ? { authoring } : {}),
     latest: { status: latest.status, badge, ...(result ? { result } : {}) },
@@ -204,9 +217,10 @@ function authoringSnapshot(snapshot, examples, revision) {
     if (snapshot.editable) {
       instructionSections(snapshot.source);
       // A hash-verified canonical source may hold zero tests, which Go emits as null.
-      replaceExamples(snapshot.source, examples ?? []);
+      if (snapshot.recordingControls === true) validateExamples(examples ?? [], true);
+      else replaceExamples(snapshot.source, examples ?? []);
     }
-    return { source: snapshot.source, editable: snapshot.editable, examples: structuredClone(examples ?? []) };
+    return { source: snapshot.source, editable: snapshot.editable, examples: structuredClone(examples ?? []), ...(snapshot.recordingControls === true ? { recordingControls: true, recordingDetails: list(snapshot.recordingDetails, MAX_ITEMS * 32).map(d => { if (!isObj(d) || typeof d.exampleId !== "string" || !TOOL_NAME.test(d.name) || typeof d.text !== "string") invalid(); return {exampleId:d.exampleId,name:d.name,text:d.text}; }) } : {}) };
   } catch { return; } // A malformed authoring snapshot cannot enable writes.
 }
 
@@ -280,12 +294,13 @@ function observed(view, operation, ids, caseId, complete, model) {
 // The page can choose a declared interaction, never a tool, path or server.
 export function createActionHandler({ session, path }) {
   path = normalizePath(path);
-  let busy = false, uncertain = false, current, disposed = false;
+  let busy = false, uncertain = false, current, disposed = false, captureAttempt;
+  const certified = new Map();
   const allowed = {
-    "save-and-test": ["expectedRevision", "sections", "examples", "tools", "showContent", "caseId", "model", "runId"],
-    "save-examples": ["expectedRevision", "examples"],
+    "save-and-test": ["expectedRevision", "sections", "examples", "exampleOrigins", "tools", "toolSettings", "expectedSettingsRevision", "showContent", "caseId", "model", "runId", "comparisonModels"],
+    "save-examples": ["expectedRevision", "examples", "exampleOrigins"],
     "save-prompt": ["expectedRevision", "sections"],
-    test: ["expectedRevision", "showContent", "caseId", "model", "runId"], run: ["expectedRevision", "input", "showContent", "model"],
+    test: ["expectedRevision", "showContent", "caseId", "model", "runId", "comparisonModels"], run: ["expectedRevision", "input", "showContent", "model"],
     suggest: [], reload: [], models: [], tools: [], progress: ["runId"], stop: ["runId"],
   };
   const validRunId = (id) => typeof id === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(id);
@@ -369,6 +384,9 @@ export function createActionHandler({ session, path }) {
       uncertain = true; throw unconfirmed();
     }
     if (result?.resultType === "timeout") { uncertain = true; throw new ViewError("outcome-unknown"); }
+    // A canonical setter refusal/unknown is an SDK error WITH an acknowledgement.
+    // Do not flatten its changed/mayHaveWritten fields into a generic failure.
+    if (operation === "set_tool_state") return result;
     if (result?.resultType !== "success") {
       const detail = typeof result === "string" ? result : [result?.textResultForLlm, result?.error].filter((s) => typeof s === "string").join("\n");
       const code = ["rejected", "denied"].includes(result?.resultType) ? "permission_required"
@@ -381,8 +399,86 @@ export function createActionHandler({ session, path }) {
     }
     return result;
   }
+  const sameSettings = (a, b) => a.length === b.length && a.every(s => b.find(t => t.name === s.name)?.state === s.state);
+  function settingsUnknown() {
+    uncertain = true;
+    throw new ViewError("outcome-unknown", "The tool settings outcome could not be confirmed. Tests did not run. Do not retry; reload to inspect the saved agent and settings.");
+  }
+  function settingsReceipt(result, view, change) {
+    if (["rejected", "denied"].includes(result?.resultType)) throw new ViewError("permission_required");
+    let r = result?.structuredContent;
+    if (r === undefined && typeof result?.textResultForLlm === "string" && Buffer.byteLength(result.textResultForLlm) <= 16384) {
+      try { r = JSON.parse(result.textResultForLlm); } catch { settingsUnknown(); }
+    }
+    if (!isObj(r) || r.schemaVersion !== 1 || r.operation !== "set_tool_state") settingsUnknown();
+    if (r.file !== undefined && (!isObj(r.file) || r.file.path !== path || !/^sha256:[a-f0-9]{64}$/.test(r.file.revision))) settingsUnknown();
+    if (["refused", "failed"].includes(r.state) && r.changed === false && r.mayHaveWritten === false
+      && !Object.hasOwn(r, "toolSettingsRevision") && !Object.hasOwn(r, "toolSettings") && typeof r.reasonCode === "string") {
+      throw new ViewError(["stale_revision", "stale_settings_revision", "invalid_tool_settings"].includes(r.reasonCode) ? r.reasonCode : "settings-failed");
+    }
+    // Unknown (including a lost/malformed receipt) grants no settings token or
+    // retry authority. The checked-agent file identity is not settings evidence.
+    if (r.state !== "complete" || result.resultType !== "success" || r.file?.revision !== view.file.revision
+      || typeof r.changed !== "boolean" || r.mayHaveWritten !== r.changed
+      || typeof r.toolSettingsRevision !== "string" || !/^(?:absent|sha256:[a-f0-9]{64})$/.test(r.toolSettingsRevision)
+      || (r.toolSettingsRevision === view.toolSettingsRevision) !== !r.changed) settingsUnknown();
+    let states;
+    try { states = cleanSettings(r.toolSettings); } catch { settingsUnknown(); }
+    const expected = view.toolSettings.map(s => s.name === change.name ? change : s);
+    if (!sameSettings(states, expected)) settingsUnknown();
+    return { changed: r.changed, token: r.toolSettingsRevision, states };
+  }
+  const pendingRecorded = (view, ids) => view.authoring.examples.filter(e => ids.includes(e.id)).some(e => e.mocks?.tools.some(t => t.mode === "recorded" && !t.calls?.length && view.toolSettings.find(s => s.name === t.name)?.state !== "Disabled"));
+  async function recordingTests(view, input, selected, ids, onPublish) {
+    const models = input.comparisonModels ?? [selected], comparing = models.length > 1, results = [];
+    if (!Array.isArray(models) || models.length < 1 || models.length > 2 || new Set(models).size !== models.length || !models.includes(selected) || !models.every(validModel)) throw new ViewError("invalid-action");
+    const settings = view.toolSettings.map(s => ({...s})), key = v => JSON.stringify([v.file.revision, ids, settings, input.showContent === true]);
+    let published = false, capture;
+    const run = async (model, replay) => {
+      let response;
+      try { response = await invoke("test", { model, expectedRevision: view.file.revision, expectedToolSettings: settings, recordedReplayOnly: replay, ...(input.caseId !== undefined ? {caseId:input.caseId} : {}), showContent: input.showContent === true, showFailedContent:true }, { id:input.runId, revision:view.file.revision,model,examples:view.authoring.examples,caseIds:ids,totalCases:view.examples.length,toolSettings:settings }); }
+      catch (e) { if (e.code !== "action-failed" || e.preview?.state !== "complete") throw e; response = {structuredContent:e.preview}; }
+      let raw = response.structuredContent;
+      if (!raw && typeof response.textResultForLlm === "string" && Buffer.byteLength(response.textResultForLlm) <= MAX_RESOURCE_BYTES) { try {raw=JSON.parse(response.textResultForLlm);} catch {} }
+      if (response.stopped) {
+        const fresh = await readView(session,path); if (fresh.file.revision !== view.file.revision) throw new ViewError("outcome-unknown");
+        current.state = "stopped"; view = {...fresh,latest:{status:"none",badge:"none"}}; return {stopped:true};
+      }
+      if (raw?.file?.path !== path || raw.file.revision !== view.file.revision) throw new ViewError("outcome-unknown");
+      const result = cleanResult(raw,"current",view.file.revision);
+      if (result.modelRoute.slice(result.modelRoute.indexOf("/")+1) !== model || result.state !== "complete" || !sameSettings(result.toolSettings ?? [],settings) || JSON.stringify(result.selection.caseIds) !== JSON.stringify(ids)) throw new ViewError("outcome-unknown");
+      if (replay && result.recordedReplayOnly !== true) throw new ViewError("outcome-unknown");
+      const fresh = await readView(session,path), flags = result.examples.flatMap(e => e.tools ?? []).filter(t => t.recordingSaved);
+      if (result.savedRevision) {
+        if (replay || !flags.length || fresh.file.revision !== result.savedRevision || flags.some(t => t.mode !== "recorded" || t.source !== "live")) throw new ViewError("outcome-unknown");
+        published = true; onPublish(fresh);
+      } else if (flags.length || fresh.file.revision !== view.file.revision) throw new ViewError("revision_mismatch");
+      if (!sameSettings(fresh.toolSettings,settings)) throw new ViewError("tool_settings_changed");
+      view = fresh;
+      const row = { result, executedRevision: raw.file.revision, view: {...fresh,latest:{status:"current",badge:result.fullPass?"pass":"not-passing",result}} };
+      if (replay) { certified.set(key(fresh)+model,row); while(certified.size>2)certified.delete(certified.keys().next().value); }
+      return row;
+    };
+    if (!comparing) {
+      const pending = pendingRecorded(view,ids), row = await run(selected,!pending);
+      if (row.stopped) return {stopped:true,run:snapshot(),view,saved:false};
+      if (pending) captureAttempt = {key:key(view),model:selected};
+      return {view:row.result.savedRevision ? view : row.view,saved:published,...(pending ? {capture:{...row.result,executedRevision:row.executedRevision,model:selected}} : {})};
+    }
+    if (pendingRecorded(view,ids) && captureAttempt?.key !== key(view)) {
+      capture = await run(selected,false);
+      if (capture.stopped) return {stopped:true,run:snapshot(),view,saved:published};
+      captureAttempt = {key:key(view),model:selected};
+    }
+    if (pendingRecorded(view,ids)) return {error:"recording_missing",message:"A Recorded tool has no saved call. Change the test or tool mode before comparing.",view,saved:published};
+    for (const model of models) {
+      const row = model !== selected && certified.get(key(view)+model) || await run(model,true); if(row.stopped)return {stopped:true,run:snapshot(),view,saved:published};results.push(row.view);
+    }
+    return {view:results.find(v=>v.latest.result.modelRoute.endsWith("/"+selected)),saved:published,comparison:{revision:view.file.revision,models,results}};
+  }
   const act = async (input) => {
     if (!isObj(input) || !Object.hasOwn(allowed, input.operation) || Object.keys(input).some((k) => k !== "operation" && !allowed[input.operation].includes(k))) return { error: "invalid-action", message: MESSAGES["invalid-action"] };
+    if (input.operation === "reload") { captureAttempt = undefined; certified.clear(); }
     if (input.showContent !== undefined && typeof input.showContent !== "boolean") return { error: "invalid-action", message: MESSAGES["invalid-action"] };
     if (input.model !== undefined && input.model !== "" && !validModel(input.model)) return { error: "invalid-action", message: MESSAGES["invalid-action"] };
     if ((Object.hasOwn(input, "runId") || ["progress", "stop"].includes(input.operation)) && !validRunId(input.runId)) return { error: "invalid-action", message: MESSAGES["invalid-action"] };
@@ -406,6 +502,7 @@ export function createActionHandler({ session, path }) {
     busy = true;
     current = undefined; // Never replay the previous invocation's snapshot.
     let saved = false, tested = false, targetRevision, ids, operation, model;
+    let settingsIncomplete = Array.isArray(input.toolSettings) && input.toolSettings.length > 0;
     const lease = ["run", "test", "save-and-test"].includes(input.operation) ? beginPreview(session) : undefined;
     try {
       if (disposed) throw new ViewError("unavailable");
@@ -423,27 +520,53 @@ export function createActionHandler({ session, path }) {
       if (input.expectedRevision !== view.file.revision) throw new ViewError("stale_revision");
       targetRevision = input.expectedRevision;
       model = effectiveModel(view.model, input.model, view.chatModel);
+      if (input.comparisonModels !== undefined && (!Array.isArray(input.comparisonModels) || input.comparisonModels.length < 1 || input.comparisonModels.length > 2 || new Set(input.comparisonModels).size !== input.comparisonModels.length || !input.comparisonModels.includes(model) || !input.comparisonModels.every(validModel))) throw new ViewError("invalid-action");
       const runtimeModel = input.model || (!view.model && view.chatModel ? model : undefined);
       const saving = ["save-and-test", "save-examples", "save-prompt"].includes(input.operation);
       // Intended drafts apply to the exact current source; an absent draft is a no-op.
-      let content = view.authoring.source, examples = view.authoring.examples;
+      let content = view.authoring.source, examples = view.authoring.examples, patches;
       try {
         if (input.sections !== undefined) content = replaceInstructions(content, input.sections);
         if (input.examples !== undefined || input.operation === "save-examples") {
-          content = replaceExamples(content, input.examples);
+          if (view.authoring.recordingControls) patches = exampleEdits(examples, input.examples, input.exampleOrigins);
+          else content = replaceExamples(content, input.examples);
           examples = input.examples;
         }
         if (input.tools !== undefined) content = replaceTools(content, input.tools);
         instructionSections(content);
       } catch { throw new ViewError("invalid-action"); }
+      let changes = [];
+      try { if (input.toolSettings !== undefined) changes = cleanSettings(input.toolSettings); }
+      catch { throw new ViewError("invalid-action"); }
+      if (changes.some(s => !(input.tools ?? view.tools).includes(s.name))
+        || input.expectedSettingsRevision !== undefined && (typeof input.expectedSettingsRevision !== "string" || !/^(?:absent|sha256:[a-f0-9]{64})$/.test(input.expectedSettingsRevision))) throw new ViewError("invalid-action");
+      const originalToken = view.toolSettingsRevision;
+      if (changes.length) {
+        // Availability is checked BEFORE Edit, including zero-tool legacy views.
+        const metadata = await session.rpc.tools.getCurrentMetadata();
+        if (metadata.tools?.filter(t => t.mcpServerName === SERVER_NAME && t.mcpToolName === "set_tool_state").length !== 1) throw new ViewError("unavailable");
+        if (view.tools.length) {
+          if (originalToken === undefined) throw new ViewError("unavailable");
+          if (input.expectedSettingsRevision === undefined) throw new ViewError("invalid-action");
+          if (input.expectedSettingsRevision !== originalToken) throw new ViewError("stale_settings_revision");
+        } else if (input.expectedSettingsRevision !== undefined) throw new ViewError("invalid-action");
+      }
       ids = examples.map((e) => e.id);
       // A selected case must exist once in the intended examples before any write.
       if (input.caseId !== undefined && (typeof input.caseId !== "string" || ids.filter((id) => id === input.caseId).length !== 1)) throw new ViewError("invalid-action");
       if (saving) {
         if (Buffer.byteLength(content, "utf8") > 256 * 1024) throw new ViewError("too-large");
-        if (content !== view.authoring.source) {
-          await invoke("edit", { expectedRevision: input.expectedRevision, content });
-          targetRevision = `sha256:${createHash("sha256").update(content).digest("hex")}`;
+        if (content !== view.authoring.source || patches?.length) {
+          captureAttempt = undefined; certified.clear();
+          const edit = await invoke("edit", { expectedRevision: input.expectedRevision, content, ...(patches?.length ? { exampleEdits: patches } : {}) });
+          // A later settings read/write failure must retain this acknowledged Edit.
+          if (changes.length) saved = true;
+          if (patches?.length) {
+            let ack = edit.structuredContent;
+            if (!ack && typeof edit.textResultForLlm === "string") { try { ack = JSON.parse(edit.textResultForLlm); } catch {} }
+            if (ack?.schemaVersion !== 1 || ack.operation !== "edit" || ack.file?.path !== path || !/^sha256:[a-f0-9]{64}$/.test(ack.file.revision)) { uncertain = true; throw new ViewError("outcome-unknown"); }
+            targetRevision = ack.file.revision;
+          } else targetRevision = `sha256:${createHash("sha256").update(content).digest("hex")}`;
           try { view = await readView(session, path); }
           catch { uncertain = true; throw new ViewError("outcome-unknown"); }
           if (view.file.revision !== targetRevision) { uncertain = true; throw new ViewError("outcome-unknown"); }
@@ -451,6 +574,18 @@ export function createActionHandler({ session, path }) {
         }
         if (["save-examples", "save-prompt"].includes(input.operation)) return { view, saved };
       }
+      if (changes.length && originalToken !== undefined && view.toolSettingsRevision !== originalToken) throw new ViewError("stale_settings_revision");
+      for (const change of changes) {
+        if (view.toolSettingsRevision === undefined) throw new ViewError("unavailable");
+        const result = await invoke("set_tool_state", { expectedRevision: targetRevision, expectedSettingsRevision: view.toolSettingsRevision, ...change });
+        const receipt = settingsReceipt(result, view, change);
+        saved ||= receipt.changed;
+        let next;
+        try { next = await readView(session, path); } catch { settingsUnknown(); }
+        if (next.file.revision !== targetRevision || next.toolSettingsRevision !== receipt.token || !sameSettings(next.toolSettings, receipt.states)) settingsUnknown();
+        view = next;
+      }
+      settingsIncomplete = false;
       operation = input.operation === "run" ? "run" : "test";
       if (operation === "run" && (typeof input.input !== "string" || Buffer.byteLength(input.input, "utf8") > 16384)) throw new ViewError("invalid-action");
       // Test/Run have no revision parameter. Check the actual result afterward,
@@ -459,6 +594,7 @@ export function createActionHandler({ session, path }) {
         try { await ensureHostRuntime(session, lease); } catch { /* Original server retains the plain unbound refusal; never invent a binding. */ }
       }
       tested = true;
+      if (operation === "test" && view.authoring.recordingControls) { const result = await recordingTests(view,input,model,input.caseId === undefined ? ids : [input.caseId],fresh=>{saved=true;targetRevision=fresh.file.revision}); return {...result,saved:saved||result.saved}; }
       const outcome = await invoke(operation, { ...(runtimeModel ? { model: runtimeModel } : {}), ...(operation === "run" ? { input: input.input } : {}), ...(input.caseId !== undefined ? { caseId: input.caseId } : {}), showContent: input.showContent === true, showFailedContent: true },
         { id: input.runId, revision: targetRevision, model, examples, caseIds: input.caseId === undefined ? ids : [input.caseId], totalCases: ids.length,
           ...(view.tools.length ? { toolSettings: view.toolSettings.map(s => ({ ...s })) } : {}) });
@@ -474,9 +610,10 @@ export function createActionHandler({ session, path }) {
       return { view, saved, ...(snapshot() ? { run: snapshot() } : {}) };
     } catch (e) {
       const err = safeError(e);
-      const response = { error: err.code, message: err.message, saved, ...(err.approvalTimeout ? { approvalTimeout: true } : {}) };
+      if (err.code === "outcome-unknown") uncertain = true;
+      const response = { error: err.code, message: err.message, saved, ...(settingsIncomplete ? { settingsIncomplete: true } : {}), ...(err.approvalTimeout ? { approvalTimeout: true } : {}) };
       const failedPreview = tested && err.code === "action-failed";
-      if ((saved || failedPreview) && err.code !== "revision_mismatch" && err.code !== "outcome-unknown") {
+      if (!settingsIncomplete && (saved || failedPreview) && err.code !== "revision_mismatch" && err.code !== "outcome-unknown") {
         try {
           const view = await readView(session, path);
           // Project the invocation payload through the same bounded parser as
@@ -545,6 +682,7 @@ const ASSETS = {
   "style.css": ["style.css", "text/css; charset=utf-8"],
   "authoring.mjs": ["authoring.mjs", "text/javascript; charset=utf-8"],
   "tools-view.mjs": ["tools-view.mjs", "text/javascript; charset=utf-8"],
+  "test-tools.mjs": ["test-tools.mjs", "text/javascript; charset=utf-8"],
   "editor.mjs": ["editor.mjs", "text/javascript; charset=utf-8"],
   "draft-controller.mjs": ["draft-controller.mjs", "text/javascript; charset=utf-8"],
   "action-controller.mjs": ["action-controller.mjs", "text/javascript; charset=utf-8"],

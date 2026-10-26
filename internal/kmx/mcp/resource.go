@@ -19,20 +19,24 @@ import (
 // AgentView is authored content for the requested agent file, not a safe log.
 // Model answers appear only in an already opted-in safe preview result.
 type AgentView struct {
-	SchemaVersion int                      `json:"schemaVersion"`
-	Kind          string                   `json:"kind"`
-	File          File                     `json:"file"`
-	Title         string                   `json:"title"`
-	Instructions  string                   `json:"instructions"`
-	Model         string                   `json:"model"`
-	Tools         []string                 `json:"tools,omitempty"`
-	ToolSettings  []localtools.ToolSetting `json:"toolSettings,omitempty"`
-	Examples      []AgentViewExample       `json:"examples"`
-	Latest        AgentViewLatest          `json:"latest"`
-	Authoring     *AgentViewAuthoring      `json:"authoring,omitempty"`
-	History       *AgentHistory            `json:"history,omitempty"`
+	SchemaVersion        int                      `json:"schemaVersion"`
+	Kind                 string                   `json:"kind"`
+	File                 File                     `json:"file"`
+	Title                string                   `json:"title"`
+	Instructions         string                   `json:"instructions"`
+	Model                string                   `json:"model"`
+	Tools                []string                 `json:"tools,omitempty"`
+	ToolSettingsRevision string                   `json:"toolSettingsRevision,omitempty"`
+	ToolSettings         []localtools.ToolSetting `json:"toolSettings,omitempty"`
+	Examples             []AgentViewExample       `json:"examples"`
+	Latest               AgentViewLatest          `json:"latest"`
+	Authoring            *AgentViewAuthoring      `json:"authoring,omitempty"`
+	History              *AgentHistory            `json:"history,omitempty"`
 }
 type AgentViewAuthoring struct {
+	RecordingControls bool                        `json:"recordingControls,omitempty"`
+	RecordingDetails  []agentfile.RecordingDetail `json:"recordingDetails,omitempty"`
+
 	Source   string `json:"source"`
 	Editable bool   `json:"editable"`
 }
@@ -98,7 +102,8 @@ func AddAgentResource(server *sdk.Server, files *Files) {
 		if files.root != nil {
 			physical = filepath.Join(files.root.Name(), filepath.FromSlash(target))
 		}
-		view.ToolSettings, err = localtools.LoadSettings(ctx, physical, agent.Tools)
+		snapshot, settingsErr := localtools.ReadSettingsSnapshot(ctx, physical, agent.Tools)
+		view.ToolSettings, view.ToolSettingsRevision, err = snapshot.Settings, snapshot.Revision, settingsErr
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
@@ -107,18 +112,9 @@ func AddAgentResource(server *sdk.Server, files *Files) {
 			return &sdk.ReadResourceResult{Contents: []*sdk.ResourceContents{{URI: req.Params.URI, MIMEType: "application/json", Text: `{"schemaVersion":1,"kind":"kmx.agent-view-error","reasonCode":"invalid_tool_settings"}`}}}, nil
 		}
 		_, strictErr := agentfile.Parse(target, source)
-		view.Authoring = &AgentViewAuthoring{Source: string(source), Editable: strictErr == nil}
+		view.Authoring = &AgentViewAuthoring{Source: string(source), Editable: strictErr == nil, RecordingControls: true, RecordingDetails: agentfile.RecordingDetails(source)}
 		view.History = files.historyView(ctx, p)
 		for _, example := range agent.Examples {
-			// The current canvas serializer cannot round-trip tool fixtures/checks yet.
-			if example.Mocks != nil {
-				view.Authoring.Editable = false
-			}
-			for _, as := range example.Assertions {
-				if as.Type == "toolCalled" || as.Type == "toolNotCalled" {
-					view.Authoring.Editable = false
-				}
-			}
 			view.Examples = append(view.Examples, AgentViewExample{ID: example.ID, Input: example.Input, Assertions: example.Assertions, Mocks: example.Mocks})
 		}
 		files.viewMu.Lock()
