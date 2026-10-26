@@ -67,8 +67,8 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     if (disposed) return;
     state.busy = false; state.pending = undefined; state.message = "";
     const latest = response?.view?.latest;
-    if (hostedAttempt && (UNKNOWN.includes(response?.error) || CONFLICTS.includes(response?.error) || latest?.status === "current" && latest.result && !isRefused(latest.result))) state.hostedSent = true;
-    if (executing && matches(response?.view) && !response.stopped) {
+    if (hostedAttempt && !response?.settingsIncomplete && (UNKNOWN.includes(response?.error) || CONFLICTS.includes(response?.error) || latest?.status === "current" && latest.result && !isRefused(latest.result))) state.hostedSent = true;
+    if (executing && !response?.settingsIncomplete && matches(response?.view) && !response.stopped) {
       state.history.remember(response.view, true, response.run?.elapsedMs, executing ? effectiveModel(state.base.model, modelChoice.override, state.base.chatModel) : undefined);
       modelChoice.confirm(response.view);
     }
@@ -80,7 +80,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     } else if (operation === "reload") {
       if (matches(response?.view)) {
         state.history.reset(); state.history.remember(response.view); state.run = undefined;
-        sectionDrafts.clear(); testDrafts.clear(); state.toolsDraft = undefined; displayNames.clear(); state.blocked = false; state.savedUntested = false; state.lastRun = undefined;
+        sectionDrafts.clear(); testDrafts.clear(); state.toolsDraft = undefined; state.settingsDraft.clear(); displayNames.clear(); state.blocked = false; state.savedUntested = false; state.lastRun = undefined;
         adopt(response.view, { sections: [], tests: [] }); state.message = "Reloaded the saved agent. Drafts were discarded.";
       } else state.message = response?.message || "Reload did not complete. Your draft is still here.";
     } else if (response?.error === "no-tests" && matches(response.view)) {
@@ -89,8 +89,11 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
       const unknown = UNKNOWN.includes(response.error) || CONFLICTS.includes(response.error);
       // Unsaved failures must still match our revision.
       const fresh = matches(response.view) && (response.saved === true || response.view.file.revision === state.base.file.revision);
-      if (response.error === "stale_revision" || response.error === "stale-revision") {
-        state.message = "This agent changed outside the panel. Your edits are kept."; checkNow();
+      if (response.settingsIncomplete && (response.saved === true || unknown)) {
+        state.blocked = true; state.savedUntested = response.saved === true;
+        state.message = `${response.saved ? "Some changes were saved. " : ""}${unknown ? "The tool settings outcome is unconfirmed. " : ""}Tests did not run. Your draft is still here; reload to inspect the saved agent and settings.`;
+      } else if (["stale_revision", "stale-revision", "stale_settings_revision"].includes(response.error)) {
+        state.message = response.error === "stale_settings_revision" ? "Tool settings changed outside the panel. Your edits are kept." : "This agent changed outside the panel. Your edits are kept."; checkNow();
       } else if (!unknown && fresh && (response.saved || ["test", "run", "save-and-test"].includes(operation))) {
         // Only confirmed snapshots can replace the baseline after failure.
         adopt(response.view, response.saved ? submitted : { sections: [], tests: [] });
@@ -117,6 +120,12 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     render();
   }
 
+  function submitSettings(values, submitted) {
+    if (!state.settingsDraft.size) return;
+    values.toolSettings = drafts.toolNames().filter(name => state.settingsDraft.has(name)).map(name => ({ name, state: state.settingsDraft.get(name) }));
+    if (state.base.toolSettingsRevision !== undefined) values.expectedSettingsRevision = state.base.toolSettingsRevision;
+    submitted.settings = true;
+  }
   // Enter saves all drafts once, then runs the suite.
   function submitAll() {
     if (!state.snap || state.busy || state.blocked || state.candidate || invalidEditors.size) return;
@@ -131,6 +140,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     if (sectionDrafts.size) values.sections = [...sectionDrafts].map(([key, text]) => ({ key, text }));
     if (testDrafts.size) values.examples = localExamples();
     if (state.toolsDraft !== undefined) { values.tools = state.toolsDraft; submitted.tools = true; }
+    submitSettings(values, submitted);
     if (!hasDrafts() && !intended.length) { state.message = "No tests yet — add or suggest one"; refresh(); return; }
     act(hasDrafts() ? "save-and-test" : "test", values, submitted);
   }
@@ -154,7 +164,8 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     if (sectionDrafts.size) values.sections = [...sectionDrafts].map(([k, text]) => ({ key: k, text }));
     if (entry.draft) values.examples = intended;
     if (state.toolsDraft !== undefined) { values.tools = state.toolsDraft; submitted.tools = true; }
-    act(state.toolsDraft !== undefined || sectionDrafts.size || entry.draft ? "save-and-test" : "test", values, submitted);
+    submitSettings(values, submitted);
+    act(state.toolsDraft !== undefined || state.settingsDraft.size || sectionDrafts.size || entry.draft ? "save-and-test" : "test", values, submitted);
   }
 
   return { act, submitAll, submitOne, testing, clearUndo, stop, dispose() { disposed = true; stopWatching(); } };

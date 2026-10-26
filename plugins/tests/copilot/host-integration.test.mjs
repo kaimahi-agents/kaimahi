@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdtemp, mkdir, writeFile, rm, realpath } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { readView, createActionHandler } from '../../copilot-wsl/com.github.copilot/extensions/agent-view/view.mjs';
@@ -31,8 +31,9 @@ async function connect(command, args, options) {
 }
 
 const binary = process.env.KMX_HOST_BRIDGE_TEST_BINARY;
-for (const mode of ['round trip', 'denial', 'cancelled', 'expired', 'batch', 'batch denial', 'batch limit', 'disabled', 'batch disabled', 'batch mixed', 'invalid settings']) test(`Go MCP plus Node runtime fixture: native tool ${mode}`, { skip: !binary, timeout: 60000 }, async t => {
-  const disabled = mode === 'disabled' || mode === 'batch disabled', mixed = mode === 'batch mixed', invalidSettings = mode === 'invalid settings';
+for (const mode of ['round trip', 'denial', 'cancelled', 'expired', 'batch', 'batch denial', 'batch limit', 'disabled', 'batch disabled', 'batch mixed', 'invalid settings', 'switch off', 'switch on', 'switch new', 'switch both', 'switch stale', 'switch noop']) test(`Go MCP plus Node runtime fixture: native tool ${mode}`, { skip: !binary, timeout: 60000 }, async t => {
+  const switching = mode.startsWith('switch'), newDeclaration = mode === 'round trip' || mode === 'switch new';
+  const disabled = ['disabled', 'batch disabled', 'switch off', 'switch both'].includes(mode), mixed = mode === 'batch mixed', pair = mixed || mode === 'switch both', invalidSettings = mode === 'invalid settings';
   const batch = mode.startsWith('batch'), denied = mode.includes('denial'), overLimit = mode === 'batch limit', stopping = mode === 'cancelled' || mode === 'expired';
   let modelServer, modelError, sends = 0;
   if (batch) {
@@ -61,11 +62,11 @@ for (const mode of ['round trip', 'denial', 'cancelled', 'expired', 'batch', 'ba
   const state = path.join(root, 'state'); await mkdir(state, { mode: 0o700 });
   const env = { ...process.env, KMX_HOME: state };
   const source = '# Host fixture\n\n## Identity\n- **ID:** fixture\n- **Purpose:** One host read.\n\n## Accountable Responsibilities\nCall the tool `ping`. Reply with exactly `done`.\n\n## Non-Responsibilities\nNo other calls.\n\n## Collaboration and Review Authority\nReturn the answer.\n\n## Model\n- **Preferred:** fake\n\n## Tools\n- ping\n\n## Examples\n```yaml\nexamples:\n  - id: read\n    input: read\n    assertions:\n      - id: complete\n        type: contains\n        value: done\n```\n';
-  let configured = batch ? source.replace('Preferred:** fake', 'Preferred:** unit') : mode === 'round trip' ? source.replace('## Tools\n- ping\n\n', '') : source;
-  if (mixed) configured = configured.replace('- ping\n', '- ping\n- pong\n');
+  let configured = batch ? source.replace('Preferred:** fake', 'Preferred:** unit') : newDeclaration ? source.replace('## Tools\n- ping\n\n', '') : source;
+  if (pair) configured = configured.replace('- ping\n', '- ping\n- pong\n');
   await writeFile(path.join(root, 'fixture.agent.md'), configured, { mode: 0o600 });
   if (invalidSettings) await writeFile(path.join(root, 'kmx.yaml'), 'tools: {ping: Ask}\n', { mode: 0o600 });
-  if (disabled || mixed) await writeFile(path.join(root, 'kmx.yaml'), 'tools:\n  ping: Disabled\n' + (mixed ? '  pong: Enabled\n' : ''), { mode: 0o600 });
+  if (mode === 'disabled' || mode === 'batch disabled' || mixed || ['switch on', 'switch new'].includes(mode)) await writeFile(path.join(root, 'kmx.yaml'), 'tools:\n  ping: Disabled\n' + (mixed ? '  pong: Enabled\n' : ''), { mode: 0o600 });
   const original = await connect(binary, ['mcp', '--root', root, ...(batch ? ['--provider', 'compatible', '--endpoint', `http://127.0.0.1:${modelServer.address().port}`] : [])], { env });
   const servers = new Map([['kmx-agent-builder', original]]), calls = [], previews = [];
   const session = { rpc: { mcp: {
@@ -79,7 +80,7 @@ for (const mode of ['round trip', 'denial', 'cancelled', 'expired', 'batch', 'ba
   }, tools: {
     initializeAndValidate: async () => {},
     getCurrentMetadata: async () => { if (stopping && ++reads === 2) { enter(); await gate; } return { tools: [
-      ...[...servers].flatMap(([serverName]) => ['create', 'edit', 'run', 'test'].map(name => ({ name: `${serverName}:${name}`, mcpServerName: serverName, mcpToolName: name, description: name, input_schema: { type: 'object' } }))),
+      ...[...servers].flatMap(([serverName]) => ['create', 'edit', 'run', 'test', ...(serverName === 'kmx-agent-builder' ? ['set_tool_state'] : [])].map(name => ({ name: `${serverName}:${name}`, mcpServerName: serverName, mcpToolName: name, description: name, input_schema: { type: 'object' } }))),
       ...['ping', 'pong'].map(name => ({ name: `actual-host-${name}`, mcpServerName: 'actual-host', mcpToolName: name, description: `Actual host fixture ${name}`, input_schema: { type: 'object', additionalProperties: false } })),
     ] }; },
     execute: async input => {
@@ -122,9 +123,23 @@ for (const mode of ['round trip', 'denial', 'cancelled', 'expired', 'batch', 'ba
     assert.equal(calls.length, 0);
     act.dispose(); return;
   }
-  const before = await readView(session, 'fixture.agent.md'); assert.deepEqual(before.tools, mode === 'round trip' ? [] : mixed ? ['ping', 'pong'] : ['ping']);
-  const result = await createActionHandler({ session, path: 'fixture.agent.md' })({ operation: mode === 'round trip' ? 'save-and-test' : 'test', expectedRevision: before.file.revision, ...(mode === 'round trip' ? { tools: ['ping'] } : {}) });
-  if (mode === 'round trip') {
+  const before = await readView(session, 'fixture.agent.md'); assert.deepEqual(before.tools, newDeclaration ? [] : pair ? ['ping', 'pong'] : ['ping']);
+  if (mode === 'switch stale') await writeFile(path.join(root, 'kmx.yaml'), '# outside comment\ntools: {ping: Enabled}\n', { mode: 0o600 });
+  const result = await createActionHandler({ session, path: 'fixture.agent.md' })({ operation: newDeclaration || switching ? 'save-and-test' : 'test', expectedRevision: before.file.revision,
+    ...(newDeclaration ? { tools: ['ping'] } : {}), ...(switching ? { expectedSettingsRevision: before.toolSettingsRevision, toolSettings: [{ name: 'ping', state: disabled || mode === 'switch stale' ? 'Disabled' : 'Enabled' }, ...(mode === 'switch both' ? [{ name: 'pong', state: 'Disabled' }] : [])] } : {}) });
+  if (mode === 'switch stale') {
+    assert.equal(result.error, 'stale_settings_revision'); assert.equal(result.saved, false); assert.equal(previews.length, 0); assert.equal(calls.length, 0);
+    assert.equal(await readFile(path.join(root, 'fixture.agent.md'), 'utf8'), configured); return;
+  }
+  if (switching) {
+    assert.equal(result.error, undefined, JSON.stringify(result)); assert.equal(result.saved, mode !== 'switch noop');
+    const setters = previews.filter(p => p.result.structuredContent?.operation === 'set_tool_state');
+    assert.equal(setters.length, mode === 'switch both' ? 2 : 1); assert.ok(setters.every(p => p.serverName === 'kmx-agent-builder'));
+    assert.equal(result.view.toolSettingsRevision, (await readView(session, 'fixture.agent.md')).toolSettingsRevision);
+    if (!newDeclaration) assert.equal(await readFile(path.join(root, 'fixture.agent.md'), 'utf8'), configured, 'settings never rewrite source');
+    if (mode === 'switch noop') { assert.equal(result.view.toolSettingsRevision, 'absent'); await assert.rejects(readFile(path.join(root, 'kmx.yaml')), { code: 'ENOENT' }); }
+  }
+  if (newDeclaration) {
     assert.equal(result.saved, true); assert.deepEqual(result.view.tools, ['ping']);
     assert.notEqual(result.view.file.revision, before.file.revision);
     assert.equal(previews[0].serverName, 'kmx-agent-builder', 'Edit stays on the original checked agent-file server');
@@ -141,5 +156,5 @@ for (const mode of ['round trip', 'denial', 'cancelled', 'expired', 'batch', 'ba
   assert.equal(result.error, denied || overLimit ? 'action-failed' : undefined);
   assert.ok(!JSON.stringify(result).includes('private-canary'));
   if (!denied && !overLimit) { assert.equal(payload.examples[0].toolCalls ?? 0, liveCalls);
-    assert.deepEqual(payload.toolSettings, [{ name: 'ping', state: disabled || mixed ? 'Disabled' : 'Enabled' }, ...(mixed ? [{ name: 'pong', state: 'Enabled' }] : [])]); assert.equal(result.view.latest.result.fullPass, true); }
+    assert.deepEqual(payload.toolSettings, [{ name: 'ping', state: disabled || mixed ? 'Disabled' : 'Enabled' }, ...(pair ? [{ name: 'pong', state: mixed ? 'Enabled' : 'Disabled' }] : [])]); assert.equal(result.view.latest.result.fullPass, true); }
 });

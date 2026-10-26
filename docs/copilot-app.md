@@ -71,11 +71,27 @@ Use a path in your own repository. On Windows, give the WSL path (`C:\work` is
 `/mnt/c/work`), not a Windows path. Files can live in different repositories;
 installation does not bind kmx to one folder.
 
-The canvas shows **Prompt** and **Tests**. The saved `.agent.md` file holds both;
-you can keep it in version control with the code it describes. If your host
+The canvas shows **Prompt**, **Tools** and **Tests**. The saved `.agent.md` file
+holds the prompt, tool names and tests; you can keep it in version control with
+the code it describes. If your host
 cannot render the canvas, Copilot can still use kmx's tools in text.
 
 *Screenshot to add: a newly created agent with Prompt and Tests visible.*
+
+## Choose tools for tests
+
+With a matching current-source plugin and binary, **Add tools** opens this app's
+MCP servers. Tick tools to add them to the agent. A ticked tool's **Enabled** or
+**Disabled** word flips a draft; Disabled tools stay declared but do not run in tests.
+Enter saves edits, then tests. Esc discards Tools edits without discarding prompt
+or test edits. Server rows show saved disabled counts; the tool page shows drafts.
+
+Tool names live in the agent file. Test settings live in `kmx.yaml` beside its
+physical target and also affect other agents in that folder. These are separate
+saves, not one transaction. If a save is partial or unconfirmed, tests do not run:
+keep the draft and deliberately reload to inspect what was saved. Do not retry
+an uncertain write. This switch needs `set_tool_state`, absent from the pinned
+v0.9.0-rc.2 binary above.
 
 ## Add tests and run them
 

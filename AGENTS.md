@@ -688,8 +688,10 @@ never ancestor discovery or source declarations. `tools` maps names to Enabled
 (default) or Disabled; unknown states refuse. Read without rewriting other keys,
 freeze for execution/results/journals, and stale prior results on effective-setting
 changes. Disabled answers consume a request slot but do not count as live calls;
-Enabled calls retain native permissions. Canvas states are read-only; Ask is not
-implemented. Historical settings-free journals retain Enabled semantics.
+Enabled calls retain native permissions. Canvas switches draft Enabled/Disabled
+and save through the original-server revision-checked setter before Test; partial
+or uncertain saves retain drafts and never run Test. Ask is not implemented.
+Historical settings-free journals retain Enabled semantics.
 Its optional first-response batch of up to five calls is host-enforced against
 trusted definitions and schemas, validated as a whole before serial dispatch;
 arguments are bounded to 8 KiB and results to 32 KiB per call; at most two agent model calls,

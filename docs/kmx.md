@@ -186,7 +186,8 @@ Bound tools support Copilot Chat Completions and Responses routes; judging stays
 tool-free. Unbound tools still refuse with one plain reason. Trusted embedding
 can bind multiple declared tool names. The Copilot extension runtime also binds
 names to the joined session's actual MCP tools without a binding file; see
-[Copilot host tools](local-preview.md#copilot-host-tools). No Tools editor UI is added.
+[Copilot host tools](local-preview.md#copilot-host-tools). The canvas edits tool
+declarations and [folder test settings](#folder-tool-settings) separately.
 The opt-in hosted smoke uses a scripted model, not real-LLM qualification.
 
 File mode uses embedded Sessions for fake/local and explicit Copilot routes,
@@ -423,9 +424,17 @@ bytes/absence untouched. Changes retain other keys/comments and existing mode bi
 or stale config refuses without a write; the writer refuses multiply-linked files
 and folders the settings reader cannot use. Missing Enabled no-ops remain portable.
 Any unconfirmed publication reports `state: unknown`, `mayHaveWritten: true`,
-`reasonCode: settings_write_unknown`, without an invented revision/vector/changed
-value. This is conservative, not a claim a write likely occurred. Read back before
-deciding what to do; never retry automatically or assume agent/config atomicity.
+`reasonCode: settings_write_unknown`, without an invented settings revision/vector
+or changed value; the checked agent's `file` identity is not settings evidence.
+This is conservative, not a claim a write likely occurred. Read back before deciding
+what to do; never retry automatically or assume agent/config atomicity.
+
+With a matching current-source plugin and binary, a ticked tool's quiet
+Enabled/Disabled word in the canvas flips a draft. Enter saves declarations first,
+then serial folder settings, with checked readback before testing. The Tools section
+shows saved per-server disabled counts; the tool page shows draft counts. Esc discards Tools
+edits, not unrelated prompt/test drafts. Partial saves disclose earlier effects and
+stop before Test; unknown outcomes require deliberate Reload, not resubmission.
 
 #### Optional native Squad chat flow
 

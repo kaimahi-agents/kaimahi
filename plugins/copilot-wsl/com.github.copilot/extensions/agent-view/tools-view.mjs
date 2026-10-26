@@ -9,23 +9,27 @@ const VISIBLE_ROWS = 9;
 
 // A declared name belongs to a server only when exactly one catalog server lists
 // it; anything else is reported generically, never assigned to a guessed server.
-function ownership(servers, names) {
+function ownership(servers, names, settings) {
   const seen = new Map();
   for (const server of servers) for (const name of new Set(server.tools.map(t => t.name))) seen.set(name, [...seen.get(name) ?? [], server]);
-  const counts = new Map();
+  const counts = new Map(), disabled = new Map(), off = new Set((settings ?? []).filter(s => s.state === "Disabled").map(s => s.name));
   let unmatched = 0;
   for (const name of new Set(names)) {
     const owners = seen.get(name) ?? [];
-    if (owners.length === 1) counts.set(owners[0].name, (counts.get(owners[0].name) ?? 0) + 1); else unmatched++;
+    if (owners.length === 1) {
+      const owner = owners[0].name;
+      counts.set(owner, (counts.get(owner) ?? 0) + 1);
+      if (off.has(name)) disabled.set(owner, (disabled.get(owner) ?? 0) + 1);
+    } else unmatched++;
   }
-  return { count: server => counts.get(server.name) ?? 0, unmatched };
+  return { count: server => counts.get(server.name) ?? 0, disabled: server => disabled.get(server.name) ?? 0, unmatched };
 }
-const countText = (n, server) => `${n} of ${plural(server.tools.length, "tool")}`;
+const countText = (n, server, disabled = 0) => `${n} of ${plural(server.tools.length, "tool")}${disabled ? ` · ${disabled} disabled for tests` : ""}`;
 
-export function toolsSection(doc, button, { servers, names, editable, loading, loaded = true, error, menuOpen, onToggleMenu, onOpen }) {
+export function toolsSection(doc, button, { servers, names, settings, editable, loading, loaded = true, error, menuOpen, onToggleMenu, onOpen }) {
   const section = el(doc, "section", "tools-section"), head = el(doc, "div", "tools-head");
   head.append(el(doc, "h2", "lbl", "Tools")); section.append(head);
-  const ready = loaded && !loading && !error, owned = ownership(ready ? servers : [], names);
+  const ready = loaded && !loading && !error, owned = ownership(ready ? servers : [], names, settings);
   const addControl = () => {
     const wrap = el(doc, "div", "tools-add"), add = button("+ Add tools", onToggleMenu, "tb", "nav");
     add.setAttribute("aria-haspopup", "menu"); add.setAttribute("aria-expanded", String(!!menuOpen));
@@ -62,7 +66,7 @@ export function toolsSection(doc, button, { servers, names, editable, loading, l
     if (!n) continue;
     const item = el(doc, "li", "test-item"), row = button("", () => onOpen(server), "test-row tool-source", "nav");
     row.setAttribute("data-server", server.name);
-    row.append(el(doc, "span", "test-name", server.label), el(doc, "span", "test-input-summary", `MCP server · ${countText(n, server)}`));
+    row.append(el(doc, "span", "test-name", server.label), el(doc, "span", "test-input-summary", `MCP server · ${countText(n, server, owned.disabled(server))}`));
     item.append(row); list.append(item);
   }
   if (list.children.length) section.append(list);
@@ -73,14 +77,14 @@ export function toolsSection(doc, button, { servers, names, editable, loading, l
 
 // Rows arrive in the caller's fixed opening order; filtering only hides rows.
 // `servers` is the whole catalog, so the count matches the T1 row's ownership rule.
-export function serverToolsView(doc, button, { agentName, server, servers = [server], rows, names, filter, onFilter, onToggle, onBack, onDiscard, onSubmit, dirty, footer, busy, editable = true }) {
-  const ticked = new Set(names);
+export function serverToolsView(doc, button, { agentName, server, servers = [server], rows, names, settings = [], filter, onFilter, onToggle, onStateToggle, onBack, onDiscard, onSubmit, dirty, footer, busy, editable = true, settingsEditable = editable }) {
+  const ticked = new Set(names), owned = ownership(servers, names, settings);
   const head = el(doc, "div", "detail-head"), bar = el(doc, "div", "detail-bar");
   const back = button("", onBack, "back", "nav");
   back.setAttribute("aria-label", `Back to ${agentName}`); back.append(icon(doc, "back", 14, 2), agentName);
   bar.append(back);
   head.append(bar, el(doc, "h1", "test-title", server.label),
-    el(doc, "p", "detail-status", `MCP server · ${countText(ownership(servers, names).count(server), server)}`));
+    el(doc, "p", "detail-status", `MCP server · ${countText(owned.count(server), server, owned.disabled(server))}`));
 
   const body = el(doc, "section", "detail-section tools-picker");
   const search = el(doc, "input", "tool-filter");
@@ -96,7 +100,18 @@ export function serverToolsView(doc, button, { agentName, server, servers = [ser
     box.addEventListener("change", event => onToggle(tool.name, !!(event?.target ?? box).checked));
     const text = el(doc, "span", "tool-text");
     text.append(el(doc, "code", "tool-name", tool.name), el(doc, "span", "tool-description", tool.description ?? ""));
-    label.append(box, text); item.append(label); list.append(item);
+    label.append(box, text); item.append(label);
+    if (ticked.has(tool.name) && settings !== null) {
+      const value = settings.find(s => s.name === tool.name)?.state ?? "Enabled", cls = `tool-state${value === "Disabled" ? " is-disabled" : ""}`;
+      const word = settingsEditable && editable ? button(value, () => onStateToggle?.(tool.name), `tb ${cls}`, "settings") : el(doc, "span", cls, value);
+      word.setAttribute("data-tool-state", tool.name);
+      if (settingsEditable && editable) {
+        word.disabled = !!busy; word.setAttribute("role", "switch"); word.setAttribute("aria-checked", String(value === "Enabled"));
+        word.setAttribute("aria-label", `${tool.name}: ${value} for tests`);
+      }
+      item.append(word);
+    }
+    list.append(item);
     return { item, tool };
   });
   const draw = () => {
@@ -117,7 +132,7 @@ export function serverToolsView(doc, button, { agentName, server, servers = [ser
     event.preventDefault(); event.stopPropagation?.(); onSubmit();
   });
   body.append(search);
-  if (editable) body.append(el(doc, "p", "quiet tools-hint", "Tick a tool to give it to the agent."));
+  if (editable) body.append(el(doc, "p", "quiet tools-hint", "Tick a tool to give it to the agent. Disabled tools stay in the agent but don't run in tests."));
   body.append(list, more);
   draw();
 

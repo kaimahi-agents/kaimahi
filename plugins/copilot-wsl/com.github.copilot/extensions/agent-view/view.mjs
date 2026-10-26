@@ -28,6 +28,8 @@ const MESSAGES = {
   "read-only": "This file is available for inspection only. Editing and testing require a complete canonical charter.",
   busy: "Another canvas action is still running.",
   stale_revision: "Changed elsewhere. Your draft is still here; reload before saving or testing.",
+  stale_settings_revision: "Tool settings changed elsewhere. Your draft is still here; compare the new settings before saving.",
+  "settings-failed": "The tool settings could not be saved. Your draft is still here; tests did not run.",
   revision_mismatch: "The file changed during testing. These results do not test your draft; reload to continue.",
   permission_required: "Copilot did not permit this action. No permission settings were changed.",
   "action-failed": "The action couldn't be confirmed. Reload the saved file before trying again.",
@@ -285,7 +287,7 @@ export function createActionHandler({ session, path }) {
   path = normalizePath(path);
   let busy = false, uncertain = false, current, disposed = false;
   const allowed = {
-    "save-and-test": ["expectedRevision", "sections", "examples", "tools", "showContent", "caseId", "model", "runId"],
+    "save-and-test": ["expectedRevision", "sections", "examples", "tools", "toolSettings", "expectedSettingsRevision", "showContent", "caseId", "model", "runId"],
     "save-examples": ["expectedRevision", "examples"],
     "save-prompt": ["expectedRevision", "sections"],
     test: ["expectedRevision", "showContent", "caseId", "model", "runId"], run: ["expectedRevision", "input", "showContent", "model"],
@@ -372,6 +374,9 @@ export function createActionHandler({ session, path }) {
       uncertain = true; throw unconfirmed();
     }
     if (result?.resultType === "timeout") { uncertain = true; throw new ViewError("outcome-unknown"); }
+    // A canonical setter refusal/unknown is an SDK error WITH an acknowledgement.
+    // Do not flatten its changed/mayHaveWritten fields into a generic failure.
+    if (operation === "set_tool_state") return result;
     if (result?.resultType !== "success") {
       const detail = typeof result === "string" ? result : [result?.textResultForLlm, result?.error].filter((s) => typeof s === "string").join("\n");
       const code = ["rejected", "denied"].includes(result?.resultType) ? "permission_required"
@@ -383,6 +388,35 @@ export function createActionHandler({ session, path }) {
       throw error;
     }
     return result;
+  }
+  const sameSettings = (a, b) => a.length === b.length && a.every(s => b.find(t => t.name === s.name)?.state === s.state);
+  function settingsUnknown() {
+    uncertain = true;
+    throw new ViewError("outcome-unknown", "The tool settings outcome could not be confirmed. Tests did not run. Do not retry; reload to inspect the saved agent and settings.");
+  }
+  function settingsReceipt(result, view, change) {
+    if (["rejected", "denied"].includes(result?.resultType)) throw new ViewError("permission_required");
+    let r = result?.structuredContent;
+    if (r === undefined && typeof result?.textResultForLlm === "string" && Buffer.byteLength(result.textResultForLlm) <= 16384) {
+      try { r = JSON.parse(result.textResultForLlm); } catch { settingsUnknown(); }
+    }
+    if (!isObj(r) || r.schemaVersion !== 1 || r.operation !== "set_tool_state") settingsUnknown();
+    if (r.file !== undefined && (!isObj(r.file) || r.file.path !== path || !/^sha256:[a-f0-9]{64}$/.test(r.file.revision))) settingsUnknown();
+    if (["refused", "failed"].includes(r.state) && r.changed === false && r.mayHaveWritten === false
+      && !Object.hasOwn(r, "toolSettingsRevision") && !Object.hasOwn(r, "toolSettings") && typeof r.reasonCode === "string") {
+      throw new ViewError(["stale_revision", "stale_settings_revision", "invalid_tool_settings"].includes(r.reasonCode) ? r.reasonCode : "settings-failed");
+    }
+    // Unknown (including a lost/malformed receipt) grants no settings token or
+    // retry authority. The checked-agent file identity is not settings evidence.
+    if (r.state !== "complete" || result.resultType !== "success" || r.file?.revision !== view.file.revision
+      || typeof r.changed !== "boolean" || r.mayHaveWritten !== r.changed
+      || typeof r.toolSettingsRevision !== "string" || !/^(?:absent|sha256:[a-f0-9]{64})$/.test(r.toolSettingsRevision)
+      || (r.toolSettingsRevision === view.toolSettingsRevision) !== !r.changed) settingsUnknown();
+    let states;
+    try { states = cleanSettings(r.toolSettings); } catch { settingsUnknown(); }
+    const expected = view.toolSettings.map(s => s.name === change.name ? change : s);
+    if (!sameSettings(states, expected)) settingsUnknown();
+    return { changed: r.changed, token: r.toolSettingsRevision, states };
   }
   const act = async (input) => {
     if (!isObj(input) || !Object.hasOwn(allowed, input.operation) || Object.keys(input).some((k) => k !== "operation" && !allowed[input.operation].includes(k))) return { error: "invalid-action", message: MESSAGES["invalid-action"] };
@@ -409,6 +443,7 @@ export function createActionHandler({ session, path }) {
     busy = true;
     current = undefined; // Never replay the previous invocation's snapshot.
     let saved = false, tested = false, targetRevision, ids, operation, model;
+    let settingsIncomplete = Array.isArray(input.toolSettings) && input.toolSettings.length > 0;
     const lease = ["run", "test", "save-and-test"].includes(input.operation) ? beginPreview(session) : undefined;
     try {
       if (disposed) throw new ViewError("unavailable");
@@ -439,6 +474,22 @@ export function createActionHandler({ session, path }) {
         if (input.tools !== undefined) content = replaceTools(content, input.tools);
         instructionSections(content);
       } catch { throw new ViewError("invalid-action"); }
+      let changes = [];
+      try { if (input.toolSettings !== undefined) changes = cleanSettings(input.toolSettings); }
+      catch { throw new ViewError("invalid-action"); }
+      if (changes.some(s => !(input.tools ?? view.tools).includes(s.name))
+        || input.expectedSettingsRevision !== undefined && (typeof input.expectedSettingsRevision !== "string" || !/^(?:absent|sha256:[a-f0-9]{64})$/.test(input.expectedSettingsRevision))) throw new ViewError("invalid-action");
+      const originalToken = view.toolSettingsRevision;
+      if (changes.length) {
+        // Availability is checked BEFORE Edit, including zero-tool legacy views.
+        const metadata = await session.rpc.tools.getCurrentMetadata();
+        if (metadata.tools?.filter(t => t.mcpServerName === SERVER_NAME && t.mcpToolName === "set_tool_state").length !== 1) throw new ViewError("unavailable");
+        if (view.tools.length) {
+          if (originalToken === undefined) throw new ViewError("unavailable");
+          if (input.expectedSettingsRevision === undefined) throw new ViewError("invalid-action");
+          if (input.expectedSettingsRevision !== originalToken) throw new ViewError("stale_settings_revision");
+        } else if (input.expectedSettingsRevision !== undefined) throw new ViewError("invalid-action");
+      }
       ids = examples.map((e) => e.id);
       // A selected case must exist once in the intended examples before any write.
       if (input.caseId !== undefined && (typeof input.caseId !== "string" || ids.filter((id) => id === input.caseId).length !== 1)) throw new ViewError("invalid-action");
@@ -446,6 +497,8 @@ export function createActionHandler({ session, path }) {
         if (Buffer.byteLength(content, "utf8") > 256 * 1024) throw new ViewError("too-large");
         if (content !== view.authoring.source) {
           await invoke("edit", { expectedRevision: input.expectedRevision, content });
+          // A later settings read/write failure must retain this acknowledged Edit.
+          if (changes.length) saved = true;
           targetRevision = `sha256:${createHash("sha256").update(content).digest("hex")}`;
           try { view = await readView(session, path); }
           catch { uncertain = true; throw new ViewError("outcome-unknown"); }
@@ -454,6 +507,18 @@ export function createActionHandler({ session, path }) {
         }
         if (["save-examples", "save-prompt"].includes(input.operation)) return { view, saved };
       }
+      if (changes.length && originalToken !== undefined && view.toolSettingsRevision !== originalToken) throw new ViewError("stale_settings_revision");
+      for (const change of changes) {
+        if (view.toolSettingsRevision === undefined) throw new ViewError("unavailable");
+        const result = await invoke("set_tool_state", { expectedRevision: targetRevision, expectedSettingsRevision: view.toolSettingsRevision, ...change });
+        const receipt = settingsReceipt(result, view, change);
+        saved ||= receipt.changed;
+        let next;
+        try { next = await readView(session, path); } catch { settingsUnknown(); }
+        if (next.file.revision !== targetRevision || next.toolSettingsRevision !== receipt.token || !sameSettings(next.toolSettings, receipt.states)) settingsUnknown();
+        view = next;
+      }
+      settingsIncomplete = false;
       operation = input.operation === "run" ? "run" : "test";
       if (operation === "run" && (typeof input.input !== "string" || Buffer.byteLength(input.input, "utf8") > 16384)) throw new ViewError("invalid-action");
       // Test/Run have no revision parameter. Check the actual result afterward,
@@ -477,9 +542,9 @@ export function createActionHandler({ session, path }) {
       return { view, saved, ...(snapshot() ? { run: snapshot() } : {}) };
     } catch (e) {
       const err = safeError(e);
-      const response = { error: err.code, message: err.message, saved, ...(err.approvalTimeout ? { approvalTimeout: true } : {}) };
+      const response = { error: err.code, message: err.message, saved, ...(settingsIncomplete ? { settingsIncomplete: true } : {}), ...(err.approvalTimeout ? { approvalTimeout: true } : {}) };
       const failedPreview = tested && err.code === "action-failed";
-      if ((saved || failedPreview) && err.code !== "revision_mismatch" && err.code !== "outcome-unknown") {
+      if (!settingsIncomplete && (saved || failedPreview) && err.code !== "revision_mismatch" && err.code !== "outcome-unknown") {
         try {
           const view = await readView(session, path);
           // Project the invocation payload through the same bounded parser as

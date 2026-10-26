@@ -294,7 +294,7 @@ export function validateDraft(draft, intended) {
   if (raw.assertions.some(a => !checkComplete(a))) return { check: true };
 }
 
-export function compareDrafts(base, candidate, snap, sectionDrafts, testDrafts, toolsDraft) {
+export function compareDrafts(base, candidate, snap, sectionDrafts, testDrafts, toolsDraft, settingsDraft = new Map()) {
   const sectionText = (key) => sectionDrafts.get(key) ?? snap.sections.find((s) => s.key === key).text;
   const rawExamples = () => snap ? base.authoring.examples : [];
   const items = [], next = readSnapshot(candidate);
@@ -312,6 +312,12 @@ export function compareDrafts(base, candidate, snap, sectionDrafts, testDrafts, 
     if (!same(b, m) || !same(b, t)) items.push([`Test ${quoted(draft?.origin === null ? draft.name : id)}`, show(b), show(m), show(t)]);
   }
   if (toolsDraft !== undefined || !same(base.tools ?? [], candidate.tools ?? [])) items.push(["Tools", show(base.tools ?? []), show(toolsDraft ?? base.tools ?? []), show(candidate.tools ?? [])]);
+  const value = (view, name) => view.toolSettings?.find(s => s.name === name)?.state ?? "Enabled";
+  if (settingsDraft.size || (base.tools ?? []).some(name => candidate.tools?.includes(name) && value(base, name) !== value(candidate, name))) {
+    const mine = (toolsDraft ?? base.tools ?? []).map(name => ({ name, state: settingsDraft.get(name) ?? value(base, name) }));
+    items.push(["Tool settings", show(base.toolSettings), show(mine), show(candidate.toolSettings)]);
+    if (base.toolSettingsRevision !== candidate.toolSettingsRevision) items.push(["Tool settings revision", base.toolSettingsRevision, base.toolSettingsRevision, candidate.toolSettingsRevision]);
+  }
   if (candidate.model !== base.model) items.push(["Model", base.model, base.model, candidate.model]);
   if (candidate.title !== base.title) items.push(["Title", base.title, base.title, candidate.title]);
   return items;

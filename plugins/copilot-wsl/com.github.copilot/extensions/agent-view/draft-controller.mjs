@@ -3,11 +3,21 @@ import { uniqueIndex, isRefused, clone, same, friendlyName, checkIssue } from ".
 
 export function createDraftController(state, { clearUndo, navigate, render, refresh }) {
   const { sectionDrafts, testDrafts, invalidEditors, history, editingChecks, displayNames, modelChoice } = state;
-  const hasDrafts = () => state.toolsDraft !== undefined || sectionDrafts.size > 0 || testDrafts.size > 0 || invalidEditors.size > 0;
+  state.settingsDraft ??= new Map();
+  const hasDrafts = () => state.toolsDraft !== undefined || state.settingsDraft.size > 0 || sectionDrafts.size > 0 || testDrafts.size > 0 || invalidEditors.size > 0;
   const toolNames = () => state.toolsDraft ?? state.base.tools ?? [];
   function noteTools(names) {
     clearUndo();
     state.toolsDraft = same([...names].sort(), [...(state.base.tools ?? [])].sort()) ? undefined : [...names];
+    pruneSettings();
+  }
+  const toolState = name => state.settingsDraft.get(name) ?? state.base.toolSettings?.find(s => s.name === name)?.state ?? "Enabled";
+  function pruneSettings() {
+    for (const [name, value] of state.settingsDraft) if (!toolNames().includes(name)
+      || (state.base.tools ?? []).includes(name) && value === state.base.toolSettings?.find(s => s.name === name)?.state) state.settingsDraft.delete(name);
+  }
+  function noteSetting(name, value) {
+    clearUndo(); state.settingsDraft.set(name, value); pruneSettings();
   }
   const rawExamples = () => state.snap ? state.base.authoring.examples : [];
   const sectionText = (key) => sectionDrafts.get(key) ?? state.snap.sections.find((s) => s.key === key).text;
@@ -39,7 +49,8 @@ export function createDraftController(state, { clearUndo, navigate, render, refr
     if (draft.origin && origin && same(origin, draft.raw)) testDrafts.delete(key); else testDrafts.set(key, draft);
   }
   function pruneDrafts() {
-    if (!state.snap) { sectionDrafts.clear(); testDrafts.clear(); state.toolsDraft = undefined; return; }
+    if (!state.snap) { sectionDrafts.clear(); testDrafts.clear(); state.toolsDraft = undefined; state.settingsDraft.clear(); return; }
+    pruneSettings();
     if (state.toolsDraft !== undefined && same([...state.toolsDraft].sort(), [...(state.base.tools ?? [])].sort())) state.toolsDraft = undefined;
     for (const [key, text] of sectionDrafts) if (state.snap.sections.find((s) => s.key === key)?.text === text) sectionDrafts.delete(key);
     const raws = uniqueIndex(rawExamples(), (e) => e.id);
@@ -69,6 +80,7 @@ export function createDraftController(state, { clearUndo, navigate, render, refr
     history.remember(view); editingChecks.clear();
     state.base = modelChoice.view(view); state.snap = readSnapshot(state.base); state.candidate = undefined; state.compareOpen = false;
     if (submitted.tools) state.toolsDraft = undefined;
+    if (submitted.settings) state.settingsDraft.clear();
     for (const key of submitted.sections) sectionDrafts.delete(key);
     for (const key of submitted.tests) testDrafts.delete(key);
     if (renamed) state.route = { name: "detail", key: `id:${renamed}` };
@@ -84,5 +96,5 @@ export function createDraftController(state, { clearUndo, navigate, render, refr
     navigate({ name: "detail", key }); state.focusTestName = true; render();
   }
 
-  return { hasDrafts, toolNames, noteTools, rawExamples, sectionText, entries, localExamples, draftName, checkProblem, noteDraft, pruneDrafts, adopt, addTest };
+  return { hasDrafts, toolNames, toolState, noteTools, noteSetting, rawExamples, sectionText, entries, localExamples, draftName, checkProblem, noteDraft, pruneDrafts, adopt, addTest };
 }
