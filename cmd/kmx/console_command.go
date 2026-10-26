@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/spf13/cobra"
 )
@@ -15,6 +18,14 @@ func newConsoleCommand(state *commandState) *cobra.Command {
 	cmd.Flags().StringVar(&opt.RemoteContext, "remote-context", "", "remote context (default: last TUI selection, last deploy target, configured context, or first remote)")
 	cmd.Flags().StringVar(&opt.Namespace, "namespace", app.OrkaNamespace, "Orka namespace to display")
 	cmd.Flags().BoolVar(&opt.Demo, "demo", false, "use sample agents; no cluster or cloud operations")
+	cmd.Flags().StringVar(&opt.EnforcementFile, "enforcement-file", "", "complete enforcement requirement JSON, frozen for every native chat Task in this console session")
+	cmd.MarkFlagsMutuallyExclusive("demo", "enforcement-file")
+	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error {
+		if cmd.Flags().Changed("enforcement-file") && strings.TrimSpace(opt.EnforcementFile) == "" {
+			return fmt.Errorf("--enforcement-file requires a nonempty path")
+		}
+		return nil
+	}
 	_ = cmd.RegisterFlagCompletionFunc("local-context", completeContexts)
 	_ = cmd.RegisterFlagCompletionFunc("remote-context", completeContexts)
 	cmd.RunE = appRun(state, func(a *app.App) error { return a.AgentTUI(opt) })

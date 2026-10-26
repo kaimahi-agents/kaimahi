@@ -59,6 +59,9 @@ func newAgentEvaluationCommand(state *commandState, verb string) *cobra.Command 
 			"  kmx test --workspace ./workspace --to-context remote --to-namespace orka-system --inference provider:inference --out ../private/passing.json",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if verb == "test" && len(args) == 1 {
+				if cmd.Flags().Changed("orka-chart") || cmd.Flags().Changed("orka-chart-sha256") {
+					return fileUsageError(fmt.Errorf("file previews refuse local Orka chart selection"))
+				}
 				file.Output = output
 				if cmd.Flags().Changed("show-content") {
 					return fileUsageError(fmt.Errorf("--show-content is not supported with FILE; content is shown by default, use --no-content to omit it"))
@@ -87,13 +90,13 @@ func newAgentEvaluationCommand(state *commandState, verb string) *cobra.Command 
 				return fmt.Errorf("--context cannot be used with native eval; use --to-context")
 			}
 			if native.DevelopmentHost != "" {
-				for _, name := range []string{"to", "to-context", "to-namespace", "inference", "result-port", "container-engine"} {
+				for _, name := range []string{"to", "to-context", "to-namespace", "inference", "result-port", "container-engine", "orka-chart", "orka-chart-sha256"} {
 					if cmd.Flag(name).Changed {
 						return fmt.Errorf("--development-host refuses --%s", name)
 					}
 				}
 			}
-			for _, name := range []string{"to", "workspace", "to-context", "to-namespace", "inference", "bindings", "development-host", "out", "result-port", "judge-base-url", "judge-key-env"} {
+			for _, name := range []string{"to", "workspace", "to-context", "to-namespace", "inference", "bindings", "development-host", "out", "result-port", "judge-base-url", "judge-key-env", "orka-chart", "orka-chart-sha256"} {
 				if flag := cmd.Flag(name); flag.Changed && strings.TrimSpace(flag.Value.String()) == "" {
 					return fmt.Errorf("native eval requires non-empty --%s", name)
 				}
@@ -171,6 +174,10 @@ func newAgentEvaluationCommand(state *commandState, verb string) *cobra.Command 
 	group.Flags().StringVar(&native.ToContext, "to-context", "", "explicit native evaluation context")
 	group.Flags().StringVar(&native.ToNamespace, "to-namespace", app.OrkaNamespace, "native evaluation namespace")
 	group.Flags().StringVar(&native.Inference, "inference", "", "existing inference Provider, as provider:NAME")
+	group.Flags().StringVar(&native.OrkaChart, "orka-chart", "", "exact local chart of an already installed kmx-owned Orka candidate")
+	group.Flags().StringVar(&native.OrkaChartSHA256, "orka-chart-sha256", "", "exact SHA256 of --orka-chart (not publisher or enforcement attestation)")
+	group.MarkFlagsRequiredTogether("orka-chart", "orka-chart-sha256")
+	_ = group.MarkFlagFilename("orka-chart")
 	group.Flags().StringVar(&native.Bindings, "bindings", "", "author-owned KagentBindings (kagent) or AgentSessionsBinding (agentsessions) file")
 	_ = group.MarkFlagFilename("bindings")
 	group.Flags().StringVar(&native.DevelopmentHost, "development-host", "", "private JSON observation selecting a loopback unauthenticated AgentSessions development host")

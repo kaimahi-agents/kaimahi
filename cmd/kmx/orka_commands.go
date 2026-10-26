@@ -36,24 +36,32 @@ func newOrkaCommand(state *commandState) *cobra.Command {
 
 func newOrkaInstallCommand(state *commandState) *cobra.Command {
 	var opt app.OrkaOptions
+	var enforcement bool
 	cmd := &cobra.Command{
 		Use:   "install",
 		Short: "Install Orka " + app.OrkaVersion + " and a keyless Provider",
 		Args:  cobra.NoArgs,
 	}
-	// No --version. The digest below the flag is of ONE tag's bytes, so a
-	// version flag would either carry no verification or need a digest per
-	// version; the pin is the point, and moving it is an edit to this
-	// repository that someone reviews.
+	// No --version: ordinary installs retain the reviewed release pin.
+	// A local chart is a separate explicit exact-byte operator input.
 	cmd.Flags().StringVar(&opt.Provider, "provider", "",
 		"Orka Provider to create for the in-cluster model server ('-' for none; default: local)")
+	cmd.Flags().StringVar(&opt.Chart, "chart", "", "operator-supplied local Orka chart archive (requires --chart-sha256)")
+	cmd.Flags().StringVar(&opt.ChartSHA256, "chart-sha256", "", "exact SHA256 of --chart; no publisher attestation is implied")
+	cmd.MarkFlagsRequiredTogether("chart", "chart-sha256")
+	cmd.Flags().BoolVar(&enforcement, "enforcement", false, "explicit provider enrollment (requires a verified bundled chart; omission preserves an existing setting)")
 	cmd.Flags().StringVar(&opt.Model, "model", "", "default model that Provider resolves (default: qwen2.5:3b)")
 	cmd.Flags().StringVar(&opt.ModelURL, "model-url", "",
 		"OpenAI-compatible endpoint the Provider points at (default: the in-cluster Ollama)")
 	cmd.Flags().BoolVar(&opt.NoApply, "no-apply", false, "fetch and verify the installer, write nothing")
 	cmd.Flags().BoolVar(&opt.DryRun, "dry-run", false, "server-side validation only")
 	cmd.MarkFlagsMutuallyExclusive("no-apply", "dry-run")
-	cmd.RunE = appRun(state, func(a *app.App) error { return a.OrkaInstall(opt) })
+	cmd.RunE = appRun(state, func(a *app.App) error {
+		if cmd.Flags().Changed("enforcement") {
+			opt.Enforcement = &enforcement
+		}
+		return a.OrkaInstall(opt)
+	})
 	return cmd
 }
 

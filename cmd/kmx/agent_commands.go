@@ -208,12 +208,13 @@ func (r createPromptReader) Read(p []byte) (int, error) {
 
 func newAgentChatCommand(state *commandState) *cobra.Command {
 	var verbose bool
-	var runtime, namespace string
+	var runtime, namespace, enforcementFile string
 	usage := "kmx chat [--namespace <namespace>] <name> [message]"
 	cmd := &cobra.Command{Use: "chat <name> [message...]", Short: "Chat with an Orka Agent", Long: "Open an interactive chat session with an Orka Agent. An optional message is sent as the first turn; for a one-shot Task use kmx run.", Args: usageArgs(1, -1, usage)}
 	cmd.Flags().BoolVar(&verbose, "verbose", false, "show chat WORKING and TIMING details")
 	cmd.Flags().StringVar(&runtime, "runtime", "auto", "agent runtime: auto (detect the Orka Agent) or orka")
 	cmd.Flags().StringVar(&namespace, "namespace", "", "Orka Agent namespace (default: "+app.OrkaNamespace+")")
+	cmd.Flags().StringVar(&enforcementFile, "enforcement-file", "", "complete enforcement requirement JSON for every native Orka Task in this chat")
 	cmd.Flags().String("session", "", "retired server-side session flag")
 	cmd.Flags().Bool("json", false, "retired raw A2A task flag")
 	_ = cmd.Flags().MarkHidden("session")
@@ -221,6 +222,9 @@ func newAgentChatCommand(state *commandState) *cobra.Command {
 	_ = cmd.RegisterFlagCompletionFunc("runtime", staticCompletion([]string{"auto", "orka"}))
 	cmd.ValidArgsFunction = completeLiveAgents
 	cmd.Args = func(cmd *cobra.Command, args []string) error {
+		if cmd.Flags().Changed("enforcement-file") && strings.TrimSpace(enforcementFile) == "" {
+			return fmt.Errorf("--enforcement-file must name a requirement JSON file")
+		}
 		if cmd.Flags().Changed("session") {
 			return fmt.Errorf("--session is retired: Orka chat has no resumable server-side session; use kmx chat --namespace <ns> <name>")
 		}
@@ -231,7 +235,7 @@ func newAgentChatCommand(state *commandState) *cobra.Command {
 	}
 	cmd.RunE = appRun(state, func(a *app.App) error {
 		args := cmd.Flags().Args()
-		return a.ChatWithOptions(app.ChatOptions{Agent: args[0], Task: joinArgs(args[1:]), Verbose: verbose, Runtime: runtime, Namespace: namespace})
+		return a.ChatWithOptions(app.ChatOptions{Agent: args[0], Task: joinArgs(args[1:]), Verbose: verbose, Runtime: runtime, Namespace: namespace, EnforcementFile: enforcementFile})
 	})
 	return cmd
 }

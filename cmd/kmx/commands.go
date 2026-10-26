@@ -91,6 +91,8 @@ not run for an existing Agent. The first Task uses the Agent's deployed Provider
 	// create authors native workspace source offline. Asking a live Orka Agent
 	// anything is `kmx chat`.
 	flags.StringVar(&opt.Task, "task", config.DefaultTask, "fixed-mode question; with --interactive, optional first Orka Task for a new Agent only (fixed default ignored)")
+	addOrkaSetupFlags(cmd, &opt.Orka)
+	flags.StringVar(&opt.EnforcementFile, "enforcement-file", "", "complete requirement for first-answer and guided chat Tasks, not suite evaluation")
 	flags.StringVar(&wizard.Create.Instructions, "instructions", "", "file containing the system message (--interactive only)")
 	flags.StringVar(&wizard.Create.Tools, "tools", "", "retired quickstart tool shortcut; use tool-free native chat until suite ToolProvider support")
 	flags.StringVar(&wizard.Create.Skills, "skills", "", "unsupported guided skill shortcut; use the authored suite lifecycle")
@@ -104,12 +106,21 @@ not run for an existing Agent. The first Task uses the Agent's deployed Provider
 		if err := cobra.NoArgs(cmd, args); err != nil {
 			return err
 		}
+		if err := validateOrkaSetupFlags(cmd, opt.Orka); err != nil {
+			return err
+		}
+		if cmd.Flags().Changed("enforcement-file") && strings.TrimSpace(opt.EnforcementFile) == "" {
+			return fmt.Errorf("--enforcement-file must name a requirement JSON file")
+		}
 		return quickstartModeFlags(cmd, interactive)
 	}
 	cmd.RunE = appRun(state, func(a *app.App) error {
+		selected := opt
+		selected.Orka = selectedOrkaSetup(cmd, opt.Orka)
 		if !interactive {
-			return a.Quickstart(opt)
+			return a.Quickstart(selected)
 		}
+		wizard.Orka, wizard.EnforcementFile = selected.Orka, selected.EnforcementFile
 		// The fixed question is the non-interactive default; the guided
 		// setup runs a first Task only when one was asked for.
 		if cmd.Flags().Changed("task") {
@@ -144,10 +155,25 @@ func quickstartModeFlags(cmd *cobra.Command, interactive bool) error {
 
 func newUpCommand(state *commandState) *cobra.Command {
 	var step string
+	var opt app.OrkaSetupOptions
 	cmd := &cobra.Command{Use: "up", Short: "Bring up the local runtime", Args: cobra.NoArgs}
 	cmd.Flags().StringVar(&step, "step", "", "run one step only: "+strings.Join(app.UpSteps, ", "))
+	addOrkaSetupFlags(cmd, &opt)
 	_ = cmd.RegisterFlagCompletionFunc("step", staticCompletion(app.UpSteps))
-	cmd.RunE = appRun(state, func(a *app.App) error { return a.Up(step) })
+	cmd.Args = func(cmd *cobra.Command, args []string) error {
+		if err := cobra.NoArgs(cmd, args); err != nil {
+			return err
+		}
+		if err := validateOrkaSetupFlags(cmd, opt); err != nil {
+			return err
+		}
+		if step != "" && step != "orka" &&
+			(cmd.Flags().Changed("orka-chart") || cmd.Flags().Changed("orka-chart-sha256") || cmd.Flags().Changed("enforcement")) {
+			return fmt.Errorf("Orka setup flags require local up or local up --step orka")
+		}
+		return nil
+	}
+	cmd.RunE = appRun(state, func(a *app.App) error { return a.UpWithOptions(step, selectedOrkaSetup(cmd, opt)) })
 	return cmd
 }
 

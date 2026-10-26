@@ -77,7 +77,7 @@ func newReleaseCommand(state *commandState, verb string) *cobra.Command {
 			if state.contextFlag != "" || cmd.Flags().Changed("context") {
 				return fmt.Errorf("--context cannot be used with suite %s; use --to-context", verb)
 			}
-			for _, name := range []string{"to", "to-context", "to-namespace", "inference", "bindings", "evidence", "from-layout", "output", "result-port", "judge-base-url", "judge-key-env", "name"} {
+			for _, name := range []string{"to", "to-context", "to-namespace", "inference", "bindings", "evidence", "from-layout", "output", "result-port", "judge-base-url", "judge-key-env", "name", "orka-chart", "orka-chart-sha256"} {
 				if f := cmd.Flag(name); f.Changed && strings.TrimSpace(f.Value.String()) == "" {
 					return fmt.Errorf("%s requires non-empty --%s", verb, name)
 				}
@@ -86,6 +86,9 @@ func newReleaseCommand(state *commandState, verb string) *cobra.Command {
 				return fmt.Errorf("%s output must be text or json", verb)
 			}
 			if len(args) == 0 {
+				if cmd.Flags().Changed("orka-chart") || cmd.Flags().Changed("orka-chart-sha256") {
+					return fmt.Errorf("local Orka chart selection requires explicit digest Deploy")
+				}
 				for _, name := range []string{"evidence", "from-layout", "bindings", "harness-image", "name"} {
 					if cmd.Flags().Changed(name) {
 						return fmt.Errorf("workspace %s refuses --%s; use explicit digest %s", verb, name, label)
@@ -264,6 +267,10 @@ func newReleaseCommand(state *commandState, verb string) *cobra.Command {
 	cmd.Flags().StringVar(&opt.ToContext, "to-context", "", "explicit destination kubeconfig context")
 	cmd.Flags().StringVar(&opt.ToNamespace, "to-namespace", app.OrkaNamespace, "destination namespace")
 	cmd.Flags().StringVar(&opt.Inference, "inference", "", "existing Ready inference Provider, as provider:NAME")
+	cmd.Flags().StringVar(&opt.OrkaChart, "orka-chart", "", "exact local chart of the already installed kmx-owned Orka candidate")
+	cmd.Flags().StringVar(&opt.OrkaChartSHA256, "orka-chart-sha256", "", "exact SHA256 of --orka-chart; must match evaluated runtime proof")
+	cmd.MarkFlagsRequiredTogether("orka-chart", "orka-chart-sha256")
+	_ = cmd.MarkFlagFilename("orka-chart")
 	cmd.Flags().StringVar(&opt.Bindings, "bindings", "", "author-owned KagentBindings (kagent) or AgentSessionsBinding (agentsessions, with --harness-image) file")
 	cmd.Flags().StringVar(&opt.AgentName, "name", "", "AgentSessions Agent resource name (default: packaged member); changed inputs require a new name")
 	_ = cmd.RegisterFlagCompletionFunc("name", staticCompletion(nil))
