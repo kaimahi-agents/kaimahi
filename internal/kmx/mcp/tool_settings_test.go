@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
@@ -181,6 +182,7 @@ func TestSetToolStateRechecksSourceConfigAndUnboundParent(t *testing.T) {
 			}
 			defer files.Close()
 			in := ToolStateInput{SchemaVersion: 1, Path: filepath.Join(root, saved.Path), ExpectedRevision: saved.Revision, ExpectedSettingsRevision: "absent", Name: "ping", State: localtools.Disabled}
+			parentPinned := false
 			ctx := &settingsRecheckContext{Context: t.Context(), staged: func() bool {
 				matches, _ := filepath.Glob(filepath.Join(root, ".kmx-mcp-*.tmp"))
 				return len(matches) > 0
@@ -196,6 +198,13 @@ func TestSetToolStateRechecksSourceConfigAndUnboundParent(t *testing.T) {
 					}
 				case "parent":
 					if err := os.Rename(root, root+"-moved"); err != nil {
+						// Windows OpenRoot uses a handle without FILE_SHARE_DELETE.
+						// Assert that protection instead of requiring an impossible swap.
+						const sharingViolation = syscall.Errno(32)
+						if runtime.GOOS == "windows" && errors.Is(err, sharingViolation) {
+							parentPinned = true
+							return
+						}
 						t.Fatal(err)
 					}
 					t.Cleanup(func() { _ = os.Rename(root+"-moved", root) })
@@ -206,6 +215,15 @@ func TestSetToolStateRechecksSourceConfigAndUnboundParent(t *testing.T) {
 				}
 			}}
 			out := files.SetToolState(ctx, in)
+			if parentPinned {
+				if !ctx.once.Load() || out.State != "complete" || out.Changed == nil || !*out.Changed {
+					t.Fatalf("pinned parent blocked valid write: %+v", out)
+				}
+				if _, err := os.Stat(root + "-moved"); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("blocked parent moved: %v", err)
+				}
+				return
+			}
 			want := "stale_revision"
 			if change == "config" {
 				want = "stale_settings_revision"
