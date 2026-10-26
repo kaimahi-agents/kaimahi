@@ -270,7 +270,11 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 - Follow the Copilot app walkthrough to create and test agent files, try another model and run the same file tests in CI.
 
+- File Run/Test reads each tool's Enabled/Disabled setting from `kmx.yaml` beside the agent file, defaulting to Enabled; the canvas shows these settings read-only and results retain the settings used. Disabled answers never execute or count as live calls; enabled tools keep their existing permissions and call, size, journal and replay limits.
+
 - The canvas shows tool servers and counts between Prompt and Tests, with Add tools opening the app's server catalog. Tool selections stay as drafts until Enter saves and tests; Escape or discard cancels tool edits without dropping prompt or test drafts.
+
+- Native `/kmx-canvas open PATH` opens or focuses an agent canvas without a model turn, or shows its text view when no renderer is available. It requires host extension support; `/kmx-canvas help` shows usage, and the distinct name avoids the model-backed `/kmx` skill alias.
 
 - Deploy evaluated AgentSessions packages by digest as immutable Agents; new creates wait for registration, and the separate offline `--harness-image --plan` render remains available. Exact acknowledged deployments are read-only no-ops; use `--name` for changed inputs, and treat Registered as controller-observed admission rather than live availability or target evaluation.
 
