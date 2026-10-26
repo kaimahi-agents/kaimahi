@@ -69,7 +69,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     if (disposed) return;
     state.busy = false; state.pending = undefined; state.message = "";
     const latest = response?.view?.latest;
-    if (response?.capture) { state.history.noteCapture(response.capture); state.lastCapture = response.capture; }
+    if (response?.capture) { state.history.noteCapture(response.capture, response.capture.savedRevision && matches(response.view) ? response.view : undefined); state.lastCapture = response.capture; }
     for (const result of response?.comparison?.results ?? []) if (matches(result)) state.history.remember(result, true);
     if (hostedAttempt && !response?.settingsIncomplete && (UNKNOWN.includes(response?.error) || CONFLICTS.includes(response?.error) || latest?.status === "current" && latest.result && !isRefused(latest.result))) state.hostedSent = true;
     if (executing && !response?.settingsIncomplete && matches(response?.view) && !response.stopped) {
@@ -117,7 +117,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     } else if (matches(response?.view)) {
       adopt(response.view, submitted);
       if (tested) state.lastRun = { one: values.caseId };
-      if (response.capture?.savedRevision) state.message = "Recordings saved. The capture ran before that saved revision; comparison runs will replay them.";
+      if (response.capture?.savedRevision) state.message = "Recording saved. Later runs replay it.";
     } else {
       state.blocked = true; state.message = "Outcome not confirmed. Do not resubmit. Reload deliberately to inspect the saved file.";
     }

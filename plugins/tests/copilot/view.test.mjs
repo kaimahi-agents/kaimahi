@@ -4320,3 +4320,26 @@ test("tool settings: route-less pre-execution refusals are not made stale by Dis
     h.app.dispose();
   }
 });
+
+test("after a capture the test shows that run's result and says the recording was saved", async () => {
+  const original = replaceTools(await readFile(new URL("../../../internal/kmx/agentfile/testdata/greeter.agent.md", import.meta.url), "utf8"), ["ping"]);
+  const examples = calls => [{ id: "greeting", input: "Ada", assertions: [{ id: "greeting-text", type: "contains", value: "Hello, Ada" }],
+    mocks: { tools: [{ name: "ping", mode: "recorded", ...(calls.length ? { description: "Ping", parameters: { type: "object" } } : {}), calls }] } }];
+  const extra = source => ({ tools: ["ping"], toolSettings: ENABLED("ping"), authoring: { source, editable: true, recordingControls: true } });
+  const view = await viewFor(original, examples([]), { status: "none" }, "fake", extra(original));
+  const ran = await viewFor(original, examples([]), bLatest({ greeting: "pass" }), "fake", extra(original));
+  const savedSource = original + "\n", saved = await viewFor(savedSource, examples([{ arguments: {}, result: { ok: true } }]), { status: "stale" }, "fake", extra(savedSource));
+  const capture = { ...ran.latest.result, executedRevision: view.file.revision, savedRevision: saved.file.revision, model: "fake" };
+  const doc = fakeDoc(), root = doc.createElement("main");
+  const app = renderView(doc, root, view, async () => ({ view: saved, saved: true, capture }), {});
+  openTest(root, "greeting");
+  enterOn(byClass(root, "example-input")[0]);
+  for (let i = 0; i < 6; i++) await Promise.resolve();
+  assert.equal(byClass(root, "detail-status")[0].textContent, "Passed · recording run on fake");
+  assert.deepEqual(checkLabels(byClass(root, "checks-section")[0]), ["Passed last run"]);
+  assert.match(root.textContent, /Recording saved\. Later runs replay it\./);
+  assert.doesNotMatch(root.textContent, /Not run yet|capture ran before/);
+  goBack(root);
+  assert.deepEqual(rowLabels(root), ["Passed last run"]);
+  app.dispose?.();
+});

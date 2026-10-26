@@ -579,7 +579,8 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       if (caseInfo.label === "Not in this run") return "Not in the last run";
       if (!["pass", "fail"].includes(caseInfo.state)) return caseInfo.row ? caseInfo.label : state.base.latest.status === "stale" && !history.last ? "Out of date" : "Not run yet";
       const model = modelLabel(caseInfo.previous ? caseInfo.previousModel : state.base.latest.result?.modelRoute);
-      const when = local() ? caseInfo.previous ? "Out of date · last run" : "before your edit" : state.lastRun && !state.runAlert ? "just now" : "last run";
+      const when = caseInfo.capturedRevision === state.base.file.revision && !hasDrafts() && !testing() ? "recording run"
+        : local() ? caseInfo.previous ? "Out of date · last run" : "before your edit" : state.lastRun && !state.runAlert ? "just now" : "last run";
       return `${caseInfo.state === "pass" ? "Passed" : "Failed"} · ${when}${model ? ` on ${model}` : ""}`;
     }
     top.append(bar, nameLine, ...(nameHint ? [nameHint] : []), resultLine);
@@ -604,7 +605,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     if (state.base.authoring?.recordingControls && editableTest && state.base.tools.length) {
       const raw = current()?.mocks ? current() : entry.raw;
       const observed = c?.row?.tools ?? state.lastCapture?.examples?.find(e => e.id === raw.id)?.tools ?? [];
-      out.push(renderTestTools(doc, { names: state.base.tools, raw, tools: observed.map(t => ({...t,settingDisabled:state.base.toolSettings.find(s=>s.name===t.name)?.state === "Disabled"})), details: state.base.authoring.recordingDetails?.filter(d=>d.exampleId===raw.id), disabled:()=>state.busy||state.blocked||!!state.candidate, updates,
+      out.push(renderTestTools(doc, { names: state.base.tools, raw, tools: observed.map(t => ({...t,settingDisabled:state.base.toolSettings.find(s=>s.name===t.name)?.state === "Disabled"})), details: state.base.authoring.recordingDetails?.filter(d=>d.exampleId===raw.id), disabled:()=>state.busy||state.blocked||!!state.candidate, updates, keys: fieldKeys,
         onChange:(name,mode)=>{mutate(d=>{d.raw=setToolMode(withToolModes(d.raw,raw),name,mode)});render()}, onReset:name=>{mutate(d=>{d.raw=setToolMode(withToolModes(d.raw,raw),name,"recorded",true)});render()} }));
     }
 

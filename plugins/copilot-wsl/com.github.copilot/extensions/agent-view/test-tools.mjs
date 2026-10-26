@@ -39,7 +39,7 @@ export function toolUseText(tools = [], settings = []) {
   }).join(", ");
 }
 
-export function renderTestTools(doc, { names, raw, tools = [], settings = [], details = [], onChange, onReset, disabled = false, updates }) {
+export function renderTestTools(doc, { names, raw, tools = [], settings = [], details = [], onChange, onReset, disabled = false, updates, keys }) {
   const section = el(doc, "section", "detail-section test-tools");
   const isDisabled = typeof disabled === "function" ? disabled : () => disabled;
   section.append(el(doc, "h2", "lbl", "Tools"));
@@ -53,7 +53,9 @@ export function renderTestTools(doc, { names, raw, tools = [], settings = [], de
   for (const name of names) {
     const mode = toolMode(raw, name), label = modeLabel(mode), row = el(doc, "div", "check test-tool");
     const head = el(doc, "div", "tools-head");
-    head.append(el(doc, "code", "tool-name", name), button(label, `${name}: ${label}`, () => onChange(name, mode === "live" ? "recorded" : "live"), "tool-mode"));
+    const toggle = button(label, `${name}: ${label}`, () => onChange(name, mode === "live" ? "recorded" : "live"), "tool-mode");
+    keys?.(toggle); // Enter saves and runs, as in the test's fields; Space switches.
+    head.append(el(doc, "code", "tool-name", name), toggle);
     row.append(head);
     const observed = tools.find(t => t.name === name);
     if (observed) row.append(el(doc, "p", "meta tool-status", attemptedDisabled(observed)

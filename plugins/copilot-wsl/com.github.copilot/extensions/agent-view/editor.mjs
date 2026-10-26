@@ -232,7 +232,16 @@ export function resultHistory(initial) {
       return matches.length === 1 ? { ...view, latest: matches[0].latest } : undefined;
     },
     pair: () => [...models.values()],
-    noteCapture: receipt => { capturedModel = receipt.model; },
+    // A capture's results stay this run's results after its recordings are saved.
+    noteCapture: (receipt, saved) => {
+      capturedModel = receipt.model;
+      if (!saved) return;
+      const definitions = uniqueIndex(saved.authoring?.examples ?? [], e => e.id), route = receipt.modelRoute;
+      for (const c of inspectCases({ ...saved, latest: { status: "current", result: receipt } })) {
+        const definition = definitions.get(c.example.id);
+        if (definition && c.row) { const record = { definition, c: { ...c, capturedRevision: saved.file.revision }, model: route }; records.set(c.example.id, record); modelCases.set(`${route}\0${c.example.id}`, record); }
+      }
+    },
     comparisonModels(selected) { const candidates = [...models.values()].filter(v => v.latest.result.state === "complete").map(modelId).filter(id => id !== selected); const other = candidates.includes(preferred) ? preferred : candidates.at(-1) ?? (capturedModel !== selected ? capturedModel : undefined); return other ? [selected, other] : [selected]; },
     prefer: model => { preferred = model; },
     focus: model => { focused = model; },

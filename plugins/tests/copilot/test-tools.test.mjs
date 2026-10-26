@@ -210,3 +210,12 @@ test("mode change and reset keep later input and check edits with shown default 
   assert.equal(reset.input, "typed again"); assert.equal(reset.mocks.tools[1].mode, "recorded");
   assert.equal(shown.mocks.tools[1].mode, "live");
 });
+
+test("Enter on a Live/Recorded switch is handed to the test's save-and-run keys", () => {
+  const keyed = [];
+  const { root } = render({ keys: node => keyed.push(node) });
+  const modes = buttons(root).filter(b => b.className.includes("tool-mode"));
+  assert.equal(keyed.length, 4);
+  assert.deepEqual(keyed, modes);
+  assert.ok(buttons(root).filter(b => b.className.includes("tool-reset")).every(b => !keyed.includes(b)));
+});

@@ -191,6 +191,22 @@ test("a model whose last run didn't finish is not the next comparison partner", 
   assert.deepEqual(history.comparisonModels("haiku-old"), ["haiku-old", "terra"]);
 });
 
+test("a capture's result stays shown after its recording is saved", () => {
+  const before = historyView("terra"), history = resultHistory(before);
+  const receipt = { ...before.latest.result, model: "terra", savedRevision: "saved-revision" };
+  const saved = historyView("terra");
+  saved.file = { revision: "saved-revision" };
+  saved.authoring.examples[0].mocks = { tools: [{ name: "ping", mode: "recorded", calls: [{ arguments: {}, result: {} }] }] };
+  saved.latest = { status: "stale" };
+  history.noteCapture(receipt, saved);
+  history.remember(saved, true);
+  const [shown] = history.cases(saved, "terra");
+  assert.equal(shown.state, "pass");
+  assert.equal(shown.previous, true);
+  assert.equal(shown.previousModel, "copilot/terra");
+  assert.deepEqual([...shown.checks.values()].map(c => c.verdict), ["pass"]);
+});
+
 // Wrong offsets, stripping untouched whitespace, or reserializing YAML must fail.
 test("instructions extract only canonical bodies and preserve an unchanged save byte-for-byte", () => {
   assert.deepEqual(instructionSections(SOURCE), [
