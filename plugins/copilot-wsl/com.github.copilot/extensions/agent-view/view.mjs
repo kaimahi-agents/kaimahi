@@ -435,9 +435,11 @@ export function createActionHandler({ session, path }) {
     const settings = view.toolSettings.map(s => ({...s})), key = v => JSON.stringify([v.file.revision, ids, settings, input.showContent === true]);
     let published = false, capture;
     const run = async (model, replay) => {
+      // A comparison partner that doesn't finish is a confirmed result, not an unknown one.
+      const partner = comparing && model !== selected;
       let response;
       try { response = await invoke("test", { model, expectedRevision: view.file.revision, expectedToolSettings: settings, recordedReplayOnly: replay, ...(input.caseId !== undefined ? {caseId:input.caseId} : {}), showContent: input.showContent === true, showFailedContent:true }, { id:input.runId, revision:view.file.revision,model,examples:view.authoring.examples,caseIds:ids,totalCases:view.examples.length,toolSettings:settings }); }
-      catch (e) { if (e.code !== "action-failed" || e.preview?.state !== "complete") throw e; response = {structuredContent:e.preview}; }
+      catch (e) { if (e.code !== "action-failed" || e.preview?.state !== "complete" && !(partner && e.preview?.state === "error")) throw e; response = {structuredContent:e.preview}; }
       let raw = response.structuredContent;
       if (!raw && typeof response.textResultForLlm === "string" && Buffer.byteLength(response.textResultForLlm) <= MAX_RESOURCE_BYTES) { try {raw=JSON.parse(response.textResultForLlm);} catch {} }
       if (response.stopped) {
@@ -446,7 +448,7 @@ export function createActionHandler({ session, path }) {
       }
       if (raw?.file?.path !== path || raw.file.revision !== view.file.revision) throw new ViewError("outcome-unknown");
       const result = cleanResult(raw,"current",view.file.revision);
-      if (result.modelRoute.slice(result.modelRoute.indexOf("/")+1) !== model || result.state !== "complete" || !sameSettings(result.toolSettings ?? [],settings) || JSON.stringify(result.selection.caseIds) !== JSON.stringify(ids)) throw new ViewError("outcome-unknown");
+      if (result.modelRoute.slice(result.modelRoute.indexOf("/")+1) !== model || result.state !== (partner && raw.state === "error" ? "error" : "complete") || !sameSettings(result.toolSettings ?? [],settings) || JSON.stringify(result.selection.caseIds) !== JSON.stringify(ids)) throw new ViewError("outcome-unknown");
       if (replay && result.recordedReplayOnly !== true) throw new ViewError("outcome-unknown");
       const fresh = await readView(session,path), flags = result.examples.flatMap(e => e.tools ?? []).filter(t => t.recordingSaved);
       if (result.savedRevision) {
@@ -456,7 +458,7 @@ export function createActionHandler({ session, path }) {
       if (!sameSettings(fresh.toolSettings,settings)) throw new ViewError("tool_settings_changed");
       view = fresh;
       const row = { result, executedRevision: raw.file.revision, view: {...fresh,latest:{status:"current",badge:result.fullPass?"pass":"not-passing",result}} };
-      if (replay) { certified.set(key(fresh)+model,row); while(certified.size>2)certified.delete(certified.keys().next().value); }
+      if (replay && result.state === "complete") { certified.set(key(fresh)+model,row); while(certified.size>2)certified.delete(certified.keys().next().value); }
       return row;
     };
     if (!comparing) {

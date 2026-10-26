@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,6 +12,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/localpreview"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
@@ -80,5 +83,36 @@ func TestFileToolSummaryValidation(t *testing.T) {
 	}
 	if !validPreviewTools(agentpreview.Completion{}, agentfile.Example{}, []string{"ping"}) {
 		t.Fatal("legacy missing source rejected")
+	}
+}
+
+func TestFileToolReplyUnusableHasItsOwnReason(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct{ Messages []json.RawMessage }
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.Header().Set("Content-Type", "application/json")
+		if len(body.Messages) == 2 {
+			_, _ = w.Write([]byte(`{"model":"unit","choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","tool_calls":[{"id":"c","type":"function","function":{"name":"ping","arguments":"{}"}}]}}]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"model":"unit","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"done","audio":null}}]}`))
+	}))
+	defer server.Close()
+	opt := directOptions(t, "unit", false)
+	opt.Route = &modelaccess.Route{Provider: "compatible", Model: "unit", Endpoint: server.URL, Auth: "none"}
+	a, err := agentfile.Load(opt.File)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.Tools = []string{"ping"}
+	for i := range a.Examples {
+		a.Examples[i].Assertions = []runtime.EvaluationAssertion{{ID: "called", Type: "toolCalled", Tool: "ping"}}
+		a.Examples[i].Mocks = &agentfile.Mocks{Tools: []agentfile.MockTool{{Name: "ping", Mode: "recorded", Description: "Saved ping", Parameters: map[string]any{"type": "object"}, Calls: []agentfile.MockCall{{Arguments: map[string]any{}, Result: map[string]any{"ok": true}}}}}}
+	}
+	dir := filepath.Join(t.TempDir(), "journals")
+	runner := localpreview.NewRunner(localpreview.RunnerOptions{JournalDir: func() (string, error) { return dir, nil }})
+	r, err := (&App{FileRunner: runner}).PreviewAgentSnapshot(context.Background(), a, opt)
+	if err == nil || r.ReasonCode != "model_reply_unusable" || !strings.Contains(r.Reason, "cannot use") {
+		t.Fatalf("reason %+v / %v", r, err)
 	}
 }

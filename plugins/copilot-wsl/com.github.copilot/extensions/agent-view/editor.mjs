@@ -112,6 +112,7 @@ const PLAIN_REASONS = {
   copilot_quota: "Copilot's usage limit was reached.", copilot_model_unavailable: "Choose an available Copilot model.",
   copilot_malformed: "Copilot returned an answer that could not be used.", copilot_keychain_unavailable: "Copilot sign-in could not be read. Use an existing GitHub sign-in.",
   copilot_unavailable: "Copilot could not complete this run.",
+  model_reply_unusable: "This model replied in a form kmx cannot use, so the test did not finish. Try another model.",
 };
 export function plainReason(row) {
   if (row?.reasonCode === "copilot_model_unavailable" && row.reason?.startsWith("Available Copilot models: ")) {
@@ -232,7 +233,7 @@ export function resultHistory(initial) {
     },
     pair: () => [...models.values()],
     noteCapture: receipt => { capturedModel = receipt.model; },
-    comparisonModels(selected) { const candidates = [...models.values()].map(modelId).filter(id => id !== selected); const other = candidates.includes(preferred) ? preferred : candidates.at(-1) ?? (capturedModel !== selected ? capturedModel : undefined); return other ? [selected, other] : [selected]; },
+    comparisonModels(selected) { const candidates = [...models.values()].filter(v => v.latest.result.state === "complete").map(modelId).filter(id => id !== selected); const other = candidates.includes(preferred) ? preferred : candidates.at(-1) ?? (capturedModel !== selected ? capturedModel : undefined); return other ? [selected, other] : [selected]; },
     prefer: model => { preferred = model; },
     focus: model => { focused = model; },
     started: model => { attempts.delete(model); },

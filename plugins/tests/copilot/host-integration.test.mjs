@@ -31,7 +31,7 @@ async function connect(command, args, options) {
 }
 
 const binary = process.env.KMX_HOST_BRIDGE_TEST_BINARY;
-for (const mode of ['round trip', 'denial', 'cancelled', 'expired', 'batch', 'batch denial', 'batch limit', 'disabled', 'batch disabled', 'batch mixed', 'invalid settings', 'switch off', 'switch on', 'switch new', 'switch both', 'switch stale', 'switch noop', 'recording compare', 'recording uncalled']) test(`Go MCP plus Node runtime fixture: native tool ${mode}`, { skip: !binary, timeout: 60000 }, async t => {
+for (const mode of ['round trip', 'denial', 'cancelled', 'expired', 'batch', 'batch denial', 'batch limit', 'disabled', 'batch disabled', 'batch mixed', 'invalid settings', 'switch off', 'switch on', 'switch new', 'switch both', 'switch stale', 'switch noop', 'recording compare', 'recording uncalled', 'recording failed model']) test(`Go MCP plus Node runtime fixture: native tool ${mode}`, { skip: !binary, timeout: 60000 }, async t => {
   const recording = mode.startsWith('recording');
   const switching = mode.startsWith('switch'), newDeclaration = mode === 'round trip' || mode === 'switch new';
   const disabled = ['disabled', 'batch disabled', 'switch off', 'switch both'].includes(mode), mixed = mode === 'batch mixed', pair = mixed || mode === 'switch both' || recording, invalidSettings = mode === 'invalid settings';
@@ -44,7 +44,9 @@ for (const mode of ['round trip', 'denial', 'cancelled', 'expired', 'batch', 'ba
         const body = JSON.parse(Buffer.concat(chunks)); sends++;
         assert.equal(req.url, '/chat/completions');
         if (recording) {
-          const first = sends % 2 === 1 && mode !== 'recording uncalled';
+          const first = mode === 'recording failed model' ? body.messages.length === 2 : sends % 2 === 1 && mode !== 'recording uncalled';
+          // A model that fails after the replayed call, as in the rc.3 walk.
+          if (body.model === 'unit-failing' && !first) { res.writeHead(500); res.end(); return; }
           res.setHeader('Content-Type','application/json');
           res.end(JSON.stringify({model:body.model,choices:[{finish_reason:first?'tool_calls':'stop',message:first?{role:'assistant',tool_calls:Array.from({length:5},(_,i)=>({id:`call_${sends}_${i}`,type:'function',function:{name:i===4?'pong':'ping',arguments:'{}'}}))}:{role:'assistant',content:'done'}}]}));return;
         }
@@ -134,6 +136,21 @@ for (const mode of ['round trip', 'denial', 'cancelled', 'expired', 'batch', 'ba
   if (mode === 'switch stale') await writeFile(path.join(root, 'kmx.yaml'), '# outside comment\ntools: {ping: Enabled}\n', { mode: 0o600 });
   if (recording) {
     const act = createActionHandler({session,path:'fixture.agent.md'});
+    if (mode === 'recording failed model') {
+      const captured = await act({operation:'test',expectedRevision:before.file.revision});
+      assert.equal(captured.error,undefined,JSON.stringify(captured));
+      const saved = await readView(session,'fixture.agent.md');
+      const failed = await act({operation:'test',expectedRevision:saved.file.revision,model:'unit-failing'});
+      assert.equal(failed.error,'action-failed',JSON.stringify(failed));
+      // The canvas then compares the next model with the one that didn't finish.
+      const next = await act({operation:'test',expectedRevision:saved.file.revision,model:'unit',comparisonModels:['unit','unit-failing']});
+      assert.equal(next.error,undefined,JSON.stringify(next));assert.equal(next.view.latest.result.fullPass,true);
+      const partner = next.comparison.results.find(v => v.latest.result.modelRoute.endsWith('/unit-failing')).latest.result;
+      assert.equal(partner.state,'error');assert.equal(partner.reasonCode,'execution_failed');
+      const again = await act({operation:'test',expectedRevision:saved.file.revision,model:'unit'});
+      assert.equal(again.error,undefined,JSON.stringify(again));
+      act.dispose();return;
+    }
     const result = await act({operation:'test',expectedRevision:before.file.revision,comparisonModels:['unit','unit-other']});
     assert.ifError(modelError);
     if (mode === 'recording uncalled') { assert.equal(result.error,'recording_missing',JSON.stringify(result)); assert.equal(sends,1); assert.equal(calls.length,0); }

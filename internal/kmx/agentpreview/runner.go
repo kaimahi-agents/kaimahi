@@ -70,6 +70,8 @@ var (
 	ErrJournalFailed     = errors.New("preview journal finalization failed")
 	ErrModelUnavailable  = errors.New("preview model unavailable")
 	ErrDiagnosticsFailed = errors.New("preview diagnostic output failed")
+	// ErrModelReply marks a model reply the tool runner cannot use.
+	ErrModelReply = errors.New("preview model reply unusable")
 )
 
 // Completion contains private bounded execution data, never a JSON projection.

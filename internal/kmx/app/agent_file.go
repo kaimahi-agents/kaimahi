@@ -197,7 +197,7 @@ func previewReason(code string) string {
 		"unsafe_tool_content":       "Unsafe tool preview content was withheld; nothing was journaled.",
 		"credential_content":        "Credential-bearing preview content was withheld.",
 		"runner_unavailable":        "Embedded preview runner is not available; no inference was performed.",
-		"execution_failed":          "Local preview execution failed.", "invalid_completion": "Runner returned incomplete or mismatched execution metadata.",
+		"execution_failed":          "Local preview execution failed.", "model_reply_unusable": "The model replied in a form kmx cannot use, so the test did not finish.", "invalid_completion": "Runner returned incomplete or mismatched execution metadata.",
 		"diagnostics_failed": "Cannot write local preview diagnostics.",
 		"journal_failed":     "Preview journal finalization failed; the result is unknown.",
 	}
@@ -534,6 +534,9 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	}
 	if errors.Is(cause, agentpreview.ErrModelUnavailable) {
 		return fail("model_unavailable", 1)
+	}
+	if errors.Is(cause, agentpreview.ErrModelReply) {
+		return fail("model_reply_unusable", 1)
 	}
 	if cause != nil {
 		if code := previewCopilotFailure(cause); code != "" {

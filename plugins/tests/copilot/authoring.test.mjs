@@ -182,6 +182,15 @@ test("a new full completion clears the retained model's stopped marker", () => {
   assert.ok(history.attempt("B"), "completing A must not clear B's stop");
 });
 
+test("a model whose last run didn't finish is not the next comparison partner", () => {
+  const terra = historyView("terra"), failed = historyView("haiku-new"), history = resultHistory(terra);
+  failed.latest.result.state = "error"; failed.latest.result.reasonCode = "execution_failed";
+  history.remember(failed, true);
+  assert.deepEqual(history.comparisonModels("haiku-old"), ["haiku-old", "terra"]);
+  history.prefer("haiku-new");
+  assert.deepEqual(history.comparisonModels("haiku-old"), ["haiku-old", "terra"]);
+});
+
 // Wrong offsets, stripping untouched whitespace, or reserializing YAML must fail.
 test("instructions extract only canonical bodies and preserve an unchanged save byte-for-byte", () => {
   assert.deepEqual(instructionSections(SOURCE), [
