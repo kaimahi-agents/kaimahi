@@ -189,7 +189,7 @@ test('agent-file CI reports retain failure status and content-free summaries', a
     'content-free table',
     'Neither output creates automatic local history'
   ]) assert.ok(app.includes(marker), `CI report contract: ${marker}`)
-  assert.match(app, /CLI section follows current main, not the rc\.4 app walkthrough/)
+  assert.match(app, /CLI section follows current main, not the rc\.5 app walkthrough/)
   assert.match(app, /1\s*A completed assertion failed/)
   assert.match(app, /2\s*Could not run or decide/)
   assert.doesNotMatch(app, /release candidates do not contain it/i)

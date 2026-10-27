@@ -299,7 +299,7 @@ These comparison pictures are from a build before rc.3.
 ## Run the same tests in CI
 
 Commit the agent file, then run `kmx test FILE` in a GitHub Actions step after
-checkout. This CLI section follows current main, not the rc.4 app walkthrough
+checkout. This CLI section follows current main, not the rc.5 app walkthrough
 above. Use a build containing the grouped commands and current file-mode exit
 codes; older binaries can have different exit meanings. After installing that
 binary, these steps test `greeter.agent.md` using its authored `fake` model:
