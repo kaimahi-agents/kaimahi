@@ -79,6 +79,11 @@ class PlainPluginTests(unittest.TestCase):
             resolved = shutil.which("kmx", path=env["PATH"])
             assert resolved is not None
             self.assertEqual(Path(resolved).resolve(), binary)
+            # The install job deliberately supplies a published pre-change CLI.
+            # Keep its exit contract distinct from a checkout-built file CLI.
+            help_text = subprocess.run([str(binary), "run", "--help"], cwd=base, env=env,
+                                       capture_output=True, text=True, check=True, timeout=30).stdout
+            failed_check_exit = 1 if "--no-content" in help_text else 2
             config = json.loads((HERE / "mcp.json").read_text())["mcpServers"]["kmx-agent-builder"]
             process = subprocess.Popen([config["command"], *config["args"]], cwd=HERE,
                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -127,7 +132,7 @@ class PlainPluginTests(unittest.TestCase):
                 edited = call("edit", path=str(path), content=wrong,
                               expectedRevision=created["file"]["revision"])
                 self.assertEqual(path.read_text().split("## Examples")[1], source.split("## Examples")[1])
-                cli_test("fail", 1)
+                cli_test("fail", failed_check_exit)
                 call("edit", path=str(path), content=source,
                      expectedRevision=edited["file"]["revision"])
                 cli_test("pass", 0)
