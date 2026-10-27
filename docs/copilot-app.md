@@ -314,10 +314,10 @@ These comparison pictures are from a build before rc.3.
 ## Run the same tests in CI
 
 Commit the agent file, then run `kmx test FILE` in a GitHub Actions step after
-checkout. `--github-summary` is currently unreleased on `main`; use an exact
-checkout build or future pinned release that documents the flag. Existing
-v0.9.0 release candidates do not contain it. After installing that binary, these
-steps test `greeter.agent.md` using its authored `fake` model:
+checkout. This CLI section follows current main, not the rc.4 app walkthrough
+above. Use a build containing the grouped commands and current file-mode exit
+codes; older binaries can have different exit meanings. After installing that
+binary, these steps test `greeter.agent.md` using its authored `fake` model:
 
 ```yaml
 - name: Test the agent
@@ -347,7 +347,7 @@ Its `fake` model follows a small set of deterministic instructions; it checks
 wiring, not a real model's quality. Your release-notes agent needs a real model:
 use an available model ID and `kmx test ./release-notes.agent.md --provider copilot`
 with credentials supplied securely to the runner. App sign-in is not CI sign-in;
-see [Copilot authentication](kmx.md#copilot-model-access).
+see the [CI token setup](local-preview.md#copilot-sign-in-in-ci).
 Never commit credentials or print them in workflow logs.
 
 File-mode exit codes make this a CI gate without parsing the output:
@@ -355,15 +355,16 @@ File-mode exit codes make this a CI gate without parsing the output:
 | Exit | Meaning |
 |---|---|
 | `0` | All selected checks completed and passed. Use no case filter to test the whole file. |
-| `2` | A completed assertion failed or was unknown. |
-| `1` | Refusal or execution, deadline, journal or output failure. |
+| `1` | A completed assertion failed, flag parsing failed, or an output/summary write failed. |
+| `2` | Could not run or decide: missing sign-in/tests, refusal, execution/deadline/journal failure or an inconclusive check. |
 | `130` | Cancelled. |
 
 GitHub Actions fails the step on a nonzero exit. Do not use `continue-on-error`
 if these tests are meant to gate the pull request. This file-mode check does not
 publish a package or create evidence for deployment. The explicit status capture
 lets the upload step run while the test step still records the original
-0/1/2/130 file-mode result (passed/failed/could-not-run/cancelled). `--github-summary` adds a content-free table with revision,
+0/1/2/130 file-mode result (passed/assertion-or-output-failure/could-not-run/cancelled).
+`--github-summary` adds a content-free table with revision,
 model/judge, scope, timings, checks and tool settings/sources/counts; the JSON
 artifact is the durable report you chose to retain. Neither output creates
 automatic local history.

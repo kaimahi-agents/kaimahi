@@ -109,7 +109,9 @@ Missing/unknown versions, states or verdicts are not passes. Preserve
 Content labeled `not_requested` was not returned; do not invent an answer.
 Test retention metadata contains only opaque diagnostic IDs, not failure content.
 Explain is not an MCP tool; file diagnostics are inspected offline through the
-CLI with the exact file path.
+CLI with the exact file path. `kmx test FILE` checks inline saved tests;
+`kmx package test` is native workspace evaluation, not this preview.
+Keep using this plugin's MCP Run/Test calls for chat requests.
 
 ## Tests in Copilot-format files
 
