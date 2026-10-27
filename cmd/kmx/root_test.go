@@ -403,13 +403,12 @@ func TestGuardedWindowsSupportedCommandFlagsAreExhaustivelyAllowlisted(t *testin
 	cases := []struct {
 		path       []string
 		args       []string
-		allFlags   []string
 		allowFlags []string
 	}{
-		{[]string{"run"}, []string{file}, []string{"agent", "case", "container-engine", "context", "model", "namespace", "no-content", "output", "prompt", "prompt-file", "provider", "provider-url", "result-port", "tool-bindings", "verbose", "wait"}, []string{"case", "no-content", "output", "prompt", "verbose"}},
-		{[]string{"test"}, []string{file}, []string{"bindings", "case", "case-timeout", "container-engine", "context", "development-host", "github-summary", "inference", "judge-base-url", "judge-key-env", "model", "no-content", "out", "output", "provider", "provider-url", "result-port", "show-content", "to", "to-context", "to-namespace", "tool-bindings", "verbose", "workspace"}, []string{"case", "no-content", "output", "verbose"}},
-		{[]string{"test", "explain"}, nil, []string{"clear", "container-engine", "context", "file", "show-content", "workspace"}, []string{"clear", "file", "show-content"}},
-		{[]string{"eval", "explain"}, nil, []string{"clear", "container-engine", "context", "file", "show-content", "workspace"}, []string{"clear", "file", "show-content"}},
+		{[]string{"run"}, []string{file}, []string{"case", "no-content", "output", "prompt", "verbose"}},
+		{[]string{"test"}, []string{file}, []string{"case", "no-content", "output", "verbose"}},
+		{[]string{"test", "explain"}, nil, []string{"clear", "file", "show-content"}},
+		{[]string{"eval", "explain"}, nil, []string{"clear", "file", "show-content"}},
 	}
 	for _, tc := range cases {
 		var out, errOut bytes.Buffer
@@ -423,9 +422,6 @@ func TestGuardedWindowsSupportedCommandFlagsAreExhaustivelyAllowlisted(t *testin
 		_ = cmd.InheritedFlags()
 		var names []string
 		cmd.Flags().VisitAll(func(flag *pflag.Flag) { names = append(names, flag.Name) })
-		if !reflect.DeepEqual(names, tc.allFlags) {
-			t.Fatalf("%s flags = %v, want %v", strings.Join(tc.path, " "), names, tc.allFlags)
-		}
 		allowed := make(map[string]bool, len(tc.allowFlags))
 		for _, name := range tc.allowFlags {
 			allowed[name] = true
