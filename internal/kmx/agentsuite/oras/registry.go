@@ -151,6 +151,11 @@ func newRegistryRepository(
 	plainHTTP bool,
 	store credentials.Store,
 ) (*remote.Repository, string, error) {
+	return newRegistryRepositoryLimit(value, plainHTTP, store, maxProvenanceObjectBytes)
+}
+
+// Image operations use their inspector's budget without widening suite referrers.
+func newRegistryRepositoryLimit(value string, plainHTTP bool, store credentials.Store, metadataLimit int64) (*remote.Repository, string, error) {
 	parsed, err := registry.ParseReference(value)
 	if err != nil {
 		return nil, "", fmt.Errorf("parse AgentSuite registry reference %q: %w", value, err)
@@ -164,7 +169,7 @@ func newRegistryRepository(
 	}
 	repository.PlainHTTP = plainHTTP
 	repository.ReferrerListMaxPages = 4
-	repository.MaxMetadataBytes = maxProvenanceObjectBytes
+	repository.MaxMetadataBytes = metadataLimit
 	// Deleting old referrer indexes fails on registries without DELETE.
 	repository.SkipReferrersGC = true
 	anonymous := plainHTTP && !isLoopbackHost((&url.URL{Host: parsed.Registry}).Hostname())
@@ -182,7 +187,7 @@ func newRegistryRepository(
 		}
 		return nil
 	}
-	httpClient.Transport = &registryTransport{base: httpClient.Transport, anonymous: anonymous}
+	httpClient.Transport = &registryTransport{base: httpClient.Transport, anonymous: anonymous, metadataLimit: metadataLimit}
 	if anonymous {
 		// Do not open Docker configuration or use auth machinery: even an
 		// anonymous bearer challenge could produce an Authorization header.
@@ -220,8 +225,9 @@ func (c *anonymousRegistryClient) Do(req *http.Request) (*http.Response, error) 
 // Auth-capable clients refuse all remote HTTP requests, so credential bodies
 // never need to be inspected or consumed.
 type registryTransport struct {
-	base      http.RoundTripper
-	anonymous bool
+	metadataLimit int64
+	base          http.RoundTripper
+	anonymous     bool
 }
 
 func (t *registryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -234,11 +240,15 @@ func (t *registryTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	}
 	// ORAS sets the generated index's known size but does not bound its PUT.
 	// Refuse growth before replacing an index that our own pull can still read.
-	if req.Method == http.MethodPut && strings.Contains(req.URL.Path, "/manifests/") && req.Header.Get("Content-Type") == ocispec.MediaTypeImageIndex && req.ContentLength > maxProvenanceObjectBytes {
+	limit := t.metadataLimit
+	if limit == 0 {
+		limit = maxProvenanceObjectBytes
+	}
+	if req.Method == http.MethodPut && strings.Contains(req.URL.Path, "/manifests/") && req.Header.Get("Content-Type") == ocispec.MediaTypeImageIndex && req.ContentLength > limit {
 		if req.Body != nil {
 			req.Body.Close()
 		}
-		return nil, fmt.Errorf("registry index size %d exceeds %d bytes: %w", req.ContentLength, maxProvenanceObjectBytes, errdef.ErrSizeExceedsLimit)
+		return nil, fmt.Errorf("registry index size %d exceeds %d bytes: %w", req.ContentLength, limit, errdef.ErrSizeExceedsLimit)
 	}
 	base := t.base
 	if base == nil {

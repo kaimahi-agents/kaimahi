@@ -55,6 +55,7 @@ type ociIndex struct {
 	MediaType     string            `json:"mediaType,omitempty"`
 	Manifests     []ociDescriptor   `json:"manifests"`
 	Annotations   map[string]string `json:"annotations,omitempty"`
+	Subject       *ociDescriptor    `json:"subject,omitempty"`
 }
 
 type ociManifest struct {
@@ -119,6 +120,9 @@ func InspectImageArchive(ctx context.Context, source io.ReaderAt, size int64, pl
 		}
 		if index.SchemaVersion != 2 || index.MediaType != "" && index.MediaType != ociIndexMediaType {
 			return errors.New("invalid OCI image index")
+		}
+		if index.Subject != nil {
+			return errors.New("OCI image index subjects are unsupported")
 		}
 		for _, d := range index.Manifests {
 			count++
@@ -359,6 +363,9 @@ func (a *imageArchive) manifest(d ociDescriptor) (ociManifest, error) {
 	}
 	if m.SchemaVersion != 2 || m.MediaType != "" && m.MediaType != ociManifestMediaType {
 		return m, errors.New("invalid OCI image manifest")
+	}
+	if m.Subject != nil {
+		return m, errors.New("OCI image manifest subjects are unsupported")
 	}
 	if err := a.verify(m.Config); err != nil {
 		return m, err

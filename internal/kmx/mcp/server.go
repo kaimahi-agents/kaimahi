@@ -23,10 +23,25 @@ type Operation struct {
 	V2          *Operation
 }
 
-// NewServer requires exactly the four operations, including real Run/Test
-// bindings before production startup. Fixture handlers do not qualify execution.
-func NewServer(engineVersion string, operations map[string]Operation) (*sdk.Server, error) {
+// ServerRole is trusted startup authority, never a client-selected tool operand.
+type ServerRole uint8
+
+const (
+	OriginalServer ServerRole = iota
+	PreviewServer
+)
+
+// NewServer requires the exact role's closed set; preview children cannot write config.
+// Fixture handlers do not qualify execution.
+func NewServer(engineVersion string, operations map[string]Operation, role ServerRole) (*sdk.Server, error) {
 	names := []string{"create", "edit", "run", "test"}
+	switch role {
+	case OriginalServer:
+		names = append(names, "set_tool_state")
+	case PreviewServer:
+	default:
+		return nil, refusal("invalid_options")
+	}
 	if len(operations) != len(names) || engineVersion == "" {
 		return nil, refusal("invalid_options")
 	}
@@ -41,10 +56,10 @@ func NewServer(engineVersion string, operations map[string]Operation) (*sdk.Serv
 		Instructions: instructions,
 		Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
-	titles := map[string]string{"create": "Create agent", "edit": "Edit agent", "run": "Run agent", "test": "Test agent"}
+	titles := map[string]string{"create": "Create agent", "edit": "Edit agent", "run": "Run agent", "test": "Test agent", "set_tool_state": "Set tool state"}
 	for _, name := range names {
 		op, ok := operations[name]
-		if !ok || op.Schema == nil || op.Schema.Type != "object" || op.Handler == nil {
+		if !ok || op.Schema == nil || op.Schema.Type != "object" || op.Handler == nil || name == "set_tool_state" && op.V2 != nil {
 			return nil, refusal("invalid_options")
 		}
 		schema := op.Schema.CloneSchemas()
@@ -128,9 +143,7 @@ func NewServer(engineVersion string, operations map[string]Operation) (*sdk.Serv
 				if !ok {
 					return nil, &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: "invalid_options"}
 				}
-				switch p.Name {
-				case "create", "edit", "run", "test":
-				default:
+				if !slices.Contains(names, p.Name) {
 					return nil, &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: "unknown_tool"}
 				}
 			}

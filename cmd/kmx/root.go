@@ -34,6 +34,7 @@ type dependencies struct {
 	newAgentKitBuilder func(agentkitbuilder.Options) kmxsuite.SandboxBuilder
 	discoverModels     func(context.Context) []modelaccess.Report
 	newCopilot         func() copilotAccess
+	openGitHubSummary  func() (io.WriteCloser, error)
 	goos               string
 }
 
@@ -41,9 +42,10 @@ func productionDependencies() dependencies {
 	return dependencies{
 		fileRunner: app.NewLocalFileRunner(),
 		stdin:      os.Stdin, stdout: os.Stdout, stderr: os.Stderr,
-		executable: invocationExecutable(os.Args[0]),
-		goos:       runtime.GOOS,
-		loadConfig: config.LoadWithOverrides, newApp: app.New, buildInfo: debug.ReadBuildInfo,
+		executable:        invocationExecutable(os.Args[0]),
+		goos:              runtime.GOOS,
+		openGitHubSummary: func() (io.WriteCloser, error) { return openGitHubSummary() },
+		loadConfig:        config.LoadWithOverrides, newApp: app.New, buildInfo: debug.ReadBuildInfo,
 		newAgentKitBuilder: func(options agentkitbuilder.Options) kmxsuite.SandboxBuilder {
 			return agentkitbuilder.New(options)
 		},

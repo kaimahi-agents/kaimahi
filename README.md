@@ -57,7 +57,8 @@ Use a dedicated test environment. See [other install methods, prerequisites and 
 ## Agent files in Copilot
 
 On macOS, use the [plain Copilot plugin](plugins/copilot/README.md#install-on-macos):
-install the rc.3 prerelease darwin binary, register `kmx-plugins`, then install the PATH plugin. macOS CI checks installation and
+install the rc.3 prerelease darwin binary, register `kmx-plugins`, then install the
+PATH plugin. macOS CI checks installation and
 the offline fake-model loop, not a Copilot model or the desktop app.
 
 ### Windows through WSL

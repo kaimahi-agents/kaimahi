@@ -1,291 +1,25 @@
 // Agent canvas. Files and previews are accessed only through the
 // same session's existing kmx MCP resource and Edit/Run/Test operations.
 import { randomBytes, timingSafeEqual, createHash } from "node:crypto";
-import { instructionSections, replaceInstructions, replaceExamples, replaceTools, effectiveModel, preRouteRefusal, agentName, fileLocation } from "./authoring.mjs";
+import { instructionSections, replaceInstructions, replaceExamples, replaceTools, exampleEdits, effectiveModel, agentName, fileLocation } from "./authoring.mjs";
 import { readFile } from "node:fs/promises";
 import http from "node:http";
-import { ensureHostRuntime, previewServer, beginPreview, closeHostRuntime, observePreview, HostRuntimeUnavailable } from "./host-relay.mjs";
-
+import { ensureHostRuntime, previewServer, beginPreview, closeHostRuntime, observePreview } from "./host-relay.mjs";
 import { readToolCatalog } from "./tool-catalog.mjs";
+import { SERVER_NAME, MAX_RESOURCE_BYTES, MAX_TEXT, MESSAGES, ViewError, invalid, safeError, normalizePath, clean, text, isObj, cleanSettings, cleanResult, readView, validModel, readModels, observed } from "./view-resource.mjs";
+export { CANVAS_ID, SERVER_NAME, ViewError, normalizePath, resourceUri, readView } from "./view-resource.mjs";
 export { readToolCatalog };
-
-export const CANVAS_ID = "kmx-agent-view";
-export const SERVER_NAME = "kmx-agent-builder";
-const KIND = "kmx.agent-view";
-const MAX_RESOURCE_BYTES = 2 * 1024 * 1024;
-const MAX_ITEMS = 128;
-const MAX_TEXT = 6000;
-const TRUNCATED = "… [truncated]";
-
-const MESSAGES = {
-  "invalid-path": "Choose an .agent.md file or a .squad/agents/<member>/charter.md file.",
-  unavailable: "The kmx agent builder could not be read. Check that its MCP server is running.",
-  "invalid-resource": "The kmx agent view was not in the supported format.",
-  "invalid-file": "This agent file needs fixing before it can open. Check its format and test fields.",
-  "models-unavailable": "Model choices are unavailable. Your model selection is unchanged.",
-  "too-large": "The kmx agent view was too large to show.",
-  "invalid-action": "This canvas action is not supported.",
-  "read-only": "This file is available for inspection only. Editing and testing require a complete canonical charter.",
-  busy: "Another canvas action is still running.",
-  stale_revision: "Changed elsewhere. Your draft is still here; reload before saving or testing.",
-  revision_mismatch: "The file changed during testing. These results do not test your draft; reload to continue.",
-  permission_required: "Copilot did not permit this action. No permission settings were changed.",
-  "action-failed": "The action couldn't be confirmed. Reload the saved file before trying again.",
-  "outcome-unknown": "The action outcome could not be confirmed. Do not retry; reload the source first.",
-  "no-tests": "No tests yet — add or suggest one",
-  invalid_tool_settings: "The tool settings in kmx.yaml are invalid. Fix them before running this agent.",
-};
-
-export class ViewError extends Error {
-  constructor(code, message = MESSAGES[code] ?? MESSAGES.unavailable) {
-    super(message);
-    this.name = "ViewError";
-    this.code = MESSAGES[code] ? code : "unavailable";
-  }
-}
-const invalid = () => {
-  throw new ViewError("invalid-resource");
-};
-const safeError = (e) => e instanceof ViewError ? e : /\binvalid_tool_settings\b/.test(e?.message) ? new ViewError("invalid_tool_settings") : new ViewError("unavailable",
-  e instanceof HostRuntimeUnavailable ? "Host tools are unavailable in this session. Start a new Copilot session." : MESSAGES.unavailable);
-
-// Preserve the requested path. The MCP server resolves it and checks the target;
-// a Windows-hosted extension must not resolve WSL paths on the Windows filesystem.
-export function normalizePath(path) {
-  if (typeof path === "string" && !path.includes("\0")) {
-    const name = path.split("/").at(-1);
-    const agent = name.length > ".agent.md".length && name.endsWith(".agent.md");
-    const squad = /(?:^|\/)\.squad\/agents\/[^/]+\/charter\.md$/.test(path);
-    if (agent || squad) return path;
-  }
-  throw new ViewError("invalid-path");
-}
-export const resourceUri = (path) => `kmx://agent/${encodeURIComponent(normalizePath(path))}`;
-
-// --- sanitising ------------------------------------------------------------
-// Strip controls (keeping \n and \t) and bidi overrides, and bound length.
-const CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g;
-function clean(value, max = 500, multiline = false) {
-  let s = String(value).replace(/\r\n?/g, "\n").replace(CONTROL, "");
-  if (!multiline) s = s.replace(/[\n\t]+/g, " ");
-  if (s.length <= max) return s;
-  const cut = s.slice(0, max);
-  return (/[\ud800-\udbff]$/.test(cut) ? cut.slice(0, -1) : cut) + TRUNCATED;
-}
-const text = (v, max = 300) => (typeof v === "string" ? clean(v, max) : "");
-const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
-const list = (v, max = MAX_ITEMS) => {
-  if (v === undefined || v === null) return [];
-  if (!Array.isArray(v) || v.length > max) invalid();
-  return v;
-};
-const show = (v, max) => clean(typeof v === "string" ? v : JSON.stringify(v) ?? "", max, true);
-// Authored extra fields as bounded [name, value] pairs; names are restricted.
-function fields(obj, skip = []) {
-  return Object.entries(obj)
-    .filter(([k]) => !skip.includes(k) && /^[A-Za-z][A-Za-z0-9_.-]{0,39}$/.test(k))
-    .slice(0, 12)
-    .map(([k, v]) => [k, show(v, 1000)]);
-}
-
-// Per-run state of each declared folder tool; only these two values are known.
-const TOOL_NAME = /^[A-Za-z_][A-Za-z0-9_-]{0,63}$/;
-function cleanSettings(value) {
-  if (!Array.isArray(value) || value.length > 32) invalid();
-  const seen = new Set();
-  return value.map((s) => {
-    if (!isObj(s) || Object.keys(s).length !== 2 || typeof s.name !== "string" || !TOOL_NAME.test(s.name)
-      || !["Enabled", "Disabled"].includes(s.state) || seen.has(s.name)) invalid();
-    seen.add(s.name);
-    return { name: s.name, state: s.state };
-  });
-}
-const settingsMatch = (settings, tools) => settings.length === tools.length && settings.every((s, i) => s.name === tools[i]);
-
-function cleanJudge(value, verdict) {
-  if (!isObj(value) || !Number.isInteger(value.minScore) || value.minScore < 0 || value.minScore > 100
-    || !Array.isArray(value.scores) || value.scores.length !== 2 || !value.scores.every(s => Number.isInteger(s) && s >= 0 && s <= 100)) return;
-  const expected = value.scores.every(s => s >= value.minScore) ? "pass" : value.scores.every(s => s < value.minScore) ? "fail" : "unknown";
-  if (verdict !== expected) return;
-  const reasons = Array.isArray(value.reasons) && value.reasons.length <= 2 && value.reasons.every(r => typeof r === "string")
-    ? value.reasons.map(r => clean(r, 2000, true)) : [];
-  return { scores: [...value.scores], minScore: value.minScore, reasons };
-}
-
-function cleanResult(r, status, revision) {
-  if (!isObj(r) || typeof r.state !== "string" || typeof r.verdict !== "string" || typeof r.fullPass !== "boolean") invalid();
-  if (r.schemaVersion !== 1 || r.kind !== "kmx.agent-file-preview" || !isObj(r.file) || r.file.revision !== revision) invalid();
-  const completion = (c) => ({
-    state: text(c.state), verdict: text(c.verdict), reasonCode: text(c.reasonCode), reason: text(c.reason, c.reasonCode === "copilot_model_unavailable" ? MAX_RESOURCE_BYTES : 500),
-    ...(typeof c.answerExcerpt === "string" ? { answerExcerpt: clean(c.answerExcerpt, 2000, true) } : {}),
-    truncated: c.truncated === true,
-  });
-  const sel = isObj(r.selection) ? r.selection : {};
-  const route = isObj(r.modelRoute) ? r.modelRoute : {};
-  return {
-    ...completion(r),
-    fullPass: r.fullPass,
-    operation: text(r.operation),
-    modelRoute: `${text(route.provider, 80)}/${text(route.model, 256)}`,
-    selection: { scope: text(sel.scope, 40), totalCases: Number.isInteger(sel.totalCases) ? sel.totalCases : 0, caseIds: list(sel.caseIds).map((i) => text(i, 80)) },
-    examples: list(r.examples).map((e) => {
-      if (!isObj(e)) invalid();
-      return {
-        id: text(e.id, 80), ...completion(e),
-        assertions: list(e.assertions).map((a) => {
-          if (!isObj(a)) invalid();
-          const judge = a.type === "llmJudge" ? cleanJudge(a.judge, a.verdict) : undefined;
-          return { id: text(a.id, 80), type: text(a.type, 80), verdict: text(a.verdict), reasonCode: text(a.reasonCode), reason: text(a.reason, 500), ...(judge ? { judge } : {}) };
-        }),
-      };
-    }),
-    ...(isObj(r.adHoc) ? { adHoc: completion(r.adHoc) } : {}),
-    // Absent means an older result that recorded no settings; never invent them.
-    ...(r.toolSettings !== undefined ? { toolSettings: cleanSettings(r.toolSettings) } : {}),
-  };
-}
-
-function parseView(json, path) {
-  let raw;
-  try {
-    raw = JSON.parse(json);
-  } catch {
-    invalid();
-  }
-  if (raw?.schemaVersion === 1 && raw.kind === "kmx.agent-view-error" && raw.reasonCode === "invalid_tool_settings") throw new ViewError("invalid_tool_settings");
-  if (raw?.schemaVersion === 1 && raw.kind === "kmx.agent-view-error" && raw.reasonCode === "invalid_file") throw new ViewError("invalid-file");
-  if (!isObj(raw) || raw.schemaVersion !== 1 || raw.kind !== KIND) invalid();
-  const file = raw.file;
-  if (!isObj(file) || file.path !== path || typeof file.revision !== "string" || !/^sha256:[0-9a-f]{64}$/.test(file.revision)) invalid();
-  if (typeof raw.title !== "string" || typeof raw.instructions !== "string") invalid();
-  let model;
-  if (typeof raw.model === "string") model = clean(raw.model, 300);
-  else if (isObj(raw.model)) model = fields(raw.model).map(([k, v]) => `${k}: ${v}`).join("\n");
-  else invalid();
-  const tools = raw.tools ?? [];
-  if (!Array.isArray(tools) || tools.length > 32 || new Set(tools).size !== tools.length || tools.some(t => typeof t !== "string" || !TOOL_NAME.test(t))) invalid();
-  // An older server has no settings: every declared tool is Enabled by default.
-  const toolSettings = raw.toolSettings === undefined ? tools.map((name) => ({ name, state: "Enabled" })) : cleanSettings(raw.toolSettings);
-  if (!settingsMatch(toolSettings, tools)) invalid();
-  const examples = list(raw.examples).map((e) => {
-    if (!isObj(e) || typeof e.id !== "string") invalid();
-    return {
-      id: clean(e.id, 80),
-      input: show(e.input ?? "", 2000),
-      assertions: list(e.assertions).map((a) => {
-        if (!isObj(a) || typeof a.id !== "string" || typeof a.type !== "string") invalid();
-        return { id: clean(a.id, 80), type: clean(a.type, 80), fields: fields(a, ["id", "type"]) };
-      }),
-    };
-  });
-  const latest = raw.latest;
-  if (!isObj(latest) || !["none", "current", "stale"].includes(latest.status)) invalid();
-  if ((latest.status === "current") !== (latest.result !== undefined)) invalid();
-  const result = latest.status === "current" ? cleanResult(latest.result, latest.status, file.revision) : undefined;
-  if (result?.toolSettings && !settingsMatch(result.toolSettings, tools)) invalid();
-  const badge = latest.status !== "current" ? latest.status : result.fullPass && result.state === "complete" && result.selection.scope === "full" && result.verdict === "pass" ? "pass" : "not-passing";
-  const authoring = authoringSnapshot(raw.authoring, raw.examples, file.revision);
-  return {
-    file: { path, revision: file.revision },
-    title: clean(raw.title, 200),
-    instructions: clean(raw.instructions, 60000, true),
-    model, tools, toolSettings,
-    examples,
-    ...(authoring ? { authoring } : {}),
-    latest: { status: latest.status, badge, ...(result ? { result } : {}) },
-  };
-}
-
-function authoringSnapshot(snapshot, examples, revision) {
-  if (!isObj(snapshot) || typeof snapshot.source !== "string" || typeof snapshot.editable !== "boolean") return;
-  if (Buffer.byteLength(snapshot.source, "utf8") > 256 * 1024 ||
-      `sha256:${createHash("sha256").update(snapshot.source).digest("hex")}` !== revision) return;
-  try {
-    if (snapshot.editable) {
-      instructionSections(snapshot.source);
-      // A hash-verified canonical source may hold zero tests, which Go emits as null.
-      replaceExamples(snapshot.source, examples ?? []);
-    }
-    return { source: snapshot.source, editable: snapshot.editable, examples: structuredClone(examples ?? []) };
-  } catch { return; } // A malformed authoring snapshot cannot enable writes.
-}
-
-export async function readView(session, rawPath) {
-  const path = normalizePath(rawPath);
-  const read = session?.rpc?.mcp?.resources?.read;
-  if (typeof read !== "function") throw new ViewError("unavailable");
-  const chat = readChatModel(session);
-  let response;
-  try {
-    response = await session.rpc.mcp.resources.read({ serverName: previewServer(session), uri: resourceUri(path) });
-  } catch (e) {
-    throw safeError(e); // never surface raw transport errors
-  }
-  const contents = response?.contents;
-  if (!Array.isArray(contents) || contents.length !== 1 || typeof contents[0]?.text !== "string") invalid();
-  const body = contents[0].text;
-  if (Buffer.byteLength(body, "utf8") > MAX_RESOURCE_BYTES) throw new ViewError("too-large");
-  if (typeof body.isWellFormed === "function" && !body.isWellFormed()) invalid();
-  const view = parseView(body, path), metadata = await chat;
-  return { ...view, ...(metadata.model ? { chatModel: metadata.model } : {}), ...(metadata.name ? { chatModelName: metadata.name } : {}) };
-}
-
-// Optional joined-session SDK metadata, not catalog/auth discovery. Keep the
-// last valid observation through throws; an explicit unknown clears it. The
-// newest completed observation wins, including explicit invalid/auto values.
-const chatModels = new WeakMap();
-async function readChatModel(session) {
-  let state = chatModels.get(session);
-  if (!state) { state = { generation: 0, resolved: 0 }; chatModels.set(session, state); }
-  const generation = ++state.generation;
-  let timer;
-  try {
-    // Optional metadata must not stall file reads or leave an action locked.
-    const current = typeof session.rpc?.model?.getCurrent === "function" ? await Promise.race([
-      session.rpc.model.getCurrent(),
-      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Model metadata timed out.")), 2000); }),
-    ]) : undefined;
-    if (generation > state.resolved) {
-      state.model = validModel(current?.modelId) ? current.modelId : undefined;
-      state.name = current?.modelId === "auto" ? "Copilot Fusion" : undefined; state.resolved = generation;
-    }
-  } catch { /* Transient metadata failures keep the last known valid model. */ }
-  finally { clearTimeout(timer); }
-  return { model: state.model, name: state.name };
-}
-
-const validModel = (model) => typeof model === "string" && /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/.test(model) && model.toLowerCase() !== "auto" && !model.includes("://");
-async function readModels(session) {
-  try {
-    const response = await session.rpc.mcp.resources.read({ serverName: SERVER_NAME, uri: "kmx://models" });
-    if (!Array.isArray(response?.contents) || response.contents.length !== 1 || typeof response.contents[0]?.text !== "string") invalid();
-    const body = response.contents[0].text;
-    if (Buffer.byteLength(body, "utf8") > MAX_RESOURCE_BYTES) invalid();
-    const raw = JSON.parse(body);
-    if (raw?.schemaVersion !== 1 || raw.kind !== "kmx.models" || !validModel(raw.defaultModel) || !Array.isArray(raw.models) || !raw.models.every(validModel)) invalid();
-    return { defaultModel: raw.defaultModel, models: [...new Set(raw.models)] };
-  } catch { throw new ViewError("models-unavailable"); }
-}
-
-// The resource keeps only the latest preview and clears it when one starts. Still
-// attribute it only for the requested operation and exact full/single-case scope.
-function observed(view, operation, ids, caseId, complete, model) {
-  const r = view.latest.status === "current" ? view.latest.result : undefined;
-  const want = caseId === undefined ? ids : [caseId], got = r?.selection.caseIds ?? [], rows = r?.examples.map((e) => e.id) ?? [];
-  return r?.operation === operation && (preRouteRefusal(r) || r.modelRoute.slice(r.modelRoute.indexOf("/") + 1) === model) && r.selection.scope === (caseId === undefined ? "full" : "subset") && r.selection.totalCases === ids.length &&
-    new Set(got).size === got.length && got.every((id) => want.includes(id)) && (!complete || got.length === want.length) &&
-    new Set(rows).size === rows.length && rows.every((id) => got.includes(id));
-}
 
 // The page can choose a declared interaction, never a tool, path or server.
 export function createActionHandler({ session, path }) {
   path = normalizePath(path);
-  let busy = false, uncertain = false, current, disposed = false;
+  let busy = false, uncertain = false, current, disposed = false, captureAttempt, saving;
+  const certified = new Map();
   const allowed = {
-    "save-and-test": ["expectedRevision", "sections", "examples", "tools", "showContent", "caseId", "model", "runId"],
-    "save-examples": ["expectedRevision", "examples"],
+    "save-and-test": ["expectedRevision", "sections", "examples", "exampleOrigins", "tools", "toolSettings", "expectedSettingsRevision", "showContent", "caseId", "model", "runId", "comparisonModels"],
+    "save-examples": ["expectedRevision", "examples", "exampleOrigins"],
     "save-prompt": ["expectedRevision", "sections"],
-    test: ["expectedRevision", "showContent", "caseId", "model", "runId"], run: ["expectedRevision", "input", "showContent", "model"],
+    test: ["expectedRevision", "showContent", "caseId", "model", "runId", "comparisonModels"], run: ["expectedRevision", "input", "showContent", "model"],
     suggest: [], reload: [], models: [], tools: [], progress: ["runId"], stop: ["runId"],
   };
   const validRunId = (id) => typeof id === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(id);
@@ -349,7 +83,11 @@ export function createActionHandler({ session, path }) {
       run = { ...scope, toolCallId: randomBytes(24).toString("base64url"), rows: new Map(), state: "running", started: Date.now(), pending: true };
       current = run; run.approval = observePreview(session, run.toolCallId);
       if (typeof session.on === "function") run.unsubscribe = session.on("tool.execution_progress", event => progress(run, event));
+    } else if (operation === "edit" && scope?.id) {
+      // Edit before a Test can wait for approval in chat too; progress reports it.
+      saving = { id: scope.id, toolCallId: randomBytes(24).toString("base64url") }; saving.approval = observePreview(session, saving.toolCallId);
     }
+    const call = run ?? (operation === "edit" ? saving : undefined);
     const unconfirmed = () => {
       const approvalTimeout = run?.approval?.timedOut() === true;
       const error = new ViewError("outcome-unknown", approvalTimeout
@@ -359,16 +97,19 @@ export function createActionHandler({ session, path }) {
       return error;
     };
     try {
-      result = await session.rpc.tools.execute({ name: tools[0].name, arguments: { schemaVersion: 1, path, ...args }, ...(run ? { toolCallId: run.toolCallId } : {}) });
+      result = await session.rpc.tools.execute({ name: tools[0].name, arguments: { schemaVersion: 1, path, ...args }, ...(call ? { toolCallId: call.toolCallId } : {}) });
     } catch {
       finish(run);
       if (run?.stopRequested && await run.abortAck && !disposed) return { stopped: true };
       uncertain = true; throw unconfirmed();
-    } finally { finish(run); run?.releaseAbort?.(false); }
+    } finally { finish(run); run?.releaseAbort?.(false); if (call === saving) { saving?.approval.clear(); saving = undefined; } }
     if ((run?.approval?.pendingTool() || run?.approval?.timedOut()) && result?.resultType !== "success") {
       uncertain = true; throw unconfirmed();
     }
     if (result?.resultType === "timeout") { uncertain = true; throw new ViewError("outcome-unknown"); }
+    // A canonical setter refusal/unknown is an SDK error WITH an acknowledgement.
+    // Do not flatten its changed/mayHaveWritten fields into a generic failure.
+    if (operation === "set_tool_state") return result;
     if (result?.resultType !== "success") {
       const detail = typeof result === "string" ? result : [result?.textResultForLlm, result?.error].filter((s) => typeof s === "string").join("\n");
       const code = ["rejected", "denied"].includes(result?.resultType) ? "permission_required"
@@ -381,8 +122,88 @@ export function createActionHandler({ session, path }) {
     }
     return result;
   }
+  const sameSettings = (a, b) => a.length === b.length && a.every(s => b.find(t => t.name === s.name)?.state === s.state);
+  function settingsUnknown() {
+    uncertain = true;
+    throw new ViewError("outcome-unknown", "The tool settings outcome could not be confirmed. Tests did not run. Do not retry; reload to inspect the saved agent and settings.");
+  }
+  function settingsReceipt(result, view, change) {
+    if (["rejected", "denied"].includes(result?.resultType)) throw new ViewError("permission_required");
+    let r = result?.structuredContent;
+    if (r === undefined && typeof result?.textResultForLlm === "string" && Buffer.byteLength(result.textResultForLlm) <= 16384) {
+      try { r = JSON.parse(result.textResultForLlm); } catch { settingsUnknown(); }
+    }
+    if (!isObj(r) || r.schemaVersion !== 1 || r.operation !== "set_tool_state") settingsUnknown();
+    if (r.file !== undefined && (!isObj(r.file) || r.file.path !== path || !/^sha256:[a-f0-9]{64}$/.test(r.file.revision))) settingsUnknown();
+    if (["refused", "failed"].includes(r.state) && r.changed === false && r.mayHaveWritten === false
+      && !Object.hasOwn(r, "toolSettingsRevision") && !Object.hasOwn(r, "toolSettings") && typeof r.reasonCode === "string") {
+      throw new ViewError(["stale_revision", "stale_settings_revision", "invalid_tool_settings"].includes(r.reasonCode) ? r.reasonCode : "settings-failed");
+    }
+    // Unknown (including a lost/malformed receipt) grants no settings token or
+    // retry authority. The checked-agent file identity is not settings evidence.
+    if (r.state !== "complete" || result.resultType !== "success" || r.file?.revision !== view.file.revision
+      || typeof r.changed !== "boolean" || r.mayHaveWritten !== r.changed
+      || typeof r.toolSettingsRevision !== "string" || !/^(?:absent|sha256:[a-f0-9]{64})$/.test(r.toolSettingsRevision)
+      || (r.toolSettingsRevision === view.toolSettingsRevision) !== !r.changed) settingsUnknown();
+    let states;
+    try { states = cleanSettings(r.toolSettings); } catch { settingsUnknown(); }
+    const expected = view.toolSettings.map(s => s.name === change.name ? change : s);
+    if (!sameSettings(states, expected)) settingsUnknown();
+    return { changed: r.changed, token: r.toolSettingsRevision, states };
+  }
+  const pendingRecorded = (view, ids) => view.authoring.examples.filter(e => ids.includes(e.id)).some(e => e.mocks?.tools.some(t => t.mode === "recorded" && !t.calls?.length && view.toolSettings.find(s => s.name === t.name)?.state !== "Disabled"));
+  async function recordingTests(view, input, selected, ids, onPublish) {
+    const models = input.comparisonModels ?? [selected], comparing = models.length > 1, results = [];
+    if (!Array.isArray(models) || models.length < 1 || models.length > 2 || new Set(models).size !== models.length || !models.includes(selected) || !models.every(validModel)) throw new ViewError("invalid-action");
+    const settings = view.toolSettings.map(s => ({...s})), key = v => JSON.stringify([v.file.revision, ids, settings, input.showContent === true]);
+    let published = false, capture;
+    const run = async (model, replay) => {
+      // A comparison partner that doesn't finish is a confirmed result, not an unknown one.
+      const partner = comparing && model !== selected;
+      let response;
+      try { response = await invoke("test", { model, expectedRevision: view.file.revision, expectedToolSettings: settings, recordedReplayOnly: replay, ...(input.caseId !== undefined ? {caseId:input.caseId} : {}), showContent: input.showContent === true, showFailedContent:true }, { id:input.runId, revision:view.file.revision,model,examples:view.authoring.examples,caseIds:ids,totalCases:view.examples.length,toolSettings:settings }); }
+      catch (e) { if (e.code !== "action-failed" || e.preview?.state !== "complete" && !(partner && e.preview?.state === "error")) throw e; response = {structuredContent:e.preview}; }
+      let raw = response.structuredContent;
+      if (!raw && typeof response.textResultForLlm === "string" && Buffer.byteLength(response.textResultForLlm) <= MAX_RESOURCE_BYTES) { try {raw=JSON.parse(response.textResultForLlm);} catch {} }
+      if (response.stopped) {
+        const fresh = await readView(session,path); if (fresh.file.revision !== view.file.revision) throw new ViewError("outcome-unknown");
+        current.state = "stopped"; view = {...fresh,latest:{status:"none",badge:"none"}}; return {stopped:true};
+      }
+      if (raw?.file?.path !== path || raw.file.revision !== view.file.revision) throw new ViewError("outcome-unknown");
+      const result = cleanResult(raw,"current",view.file.revision);
+      if (result.modelRoute.slice(result.modelRoute.indexOf("/")+1) !== model || result.state !== (partner && raw.state === "error" ? "error" : "complete") || !sameSettings(result.toolSettings ?? [],settings) || JSON.stringify(result.selection.caseIds) !== JSON.stringify(ids)) throw new ViewError("outcome-unknown");
+      if (replay && result.recordedReplayOnly !== true) throw new ViewError("outcome-unknown");
+      const fresh = await readView(session,path), flags = result.examples.flatMap(e => e.tools ?? []).filter(t => t.recordingSaved);
+      if (result.savedRevision) {
+        if (replay || !flags.length || fresh.file.revision !== result.savedRevision || flags.some(t => t.mode !== "recorded" || t.source !== "live")) throw new ViewError("outcome-unknown");
+        published = true; onPublish(fresh);
+      } else if (flags.length || fresh.file.revision !== view.file.revision) throw new ViewError("revision_mismatch");
+      if (!sameSettings(fresh.toolSettings,settings)) throw new ViewError("tool_settings_changed");
+      view = fresh;
+      const row = { result, executedRevision: raw.file.revision, view: {...fresh,latest:{status:"current",badge:result.fullPass?"pass":"not-passing",result}} };
+      if (replay && result.state === "complete") { certified.set(key(fresh)+model,row); while(certified.size>2)certified.delete(certified.keys().next().value); }
+      return row;
+    };
+    if (!comparing) {
+      const pending = pendingRecorded(view,ids), row = await run(selected,!pending);
+      if (row.stopped) return {stopped:true,run:snapshot(),view,saved:false};
+      if (pending) captureAttempt = {key:key(view),model:selected};
+      return {view:row.result.savedRevision ? view : row.view,saved:published,...(pending ? {capture:{...row.result,executedRevision:row.executedRevision,model:selected}} : {})};
+    }
+    if (pendingRecorded(view,ids) && captureAttempt?.key !== key(view)) {
+      capture = await run(selected,false);
+      if (capture.stopped) return {stopped:true,run:snapshot(),view,saved:published};
+      captureAttempt = {key:key(view),model:selected};
+    }
+    if (pendingRecorded(view,ids)) return {error:"recording_missing",message:"A Recorded tool has no saved call. Change the test or tool mode before comparing.",view,saved:published};
+    for (const model of models) {
+      const row = model !== selected && certified.get(key(view)+model) || await run(model,true); if(row.stopped)return {stopped:true,run:snapshot(),view,saved:published};results.push(row.view);
+    }
+    return {view:results.find(v=>v.latest.result.modelRoute.endsWith("/"+selected)),saved:published,comparison:{revision:view.file.revision,models,results}};
+  }
   const act = async (input) => {
     if (!isObj(input) || !Object.hasOwn(allowed, input.operation) || Object.keys(input).some((k) => k !== "operation" && !allowed[input.operation].includes(k))) return { error: "invalid-action", message: MESSAGES["invalid-action"] };
+    if (input.operation === "reload") { captureAttempt = undefined; certified.clear(); }
     if (input.showContent !== undefined && typeof input.showContent !== "boolean") return { error: "invalid-action", message: MESSAGES["invalid-action"] };
     if (input.model !== undefined && input.model !== "" && !validModel(input.model)) return { error: "invalid-action", message: MESSAGES["invalid-action"] };
     if ((Object.hasOwn(input, "runId") || ["progress", "stop"].includes(input.operation)) && !validRunId(input.runId)) return { error: "invalid-action", message: MESSAGES["invalid-action"] };
@@ -390,6 +211,7 @@ export function createActionHandler({ session, path }) {
     // available during Test and cannot clear an existing uncertainty lock.
     if (input.operation === "progress") {
       const run = current;
+      if (saving && saving.id === input.runId) { await saving.approval.refresh(); return { run: undefined, ...(saving?.approval.waiting() ? { approvalWaiting: true } : {}) }; }
       if (run?.id !== input.runId) return { run: undefined };
       await run.approval?.refresh();
       return { run: current === run && !disposed ? snapshot() : undefined };
@@ -406,6 +228,7 @@ export function createActionHandler({ session, path }) {
     busy = true;
     current = undefined; // Never replay the previous invocation's snapshot.
     let saved = false, tested = false, targetRevision, ids, operation, model;
+    let settingsIncomplete = Array.isArray(input.toolSettings) && input.toolSettings.length > 0;
     const lease = ["run", "test", "save-and-test"].includes(input.operation) ? beginPreview(session) : undefined;
     try {
       if (disposed) throw new ViewError("unavailable");
@@ -423,27 +246,53 @@ export function createActionHandler({ session, path }) {
       if (input.expectedRevision !== view.file.revision) throw new ViewError("stale_revision");
       targetRevision = input.expectedRevision;
       model = effectiveModel(view.model, input.model, view.chatModel);
+      if (input.comparisonModels !== undefined && (!Array.isArray(input.comparisonModels) || input.comparisonModels.length < 1 || input.comparisonModels.length > 2 || new Set(input.comparisonModels).size !== input.comparisonModels.length || !input.comparisonModels.includes(model) || !input.comparisonModels.every(validModel))) throw new ViewError("invalid-action");
       const runtimeModel = input.model || (!view.model && view.chatModel ? model : undefined);
       const saving = ["save-and-test", "save-examples", "save-prompt"].includes(input.operation);
       // Intended drafts apply to the exact current source; an absent draft is a no-op.
-      let content = view.authoring.source, examples = view.authoring.examples;
+      let content = view.authoring.source, examples = view.authoring.examples, patches;
       try {
         if (input.sections !== undefined) content = replaceInstructions(content, input.sections);
         if (input.examples !== undefined || input.operation === "save-examples") {
-          content = replaceExamples(content, input.examples);
+          if (view.authoring.recordingControls) patches = exampleEdits(examples, input.examples, input.exampleOrigins);
+          else content = replaceExamples(content, input.examples);
           examples = input.examples;
         }
         if (input.tools !== undefined) content = replaceTools(content, input.tools);
         instructionSections(content);
       } catch { throw new ViewError("invalid-action"); }
+      let changes = [];
+      try { if (input.toolSettings !== undefined) changes = cleanSettings(input.toolSettings); }
+      catch { throw new ViewError("invalid-action"); }
+      if (changes.some(s => !(input.tools ?? view.tools).includes(s.name))
+        || input.expectedSettingsRevision !== undefined && (typeof input.expectedSettingsRevision !== "string" || !/^(?:absent|sha256:[a-f0-9]{64})$/.test(input.expectedSettingsRevision))) throw new ViewError("invalid-action");
+      const originalToken = view.toolSettingsRevision;
+      if (changes.length) {
+        // Availability is checked BEFORE Edit, including zero-tool legacy views.
+        const metadata = await session.rpc.tools.getCurrentMetadata();
+        if (metadata.tools?.filter(t => t.mcpServerName === SERVER_NAME && t.mcpToolName === "set_tool_state").length !== 1) throw new ViewError("unavailable");
+        if (view.tools.length) {
+          if (originalToken === undefined) throw new ViewError("unavailable");
+          if (input.expectedSettingsRevision === undefined) throw new ViewError("invalid-action");
+          if (input.expectedSettingsRevision !== originalToken) throw new ViewError("stale_settings_revision");
+        } else if (input.expectedSettingsRevision !== undefined) throw new ViewError("invalid-action");
+      }
       ids = examples.map((e) => e.id);
       // A selected case must exist once in the intended examples before any write.
       if (input.caseId !== undefined && (typeof input.caseId !== "string" || ids.filter((id) => id === input.caseId).length !== 1)) throw new ViewError("invalid-action");
       if (saving) {
         if (Buffer.byteLength(content, "utf8") > 256 * 1024) throw new ViewError("too-large");
-        if (content !== view.authoring.source) {
-          await invoke("edit", { expectedRevision: input.expectedRevision, content });
-          targetRevision = `sha256:${createHash("sha256").update(content).digest("hex")}`;
+        if (content !== view.authoring.source || patches?.length) {
+          captureAttempt = undefined; certified.clear();
+          const edit = await invoke("edit", { expectedRevision: input.expectedRevision, content, ...(patches?.length ? { exampleEdits: patches } : {}) }, validRunId(input.runId) ? { id: input.runId } : undefined);
+          // A later settings read/write failure must retain this acknowledged Edit.
+          if (changes.length) saved = true;
+          if (patches?.length) {
+            let ack = edit.structuredContent;
+            if (!ack && typeof edit.textResultForLlm === "string") { try { ack = JSON.parse(edit.textResultForLlm); } catch {} }
+            if (ack?.schemaVersion !== 1 || ack.operation !== "edit" || ack.file?.path !== path || !/^sha256:[a-f0-9]{64}$/.test(ack.file.revision)) { uncertain = true; throw new ViewError("outcome-unknown"); }
+            targetRevision = ack.file.revision;
+          } else targetRevision = `sha256:${createHash("sha256").update(content).digest("hex")}`;
           try { view = await readView(session, path); }
           catch { uncertain = true; throw new ViewError("outcome-unknown"); }
           if (view.file.revision !== targetRevision) { uncertain = true; throw new ViewError("outcome-unknown"); }
@@ -451,6 +300,18 @@ export function createActionHandler({ session, path }) {
         }
         if (["save-examples", "save-prompt"].includes(input.operation)) return { view, saved };
       }
+      if (changes.length && originalToken !== undefined && view.toolSettingsRevision !== originalToken) throw new ViewError("stale_settings_revision");
+      for (const change of changes) {
+        if (view.toolSettingsRevision === undefined) throw new ViewError("unavailable");
+        const result = await invoke("set_tool_state", { expectedRevision: targetRevision, expectedSettingsRevision: view.toolSettingsRevision, ...change });
+        const receipt = settingsReceipt(result, view, change);
+        saved ||= receipt.changed;
+        let next;
+        try { next = await readView(session, path); } catch { settingsUnknown(); }
+        if (next.file.revision !== targetRevision || next.toolSettingsRevision !== receipt.token || !sameSettings(next.toolSettings, receipt.states)) settingsUnknown();
+        view = next;
+      }
+      settingsIncomplete = false;
       operation = input.operation === "run" ? "run" : "test";
       if (operation === "run" && (typeof input.input !== "string" || Buffer.byteLength(input.input, "utf8") > 16384)) throw new ViewError("invalid-action");
       // Test/Run have no revision parameter. Check the actual result afterward,
@@ -459,6 +320,7 @@ export function createActionHandler({ session, path }) {
         try { await ensureHostRuntime(session, lease); } catch { /* Original server retains the plain unbound refusal; never invent a binding. */ }
       }
       tested = true;
+      if (operation === "test" && view.authoring.recordingControls) { const result = await recordingTests(view,input,model,input.caseId === undefined ? ids : [input.caseId],fresh=>{saved=true;targetRevision=fresh.file.revision}); return {...result,saved:saved||result.saved}; }
       const outcome = await invoke(operation, { ...(runtimeModel ? { model: runtimeModel } : {}), ...(operation === "run" ? { input: input.input } : {}), ...(input.caseId !== undefined ? { caseId: input.caseId } : {}), showContent: input.showContent === true, showFailedContent: true },
         { id: input.runId, revision: targetRevision, model, examples, caseIds: input.caseId === undefined ? ids : [input.caseId], totalCases: ids.length,
           ...(view.tools.length ? { toolSettings: view.toolSettings.map(s => ({ ...s })) } : {}) });
@@ -474,9 +336,10 @@ export function createActionHandler({ session, path }) {
       return { view, saved, ...(snapshot() ? { run: snapshot() } : {}) };
     } catch (e) {
       const err = safeError(e);
-      const response = { error: err.code, message: err.message, saved, ...(err.approvalTimeout ? { approvalTimeout: true } : {}) };
+      if (err.code === "outcome-unknown") uncertain = true;
+      const response = { error: err.code, message: err.message, saved, ...(settingsIncomplete ? { settingsIncomplete: true } : {}), ...(err.approvalTimeout ? { approvalTimeout: true } : {}) };
       const failedPreview = tested && err.code === "action-failed";
-      if ((saved || failedPreview) && err.code !== "revision_mismatch" && err.code !== "outcome-unknown") {
+      if (!settingsIncomplete && (saved || failedPreview) && err.code !== "revision_mismatch" && err.code !== "outcome-unknown") {
         try {
           const view = await readView(session, path);
           // Project the invocation payload through the same bounded parser as
@@ -499,6 +362,7 @@ export function createActionHandler({ session, path }) {
   };
   act.dispose = () => {
     disposed = true;
+    saving?.approval.clear(); saving = undefined; // The Edit itself is neither cancelled nor retried.
     finish(current); current?.releaseAbort?.(false); current = undefined;
   };
   return act;
@@ -545,7 +409,13 @@ const ASSETS = {
   "style.css": ["style.css", "text/css; charset=utf-8"],
   "authoring.mjs": ["authoring.mjs", "text/javascript; charset=utf-8"],
   "tools-view.mjs": ["tools-view.mjs", "text/javascript; charset=utf-8"],
+  "test-tools.mjs": ["test-tools.mjs", "text/javascript; charset=utf-8"],
   "editor.mjs": ["editor.mjs", "text/javascript; charset=utf-8"],
+  "dom.mjs": ["dom.mjs", "text/javascript; charset=utf-8"],
+  "results.mjs": ["results.mjs", "text/javascript; charset=utf-8"],
+  "check-controls.mjs": ["check-controls.mjs", "text/javascript; charset=utf-8"],
+  "instruction-text.mjs": ["instruction-text.mjs", "text/javascript; charset=utf-8"],
+  "run-views.mjs": ["run-views.mjs", "text/javascript; charset=utf-8"],
   "draft-controller.mjs": ["draft-controller.mjs", "text/javascript; charset=utf-8"],
   "action-controller.mjs": ["action-controller.mjs", "text/javascript; charset=utf-8"],
   "observation-controller.mjs": ["observation-controller.mjs", "text/javascript; charset=utf-8"],

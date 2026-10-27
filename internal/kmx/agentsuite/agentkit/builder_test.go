@@ -13,9 +13,25 @@ import (
 
 	suitecore "github.com/agent-primitives/suite/core"
 	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
 const testDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+func TestBuildRefusesCredentialShapedEnvironmentBeforeExport(t *testing.T) {
+	for _, shape := range secretshapes.All() {
+		t.Run(shape.Name, func(t *testing.T) {
+			called := false
+			builder := New(Options{ModelBaseURL: "https://models.example/v1", ModelAPIKeyEnv: shape.Example,
+				exporter: ociExporterFunc(func(context.Context, agentImage, io.Writer) error { called = true; return nil })})
+			var out bytes.Buffer
+			_, err := builder.Build(t.Context(), minimalPlan(), &out)
+			if err == nil || called || out.Len() != 0 || strings.Contains(err.Error(), shape.Example) {
+				t.Fatal("credential-shaped environment was accepted, exported or echoed")
+			}
+		})
+	}
+}
 
 func TestBuildEmitsArchiveThroughBuildxExporter(t *testing.T) {
 	var exported agentImage

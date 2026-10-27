@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
@@ -30,16 +31,25 @@ type FilePreviewOptions struct {
 	Input             *string
 	ShowContent       bool
 	ShowFailedContent bool
+
+	RecordedReplayOnly   bool
+	ExpectedToolSettings *[]localtools.ToolSetting
+
 	// FullPath keeps MCP's requested identity inside the shared redaction boundary.
 	FullPath       bool
 	Progress       func(string) error
 	retentionScope *fileFailureScope
 	// CaseFinished receives a safe provisional row, never answer or judge content.
 	CaseFinished func(FilePreviewCaseProgress)
+	// PrepareRecordingSave freezes authoring authority after Load, before execution.
+	PrepareRecordingSave func(context.Context, string) (RecordingSaver, error)
 }
 
 type FilePreviewResult struct {
+	RecordedReplayOnly bool `json:"recordedReplayOnly,omitempty"`
+
 	SchemaVersion int                       `json:"schemaVersion"`
+	SavedRevision string                    `json:"savedRevision,omitempty"`
 	Kind          string                    `json:"kind"`
 	Runner        string                    `json:"runner,omitempty"`
 	Operation     string                    `json:"operation"`
@@ -53,6 +63,7 @@ type FilePreviewResult struct {
 	FullPass      bool                      `json:"fullPass"`
 	ReasonCode    string                    `json:"reasonCode"`
 	Reason        string                    `json:"reason"`
+	DurationMs    int64                     `json:"durationMs"`
 	Examples      []FilePreviewExample      `json:"examples"`
 	AdHoc         *FilePreviewCompletion    `json:"adHoc,omitempty"`
 	Retention     FilePreviewRetention      `json:"retention"`
@@ -105,6 +116,7 @@ type FilePreviewCompletion struct {
 	Reason        string                     `json:"reason"`
 	AnswerExcerpt string                     `json:"answerExcerpt,omitempty"`
 	Truncated     bool                       `json:"truncated,omitempty"`
+	DurationMs    int64                      `json:"durationMs"`
 	ToolCalls     int                        `json:"toolCalls,omitempty"`
 	Tools         []agentpreview.ToolSummary `json:"tools,omitempty"`
 }
@@ -176,14 +188,19 @@ func previewReason(code string) string {
 		"invalid_file":      "Invalid agent file; use the canonical charter format with required fields and an Examples section.",
 		"no_tests":          "No tests yet — add or suggest one",
 		"invalid_selection": "Unknown example ID; select an authored example ID.", "invalid_options": "Invalid file preview options.",
-		"model_unavailable":     "Selected model route is unavailable or does not match the file model; select an exact trusted route.",
-		"tools_unavailable":     "Host-bound tools are unavailable for the declared names.",
-		"invalid_tool_settings": "Tool settings in the agent folder's kmx.yaml are invalid.",
-		"recording_mismatch":    "Recording mismatch: tool arguments differ from the saved call. Update the saved call before retrying.",
-		"unsafe_tool_content":   "Unsafe tool preview content was withheld; nothing was journaled.",
-		"credential_content":    "Credential-bearing preview content was withheld.",
-		"runner_unavailable":    "Embedded preview runner is not available; no inference was performed.",
-		"execution_failed":      "Local preview execution failed.", "invalid_completion": "Runner returned incomplete or mismatched execution metadata.",
+		"invalid_tool_settings":     "Tool settings in the agent folder's kmx.yaml are invalid.",
+		"model_unavailable":         "Selected model route is unavailable or does not match the file model; select an exact trusted route.",
+		"tools_unavailable":         "Host-bound tools are unavailable for the declared names.",
+		"recording_mismatch":        "Recording mismatch: tool arguments differ from the saved call. Update the saved call before retrying.",
+		"recording_source_changed":  "Agent file changed; recording was not saved.",
+		"recording_unrepresentable": "Recording cannot fit the agent file format and limits; no recording was saved.",
+		"recording_save_failed":     "Recording save failed.",
+		"recording_missing":         "A Recorded tool has no saved call. Change the test or tool mode before comparing.",
+		"tool_settings_changed":     "Tool settings changed. Reload before comparing.",
+		"unsafe_tool_content":       "Unsafe tool preview content was withheld; nothing was journaled.",
+		"credential_content":        "Credential-bearing preview content was withheld.",
+		"runner_unavailable":        "Embedded preview runner is not available; no inference was performed.",
+		"execution_failed":          "Local preview execution failed.", "model_reply_unusable": "The model replied in a form kmx cannot use, so the test did not finish.", "invalid_completion": "Runner returned incomplete or mismatched execution metadata.",
 		"diagnostics_failed": "Cannot write local preview diagnostics.",
 		"journal_failed":     "Preview journal finalization failed; the result is unknown.",
 	}
@@ -192,11 +209,12 @@ func previewReason(code string) string {
 
 // PreviewAgentFile is the CLI path wrapper: load once, then execute that snapshot.
 func (a *App) PreviewAgentFile(ctx context.Context, opt FilePreviewOptions) (FilePreviewResult, error) {
+	started := a.timeNow()
 	parsed, err := agentfile.Load(opt.File)
 	if err == nil && opt.RetentionFile != "" && opt.retentionScope == nil {
 		opt = WithFilePreviewRetention(opt, opt.RetentionFile, parsed.Revision)
 	}
-	return a.previewAgentSnapshot(ctx, parsed, opt, err)
+	return a.previewAgentSnapshot(ctx, parsed, opt, err, started)
 }
 
 // PreviewAgentSnapshot executes a caller-owned parsed snapshot without reopening
@@ -204,10 +222,11 @@ func (a *App) PreviewAgentFile(ctx context.Context, opt FilePreviewOptions) (Fil
 // The caller must obtain parsed from agentfile.Parse/Load and not mutate it while
 // the operation runs. Preview results grant no native evidence/deploy authority.
 func (a *App) PreviewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent, opt FilePreviewOptions) (FilePreviewResult, error) {
-	return a.previewAgentSnapshot(ctx, parsed, opt, nil)
+	return a.previewAgentSnapshot(ctx, parsed, opt, nil, a.timeNow())
 }
 
-func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent, opt FilePreviewOptions, parseErr error) (FilePreviewResult, error) {
+func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent, opt FilePreviewOptions, parseErr error, started time.Time) (result FilePreviewResult, resultErr error) {
+	defer func() { result.DurationMs = previewDurationMilliseconds(a.timeNow().Sub(started)) }()
 	filePath := suiteDiagnosticIdentity(filepath.Base(opt.File), nil)
 	if opt.FullPath {
 		var safe bool
@@ -216,8 +235,12 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 			filePath = "withheld"
 		}
 	}
+	scope := "full"
+	if opt.CaseID != "" {
+		scope = "subset"
+	}
 	r := FilePreviewResult{SchemaVersion: 1, Kind: "kmx.agent-file-preview", Operation: opt.Operation,
-		File: FilePreviewIdentity{Path: filePath}, Selection: FilePreviewSelection{Scope: "full", CaseIDs: []string{}},
+		File: FilePreviewIdentity{Path: filePath}, Selection: FilePreviewSelection{Scope: scope, CaseIDs: []string{}},
 		State: "refused", Verdict: runtime.EvaluationUnknown, Examples: []FilePreviewExample{}, Retention: FilePreviewRetention{Status: "not_requested"}}
 	fail := func(code string, exit int) (FilePreviewResult, *FilePreviewError) {
 		r.FullPass = false
@@ -225,6 +248,13 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		r.ReasonCode = code
 		r.Reason = previewReason(code)
 		return r, &FilePreviewError{code: code, exit: exit}
+	}
+	recordingFail := func(err error) (FilePreviewResult, *FilePreviewError) {
+		if errors.Is(err, context.Canceled) {
+			r.State = "cancelled"
+			return fail("cancelled", 130)
+		}
+		return fail(recordingReason(err), 1)
 	}
 	if opt.Operation != "run" && opt.Operation != "test" || opt.Operation == "test" && opt.Input != nil || opt.Input != nil && (len(*opt.Input) > agentfile.MaxInputBytes || !utf8.ValidString(*opt.Input)) {
 		return fail("invalid_options", 1)
@@ -290,7 +320,6 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	parsed.Examples = agentfile.BindJudgeModels(parsed.Examples, judge.Model)
 	selected := parsed.Examples
 	if opt.CaseID != "" {
-		r.Selection.Scope = "subset"
 		selected = nil
 		for _, ex := range parsed.Examples {
 			if ex.ID == opt.CaseID {
@@ -301,7 +330,13 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 			return fail("invalid_selection", 1)
 		}
 	}
-	if opt.JudgeRoute != nil {
+	usesJudge := opt.JudgeRoute != nil
+	for _, ex := range selected {
+		for _, assertion := range ex.Assertions {
+			usesJudge = usesJudge || assertion.Type == "llmJudge"
+		}
+	}
+	if usesJudge {
 		r.JudgeRoute = &FilePreviewRoute{judge.Provider, judge.Model}
 	}
 	if len(parsed.Tools) == 0 && opt.ToolBindings != "" {
@@ -357,6 +392,46 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 			return fail("invalid_tool_settings", 1)
 		}
 	}
+	if expected := opt.ExpectedToolSettings; expected != nil {
+		if len(*expected) != len(r.ToolSettings) {
+			return fail("tool_settings_changed", 1)
+		}
+		seen := map[string]bool{}
+		for _, setting := range *expected {
+			found := false
+			for _, actual := range r.ToolSettings {
+				if setting == actual {
+					found = true
+				}
+			}
+			if seen[setting.Name] || !found {
+				return fail("tool_settings_changed", 1)
+			}
+			seen[setting.Name] = true
+		}
+	}
+	if opt.RecordedReplayOnly {
+		for _, ex := range selected {
+			if ex.Mocks != nil {
+				for _, tool := range ex.Mocks.Tools {
+					disabled := false
+					for _, s := range r.ToolSettings {
+						if s.Name == tool.Name && s.State == localtools.Disabled {
+							disabled = true
+						}
+					}
+					if tool.Mode == "recorded" && !disabled && len(tool.Calls) == 0 {
+						return fail("recording_missing", 1)
+					}
+				}
+			}
+		}
+		r.RecordedReplayOnly = true
+	}
+	recordingSave, prepareErr := prepareRecordingSave(ctx, opt, parsed.Revision, selected, r.ToolSettings)
+	if prepareErr != nil {
+		return recordingFail(prepareErr)
+	}
 	request := agentpreview.Request{Agent: parsed, Examples: selected, Route: route, JudgeRoute: opt.JudgeRoute, Input: opt.Input, Progress: opt.Progress, ToolBindings: opt.ToolBindings, FileLabel: r.File.Path, ToolSettings: append([]localtools.ToolSetting(nil), r.ToolSettings...)}
 	request.ExampleFinished = previewCaseObserver(ctx, selected, parsed, route, opt.CaseFinished)
 	judgeCtx, judgeNotes := newFileJudgeContext(ctx)
@@ -393,7 +468,7 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		if !validPreviewTools(c, ex, parsed.Tools) {
 			return false
 		}
-		if c.ToolCalls < 0 || c.ToolCalls > localtools.MaxCalls || len(parsed.Tools) == 0 && c.ToolCalls != 0 || c.State != agentpreview.Complete || c.ID == "" || seen[c.ID] || c.FileRevision != parsed.Revision || c.Provider != route.Provider || c.Model != route.Model || len(c.Answer) > 256*1024 || !utf8.ValidString(c.Answer) {
+		if c.DurationMs < 0 || c.DurationMs > (5*time.Minute).Milliseconds() || c.ToolCalls < 0 || c.ToolCalls > localtools.MaxCalls || len(parsed.Tools) == 0 && c.ToolCalls != 0 || c.State != agentpreview.Complete || c.ID == "" || seen[c.ID] || c.FileRevision != parsed.Revision || c.Provider != route.Provider || c.Model != route.Model || len(c.Answer) > 256*1024 || !utf8.ValidString(c.Answer) {
 			return false
 		}
 		seen[c.ID] = true
@@ -447,7 +522,10 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 				r.Examples[i].Assertions[j].Judge = previewJudge(as, ex.Assertions[j], note, &judgeReasonBytes)
 			}
 		}
-		r.Examples[i].FilePreviewCompletion = previewCompleted(row.Completion, show)
+		completion := previewCompleted(row.Completion, show)
+		completion.ReasonCode = previewResultReasonCode(verdict)
+		completion.Reason = previewReason(completion.ReasonCode)
+		r.Examples[i].FilePreviewCompletion = completion
 		r.Examples[i].Verdict = verdict
 		all = append(all, row.Assertions...)
 	}
@@ -461,6 +539,9 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	if errors.Is(cause, agentpreview.ErrRecordingMismatch) {
 		return fail("recording_mismatch", 1)
 	}
+	if errors.Is(cause, agentfile.ErrRecordingInvalid) {
+		return fail("recording_unrepresentable", 1)
+	}
 	if errors.Is(cause, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
 		r.State = "cancelled"
 		return fail("cancelled", 130)
@@ -470,6 +551,9 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	}
 	if errors.Is(cause, agentpreview.ErrModelUnavailable) {
 		return fail("model_unavailable", 1)
+	}
+	if errors.Is(cause, agentpreview.ErrModelReply) {
+		return fail("model_reply_unusable", 1)
 	}
 	if cause != nil {
 		if code := previewCopilotFailure(cause); code != "" {
@@ -499,6 +583,9 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	if r.AdHoc != nil && r.AdHoc.State != "complete" {
 		return fail("invalid_completion", 1)
 	}
+	if saveErr := saveFileRecordings(ctx, recordingSave, outcome, selected, &r); saveErr != nil {
+		return recordingFail(saveErr)
+	}
 	if opt.Operation == "test" && opt.retentionScope != nil {
 		retainFilePreviewFailures(ctx, *opt.retentionScope, parsed, selected, route, judge, r.Selection.Scope, outcome.Examples, &r)
 	} else if opt.Operation == "test" && opt.RetentionFile != "" && runtime.EvaluationAssertionsVerdict(all) != runtime.EvaluationPass {
@@ -512,12 +599,7 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		return r, nil
 	}
 	r.Verdict = runtime.EvaluationAssertionsVerdict(all)
-	r.ReasonCode = "checks_passed"
-	if r.Verdict == runtime.EvaluationFail {
-		r.ReasonCode = "assertion_failed"
-	} else if r.Verdict != runtime.EvaluationPass {
-		r.ReasonCode = "judge_unknown"
-	}
+	r.ReasonCode = previewResultReasonCode(r.Verdict)
 	r.Reason = previewReason(r.ReasonCode)
 	r.FullPass = r.Selection.Scope == "full" && r.Verdict == runtime.EvaluationPass
 	if r.Verdict != runtime.EvaluationPass {
@@ -595,6 +677,7 @@ func previewCompletion(state, code string) FilePreviewCompletion {
 }
 func previewCompleted(c agentpreview.Completion, show bool) FilePreviewCompletion {
 	row := previewCompletion("complete", "completion_ready")
+	row.DurationMs = c.DurationMs
 	row.ToolCalls = c.ToolCalls
 	row.Tools = append([]agentpreview.ToolSummary(nil), c.Tools...)
 	if show {
@@ -604,6 +687,24 @@ func previewCompleted(c agentpreview.Completion, show bool) FilePreviewCompletio
 	}
 	return row
 }
+
+func previewDurationMilliseconds(elapsed time.Duration) int64 {
+	if elapsed <= 0 {
+		return 0
+	}
+	return elapsed.Milliseconds()
+}
+
+func previewResultReasonCode(verdict runtime.EvaluationVerdict) string {
+	if verdict == runtime.EvaluationPass {
+		return "checks_passed"
+	}
+	if verdict == runtime.EvaluationFail {
+		return "assertion_failed"
+	}
+	return "judge_unknown"
+}
+
 func previewAssertion(id, kind string, v runtime.EvaluationVerdict) FilePreviewAssertion {
 	code := "judge_unknown"
 	if v == runtime.EvaluationPass {

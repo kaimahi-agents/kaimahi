@@ -10,9 +10,10 @@ type SourceConfig struct {
 }
 
 type ToolSource struct {
-	Name   string `json:"name"`
-	Mode   string `json:"mode"`
-	Source string `json:"source"`
+	Name      string `json:"name"`
+	Mode      string `json:"mode"`
+	Source    string `json:"source"`
+	Capturing bool   `json:"capturing,omitempty"`
 }
 
 func (s *SourceConfig) Validate(defs []api.ToolDefinition) error {
@@ -24,7 +25,7 @@ func (s *SourceConfig) Validate(defs []api.ToolDefinition) error {
 	}
 	seen := map[string]bool{}
 	for _, tool := range s.Tools {
-		if seen[tool.Name] || (tool.Mode != "live" && tool.Mode != "recorded") || (tool.Source != "live" && tool.Source != "recorded" && tool.Source != "unavailable") || tool.Mode == "live" && tool.Source == "recorded" {
+		if seen[tool.Name] || (tool.Mode != "live" && tool.Mode != "recorded") || (tool.Source != "live" && tool.Source != "recorded" && tool.Source != "unavailable") || tool.Mode == "live" && tool.Source == "recorded" || tool.Capturing && (tool.Mode != "recorded" || tool.Source != "live") {
 			return errTrace
 		}
 		found := false

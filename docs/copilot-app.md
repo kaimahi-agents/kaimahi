@@ -10,10 +10,10 @@ kmx keeps the prompt and tests in one Markdown file. The Copilot app opens that
 file in a canvas where you can edit and test it. This path needs no Kubernetes
 cluster, Docker or local model download.
 
-**Experimental.** This page describes main. The install below pairs the
-v0.9.0-rc.3 prerelease binary with plugin source pinned to that release commit.
-Updating the plugin alone does not update kmx. Features added after that release
-need a new tested pair; a feature on main is not necessarily in your installed release.
+**Experimental.** The app walkthrough describes v0.9.0-rc.3. The install below
+pairs that prerelease binary with plugin source pinned to its release commit.
+Updating the plugin alone does not update kmx. Features merged after rc.3 need
+a newer tested pair; a feature on main is not necessarily in your installed release.
 
 ## Install
 
@@ -105,15 +105,37 @@ Open a conversation in the Copilot app and ask:
 > It should turn a change summary into a short release note with a heading,
 > explain the user-visible change and omit internal issue numbers.
 
-Use a path in your own repository. On Windows, give the WSL path (`C:\work` is
-`/mnt/c/work`), not a Windows path. Files can live in different repositories;
-installation does not bind kmx to one folder.
+Use a path in your own repository. On Windows, kmx resolves drive-absolute paths
+such as `C:\work` through their WSL mounts (`/mnt/c/work`); WSL paths also work.
+Files can live in different repositories; installation does not bind kmx to one folder.
 
-The canvas shows **Prompt** and **Tests**. The saved `.agent.md` file holds both;
-you can keep it in version control with the code it describes. If your host
+The canvas shows **Prompt**, **Tools** and **Tests**. The saved `.agent.md` file
+holds the prompt, tool names and tests; you can keep it in version control with
+the code it describes. If your host
 cannot render the canvas, Copilot can still use kmx's tools in text.
 
-*Screenshot to add: a newly created agent with Prompt and Tests visible.*
+![The release-notes prompt and tests during a run, with two tests passed and the third running](images/copilot-running.png)
+
+*Two tests have passed while the third is still running.*
+
+## Choose tools for tests
+
+With a matching rc.3 plugin and binary, **Add tools** opens this app's
+MCP servers. Tick tools to add them to the agent. A ticked tool's **Enabled** or
+**Disabled** word flips a draft; Disabled tools stay declared but do not run in tests.
+Enter saves edits, then tests. Esc discards Tools edits without discarding prompt
+or test edits. Server rows show saved disabled counts; the tool page shows drafts.
+
+Tool names live in the agent file. Test settings live in `kmx.yaml` beside its
+physical target and also affect other agents in that folder. These are separate
+saves, not one transaction. If a save is partial or unconfirmed, tests do not run:
+keep the draft and deliberately reload to inspect what was saved. Do not retry
+an uncertain write. This switch uses `set_tool_state`, included in the pinned
+v0.9.0-rc.3 binary above.
+
+![Tools section showing one selected tool from the GitHub MCP server, with earlier test results marked out of date](images/copilot-tools.png)
+
+*One GitHub tool is selected, and earlier test results are out of date.*
 
 ## Add tests and run them
 
@@ -151,7 +173,26 @@ full Test reply confirms the run. A running indicator does not mean a test has p
 Known issue: Copilot may keep showing “Working” after a canvas run until the next
 chat turn, even when the run has finished.
 
-*Screenshot to add: a completed test and its check explanations.*
+![A failed check requires the PR number at the end of a bullet; the answer puts it at the start](images/copilot-test-detail.png)
+
+*The check fails because the answer puts the PR number at the start instead of the end.*
+
+### Keep tool results with a test
+
+Open a test and choose **Live** or **Recorded** for each tool. Live calls the
+tool on each run. Recorded captures the first successful call and saves its
+arguments and result with the test; later runs replay that saved result. Press
+**Enter** to save the choice and run. Use **Record again** to capture fresh data.
+Recorded details let you inspect the saved call and result.
+
+![Test detail with an unsaved Recorded selection and a prior result labelled one live call](images/copilot-live-recorded.png)
+
+*Recorded is selected but unsaved, and the previous result shows one live call.*
+
+Saved tool output is cleartext in the agent file. Review it before committing
+or sharing. A recorded pass does not prove the live server works today. See
+[per-test recorded tools](agent-file.md#per-test-recorded-tools) for matching
+rules and **Calls** / **Doesn't call** checks.
 
 ## Change the prompt and rerun
 
@@ -180,20 +221,45 @@ binding path. An unbound tool gives one plain reason; judges remain tool-free.
 See the [CLI reference](kmx.md#agent-file-local-preview-unreleased-integration)
 for supported file-preview routes and limits.
 
-*Screenshot to add: the model picker and a rerun on a second model.*
+![Model picker set to Claude Haiku 4.5, with three of four tests passing](images/copilot-model-picker.png)
+
+*Claude Haiku 4.5 is selected, with three of four tests passing.*
+
+![The same prompt's test verdicts on two models: Terra passed all four; Haiku failed the fix-note check](images/copilot-compare.png)
+
+*Terra passes all four tests, while Haiku fails the fix-note check.*
+
+These comparison pictures are from a build before rc.3.
 
 ## Run the same tests in CI
 
 Commit the agent file, then run `kmx test FILE` in a GitHub Actions step after
-checkout. Use the paired v0.9.0-rc.3 prerelease, not v0.8.1.
-These steps install it on an Ubuntu runner and test `greeter.agent.md` using its
-authored `fake` model:
+checkout. `--github-summary` is currently unreleased on `main`; use an exact
+checkout build or future pinned release that documents the flag. Existing
+v0.9.0 release candidates do not contain it. After installing that binary, these
+steps test `greeter.agent.md` using its authored `fake` model:
 
 ```yaml
-- name: Install kmx
-  run: curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.3/install.sh | sudo sh -s -- --version=v0.9.0-rc.3 --bin-dir=/usr/local/bin
 - name: Test the agent
-  run: kmx test ./greeter.agent.md
+  id: agent_test
+  shell: bash
+  run: |
+    set +e
+    kmx test ./greeter.agent.md -o json --github-summary > kmx-test.json
+    status=$?
+    set -e
+    if ! python3 -m json.tool kmx-test.json >/dev/null; then
+      rm -f kmx-test.json
+      status=1
+    fi
+    exit "$status"
+- name: Upload the test report
+  if: always() && hashFiles('kmx-test.json') != ''
+  uses: actions/upload-artifact@v4
+  with:
+    name: kmx-test-report
+    path: kmx-test.json
+    if-no-files-found: error
 ```
 
 For an offline check, start with the [complete greeter sample](../internal/kmx/agentfile/testdata/greeter.agent.md).
@@ -215,4 +281,9 @@ File-mode exit codes make this a CI gate without parsing the output:
 
 GitHub Actions fails the step on a nonzero exit. Do not use `continue-on-error`
 if these tests are meant to gate the pull request. This file-mode check does not
-publish a package or create evidence for deployment.
+publish a package or create evidence for deployment. The explicit status capture
+lets the upload step run while the test step still records the original
+0/2/1/130 result. `--github-summary` adds a content-free table with revision,
+model/judge, scope, timings, checks and tool settings/sources/counts; the JSON
+artifact is the durable report you chose to retain. Neither output creates
+automatic local history.

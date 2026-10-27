@@ -20,7 +20,7 @@ kmx <noun> <verb> [object] [flags]
   `push` and full-workspace `test`. Root `test` also retains helpers (`diff`,
   `explain`, `export`, `verify`, `from-sessions`, `cleanup`); root digest `deploy` deploys an evaluated package. Standalone packaged evaluation remains unimplemented.
 - **Resource and domain operations use noun first, then verb:** `task result`,
-  `suite build/push/pull/validate`, `run-profile export` and `orka install/status/show/list`. `kmx agent` is removed entirely,
+  `suite build/push/push-image/pull/validate`, `run-profile export` and `orka install/status/show/list`. `kmx agent` is removed entirely,
   with no alias or retirement stub.
 - **Singular nouns.** Use `orka list`, not `orkas`. A plural may exist only
   as an explicitly approved hidden alias.
@@ -52,7 +52,7 @@ Use one verb per meaning. Do not add a synonym for an existing verb.
 | `export` | Write a portable offline artifact without execution: evaluation evidence from completed exact-suite proof, or a frozen source-file run profile. | `kmx test export --member greeter --out ../evidence.json`; `kmx run-profile export FILE` |
 | `explain` | Inspect private local evaluation failures offline; content opt-in. `--clear` deletes one ID, or all only with explicit workspace or agent-file selection. | `kmx test explain [failure-id] [--workspace DIR\|--file FILE] [--show-content\|--clear]` |
 | `verify` | Check public evidence against a local suite and independent accepted subject/policy, offline. | `kmx test verify --suite ./layout --evidence evidence.json --expect expected.json` |
-| `mcp` | Serve exactly four local agent-file tools over stdio, bound to one explicit root; no network listener | `kmx mcp --root DIRECTORY` |
+| `mcp` | Serve five original-server agent/settings tools over stdio, optionally root-bound; preview children retain four; no network listener | `kmx mcp --root DIRECTORY` |
 | `cleanup` | Inspect candidate runs; delete one explicitly selected run after confirmation. | `kmx test cleanup [run-id] --to dev` |
 | `validate` | Check an artifact offline, without a cluster. | `kmx suite validate <path>` |
 | `policy` | Resolve portable suite restrictions offline without granting authority or selecting an enforcement provider. | `kmx suite policy POLICY.json [--administrative-policy ADMIN.json]` |
@@ -102,6 +102,7 @@ Keep these distinctions:
 | `--plan` | Read the target and print what would change. No writes. |
 | `--show-content` | Opt into sanitized bounded failure excerpts and expected values: stderr for test/executing workspace Deploy, stdout for offline test explain. Workspace records may include retained rationale; file records do not retain judge rationale. Not evidence; never implied by --verbose; conflicts with explain --clear. |
 | `--verbose` | Where supported, add content-free diagnostics and timings on stderr. File Run/Test includes request progress, endpoints, HTTP status, timings and safe failures, without repeating the final report; never implies --show-content. |
+| `--github-summary` | File Test only: with `-o json`, append the same result's bounded content-free Markdown projection to `$GITHUB_STEP_SUMMARY`. Never changes the Test exit code or grants evidence. |
 | `--no-apply` | Where supported by runtime setup, render without cluster writes; removed from workspace create. |
 | `--dry-run` | Where supported by runtime setup, check server admission without persistent writes; removed from workspace create. |
 | `--step` | Run one named phase of a multi-phase workflow. |
@@ -239,3 +240,4 @@ row when its rename lands.
 | `suite push <directory> <reference>` | Two positional arguments: extracted source directory and OCI destination reference. | Retain extracted-artifact transfer syntax without workspace discovery or `--workspace`; root `push [--workspace <directory>] [reference]` discovers a workspace and publishes a prepared native suite with at most one positional destination. An explicit tag is preserved; bare push derives a full-S tag from saved publishRepository. Completed private exact-S proof is required unless --unevaluated explicitly opts out. `--workspace` selects an exact root without fallback. |
 | `suite build --output <file>`, `suite pull --output <directory>` | `--output` is an artifact path, not a report format; neither command has the report-format `-o` shorthand. | Retain current syntax until a replacement is agreed. |
 | `suite build --attestations` | Defaults to true; `--attestations=false` opts out of SBOM and provenance requests. | Keep the documented default; `--require-attestations` refuses missing or unsupported attestations. |
+| `suite push-image <archive> <reference>` | Two positional arguments: built OCI archive and registry destination. | Explicit experimental exception matching extracted `suite push`; keeps image transport separate from suite publication and deployment admission. `--force` permits changing an existing tag; platform is `--platform OS/ARCH`. |

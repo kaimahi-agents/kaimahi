@@ -12,7 +12,7 @@
       "source": {
         "source": "github",
         "repo": "kaimahi-agents/kaimahi",
-        "sha": "62a72c73d981fbf13c3b586e0a7e08373450425f",
+        "sha": "eddacc3755b9752122a8467aa015a1d49e7302fb",
         "path": "plugins/copilot-wsl"
       }
     },
@@ -23,7 +23,7 @@
       "source": {
         "source": "github",
         "repo": "kaimahi-agents/kaimahi",
-        "sha": "62a72c73d981fbf13c3b586e0a7e08373450425f",
+        "sha": "eddacc3755b9752122a8467aa015a1d49e7302fb",
         "path": "plugins/copilot"
       }
     }

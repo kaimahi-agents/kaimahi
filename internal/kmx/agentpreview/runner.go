@@ -70,6 +70,8 @@ var (
 	ErrJournalFailed     = errors.New("preview journal finalization failed")
 	ErrModelUnavailable  = errors.New("preview model unavailable")
 	ErrDiagnosticsFailed = errors.New("preview diagnostic output failed")
+	// ErrModelReply marks a model reply the tool runner cannot use.
+	ErrModelReply = errors.New("preview model reply unusable")
 )
 
 // Completion contains private bounded execution data, never a JSON projection.
@@ -80,12 +82,15 @@ type Completion struct {
 	Provider     string
 	Model        string
 	Answer       string
+	DurationMs   int64
 	ToolCalls    int
 	Tools        []ToolSummary
 }
 
 // ToolSummary is content-free; a zero count means the selected source was not exercised.
 type ToolSummary struct {
+	RequestCount int `json:"requestCount,omitempty"`
+
 	Name           string `json:"name"`
 	Mode           string `json:"mode"`
 	Source         string `json:"source"`
@@ -105,4 +110,6 @@ type Outcome struct {
 	AdHoc     *Completion
 	Examples  []ExampleOutcome
 	Journal   string
+	// Recordings is private verified content, never a default result projection.
+	Recordings []agentfile.Recording
 }

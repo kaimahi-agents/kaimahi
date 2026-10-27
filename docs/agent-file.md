@@ -153,7 +153,7 @@ numeric-looking input such as `"123"`; null entries cannot disappear silently.
 
 ## Per-test recorded tools
 
-File Run/Test accepts hand-authored recordings. This first slice does **not** capture or save live results automatically.
+File Run/Test accepts hand-authored recordings and saves a successful first live capture for a pending Recorded tool.
 Each `mocks.tools` entry names a declared tool and an explicit `mode: live` or `mode: recorded`:
 
 ```yaml
@@ -168,25 +168,60 @@ mocks:
           result: {greeting: "Hello"}
 ```
 
-A populated recording requires a description, an offline JSON parameter schema and exactly one saved call with
-object arguments/result. The result is model-visible JSON output, not an MCP envelope. Live entries have only name/mode.
-Recorded entries with `calls: []` use a live binding if present, otherwise an unavailable stub; they remain pending
-in this slice. Omitted settings keep live/unavailable behavior. Saved data never grants live execution authority.
+A populated recording requires a nonblank description, an offline JSON parameter schema and exactly one saved call with
+object arguments/result. A requested pending capture with a blank live description refuses before executing that tool;
+uncalled tools stay pending, and ordinary Live calls do not require a recording description. The result is model-visible
+JSON output, not an MCP envelope. Live entries have only name/mode.
+Recorded entries with `calls: []` use a live binding if present, otherwise an unavailable stub. A successful live
+call fills that entry after the invocation's journal closes successfully, even if an ordinary answer check fails.
+Uncalled or unavailable entries stay pending. Ordinary Live and ad-hoc calls are never saved. Omitted settings keep
+live/unavailable behavior. Saved data never grants live execution authority.
 A recording runs without a tool binding or tool sign-in, but the model still needs its normal access.
 
 Schema-valid calls match canonical JSON arguments, independent of key order or model call ID. Different arguments stop the run
 with a recording-mismatch message and no live fallback. Schema-invalid model requests are refused before dispatch,
 like invalid live requests. The same saved response can answer repeated identical
 requests within the existing five-call first-response batch. Saved-but-unused data is not an implicit Calls check.
-Both call checks count validated requests, including recorded and unavailable requests; incomplete execution
-cannot pass a Doesn't call check. Results report configured mode, selected source and actual count; zero means
-**Not called**, not proof that a live tool worked. A recorded pass does not qualify today's server.
+Both call checks count validated Enabled requests, including recorded and unavailable requests. Disabled answers
+consume a request slot but do not count as calls and never become recordings; incomplete execution cannot pass a Doesn't call check. Results report configured mode, selected source and actual count; zero means
+**Not called**, not proof that a live tool worked. A first capture says **recorded just now**, with source `live`,
+not replayed. A recorded pass does not qualify today's server.
+
+A pending tool executes live once per test: further identical requests in that batch use its new in-memory snapshot;
+different arguments stop with a mismatch and nothing is saved. Tests never share these snapshots. Capture requires
+both a successful trusted live observation and the matching complete, verified journal; replay and unavailable
+answers cannot become new recordings. Cancellation, execution errors or failed journal finalization save nothing.
+
+Saving uses one revision- and physical-file/parent-checked edit for the invocation. Source comments, line endings and
+unrelated tests are preserved; strings are JSON-quoted and the whole candidate is parsed again. A stale file, a
+competing save, an unsupported layout or data that cannot fit the existing bounds fails visibly without retrying
+the tool or claiming a full pass. Existing recordings are not replaced automatically. CLI saving is bound to the
+one file explicitly selected; MCP retains its normal path restrictions. Snapshot embedding must provide a trusted
+checked-save capability for pending entries, never write using a display label alone.
+
+The result's `file.revision` remains the revision that executed. A successful capture also returns `savedRevision`
+and marks only captured tools `recordingSaved: true`. Those answers are historical against the new bytes; they are
+not relabelled as a run on the saved revision. Saved output is plain file content and can enter Git history.
+
+In a matching current-source canvas, each test offers **⚡ Live** or **◉ Recorded** per tool. These choices and
+**Record again** are drafts until Enter saves and runs; changing to Live removes that tool's saved fixture.
+Recorded details show the saved call and result. Live details report actual source and counts, not saved payload.
+Model comparison captures pending Recorded tools at most once, then every compared model (including the capture
+model) replays the acknowledged saved source. A still-uncaptured Recorded tool stops comparison; Live tools remain
+live for each model. Modes never change silently. Source or effective-settings changes stop subsequent execution.
+
+The existing MCP Run/Test operations accept an optional `expectedRevision` precondition. Test additionally accepts
+`expectedToolSettings` (the complete named Enabled/Disabled vector) and `recordedReplayOnly`; the latter prevents
+new Recorded captures, not Live calls. Edit accepts bounded `exampleEdits` alongside `content` and its expected
+revision. With sparse edits the supplied content retains the original Examples bytes; only named test fields and
+mode/reset intents change, never caller-supplied fixture payload. Older backends keep fixture-bearing files
+inspection-only in the canvas. These source capabilities are not supplied by the pinned older release.
 
 Fixtures share all existing YAML/source bounds below, including the shallow 12-level nesting budget. They reject
 external schema references, duplicate keys, inexact JSON numbers and known credential shapes. Arbitrary private data
 can evade those checks: saved results are plain file content that the author may commit. Native Squad stays tool-free.
-Run-profile export refuses fixtures and tool checks rather than dropping them. Until canvas round-trip support lands,
-fixture/tool-check files are read-only in the canvas; CLI/MCP Test remains available. No automatic migration occurs.
+Run-profile export refuses fixtures and tool checks rather than dropping them. Older backends without sparse
+`exampleEdits` keep fixture/tool-check files read-only in the canvas; CLI/MCP Test remains available. No automatic migration occurs.
 
 ## Bounds, loading and errors
 

@@ -3,6 +3,26 @@ import test from "node:test";
 import { resultHistory } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/editor.mjs";
 import { instructionSections, replaceInstructions, replaceExamples, effectiveModel, runtimeModelSelection } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs";
 
+test("sparse recording edits preserve payload and reject fixture injection", async () => {
+  const { exampleEdits } = await import("../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs");
+  const tool = { name: "read", mode: "recorded", description: "private", parameters: { type: "object" }, calls: [{ arguments: {}, result: { value: 1152921504606846976 } }] };
+  const before = [{ id: "one", input: "old", assertions: [{ id: "a", type: "contains", value: "hello" }], mocks: { tools: [tool] } }];
+  const after = structuredClone(before); after[0].input = "new";
+  assert.deepEqual(exampleEdits(before,after), [{beforeId:"one",input:"new"}]);
+  after[0].mocks.tools[0].calls[0].result.value = 3;
+  assert.throws(() => exampleEdits(before,after));
+  after[0].mocks.tools = [{name:"read",mode:"recorded",calls:[]}];
+  assert.deepEqual(exampleEdits(before,after), [{beforeId:"one",input:"new",tools:[{name:"read",mode:"recorded",reset:true}]}]);
+});
+
+test("rename carries source identity without resubmitting saved fixtures", async () => {
+ const {exampleEdits}=await import("../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs");
+ const saved={name:"read",mode:"recorded",description:"read",parameters:{type:"object"},calls:[{arguments:{},result:{ok:true}}]};
+ const before=[{id:"old",input:"a",assertions:[{id:"a",type:"contains",value:"b"}],mocks:{tools:[saved]}}];
+ const after=structuredClone(before);after[0].id="new";
+ assert.deepEqual(exampleEdits(before,after,["old"]),[{beforeId:"old",id:"new"}]);
+});
+
 const KEYS = ["Accountable Responsibilities", "Non-Responsibilities", "Collaboration and Review Authority"];
 const SOURCE = `# Greeter — Greeting 🌱
 
@@ -162,6 +182,40 @@ test("a new full completion clears the retained model's stopped marker", () => {
   assert.ok(history.attempt("B"), "completing A must not clear B's stop");
 });
 
+test("a model whose last run didn't finish is not the next comparison partner", () => {
+  const terra = historyView("terra"), failed = historyView("haiku-new"), history = resultHistory(terra);
+  failed.latest.result.state = "error"; failed.latest.result.reasonCode = "execution_failed";
+  history.remember(failed, true);
+  assert.deepEqual(history.comparisonModels("haiku-old"), ["haiku-old", "terra"]);
+  history.prefer("haiku-new");
+  assert.deepEqual(history.comparisonModels("haiku-old"), ["haiku-old", "terra"]);
+});
+
+test("a captured model that then didn't finish is not brought back as the partner", () => {
+  const before = historyView("haiku-new"), history = resultHistory(before);
+  history.reset(); history.noteCapture({ model: "haiku-new" });
+  const failed = historyView("haiku-new");
+  failed.latest.result.state = "error"; failed.latest.result.reasonCode = "execution_failed";
+  history.remember(failed, true);
+  assert.deepEqual(history.comparisonModels("haiku-old"), ["haiku-old"]);
+});
+
+test("a capture's result stays shown after its recording is saved", () => {
+  const before = historyView("terra"), history = resultHistory(before);
+  const receipt = { ...before.latest.result, model: "terra", savedRevision: "saved-revision" };
+  const saved = historyView("terra");
+  saved.file = { revision: "saved-revision" };
+  saved.authoring.examples[0].mocks = { tools: [{ name: "ping", mode: "recorded", calls: [{ arguments: {}, result: {} }] }] };
+  saved.latest = { status: "stale" };
+  history.noteCapture(receipt, saved);
+  history.remember(saved, true);
+  const [shown] = history.cases(saved, "terra");
+  assert.equal(shown.state, "pass");
+  assert.equal(shown.previous, true);
+  assert.equal(shown.previousModel, "copilot/terra");
+  assert.deepEqual([...shown.checks.values()].map(c => c.verdict), ["pass"]);
+});
+
 // Wrong offsets, stripping untouched whitespace, or reserializing YAML must fail.
 test("instructions extract only canonical bodies and preserve an unchanged save byte-for-byte", () => {
   assert.deepEqual(instructionSections(SOURCE), [
@@ -296,4 +350,16 @@ test("zero examples serialize as an explicit empty sequence", () => {
   const prefix = source.slice(0, source.indexOf("## Examples"));
   assert.equal(replaceExamples(source, []), prefix + "## Examples\r\n```yaml\r\nexamples: []\r\n```\r\n");
   assert.deepEqual(instructionSections(replaceExamples(SOURCE, [])), instructionSections(SOURCE));
+});
+
+test("test IDs keep typed capitals and stay unique ignoring case", async () => {
+  const { portableId, validateDraft } = await import("../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs");
+  assert.equal(portableId("Leaves out dependency and CI changes"), "leaves-out-dependency-and-CI-changes");
+  assert.equal(portableId("CI changes"), "CI-changes");
+  assert.equal(portableId("greets ada"), "greets-ada");
+  const draft = name => ({ origin: null, name, raw: { id: "", input: "x", assertions: [{ id: "a", type: "contains", value: "x" }] } });
+  const ci = draft("CI"), dupe = draft("ci");
+  assert.equal(validateDraft(ci, [ci.raw]), undefined);
+  assert.equal(validateDraft(dupe, [{ id: "CI" }, dupe.raw]), "Another test already has this name.");
+  assert.match(validateDraft(draft("Con"), []), /starts with a letter/);
 });

@@ -43,6 +43,14 @@ func TestFileCaseProgressSafeProjectionAndFinalParity(t *testing.T) {
 			var rows []FilePreviewCaseProgress
 			opt.CaseFinished = func(row FilePreviewCaseProgress) { rows = append(rows, row) }
 			result, err := application.PreviewAgentFile(t.Context(), opt)
+			baseline.DurationMs = 0
+			for i := range baseline.Examples {
+				baseline.Examples[i].DurationMs = 0
+			}
+			result.DurationMs = 0
+			for i := range result.Examples {
+				result.Examples[i].DurationMs = 0
+			}
 			before, _ := json.Marshal(baseline)
 			after, _ := json.Marshal(result)
 			if !bytes.Equal(before, after) || (baselineErr == nil) != (err == nil) {

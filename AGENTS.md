@@ -509,6 +509,16 @@ not the Copilot SDK.
 native evidence receipt. Subset is always partial, execution/journal failure is
 unknown, and only an explicit caller override changes the judge route. Keep
 live `run --agent`, native workspace Test/Explain and legacy Eval unchanged.
+The additive report includes monotonic total/per-test duration and content-free
+tool setting/source/count rows. Optional `test FILE -o json --github-summary`
+appends a bounded Markdown projection to the existing GitHub Actions summary
+file after writing the same JSON result; it never includes paths, prompts,
+answers, operands, tool arguments/results, credentials or provider diagnostics.
+Unset/unsafe summary paths refuse before execution; a missing regular-file target
+at a valid absolute path is created with mode 0600. Write failure exits 1.
+Preserve the original 0/2/1/130 Test status when report and summary writes work.
+This creates no automatic local history and grants no evidence, Publish or
+Deploy authority.
 File Run/Test `--verbose` is content-free stderr diagnostics only, never implicit
 `--show-content`. Keep transport errors classified without raw URLs/bodies;
 only validated local origins and standard endpoint paths may be shown. Failed
@@ -519,13 +529,18 @@ See [file preview](docs/kmx.md#agent-file-local-preview-unreleased-integration).
 
 `kmx mcp` is stdio-only and config-free at startup. It accepts agent paths in any
 directory; relative paths resolve against the server's working directory. Prefer
-absolute WSL paths from a Windows host. Read/write only `*.agent.md` and
+absolute WSL paths from a Windows host. Authoring reads/writes only `*.agent.md` and
 `.squad/agents/<member>/charter.md`, checking both the requested and resolved
-path. Ordinary folder names and links to agent files are supported; never use an
+path. The original-server fifth tool `set_tool_state` separately changes one declared
+Enabled/Disabled value in the physical agent folder's `kmx.yaml`, with agent and
+exact-byte settings revisions. Preserve other keys/comments; refuse invalid config.
+No arbitrary config path/content operands. Preview bridge children retain exactly
+Create/Edit/Run/Test and cannot discover or dispatch the settings writer. Ordinary folder names and links to agent files are supported; never use an
 agent-looking link to access a non-agent file. Keep descriptor-bound file IO and
 revision-checked edits. Optional `--root DIRECTORY` remains only for legacy
 plugins and the separately configured native Squad flow. Expose exactly
-Create/Edit/Run/Test; call canonical parsing and `App.PreviewAgentSnapshot`,
+Create/Edit/Run/Test/set_tool_state on the original role; execution calls canonical
+parsing and `App.PreviewAgentSnapshot`,
 never the path wrapper or shell CLI strings. Optional native v2 targets use
 explicit `App.PreviewSquadSnapshot` and revalidated native state, not auto-detection.
 Provider/endpoint selection comes from trusted startup configuration or the
@@ -539,7 +554,11 @@ paths after it returns. Fixture runners are not production execution. Edit prese
 ownership/ACLs/xattrs; normal directory inheritance is the day-0 own-file contract.
 No new runner, Explain tool or MCP network listener. The read-only
 `kmx://agent/{path}` resource projects the requested supported agent file;
-it is not a fifth tool or generic file reader. Read-only `kmx://models` lazily
+it is not an additional tool or generic file reader. Declared-tool resources include
+opaque `toolSettingsRevision` (`absent` or exact-byte sha256), from the same checked
+read as `toolSettings`. Zero-tool resources omit the token. Mutating settings qualifies
+the folder for the reader; an absent Enabled no-op preserves absence without it.
+Publication errors report explicit unknown/mayHaveWritten, never automatic retries. Read-only `kmx://models` lazily
 projects validated Copilot IDs/default for the picker, without startup auth or
 inference. Model selection is memory-only, never source/history. Fence model
 changes as well as revisions; never attribute another model's result as current. No folder confirmation is needed
@@ -679,8 +698,10 @@ never ancestor discovery or source declarations. `tools` maps names to Enabled
 (default) or Disabled; unknown states refuse. Read without rewriting other keys,
 freeze for execution/results/journals, and stale prior results on effective-setting
 changes. Disabled answers consume a request slot but do not count as live calls;
-Enabled calls retain native permissions. Canvas states are read-only; Ask is not
-implemented. Historical settings-free journals retain Enabled semantics.
+Enabled calls retain native permissions. Canvas switches draft Enabled/Disabled
+and save through the original-server revision-checked setter before Test; partial
+or uncertain saves retain drafts and never run Test. Ask is not implemented.
+Historical settings-free journals retain Enabled semantics.
 Its optional first-response batch of up to five calls is host-enforced against
 trusted definitions and schemas, validated as a whole before serial dispatch;
 arguments are bounded to 8 KiB and results to 32 KiB per call; at most two agent model calls,
@@ -855,6 +876,28 @@ link, README-front-door and repository-map checks and run
 `npm --prefix docs run docs:check` when they affect the rendered site. The
 current exact alpha framework pin is a draft choice, not approval to publish;
 custom-domain and versioned-site changes require a separate review.
+
+The experimental `suite build --suite-ref` mode checks all local packaged files
+against a bounded SHA256-pinned published source, including cases and supplemental
+metadata, builds from the fetched bytes and emits image execution metadata.
+The full suite digest remains authoritative; an unchanged public graph alone is
+insufficient. Capability-based sources bind models
+at deployment, so omit model build flags. `suite push-image` publishes the full
+image index/attestation graph (flat or nested) and prints the runnable platform
+digest without requiring deployment admission metadata. Different existing tags
+require explicit --force; same-digest publication is a no-op. The AgentKit adapter
+refuses serving ports/health paths outside 8080 and /healthz. These
+image operations do not alter native workspace authoring or add Deploy support.
+Source comparison uses the shared portable packing policy, including declared
+ToolProvider modes rather than host execute bits. Keep strict image-source reads
+separate from explicit flow ingestion; preserve flow-only limits and graph identity.
+Image inspection refuses OCI index/manifest subjects before registry requests;
+in-toto statement subjects remain validated normally. Resolution traverses nested
+indexes under one global descriptor/depth budget and ambiguity count. Mounted
+AgentKit builds require linux/amd64 for the qualified single-platform harness pin.
+Reject known credential shapes in model-key environment selectors before source
+or build effects. Loose build staging refuses modes without owner file-read or
+directory read/search permissions before creating output, preserving declared modes.
 
 Run checks appropriate to the changed paths as described in CONTRIBUTING.md.
 App CI runs all four process-isolated shards on Linux and macOS; both platforms

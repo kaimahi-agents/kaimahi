@@ -52,7 +52,7 @@ func TestAgentResourceShapesAndConfinement(t *testing.T) {
 		t.Fatal("resource not discoverable", err)
 	}
 	tools, err := cs.ListTools(t.Context(), nil)
-	if err != nil || len(tools.Tools) != 4 {
+	if err != nil || len(tools.Tools) != 5 {
 		t.Fatal("resource added a tool")
 	}
 	for _, p := range []string{"minimal.agent.md", saved.Path} {
@@ -100,6 +100,16 @@ func TestAgentResourceInvalidCheckIsClassifiedWithoutSource(t *testing.T) {
 	result, err := cs.ReadResource(t.Context(), &sdk.ReadResourceParams{URI: agentResourceURI("broken.agent.md")})
 	if err != nil || len(result.Contents) != 1 || result.Contents[0].Text != `{"schemaVersion":1,"kind":"kmx.agent-view-error","reasonCode":"invalid_file"}` {
 		t.Fatalf("missing fixed resource refusal: %+v %v", result, err)
+	}
+}
+
+// The native host drops RPC error data, so a missing file is fixed resource data.
+func TestAgentResourceMissingFileIsClassified(t *testing.T) {
+	f, _, _ := canonicalFiles(t)
+	cs := resourceClient(t, f, &app.App{})
+	result, err := cs.ReadResource(t.Context(), &sdk.ReadResourceParams{URI: agentResourceURI("missing.agent.md")})
+	if err != nil || len(result.Contents) != 1 || result.Contents[0].Text != `{"schemaVersion":1,"kind":"kmx.agent-view-error","reasonCode":"not_found"}` {
+		t.Fatalf("missing file not classified: %+v %v", result, err)
 	}
 }
 
@@ -220,7 +230,7 @@ func TestAgentResourceAuthoringSnapshot(t *testing.T) {
 	}
 }
 
-func TestAgentResourceRecordingPreservesDataAndRefusesLossyCanvasEdit(t *testing.T) {
+func TestAgentResourceRecordingPreservesDataAndSupportsSparseCanvasEdit(t *testing.T) {
 	f, _, source := canonicalFiles(t)
 	source = strings.Replace(source, "## Examples", "## Tools\n- ping\n\n## Examples", 1)
 	source = strings.Replace(source, "    assertions:", "    mocks:\n      tools: [{name: ping, mode: recorded, calls: []}]\n    assertions:", 1)
@@ -229,7 +239,7 @@ func TestAgentResourceRecordingPreservesDataAndRefusesLossyCanvasEdit(t *testing
 		t.Fatal(err)
 	}
 	view := readView(t, resourceClient(t, f, &app.App{}), saved.Path)
-	if view.Authoring == nil || view.Authoring.Editable || view.Authoring.Source != source || view.Examples[0].Mocks == nil {
+	if view.Authoring == nil || !view.Authoring.Editable || !view.Authoring.RecordingControls || view.Authoring.Source != source || view.Examples[0].Mocks == nil {
 		t.Fatalf("lossy recording projection %+v", view)
 	}
 }

@@ -61,6 +61,7 @@ const ASSERTION_FIELDS = {
   contains: ["value"],
   notContains: ["value"],
   regex: ["pattern"],
+  toolCalled: ["tool"], toolNotCalled: ["tool"],
   llmJudge: ["rubric", "minScore", "judgeModel", "judgeVersion"],
 };
 
@@ -189,20 +190,30 @@ function uniqueID(id, seen) {
   seen.add(id);
 }
 
-function validateExamples(examples) {
+export function validateExamples(examples, recordings = false) {
   require(Array.isArray(examples) && examples.length <= 128, "Provide 0–128 examples.");
   const seen = new Set();
   for (const example of examples) {
-    objectFields(example, ["id", "input", "assertions"]);
+    objectFields(example, recordings ? ["id", "input", "assertions", "mocks"] : ["id", "input", "assertions"]);
+    if (example.mocks !== undefined) {
+      objectFields(example.mocks, ["tools"]);
+      require(Array.isArray(example.mocks.tools) && example.mocks.tools.length <= 32, "Invalid tool modes.");
+      const names = new Set();
+      for (const t of example.mocks.tools) {
+        objectFields(t, ["name", "mode", "description", "parameters", "calls"]);
+        require(typeof t.name === "string" && /^[A-Za-z_][A-Za-z0-9_-]{0,63}$/.test(t.name) && !names.has(t.name) && ["live", "recorded"].includes(t.mode), "Invalid tool mode."); names.add(t.name);
+      }
+    }
     uniqueID(example.id, seen);
     nonblank(example.input);
     require(Array.isArray(example.assertions) && example.assertions.length >= 1 && example.assertions.length <= 64, "Provide 1–64 checks per example.");
     const checkIDs = new Set();
     for (const check of example.assertions) {
-      objectFields(check, ["id", "type", "value", "pattern", "rubric", "minScore", "judgeModel", "judgeVersion"]);
+      objectFields(check, ["id", "type", "value", "pattern", "rubric", "minScore", "judgeModel", "judgeVersion", "tool"]);
       uniqueID(check.id, checkIDs);
       require(!check.id.startsWith("expectContains."), "Reserved assertion ID.");
       require(typeof check.type === "string" && Object.hasOwn(ASSERTION_FIELDS, check.type), "Unsupported assertion type.");
+      require(recordings || !["toolCalled", "toolNotCalled"].includes(check.type), "Tool checks require sparse edits.");
       const operands = ASSERTION_FIELDS[check.type];
       require(Object.keys(check).every((key) => key === "id" || key === "type" || operands.includes(key)), "Operand is not allowed for this assertion type.");
       for (const key of operands) {
@@ -247,9 +258,36 @@ export function uniqueIndex(items, key) {
   return map;
 }
 export const clone = (value) => JSON.parse(JSON.stringify(value));
+// Only sparse mode intents cross Edit. Existing fixture payload never makes a
+// numeric round trip, and a changed payload cannot impersonate a new capture.
+export function exampleEdits(before, after, origins) {
+  validateExamples(after, true);
+  const prior = new Map(before.map(e => [e.id, e])), edits = [];
+  origins ??= after.map(e => prior.has(e.id) ? e.id : null);
+  require(Array.isArray(origins) && origins.length === after.length && origins.every(id => id === null || prior.has(id)) && new Set(origins.filter(id=>id!==null)).size === origins.filter(id=>id!==null).length, "Invalid test origins.");
+  for (const old of before) if (!origins.includes(old.id)) edits.push({ beforeId: old.id, delete: true });
+  for (const [index,e] of after.entries()) {
+    const old = prior.get(origins[index]), change = old ? { beforeId: old.id } : { id: e.id };
+    if (old && e.id !== old.id) change.id = e.id;
+    for (const key of ["input", "assertions"]) if (!old || !same(old[key], e[key])) change[key] = e[key];
+    const tools = [];
+    for (const t of e.mocks?.tools ?? []) {
+      const prev = old?.mocks?.tools.find(x => x.name === t.name);
+      if (same(prev, t)) continue;
+      const pending = { name: t.name, mode: "recorded", calls: [] }, live = { name: t.name, mode: "live" };
+      require(same(t, t.mode === "live" ? live : pending), "Fixture payload is not an editable operand.");
+      tools.push({ name: t.name, mode: t.mode, ...(prev?.mode === "recorded" && t.mode === "recorded" ? { reset: true } : {}) });
+    }
+    require(!(old?.mocks?.tools ?? []).some(t => !e.mocks?.tools.some(x => x.name === t.name)), "Keep existing tool modes or explicitly choose Live.");
+    if (tools.length) change.tools = tools;
+    if (!old || Object.keys(change).length > 1) edits.push(change);
+  }
+  return edits;
+}
+
 export const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-export const operandKey = (type) => type === "regex" ? "pattern" : type === "llmJudge" ? "rubric" : "value";
-export const EDITABLE_TYPES = [["contains", "Contains"], ["notContains", "Not contains"], ["regex", "Regex"], ["llmJudge", "Judge"]];
+export const operandKey = (type) => ["toolCalled", "toolNotCalled"].includes(type) ? "tool" : type === "regex" ? "pattern" : type === "llmJudge" ? "rubric" : "value";
+export const EDITABLE_TYPES = [["contains", "Contains"], ["notContains", "Not contains"], ["regex", "Regex"], ["llmJudge", "Judge"], ["toolCalled", "Calls"], ["toolNotCalled", "Doesn't call"]];
 export const quoted = (text) => `“${text}”`;
 
 export function checkIssue(a) {
@@ -279,22 +317,24 @@ export const readSnapshot = (view) => {
   } catch { /* Old or noncanonical resources remain inspection-only. */ }
 };
 
-const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/;
-export const portableId = (name) => name.trim().toLowerCase().replace(/\s+/g, "-");
+const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+// IDs keep typed capitals ("CI"); only a sentence-case first letter is lowered,
+// since the shown name capitalizes it again. Uniqueness ignores case.
+export const portableId = (name) => name.trim().replace(/\s+/g, "-").replace(/^[A-Z](?![A-Z])/, c => c.toLowerCase());
 
 export function validateDraft(draft, intended) {
   const raw = draft.raw;
   if (draft.origin === null && !draft.fixedId) {
     raw.id = portableId(draft.name);
-    if (!/^[a-z][a-z0-9-]{0,62}$/.test(raw.id) || RESERVED.test(raw.id)) return "Use a name that starts with a letter, then letters, numbers, spaces or hyphens.";
+    if (!/^[A-Za-z][A-Za-z0-9-]{0,62}$/.test(raw.id) || RESERVED.test(raw.id)) return "Use a name that starts with a letter, then letters, numbers, spaces or hyphens.";
   }
-  if (intended.filter((e) => e.id === raw.id).length !== 1) return "Another test already has this name.";
+  if (intended.filter((e) => e.id.toLowerCase() === raw.id.toLowerCase()).length !== 1) return "Another test already has this name.";
   if (!raw.input.trim()) return "Say what the agent gets.";
   if (!raw.assertions.length) return "Keep at least one check.";
   if (raw.assertions.some(a => !checkComplete(a))) return { check: true };
 }
 
-export function compareDrafts(base, candidate, snap, sectionDrafts, testDrafts, toolsDraft) {
+export function compareDrafts(base, candidate, snap, sectionDrafts, testDrafts, toolsDraft, settingsDraft = new Map()) {
   const sectionText = (key) => sectionDrafts.get(key) ?? snap.sections.find((s) => s.key === key).text;
   const rawExamples = () => snap ? base.authoring.examples : [];
   const items = [], next = readSnapshot(candidate);
@@ -312,6 +352,12 @@ export function compareDrafts(base, candidate, snap, sectionDrafts, testDrafts, 
     if (!same(b, m) || !same(b, t)) items.push([`Test ${quoted(draft?.origin === null ? draft.name : id)}`, show(b), show(m), show(t)]);
   }
   if (toolsDraft !== undefined || !same(base.tools ?? [], candidate.tools ?? [])) items.push(["Tools", show(base.tools ?? []), show(toolsDraft ?? base.tools ?? []), show(candidate.tools ?? [])]);
+  const value = (view, name) => view.toolSettings?.find(s => s.name === name)?.state ?? "Enabled";
+  if (settingsDraft.size || (base.tools ?? []).some(name => candidate.tools?.includes(name) && value(base, name) !== value(candidate, name))) {
+    const mine = (toolsDraft ?? base.tools ?? []).map(name => ({ name, state: settingsDraft.get(name) ?? value(base, name) }));
+    items.push(["Tool settings", show(base.toolSettings), show(mine), show(candidate.toolSettings)]);
+    if (base.toolSettingsRevision !== candidate.toolSettingsRevision) items.push(["Tool settings revision", base.toolSettingsRevision, base.toolSettingsRevision, candidate.toolSettingsRevision]);
+  }
   if (candidate.model !== base.model) items.push(["Model", base.model, base.model, candidate.model]);
   if (candidate.title !== base.title) items.push(["Title", base.title, base.title, candidate.title]);
   return items;

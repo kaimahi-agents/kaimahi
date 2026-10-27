@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/google/jsonschema-go/jsonschema"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -23,6 +24,7 @@ func AuthoringOperations(files *Files) map[string]Operation {
 		if name == "edit" {
 			schema.Properties["expectedRevision"] = &jsonschema.Schema{Type: "string", Pattern: `^sha256:[a-f0-9]{64}$`}
 			schema.Required = append(schema.Required, "expectedRevision")
+			schema.Properties["exampleEdits"] = exampleEditsSchema()
 			description = "Replace one validated charter at its expected revision, preserving mode bits, not ownership, ACLs or extended attributes. Revision is checked just before rename under an OS lock; outside editors ignoring that lock can still race."
 		}
 		ops[name] = Operation{Schema: schema, Description: description, Handler: func(ctx context.Context, req *sdk.CallToolRequest) (*sdk.CallToolResult, error) {
@@ -30,9 +32,10 @@ func AuthoringOperations(files *Files) map[string]Operation {
 				return nil, refusal("invalid_root")
 			}
 			var input struct {
-				Path             string `json:"path"`
-				Content          string `json:"content"`
-				ExpectedRevision string `json:"expectedRevision"`
+				Path             string                  `json:"path"`
+				Content          string                  `json:"content"`
+				ExpectedRevision string                  `json:"expectedRevision"`
+				ExampleEdits     []agentfile.ExampleEdit `json:"exampleEdits"`
 			}
 			if json.Unmarshal(req.Params.Arguments, &input) != nil {
 				return nil, refusal("invalid_options")
@@ -41,6 +44,8 @@ func AuthoringOperations(files *Files) map[string]Operation {
 			var err error
 			if name == "create" {
 				file, err = files.Create(ctx, input.Path, []byte(input.Content))
+			} else if len(input.ExampleEdits) > 0 {
+				file, err = files.editExamples(ctx, input.Path, input.ExpectedRevision, []byte(input.Content), input.ExampleEdits)
 			} else {
 				file, err = files.Edit(ctx, input.Path, input.ExpectedRevision, []byte(input.Content))
 			}

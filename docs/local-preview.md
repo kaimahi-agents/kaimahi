@@ -75,7 +75,9 @@ for one real read-only GitHub MCP operation, without discovery or workspace
 configuration. An unbound name is offered as a bounded unavailable stub answering
 "not available in this test"; it is never silently dropped. Malformed supplied bindings,
 missing live credentials and broken calls still refuse. [Per-test recordings](agent-file.md#per-test-recorded-tools)
-can supply saved output without any tool binding; this slice does not automatically capture or save results.
+supply saved output without any tool binding. A pending Recorded tool (`calls: []`) captures its first successful
+live result and saves it with its test after verified journal finalization. Ordinary Live, replay and unavailable
+responses never become recordings; uncalled tools remain pending. Save errors are explicit and withhold full success.
 Default inbound MCP remains unbound; tool input cannot supply a binding.
 Bound tools support local, fake and Copilot Chat Completions/Responses routes;
 judging remains tool-free. Copilot checks current tool capability before each
@@ -95,7 +97,11 @@ Per-test definitions and versioned dispatch-source selection are journaled to re
 zero-call offline replay; endpoint/binding credentials are not. Source selection is not proof of capture or of a call.
 Old fixed-read journals remain inspectable. Their source metadata is absent (`ToolSources` is nil), meaning
 source not recorded, never assumed live. Older kmx
-builds refuse the new source metadata rather than reinterpret it. There is no general CLI binding-file format; the explicit
+builds refuse the new source metadata, including the optional `capturing` flag, rather than reinterpret it.
+That flag is only valid for Recorded/live selection and is not capture proof by itself. Publication also requires
+the trusted live observation matched to the complete submitted journal, and a checked source-file edit. A captured
+result keeps its executed revision and separately returns the saved revision; it does not become fresh evidence
+for the new source bytes. No execution retry follows a stale or failed save. There is no general CLI binding-file format; the explicit
 CLI binding below remains the fixed read. Copilot's runtime-owned binding is
 separate and requires no hand-edited file.
 
@@ -131,6 +137,10 @@ the effective settings makes an earlier result out of date even when the agent
 file is unchanged. Offline replay uses the journaled settings and results,
 never today's YAML or a live executor. Older journals without settings retain
 Enabled semantics; older readers can refuse new settings-bearing journals.
+The safe JSON report projects these settings and per-test source/call counts
+without definitions, arguments or results. It also records monotonic total and
+per-test `durationMs`; those timings are diagnostics, not model billing or
+deployment evidence.
 
 ## Copilot host tools
 

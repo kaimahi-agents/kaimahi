@@ -31,7 +31,7 @@ func TestFileUnpinnedJudgeModelSelectionPreservesSnapshot(t *testing.T) {
 		opt.Route = &modelaccess.Route{Provider: "compatible", Model: model, Endpoint: "http://127.0.0.1/v1", Auth: "none"}
 		runner := &scriptedPreview{verdict: runtime.EvaluationPass}
 		result, err := (&App{FileRunner: runner}).PreviewAgentSnapshot(t.Context(), parsed, opt)
-		if err != nil || !result.FullPass {
+		if err != nil || !result.FullPass || result.JudgeRoute == nil || result.JudgeRoute.Provider != "compatible" || result.JudgeRoute.Model != model {
 			t.Fatalf("result=%+v / %v", result, err)
 		}
 		for i, example := range runner.request.Examples {

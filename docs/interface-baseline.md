@@ -58,6 +58,7 @@ kmx
 │   ├── build <directory>
 │   ├── policy <file>
 │   ├── push <directory> <reference>
+│   ├── push-image <archive> <reference>
 │   └── pull <reference>
 ├── task
 │   └── result <task>
@@ -70,6 +71,10 @@ read-only reference extraction/export helpers; explicit `test FILE` is a local
 preview whose completed non-pass diagnostics can be explained offline with
 `test explain --file FILE`. Explicit `run FILE` is the corresponding preview Run.
 Cobra also supplies `help`.
+Experimental `suite push-image` publishes a verified OCI image graph, including
+attestations, independently of deployment admission. Replacing a different tag
+requires `--force`; same-digest publication is a no-op. `suite build --suite-ref`
+checks complete source content through the shared bounded materializer.
 
 Unreleased `model list` defaults to local discovery; explicit Copilot listing
 uses explicit `COPILOT_GITHUB_TOKEN`, then an existing gh sign-in without keychain

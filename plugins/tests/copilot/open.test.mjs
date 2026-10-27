@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { registerHooks } from "node:module";
-import { createOpenHandler, readOpenView, viewInstanceId, OPEN_TOOL_NAME, OPEN_TOOL_PARAMETERS } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/open.mjs";
+import { createOpenHandler, createOpenCommand, readOpenView, viewInstanceId, OPEN_TOOL_NAME, OPEN_TOOL_PARAMETERS } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/open.mjs";
 
 const PATH = "greeter.agent.md";
 const PROVIDER = "plugin:kmx-agent-builder:agent-view";
@@ -102,13 +102,22 @@ test("invalid check resource explains the file needs fixing without exposing par
   assert.equal((await malformed.run({ path: PATH })).reasonCode, "invalid-resource");
 });
 
-test("no renderer yields existing text projection with no canvas call", async () => {
+test("an unadvertised renderer is still tried; text only when the canvas can't open", async () => {
+  // A resumed app session can omit the canvas capability while canvas.open works.
   for (const renderer of [false, undefined]) {
     const f = setup({ renderer });
     if (renderer === undefined) delete f.session.capabilities.ui;
-    const result = await f.run({ path: PATH });
-    assert.equal(result.mode, "text"); assert.match(result.text, /Title: Greeter/);
-    assert.match(result.text, /Latest: none/); assert.deepEqual(f.calls.map(c => c[0]), ["read"]);
+    assert.equal((await f.run({ path: PATH })).mode, "canvas");
+    assert.deepEqual(f.calls.map(c => c[0]), ["read", "open"]);
+    const failing = setup({ renderer, openError: new Error("no renderer") });
+    if (renderer === undefined) delete failing.session.capabilities.ui;
+    const result = await failing.run({ path: PATH });
+    assert.equal(result.mode, "text"); assert.equal(result.canvasFailed, true); assert.match(result.text, /Title: Greeter/);
+    assert.match(result.text, /Latest: none/); assert.deepEqual(failing.calls.map(c => c[0]), ["read", "open"]);
+    const missing = setup({ renderer }); delete missing.session.rpc.canvas;
+    if (renderer === undefined) delete missing.session.capabilities.ui;
+    assert.equal((await missing.run({ path: PATH })).mode, "text");
+    assert.deepEqual(missing.calls.map(c => c[0]), ["read"]);
   }
 });
 test("advertised renderer failure is a safe refusal, never a retry or text substitute", async () => {
@@ -176,13 +185,15 @@ test(`actual ${variant} extension opens its own provider and registers the kmx s
       assert.equal(f.calls.length, 1, "help and malformed commands must not read or open");
       assert.equal(f.calls[0][0], "log");
       assert.match(f.calls[0][1], /Usage: \/kmx-canvas open <path>/);
+      assert.deepEqual(f.calls[0][2], { level: "error" }, "the app shows only error-level command output");
     }
     f.calls.length = 0;
     await command({ args: "open greeter.agent.md" });
     await command({ args: "open greeter.agent.md" });
-    assert.deepEqual(f.calls.map(c => c[0]), ["read", "open", "read", "open"]);
+    assert.deepEqual(f.calls.map(c => c[0]), ["read", "open", "log", "read", "open", "log"]);
     assert.deepEqual(f.calls[1][1], { extensionId: provider, canvasId: "kmx-agent-view", instanceId: "kmx-agent-greeter", input: { path: PATH } });
-    assert.deepEqual(f.calls[1], f.calls[3], "native reopen focuses the same instance");
+    assert.deepEqual(f.calls[1], f.calls[4], "native reopen focuses the same instance");
+    assert.equal(f.calls[2][1], "Opened greeter.agent.md in the agent canvas.");
     const nativeRead = f.session.rpc.mcp.resources.read;
     try {
       for (const path of ["/repo Māori/Release Notes.agent.md", " greeter.agent.md", "\tgreeter.agent.md"]) {
@@ -202,10 +213,14 @@ test(`actual ${variant} extension opens its own provider and registers the kmx s
       assert.deepEqual([f.calls[0][0], f.calls[0][2]], ["log", { level: "error" }]);
     }
     f.session.capabilities.ui.canvases = false;
+    const advertisedOpen = f.session.rpc.canvas.open;
+    f.session.rpc.canvas.open = async () => { throw new Error("no renderer"); };
     f.calls.length = 0;
     await command({ args: "open greeter.agent.md" });
-    assert.deepEqual(f.calls.map(c => c[0]), ["read", "log"]);
-    assert.match(f.calls[1][1], /Title: Greeter/);
+    assert.deepEqual(f.calls.map(c => c[0]), ["read", "log", "log"]);
+    assert.deepEqual(f.calls[1].slice(1), ["The canvas couldn't open here, so the agent is shown as text.", { level: "error" }]);
+    assert.match(f.calls[2][1], /Title: Greeter/);
+    f.session.rpc.canvas.open = advertisedOpen;
     f.session.capabilities.ui.canvases = true;
     const nativeOpen = f.session.rpc.canvas.open;
     try {
@@ -248,4 +263,37 @@ test(`actual ${variant} extension opens its own provider and registers the kmx s
       assert.doesNotMatch(ordinary, /ask.*(?:approval|confirmation)|obtain.*approval/i);
     }
   } finally { hooks.deregister(); delete globalThis.__kmxJoin; }
+});
+
+test("/kmx-canvas open resolves a relative path in the session folder and says what happened", async () => {
+  for (const [folder, want] of [["C:\\Users\\ada\\walk", "C:\\Users\\ada\\walk/team/count.agent.md"], ["/home/ada/walk/", "/home/ada/walk/team/count.agent.md"]]) {
+    const f = setup({ path: want });
+    f.session.rpc.metadata = { snapshot: async () => ({ workingDirectory: folder }) };
+    const command = createOpenCommand({ getSession: () => f.session, extensionId: PROVIDER });
+    await command({ args: "open team/count.agent.md" });
+    assert.deepEqual(f.calls[0], ["read", { serverName: "kmx-agent-builder", uri: "kmx://agent/" + encodeURIComponent(want) }]);
+    assert.equal(f.calls[1][1].input.path, want);
+    assert.deepEqual(f.calls[2], ["log", "Opened count.agent.md in the agent canvas.", undefined]);
+  }
+  // Squad charters keep forward slashes, which the path check requires.
+  const squad = setup({ path: "C:\\walk/.squad/agents/leader/charter.md" });
+  squad.session.rpc.metadata = { snapshot: async () => ({ workingDirectory: "C:\\walk" }) };
+  await createOpenCommand({ getSession: () => squad.session, extensionId: PROVIDER })({ args: "open .squad/agents/leader/charter.md" });
+  assert.deepEqual(squad.calls.map(c => c[0]), ["read", "open", "log"]);
+  const full = setup({ path: "/mnt/c/walk/count.agent.md" });
+  full.session.rpc.metadata = { snapshot: async () => ({ workingDirectory: "C:\\walk" }) };
+  await createOpenCommand({ getSession: () => full.session, extensionId: PROVIDER })({ args: "open /mnt/c/walk/count.agent.md" });
+  assert.equal(full.calls[1][1].input.path, "/mnt/c/walk/count.agent.md", "a full path is used as typed");
+});
+
+test("/kmx-canvas open says file not found only when the kmx server says so", async () => {
+  const f = setup({ resourceError: { schemaVersion: 1, kind: "kmx.agent-view-error", reasonCode: "not_found" } });
+  f.session.rpc.metadata = { snapshot: async () => { throw new Error("not supported"); } };
+  await createOpenCommand({ getSession: () => f.session, extensionId: PROVIDER })({ args: "open missing.agent.md" });
+  assert.deepEqual(f.calls.at(-1), ["log", "File not found: missing.agent.md. Check the name, or give the full path.", { level: "error" }]);
+  assert.equal((await f.run({ path: "missing.agent.md" })).reasonCode, "not-found");
+  // A transport or permission failure is not a missing file.
+  const g = setup({ readError: new Error("io_failed") });
+  await createOpenCommand({ getSession: () => g.session, extensionId: PROVIDER })({ args: "open missing.agent.md" });
+  assert.match(g.calls.at(-1)[1], /MCP server is running/);
 });

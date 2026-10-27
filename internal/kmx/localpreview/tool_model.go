@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/agent-primitives/sessions/api"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
@@ -152,7 +153,7 @@ func (c *modelClient) ToolModel(ctx context.Context, r api.ModelRequest) (api.Mo
 	}
 	result, err := parseToolReply(raw, r.Model, len(r.Messages) == 2, defs...)
 	if err != nil {
-		return fail()
+		return api.ModelResponse{}, err
 	}
 	if c.check != nil {
 		if err := localtools.CheckJSON(result, c.check); err != nil {
@@ -170,7 +171,7 @@ func validModelCall(c api.ToolCall, defs ...api.ToolDefinition) bool {
 }
 
 func parseToolReply(raw []byte, model string, allowCall bool, defs ...api.ToolDefinition) (api.ModelResponse, error) {
-	fail := func() (api.ModelResponse, error) { return api.ModelResponse{}, errRunnerExecution }
+	fail := func() (api.ModelResponse, error) { return api.ModelResponse{}, agentpreview.ErrModelReply }
 	if !runtime.JSONKeysUnique(raw) {
 		return fail()
 	}
@@ -191,6 +192,12 @@ func parseToolReply(raw []byte, model string, allowCall bool, defs ...api.ToolDe
 		case "role", "content", "tool_calls":
 		case "refusal":
 			if !bytes.Equal(value, []byte("null")) {
+				return fail()
+			}
+		case "reasoning_opaque", "reasoning_text":
+			// Copilot adds model reasoning to some answers; it is never used.
+			var reasoning *string
+			if json.Unmarshal(value, &reasoning) != nil {
 				return fail()
 			}
 		default:

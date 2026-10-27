@@ -135,7 +135,7 @@ test("server page names its destination, counts and opening rows", () => {
   fire(back, "click"); assert.equal(p.calls.back, 1);
   assert.equal(byTag(p.root, "h1")[0].textContent, "GitHub");
   assert.match(p.root.textContent, /MCP server · 2 of 12 tools/);
-  assert.doesNotMatch(p.root.textContent, /Live|signed in|Enabled|Disabled/);
+  assert.doesNotMatch(p.root.textContent, /Live|signed in|Ask/);
   const search = byClass(p.root, "tool-filter")[0];
   assert.equal(search.type, "search");
   assert.equal(search.getAttribute("placeholder"), "Filter 12 tools");
@@ -197,4 +197,34 @@ test("footer discard only when dirty; busy disables inputs", () => {
   assert.equal(dirty.guard(discard), "idle");
   fire(discard, "click"); assert.equal(dirty.calls.discard, 1);
   assert.ok(byTag(dirty.root, "input").every((i) => i.disabled));
+});
+
+test("T1 disabled counts use unique ownership, not per-tool labels or guessed servers", () => {
+  const h = harness(), names = ["list_tags", "add_comment", "get_file", "search_docs"];
+  const section = toolsSection(h.doc, h.button, base({ names, settings: names.map(name => ({ name, state: "Disabled" })) }));
+  assert.deepEqual(byClass(section, "tool-source").map(n => n.textContent), ["GitHubMCP server · 2 of 4 tools · 2 disabled for tests", "DocsMCP server · 1 of 2 tools · 1 disabled for tests"]);
+  assert.match(section.textContent, /1 tool in the agent file can’t be matched/);
+  assert.equal(byClass(section, "tool-state").length, 0);
+});
+test("T2 ticked tools have one accessible flipping word, not a disabled checkbox", () => {
+  const calls = [], p = t2({ settings: [{ name: "tool_0", state: "Disabled" }, { name: "tool_1", state: "Enabled" }], onStateToggle: name => calls.push(name) });
+  const words = byClass(p.root, "tool-state");
+  assert.deepEqual(words.map(n => n.textContent), ["Disabled", "Enabled"]);
+  assert.deepEqual(words.map(n => n.getAttribute("aria-checked")), ["false", "true"]);
+  assert.equal(words[0].getAttribute("role"), "switch"); assert.equal(p.guard(words[0]), "settings");
+  assert.match(words[0].getAttribute("aria-label"), /tool_0.*tests/);
+  assert.equal(byClass(p.root, "tool-choice")[0].disabled, false);
+  assert.match(words[0].className, /is-disabled/);
+  fire(words[0], "click"); assert.deepEqual(calls, ["tool_0"]);
+  assert.match(p.root.textContent, /MCP server · 2 of 12 tools · 1 disabled for tests/);
+  assert.match(p.root.textContent, /Tick a tool to give it to the agent\. Disabled tools stay in the agent but don't run in tests\./);
+});
+test("T2 inspection and older resources use plain state words without handlers", () => {
+  for (const over of [{ editable: false }, { settingsEditable: false }]) {
+    const p = t2(over), words = byClass(p.root, "tool-state");
+    assert.equal(words.length, 2); assert.ok(words.every(n => n.tag === "span" && !n.listeners.click && !n.getAttribute("role")));
+    assert.ok(words.every(n => !n.className.split(/\s+/).includes("tb")), "plain words must not inherit the interactive button cursor/color");
+  }
+  assert.equal(byClass(t2({ names: [] }).root, "tool-state").length, 0);
+  assert.equal(byClass(t2({ settings: null }).root, "tool-state").length, 0, "invalid settings never claim retained values are current");
 });

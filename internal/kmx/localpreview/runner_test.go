@@ -57,6 +57,29 @@ func injectedRunner(e *runnerExecutor, timeout time.Duration) agentpreview.Runne
 	return r
 }
 
+func TestRunnerReportsMonotonicCompletionDuration(t *testing.T) {
+	req := runnerRequest(t)
+	req.Examples = req.Examples[:1]
+	times := []time.Time{
+		time.Unix(100, 0),
+		time.Unix(101, 234*int64(time.Millisecond)),
+		time.Unix(101, 750*int64(time.Millisecond)),
+	}
+	r := injectedRunner(&runnerExecutor{}, time.Minute).(*runner)
+	r.now = func() time.Time {
+		if len(times) == 0 {
+			t.Fatal("unexpected clock read")
+		}
+		now := times[0]
+		times = times[1:]
+		return now
+	}
+	out, err := r.Run(t.Context(), req)
+	if err != nil || len(out.Examples) != 1 || out.Examples[0].Completion.DurationMs != 1750 || len(times) != 0 {
+		t.Fatalf("examples=%+v err=%v remaining=%d", out.Examples, err, len(times))
+	}
+}
+
 func TestRunnerCopilotToolsRefusesBeforeAccessOrJournal(t *testing.T) {
 	for _, judge := range []bool{false, true} {
 		for _, bindings := range []bool{false, true} {

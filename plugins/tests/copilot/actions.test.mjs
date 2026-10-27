@@ -30,6 +30,45 @@ function harness({omitModel=false,fixture=original}={}){
  }}},send:async prompt=>{calls.push({chat:prompt})}};
  return{o,session,calls,raw,source:()=>source,setRace:()=>{race=true},setDenied:()=>{denied=true},setUnavailable:()=>{unavailable=true},hold:()=>{release={};return()=>release.resolve()},act:createActionHandler({session,path:'greeter.agent.md'})};
 }
+test('recording-capable Test enforces loaded revision and preserves an uncalled attempt for Compare', async () => {
+ const h=harness(),read=h.session.rpc.mcp.resources.read,execute=h.session.rpc.tools.execute;
+ const mocks={tools:[{name:'ping',mode:'recorded',calls:[]}]};
+ h.session.rpc.mcp.resources.read=async args=>{const r=await read(args),raw=JSON.parse(r.contents[0].text);raw.authoring.recordingControls=true;raw.tools=['ping'];raw.toolSettings=[{name:'ping',state:'Enabled'}];raw.examples[0].mocks=mocks;r.contents[0].text=JSON.stringify(raw);return r};
+ let sent=0;
+ h.session.rpc.tools.execute=async req=>{
+  sent++;assert.equal(req.arguments.expectedRevision,revision(h.source()));assert.deepEqual(req.arguments.expectedToolSettings,[{name:'ping',state:'Enabled'}]);
+  const r=await execute({...req,arguments:Object.fromEntries(Object.entries(req.arguments).filter(([k])=>!['expectedRevision','expectedToolSettings','recordedReplayOnly'].includes(k)))});
+  h.raw().latest.result.toolSettings=[{name:'ping',state:'Enabled'}];
+  return {...r,structuredContent:h.raw().latest.result};
+ };
+ const first=await h.act({operation:'test',expectedRevision:revision(h.source())});assert.equal(first.error,undefined);
+ const second=await h.act({operation:'test',expectedRevision:revision(h.source()),comparisonModels:['fake','other']});
+ assert.equal(second.error,'recording_missing');assert.equal(sent,1,'uncalled stage must not be captured again');
+});
+
+test('comparison reuses a certified same-source partner instead of rerunning it',async()=>{
+ const h=harness(),read=h.session.rpc.mcp.resources.read,execute=h.session.rpc.tools.execute;
+ h.session.rpc.mcp.resources.read=async args=>{const r=await read(args),raw=JSON.parse(r.contents[0].text);raw.authoring.recordingControls=true;r.contents[0].text=JSON.stringify(raw);return r};
+ h.session.rpc.tools.execute=async req=>{const original=req.arguments;const r=await execute({...req,arguments:Object.fromEntries(Object.entries(original).filter(([k])=>!['expectedRevision','expectedToolSettings','recordedReplayOnly'].includes(k)))});const result=h.raw().latest.result;result.modelRoute.model=original.model;result.recordedReplayOnly=true;result.toolSettings=[];return {...r,structuredContent:result}};
+ assert.equal((await h.act({operation:'test',expectedRevision:revision(h.source())})).error,undefined);
+ const second=await h.act({operation:'test',expectedRevision:revision(h.source()),model:'other',comparisonModels:['other','fake']});
+ assert.equal(second.error,undefined);assert.equal(h.calls.length,2,'only newly selected model executes');assert.equal(second.comparison.results.length,2);
+});
+
+test('recording detail capacity follows test/tool pairs, not test count',async()=>{
+ const h=harness(),read=h.session.rpc.mcp.resources.read;
+ h.session.rpc.mcp.resources.read=async args=>{const r=await read(args),raw=JSON.parse(r.contents[0].text);raw.authoring.recordingControls=true;raw.authoring.recordingDetails=Array.from({length:130},(_,i)=>({exampleId:`e${Math.floor(i/2)}`,name:i%2?'clock':'read',text:'{arguments: {}, result: {ok: true}}'}));r.contents[0].text=JSON.stringify(raw);return r};
+ const v=await readView(h.session,'greeter.agent.md');assert.equal(v.authoring?.recordingControls,true);assert.equal(v.authoring.recordingDetails.length,130);
+});
+
+for (const changed of [false,true]) test('recording outcome fences '+(changed?'changed settings':'unconfirmed replay receipt'),async()=>{
+ const h=harness(),read=h.session.rpc.mcp.resources.read,execute=h.session.rpc.tools.execute;
+ h.session.rpc.mcp.resources.read=async args=>{const r=await read(args),raw=JSON.parse(r.contents[0].text);raw.authoring.recordingControls=true;raw.tools=['ping'];raw.toolSettings=[{name:'ping',state:changed&&h.calls.length?'Disabled':'Enabled'}];r.contents[0].text=JSON.stringify(raw);return r};
+ h.session.rpc.tools.execute=async req=>{const r=await execute({...req,arguments:Object.fromEntries(Object.entries(req.arguments).filter(([k])=>!['expectedRevision','expectedToolSettings','recordedReplayOnly'].includes(k)))});const result=h.raw().latest.result;result.toolSettings=[{name:'ping',state:'Enabled'}];if(changed)result.recordedReplayOnly=true;return {...r,structuredContent:result}};
+ const first=await h.act({operation:'test',expectedRevision:revision(h.source())});assert.equal(first.error,changed?'tool_settings_changed':'outcome-unknown');
+ if(!changed){const next=await h.act({operation:'test',expectedRevision:revision(h.source())});assert.equal(next.error,'outcome-unknown');assert.equal(h.calls.length,1,'unknown replay receipt locks before another dispatch')}
+});
+
 test('runtime reads existing tool declarations without adding a tool editor', async()=>{
  const h=harness({fixture:original.replace('## Examples','## Tools\n- ping\n\n## Examples')});
  const read=h.session.rpc.mcp.resources.read;
@@ -87,6 +126,13 @@ function nativeHarness(options){
  };
  return{...h,listeners,retired,requests,gate,ack,aborts,emit,start,dispatched,events,event:(name,data)=>{for(const listener of events.get(name)??[])listener({data})}};
 }
+test('recording-capable abort finishes stopped and reads back the resource',async()=>{
+ const n=nativeHarness(),read=n.session.rpc.mcp.resources.read;let reads=0;
+ n.session.rpc.mcp.resources.read=async args=>{reads++;const r=await read(args),raw=JSON.parse(r.contents[0].text);raw.authoring.recordingControls=true;r.contents[0].text=JSON.stringify(raw);return r};
+ const {pending}=await n.start();const before=reads;await n.act({operation:'stop',runId:'run-1'});n.ack.resolve({success:true});n.gate.reject(Error('aborted'));const stopped=await pending;
+ assert.equal(stopped.stopped,true);assert.equal(stopped.run.state,'stopped');assert.ok(reads>before,'read after acknowledged abort');assert.equal(stopped.view.latest.status,'none');
+});
+
 test('stopped snapshots keep request settings from before a config change, not Stop readback settings',async()=>{
  const n=nativeHarness({fixture:original.replace('## Examples','## Tools\n- ping\n\n## Examples')});
  let state='Enabled';const read=n.session.rpc.mcp.resources.read;
@@ -679,4 +725,129 @@ test('a refused tool-settings read is explained plainly without transport text',
  const h=harness();h.session.rpc.mcp.resources.read=async()=>{throw Error('invalid_tool_settings: kmx.yaml line 3 secret')};
  await assert.rejects(readView(h.session,'greeter.agent.md'),e=>e.code==='invalid_tool_settings'&&/tool settings.*kmx\.yaml/i.test(e.message)&&!/secret|line 3/.test(e.message));
  const r=await h.act({operation:'reload'});assert.equal(r.error,'invalid_tool_settings');assert.doesNotMatch(JSON.stringify(r),/secret|line 3/);
+});
+
+// The same SDK-shaped transport as the existing action tests, now with the
+// original-role setter and independently changing source/config revisions.
+function stateHarness({names=['ping','lookup'],states={},writer=true}={}) {
+ const fixture=names.length?original.replace('## Examples',`## Tools\n${names.map(n=>'- '+n).join('\n')}\n\n## Examples`):original;
+ const h=harness({fixture}),config=new Map(Object.entries(states));let token=config.size?revision(JSON.stringify([...config])):'absent',reads=0;
+ const declared=()=>h.source().match(/## Tools\r?\n([^]*?)## Examples/)?.[1].split(/\r?\n/).filter(l=>l.startsWith('- ')).map(l=>l.slice(2))??[];
+ const vector=()=>declared().map(name=>({name,state:config.get(name)??'Enabled'}));
+ const read=h.session.rpc.mcp.resources.read,execute=h.session.rpc.tools.execute;
+ h.session.rpc.mcp.resources.read=async args=>{reads++;const response=await read(args),raw=JSON.parse(response.contents[0].text);raw.tools=declared();if(raw.tools.length){raw.toolSettings=vector();raw.toolSettingsRevision=token;}h.o.readState?.(raw,reads);response.contents[0].text=JSON.stringify(raw);return response;};
+ h.session.rpc.tools.getCurrentMetadata=async()=>({tools:['edit','test','run',...(writer?['set_tool_state']:[])].map(op=>({name:'owned-'+op,mcpServerName:'kmx-agent-builder',mcpToolName:op}))});
+ h.session.rpc.tools.execute=async request=>{
+  if(request.name!=='owned-set_tool_state')return execute(request);
+  h.calls.push(request);const a=request.arguments;
+  const apply=()=>{
+   const changed=(config.get(a.name)??'Enabled')!==a.state;
+   if(changed){config.set(a.name,a.state);token=revision(JSON.stringify([...config]));}
+   const r={schemaVersion:1,operation:'set_tool_state',state:'complete',file:h.raw().file,changed,mayHaveWritten:changed,toolSettingsRevision:token,toolSettings:vector()};
+   return {resultType:'success',structuredContent:r,textResultForLlm:JSON.stringify(r)};
+  };
+  return h.o.setter?h.o.setter(a,apply):apply();
+ };
+ h.o.shape=r=>({...r,...(declared().length?{toolSettings:vector()}: {})});
+ const input=extra=>({operation:'save-and-test',expectedRevision:revision(h.source()),...(declared().length?{expectedSettingsRevision:token}:{}),toolSettings:[{name:'ping',state:'Disabled'}],...extra});
+ return {...h,input,token:()=>token,vector,reads:()=>reads};
+}
+const refusedState=(reasonCode='stale_settings_revision')=>({resultType:'failure',structuredContent:{schemaVersion:1,operation:'set_tool_state',state:'refused',changed:false,mayHaveWritten:false,reasonCode,reason:'private backend detail'}});
+test('switch save: settings-only flips serialize tokens without Edit and confirm before Test',async()=>{
+ const h=stateHarness(),source=h.source();
+ const r=await h.act(h.input({toolSettings:[{name:'ping',state:'Disabled'},{name:'lookup',state:'Disabled'}]}));
+ assert.equal(r.error,undefined);assert.equal(r.saved,true);assert.equal(h.source(),source);
+ assert.deepEqual(h.calls.map(c=>c.name),['owned-set_tool_state','owned-set_tool_state','owned-test']);
+ assert.equal(h.calls[0].arguments.expectedSettingsRevision,'absent');assert.notEqual(h.calls[1].arguments.expectedSettingsRevision,'absent');
+ assert.equal(h.calls[1].arguments.expectedRevision,revision(source));assert.equal(h.reads(),4);
+ assert.deepEqual(r.view.toolSettings,[{name:'ping',state:'Disabled'},{name:'lookup',state:'Disabled'}]);
+});
+test('switch save: zero declarations Edit/readback precedes setter and retained override is not defaulted',async()=>{
+ const h=stateHarness({names:[],states:{ping:'Disabled'}}),token=h.token();
+ const r=await h.act(h.input({tools:['ping'],toolSettings:[{name:'ping',state:'Enabled'}]}));
+ assert.equal(r.error,undefined);assert.equal(r.saved,true);
+ assert.deepEqual(h.calls.map(c=>c.name),['owned-edit','owned-set_tool_state','owned-test']);
+ assert.equal(h.calls[1].arguments.expectedSettingsRevision,token);assert.equal(h.calls[1].arguments.expectedRevision,revision(h.source()));
+ assert.deepEqual(r.view.toolSettings,[{name:'ping',state:'Enabled'}]);
+});
+test('switch save: absent Enabled no-op is success, not an invented config write',async()=>{
+ const h=stateHarness();const r=await h.act(h.input({toolSettings:[{name:'ping',state:'Enabled'}]}));
+ assert.equal(r.error,undefined);assert.equal(r.saved,false);assert.equal(h.token(),'absent');assert.equal(h.calls[0].arguments.expectedSettingsRevision,'absent');
+});
+test('switch save: stale config token refuses before combined Edit, even for same desired state',async()=>{
+ const h=stateHarness(),r=await h.act(h.input({expectedSettingsRevision:revision('old comments'),sections:edited()}));
+ assert.equal(r.error,'stale_settings_revision');assert.equal(r.saved,false);assert.equal(h.calls.length,0);
+});
+test('switch save: missing original setter refuses zero-tool combined save before any Edit',async()=>{
+ const h=stateHarness({names:[],writer:false}),r=await h.act(h.input({tools:['ping']}));
+ assert.equal(r.error,'unavailable');assert.equal(r.saved,false);assert.equal(h.calls.length,0);assert.equal(h.source(),original);
+});
+test('switch save: source-only save needs no writer or settings revision',async()=>{
+ const h=stateHarness({names:[],writer:false,states:{ping:'Disabled'}}),r=await h.act({operation:'save-and-test',expectedRevision:revision(h.source()),tools:['ping']});
+ assert.equal(r.error,undefined);assert.equal(r.saved,true);assert.deepEqual(r.view.toolSettings,[{name:'ping',state:'Disabled'}]);assert.deepEqual(h.calls.map(c=>c.name),['owned-edit','owned-test']);
+});
+for(const toolSettings of [[{name:'ping',state:'Ask'}],[{name:'ping',state:'Disabled',path:'kmx.yaml'}],[{name:'ping',state:'Disabled'},{name:'ping',state:'Enabled'}],[{name:'foreign',state:'Disabled'}],{},null])test('switch save: invalid dirty subset refuses without effects '+JSON.stringify(toolSettings),async()=>{
+ const h=stateHarness(),r=await h.act(h.input({toolSettings,sections:edited()}));assert.equal(r.error,'invalid-action');assert.equal(h.calls.length,0);
+});
+for(const code of ['stale_revision','stale_settings_revision','permission_required'])test('switch save: post-Edit '+code+' is a known partial, not an unconfirmed Test',async()=>{
+ const h=stateHarness({names:[]});h.o.setter=()=>code==='permission_required'?{resultType:'rejected'}:refusedState(code);
+ const r=await h.act(h.input({tools:['ping']}));
+ assert.equal(r.error,code);assert.equal(r.saved,true);assert.equal(r.settingsIncomplete,true);assert.equal(r.view,undefined);
+ assert.match(h.source(),/## Tools\r?\n- ping/);assert.deepEqual(h.calls.map(c=>c.name),['owned-edit','owned-set_tool_state']);
+});
+test('switch save: second setter refusal preserves earlier acknowledgement and never runs Test or retries',async()=>{
+ const h=stateHarness();let n=0;h.o.setter=(a,apply)=>++n===1?apply():refusedState();
+ const r=await h.act(h.input({toolSettings:[{name:'ping',state:'Disabled'},{name:'lookup',state:'Disabled'}]}));
+ assert.equal(r.error,'stale_settings_revision');assert.equal(r.saved,true);assert.equal(r.settingsIncomplete,true);assert.equal(r.view,undefined);
+ assert.deepEqual(h.vector(),[{name:'ping',state:'Disabled'},{name:'lookup',state:'Enabled'}]);assert.equal(n,2);assert.equal(h.calls.length,2);
+});
+test('switch save: truthful unknown keeps uncertainty until explicit Reload, without automatic readback',async()=>{
+ const h=stateHarness();h.o.setter=()=>({resultType:'failure',structuredContent:{schemaVersion:1,operation:'set_tool_state',state:'unknown',file:h.raw().file,mayHaveWritten:true,reasonCode:'settings_write_unknown',reason:'private detail'}});
+ const r=await h.act(h.input());assert.equal(r.error,'outcome-unknown');assert.equal(r.saved,false);assert.equal(r.settingsIncomplete,true);assert.equal(h.calls.length,1);assert.equal(h.reads(),1);assert.doesNotMatch(JSON.stringify(r),/private detail/);
+ assert.equal((await h.act(h.input())).error,'outcome-unknown');assert.equal(h.calls.length,1);
+ assert.equal((await h.act({operation:'reload'})).error,undefined);assert.equal(h.calls.length,1);
+});
+test('switch save: known failed prepublication result does not claim an effect or automatically retry',async()=>{
+ const h=stateHarness();h.o.setter=()=>({resultType:'failure',structuredContent:{...refusedState('io_failed').structuredContent,state:'failed'}});
+ const r=await h.act(h.input());assert.equal(r.error,'settings-failed');assert.equal(r.saved,false);assert.equal(r.settingsIncomplete,true);assert.equal(h.calls.length,1);assert.doesNotMatch(JSON.stringify(r),/private backend detail/);
+ h.o.setter=undefined;assert.equal((await h.act(h.input())).error,undefined,'an explicit new save is allowed after known no-write failure');
+});
+for(const [name,mutate] of Object.entries({path:r=>({...r,file:{...r.file,path:'other.agent.md'}}),revision:r=>({...r,file:{...r.file,revision:revision('other')}}),operation:r=>({...r,operation:'edit'}),changed:r=>({...r,changed:undefined}),effect:r=>({...r,mayHaveWritten:false}),token:r=>({...r,toolSettingsRevision:'invented'}),missing:r=>({...r,toolSettings:[]}),state:r=>({...r,toolSettings:r.toolSettings.map(s=>({...s,state:'Enabled'}))})}))test('switch save: malformed '+name+' acknowledgement cannot authorize Test',async()=>{
+ const h=stateHarness();h.o.setter=(a,apply)=>{const r=apply();return {...r,structuredContent:mutate(r.structuredContent)};};
+ const r=await h.act(h.input());assert.equal(r.error,'outcome-unknown');assert.equal(r.settingsIncomplete,true);assert.equal(h.calls.length,1);assert.equal(r.view,undefined);
+});
+test('switch save: bounded backend JSON fallback preserves known IsError acknowledgement',async()=>{
+ const h=stateHarness();h.o.setter=()=>({resultType:'failure',textResultForLlm:JSON.stringify(refusedState().structuredContent)});
+ const r=await h.act(h.input());assert.equal(r.error,'stale_settings_revision');assert.equal(r.saved,false);assert.equal(h.calls.length,1);
+});
+test('switch save: readback drift after a complete receipt retains acknowledged change, fences Test',async()=>{
+ const h=stateHarness();h.o.readState=(raw,count)=>{if(count===2)raw.toolSettingsRevision=revision('outside comments');};
+ const r=await h.act(h.input());assert.equal(r.error,'outcome-unknown');assert.equal(r.saved,true);assert.equal(r.settingsIncomplete,true);assert.equal(h.calls.length,1);assert.equal(r.view,undefined);
+});
+
+test('an Edit approval waiting in chat is reported while saving before a test',async()=>{
+ const n=nativeHarness(),execute=n.session.rpc.tools.execute,held=deferred(),edits=[];
+ n.session.rpc.tools.execute=async request=>{if(request.name==='owned-edit'){edits.push(request);await held.promise}return execute(request)};
+ const pending=n.act({operation:'save-and-test',expectedRevision:revision(n.source()),sections:edited(),runId:'run-1'});
+ await new Promise(setImmediate);assert.equal(edits.length,1);assert.match(edits[0].toolCallId,/^[A-Za-z0-9_-]{32}$/);
+ n.session.rpc.permissions={pendingRequests:async()=>({items:[{requestId:'edit-request',request:{kind:'mcp',toolCallId:edits[0].toolCallId}}]})};
+ const waiting=await n.act({operation:'progress',runId:'run-1'});
+ assert.equal(waiting.approvalWaiting,true);assert.equal(waiting.run,undefined);
+ assert.equal((await n.act({operation:'progress',runId:'other'})).approvalWaiting,undefined);
+ n.event('permission.completed',{requestId:'edit-request',toolCallId:edits[0].toolCallId});
+ n.session.rpc.permissions={pendingRequests:async()=>({items:[]})};
+ assert.equal((await n.act({operation:'progress',runId:'run-1'})).approvalWaiting,undefined);
+ held.resolve();await new Promise(setImmediate);n.gate.resolve();await pending;
+});
+
+test('closing the canvas while an Edit approval waits releases its observer without cancelling the Edit',async()=>{
+ const n=nativeHarness(),execute=n.session.rpc.tools.execute,held=deferred(),edits=[];
+ n.session.rpc.tools.execute=async request=>{if(request.name==='owned-edit'){edits.push(request);await held.promise}return execute(request)};
+ const before=(n.events.get('permission.requested')?.size??0),beforeDone=(n.events.get('permission.completed')?.size??0);
+ const pending=n.act({operation:'save-and-test',expectedRevision:revision(n.source()),sections:edited(),runId:'run-1'});
+ await new Promise(setImmediate);assert.equal(n.events.get('permission.requested').size,before+1);
+ n.act.dispose();
+ assert.equal(n.events.get('permission.requested').size,before);assert.equal(n.events.get('permission.completed').size,beforeDone);
+ assert.equal((await n.act({operation:'progress',runId:'run-1'})).approvalWaiting,undefined);
+ held.resolve();await pending.catch(()=>{});assert.equal(edits.length,1,'the Edit is neither cancelled nor retried');
 });

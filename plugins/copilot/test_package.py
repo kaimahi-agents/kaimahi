@@ -98,7 +98,9 @@ class PackageTests(unittest.TestCase):
         self.build()
         native = "com.github.copilot/extensions/agent-view"
         names = {"extension.mjs", "view.mjs", "open.mjs", "index.html", "app.js", "style.css", "authoring.mjs", "editor.mjs",
-                 "draft-controller.mjs", "action-controller.mjs", "observation-controller.mjs", "host-relay.mjs", "tool-catalog.mjs", "tools-view.mjs"}
+                 "draft-controller.mjs", "action-controller.mjs", "observation-controller.mjs", "host-relay.mjs", "tool-catalog.mjs", "tools-view.mjs", "test-tools.mjs",
+                 "dom.mjs", "results.mjs", "check-controls.mjs", "instruction-text.mjs",
+                 "run-views.mjs", "view-resource.mjs"}
         self.assertEqual({p.name for p in (self.out / native).iterdir()}, names)
         for name in names:
             self.assertEqual((self.out / native / name).read_bytes(),
@@ -350,7 +352,7 @@ class ProcessTests(unittest.TestCase):
                 self.assertEqual(initialized["result"]["serverInfo"]["name"], "kmx")
                 send({"jsonrpc": "2.0", "method": "notifications/initialized"})
                 tools = request(2, "tools/list", {})["result"]["tools"]
-                self.assertEqual({t["name"] for t in tools}, {"create", "edit", "run", "test"})
+                self.assertEqual({t["name"] for t in tools}, {"create", "edit", "run", "test", "set_tool_state"})
                 for tool in tools:
                     self.assertIn("path", tool["inputSchema"]["required"])
                     self.assertIn("schemaVersion", tool["inputSchema"]["required"])

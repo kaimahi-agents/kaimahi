@@ -22,6 +22,8 @@
     "cmd/kmx/agent_file_commands_test.go",
     "internal/kmx/app/agent_file.go",
     "internal/kmx/app/agent_file_output.go",
+    "internal/kmx/app/agent_file_summary.go",
+    "internal/kmx/app/agent_file_summary_test.go",
     "internal/kmx/app/agent_file_test.go",
     "internal/kmx/app/agent_file_safety_test.go",
     "internal/kmx/app/agent_file_direct_test.go",

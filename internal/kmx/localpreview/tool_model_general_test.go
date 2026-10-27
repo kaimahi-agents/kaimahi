@@ -99,3 +99,23 @@ func TestToolModelPreservesSafeFailuresAndDecodedCredentialRefusal(t *testing.T)
 		s.Close()
 	}
 }
+
+func TestToolReplyIgnoresCopilotReasoning(t *testing.T) {
+	answer := `{"model":"unit","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"done","reasoning_opaque":"b3BhcXVl","reasoning_text":null}}]}`
+	out, err := parseToolReply([]byte(answer), "unit", false, generalDefinitions()...)
+	if err != nil || out.Message.Text() != "done" {
+		t.Fatalf("answer with reasoning: %v", err)
+	}
+	call := `{"model":"unit","choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","reasoning_text":"look it up","tool_calls":[{"id":"c","type":"function","function":{"name":"ping","arguments":"{}"}}]}}]}`
+	if out, err = parseToolReply([]byte(call), "unit", true, generalDefinitions()...); err != nil || len(out.Message.Parts) != 1 || out.Message.Parts[0].ToolCall == nil {
+		t.Fatalf("call with reasoning: %v", err)
+	}
+	for _, raw := range []string{
+		strings.Replace(answer, `"reasoning_text":null`, `"audio":null`, 1),
+		strings.Replace(answer, `"reasoning_opaque":"b3BhcXVl"`, `"reasoning_opaque":{"text":"x"}`, 1),
+	} {
+		if _, err := parseToolReply([]byte(raw), "unit", false, generalDefinitions()...); !errors.Is(err, agentpreview.ErrModelReply) {
+			t.Fatalf("unknown reply shape: %v", err)
+		}
+	}
+}

@@ -88,7 +88,7 @@ func TestPendingAndUnavailableRunnerSources(t *testing.T) {
 				if !available {
 					return nil, nil
 				}
-				return localtools.NewTrustedHost([]api.ToolDefinition{{Name: "ping", InputSchema: map[string]any{"type": "object"}}}, func(_ context.Context, _ controller.ToolCallContext, c api.ToolCall) (api.ToolResult, error) {
+				return localtools.NewTrustedHost([]api.ToolDefinition{{Name: "ping", Description: "Read ping.", InputSchema: map[string]any{"type": "object"}}}, func(_ context.Context, _ controller.ToolCallContext, c api.ToolCall) (api.ToolResult, error) {
 					count++
 					return api.ToolResult{ID: c.ID, Output: map[string]any{"ok": true}}, nil
 				}, func(...string) error { return nil })

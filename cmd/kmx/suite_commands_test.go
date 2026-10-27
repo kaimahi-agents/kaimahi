@@ -4,11 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"io/fs"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	suitecore "github.com/agent-primitives/suite/core"
@@ -21,6 +25,101 @@ import (
 	"github.com/spf13/cobra"
 	"oras.land/oras-go/v2/content/oci"
 )
+
+func TestSuitePushImagePlatformValidationBeforeArchiveIO(t *testing.T) {
+	t.Setenv("KMX_HOME", t.TempDir())
+	archive := filepath.Join(t.TempDir(), "missing-image.tar")
+	for _, tc := range []struct {
+		platform string
+		valid    bool
+	}{
+		{"", false},
+		{"linux", false},
+		{"/amd64", false},
+		{"linux/", false},
+		{"/", false},
+		{"linux/amd64/v8", false},
+		{"linux/amd64", true},
+		{"linux/arm64", true},
+	} {
+		t.Run(tc.platform, func(t *testing.T) {
+			var out, diagnostics bytes.Buffer
+			deps, loads := testDependencies(&out, &diagnostics)
+			err := execute([]string{"suite", "push-image", archive, "registry.example.com/image:v1", "--platform", tc.platform}, deps)
+			if tc.valid {
+				var pathErr *os.PathError
+				if !errors.Is(err, fs.ErrNotExist) || !errors.As(err, &pathErr) || pathErr.Path != archive {
+					t.Fatalf("valid platform did not reach archive IO: %v", err)
+				}
+			} else if err == nil || err.Error() != "platform must be os/architecture" {
+				t.Fatalf("invalid platform was not refused before archive IO: %v", err)
+			}
+			if *loads != 0 {
+				t.Fatalf("platform validation loaded operational config %d time(s)", *loads)
+			}
+			if out.Len() != 0 || diagnostics.Len() != 0 {
+				t.Fatalf("unexpected output: stdout=%q stderr=%q", out.String(), diagnostics.String())
+			}
+		})
+	}
+}
+
+func TestSuitePushImageTagPolicyAndOfflineConfiguration(t *testing.T) {
+	t.Setenv("DOCKER_CONFIG", t.TempDir())
+	t.Setenv("KMX_HOME", t.TempDir())
+	archive, image, index, _ := suiteCommandArchive(t, true)
+	file := filepath.Join(t.TempDir(), "image.tar")
+	if err := os.WriteFile(file, archive, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name        string
+		same, force bool
+	}{
+		{"same", true, false}, {"same forced", true, true}, {"different", false, false}, {"different forced", false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var beyondPreflight atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodHead && strings.HasSuffix(r.URL.Path, "/manifests/v1") {
+					digest := index
+					if !tc.same {
+						digest = "sha256:" + strings.Repeat("f", 64)
+					}
+					w.Header().Set("Content-Type", ocispec.MediaTypeImageIndex)
+					w.Header().Set("Content-Length", "1")
+					w.Header().Set("Docker-Content-Digest", digest)
+					return
+				}
+				beyondPreflight.Add(1)
+				w.WriteHeader(http.StatusForbidden)
+			}))
+			defer server.Close()
+			ref := strings.TrimPrefix(server.URL, "http://") + "/image:v1"
+			args := []string{"suite", "push-image", file, ref, "--plain-http"}
+			if tc.force {
+				args = append(args, "--force")
+			}
+			var out, diagnostics bytes.Buffer
+			deps, loads := testDependencies(&out, &diagnostics)
+			err := execute(args, deps)
+			if *loads != 0 {
+				t.Fatal("image publication loaded operational configuration")
+			}
+			if tc.same {
+				if err != nil || out.String() != strings.TrimSuffix(ref, ":v1")+"@"+image+"\n" || beyondPreflight.Load() != 0 {
+					t.Fatalf("same-digest publication: stdout=%q err=%v requests=%d", out.String(), err, beyondPreflight.Load())
+				}
+			} else if !tc.force {
+				if err == nil || !strings.Contains(err.Error(), "--force") || beyondPreflight.Load() != 0 || out.Len() != 0 {
+					t.Fatalf("replacement refusal: %v", err)
+				}
+			} else if err == nil || beyondPreflight.Load() == 0 || out.Len() != 0 {
+				t.Fatalf("force did not reach transfer boundary: %v", err)
+			}
+		})
+	}
+}
 
 func TestSuiteDiffIsRemovedBeforeConfiguration(t *testing.T) {
 	var out, diagnostics bytes.Buffer
@@ -144,7 +243,7 @@ func TestSuiteBuildUsesAgentKitBackend(t *testing.T) {
 func TestSuiteBuildRejectsInvalidModelKeyEnvBeforeBuilderOrFiles(t *testing.T) {
 	for _, verbose := range []bool{false, true} {
 		t.Run(map[bool]string{false: "quiet", true: "verbose"}[verbose], func(t *testing.T) {
-			const invalid = "sk-test-only-invalid-env"
+			invalid := "github_" + "pat_" + strings.Repeat("A", 82)
 			root := t.TempDir()
 			var out, diagnostics bytes.Buffer
 			deps, loads := testDependencies(&out, &diagnostics)
