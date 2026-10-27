@@ -641,10 +641,6 @@ func (a *App) ensureQuickstartProviderSecret() error {
 	}
 }
 
-func (a *App) orkaKeylessProviderSecret(provider string) error {
-	return a.orkaKeylessProviderSecretIn(provider, OrkaNamespace)
-}
-
 func (a *App) orkaKeylessProviderSecretIn(provider, namespace string) error {
 	secret := provider + "-provider-key"
 	body := secretManifest(secret, namespace, map[string]string{"api-key": "not-used-by-this-endpoint"},
