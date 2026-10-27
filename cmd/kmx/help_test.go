@@ -115,9 +115,20 @@ func TestShortHelpFlagScopesAndCaveats(t *testing.T) {
 		}
 		if verb == "run" {
 			_, fileFlags, _ := strings.Cut(output, "Flags (file preview):")
-			fileFlags, liveFlags, ok := strings.Cut(fileFlags, "Flags (live Orka):")
-			if !ok || strings.Contains(fileFlags, "--context") || !strings.Contains(liveFlags, "--agent") || !strings.Contains(liveFlags, "--context") {
-				t.Fatal("file/live flag scopes confused")
+			fileFlags, rest, ok := strings.Cut(fileFlags, "Flags (shared input):")
+			sharedFlags, liveFlags, liveOK := strings.Cut(rest, "Flags (live Orka):")
+			if !ok || !liveOK || strings.Contains(fileFlags, "--context") || !strings.Contains(liveFlags, "--agent") || !strings.Contains(liveFlags, "--context") {
+				t.Fatal("file/shared/live flag scopes confused")
+			}
+			for _, flag := range []string{"--prompt ", "--prompt-file "} {
+				if !strings.Contains(sharedFlags, flag) || strings.Contains(fileFlags, flag) || strings.Contains(liveFlags, flag) {
+					t.Errorf("shared input flag misplaced: %s", flag)
+				}
+			}
+			for _, usage := range []string{"Input text (FILE or live Agent)", "Input file, or - for stdin (FILE/live Agent)"} {
+				if !strings.Contains(sharedFlags, usage) {
+					t.Errorf("shared usage missing: %s", usage)
+				}
 			}
 		}
 	}
@@ -155,6 +166,7 @@ func TestShortHelpFlagErrorsOfferSafelyQuotedHelp(t *testing.T) {
 			var out, diag bytes.Buffer
 			deps, loads := testDependencies(&out, &diag)
 			deps.executable = executable
+			deps.goos = "linux"
 			args := append(append([]string{}, path...), "--not-a-flag")
 			err := execute(args, deps)
 			hint := quoteShell(executable)
@@ -162,7 +174,7 @@ func TestShortHelpFlagErrorsOfferSafelyQuotedHelp(t *testing.T) {
 				hint += " " + strings.Join(path, " ")
 			}
 			hint += " --help"
-			if err == nil || !strings.HasPrefix(err.Error(), "unknown flag: --not-a-flag") || !strings.Contains(err.Error(), "Run "+hint+" for available flags.") {
+			if err == nil || !strings.HasPrefix(err.Error(), "unknown flag: --not-a-flag") || !strings.Contains(err.Error(), "Run "+hint+" for available flags") {
 				t.Fatalf("%v: %v", args, err)
 			}
 			if *loads != 0 || out.Len() != 0 || diag.Len() != 0 {
@@ -190,5 +202,44 @@ func TestShortHelpFlagErrorsOfferSafelyQuotedHelp(t *testing.T) {
 				t.Fatalf("legacy stderr changed: %q", diag.String())
 			}
 		}
+	}
+}
+
+func TestShortHelpWindowsFlagErrorUsesPowerShell(t *testing.T) {
+	for _, tc := range []struct{ executable, quoted string }{
+		{"kmx.exe", "'kmx.exe'"},
+		{`C:\tools\kmx.exe`, `'C:\tools\kmx.exe'`},
+		{`C:\Program Files\Kaimahi\kmx.exe`, `'C:\Program Files\Kaimahi\kmx.exe'`},
+		{`C:\O'Brien & $literal\kmx.exe`, `'C:\O''Brien & $literal\kmx.exe'`},
+		{`C:\O‘Brien\kmx.exe`, `'C:\O‘‘Brien\kmx.exe'`},
+		{`C:\O’Brien\kmx.exe`, `'C:\O’’Brien\kmx.exe'`},
+		{`C:\O‚Brien\kmx.exe`, `'C:\O‚‚Brien\kmx.exe'`},
+		{`C:\O‛Brien\kmx.exe`, `'C:\O‛‛Brien\kmx.exe'`},
+	} {
+		var out, diag bytes.Buffer
+		deps, loads := testDependencies(&out, &diag)
+		deps.goos = "windows"
+		deps.executable = tc.executable
+		err := execute([]string{"test", "--not-a-flag"}, deps)
+		want := "unknown flag: --not-a-flag\nPowerShell: & " + tc.quoted + " test --help"
+		if err == nil || err.Error() != want || *loads != 0 || out.Len() != 0 || diag.Len() != 0 {
+			t.Errorf("%s: %v; loads=%d stdout=%q stderr=%q", tc.executable, err, *loads, &out, &diag)
+		}
+	}
+}
+
+func TestShortHelpTestExitCodesMatchRuntime(t *testing.T) {
+	var out, diag bytes.Buffer
+	deps, loads := testDependencies(&out, &diag)
+	if err := execute([]string{"test", "--help"}, deps); err != nil {
+		t.Fatal(err)
+	}
+	for _, contract := range []string{"0 pass", "1 assertion fail", "2 unknown/execution error", "130 interrupted"} {
+		if !strings.Contains(out.String(), contract) {
+			t.Errorf("file Test help omits runtime exit contract %q", contract)
+		}
+	}
+	if *loads != 0 || diag.Len() != 0 {
+		t.Fatal("help performed effects")
 	}
 }

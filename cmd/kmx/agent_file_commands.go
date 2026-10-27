@@ -48,7 +48,7 @@ func registerFileCommandFlags(cmd *cobra.Command, f *fileCommandOptions, output 
 	cmd.Flags().BoolVar(&f.Verbose, "verbose", false, "Content-free diagnostics and timings on stderr")
 	cmd.Flags().StringVar(&f.CaseID, "case", "", "One saved example ID (partial preview)")
 	cmd.Flags().StringVar(&f.Provider, "provider", "", "copilot (default), fake, ollama, foundry-local, compatible")
-	cmd.Flags().StringVar(&f.Endpoint, "provider-url", "", "Model URL (required for local; fixed for Copilot)")
+	cmd.Flags().StringVar(&f.Endpoint, "provider-url", "", "Required local model URL; fixed for Copilot")
 	cmd.Flags().StringVar(&f.Model, "model", "", "Model override for this invocation")
 	cmd.Flags().BoolVar(&f.NoContent, "no-content", false, "Hide answers and failed assertion content")
 	cmd.Flags().StringVar(&f.ToolBindings, "tool-bindings", "", "Host-owned tool binding file (local/Copilot)")

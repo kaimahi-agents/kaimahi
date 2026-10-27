@@ -21,7 +21,7 @@ func newAgentTestCommand(state *commandState) *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "test FILE", Short: "Test a markdown agent file's saved examples",
 		Long: "Test FILE checks every saved example; --case selects one example.\n" +
-			"Pass exits 0; completed non-pass exits 2.\n" +
+			"Exit: 0 pass, 1 assertion fail, 2 unknown/execution error, 130 interrupted.\n" +
 			"Use test explain --file FILE for retained diagnostics.\n" +
 			"Local preview is not package evidence. Content retention and privacy:\n" +
 			previewCaveatsURL,

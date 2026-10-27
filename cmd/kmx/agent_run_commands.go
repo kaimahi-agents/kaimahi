@@ -25,8 +25,8 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&opt.Agent, "agent", "", "Live Orka Agent (required without FILE)")
 	cmd.Flags().StringVar(&opt.Namespace, "namespace", "", "Agent namespace (default: "+app.OrkaNamespace+")")
-	cmd.Flags().StringVar(&opt.Prompt, "prompt", "", "One-shot Task prompt")
-	cmd.Flags().StringVar(&opt.PromptFile, "prompt-file", "", "Task prompt file, or - for stdin")
+	cmd.Flags().StringVar(&opt.Prompt, "prompt", "", "Input text (FILE or live Agent)")
+	cmd.Flags().StringVar(&opt.PromptFile, "prompt-file", "", "Input file, or - for stdin (FILE/live Agent)")
 	cmd.Flags().DurationVar(&opt.Wait, "wait", 5*time.Minute, "Wait for answer (10s to 9m)")
 	cmd.Flags().StringVar(&opt.ResultPort, "result-port", "", "Loopback forward port (chosen automatically)")
 	registerFileCommandFlags(cmd, &file, true)

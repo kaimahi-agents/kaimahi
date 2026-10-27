@@ -18,13 +18,15 @@ other command groups retain their normal discovery order.
 
 Inner-loop help uses a one-line summary, at most five logical description
 lines, two or three truthful examples, and a flag block fitting 24 lines at
-80 columns. Run separates file-preview and live-Orka flags. Kubernetes selectors
+80 columns. Run separates file-preview, shared-input and live-Orka flags;
+`--prompt` and `--prompt-file` are shared input options. Kubernetes selectors
 are not advertised for file-only operations; global parsing is unchanged.
 File help links once to [preview storage and privacy](local-preview.md#cli-storage-privacy-and-evidence-caveats)
 rather than repeating journal, failure-retention and evidence limitations.
 Package/native help keeps its own safety disclosures. Canonical flag-parse errors
-point to the safely quoted executable and resolved topic's `--help`; legacy
-Eval/Lift refusals, argument/runtime errors, stdout and exit codes stay unchanged.
+point to the safely quoted executable and resolved topic's `--help`; native
+Windows hints are explicitly labeled PowerShell and use its call operator.
+Legacy Eval/Lift refusals, argument/runtime errors, stdout and exit codes stay unchanged.
 
 ## 1. Grammar
 

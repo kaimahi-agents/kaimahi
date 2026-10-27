@@ -50,7 +50,12 @@ func configureCommandHelp(root *cobra.Command, state *commandState) {
 func flagErrorWithHelp(cmd *cobra.Command, state *commandState, err error) error {
 	// Never replay argv or flag values: only the executable and resolved topic.
 	topic := strings.TrimPrefix(cmd.CommandPath(), cmd.Root().Name())
-	return fmt.Errorf("%w\nRun %s%s --help for available flags.", err, quoteShell(state.executable()), topic)
+	if state.deps.goos == "windows" {
+		// PowerShell treats straight and curly apostrophes as string delimiters.
+		quotes := strings.NewReplacer("'", "''", "‘", "‘‘", "’", "’’", "‚", "‚‚", "‛", "‛‛")
+		return fmt.Errorf("%w\nPowerShell: & '%s'%s --help", err, quotes.Replace(state.executable()), topic)
+	}
+	return fmt.Errorf("%w\nRun %s%s --help for available flags", err, quoteShell(state.executable()), topic)
 }
 
 func shortCommandHelp(cmd *cobra.Command, _ []string) {
@@ -76,10 +81,13 @@ func shortCommandHelp(cmd *cobra.Command, _ []string) {
 	local := cmd.LocalFlags()
 	if cmd.Name() == "run" {
 		fileFlags := pflag.NewFlagSet("file", pflag.ContinueOnError)
+		sharedFlags := pflag.NewFlagSet("input", pflag.ContinueOnError)
 		liveFlags := pflag.NewFlagSet("live", pflag.ContinueOnError)
 		local.VisitAll(func(flag *pflag.Flag) {
 			switch flag.Name {
-			case "agent", "namespace", "prompt", "prompt-file", "wait", "result-port":
+			case "prompt", "prompt-file":
+				sharedFlags.AddFlag(flag)
+			case "agent", "namespace", "wait", "result-port":
 				liveFlags.AddFlag(flag)
 			default:
 				fileFlags.AddFlag(flag)
@@ -87,6 +95,7 @@ func shortCommandHelp(cmd *cobra.Command, _ []string) {
 		})
 		liveFlags.AddFlagSet(cmd.InheritedFlags())
 		writeHelpFlags(out, "Flags (file preview)", fileFlags)
+		writeHelpFlags(out, "Flags (shared input)", sharedFlags)
 		writeHelpFlags(out, "Flags (live Orka)", liveFlags)
 		return
 	}
