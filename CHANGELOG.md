@@ -540,6 +540,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 - `/kmx-canvas open PATH` opens the canvas even when a resumed session doesn't report canvas support, and shows usage and problems in the chat. A relative path is read in the session folder, and a missing file says "File not found".
 
 - Save GitHub MCP file-resource recordings without losing their nested result. Recorded arguments and results each allow 32 payload-relative nesting levels; other Examples structure stays at 12, with unchanged shared node and byte limits. Older kmx versions may refuse these deeper recordings; update the reader rather than truncate the data.
+- Make kmx skill help host-neutral and report when no canvas opener is available instead of suggesting an unavailable command.
+- Use singular wording after saving one test and distinguish Run's optional input from Test's saved tests in MCP descriptions. Operation behavior is unchanged.
 
 ### Breaking
 
