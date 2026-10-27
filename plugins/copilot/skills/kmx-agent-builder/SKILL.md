@@ -83,8 +83,18 @@ test inputs to the selected hosted model." This is a notice, not a confirmation.
 
 ## Edit and test
 
-Use Edit with the saved path and current `expectedRevision`. On a stale revision,
-read the current agent resource and preserve the user's edits while reconciling.
+Use Edit only with the saved path, exact saved source and matching current
+`expectedRevision` from a supplied saved snapshot or an available agent-resource
+reader. On a stale revision, read the current agent resource and preserve the
+user's edits while reconciling; if that reader is unavailable, use the no-save
+recovery below. Never claim a successful save after a stale or refused Edit.
+
+Never fabricate expectedRevision, including an all-zero hash, or call Run/Test
+solely to learn a revision. If the saved source or current revision is unavailable,
+do not call Edit; report that nothing was saved. In user-facing replies, describe
+missing saved source and revision, not host implementation terms. Explain that a
+current saved snapshot containing source and revision is needed before saving.
+
 Run accepts an optional ad-hoc input; Test checks saved tests. `caseId` selects
 one case and is always partial. Keep expected checks unless the user asks to edit
 them. The resource URI is `kmx://agent/{path}`, with the whole path encoded as
@@ -122,8 +132,11 @@ because a frontmatter model or tool is one kmx does not map.
 When asked to add or suggest tests with a saved agent snapshot, use its exact
 `content` and `expectedRevision`; no resource read is needed. Add job-relevant
 tests with one Edit at that revision, after the go-ahead above when the file has
-frontmatter. Otherwise read the current resource if the
-host provides a resource reader. Preserve the prompt, authored model and existing
+frontmatter. Otherwise use an available agent-resource reader to obtain both the
+saved source and current revision. If no agent-resource reader is available,
+follow the no-save recovery above. For an add-tests request that cannot be saved,
+include this conditional next step: `If your kmx canvas offers Suggest tests, use it to send the saved source and revision to chat.`
+Preserve the prompt, authored model and existing
 tests. Use the stable-string recipe above. Do not run tests
 unless asked. After a confirmed save, the complete reply is exactly one line:
 `Added 1 test to <file>.` for one addition, or `Added <count> tests to <file>.`

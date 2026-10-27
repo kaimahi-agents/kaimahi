@@ -279,6 +279,15 @@ for (const variant of ["copilot-wsl", "copilot"]) test(`${variant} skill help di
   assert.ok(builder.includes("Added <count> tests to <file>."));
 });
 
+for (const variant of ["copilot-wsl", "copilot"]) test(`${variant} builder waits for a saved revision without using execution as discovery`, async () => {
+  const skill = (await readFile(new URL(`../../${variant}/skills/kmx-agent-builder/SKILL.md`, import.meta.url), "utf8")).replaceAll("`", "").replace(/\s+/g, " ");
+  assert.ok(skill.includes("Never fabricate expectedRevision, including an all-zero hash, or call Run/Test solely to learn a revision."));
+  assert.ok(skill.includes("If the saved source or current revision is unavailable, do not call Edit; report that nothing was saved."));
+  assert.ok(skill.includes("For an add-tests request that cannot be saved, include this conditional next step: If your kmx canvas offers Suggest tests, use it to send the saved source and revision to chat."));
+  assert.ok(skill.includes("describe missing saved source and revision, not host implementation terms"));
+  assert.ok(skill.includes("If no agent-resource reader is available, follow the no-save recovery above."));
+});
+
 test("/kmx-canvas open resolves a relative path in the session folder and says what happened", async () => {
   for (const [folder, want] of [["C:\\Users\\ada\\walk", "C:\\Users\\ada\\walk/team/count.agent.md"], ["/home/ada/walk/", "/home/ada/walk/team/count.agent.md"]]) {
     const f = setup({ path: want });
