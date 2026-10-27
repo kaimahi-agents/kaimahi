@@ -86,6 +86,18 @@ func TestPreviewDescriptionsDiscloseRecordingSave(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	names := []string{}
+	descriptions := map[string]string{}
+	for _, tool := range list.Tools {
+		names = append(names, tool.Name)
+		descriptions[tool.Name] = tool.Description
+	}
+	if descriptions["run"] == descriptions["test"] {
+		t.Fatal("Run and Test must advertise different intents")
+	}
+	if strings.Join(names, ",") != "create,edit,run,set_tool_state,test" {
+		t.Fatalf("production tools: %v", names)
+	}
 	found := 0
 	for _, tool := range list.Tools {
 		if tool.Name != "run" && tool.Name != "test" {
@@ -93,6 +105,23 @@ func TestPreviewDescriptionsDiscloseRecordingSave(t *testing.T) {
 		}
 		if !strings.Contains(tool.Description, "A successful first live call for a pending Recorded tool saves its result in this file.") {
 			t.Errorf("%s description omits recording save: %q", tool.Name, tool.Description)
+		}
+		want := map[string]string{"run": "optional ad-hoc input", "test": "saved tests"}[tool.Name]
+		if !strings.Contains(tool.Description, want) {
+			t.Errorf("%s description must explain %q: %q", tool.Name, want, tool.Description)
+		}
+		encoded, err := json.Marshal(tool.InputSchema)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var schema struct {
+			Properties map[string]json.RawMessage `json:"properties"`
+		}
+		if err := json.Unmarshal(encoded, &schema); err != nil {
+			t.Fatal(err)
+		}
+		if _, input := schema.Properties["input"]; input != (tool.Name == "run") {
+			t.Errorf("%s ad-hoc input schema: %s", tool.Name, encoded)
 		}
 		found++
 	}

@@ -220,9 +220,8 @@ The separate **kmx** skill uses a host-model turn. In interactive CLI 1.0.103,
 this PATH plugin exposes `/kmx-agent-builder-path:kmx open FULL_PATH` and
 `/kmx-agent-builder-path:kmx help`; the builder entry is
 `/kmx-agent-builder-path:kmx-agent-builder` followed by a task. Short `/kmx open`
-and `/kmx help` were unknown commands there, even though the skill's help can
-still print those short spellings. App menu aliases are host-specific: select
-the full installed entry rather than assuming a short alias.
+and `/kmx help` were unknown commands there. App menu aliases are host-specific:
+select the full installed entry rather than assuming a short alias.
 
 The skill asks for one built-in `open_canvas` call with the installed provider and a stable
 instance ID. The provider checks the agent resource before every open, including

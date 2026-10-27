@@ -1,6 +1,6 @@
 ---
 name: kmx-agent-builder
-description: Use when creating or opening a kmx agent, editing its prompt, adding tests or checking test results through chat.
+description: Use when creating or opening a kmx agent, editing its prompt, running an input, adding tests or running and checking saved tests through chat.
 ---
 
 # Build an agent through chat
@@ -126,7 +126,8 @@ frontmatter. Otherwise read the current resource if the
 host provides a resource reader. Preserve the prompt, authored model and existing
 tests. Use the stable-string recipe above. Do not run tests
 unless asked. After a confirmed save, the complete reply is exactly one line:
-`Added <count> tests to <file>.` Use the basename, with no revision, test list or
+`Added 1 test to <file>.` for one addition, or `Added <count> tests to <file>.`
+for multiple additions. Use the basename, with no revision, test list or
 trailing explanation. The canvas reads the saved file. If no save occurred,
 say so; do not claim additions.
 If the user explicitly asks for proposals only, show proposals as tests in chat

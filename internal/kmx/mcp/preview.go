@@ -49,7 +49,11 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 		if name == "run" {
 			schema.Properties["input"] = &jsonschema.Schema{Type: "string", MaxLength: new(agentfile.MaxInputBytes)}
 		}
-		ops[name] = Operation{Schema: schema, Description: "kmx local preview of this charter; saved examples, optionally one case (always partial). Returns the shared revision, route, state and verdict; never deployment evidence. A successful first live call for a pending Recorded tool saves its result in this file.", Handler: func(ctx context.Context, req *sdk.CallToolRequest) (*sdk.CallToolResult, error) {
+		description := "Test this charter's saved tests in a kmx local preview, optionally one case (always partial). "
+		if name == "run" {
+			description = "Run this charter in a kmx local preview with optional ad-hoc input and saved examples, optionally one case (always partial). "
+		}
+		ops[name] = Operation{Schema: schema, Description: description + "Returns the shared revision, route, state and verdict; never deployment evidence. A successful first live call for a pending Recorded tool saves its result in this file.", Handler: func(ctx context.Context, req *sdk.CallToolRequest) (*sdk.CallToolResult, error) {
 			var input struct {
 				Path                    string                    `json:"path"`
 				Model                   string                    `json:"model"`

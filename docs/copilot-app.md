@@ -139,10 +139,10 @@ In CLI 1.0.103 with the macOS/PATH plugin, the full skill entries are:
 ```
 
 These use a model turn. Short `/kmx help` and `/kmx open PATH` returned
-`Unknown command: /kmx` in that CLI. The skill can still print the short spelling
-in its help. Use the full installed skill entry, not that short spelling or an
-ambiguous prefix. Other plugin variants and the app have their own menu entries;
-select the actual installed entry rather than assuming this CLI namespace.
+`Unknown command: /kmx` in that CLI. Use the full installed skill entry, not that
+short spelling or an ambiguous prefix. Other plugin variants and the app have
+their own menu entries; select the actual installed entry rather than assuming
+this CLI namespace.
 
 Submit native slash commands interactively. `copilot -p '/kmx-canvas open ...'`
 passes text to the model rather than exercising native command dispatch. In a

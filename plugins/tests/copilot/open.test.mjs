@@ -265,6 +265,20 @@ test(`actual ${variant} extension opens its own provider and registers the kmx s
   } finally { hooks.deregister(); delete globalThis.__kmxJoin; }
 });
 
+for (const variant of ["copilot-wsl", "copilot"]) test(`${variant} skill help distinguishes a missing extension from a text fallback`, async () => {
+  const opener = await readFile(new URL(`../../${variant}/skills/kmx/SKILL.md`, import.meta.url), "utf8");
+  assert.ok(opener.includes("Select the kmx skill entry in your host's slash menu and give it open FULL_PATH, or ask: Open the kmx canvas for FULL_PATH."));
+  assert.doesNotMatch(opener, /`\/kmx(?: help| open|`)/);
+  assert.match(opener, /If `open_kmx_canvas` is offered/);
+  const absent = opener.split("## No opener available")[1];
+  assert.ok(absent?.includes("Canvas not opened: no canvas opener is available in this session. Use a Copilot host with the kmx canvas extension loaded."));
+  assert.doesNotMatch(absent, /\/agent-view/);
+  const builder = await readFile(new URL(`../../${variant}/skills/kmx-agent-builder/SKILL.md`, import.meta.url), "utf8");
+  assert.match(builder, /description: .*running an input.*saved tests/);
+  assert.ok(builder.includes("Added 1 test to <file>."));
+  assert.ok(builder.includes("Added <count> tests to <file>."));
+});
+
 test("/kmx-canvas open resolves a relative path in the session folder and says what happened", async () => {
   for (const [folder, want] of [["C:\\Users\\ada\\walk", "C:\\Users\\ada\\walk/team/count.agent.md"], ["/home/ada/walk/", "/home/ada/walk/team/count.agent.md"]]) {
     const f = setup({ path: want });
