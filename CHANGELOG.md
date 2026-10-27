@@ -77,7 +77,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   `snapshot.storageLocation` refuses `\`, empty path segments and segments of
   only `.` and spaces; an empty `workerSelector.matchLabels` has the same digest
   as an omitted selector.
-- Plan-only AgentSessions deploy: `kmx deploy REF@DIGEST --harness-image IMAGE@sha256:…
+- Plan-only AgentSessions deploy: `kmx package deploy REF@DIGEST --harness-image IMAGE@sha256:…
   --bindings FILE --evidence FILE --plan` renders a substrate ActorTemplate and
   HarnessRegistration offline from full-passing AgentSessions evidence, for
   agent-substrate/substrate main at `f4f7b806255ffdc824391b857dbbf329a2556402`.
@@ -86,7 +86,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   `scripts/validate-agentsessions-render.sh` checks the golden renders against
   that commit. The template name hash covers the renderer version, the full
   image reference (a mirrored image is another template) and the binding
-  digest. Composed `kmx deploy --to NAME` refuses `--harness-image` and
+  digest. Composed `kmx package deploy --to NAME` refuses `--harness-image` and
   AgentSessions workspaces before evaluation or publication.
 - Eval and composed workspace Lift show non-pass case/run, assertion IDs/types,
   both judge scores against the threshold and safe unknown-outcome classes.
@@ -94,7 +94,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   and answer excerpts on stderr; outcome JSON remains payload-free. Diagnostics
   remain separate from evidence. Non-pass runs are retained privately under
   KMX_HOME: last 10 per workspace across revisions, 64 KiB answers/128 KiB records,
-  owner-only and deterministically bounded. Offline `kmx test explain` lists or
+  owner-only and deterministically bounded. Offline `kmx package test explain` lists or
   shows retained diagnostics with opt-in content; --clear removes one ID or all
   only with explicit --workspace, without touching passing proof or upstream data.
   Failure JSON adds diagnostic/provenance IDs, completion/attribution flags and
@@ -330,11 +330,11 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   repeating argument values; native Windows hints explicitly use PowerShell
   quoting and its call operator. Legacy refusals and exit codes stay unchanged.
 
-- Canonical `kmx test` replaces `kmx eval`, including all six helpers:
+- Canonical `kmx package test` replaces `kmx eval`, including all six helpers:
   `cleanup`, `diff`, `explain`, `export`, `verify` and `from-sessions`. Test is unreleased;
   v0.8.1 uses `eval`. The hidden legacy root and helpers remain callable for at
   least one released version, adding exactly one stderr line per invocation:
-  `kmx eval is deprecated; use kmx test (same arguments).`
+  `kmx eval is deprecated; use kmx package test (same arguments).`
   Arguments, flags, stdout, existing stderr labels, exit codes and state are
   unchanged apart from the notice. Authored `eval/`, packaged `evals/`,
   `evalTarget`/`evaluationTarget`, schemas, APIs and machine JSON remain unchanged.
@@ -344,12 +344,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   Old guide fragments remain valid; removal requires a later announced breaking
   release. See [Test compatibility](docs/kmx.md#test-compatibility-unreleased).
 
-- Canonical `kmx deploy` replaces packaged-suite `kmx lift`, with the same
+- Canonical `kmx package deploy` replaces packaged-suite `kmx lift`, with the same
   arguments, flags, runtime/evidence/consent guards and exit contracts. Deploy is
   unreleased; v0.8.1 uses `lift`. Deprecated `kmx lift` stays hidden but callable
   for at least one released version, preserving stdout and stderr stage labels
   and adding exactly one stderr line per legacy invocation:
-  `kmx lift is deprecated; use kmx deploy (same arguments).`
+  `kmx lift is deprecated; use kmx package deploy (same arguments).`
   Canonical human help/output says Deploy; machine JSON keys/values (including
   `targets` operation `"lift"`), public Go/API/internal `Lift` names, evidence,
   storage and annotations are unchanged. Old guide fragments remain valid.
@@ -575,7 +575,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   standalone receipts. Rebuilding a different artifact requires fresh evaluation,
   never edited or relabeled proof. See the
   [cache upgrade](docs/suite-workspace.md#portable-directory-modes-and-preparation-cache-upgrade).
-- AgentSessions `kmx test --development-host FILE` requires `--bindings FILE`
+- AgentSessions `kmx package test --development-host FILE` requires `--bindings FILE`
   and records the binding digest in its evidence, including judged and repeated
   proof. AgentSessions passing receipts move to v2
   (`kmx.agentsessions-suite.passing/v2`); v1 receipts and managed v1 proof are
@@ -665,12 +665,12 @@ Stable v0.8.1 examples retain root Quickstart/Orka, and historical v0.4.1 wizard
 instructions retain their original root path.
 
 - For unreleased main builds, change maintained `kmx eval` invocations and all
-  six helper routes to `kmx test`. v0.8.1 still uses `eval`. The hidden alias
+  six helper routes to `kmx package test`. v0.8.1 still uses `eval`. The hidden alias
   remains callable for at least one released version with one deprecation notice
   on stderr; stdout, arguments, exit codes and state do not change. Do not rename
   case directories, receipts or configuration fields. No data migration is needed.
 
-- Remove `kmx suite diff` from scripts. `kmx test diff` compares passing evaluation receipts, not packages, and is not a replacement.
+- Remove `kmx suite diff` from scripts. `kmx package test diff` compares passing evaluation receipts, not packages, and is not a replacement.
 
 - Before installing the renamed PATH source plugin, uninstall an existing direct PATH installation under its old `kmx-agent-builder` name. This does not update the kmx binary or add a marketplace install.
 
