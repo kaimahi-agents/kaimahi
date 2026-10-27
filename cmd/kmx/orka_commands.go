@@ -40,7 +40,12 @@ func newOrkaInstallCommand(state *commandState) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "install",
 		Short: "Install Orka " + app.OrkaVersion + " and a keyless Provider",
-		Args:  cobra.NoArgs,
+		Args: func(cmd *cobra.Command, args []string) error {
+			if err := cobra.NoArgs(cmd, args); err != nil {
+				return err
+			}
+			return validateOrkaChartFlags(cmd, "chart", opt.Chart, opt.ChartSHA256)
+		},
 	}
 	// No --version: ordinary installs retain the reviewed release pin.
 	// A local chart is a separate explicit exact-byte operator input.

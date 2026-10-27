@@ -34,6 +34,8 @@ func TestOrkaSetupFlagsRetainEnrollmentTriState(t *testing.T) {
 func TestOrkaSetupCommandsValidateBeforeConfiguration(t *testing.T) {
 	for _, command := range []string{"up", "fixed", "guided"} {
 		for _, flags := range [][]string{
+			{"--orka-chart=", "--orka-chart-sha256="},
+			{"--orka-chart= ", "--orka-chart-sha256=" + strings.Repeat("a", 64)},
 			{"--orka-chart", "candidate.tgz"},
 			{"--orka-chart-sha256", strings.Repeat("a", 64)},
 			{"--enforcement=false"},

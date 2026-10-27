@@ -1,9 +1,27 @@
 package main
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 )
+
+func TestOrkaInstallRejectsInvalidChartSelectorsBeforeConfiguration(t *testing.T) {
+	for _, args := range [][]string{
+		{"--chart=", "--chart-sha256="},
+		{"--chart=candidate.tgz", "--chart-sha256="},
+		{"--chart= ", "--chart-sha256=" + strings.Repeat("a", 64)},
+		{"--chart=candidate.tgz", "--chart-sha256=" + strings.Repeat("A", 64)},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			deps, loads := testDependencies(&out, &errOut)
+			if err := execute(append([]string{"orka", "install"}, args...), deps); err == nil || *loads != 0 {
+				t.Fatalf("invalid chart selection reached configuration: err=%v loads=%d", err, *loads)
+			}
+		})
+	}
+}
 
 func TestOrkaLocalChartFlagsRequireEachOther(t *testing.T) {
 	for _, tc := range []struct {

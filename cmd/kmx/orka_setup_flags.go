@@ -25,15 +25,23 @@ func selectedOrkaSetup(cmd *cobra.Command, opt app.OrkaSetupOptions) app.OrkaSet
 }
 
 func validateOrkaSetupFlags(cmd *cobra.Command, opt app.OrkaSetupOptions) error {
-	if cmd.Flags().Changed("orka-chart") || cmd.Flags().Changed("orka-chart-sha256") {
-		_, err := hex.DecodeString(opt.ChartSHA256)
-		if strings.TrimSpace(opt.Chart) == "" || len(opt.ChartSHA256) != 64 ||
-			opt.ChartSHA256 != strings.ToLower(opt.ChartSHA256) || err != nil {
-			return fmt.Errorf("--orka-chart and --orka-chart-sha256 require a local file and exact lowercase SHA256")
-		}
+	if err := validateOrkaChartFlags(cmd, "orka-chart", opt.Chart, opt.ChartSHA256); err != nil {
+		return err
 	}
 	if cmd.Flags().Changed("enforcement") && opt.Chart == "" {
 		return fmt.Errorf("--enforcement requires --orka-chart and --orka-chart-sha256 with the bundled provider installer")
+	}
+	return nil
+}
+
+func validateOrkaChartFlags(cmd *cobra.Command, name, chart, digest string) error {
+	digestName := name + "-sha256"
+	if !cmd.Flags().Changed(name) && !cmd.Flags().Changed(digestName) {
+		return nil
+	}
+	_, err := hex.DecodeString(digest)
+	if strings.TrimSpace(chart) == "" || len(digest) != 64 || digest != strings.ToLower(digest) || err != nil {
+		return fmt.Errorf("--%s and --%s require a local file and exact lowercase SHA256", name, digestName)
 	}
 	return nil
 }
