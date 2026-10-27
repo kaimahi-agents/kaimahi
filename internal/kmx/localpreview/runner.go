@@ -180,7 +180,7 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 				Input        *string
 				Definitions  any
 			}{agent, request.FileLabel, request.Route, judgeSelection, request.Input, request.ToolDefinitions})
-			if checkJSONContent(content, checkContent) != nil {
+			if checkJSONContent(content, checkContent, agentPayloadPaths...) != nil {
 				return agentpreview.Outcome{State: agentpreview.Failed}, agentpreview.ErrCredentialContent
 			}
 		}

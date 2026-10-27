@@ -2,6 +2,8 @@
 // Explicit Squad parsing returns a distinct charter type, not a runnable Agent.
 // Canonical judge models may be omitted; execution binds isolated copies to the
 // selected route, while native Squad parsing and offline export require pins.
+// Recorded call arguments/results have 32 payload-relative nesting levels;
+// other Examples structure keeps 12 levels, sharing the same node/byte bounds.
 // Offline run-profile export preserves canonical content and hashes, not evidence.
 // Parsing, inspection and export do not execute agents or register them with Squad.
 package agentfile

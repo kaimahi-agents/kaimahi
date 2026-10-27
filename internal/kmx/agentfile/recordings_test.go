@@ -99,7 +99,7 @@ func TestRecordingsClosedFieldsAndModes(t *testing.T) {
 		{"inexact decimal", "number: 42", "number: 0.123456789012345678901"},
 		{"nonfinite", "number: 42", "number: .inf"},
 		{"timestamp", "title: Fix", "title: 2026-10-25"},
-		{"deep result", "title: Fix", "title: {nested: value}"},
+		{"deep result", "title: Fix", "title: " + strings.Repeat("{nested: ", 32) + "value" + strings.Repeat("}", 32)},
 		{"escaped credential value", "title: Fix", `title: "\u0067hp_` + strings.Repeat("a", 36) + `"`},
 		{"escaped credential key", "complete: true", `"\u0067hp_` + strings.Repeat("a", 36) + `": true`},
 	} {

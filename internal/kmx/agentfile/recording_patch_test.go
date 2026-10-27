@@ -195,8 +195,8 @@ func TestApplyRecordingsRefusesTargets(t *testing.T) {
 		"result over bound": func(m *MockTool) {
 			m.Calls[0].Result = map[string]any{"a": strings.Repeat("a", 16384), "b": strings.Repeat("a", 16384)}
 		},
-		"depth 13": func(m *MockTool) {
-			m.Calls[0].Result = map[string]any{"a": map[string]any{"b": map[string]any{"c": map[string]any{"d": 1.0}}}}
+		"depth 33": func(m *MockTool) {
+			m.Calls[0].Result = payloadAtDepth(33, false)
 		},
 		"definition too big": func(m *MockTool) { m.Description = strings.Repeat("a", 4097) },
 	} {

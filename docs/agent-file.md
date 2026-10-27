@@ -217,8 +217,11 @@ revision. With sparse edits the supplied content retains the original Examples b
 mode/reset intents change, never caller-supplied fixture payload. Older backends keep fixture-bearing files
 inspection-only in the canvas. These source capabilities are not supplied by the pinned older release.
 
-Fixtures share all existing YAML/source bounds below, including the shallow 12-level nesting budget. They reject
-external schema references, duplicate keys, inexact JSON numbers and known credential shapes. Arbitrary private data
+Recorded call `arguments` and `result` each have their own 32-level nesting budget, measured from that
+payload's root at depth zero. Each nested object value or array element adds one level. Other Examples structure,
+including tool `parameters` schemas, keeps the 12-level budget measured from the YAML document root at depth zero.
+Payload nodes still count toward the same 32,768-node total for the whole Examples document; byte caps are unchanged.
+Fixtures reject external schema references, duplicate keys, inexact JSON numbers and known credential shapes. Arbitrary private data
 can evade those checks: saved results are plain file content that the author may commit. Native Squad stays tool-free.
 Run-profile export refuses fixtures and tool checks rather than dropping them. Older backends without sparse
 `exampleEdits` keep fixture/tool-check files read-only in the canvas; CLI/MCP Test remains available. No automatic migration occurs.
@@ -231,10 +234,13 @@ Run-profile export refuses fixtures and tool checks rather than dropping them. O
 | Examples | 128 |
 | Assertions per example | 64 |
 | Input or any YAML scalar | 16 KiB UTF-8 |
-| YAML nesting / nodes | 12 levels / 32768 nodes |
+| Examples structure nesting (outside recorded payloads) | 12 levels from document root (depth 0) |
+| Each recorded call's arguments or result nesting | 32 levels from payload root (depth 0) |
+| YAML nodes, including all recorded payloads | 32768 total |
 
-Existing stricter assertion limits still apply. These are parsing limits, not
-execution/output/token budgets. A runner must separately bound outputs and cost.
+Existing stricter assertion limits still apply. Recorded payload safety checks also inspect JSON encoded inside
+strings; that decoded nesting counts toward their 32-level safety budget, and encoded duplicate keys refuse.
+These are parsing limits, not execution/output/token budgets. A runner must separately bound outputs and cost.
 
 `Parse(filename, bytes)` returns an Agent or a typed Error and nil Agent.
 `Load(filename)` first checks a bounded regular file, then calls Parse. Paths

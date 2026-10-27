@@ -42,6 +42,38 @@ var (
 	errRecording        = errors.New("invalid tool fixture")
 )
 
+// recordingPayloadRoots selects only canonical call payloads, never similarly
+// named fields in schemas or nested results. Shape validation still follows the
+// bounded walk, so malformed/duplicate fields do not gain format authority.
+func recordingPayloadRoots(root *yaml.Node) map[*yaml.Node]bool {
+	roots := map[*yaml.Node]bool{}
+	var visit func(*yaml.Node, []string)
+	visit = func(n *yaml.Node, path []string) {
+		if len(path) == 0 {
+			roots[n] = true
+			return
+		}
+		if n.Kind == yaml.SequenceNode && path[0] == "*" {
+			for _, child := range n.Content {
+				visit(child, path[1:])
+			}
+		} else if n.Kind == yaml.MappingNode && path[0] != "*" {
+			for i := 0; i+1 < len(n.Content); i += 2 {
+				key := n.Content[i]
+				if key.Kind == yaml.ScalarNode && key.Tag == "!!str" && key.Value == path[0] {
+					visit(n.Content[i+1], path[1:])
+				}
+			}
+		}
+	}
+	if root.Kind == yaml.DocumentNode && len(root.Content) == 1 {
+		for _, field := range []string{"arguments", "result"} {
+			visit(root.Content[0], []string{"examples", "*", "mocks", "tools", "*", "calls", "*", field})
+		}
+	}
+	return roots
+}
+
 func parseMocks(node *yaml.Node) (*Mocks, error) {
 	// Convert before decoding the closed shape: YAML's permissive scalar-to-string
 	// conversion and float parsing must not erase original types or precision.
@@ -137,14 +169,14 @@ func parseMocks(node *yaml.Node) (*Mocks, error) {
 			}
 		}
 	}
-	if localtools.CheckJSON(mocks, func(values ...string) error {
+	if localtools.CheckJSONPayloads(mocks, func(values ...string) error {
 		for _, value := range values {
 			if secretshapes.Match(value) != nil || strings.IndexFunc(value, unsupportedControl) >= 0 {
 				return errRecording
 			}
 		}
 		return nil
-	}) != nil {
+	}, []string{"tools", "*", "calls", "*", "arguments"}, []string{"tools", "*", "calls", "*", "result"}) != nil {
 		return nil, errRecording
 	}
 	return &mocks, nil

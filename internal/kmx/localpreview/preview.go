@@ -238,7 +238,7 @@ func (p *prepared) addCredential(key string) {
 func (p *prepared) refuseJournalCredentials(examples []agentfile.Example) error {
 	fields := []string{p.agent.Identity.ID, p.agent.Revision, p.route.model, p.agent.Instructions}
 	for _, example := range examples {
-		if localtools.CheckJSON(example.Mocks, func(values ...string) error { fields = append(fields, values...); return nil }) != nil {
+		if localtools.CheckJSONPayloads(example.Mocks, func(values ...string) error { fields = append(fields, values...); return nil }, mockPayloadPaths...) != nil {
 			return agentpreview.ErrUnsafeToolContent
 		}
 		fields = append(fields, example.ID, example.Input)
