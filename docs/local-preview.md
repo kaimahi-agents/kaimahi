@@ -24,6 +24,41 @@ and clearing failure diagnostics does not delete journals, source history or
 passing proof. See [retained Test failures](#retained-test-failures) for scope,
 revision attribution, bounds and retention-unavailable behavior.
 
+## Copilot sign-in in CI
+
+The app's sign-in is not the runner's sign-in. Supply your own Copilot-enabled
+GitHub credential as the runner's `COPILOT_GITHUB_TOKEN` environment variable;
+do not put a token in the agent file, command arguments or workflow source.
+In GitHub Actions, store it as a repository or environment secret (named
+`COPILOT_GITHUB_TOKEN` in this example), then expose it only to the test step:
+
+```yaml
+- name: Test with Copilot
+  env:
+    COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+  run: kmx test ./release-notes.agent.md --provider copilot -o json --github-summary
+```
+
+Run after checkout and installation of a current-main binary, with the agent's
+model set to an exact enabled ID or an explicit `--model ID`. The default
+non-fake route is Copilot; the explicit provider above makes the CI choice clear.
+The workflow-provided `GITHUB_TOKEN` is not a substitute for a credential with
+Copilot model access. Do not print or echo the secret. No interactive login or
+keychain setup is needed when a valid explicit token is supplied. Missing,
+invalid or refused credentials stop execution; kmx never switches credentials
+after an invalid explicit token. See [credential precedence](kmx.md#copilot-model-access).
+
+Use `kmx test FILE -o json --github-summary` to gate on all saved tests.
+Exit 0 means pass, 1 means assertion failure, 2 means it could not run or decide,
+and 130 means cancelled; flag-parsing and output/summary-write failures also exit 1.
+A case filter is always partial. `--no-content` omits answers and failure operands
+from JSON; the step summary is content-free regardless. The
+[CI report and artifact example](copilot-app.md#run-the-same-tests-in-ci) preserves
+the test's status while retaining JSON. Keep content-bearing reports private as
+needed. Neither a report nor a green preview is package deployment evidence,
+and the journal and failure-retention rules above still apply on a runner.
+The fake model checks wiring offline; it does not qualify hosted Copilot access.
+
 ## Preview execution
 
 `internal/kmx/localpreview` runs one [single-file agent](agent-file.md), tool-free
@@ -31,7 +66,7 @@ by default,
 in the kmx process. Every result is labeled **local preview**. It is not
 deployment qualification, suite evidence, a passing receipt, or authority to
 publish or deploy. `kmx run FILE`, `kmx test FILE` and MCP Run/Test use it for
-fake/local and explicit Copilot routes through the `agentpreview.Runner` interface.
+fake/local and default or explicit Copilot routes through the `agentpreview.Runner` interface.
 Selected examples and optional ad-hoc input share one invocation-owned journal;
 each gets a fresh Session, as does each of the two samples per judge assertion. The adapter aborts later sends on execution or deadline
 failure, and only exposes a private journal handle after successful finalization.
@@ -289,6 +324,12 @@ Projected PR titles and drafts are cleartext journal content, subject to the
 same retention and clear operations below. Native Squad parsing stays tool-free.
 
 ## Model routes
+
+The following describes the standalone preview library. For file CLI use,
+`--model` overrides the authored model, and a non-fake model defaults to Copilot
+with an existing sign-in. Select a local route explicitly with `--provider`
+and `--provider-url`; the CLI [route examples](kmx.md#agent-file-local-preview-unreleased-integration)
+show both. No route is discovered or installed during Run/Test.
 
 Preview chooses the exact runtime picker/tool override, then authored
 `Model.Preferred`, then `gpt-5.6-terra`. An omitted Model remains omitted in the
