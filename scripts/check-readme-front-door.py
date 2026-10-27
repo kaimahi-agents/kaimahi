@@ -200,7 +200,7 @@ def check_workflow(text: str) -> str | None:
     if list(paths) != PATH_ROWS:
         return "README front door: workspace/live paths must contain the exact four rows"
     for label, required in {
-        "Workspace": ["`kmx create`", "root `test`", "root `push`", "does not consume workspace source", "separate private evidence"],
+        "Workspace": ["`kmx create`", "`package test`", "`package push`", "does not consume workspace source", "separate private evidence"],
         "Local environment": ["`kmx cluster up`", "without creating an Agent", "setup-only", "not wired"],
         "Live Agent": ["`kmx run --agent NAME --prompt TEXT`", "`kmx chat NAME`", "including suite-owned Agents", "neither is workspace-local execution or suite evaluation"],
         "Legacy bundle": ["Removed outright", "`agent.yaml` readers/writers", "Old receipts are unreadable", "no conversion, migration or on-disk/resource deletion", "Public AgentSuite implementation bundles"],

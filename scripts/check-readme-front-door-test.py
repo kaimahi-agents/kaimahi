@@ -55,7 +55,7 @@ kmx cluster quickstart
 ## Workspace And Live Paths
 | Path | What it means |
 |---|---|
-| Workspace | Default `kmx create`, root `test`, and root `push` operate on editable source. Digest-based root `deploy` does not consume workspace source; it uses the packaged artifact and separate private evidence with explicit target and inference inputs. Run/chat still target live Agents. |
+| Workspace | Default `kmx create`, `package test`, and `package push` operate on editable source. Digest-based `package deploy` does not consume workspace source; it uses the packaged artifact and separate private evidence with explicit target and inference inputs. Run/chat still target live Agents. |
 | Local environment | `kmx cluster up` prepares kind, model and runtime without creating an Agent. The experimental Go `AgentEnvironment` interface is setup-only and is not wired to this command yet. |
 | Live Agent | `kmx run --agent NAME --prompt TEXT` performs one Task; `kmx chat NAME` opens an Orka session. Both target live Agents, including suite-owned Agents; neither is workspace-local execution or suite evaluation. |
 | Legacy bundle | Removed outright: `agent.yaml` readers/writers, commands and receipts, `create --live`. Old receipts are unreadable; no conversion, migration or on-disk/resource deletion. Public AgentSuite implementation bundles are a different format. |
@@ -121,7 +121,7 @@ CASES += [
     ("suite rows out of order", GOOD.replace("| **Create** |", "| **TEMP** |").replace("| **Test** |", "| **Create** |").replace("| **TEMP** |", "| **Test** |"), "Create row is missing"),
     ("missing test", GOOD.replace("`kmx package test --workspace DIR`", "`kmx run`"), "Test row is missing"),
     ("legacy eval in Test row", GOOD.replace("`kmx package test --workspace DIR`", "`kmx eval --workspace DIR`"), "Test row is missing"),
-    ("legacy eval in workspace row", GOOD.replace("root `test`", "root `eval`"), "Workspace path boundary is missing"),
+    ("legacy eval in workspace row", GOOD.replace("`package test`", "root `eval`"), "Workspace path boundary is missing"),
     ("partial evidence accepted", GOOD.replace("only when the full policy passes", "after any case"), "Test row must require a full pass"),
     ("repeat policy missing", GOOD.replace("optional `runs`/`minPasses` (default once)", "unbounded repeats"), "Test row must describe declared repeats"),
     ("later cases continue after failure", GOOD.replace("stops after a case misses its threshold or any unknown/error", "continues through every case"), "Test row must preserve fail-fast execution"),
@@ -161,7 +161,7 @@ CASES += [
     ("wrong installer", GOOD.replace("kaimahi/main/install.sh", "other/main/install.sh"), "release installer is missing"),
     ("install routes out of order", GOOD.replace("brew install kaimahi-agents/tap/kmx\n# or\ncurl", "curl").replace("install.sh | sh\n# or\ngo install", "install.sh | sh\n# or\nbrew install kaimahi-agents/tap/kmx\n# or\ngo install"), "release installer is missing"),
     ("first answer out of order", GOOD.replace("kmx version\nkmx cluster quickstart", "kmx cluster quickstart\nkmx version"), "kmx cluster quickstart is missing"),
-    ("missing workspace path", GOOD.replace("| Workspace | Default `kmx create`, root `test`, and root `push` operate on editable source. Digest-based root `deploy` does not consume workspace source; it uses the packaged artifact and separate private evidence with explicit target and inference inputs. Run/chat still target live Agents. |\n", ""), "workspace/live paths must contain the exact four rows"),
+    ("missing workspace path", GOOD.replace("| Workspace | Default `kmx create`, `package test`, and `package push` operate on editable source. Digest-based `package deploy` does not consume workspace source; it uses the packaged artifact and separate private evidence with explicit target and inference inputs. Run/chat still target live Agents. |\n", ""), "workspace/live paths must contain the exact four rows"),
     ("duplicate workspace path", GOOD.replace("| Local environment |", "| Workspace | Duplicate. |\n| Local environment |"), "workspace/live paths must contain the exact four rows"),
     ("workspace runs directly", GOOD.replace("does not consume workspace source", "runs workspace source directly"), "Workspace path boundary is missing"),
     ("environment interface wired", GOOD.replace("is setup-only and is not wired", "is fully wired"), "Local environment path boundary is missing"),

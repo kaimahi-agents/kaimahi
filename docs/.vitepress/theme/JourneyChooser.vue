@@ -8,7 +8,7 @@ const paths = [
     eyebrow: '01 · Ship it',
     title: 'Create, Test and Publish before Deploy',
     summary: 'Start with a prepared runtime and inference, registry authentication, and kmx.yaml with publishRepository, destination selectors and evaluationTarget; create supplies none of these. Deploy freezes inputs and composes missing Test, Publish (registry push) and placement with source-only promotion.',
-    command: 'kmx create … → kmx deploy --to NAME',
+    command: 'kmx create … → kmx package deploy --to NAME',
     link: '/docs/getting-started#an-agent-of-your-own',
     action: 'Create and Deploy your agent'
   },
@@ -17,7 +17,7 @@ const paths = [
     eyebrow: '02 · Try it',
     title: 'Start locally with a real answer',
     summary: 'Bring up kind, Ollama, and pinned Orka, then require a fresh Task to return a readable result.',
-    command: 'kmx quickstart',
+    command: 'kmx cluster quickstart',
     link: '/docs/getting-started#one-command-and-an-agent-that-answers',
     action: 'Open the local quickstart'
   },
