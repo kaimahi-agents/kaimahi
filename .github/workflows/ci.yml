@@ -1467,7 +1467,7 @@ jobs:
         env:
           KIND_CLUSTER: kmx-quickstart
         run: |
-          "$HOME/.local/bin/kmx" --context kind-kmx-quickstart local down || true
+          "$HOME/.local/bin/kmx" --context kind-kmx-quickstart cluster down || true
           # Put back what was moved aside, so nothing after this job (or any
           # post step) meets a runner missing its own toolchain.
           for hidden in /usr/bin/*.kmx-ci-hidden /usr/local/bin/*.kmx-ci-hidden /usr/local/go/bin/*.kmx-ci-hidden; do

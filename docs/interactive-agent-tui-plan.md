@@ -6,7 +6,7 @@
 > full eval/publication and reviewed Lift; Ready is placement only. See the
 > [current CLI](kmx.md). Earlier bundle panes below describe the superseded UI.
 
-`kmx cluster console` displays one local kind environment and one remote Kubernetes
+`kmx console` displays one local kind environment and one remote Kubernetes
 environment side by side. It requires an interactive terminal, at least 64×18.
 
 ## Try it
@@ -15,14 +15,14 @@ From this checkout:
 
 ```bash
 make
-bin/kmx cluster console --demo
+bin/kmx console --demo
 ```
 
 Demo mode uses sample agents, exercises navigation and command completion, and
 performs no cluster or Azure operations. For live inventory:
 
 ```bash
-bin/kmx cluster console --local-context kind-dev --remote-context my-remote --namespace orka-system
+bin/kmx console --local-context kind-dev --remote-context my-remote --namespace orka-system
 ```
 
 Live reads need `kubectl`, configured credentials, and permission to discover API
@@ -245,7 +245,7 @@ deployment review and progress panes. Both return to a refreshed overview.
 
 `/lift <agent> new` collects resource group, AKS cluster, globally unique registry
 name and Azure region. It then restores the terminal for the existing
-`kmx cluster aks up --payload orka --step cluster` provisioning flow, which reviews the
+`kmx aks up --payload orka --step cluster` provisioning flow, which reviews the
 current Azure account and confirms the named cluster. Existing AKS defaults
 apply (one `Standard_B4ms` node, Cilium, 64 GiB disk, monitoring enabled).
 After provisioning it continues the same agent lift flow on that cluster,

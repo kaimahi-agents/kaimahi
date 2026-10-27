@@ -24,12 +24,12 @@ See [native Windows](windows.md) for the exact command, trust and state limits.
 
 ## Test command (unreleased)
 
-Current main uses `kmx package test` and all six helpers (`cleanup`, `diff`, `explain`,
+Current main uses `kmx test` and all six helpers (`cleanup`, `diff`, `explain`,
 `export`, `verify`, `from-sessions`). The `explain` helper is also unreleased and
 is not available in v0.8.1 under either spelling. This rename is unreleased; v0.8.1 uses `kmx eval`
 with the same arguments. Hidden `eval` and its helpers remain callable for at
 least one released version, adding exactly one stderr line per legacy invocation:
-`kmx eval is deprecated; use kmx package test (same arguments).`
+`kmx eval is deprecated; use kmx test (same arguments).`
 Arguments, flags, stdout, existing stderr labels, exit codes and state remain
 unchanged apart from that notice. No data migration is needed: `eval/`/`evals/`,
 `evalTarget`/`evaluationTarget`, schemas, APIs and machine JSON remain unchanged.
@@ -37,16 +37,16 @@ Removal requires a later announced breaking release. See
 [Test compatibility](kmx.md#test-compatibility-unreleased).
 
 Run still invokes an existing live Orka Agent; Test evaluates workspace cases;
-Publish still transfers an OCI graph with `kmx package push`. These names do not add
+Publish still transfers an OCI graph with `kmx push`. These names do not add
 local workspace Run, numbered local versions, a plugin or a new Publish command.
 
 ## Deploy command (unreleased)
 
-Current main calls packaged-suite deployment `kmx package deploy`. This rename is not in
+Current main calls packaged-suite deployment `kmx deploy`. This rename is not in
 v0.8.1: use `kmx lift` there with the same arguments. In builds with Deploy,
 `kmx lift` remains hidden but callable for at least one released version. It adds
 exactly one stderr line per legacy invocation:
-`kmx lift is deprecated; use kmx package deploy (same arguments).`
+`kmx lift is deprecated; use kmx deploy (same arguments).`
 Legacy arguments, flags, stdout, stderr stage labels and exit codes remain
 unchanged. Machine JSON, public Go/API/internal `Lift` names, evidence, storage
 and annotations are unchanged. Removal requires a later announced breaking
@@ -321,7 +321,7 @@ from:
 
 ### Moving to main's Test spelling (unreleased)
 
-Use `kmx package test` in maintained commands and scripts, including all six helpers.
+Use `kmx test` in maintained commands and scripts, including all six helpers.
 Keep `kmx eval` when running v0.8.1. In newer builds the hidden compatibility
 route remains callable for at least one released version with only the stderr
 notice described [above](#test-command-unreleased); stdout, arguments, exit
@@ -330,7 +330,7 @@ packaged `evals/` files or configuration fields.
 
 ### AgentSessions bindings (unreleased)
 
-AgentSessions `kmx package test --development-host FILE` also requires `--bindings FILE`:
+AgentSessions `kmx test --development-host FILE` also requires `--bindings FILE`:
 an [`AgentSessionsBinding`](suite-workspace.md#agentsessionsbinding) whose
 `model.name` equals the packaged model. Evidence records the binding digest.
 AgentSessions passing receipts are now v2 (`kmx.agentsessions-suite.passing/v2`);
@@ -338,7 +338,7 @@ push and deploy refuse v1 receipts and managed v1 proofs, with no fallback.
 Evaluate again with `--development-host FILE --bindings FILE`. Orka and kagent
 receipts are unchanged.
 
-The new plan-only `kmx package deploy REF@sha256:DIGEST --harness-image IMAGE@sha256:DIGEST
+The new plan-only `kmx deploy REF@sha256:DIGEST --harness-image IMAGE@sha256:DIGEST
 --bindings FILE --evidence FILE --plan` renders a substrate ActorTemplate and
 HarnessRegistration offline and applies nothing; receipt diff still refuses
 AgentSessions evidence. See the
@@ -369,7 +369,7 @@ All three native renderers changed from v1 to v2, and public case packaging
 changes the graph and suite identities. Suites packaged by v0.6.0 are refused
 as packaged by an earlier kmx; their passing receipts are refused by push,
 Lift and receipt diff as recorded against earlier private case paths. Both
-refusals name the remedy: rerun `kmx eval` and `kmx package push` with this kmx.
+refusals name the remedy: rerun `kmx eval` and `kmx push` with this kmx.
 There is no migration reader; never rewrite old receipts to match new identities.
 Older judge receipts also require fresh evaluation because they lack the
 request-style binding.
@@ -381,8 +381,8 @@ Bare push needs saved `publishRepository`; explicit repository tags remain
 supported. Neither upgrading nor regenerating proof deletes saved files or
 deployed resources.
 
-Root `kmx package status` now requires a named destination: use `kmx package status --to NAME`
-for GET-only Agent placement/provenance inventory, or `kmx cluster orka status` for the
+Root `kmx status` now requires a named destination: use `kmx status --to NAME`
+for GET-only Agent placement/provenance inventory, or `kmx orka status` for the
 existing table-only runtime report. Status JSON is a new versioned observation,
 not a restored legacy document. See [destination status](destination-status.md).
 
@@ -441,14 +441,14 @@ Replace removed commands as follows:
 |---|---|
 | `kmx agent create` / `kmx create --live` | Offline `kmx create NAME` with exact model and instruction file, then eval/push/Lift |
 | `kmx agent chat/run` | Root `kmx chat` / `kmx run --agent NAME` for independent live Orka Agents |
-| `kmx agent show/list` | `kmx cluster orka show/list` |
-| Workspace `kmx package suite push` | `kmx package push [--workspace DIR] REF`; extracted-directory transfer remains |
-| Context-switching `kmx package ctx`, root `up/down` | `kmx cluster context show/use`, `kmx cluster up/down`; new `kmx package ctx [--check]` only lists named destinations |
-| Infrastructure `kmx lift/lift down` | `kmx cluster aks up/down`; root digest Lift is deployment only |
+| `kmx agent show/list` | `kmx orka show/list` |
+| Workspace `kmx suite push` | `kmx push [--workspace DIR] REF`; extracted-directory transfer remains |
+| Context-switching `kmx ctx`, root `up/down` | `kmx context show/use`, `kmx local up/down`; new `kmx ctx [--check]` only lists named destinations |
+| Infrastructure `kmx lift/lift down` | `kmx aks up/down`; root digest Lift is deployment only |
 | Chat `/lift` / old console Lift | Root digest Lift with explicit evidence; console creation separately composes the native workflow |
-| Chat/quickstart `--azure-discovery` | Explicit destination context; provision AKS separately with `kmx cluster aks up` |
+| Chat/quickstart `--azure-discovery` | Explicit destination context; provision AKS separately with `kmx aks up` |
 
-`package status --to NAME` is GET-only destination inventory; `orka status`
+Root `status --to NAME` is GET-only destination inventory; `orka status`
 retains the table-only Orka runtime report. Neither is suite-source evaluation
 or a legacy-state reader. `eval diff/from-sessions` remain root helpers, but
 diff reads only full-passing Orka/kagent suite receipts.
@@ -478,7 +478,7 @@ uses `kmx.kaimahi.dev/installed`; installations with the old
 kmx-owned. Relabeling live objects alone does not change those saved values.
 
 For a disposable local kind cluster you own, export needed data before
-`kmx cluster down`, then `kmx cluster up` with the same context/cluster settings.
+`kmx local down`, then `kmx local up` with the same context/cluster settings.
 **Down deletes the entire cluster**, including Tasks, Secrets, PVC-backed data,
 model data and historical databases. A matching current-label kmx-owned release
 can still be reused without replacement.
