@@ -26,8 +26,6 @@ config-write authority.
    copilot plugin install kmx-agent-builder@kmx-plugins
    ```
 
-   Until the `kmx-plugins` catalog is repinned to rc.4 after publication, the marketplace entry installs the rc.3 plugin. For the rc.4 pair meanwhile, install the plugin from main instead: `copilot plugin install kaimahi-agents/kaimahi:plugins/copilot-wsl`.
-
 There is no folder or model to configure during installation. The fixed command
 is `wsl.exe -e /usr/local/bin/kmx mcp`. The catalog pins this plugin's source to
 the matching release commit. It does not install or update `/usr/local/bin/kmx`.
