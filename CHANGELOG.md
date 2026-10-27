@@ -314,6 +314,22 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Changed
 
+- Source plugin manifests report version 0.9.0-rc.4 for the paired release.
+
+- The `kmx-plugins` marketplace pins both Copilot plugins to the published v0.9.0-rc.4 release commit. Refresh the catalog and update the plugin after installing the rc.4 binary.
+
+- Root help leads with Create, Run, Test, Chat and Model, followed by Package,
+  Cluster and Version. MCP, Completion and Help remain callable but are omitted
+  from the root help list; MCP and Completion are also omitted from suggestions.
+- Inner-loop help is concise with examples and compact flags. File Run/Test
+  storage, privacy and evidence caveats are collected in `docs/local-preview.md`;
+  Run distinguishes file-preview, shared-input and live-Orka flags. Test help
+  retains the runtime's pass/fail/inconclusive exit-code distinction. Global flag parsing,
+  supported operations and retained legacy Eval/Lift help remain unchanged.
+- Canonical flag-parsing errors point to the resolved command's help, without
+  repeating argument values; native Windows hints explicitly use PowerShell
+  quoting and its call operator. Legacy refusals and exit codes stay unchanged.
+
 - Canonical `kmx test` replaces `kmx eval`, including all six helpers:
   `cleanup`, `diff`, `explain`, `export`, `verify` and `from-sessions`. Test is unreleased;
   v0.8.1 uses `eval`. The hidden legacy root and helpers remain callable for at
@@ -447,6 +463,10 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Fixed
 
+- When chat lacks a saved agent snapshot or an agent-resource reader, report that no edit was saved instead of inventing a revision or running the agent solely to discover one. For add-tests requests, give conditional guidance to use Suggest tests if the canvas offers it. Revision checks and existing test-write consent are unchanged.
+
+- Start the macOS Copilot plugin's MCP server at `/usr/local/bin/kmx`, matching the documented installer destination without relying on a Dock-launched app's PATH. Install the paired rc.5 binary and update the plugin after the marketplace catalog is repinned; no manual MCP server definition is needed.
+
 - A private Orka ownership checkpoint could leave visible `4.json` after a
   post-link persistence failure, incorrectly authorizing a later update. Fresh
   create and internal update now require a final `committed.json` marker after
@@ -545,6 +565,11 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Breaking
 
+- Kubernetes setup/inspection and native package commands move under `kmx cluster`
+  and `kmx package`. The moved old roots are removed, not working aliases.
+  Root `test FILE` stays file-only; bare folder Test is not implemented by this
+  change. Native root `create` stays unchanged; `package create` is not added yet.
+
 - Older preparation-cache entries refuse without a current packing-policy marker.
   Move aside only the named entry and retry; keep managed passing state and
   standalone receipts. Rebuilding a different artifact requires fresh evaluation,
@@ -590,6 +615,55 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Upgrading
 
+Use this full command map (paths are relative to `kmx`; operands/flags retain
+their existing meaning):
+
+| Old path | New path |
+|---|---|
+| `local` | `cluster` (help) |
+| `local up`, `local down` | `cluster up`, `cluster down` |
+| `context`, `context show`, `context use NAME` | `cluster context`, `cluster context show`, `cluster context use NAME` |
+| `quickstart`, `console`, `targets` | `cluster quickstart`, `cluster console`, `cluster targets` |
+| `task`, `task result TASK` | `cluster task`, `cluster task result TASK` |
+| `orka`, `orka install`, `orka status`, `orka show NAME`, `orka list` | `cluster orka`, `cluster orka install`, `cluster orka status`, `cluster orka show NAME`, `cluster orka list` |
+| `orka status` (runtime report) | Also available as `cluster status`, using the same table-only report |
+| `aks`, `aks up`, `aks down` (hidden) | `cluster aks`, `cluster aks up`, `cluster aks down` (hidden) |
+| `quickstart-wizard` (hidden retirement refusal) | `cluster quickstart-wizard` (same refusal, pointer to `cluster quickstart --interactive`) |
+| `push [REF]` | `package push [REF]` (workspace publication, same exact-suite evidence gate) |
+| `deploy [REF@DIGEST]` | `package deploy [REF@DIGEST]` (composed and explicit-reference modes) |
+| `status --to NAME` (destination inventory) | `package status --to NAME`, not runtime `cluster status` |
+| Native/workspace `test` | `package test` |
+| `test cleanup`, `test diff`, `test export` | `package test cleanup`, `package test diff`, `package test export` |
+| `test verify`, `test from-sessions` | `package test verify`, `package test from-sessions` |
+| Workspace `test explain` | `package test explain` |
+| File `test FILE`, `test explain --file FILE` | Unchanged; root Explain requires `--file`. Package Explain also retains the existing offline file reader. |
+| `suite` | `package` (artifact operations); `package suite` groups directory transfer |
+| `suite validate`, `suite build`, `suite push-image` | `package validate`, `package build`, `package push-image` |
+| `suite pull`, `suite policy` | `package pull`, `package policy` |
+| `suite push DIRECTORY REF` | `package suite push DIRECTORY REF` (extracted-directory transfer; not evidence-gated workspace Push) |
+| `ctx [--check]` | `package ctx [--check]` (named destinations, not Kubernetes context selection) |
+| `run-profile`, `run-profile export FILE` | `package run-profile`, `package run-profile export FILE` |
+| `create NAME` | Unchanged native workspace creator in this change |
+| `run FILE [input]`, `run --agent NAME`, `chat NAME` | Unchanged; Chat still targets a live Orka Agent |
+| `model`, `model list`, `model login`, `model logout`, `version` | Unchanged |
+| `mcp`, `completion bash/zsh/fish`, `help [TOPIC...]` | Unchanged invocation; nested help topics use their new paths |
+| Hidden `eval` and `eval cleanup/diff/explain/export/verify/from-sessions` | Still work, with one notice: `kmx eval is deprecated; use kmx package test (same arguments).` |
+| Hidden `lift` | Still works with its legacy stage/output contract and one notice: `kmx lift is deprecated; use kmx package deploy (same arguments).` |
+| Bare root | Help only, as before |
+
+Bare helper names such as `kmx test cleanup` no longer select workspace operations.
+For an agent file literally named `cleanup`, `diff`, `export`, `verify` or
+`from-sessions`, use an explicit path such as `kmx test ./cleanup`.
+
+Build still consumes a directory and plans/builds the existing image operation;
+it does not compile an agent file into a package. No stored data, evidence,
+machine JSON fields, public Go APIs or cluster resources are migrated or deleted.
+The fixed Quickstart source description and suite digest stay unchanged.
+Installer `--quickstart` recognizes the cluster group's usage in inert help to
+select the downloaded binary's spelling; it never retries a failed setup operation.
+Stable v0.8.1 examples retain root Quickstart/Orka, and historical v0.4.1 wizard
+instructions retain their original root path.
+
 - For unreleased main builds, change maintained `kmx eval` invocations and all
   six helper routes to `kmx test`. v0.8.1 still uses `eval`. The hidden alias
   remains callable for at least one released version with one deprecation notice
@@ -609,11 +683,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   saved example. Legacy `--prompt` and `--prompt-file` retain their ad-hoc-plus-examples
   behavior.
 
-For v0.9.0-rc.4 on Windows, [install kmx at `/usr/local/bin/kmx` in WSL](plugins/copilot-wsl/README.md#install), then register the `kmx-plugins` marketplace and install `kmx-agent-builder@kmx-plugins` in Windows. On macOS, [install the Darwin binary and the `kmx-agent-builder-path` plugin](plugins/copilot/README.md#install-on-macos) with the commands in that guide.
+After v0.9.0-rc.5 is published and the marketplace catalog is repinned to its release commit, on Windows, [install kmx at `/usr/local/bin/kmx` in WSL](plugins/copilot-wsl/README.md#install), then register the `kmx-plugins` marketplace and install `kmx-agent-builder@kmx-plugins` in Windows. On macOS, [install the Darwin binary and the `kmx-agent-builder-path` plugin](plugins/copilot/README.md#install-on-macos) with the commands in that guide.
 
-Checked for this release: the marketplace install was walked in the Copilot app on Windows (register the catalog, install the plugin, open an agent canvas). The other changes since rc.3 are covered by CI, not by an app walk.
+Previously checked for rc.4: the marketplace install was walked in the Copilot app on Windows (register the catalog, install the plugin, open an agent canvas). rc.5's Mac plugin command fixes the PATH lookup; desktop behavior on the rc.5 pair still needs user verification. CI coverage does not establish an app walk.
 
 Known gaps in this preview:
+- Text-mode Copilot CLI editing remains unverified. [The revision-safe text-mode change](https://github.com/kaimahi-agents/kaimahi/pull/779) is still open and is not included in rc.5.
 - The Copilot CLI marks direct plugin installs (`copilot plugin install kaimahi-agents/kaimahi:plugins/copilot-wsl`) as deprecated; they follow main and still work, but the marketplace install is the supported pair.
 - The native Windows `kmx.exe` covers version, help, completion and fake-model file Run/Test only. The Copilot app path still runs kmx in WSL.
 - Copilot may keep showing “Working” after a canvas run until the next chat turn. Test rows and the final Test reply show the observed results.

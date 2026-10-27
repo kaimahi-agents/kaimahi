@@ -10,9 +10,10 @@ kmx keeps the prompt and tests in one Markdown file. The Copilot app opens that
 file in a canvas where you can edit and test it. This path needs no Kubernetes
 cluster, Docker or local model download.
 
-**Experimental.** The app walkthrough describes v0.9.0-rc.4. The install below
+**Experimental.** The app walkthrough describes v0.9.0-rc.5. The install below
 pairs that prerelease binary with plugin source pinned to its release commit.
-Updating the plugin alone does not update kmx. Features merged after rc.4 need
+Use these commands after rc.5 is published and the marketplace catalog is repinned.
+Updating the plugin alone does not update kmx. Features merged after rc.5 need
 a newer tested pair; a feature on main is not necessarily in your installed release.
 
 ## Install
@@ -25,7 +26,7 @@ Copilot plugin, so this path remains explicitly WSL-hosted.
 1. In WSL, install kmx:
 
    ```sh
-   curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.4/install.sh | sudo sh -s -- --version=v0.9.0-rc.4 --bin-dir=/usr/local/bin
+   curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.5/install.sh | sudo sh -s -- --version=v0.9.0-rc.5 --bin-dir=/usr/local/bin
    ```
 
 2. In a Windows terminal, register the marketplace and install the WSL variant:
@@ -44,26 +45,10 @@ Choose only one variant per host profile; their MCP server and skill names are s
 
 On macOS, use the [macOS install instructions](../plugins/copilot/README.md#install-on-macos)
 instead. They install a macOS binary and the plain Copilot plugin, not WSL.
-The source plugin now starts `/usr/local/bin/kmx mcp` directly, matching that
-installer destination rather than depending on the app's PATH. The pinned rc.4
-plugin still uses `kmx` from PATH; that fix needs a newer paired release.
-
-### macOS rc.4: server not available
-
-A Dock-launched Mac app normally has a PATH without `/usr/local/bin`. With rc.4,
-the skills can load while `kmx-agent-builder` fails to start. Restart Copilot and
-start a fresh session after installation first; an existing session may not pick
-up newly installed servers.
-
-Without a new release, use the app's **Settings → MCP Servers → Add Server →
-Add Custom server** to add a **Local** (stdio) server named `kmx-agent-builder`,
-with **Command** `/usr/local/bin/kmx` and **Arguments** `mcp`. Keep only one active
-server with that name; do not remove the plugin's skills or canvas. Start a fresh
-session to pick up the configuration. These controls are shown in Microsoft's
-[Copilot app MCP guide](https://github.com/microsoft/mcp-for-beginners/blob/main/12-tooling/01-copilot-app/README.md).
-This is a temporary local server definition, not a plugin or binary upgrade.
-Remove that manual definition when a paired release supplies the absolute-path
-plugin so it does not collide with the plugin's server.
+The rc.5 plugin starts `/usr/local/bin/kmx mcp` directly, matching that
+installer destination rather than depending on the app's PATH. This fixes rc.4's
+Dock-launch PATH lookup; no manual MCP server definition is needed. Quit and
+reopen Copilot after the paired update, then start a fresh session.
 
 ### Existing direct installs and upgrades
 
@@ -200,7 +185,7 @@ cannot render the canvas, Copilot can still use kmx's tools in text.
 
 ## Choose tools for tests
 
-With a matching rc.4 plugin and binary, **Add tools** opens this app's
+With a matching rc.5 plugin and binary, **Add tools** opens this app's
 MCP servers. Tick tools to add them to the agent. A ticked tool's **Enabled** or
 **Disabled** word flips a draft; Disabled tools stay declared but do not run in tests.
 Enter saves edits, then tests. Esc discards Tools edits without discarding prompt
@@ -211,7 +196,7 @@ physical target and also affect other agents in that folder. These are separate
 saves, not one transaction. If a save is partial or unconfirmed, tests do not run:
 keep the draft and deliberately reload to inspect what was saved. Do not retry
 an uncertain write. This switch uses `set_tool_state`, included in the pinned
-v0.9.0-rc.4 binary above.
+v0.9.0-rc.5 binary above.
 
 ![Tools section showing one selected tool from the GitHub MCP server, with earlier test results marked out of date](images/copilot-tools.png)
 

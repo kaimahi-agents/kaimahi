@@ -2,7 +2,7 @@
 
 The plugin contains skills, canvas assets and MCP configuration. It uses the
 Linux kmx binary in your default WSL distribution; it does not bundle an engine.
-The v0.9.0-rc.4 install below exposes Create/Edit/Run/Test and the revision-checked
+The v0.9.0-rc.5 install below exposes Create/Edit/Run/Test and the revision-checked
 `set_tool_state` folder-settings writer. Older rc.2 binaries expose only the first
 four tools.
 Internal preview children retain only Create/Edit/Run/Test and never gain
@@ -10,10 +10,10 @@ config-write authority.
 
 ## Install
 
-1. In WSL, install the paired v0.9.0-rc.4 prerelease Linux binary at `/usr/local/bin/kmx`:
+1. In WSL, install the paired v0.9.0-rc.5 prerelease Linux binary at `/usr/local/bin/kmx`:
 
    ```sh
-   curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.4/install.sh | sudo sh -s -- --version=v0.9.0-rc.4 --bin-dir=/usr/local/bin
+   curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.5/install.sh | sudo sh -s -- --version=v0.9.0-rc.5 --bin-dir=/usr/local/bin
    ```
 
    The installer downloads the binary and checks its published SHA256 over HTTPS;
@@ -28,7 +28,8 @@ config-write authority.
 
 There is no folder or model to configure during installation. The fixed command
 is `wsl.exe -e /usr/local/bin/kmx mcp`. The catalog pins this plugin's source to
-the matching release commit. It does not install or update `/usr/local/bin/kmx`.
+the matching release commit. Use the rc.5 commands after its release is published
+and the catalog is repinned. It does not install or update `/usr/local/bin/kmx`.
 The WSL and native-bundle plugins share the name `kmx-agent-builder`; PATH uses
 `kmx-agent-builder-path`. Install only one variant per host profile.
 For an existing direct install, follow [migration and paired upgrades](../../docs/copilot-app.md#existing-direct-installs-and-upgrades), rather than leaving both registrations active.

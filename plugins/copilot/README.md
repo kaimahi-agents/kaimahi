@@ -7,10 +7,10 @@ skills, a canvas and MCP configuration, not an engine or a fixed working folder.
 ## Install on macOS
 
 With Copilot installed, run these three commands in a Mac terminal to install
-the paired v0.9.0-rc.4 prerelease:
+the paired v0.9.0-rc.5 prerelease:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.4/install.sh | sudo sh -s -- --version=v0.9.0-rc.4 --bin-dir=/usr/local/bin
+curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.5/install.sh | sudo sh -s -- --version=v0.9.0-rc.5 --bin-dir=/usr/local/bin
 copilot plugin marketplace add kaimahi-agents/kaimahi
 copilot plugin install kmx-agent-builder-path@kmx-plugins
 ```
@@ -20,14 +20,14 @@ The first command selects `kmx-darwin-arm64` on Apple Silicon and
 and installs it at `/usr/local/bin/kmx`. It uses the same binary installer as WSL,
 not a plugin setup script. It does not verify the separate signature bundle.
 The Homebrew tap tracks final releases, not release candidates; use this binary
-for rc.4. Use Homebrew for a final release only when its formula matches the
+for rc.5. Use Homebrew for a final release only when its formula matches the
 version named by the marketplace catalog.
 
 The source plugin starts `/usr/local/bin/kmx mcp`, matching the installer's
 `--bin-dir`; it does not depend on Copilot's PATH, which normally omits
-`/usr/local/bin` when the Mac app is launched from the Dock. rc.4's pinned plugin
-still starts `kmx` from PATH; see the [temporary MCP setup](../../docs/copilot-app.md#macos-rc4-server-not-available)
-until a newer paired release contains this fix. Restart Copilot after installing
+`/usr/local/bin` when the Mac app is launched from the Dock. Use the rc.5 commands
+after its release is published and the marketplace catalog is repinned; rc.4's
+pinned plugin still starts `kmx` from PATH. Restart Copilot after installing
 or updating the plugin and start a fresh session.
 No root, model or bundled binary is configured inside the plugin. The MCP schema has no
 per-OS command selector, so Windows keeps its separate WSL manifest. The PATH
@@ -134,7 +134,7 @@ The existing native bundle builder below still produces the legacy
 to its configured directory; the new unbound server needs neither file nor a
 folder confirmation. Plugin installation is replaced separately.
 
-The v0.9.0-rc.4 engine pinned above exposes exactly lowercase `create`, `edit`,
+The v0.9.0-rc.5 engine pinned above exposes exactly lowercase `create`, `edit`,
 `run`, `test` and `set_tool_state`; internal preview children retain the first four.
 Older rc.2 binaries expose only those first four. Canonical branches require
 `schemaVersion: 1` and an agent `path`; Create
