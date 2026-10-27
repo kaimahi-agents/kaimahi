@@ -114,6 +114,24 @@ func TestCopilotToolsMapping(t *testing.T) {
 	}
 }
 
+func TestCopilotToolsDoNotTruncate(t *testing.T) {
+	for _, count := range []int{32, 33} {
+		names := make([]string, count)
+		for i := range names {
+			names[i] = fmt.Sprintf("tool%d", i)
+		}
+		source := "---\ndescription: Many tools\ntools: [" + strings.Join(names, ", ") + "]\n---\nPrompt\n"
+		a := parseBoth(t, "many.agent.md", source)
+		want := count
+		if count > 32 {
+			want = 0
+		}
+		if len(a.Tools) != want || !strings.Contains(a.Frontmatter, strings.Join(names, ", ")) {
+			t.Fatalf("over-limit declarations must stay wholly unmapped, never truncated: got %d from %d", len(a.Tools), count)
+		}
+	}
+}
+
 func TestCopilotFreeFormPromptIsNotStructure(t *testing.T) {
 	prompt := "# One\n\n<!-- a comment -->\n\n## Identity\n- **ID:** nope\n\n## Model\n- **Preferred:** nope\n\n## Tools\n- nope\n\n# Two\n\n## Examples\n\nProse about examples.\n\n```text\nunclosed prose\n"
 	source := "---\ndescription: d\n---\n" + prompt

@@ -910,7 +910,7 @@ test('a header-only tools save splices the property and adds no Tools section', 
 test('the acknowledgement is a boolean only on example-saving actions and never reaches old files', async () => {
  const h = copilot();
  for (const bad of [{acknowledgeCopilotTests: 'true'}, {acknowledgeCopilotTests: 1}]) assert.equal((await h.act({operation: 'save-examples', expectedRevision: revision(h.source()), examples: addedTest, ...bad})).error, 'invalid-action');
- for (const operation of ['save-prompt', 'run']) assert.equal((await h.act({operation, expectedRevision: revision(h.source()), acknowledgeCopilotTests: true})).error, 'invalid-action');
+ for (const operation of ['save-prompt']) assert.equal((await h.act({operation, expectedRevision: revision(h.source()), acknowledgeCopilotTests: true})).error, 'invalid-action');
  assert.equal(h.calls.length, 0);
  const old = harness(); old.o.nextExamples = addedTest;
  const r = await old.act({operation: 'save-examples', expectedRevision: revision(old.source()), examples: addedTest, acknowledgeCopilotTests: true});
@@ -975,4 +975,51 @@ test('replays, live tools, disabled tools and old files need no acknowledgement 
  h.session.rpc.mcp.resources.read = async a => {const r = await read(a), raw = JSON.parse(r.contents[0].text); raw.toolSettings = [{name: 'ping', state: 'Disabled'}]; r.contents[0].text = JSON.stringify(raw); return r};
  assert.notEqual((await h.act({operation: 'test', expectedRevision: revision(h.source())})).error, 'confirmation_required');
  const ask = await old.h.act({operation: 'test', expectedRevision: revision(old.h.source())}); assert.notEqual(ask.error, 'confirmation_required');
+});
+
+// Run ("Try another input") shares the first-capture go-ahead with Test.
+function capturingRun({fixture = COPILOT, mocks = pendingMocks, saveAs} = {}) {
+ const h = harness({fixture}), read = h.session.rpc.mcp.resources.read, execute = h.session.rpc.tools.execute, seen = [];
+ h.session.rpc.mcp.resources.read = async args => {const r = await read(args), raw = JSON.parse(r.contents[0].text); Object.assign(raw, {tools: ['ping'], toolSettings: [{name: 'ping', state: 'Enabled'}], examples: [{...addedTest[0], mocks}]}); raw.authoring.recordingControls = true; r.contents[0].text = JSON.stringify(raw); return r};
+ h.session.rpc.tools.execute = async req => {
+  if (req.name !== 'owned-run') return execute(req);
+  seen.push(req.arguments);
+  const executed = revision(h.source()), body = {schemaVersion: 1, kind: 'kmx.agent-file-preview', file: {path: 'greeter.agent.md', revision: executed}, operation: 'run', state: 'complete', verdict: 'unknown', fullPass: false, modelRoute: {provider: 'fake', model: 'fake'}, selection: {scope: 'full', totalCases: 1, caseIds: [addedTest[0].id]},
+   examples: [{id: addedTest[0].id, state: 'complete', verdict: 'pass', assertions: addedTest[0].assertions.map(c => ({id: c.id, type: c.type, verdict: 'pass'})), tools: [{name: 'ping', mode: 'recorded', source: 'live', callCount: 1, ...(saveAs ? {recordingSaved: true} : {})}]}],
+   adHoc: {state: 'complete', verdict: 'unknown', reasonCode: 'completion_ready', reason: 'Answer ready.', answerExcerpt: 'Hello, Ada'}};
+  if (saveAs) {
+   const next = h.source() + saveAs.append;
+   await execute({name: 'owned-edit', arguments: {schemaVersion: 1, path: 'greeter.agent.md', expectedRevision: executed, content: next}});
+   body.savedRevision = saveAs.claim ?? revision(next);
+  } else Object.assign(h.raw().latest, {status: 'current', result: body});
+  return {resultType: 'success', structuredContent: body};
+ };
+ return {h, seen};
+}
+
+test('Run on a first capture in a frontmatter file needs the go-ahead, forwards it once, and stays ad hoc', async () => {
+ const {h, seen} = capturingRun();
+ const refused = await h.act({operation: 'run', expectedRevision: revision(h.source()), input: 'Ada'});
+ assert.equal(refused.error, 'confirmation_required'); assert.equal(refused.message, NOTICE); assert.equal(seen.length, 0);
+ const ok = await h.act({operation: 'run', expectedRevision: revision(h.source()), input: 'Ada', acknowledgeCopilotTests: true});
+ assert.equal(ok.error, undefined); assert.equal(seen.length, 1); assert.equal(seen[0].acknowledgeCopilotTests, true); assert.equal(seen[0].input, 'Ada');
+ const replay = capturingRun({mocks: {tools: [{name: 'ping', mode: 'recorded', calls: [{arguments: {}, result: {ok: true}}]}]}});
+ const free = await replay.h.act({operation: 'run', expectedRevision: revision(replay.h.source()), input: 'Ada', acknowledgeCopilotTests: true});
+ assert.equal(free.error, undefined); assert.equal(Object.hasOwn(replay.seen[0], 'acknowledgeCopilotTests'), false);
+ const old = capturingRun({fixture: original});
+ assert.equal((await old.h.act({operation: 'run', expectedRevision: revision(old.h.source()), input: 'Ada'})).error, undefined);
+});
+
+test('a Run that saved its capture reports the saved file without attributing the result to it', async () => {
+ const {h} = capturingRun({saveAs: {append: '\n'}});
+ const before = revision(h.source());
+ const r = await h.act({operation: 'run', expectedRevision: before, input: 'Ada', acknowledgeCopilotTests: true});
+ assert.equal(r.error, undefined); assert.equal(r.saved, true);
+ assert.equal(r.view.file.revision, revision(h.source())); assert.notEqual(r.view.file.revision, before);
+ assert.notEqual(r.view.latest.status, 'current', 'the new revision has no result of its own');
+ assert.equal(r.capture.executedRevision, before); assert.equal(r.capture.savedRevision, r.view.file.revision);
+ assert.equal(r.capture.adHoc.answerExcerpt, 'Hello, Ada');
+ const wrong = capturingRun({saveAs: {append: '\n', claim: 'sha256:' + 'a'.repeat(64)}});
+ const bad = await wrong.h.act({operation: 'run', expectedRevision: revision(wrong.h.source()), input: 'Ada', acknowledgeCopilotTests: true});
+ assert.equal(bad.error, 'outcome-unknown');
 });

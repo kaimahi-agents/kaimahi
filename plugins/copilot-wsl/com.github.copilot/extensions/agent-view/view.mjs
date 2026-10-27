@@ -19,7 +19,7 @@ export function createActionHandler({ session, path }) {
     "save-and-test": ["expectedRevision", "sections", "examples", "exampleOrigins", "acknowledgeCopilotTests", "tools", "toolSettings", "expectedSettingsRevision", "showContent", "caseId", "model", "runId", "comparisonModels"],
     "save-examples": ["expectedRevision", "examples", "exampleOrigins", "acknowledgeCopilotTests"],
     "save-prompt": ["expectedRevision", "sections"],
-    test: ["expectedRevision", "showContent", "caseId", "model", "runId", "comparisonModels", "acknowledgeCopilotTests"], run: ["expectedRevision", "input", "showContent", "model"],
+    test: ["expectedRevision", "showContent", "caseId", "model", "runId", "comparisonModels", "acknowledgeCopilotTests"], run: ["expectedRevision", "input", "showContent", "model", "acknowledgeCopilotTests"],
     suggest: [], reload: [], models: [], tools: [], progress: ["runId"], stop: ["runId"],
   };
   const validRunId = (id) => typeof id === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(id);
@@ -285,7 +285,7 @@ export function createActionHandler({ session, path }) {
       if (input.caseId !== undefined && (typeof input.caseId !== "string" || ids.filter((id) => id === input.caseId).length !== 1)) throw new ViewError("invalid-action");
       // A first live capture writes recorded calls into a Copilot file's tests: the same go-ahead covers it.
       const selected = input.caseId === undefined ? ids : [input.caseId];
-      if (["test", "save-and-test"].includes(input.operation) && view.authoring.recordingControls && hasFrontmatter(view.authoring.source)
+      if (["test", "save-and-test", "run"].includes(input.operation) && view.authoring.recordingControls && hasFrontmatter(view.authoring.source)
         && pendingCapture(examples, view.toolSettings.map(s => changes.find(c => c.name === s.name) ?? s), selected) && input.acknowledgeCopilotTests !== true) throw new ViewError("confirmation_required");
       // The page asks the user first; the server independently enforces the same rule.
       const acknowledge = (input.examples !== undefined || input.operation === "save-examples") && hasFrontmatter(view.authoring.source) && (patches?.length > 0 || testsNeedAcknowledgement(view.authoring.source, view.authoring.examples, examples));
@@ -331,9 +331,26 @@ export function createActionHandler({ session, path }) {
       }
       tested = true;
       if (operation === "test" && view.authoring.recordingControls) { const result = await recordingTests(view,input,model,input.caseId === undefined ? ids : [input.caseId],fresh=>{saved=true;targetRevision=fresh.file.revision}); return {...result,saved:saved||result.saved}; }
-      const outcome = await invoke(operation, { ...(runtimeModel ? { model: runtimeModel } : {}), ...(operation === "run" ? { input: input.input } : {}), ...(input.caseId !== undefined ? { caseId: input.caseId } : {}), showContent: input.showContent === true, showFailedContent: true },
+      const outcome = await invoke(operation, { ...(runtimeModel ? { model: runtimeModel } : {}), ...(operation === "run" ? { input: input.input } : {}), ...(input.caseId !== undefined ? { caseId: input.caseId } : {}),
+          // Only a live first capture writes into a Copilot file's tests; the go-ahead covers exactly that.
+          ...(operation === "run" && input.acknowledgeCopilotTests === true && view.authoring.recordingControls && hasFrontmatter(view.authoring.source) && pendingRecorded(view, ids) ? { acknowledgeCopilotTests: true } : {}),
+          showContent: input.showContent === true, showFailedContent: true },
         { id: input.runId, revision: targetRevision, model, examples, caseIds: input.caseId === undefined ? ids : [input.caseId], totalCases: ids.length,
           ...(view.tools.length ? { toolSettings: view.toolSettings.map(s => ({ ...s })) } : {}) });
+      // A Run can save a first live capture: the result describes the executed (older)
+      // revision, the file is now the saved one. Never attribute the result to the new revision.
+      let raw = outcome.structuredContent;
+      if (operation === "run" && !raw && typeof outcome.textResultForLlm === "string" && Buffer.byteLength(outcome.textResultForLlm) <= MAX_RESOURCE_BYTES) { try { raw = JSON.parse(outcome.textResultForLlm); } catch {} }
+      if (operation === "run" && !outcome.stopped && raw?.savedRevision !== undefined) {
+        let result, fresh;
+        try { result = cleanResult(raw, "current", targetRevision); fresh = await readView(session, path); }
+        catch { uncertain = true; throw new ViewError("outcome-unknown"); }
+        const flags = result.examples.flatMap(e => e.tools ?? []).filter(t => t.recordingSaved);
+        if (raw.file?.path !== path || !flags.length || fresh.file.revision !== result.savedRevision || flags.some(t => t.mode !== "recorded" || t.source !== "live")) { uncertain = true; throw new ViewError("outcome-unknown"); }
+        saved = true; targetRevision = fresh.file.revision;
+        if (!sameSettings(fresh.toolSettings, view.toolSettings)) throw new ViewError("tool_settings_changed");
+        return { view: fresh, saved, capture: { ...result, executedRevision: raw.file.revision, model } };
+      }
       try { view = await readView(session, path); }
       catch { uncertain = true; throw new ViewError("outcome-unknown"); }
       if (outcome.stopped) {

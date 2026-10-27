@@ -89,7 +89,9 @@ export function createRunViews(state, { act, actions, doc, entries, hasDrafts, h
   }
 
   function sourceActions(button, info, updates) {
-    const adHoc = state.base.latest.status === "current" ? state.base.latest.result?.adHoc : undefined;
+    // A Run that saved its capture ran the previous revision; show its answer only while that saved revision is the one open.
+    const capture = state.lastAdHoc;
+    const adHoc = state.base.latest.status === "current" ? state.base.latest.result?.adHoc : capture?.savedRevision === state.base.file.revision && capture.model === selectedModel() && ranWith(state.base, capture) ? capture.adHoc : undefined;
     if (adHoc) {
       const result = el(doc, "section", "ad-hoc-result");
       result.append(el(doc, "h3", "", "Last ad-hoc run"), el(doc, "p", "", `${adHoc.state} · ${adHoc.verdict}`), answerBlock(doc, adHoc, hasDrafts, undefined, updates));
@@ -99,7 +101,7 @@ export function createRunViews(state, { act, actions, doc, entries, hasDrafts, h
     if (!state.snap) return;
     const runInput = el(doc, "textarea"); runInput.setAttribute("aria-label", "Ad-hoc input"); runInput.rows = 2;
     const box = el(doc, "div", "source-actions"), run = el(doc, "details", "run-disclosure");
-    run.append(el(doc, "summary", "", "Try another input"), runInput, button("Run", () => act("run", { input: runInput.value }), "sb", "clean"));
+    run.append(el(doc, "summary", "", "Try another input"), runInput, button("Run", () => actions.runInput(runInput.value), "sb", "clean"));
     updates.push(() => { runInput.disabled = state.busy || state.blocked || hasDrafts(); });
     box.append(run, button("Reload and discard draft", () => act("reload"), "tb", "reload"));
     info.append(box);

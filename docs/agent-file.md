@@ -31,6 +31,9 @@ Copilot tool sets, wildcards, namespaced tool references, model preference lists
 and other unmapped settings are shown as preserved frontmatter in the canvas;
 kmx does not execute imported MCP server configuration or invent tool aliases.
 The canvas shows the model and tools actually selected for the preview.
+A frontmatter declaration with more than 32 mapped tool names stays wholly
+unmapped rather than silently activating only its first 32 names; its original
+header remains visible and unchanged.
 Unknown fields, comments and formatting are written back untouched when editing
 the prompt or tests. Runtime model selection is not written into the file.
 

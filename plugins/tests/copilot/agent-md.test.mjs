@@ -106,6 +106,33 @@ test("tools in an unsupported shape are refused, never guessed", () => {
   assert.equal(replaceTools(nested, ["a"]), "---\nmcp:\n  tools: [x]\ntools: [a]\n---\nP\n");
 });
 
+test("escaped tool names are decoded before matching, so a removed tool cannot survive in another spelling", () => {
+  // Go decodes "\u0070ing" to ping, so removing the mapped ping must remove this item.
+  assert.equal(replaceTools('---\ntools: ["\\u0070ing", \'read\']\n---\nP\n', [], ["ping"]), "---\ntools: ['read']\n---\nP\n");
+  assert.equal(replaceTools('---\ntools:\n  - "\\u0070ing"\n  - "mcp/x"\n---\nP\n', [], ["ping"]), '---\ntools:\n  - "mcp/x"\n---\nP\n');
+  // A kept mapped tool keeps its original lexeme; an unmapped item is never rewritten.
+  const kept = '---\ntools: ["\\u0070ing", "a\\/b", \'it\'\'s\', mcp.*]\n---\nP\n';
+  assert.equal(replaceTools(kept, ["ping"], ["ping"]), kept);
+  assert.equal(replaceTools(kept, ["ping", "other"], ["ping"]), kept.replace("mcp.*]", "mcp.*, other]"));
+  // A quote escaped inside an item does not end it early.
+  assert.equal(replaceTools('---\ntools: ["a\\"b, c", ping]\n---\nP\n', [], ["ping"]), '---\ntools: ["a\\"b, c"]\n---\nP\n');
+  // Escapes only YAML defines cannot be decoded safely here: refuse before any write.
+  for (const item of ['"\\x70ing"', '"p\\_ing"', '"\\Uu0000070ing"']) assert.throws(() => replaceTools(`---\ntools: [${item}]\n---\nP\n`, [], ["ping"]), /Unsupported/, item);
+});
+
+test("quoted top-level tools keys are the tools property, not a second one", () => {
+  for (const key of ['"tools"', "'tools'"]) {
+    assert.equal(replaceTools(`---\n${key}: [read, ping]\n---\nP\n`, ["lookup"], ["ping"]), `---\n${key}: [read, lookup]\n---\nP\n`, key);
+    assert.equal(replaceTools(`---\n${key} : [ping]\nmodel: x\n---\nP\n`, [], ["ping"]), `---\n${key}: []\nmodel: x\n---\nP\n`.replace(": []", ": []"), key);
+    assert.equal(replaceTools(`---\n${key}:\n  - ping\n---\nP\n`, ["ping", "b"], ["ping"]), `---\n${key}:\n  - ping\n  - b\n---\nP\n`, key);
+    assert.equal(replaceTools(`---\n${key}: [ping]\n---\nP\n`, ["ping"], ["ping"]), `---\n${key}: [ping]\n---\nP\n`, "unchanged is a no-op");
+  }
+  // Only a top-level key counts; a different quoted key is untouched.
+  assert.equal(replaceTools('---\n"mytools": [a]\n---\nP\n', ["x"]), '---\n"mytools": [a]\ntools: [x]\n---\nP\n');
+  // An escaped spelling of the key is refused rather than guessed.
+  for (const key of ['"to\\u006fls"', '"t\\x6fols"']) assert.throws(() => replaceTools(`---\n${key}: [a]\n---\nP\n`, ["x"]), /Unsupported/, key);
+});
+
 test("a minimal file with a Tools section still edits that section", () => {
   const source = "# Greeter\n\nSay hello.\n\n## Tools\n- lookup\n";
   assert.equal(replaceTools(source, ["lookup", "other"]), "# Greeter\n\nSay hello.\n\n## Tools\n- lookup\n- other\n\n");

@@ -258,8 +258,14 @@ func mapFrontmatter(filename string, a *Agent) *Error {
 	}
 	for _, name := range names {
 		name = strings.TrimSpace(name)
-		if localtools.ValidToolName(name) && !slices.Contains(copilotToolAliases, strings.ToLower(name)) && !slices.Contains(a.Tools, name) && len(a.Tools) < 32 {
+		if localtools.ValidToolName(name) && !slices.Contains(copilotToolAliases, strings.ToLower(name)) && !slices.Contains(a.Tools, name) {
 			a.Tools = append(a.Tools, name)
+			// Keep larger declarations wholly unmapped and visible in the
+			// header, never activate a truncated preview-only subset.
+			if len(a.Tools) > 32 {
+				a.Tools = nil
+				return nil
+			}
 		}
 	}
 	return nil

@@ -4482,3 +4482,29 @@ test("replayed or live tests in a Copilot file run without asking", async t => {
     assert.equal(byClass(h.root, "copilot-tests").length, 0); assert.equal(h.calls.length, 1); assert.equal(Object.hasOwn(h.calls[0], "acknowledgeCopilotTests"), false);
   }
 });
+
+test('a captured ad-hoc answer is fenced by its runtime model and tool settings', async () => {
+  const {createRunViews} = await import('../../copilot-wsl/com.github.copilot/extensions/agent-view/run-views.mjs');
+  for (const [model, setting, visible] of [['fake', 'Enabled', true], ['other', 'Enabled', false], ['fake', 'Disabled', false]]) {
+    const doc = fakeDoc(), info = doc.createElement('section');
+    const state = {base: {file: {revision: REV}, model: 'fake', tools: ['ping'], toolSettings: [{name: 'ping', state: setting}], latest: {status: 'stale'}}, lastAdHoc: {model: 'fake', savedRevision: REV, toolSettings: [{name: 'ping', state: 'Enabled'}], adHoc: {state: 'complete', verdict: 'unknown', answerExcerpt: 'Captured answer'}}};
+    const views = createRunViews(state, {doc, hasDrafts: () => false, modelChoice: {override: model}});
+    views.sourceActions(() => assert.fail('no editable snapshot'), info, []);
+    assert.equal(info.textContent.includes('Last ad-hoc run'), visible, `${model}/${setting}`);
+  }
+});
+
+test("Try another input on a pending capture asks inline; Cancel makes no call, Go ahead forwards one acknowledgement", async t => {
+  const h = await captureCanvas(); t.after(() => h.app.dispose());
+  click(btn(h.root, "Run")); await tick();
+  assert.deepEqual(h.calls, [], "nothing is sent before the user decides");
+  const notice = byClass(h.root, "copilot-tests")[0];
+  assert.equal(byClass(notice, "notice-text")[0].textContent, TESTS_NOTICE);
+  click(btn(notice, "Cancel")); await tick();
+  assert.deepEqual(h.calls, []); assert.equal(byClass(h.root, "copilot-tests").length, 0);
+  click(btn(h.root, "Run")); click(btn(byClass(h.root, "copilot-tests")[0], "Go ahead")); await tick();
+  assert.equal(h.calls.length, 1); assert.equal(h.calls[0].operation, "run"); assert.equal(h.calls[0].acknowledgeCopilotTests, true);
+  const plain = await copilotCanvas(); t.after(() => plain.app.dispose());
+  click(btn(plain.root, "Run")); await tick();
+  assert.equal(plain.calls.length, 1); assert.equal(Object.hasOwn(plain.calls[0], "acknowledgeCopilotTests"), false); assert.equal(byClass(plain.root, "copilot-tests").length, 0);
+});

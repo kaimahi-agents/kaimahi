@@ -286,13 +286,26 @@ const TOOL_NAME = /^[A-Za-z_][A-Za-z0-9_-]{0,63}$/;
 // Blank-line separation before a section appended at the end of the source.
 const separator = (source, eol) => !source ? "" : (source.match(/(?:\r?\n)*$/)[0].match(/\n/g)?.length ?? 0) >= 2 ? "" : source.endsWith("\n") ? eol : eol + eol;
 
+const TOOLS_KEY = /^(?:tools|"tools"|'tools')[ \t]*:/;
+// The value of a double-quoted YAML scalar body, or undefined when it uses an escape
+// that is not also valid JSON (YAML-only escapes are not decoded here).
+function decodeDouble(body) {
+  if (/\\/.test(body.replace(/\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4})/g, ""))) return undefined;
+  try { return JSON.parse(`"${body}"`); } catch { return undefined; }
+}
+
 // Only the top-level `tools` property changes. Items this kmx did not map
 // (aliases, wildcards, namespaced sets) are kept exactly as written, as is every
 // other header line; anything beyond plain lists is refused rather than guessed.
 function replaceHeaderTools(source, header, names, mapped, eol) {
   const rows = [...eachLine(source, header.yamlStart)].filter((l) => l.offset < header.yamlEnd);
-  const at = rows.findIndex((l) => /^tools[ \t]*:/.test(l.line));
   const unsupported = () => { throw new Error("Unsupported Tools formatting."); };
+  // An escaped spelling of the key ("to\u006fls") is the tools property to a YAML reader: refuse, never guess.
+  for (const l of rows) {
+    const escaped = /^"((?:[^"\\]|\\.)*\\(?:[^"\\]|\\.)*)"[ \t]*:/.exec(l.line)?.[1];
+    if (escaped !== undefined && (decodeDouble(escaped) ?? "tools") === "tools") unsupported();
+  }
+  const at = rows.findIndex((l) => TOOLS_KEY.test(l.line));
   const text = (name) => /^(?:true|false|null|yes|no|on|off|y|n)$/i.test(name) ? `'${name}'` : name;
   if (at < 0) {
     // New properties belong inside the YAML document, before a trailing `...` marker.
@@ -304,14 +317,18 @@ function replaceHeaderTools(source, header, names, mapped, eol) {
   // Items cut off from the property by a blank or comment line are not guessed at.
   const after = rows.slice(last + 1).find((l) => l.line.trim() && !/^[ \t]*#/.test(l.line));
   if (after && after !== rows[last + 1] && /^(?:[ \t]+\S|-(?:[ \t]|$))/.test(after.line)) unsupported();
-  const span = rows.slice(at, last + 1), head = span[0].line.replace(/^tools[ \t]*:[ \t]*/, "");
+  const span = rows.slice(at, last + 1), key = /^(?:tools|"tools"|'tools')/.exec(span[0].line)[0], head = span[0].line.replace(TOOLS_KEY, "").replace(/^[ \t]+/, "");
   if (span.some((l) => l.line.includes("#"))) unsupported();
   let items;
   if (head) {
     const flow = [head, ...span.slice(1).map((l) => l.line.trim())].join(" ").trim();
     if (!/^\[.*\]$/.test(flow)) unsupported();
     items = []; let quote = "", item = "";
-    for (const ch of flow.slice(1, -1) + ",") {
+    const chars = [...flow.slice(1, -1) + ","];
+    for (let i = 0; i < chars.length; i++) {
+      const ch = chars[i];
+      // A backslash escapes the next character inside double quotes.
+      if (quote === '"' && ch === "\\" && i + 1 < chars.length) { item += ch + chars[++i]; continue; }
       if (quote) { item += ch; if (ch === quote) quote = ""; } else if (ch === "'" || ch === '"') { quote = ch; item += ch; }
       else if (ch === ",") { if (item.trim()) items.push(item.trim()); item = ""; } else item += ch;
     }
@@ -321,13 +338,18 @@ function replaceHeaderTools(source, header, names, mapped, eol) {
     if (!items.length) unsupported();
   }
   if (items.some((i) => /^[*&!\[{|>]/.test(i))) unsupported();
-  const value = (raw) => /^(["'])(.*)\1$/.exec(raw)?.[2] ?? raw;
+  // Compare by the value a YAML reader sees; an escape this cannot decode safely refuses the edit.
+  const value = (raw) => {
+    const quoted = /^(["'])(.*)\1$/.exec(raw);
+    if (!quoted) return raw;
+    return quoted[1] === "'" ? quoted[2].replaceAll("''", "'") : decodeDouble(quoted[2]) ?? unsupported();
+  };
   const known = new Set(mapped ?? items.map(value));
   const keep = items.filter((raw) => !known.has(value(raw)) || names.includes(value(raw)));
   const next = [...keep, ...names.filter((n) => !keep.some((raw) => value(raw) === n)).map(text)];
   if (next.length === items.length && next.every((raw, i) => raw === items[i])) return source;
   const indent = /^([ \t]*)-/.exec(span[1]?.line ?? "")?.[1] ?? "  ";
-  const body = !next.length || head ? `tools: ${next.length ? `[${next.join(", ")}]` : "[]"}${eol}` : `tools:${eol}${next.map((i) => `${indent}- ${i}${eol}`).join("")}`;
+  const body = !next.length || head ? `${key}: ${next.length ? `[${next.join(", ")}]` : "[]"}${eol}` : `${key}:${eol}${next.map((i) => `${indent}- ${i}${eol}`).join("")}`;
   return source.slice(0, span[0].offset) + body + source.slice(rows[last].next);
 }
 
