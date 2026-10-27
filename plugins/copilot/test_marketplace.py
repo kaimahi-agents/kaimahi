@@ -223,6 +223,11 @@ class InstalledMarketplaceTests(unittest.TestCase):
                 host("plugin", "uninstall", old_name)
                 self.assertFalse(installed(), "direct copy must be gone before marketplace install")
                 host("plugin", "marketplace", "add", os.environ["KMX_MARKETPLACE_SOURCE"])
+                catalogs = list((home / "cache/marketplaces").glob("*/.github/plugin/marketplace.json"))
+                self.assertEqual(len(catalogs), 1, "expected one remote catalog checkout")
+                expected_commit = os.environ.get("KMX_MARKETPLACE_COMMIT") or marketplace.git(root, "rev-parse", "HEAD")
+                actual_commit = marketplace.git(catalogs[0].parents[2], "rev-parse", "HEAD")
+                self.assertEqual(actual_commit, expected_commit, "catalog ref moved away from this run's head")
                 host("plugin", "install", entry["name"] + "@kmx-plugins")
 
                 def check_cache(entry=entry):

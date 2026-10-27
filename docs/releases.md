@@ -659,11 +659,13 @@ A preparation PR for the next binary may legitimately have source manifests
 newer than the catalog: leave its old pin in place until the new pair is ready.
 No workflow writes the catalog or pushes to main, and no new secret is required.
 
-Verify actual remote catalog installation from the PR's immutable Git commit
-in private Copilot profiles. Local-directory catalogs load live and are not
-persistence evidence. On main pushes CI registers that exact catalog commit;
-users normally add the repository without a ref so they can receive catalog
-updates. CI checks each installed variant's bytes against S and exercises direct
+Verify actual remote catalog installation from the PR branch in private Copilot
+profiles. CLI 1.0.102 accepts branch/tag catalog refs, not raw commit SHAs.
+CI registers the PR branch (main on pushes) and requires the resolved checkout
+to match that run's expected head commit; a moving ref fails rather than testing
+other catalog bytes. Plugin entries independently retain full release-SHA pins.
+Local-directory catalogs load live and are not persistence evidence. Users
+normally add the repository without a ref so they can receive catalog updates. CI checks each installed variant's bytes against S and exercises direct
 registration replacement, refresh/update and uninstall. It separately retains
 the PR-source install check, so publishing S does not hide later source edits.
 Real Windows/WSL and Dock-launched Mac walks must also check both canvas provider

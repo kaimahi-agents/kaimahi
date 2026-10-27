@@ -96,8 +96,10 @@ jobs:
         env:
           KMX_MARKETPLACE_COPILOT: ${{ runner.temp }}/copilot/node_modules/.bin/copilot
           # Use a remote Git catalog, not a local directory's live-loading semantics.
-          # Pin catalog C to this run's head; its entries independently pin release S.
-          KMX_MARKETPLACE_SOURCE: ${{ format('{0}#{1}', github.event.pull_request.head.repo.full_name || github.repository, github.event.pull_request.head.sha || github.sha) }}
+          # CLI 1.0.102 accepts branch/tag refs, not raw catalog commit SHAs.
+          # Verify the fetched catalog head separately; entries still pin release S.
+          KMX_MARKETPLACE_SOURCE: ${{ format('{0}#{1}', github.event.pull_request.head.repo.full_name || github.repository, github.head_ref || github.ref_name) }}
+          KMX_MARKETPLACE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
         run: python3 -m unittest discover -s plugins/copilot -p test_marketplace.py -v
       - name: Check cached assets and offline create, test, edit, rerun
         env:
