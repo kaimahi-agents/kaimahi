@@ -85,6 +85,7 @@ func WriteFilePreviewGitHubSummary(w io.Writer, result FilePreviewResult) error 
 		fmt.Fprintln(&out, "| Test | Tool | Setting | Mode | Source | Calls |")
 		fmt.Fprintln(&out, "|---|---|---|---|---|---:|")
 		written := 0
+		unavailable := false
 		for _, example := range result.Examples {
 			for _, tool := range example.Tools {
 				if written == fileSummaryMaxToolRows {
@@ -95,11 +96,15 @@ func WriteFilePreviewGitHubSummary(w io.Writer, result FilePreviewResult) error 
 					state = localtools.Enabled
 				}
 				fmt.Fprintf(&out, "| `%s` | `%s` | `%s` | `%s` | `%s` | %d |\n", example.ID, tool.Name, state, tool.Mode, tool.Source, tool.CallCount)
+				unavailable = unavailable || fileToolUnavailable(tool, result.ToolSettings)
 				written++
 			}
 		}
 		if omitted := toolRows - written; omitted > 0 {
 			fmt.Fprintf(&out, "\n%d additional tool row(s) are available in the JSON report.\n", omitted)
+		}
+		if unavailable {
+			fmt.Fprintln(&out, "\nUnavailable tools have no recording or live source for this test. Calls count requests, not successful live execution.")
 		}
 	}
 

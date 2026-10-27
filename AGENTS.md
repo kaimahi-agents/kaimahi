@@ -546,7 +546,10 @@ native evidence receipt. Subset is always partial, execution/journal failure is
 unknown, and only an explicit caller override changes the judge route. Keep
 live `run --agent`, native workspace Test/Explain and legacy Eval unchanged.
 The additive report includes monotonic total/per-test duration and content-free
-tool setting/source/count rows. Optional `test FILE -o json --github-summary`
+tool setting/source/count rows. Text output explains Enabled unavailable sources
+as missing recordings/tools; Disabled tools stay silent. The Actions summary adds
+one static explanation only for displayed unavailable rows. JSON, request-based
+Calls checks and exit semantics remain unchanged. Optional `test FILE -o json --github-summary`
 appends a bounded Markdown projection to the existing GitHub Actions summary
 file after writing the same JSON result; it never includes paths, prompts,
 answers, operands, tool arguments/results, credentials or provider diagnostics.

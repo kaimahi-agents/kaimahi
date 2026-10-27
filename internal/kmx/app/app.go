@@ -9,6 +9,8 @@
 // remain diagnostics only and file records never become evaluation evidence.
 // File previews bind omitted judge models on execution copies and expose valid
 // two-sample scores and sanitized transient reasons only with content disclosure.
+// Tool availability notes derive from frozen settings and dispatch sources without
+// changing request-based assertions, recording data or the JSON result contract.
 package app
 
 import (
