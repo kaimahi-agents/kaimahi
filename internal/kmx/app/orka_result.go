@@ -127,7 +127,7 @@ func (a *App) orkaAPIService(ctx context.Context, namespace string) (string, err
 			} `json:"spec"`
 		} `json:"items"`
 	}
-	if err := json.Unmarshal(raw, &list); err != nil {
+	if err := json.Unmarshal(raw, &list); err != nil || list.Items == nil {
 		return "", fmt.Errorf("invalid Orka API Service list in %s", namespace)
 	}
 	var match string
