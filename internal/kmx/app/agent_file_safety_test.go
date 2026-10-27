@@ -54,12 +54,12 @@ func TestFilePreviewRootedSnapshotDoesNotReopen(t *testing.T) {
 
 func TestFilePreviewParserDiagnostic(t *testing.T) {
 	path := previewFile(t)
-	if err := os.WriteFile(path, []byte("# Unsupported charter\n"), 0600); err != nil {
+	if err := os.WriteFile(path, []byte("---\nmodel: [\n---\nReview the changes.\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	f := &scriptedPreview{}
 	r, err := (&App{FileRunner: f}).PreviewAgentFile(context.Background(), FilePreviewOptions{File: path, Operation: "test"})
-	if err == nil || f.calls != 0 || r.Diagnostic == nil || !strings.Contains(r.Diagnostic.Field, "Identity.ID") || strings.Contains(r.Diagnostic.Field, "Model.Preferred") || !strings.Contains(r.Diagnostic.Field, "Examples") || r.Diagnostic.Line < 1 {
+	if err == nil || f.calls != 0 || r.Diagnostic == nil || r.Diagnostic.Field != "Frontmatter" || r.Diagnostic.Line < 1 {
 		t.Fatalf("%+v / %v", r, err)
 	}
 }

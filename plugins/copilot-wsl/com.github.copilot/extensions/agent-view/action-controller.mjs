@@ -1,4 +1,4 @@
-import { effectiveModel, validateDraft as validate } from "./authoring.mjs";
+import { effectiveModel, validateDraft as validate, testsNeedAcknowledgement, pendingCapture, hasFrontmatter } from "./authoring.mjs";
 import { isRefused, plainReason, quoted, clone } from "./editor.mjs";
 const CONFLICTS = ["revision_mismatch", "revision-mismatch"];
 const UNKNOWN = ["outcome-unknown", "uncertain-outcome", "uncertain_outcome"];
@@ -42,7 +42,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
   async function act(operation, values = {}, submitted = { sections: [], tests: [] }) {
     if (state.busy || ((state.blocked || invalidEditors.size) && operation !== "reload")) return;
     const previousPrompt = submitted.sections.map(key => ({ key, text: state.snap.sections.find(s => s.key === key).text }));
-    clearUndo();
+    clearUndo(); state.confirm = undefined;
     if (["test", "save-and-test"].includes(operation)) state.history.started(effectiveModel(state.base.model, modelChoice.override, state.base.chatModel));
     state.observationGeneration++; state.run = undefined;
     state.busy = true; state.pending = { operation, one: values.caseId !== undefined }; state.message = operation === "run" ? "Running…" : ""; state.runAlert = undefined; refresh();
@@ -128,6 +128,16 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     render();
   }
 
+  // New or changed tests in a Copilot file become part of its prompt: ask first,
+  // and only a fresh go-ahead (never a stale one) adds the acknowledgement.
+  // The same go-ahead covers a first live capture, which writes recorded calls into the tests.
+  function acknowledged(values, again, ack, ids) {
+    const source = state.base.authoring.source, saved = rawExamples(), intended = values.examples ?? saved;
+    const settings = drafts.toolNames().map(name => ({ name, state: drafts.toolState(name) }));
+    if (!testsNeedAcknowledgement(source, saved, intended) && !(state.base.authoring.recordingControls && hasFrontmatter(source) && pendingCapture(intended, settings, ids))) return true;
+    if (ack !== true) { state.confirm = { go: again }; render(); return false; }
+    values.acknowledgeCopilotTests = true; return true;
+  }
   function submitSettings(values, submitted) {
     if (!state.settingsDraft.size) return;
     values.toolSettings = drafts.toolNames().filter(name => state.settingsDraft.has(name)).map(name => ({ name, state: state.settingsDraft.get(name) }));
@@ -135,7 +145,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     submitted.settings = true;
   }
   // Enter saves all drafts once, then runs the suite.
-  function submitAll() {
+  function submitAll(ack = false) {
     if (!state.snap || state.busy || state.blocked || state.candidate || invalidEditors.size) return;
     const list = entries(), intended = localExamples();
     if ((state.toolsDraft?.length ?? 0) > 32) { state.message = "Keep at most 32 tools for this agent."; refresh(); return; }
@@ -150,10 +160,11 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     if (state.toolsDraft !== undefined) { values.tools = state.toolsDraft; submitted.tools = true; }
     submitSettings(values, submitted);
     if (!hasDrafts() && !intended.length) { state.message = "No tests yet — add or suggest one"; refresh(); return; }
+    if (!acknowledged(values, () => submitAll(true), ack, intended.map(e => e.id))) return;
     act(hasDrafts() ? "save-and-test" : "test", values, submitted);
   }
   // Detail Enter saves the prompt and this test, then runs its caseId.
-  function submitOne(key) {
+  function submitOne(key, ack = false) {
     if (!state.snap || state.busy || state.blocked || state.candidate || invalidEditors.size) return;
     const entry = entries().find((e) => e.key === key);
     if (!entry?.raw || entry.draft?.deleted) return;
@@ -173,6 +184,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     if (entry.draft) values.examples = intended;
     if (state.toolsDraft !== undefined) { values.tools = state.toolsDraft; submitted.tools = true; }
     submitSettings(values, submitted);
+    if (!acknowledged(values, () => submitOne(key, true), ack, [entry.raw.id])) return;
     act(state.toolsDraft !== undefined || state.settingsDraft.size || sectionDrafts.size || entry.draft ? "save-and-test" : "test", values, submitted);
   }
 

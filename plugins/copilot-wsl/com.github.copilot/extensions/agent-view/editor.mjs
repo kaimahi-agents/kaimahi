@@ -1,5 +1,5 @@
 // Canvas header, notices and footers. Re-exports the canvas view modules for existing imports.
-import { effectiveModel, agentName, fileLocation } from "./authoring.mjs";
+import { effectiveModel, agentName, fileLocation, COPILOT_TESTS_NOTICE } from "./authoring.mjs";
 import { el, icon } from "./dom.mjs";
 import { inspectCases, isRefused, resultTone, testRow, coherentSelection, countText, plural } from "./results.mjs";
 import { modelPresentation } from "./check-controls.mjs";
@@ -138,6 +138,24 @@ export function conflictNotice(doc, button, items, compareOpen, toggleCompare, k
     box.append(list);
   }
   return box;
+}
+
+// The whole Copilot header, as written. It is shown only; none of it is editable here.
+export function preservedSettings(doc, header) {
+  const box = el(doc, "section", "preserved-settings");
+  box.append(el(doc, "h2", "lbl", "Preserved settings (read-only)"),
+    el(doc, "p", "quiet", "Kept exactly as written in the agent file. Tests use the model and tools shown in this panel; the other settings are kept but not applied here."),
+    el(doc, "pre", "code-block preserved-header", header));
+  return box;
+}
+
+// Inline go-ahead before tests are written into a Copilot file's prompt.
+export function copilotTestsNotice(doc, button, goAhead, cancel) {
+  const box = el(doc, "div", "notice notice-warn copilot-tests"); box.setAttribute("role", "alert");
+  const text = el(doc, "span", "notice-text"); text.append(icon(doc, "warn", 15, 2), el(doc, "span", "", COPILOT_TESTS_NOTICE));
+  const actions = el(doc, "div", "notice-actions"), no = button("Cancel", cancel, "sb");
+  actions.append(button("Go ahead", goAhead, "sb"), no); box.append(text, actions);
+  return { node: box, focus: () => no.focus() };
 }
 
 export function testNameControl(doc, settings, change) {

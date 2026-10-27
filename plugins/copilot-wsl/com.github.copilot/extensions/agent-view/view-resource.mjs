@@ -1,6 +1,6 @@
 // The kmx agent resource: bounded parsing of views and results, plus shared errors and limits.
 import { createHash } from "node:crypto";
-import { instructionSections, replaceExamples, validateExamples, preRouteRefusal } from "./authoring.mjs";
+import { instructionSections, replaceExamples, validateExamples, preRouteRefusal, hasExamples, COPILOT_TESTS_NOTICE } from "./authoring.mjs";
 import { previewServer, HostRuntimeUnavailable } from "./host-relay.mjs";
 
 export const CANVAS_ID = "kmx-agent-view";
@@ -20,7 +20,7 @@ export const MESSAGES = {
   "models-unavailable": "Model choices are unavailable. Your model selection is unchanged.",
   "too-large": "The kmx agent view was too large to show.",
   "invalid-action": "This canvas action is not supported.",
-  "read-only": "This file is available for inspection only. Editing and testing require a complete canonical charter.",
+  "read-only": "This file is available for inspection only. The builder did not provide an editable snapshot of it.",
   busy: "Another canvas action is still running.",
   stale_revision: "Changed elsewhere. Your draft is still here; reload before saving or testing.",
   stale_settings_revision: "Tool settings changed elsewhere. Your draft is still here; compare the new settings before saving.",
@@ -31,6 +31,7 @@ export const MESSAGES = {
   "outcome-unknown": "The action outcome could not be confirmed. Do not retry; reload the source first.",
   "no-tests": "No tests yet — add or suggest one",
   tool_settings_changed: "Tool settings changed. Reload before comparing.",
+  confirmation_required: COPILOT_TESTS_NOTICE,
   invalid_tool_settings: "The tool settings in kmx.yaml are invalid. Fix them before running this agent.",
 };
 
@@ -186,6 +187,8 @@ function parseView(json, path) {
       }),
     };
   });
+  // Raw, complete Copilot header (shown read-only) and the omitted-tools flag.
+  if (raw.frontmatter !== undefined && typeof raw.frontmatter !== "string" || raw.copilotToolsOmitted !== undefined && typeof raw.copilotToolsOmitted !== "boolean") invalid();
   const latest = raw.latest;
   if (!isObj(latest) || !["none", "current", "stale"].includes(latest.status)) invalid();
   if ((latest.status === "current") !== (latest.result !== undefined)) invalid();
@@ -198,6 +201,8 @@ function parseView(json, path) {
     title: clean(raw.title, 200),
     instructions: clean(raw.instructions, 60000, true),
     model, tools, toolSettings,
+    ...(raw.frontmatter ? { frontmatter: clean(raw.frontmatter, 20000, true) } : {}),
+    ...(raw.copilotToolsOmitted ? { copilotToolsOmitted: true } : {}),
     ...(token !== undefined ? { toolSettingsRevision: token } : {}),
     examples,
     ...(authoring ? { authoring } : {}),
@@ -212,6 +217,8 @@ function authoringSnapshot(snapshot, examples, revision) {
   try {
     if (snapshot.editable) {
       instructionSections(snapshot.source);
+      // Tests the editor cannot find in the source must never be rewritten blind.
+      if ((examples ?? []).length && !hasExamples(snapshot.source)) return;
       // A hash-verified canonical source may hold zero tests, which Go emits as null.
       if (snapshot.recordingControls === true) validateExamples(examples ?? [], true);
       else replaceExamples(snapshot.source, examples ?? []);

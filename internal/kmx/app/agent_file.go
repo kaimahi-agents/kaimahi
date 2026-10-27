@@ -68,6 +68,7 @@ type FilePreviewResult struct {
 	AdHoc         *FilePreviewCompletion    `json:"adHoc,omitempty"`
 	Retention     FilePreviewRetention      `json:"retention"`
 	ToolSettings  []localtools.ToolSetting  `json:"toolSettings,omitempty"`
+	Notices       []string                  `json:"notices,omitempty"`
 }
 type FilePreviewDiagnostic struct {
 	Field  string `json:"field"`
@@ -185,7 +186,7 @@ func previewReason(code string) string {
 		"completion_ready": "Attributable completion available.",
 		"assertion_failed": "Assertion not satisfied.", "judge_unknown": "Assertion outcome is inconclusive.",
 		"not_run": "Execution is not complete.", "cancelled": "Local preview cancelled.", "deadline_exceeded": "Local preview deadline exceeded.",
-		"invalid_file":      "Invalid agent file; use the canonical charter format with required fields and an Examples section.",
+		"invalid_file":      "Invalid agent file; repair the reported source field.",
 		"no_tests":          "No tests yet — add or suggest one",
 		"invalid_selection": "Unknown example ID; select an authored example ID.", "invalid_options": "Invalid file preview options.",
 		"invalid_tool_settings":     "Tool settings in the agent folder's kmx.yaml are invalid.",
@@ -282,6 +283,9 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 			r.File.Path = "[agent file]"
 			return fail("invalid_file", 1)
 		}
+	}
+	if parsed.CopilotToolsOmitted {
+		r.Notices = []string{agentfile.CopilotToolsNotice}
 	}
 	missingModel := parsed.Model == ""
 	execution := *parsed

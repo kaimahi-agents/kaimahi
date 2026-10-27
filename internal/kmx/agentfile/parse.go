@@ -32,6 +32,9 @@ const (
 	MaxAssertions = 64
 )
 
+// CopilotToolsNotice is shown wherever a frontmatter file omits tools.
+const CopilotToolsNotice = "Copilot gives this agent all tools; these tests run without tools. Add tools to choose which."
+
 type Location struct {
 	File         string
 	Line, Column int
@@ -49,6 +52,13 @@ type Agent struct {
 	Examples     []Example
 	Revision     string
 	Locations    map[string]Location
+	// Frontmatter is the raw YAML between the delimiter lines (LF-normalized)
+	// of a Copilot-format file, unmodified and never serialized back. Its unmapped
+	// settings stay source-only. CopilotToolsOmitted is true only for such a file
+	// whose header has no tools property: Copilot grants all tools, kmx runs tool-free.
+	Frontmatter         string
+	HasFrontmatter      bool
+	CopilotToolsOmitted bool
 	// NativeTaskInstructions is set only by the explicit native preview adapter.
 	// Real routes retain Instructions; fake orientation uses this task-only text.
 	NativeTaskInstructions string
@@ -100,16 +110,18 @@ type fence struct {
 // for the canonical Squad placement, an identity constraint. It reads no agent
 // files; relative charter.md names consult the current directory for placement.
 func Parse(filename string, data []byte) (*Agent, error) {
-	return parse(filename, data, false)
+	return parse(filename, data)
 }
 
-// Inspect reads either a canonical charter or a minimal titled agent for display.
-// It grants no execution acceptance: Parse remains the Run/Test validator.
+// Inspect accepts exactly the files Parse accepts: a complete canonical charter,
+// a Copilot-format file (YAML frontmatter and a free-form prompt) or a plain
+// prompt. Only a complete charter or a final structured Examples section is
+// structure; every other heading is prompt text. It runs nothing.
 func Inspect(filename string, data []byte) (*Agent, error) {
-	return parse(filename, data, true)
+	return parse(filename, data)
 }
 
-func parse(filename string, data []byte, inspection bool) (*Agent, error) {
+func parse(filename string, data []byte) (*Agent, error) {
 	fail := func(field, problem string) (*Agent, error) { return nil, refuse(filename, 1, 1, field, problem) }
 	text, err := checkedSourceText(filename, data)
 	if err != nil {
@@ -117,11 +129,13 @@ func parse(filename string, data []byte, inspection bool) (*Agent, error) {
 	}
 	lines := strings.Split(text, "\n")
 	a := &Agent{Revision: fmt.Sprintf("sha256:%x", sha256.Sum256(data)), Locations: map[string]Location{}}
+	if hasFrontmatter(lines) || !completeCharter(lines) {
+		return parseFreeForm(filename, lines, a)
+	}
 	sections := map[string]section{}
 	current := ""
 	var open fence
 	first := true
-	prelude := false
 	for i, line := range lines {
 		if open.count > 0 {
 			if closeFence(line, open) {
@@ -170,10 +184,7 @@ func parse(filename string, data []byte, inspection bool) (*Agent, error) {
 			sections[name] = section{i, len(lines)}
 			a.Locations[name] = Location{filename, i + 1, 1}
 		} else if current == "" {
-			if !inspection {
-				return nil, refuse(filename, i+1, 1, "Sections", "put instructions inside the canonical responsibility sections")
-			}
-			prelude = true
+			return nil, refuse(filename, i+1, 1, "Sections", "put instructions inside the canonical responsibility sections")
 		}
 		if f, _, ok := openFence(line); ok {
 			open = f
@@ -186,40 +197,20 @@ func parse(filename string, data []byte, inspection bool) (*Agent, error) {
 		}
 		return nil, refuse(filename, len(lines), 1, field, "close the Markdown fence with matching markers")
 	}
+	a.Instructions = strings.Join(lines, "\n")
 	if s, ok := sections["Examples"]; ok {
 		a.Instructions = strings.Join(lines[:s.start], "\n") + "\n"
 	}
 	if s, ok := sections["Tools"]; ok {
-		for i := s.start + 1; i < s.end; i++ {
-			if strings.TrimSpace(lines[i]) == "" {
-				continue
-			}
-			name, ok := strings.CutPrefix(lines[i], "- ")
-			if !ok || !localtools.ValidToolName(name) || slices.Contains(a.Tools, name) || len(a.Tools) >= 32 {
-				return nil, refuse(filename, i+1, 1, "Tools", "declare up to 32 unique tool names as canonical bullets")
-			}
-			a.Tools = append(a.Tools, name)
-		}
-		if len(a.Tools) == 0 {
-			return fail("Tools", "declare at least one tool name")
+		var err *Error
+		if a.Tools, err = readTools(filename, lines, s); err != nil {
+			return nil, err
 		}
 		a.Instructions = strings.Join(lines[:s.start], "\n") + "\n"
 	}
-	_, hasIdentity := sections["Identity"]
-	minimal := inspection && !hasIdentity
-	if inspection && hasIdentity && prelude {
-		return fail("Sections", "put instructions inside the canonical responsibility sections")
-	}
-	if minimal {
-		id := strings.TrimSuffix(path.Base(filename), ".agent.md")
-		if !strings.HasSuffix(filename, ".agent.md") || !agentID.MatchString(id) || !prelude {
-			return fail("Instructions", "use a named .agent.md file with nonblank instructions after the title")
-		}
-		a.Identity.ID = id
-	}
 	missing := []string{}
 	for _, name := range sectionNames {
-		if name == "Model" || minimal && name != "Examples" {
+		if name == "Model" || name == "Examples" {
 			continue
 		}
 		if _, ok := sections[name]; !ok {
@@ -297,22 +288,27 @@ func parse(filename string, data []byte, inspection bool) (*Agent, error) {
 		return nil, refuse(filename, loc.Line, loc.Column, "Model.Preferred", "set one concrete exact model ID, not auto, a URL or a wildcard")
 	}
 	for _, name := range sectionNames[1:4] {
-		if minimal {
-			if _, present := sections[name]; !present {
-				continue
-			}
-		}
 		s := sections[name]
 		if strings.TrimSpace(strings.Join(lines[s.start+1:s.end], "\n")) == "" {
 			return nil, refuse(filename, s.start+1, 1, name, "add nonblank instructions")
 		}
 	}
-	s := sections["Examples"]
-	examples, err := parseExamples(filename, lines[s.start+1:s.end], s.start+2, true)
-	if err != nil {
+	if s, ok := sections["Examples"]; ok {
+		examples, err := parseExamples(filename, lines[s.start+1:s.end], s.start+2, true)
+		if err != nil {
+			return nil, err
+		}
+		a.Examples = examples
+	}
+	if err := checkExampleTools(filename, a); err != nil {
 		return nil, err
 	}
-	for _, example := range examples {
+	return a, nil
+}
+
+// checkExampleTools requires every fixture and tool check to name a declared tool.
+func checkExampleTools(filename string, a *Agent) *Error {
+	for _, example := range a.Examples {
 		names := []string{}
 		if example.Mocks != nil {
 			for _, tool := range example.Mocks.Tools {
@@ -326,12 +322,30 @@ func parse(filename string, data []byte, inspection bool) (*Agent, error) {
 		}
 		for _, name := range names {
 			if !slices.Contains(a.Tools, name) {
-				return nil, refuse(filename, example.Location.Line, example.Location.Column, "Examples", "fixtures and tool checks must name a declared tool")
+				return refuse(filename, example.Location.Line, example.Location.Column, "Examples", "fixtures and tool checks must name a declared tool")
 			}
 		}
 	}
-	a.Examples = examples
-	return a, nil
+	return nil
+}
+
+// readTools reads a canonical ## Tools bullet list: up to 32 unique tool names.
+func readTools(filename string, lines []string, s section) ([]string, *Error) {
+	var tools []string
+	for i := s.start + 1; i < s.end; i++ {
+		if strings.TrimSpace(lines[i]) == "" {
+			continue
+		}
+		name, ok := strings.CutPrefix(lines[i], "- ")
+		if !ok || !localtools.ValidToolName(name) || slices.Contains(tools, name) || len(tools) >= 32 {
+			return nil, refuse(filename, i+1, 1, "Tools", "declare up to 32 unique tool names as canonical bullets")
+		}
+		tools = append(tools, name)
+	}
+	if len(tools) == 0 {
+		return nil, refuse(filename, 1, 1, "Tools", "declare at least one tool name")
+	}
+	return tools, nil
 }
 
 // ValidModel accepts the same concrete model ID in authored files and runtime choices.

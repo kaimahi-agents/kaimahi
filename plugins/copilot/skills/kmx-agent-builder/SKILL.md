@@ -18,27 +18,34 @@ Older explicitly rooted installations also support their root-relative paths.
 
 kmx reads and writes agent files only: `*.agent.md` and Squad charters at
 `.squad/agents/<member>/charter.md`. Leave unrelated files and credentials alone.
+An existing GitHub Copilot agent file (YAML frontmatter, then a free-form prompt)
+opens as it is. Edit only what the user asks: never rewrite its prompt or frontmatter,
+never add headings, and keep every frontmatter setting kmx does not map as written.
 Do not put credentials in agent files, logs or command arguments.
 
 ## Create, then open
 
 1. Give the task one short name, reused as the Markdown title and file stem:
-   `Release notes` → `release-notes.agent.md`, Identity ID `release-notes`.
-   Reuse the session's task name when supplied. The title is just `# <Name>`,
-   without a second role name or subtitle. The host owns the chat session title.
-   Write the canonical sections in this shape:
-   - Identity: ID and one-sentence Purpose describing the user's job.
-   - Accountable Responsibilities: a few short lines covering input, job and output.
+   `Release notes` → `release-notes.agent.md`. Reuse the session's task name when
+   supplied. The title is just `# <Name>`, without a second role name or subtitle.
+   The host owns the chat session title. Write the file in this shape, with no
+   required headings and no filler sections:
+   - `# <Name>`, then the prompt as plain prose: the user's job in a sentence or two,
+     then a few short lines covering input, job and output.
      For release notes: read the supplied merged PRs, write a short bullet for each,
      and preserve its PR number and title. Use only requirements from the request.
-   - Non-Responsibilities: `Outside the requested task.`
-   - Collaboration and Review Authority: `Return the result to the caller.`
-   - Examples: a few concrete tests of the requested job, in canonical YAML.
-   Expand these sections only for requirements the user actually supplies. Keep
+   - Optional `## Model` with `- **Preferred:** <model>`, only when the user names a model;
+     otherwise omit it and let the runtime default apply, without asking for a model.
+   - Optional final `## Examples`: a few concrete tests of the requested job, in canonical YAML.
+   Expand the prompt only for requirements the user actually supplies. Keep
    injection, approval, publishing and other policy rules out of generated agents
    unless the user requested them. Those are not default agent responsibilities.
-   Include Model.Preferred when the user names a model; otherwise omit Model
-   and let the runtime default apply, without asking for a model.
+   Do not add Identity, Non-Responsibilities or Collaboration sections. The agent's
+   ID comes from the file name.
+   Do not add YAML frontmatter to a new file unless the user asks for a Copilot-format
+   agent. If they do, put the user's settings in the frontmatter and the prompt below it;
+   tests then become part of the prompt in Copilot, so follow the go-ahead rule below
+   before Create includes any.
    For tests, use small realistic inputs and `contains` checks on stable strings
    the prompt requires, such as a supplied PR number or a verbatim title. Test the
    work, not invented approval conversations or exact paraphrases. Keep every
@@ -94,11 +101,28 @@ Test retention metadata contains only opaque diagnostic IDs, not failure content
 Explain is not an MCP tool; file diagnostics are inspected offline through the
 CLI with the exact file path.
 
+## Tests in Copilot-format files
+
+In a file with YAML frontmatter, everything below the header is the prompt, so tests
+written into it become instructions in Copilot. Before any Create or Edit that adds
+or changes tests in such a file, show the user exactly: `Tests added here become part
+of this agent's prompt in Copilot.` Ask them to go ahead or cancel. Call the tool
+with `acknowledgeCopilotTests: true` only after they go ahead; on cancel, make no
+call. Prompt-only or tools-only edits that leave the tests unchanged need no
+question. Old charter files and files without frontmatter need none either.
+
+A Copilot file that omits `tools` opens and runs: Copilot gives it all tools, and
+kmx runs its tests without tools. You may tell the user once: "Copilot gives this
+agent all tools; these tests run without tools. Add tools to choose which." It is
+information only. Never refuse, stop or delay a run because tools are omitted, or
+because a frontmatter model or tool is one kmx does not map.
+
 ## Add tests from chat
 
 When asked to add or suggest tests with a saved agent snapshot, use its exact
 `content` and `expectedRevision`; no resource read is needed. Add job-relevant
-tests with one Edit at that revision. Otherwise read the current resource if the
+tests with one Edit at that revision, after the go-ahead above when the file has
+frontmatter. Otherwise read the current resource if the
 host provides a resource reader. Preserve the prompt, authored model and existing
 tests. Use the stable-string recipe above. Do not run tests
 unless asked. After a confirmed save, the complete reply is exactly one line:
@@ -131,18 +155,8 @@ for canonical agent files, not a native Squad proposal editor.
 ````markdown
 # Greeter
 
-## Identity
-- **ID:** greeter
-- **Purpose:** Return a short greeting for the supplied name.
-
-## Accountable Responsibilities
+Return a short greeting for the supplied name.
 Reply with exactly `Hello, ` followed by the input name.
-
-## Non-Responsibilities
-Do not call tools, read files or contact other agents.
-
-## Collaboration and Review Authority
-Return the greeting to the caller. No delegated work.
 
 ## Model
 - **Preferred:** fake

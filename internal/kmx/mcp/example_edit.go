@@ -54,9 +54,13 @@ func (f *Files) editExamples(ctx context.Context, p, expected string, content []
 		if err != nil {
 			return nil, err
 		}
+		examples, ok := a.Locations["Examples"]
+		if !ok {
+			return nil, nil // no tests yet; ApplyExampleEdits may append the first
+		}
 		lines := strings.SplitAfter(string(b), "\n")
 		at := 0
-		for _, line := range lines[:a.Locations["Examples"].Line-1] {
+		for _, line := range lines[:examples.Line-1] {
 			at += len(line)
 		}
 		return b[at:], nil

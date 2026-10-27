@@ -52,6 +52,8 @@ type Error struct{ Code string }
 
 func (e *Error) Error() string {
 	switch e.Code {
+	case "confirmation_required":
+		return "confirmation_required: " + copilotTestsNotice + " Ask the user to go ahead or cancel; no source was changed."
 	case "invalid_root":
 		return "invalid_root: select an absolute existing directory with --root"
 	case "unsafe_path":

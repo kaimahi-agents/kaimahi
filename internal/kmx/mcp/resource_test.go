@@ -165,12 +165,12 @@ func TestAgentResourceRefusalsAreNotOldRevisions(t *testing.T) {
 		t.Fatal(err)
 	}
 	cs := resourceClient(t, f, &app.App{FileRunner: &previewFixture{verdict: runtime.EvaluationPass}})
-	refused, _ := previewCall(t, cs, "test", map[string]any{"schemaVersion": 1, "path": "minimal.agent.md"})
-	if refused.ReasonCode != "invalid_file" {
-		t.Fatal("strict minimal execution changed")
+	completed, _ := previewCall(t, cs, "test", map[string]any{"schemaVersion": 1, "path": "minimal.agent.md"})
+	if !completed.FullPass {
+		t.Fatalf("minimal execution failed: %+v", completed)
 	}
-	if got := readView(t, cs, "minimal.agent.md"); got.Latest.Status != "none" {
-		t.Fatalf("missing snapshot is not an old revision: %+v", got.Latest)
+	if got := readView(t, cs, "minimal.agent.md"); got.Latest.Status != "current" {
+		t.Fatalf("minimal snapshot lost: %+v", got.Latest)
 	}
 	previewCall(t, cs, "test", map[string]any{"schemaVersion": 1, "path": "greeter.agent.md", "caseId": "missing"})
 	got := readView(t, cs, "greeter.agent.md")
@@ -179,8 +179,7 @@ func TestAgentResourceRefusalsAreNotOldRevisions(t *testing.T) {
 	}
 }
 
-// Catch snapshots that normalize source bytes or mistake display acceptance for
-// strict authoring acceptance. Run/Test must keep their existing strict semantics.
+// Editable snapshots preserve source bytes for both charters and minimal agents.
 func TestAgentResourceAuthoringSnapshot(t *testing.T) {
 	f, root, source := canonicalFiles(t)
 	minimal := "# Minimal\n\nGreet a name.\n\n## Model\n- **Preferred:** fake\n\n## Examples" + strings.Split(source, "## Examples")[1]
@@ -192,7 +191,7 @@ func TestAgentResourceAuthoringSnapshot(t *testing.T) {
 		{"canonical.agent.md", source, true},
 		{"crlf.agent.md", strings.ReplaceAll(strings.ReplaceAll(source, "\r\n", "\n"), "\n", "\r\n"), true},
 		{"lf.agent.md", strings.ReplaceAll(source, "\r\n", "\n"), true},
-		{"minimal.agent.md", minimal, false},
+		{"minimal.agent.md", minimal, true},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(root, row.name), []byte(row.source), 0600); err != nil {

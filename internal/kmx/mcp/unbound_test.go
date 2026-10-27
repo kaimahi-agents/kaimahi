@@ -78,7 +78,7 @@ func TestUnboundFilesPathForms(t *testing.T) {
 			}
 			_, err := f.Edit(t.Context(), requested, saved.Revision, []byte(source))
 			requireCode(t, err, "stale_revision")
-			_, err = f.Edit(t.Context(), requested, edited.Revision, []byte("invalid"))
+			_, err = f.Edit(t.Context(), requested, edited.Revision, []byte("\x00invalid"))
 			requireCode(t, err, "invalid_file")
 			content, err := os.ReadFile(requested)
 			if err != nil || string(content) != source+"\n" {

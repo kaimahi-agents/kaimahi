@@ -474,17 +474,19 @@ func TestHistoryReadAuthorizationAndStrictRestore(t *testing.T) {
 	}
 	_, result := historyEdit(t, cs, file.Path, file.Revision, source)
 	requireHistoryToolReason(t, result, "invalid_file")
-	// Inspect can show a minimal source that strict Edit must not overwrite.
+	// Minimal sources now support the same revision-checked restore as charters.
 	minimal := "# Greeter\n\nGreet the supplied name.\n\n## Model\n- **Preferred:** fake\n\n## Examples" + strings.Split(source, "## Examples")[1]
 	if err := os.WriteFile(filepath.Join(root, file.Path), []byte(minimal), 0600); err != nil {
 		t.Fatal(err)
 	}
 	view = readView(t, cs, file.Path)
-	if view.Authoring.Editable || len(view.History.Versions) != 1 {
-		t.Fatal("strict-invalid current source hid readable history")
+	if !view.Authoring.Editable || len(view.History.Versions) != 1 {
+		t.Fatal("minimal current source hid readable history or editing")
 	}
 	_, result = historyEdit(t, cs, file.Path, revision([]byte(minimal)), second)
-	requireHistoryToolReason(t, result, "invalid_file")
+	if result.IsError {
+		t.Fatalf("minimal source restore failed: %+v", result)
+	}
 	if err := os.Remove(filepath.Join(root, file.Path)); err != nil {
 		t.Fatal(err)
 	}

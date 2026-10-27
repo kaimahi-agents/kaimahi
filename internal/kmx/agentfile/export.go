@@ -60,6 +60,9 @@ func ExportRunProfile(filename string) ([]byte, error) {
 	// A profile hands examples to a separate runtime; zero tests is no evidence.
 	if len(agent.Examples) == 0 {
 		loc := agent.Locations["Examples"]
+		if loc.Line == 0 {
+			loc = Location{filename, 1, 1}
+		}
 		return nil, refuse(filename, loc.Line, loc.Column, "Examples", "add at least one example before exporting a run profile")
 	}
 	for _, example := range agent.Examples {

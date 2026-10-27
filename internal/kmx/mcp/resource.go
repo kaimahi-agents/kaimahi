@@ -25,6 +25,8 @@ type AgentView struct {
 	Title                string                   `json:"title"`
 	Instructions         string                   `json:"instructions"`
 	Model                string                   `json:"model"`
+	Frontmatter          string                   `json:"frontmatter,omitempty"`
+	CopilotToolsOmitted  bool                     `json:"copilotToolsOmitted,omitempty"`
 	Tools                []string                 `json:"tools,omitempty"`
 	ToolSettingsRevision string                   `json:"toolSettingsRevision,omitempty"`
 	ToolSettings         []localtools.ToolSetting `json:"toolSettings,omitempty"`
@@ -101,6 +103,7 @@ func AddAgentResource(server *sdk.Server, files *Files) {
 			return nil, refusal("invalid_file")
 		}
 		view := AgentView{SchemaVersion: 1, Kind: "kmx.agent-view", File: File{Path: p, Revision: agent.Revision}, Title: agent.Title, Instructions: agent.Instructions, Model: agent.Model, Tools: agent.Tools, Latest: AgentViewLatest{Status: "none"}}
+		view.Frontmatter, view.CopilotToolsOmitted = agent.Frontmatter, agent.CopilotToolsOmitted
 		physical := target
 		if files.root != nil {
 			physical = filepath.Join(files.root.Name(), filepath.FromSlash(target))
