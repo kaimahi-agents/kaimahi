@@ -20,7 +20,12 @@ func newAgentTestCommand(state *commandState) *cobra.Command {
 	var file fileCommandOptions
 	cmd := &cobra.Command{
 		Use: "test FILE", Short: "Test a markdown agent file's saved examples",
-		Long: "Canonical test FILE checks a markdown agent's saved examples as a local preview (not native evidence). --case ID selects a partial preview. File previews on fake, local and Copilot models use embedded Agent Sessions and retain instructions, inputs, answers, judge payloads and reasoning in cleartext SQLite journals under the kmx state directory (KMX_HOME when set), in local-preview/journals. Journal retention keeps the newest 20 runs at each start; active runs are kept and concurrent starts can leave more. Completed non-pass Test examples additionally retain bounded diagnostics under eval-failures (last 10 per resolved file subject across revisions); the result reports retained IDs or unavailable retention. Use test explain --file FILE to inspect or clear those diagnostics offline. Stop previews before clearing journals separately; deleting journals does not clear failure diagnostics. Copilot content checks stay provider-owned and run before journaling. Replay makes zero model calls. Neither retained store is native execution evidence. --verbose prints content-free file execution diagnostics and timings on stderr.\n",
+		Long: "Test FILE checks every saved example; --case selects one example.\n" +
+			"Pass exits 0; completed non-pass exits 2.\n" +
+			"Use test explain --file FILE for retained diagnostics.\n" +
+			"Local preview is not package evidence. Content retention and privacy:\n" +
+			previewCaveatsURL,
+		Example: "  kmx test greeter.agent.md\n  kmx test greeter.agent.md --case greeting\n  kmx test greeter.agent.md -o json --no-content",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 1 {
 				return fileUsageError(fmt.Errorf("usage: kmx test FILE; workspace evaluation moved to kmx package test"))
@@ -38,6 +43,18 @@ func newAgentTestCommand(state *commandState) *cobra.Command {
 	}
 	registerFileCommandFlags(cmd, &file, true)
 	explain := newEvalExplainCommand(state)
+	explain.Use = "explain [failure-id] --file FILE"
+	explain.Short = "Inspect or clear retained file Test failures offline"
+	explain.Long = "Inspect retained Test failures for FILE without model or cluster access.\n" +
+		"Content is hidden unless --show-content is explicit.\n" +
+		"--clear removes diagnostics, not journals or source history.\n" +
+		"Content retention and privacy:\n" + previewCaveatsURL
+	explain.Example = "  kmx test explain --file greeter.agent.md\n  kmx test explain --file greeter.agent.md --clear"
+	_ = explain.Flags().MarkHidden("workspace")
+	explain.Flags().Lookup("file").Usage = "Agent file whose failures to inspect"
+	explain.Flags().Lookup("show-content").Usage = "Show bounded, sanitized failure content"
+	explain.Flags().Lookup("clear").Usage = "Clear one ID or this file's retained failures"
+	explain.SetHelpFunc(shortCommandHelp)
 	explain.PreRunE = func(cmd *cobra.Command, args []string) error {
 		if !cmd.Flags().Changed("file") || cmd.Flags().Changed("workspace") {
 			return fmt.Errorf("test explain requires --file FILE; workspace diagnostics moved to kmx package test explain")

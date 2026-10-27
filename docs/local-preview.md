@@ -1,5 +1,31 @@
 # Local preview
 
+## CLI storage, privacy and evidence caveats
+
+This is the shared caveats page linked by file Run, Test and Explain help.
+File previews on fake, local and Copilot models use embedded Agent Sessions.
+They retain instructions, inputs, answers, judge payloads and reasoning in
+cleartext SQLite journals under the kmx state directory (`KMX_HOME` when set),
+in `local-preview/journals`. The journal is never suite evidence or permission
+to publish or deploy. Copilot content checks stay provider-owned and run before
+journaling. Replay makes zero model calls; it is inspection, not a new test.
+
+Journal retention keeps the newest 20 runs at each start; active runs are kept
+and concurrent starts can leave more. Stop previews before removing journal
+files there to clear retained content. See [retention and clearing](#journal-retention-and-clearing)
+for private-file, active-run and platform boundaries; no new cleanup CLI is implied.
+
+Completed non-pass Test examples also retain bounded diagnostics under
+`eval-failures` (last 10 per resolved file subject across revisions).
+Use `kmx test explain --file FILE` to inspect them offline; `--show-content`
+opts into bounded excerpts, and `--clear` clears one ID or that file subject.
+The stores are independent: deleting journals does not clear failure diagnostics,
+and clearing failure diagnostics does not delete journals, source history or
+passing proof. See [retained Test failures](#retained-test-failures) for scope,
+revision attribution, bounds and retention-unavailable behavior.
+
+## Preview execution
+
 `internal/kmx/localpreview` runs one [single-file agent](agent-file.md), tool-free
 by default,
 in the kmx process. Every result is labeled **local preview**. It is not

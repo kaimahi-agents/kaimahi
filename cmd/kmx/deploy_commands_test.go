@@ -71,6 +71,9 @@ func TestDeployLegacyNoticeAndRefusals(t *testing.T) {
 			wantError := strings.ReplaceAll(tc.want, "VERB", strings.TrimPrefix(verb, "package "))
 			if verb == "package deploy" {
 				wantError = strings.ReplaceAll(wantError, "kmx deploy", "kmx package deploy")
+				if len(tc.tail) == 1 && tc.tail[0] == "--unknown" {
+					wantError += "\nRun kmx package deploy --help for available flags."
+				}
 			}
 			if err == nil || err.Error() != wantError || exitCode(err) != 1 || *loads != 0 || out.Len() != 0 {
 				t.Errorf("%s %v: err=%v want=%q loads=%d stdout=%q", verb, tc.tail, err, wantError, *loads, &out)

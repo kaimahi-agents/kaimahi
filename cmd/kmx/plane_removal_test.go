@@ -73,7 +73,7 @@ func TestPlaneCommandsAreNotRegisteredOrDiscoverable(t *testing.T) {
 			}
 		}
 	}
-	want := []string{"chat", "cluster", "completion", "create", "help", "mcp", "model", "package", "run", "test", "version"}
+	want := []string{"chat", "cluster", "create", "model", "package", "run", "test", "version"}
 	sort.Strings(want)
 	for _, args := range [][]string{{}, {"--help"}, {"help"}, {"__complete", ""}} {
 		out.Reset()
@@ -99,8 +99,13 @@ func TestPlaneCommandsAreNotRegisteredOrDiscoverable(t *testing.T) {
 				got = append(got, entry[1])
 			}
 		}
+		expected := append([]string(nil), want...)
+		if len(args) > 0 && args[0] == "__complete" {
+			expected = append(expected, "help")
+			sort.Strings(expected)
+		} // Cobra retains explicit Help completion.
 		sort.Strings(got)
-		if !reflect.DeepEqual(got, want) {
+		if !reflect.DeepEqual(got, expected) {
 			t.Errorf("%v command entries=%v, want %v", args, got, want)
 		}
 	}

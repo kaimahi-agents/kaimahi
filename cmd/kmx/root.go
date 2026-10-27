@@ -152,6 +152,7 @@ func execute(argv []string, deps dependencies) error {
 	root := newRootCommand(state)
 	root.InitDefaultHelpCmd()
 	help, _, _ := root.Find([]string{"help"})
+	help.Hidden = true
 	// Cobra otherwise reports an unknown help topic on stdout but exits zero.
 	help.Args = func(cmd *cobra.Command, args []string) error {
 		if len(args) > 0 {
@@ -174,7 +175,10 @@ func execute(argv []string, deps dependencies) error {
 		if legacyCommandInvocation(argv, "eval") {
 			return errors.Join(state.noticeLegacyEval(cmd), err)
 		}
-		return err
+		if legacyCommandInvocation(argv, "lift") {
+			return err
+		}
+		return flagErrorWithHelp(cmd, state, err)
 	})
 	root.SetArgs(argv)
 	return root.Execute()
@@ -209,7 +213,7 @@ func legacyCommandInvocation(argv []string, verb string) bool {
 func newRootCommand(state *commandState) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "kmx",
-		Short: "Create and run agents on Kubernetes",
+		Short: "Write, run and test agent files.",
 		// Leave Args unset so Cobra rejects unknown roots before parsing their
 		// flags or honoring --help. Bare root still runs the help handler.
 		SilenceErrors: true,
@@ -219,8 +223,8 @@ func newRootCommand(state *commandState) *cobra.Command {
 	root.SetOut(state.deps.stdout)
 	root.SetErr(state.deps.stderr)
 	root.CompletionOptions.DisableDefaultCmd = true
-	root.PersistentFlags().String("context", "", "act on this kube context for one command (may appear anywhere)")
-	root.PersistentFlags().StringVar(&state.containerEngineFlag, "container-engine", "", "kind container engine: docker or podman (overrides CONTAINER_ENGINE)")
+	root.PersistentFlags().String("context", "", "Kubernetes context for live/cluster operations")
+	root.PersistentFlags().StringVar(&state.containerEngineFlag, "container-engine", "", "kind engine: docker or podman")
 	root.PersistentPreRunE = validateContainerEngineFlag
 	_ = root.RegisterFlagCompletionFunc("context", completeContexts)
 	_ = root.RegisterFlagCompletionFunc("container-engine", staticCompletion([]string{"docker", "podman"}))
@@ -230,6 +234,7 @@ func newRootCommand(state *commandState) *cobra.Command {
 		newAgentTestCommand(state), newAgentEvalCommand(state), newReleaseLiftCommand(state),
 		newClusterCommand(state), newPackageCommand(state),
 	)
+	configureCommandHelp(root, state)
 	installPlatformGate(root, state)
 	return root
 }

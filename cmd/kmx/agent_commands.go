@@ -66,21 +66,25 @@ func newAgentCreateCommand(state *commandState) *cobra.Command {
 	var profile workspace.RuntimeProfile
 	cmd := &cobra.Command{
 		Use: "create <name>", Short: "Author an offline workspace member",
-		Long:    "Author a tool-free Orka, exact kagent Go or pinned AgentSessions chat member in a local workspace. AgentSessions evaluation uses an explicit development host and AgentSessionsBinding; deploy to a named AgentSessions destination creates an immutable Agent, and status reads last observed registration. The offline --harness-image --plan render remains available; chat is unavailable.\n\nOn a visible terminal, missing model and instructions-file inputs are prompted. Scripts require both --model and --instructions.\n\nExperimental flow authoring requires --workspace DIR --members FILE --flow FILE (strict JSON inputs). It refuses single-member/runtime selectors and supports offline authoring only.\n\nCreate does not evaluate, publish, deploy or load cluster configuration.\nReview the saved instructions and cases before eval, push or deploy.",
-		Example: "  kmx create greeter\n  kmx create greeter --workspace ./greeter --model qwen-3.5-2b --instructions instructions.md\n  kmx create release-team --workspace ./release-team --members members.json --flow flow.json",
+		Long: "Create a native workspace member, not an agent markdown file.\n" +
+			"Scripts require --model and --instructions; terminals can prompt.\n" +
+			"Nothing is evaluated, published or deployed.\n" +
+			"Runtime profiles and experimental flow authoring:\n" +
+			"https://github.com/kaimahi-agents/kaimahi/blob/main/docs/suite-workspace.md",
+		Example: "  kmx create greeter\n  kmx create greeter --workspace . --model qwen --instructions prompt.md\n  kmx create team --workspace . --members members.json --flow flow.json",
 	}
-	cmd.Flags().StringVar(&root, "workspace", "", "select an exact workspace directory (skip workspace-initialization confirmation)")
+	cmd.Flags().StringVar(&root, "workspace", "", "Workspace directory; skips initialization prompt")
 	_ = cmd.MarkFlagDirname("workspace")
-	cmd.Flags().StringVar(&members, "members", "", "experimental members JSON file (requires --flow and --workspace)")
-	cmd.Flags().StringVar(&flow, "flow", "", "experimental public flow JSON file (offline only; requires --members)")
+	cmd.Flags().StringVar(&members, "members", "", "Experimental members JSON; needs --flow/--workspace")
+	cmd.Flags().StringVar(&flow, "flow", "", "Experimental flow JSON; needs --members")
 	_ = cmd.MarkFlagFilename("members", "json")
 	_ = cmd.MarkFlagFilename("flow", "json")
 	cmd.Flags().StringVar(&description, "description", "", "one-line description")
-	cmd.Flags().StringVar(&model, "model", "", "exact authored model identifier (prompted on a visible terminal if omitted)")
-	cmd.Flags().StringVar(&instructions, "instructions", "", "file containing the system message (prompted on a visible terminal if omitted)")
-	cmd.Flags().StringVar(&runtimeID, "runtime", "orka", "agent runtime: orka, kagent or agentsessions")
-	cmd.Flags().StringVar(&version, "runtime-version", "v0.10.3", "exact workspace runtime profile (kagent: v0.10.3; agentsessions: pinned commit)")
-	cmd.Flags().StringVar(&engine, "kagent-runtime", "go", "kagent declarative runtime: go")
+	cmd.Flags().StringVar(&model, "model", "", "Exact model (prompted in a terminal)")
+	cmd.Flags().StringVar(&instructions, "instructions", "", "System-message file (prompted in a terminal)")
+	cmd.Flags().StringVar(&runtimeID, "runtime", "orka", "orka, kagent or agentsessions")
+	cmd.Flags().StringVar(&version, "runtime-version", "v0.10.3", "Exact profile (kagent: v0.10.3)")
+	cmd.Flags().StringVar(&engine, "kagent-runtime", "go", "kagent engine: go")
 	_ = cmd.RegisterFlagCompletionFunc("runtime", staticCompletion([]string{"orka", "kagent", "agentsessions"}))
 	_ = cmd.RegisterFlagCompletionFunc("runtime-version", staticCompletion([]string{"v0.10.3", workspace.AgentSessionsVersion}))
 	_ = cmd.RegisterFlagCompletionFunc("kagent-runtime", staticCompletion([]string{"go"}))
@@ -210,7 +214,12 @@ func newAgentChatCommand(state *commandState) *cobra.Command {
 	var verbose bool
 	var runtime, namespace string
 	usage := "kmx chat [--namespace <namespace>] <name> [message]"
-	cmd := &cobra.Command{Use: "chat <name> [message...]", Short: "Chat with an Orka Agent", Long: "Open an interactive chat session with an Orka Agent. An optional message is sent as the first turn; for a one-shot Task use kmx run.", Args: usageArgs(1, -1, usage)}
+	cmd := &cobra.Command{Use: "chat <name> [message...]", Short: "Chat with a live Orka Agent",
+		Long: "Open an interactive session with an existing live Orka Agent.\n" +
+			"An optional message starts the first turn. This does not run an agent file.\n" +
+			"For a one-shot Task, use kmx run --agent.",
+		Example: "  kmx chat greeter\n  kmx chat greeter \"Explain your last result\"",
+		Args:    usageArgs(1, -1, usage)}
 	cmd.Flags().BoolVar(&verbose, "verbose", false, "show chat WORKING and TIMING details")
 	cmd.Flags().StringVar(&runtime, "runtime", "auto", "agent runtime: auto (detect the Orka Agent) or orka")
 	cmd.Flags().StringVar(&namespace, "namespace", "", "Orka Agent namespace (default: "+app.OrkaNamespace+")")

@@ -9,6 +9,20 @@ changes in the package's Go doc comment.
 
 ## Command consistency
 
+- Root help advertises exactly `create`, `run`, `test`, `chat`, `model`,
+  `package`, `cluster`, `version`, in that order. MCP, completion and Help
+  remain callable but are not root help entries. Keep root ordering local;
+  do not change Cobra's package-wide sorting switch.
+- Canonical inner-loop help has a one-line summary, at most five logical
+  description lines, two or three truthful examples and compact flag blocks
+  at 80 columns. Separate file/live Run flags; do not advertise Kubernetes
+  selectors for file-only operations. Help presentation does not move global
+  flags or change extractContext's anywhere-before-`--` compatibility.
+- File help links once to `docs/local-preview.md` for content retention,
+  privacy and evidence caveats. Retain native/package safety disclosures and
+  legacy Eval/Lift help/errors. Canonical flag-parse errors include a safely
+  quoted executable/topic `--help` hint; runtime and argument errors do not.
+
 - Infrastructure and Orka commands live under `kmx cluster`; native workspace
   Test, publication, Deploy, destination inventory and artifact operations live
   under `kmx package`. Moved root routes are removed, not aliases. Root `test FILE`

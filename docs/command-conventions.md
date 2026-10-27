@@ -9,6 +9,23 @@ should be named and shaped. Apply them to new commands and to renames.
 - [Current exceptions](#8-current-exceptions) lists commands that predate
   these rules.
 
+## Help and discovery
+
+Root help lists `create`, `run`, `test`, `chat`, `model`, `package`, `cluster`,
+then `version`, under “Write, run and test agent files.” `mcp`, `completion` and
+`help` remain callable but are not root help entries. Keep root ordering local;
+other command groups retain their normal discovery order.
+
+Inner-loop help uses a one-line summary, at most five logical description
+lines, two or three truthful examples, and a flag block fitting 24 lines at
+80 columns. Run separates file-preview and live-Orka flags. Kubernetes selectors
+are not advertised for file-only operations; global parsing is unchanged.
+File help links once to [preview storage and privacy](local-preview.md#cli-storage-privacy-and-evidence-caveats)
+rather than repeating journal, failure-retention and evidence limitations.
+Package/native help keeps its own safety disclosures. Canonical flag-parse errors
+point to the safely quoted executable and resolved topic's `--help`; legacy
+Eval/Lift refusals, argument/runtime errors, stdout and exit codes stay unchanged.
+
 ## 1. Grammar
 
 ```text
@@ -16,16 +33,19 @@ kmx <verb> [object] [flags]
 kmx <noun> <verb> [object] [flags]
 ```
 
-- **Everyday workflows use root verbs:** `create`, `chat`, `run` and workspace
-  `push` and full-workspace `test`. `package test` also retains helpers (`diff`,
-  `explain`, `export`, `verify`, `from-sessions`, `cleanup`); root digest `deploy` deploys an evaluated package. Standalone packaged evaluation remains unimplemented.
-- **Resource and domain operations use noun first, then verb:** `task result`,
-  `package build/push/push-image/pull/validate`, `run-profile export` and `orka install/status/show/list`. `kmx agent` is removed entirely,
+- **Everyday workflows use root verbs:** native workspace `create`, file `run`
+  and `test`, live-Orka `chat`, and model access. Workspace evaluation, publication
+  and deployment use `package test/push/deploy`. Package Test retains `diff`,
+  `explain`, `export`, `verify`, `from-sessions` and `cleanup`; root file Test
+  retains file-only Explain. Standalone packaged evaluation remains unimplemented.
+- **Resource and domain operations use noun first, then verb:** `cluster task result`,
+  `package build/push/push-image/pull/validate`, `package run-profile export` and
+  `cluster orka install/status/show/list`. `kmx agent` is removed entirely,
   with no alias or retirement stub.
 - **Singular nouns.** Use `orka list`, not `orkas`. A plural may exist only
   as an explicitly approved hidden alias.
-- **Whole-tool entry points** include `quickstart`, `status`, `console`, `version`
-  and `completion`. `package status --to NAME` is GET-only destination inventory with
+- **Cluster entry points** include `cluster quickstart/status/console`.
+  `version` and hidden `completion` remain whole-tool entry points. `package status --to NAME` is GET-only destination inventory with
   table/JSON output; `orka status` retains the table-only runtime report. Neither
   restores legacy bundle status or implies evaluation.
   New root verbs need an explicit workflow decision, not a synonym.

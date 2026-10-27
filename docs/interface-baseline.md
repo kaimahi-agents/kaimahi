@@ -15,7 +15,9 @@ version, with one stderr notice and unchanged legacy output/exit contracts. See
 
 ## Installed command tree
 
-Visible product commands:
+Root help shows `create`, `run`, `test`, `chat`, `model`, `package`, `cluster`,
+then `version`, with the tagline “Write, run and test agent files.” The tree below
+expands those visible product commands:
 
 ```text
 kmx
@@ -66,8 +68,6 @@ kmx
 │   │   └── list
 │   └── task
 │       └── result <task>
-├── mcp --root <directory>
-├── completion bash|zsh|fish
 └── version
 ```
 
@@ -75,13 +75,15 @@ kmx
 read-only reference extraction/export helpers; explicit `test FILE` is a local
 preview whose completed non-pass diagnostics can be explained offline with
 `test explain --file FILE`. Explicit `run FILE` is the corresponding preview Run.
-Cobra also supplies `help`.
+`kmx mcp --root DIR`, `kmx completion bash|zsh|fish` and `kmx help [TOPIC...]`
+remain operational but are omitted from root help. MCP and Completion are also
+omitted from root completion suggestions; explicit invocation still works.
 Experimental `package push-image` publishes a verified OCI image graph, including
 attestations, independently of deployment admission. Replacing a different tag
 requires `--force`; same-digest publication is a no-op. `package build --suite-ref`
 checks complete source content through the shared bounded materializer.
 
-On native Windows, this full command tree remains visible for help/completion but
+On native Windows, the same discovery rules apply. Visibility in help/completion
 is not an enabled capability list. Current `main` permits only version/help/
 completion, package-free fake `run FILE` / `test FILE`, and offline
 `test explain ... --file FILE` (plus the hidden legacy Explain spelling for

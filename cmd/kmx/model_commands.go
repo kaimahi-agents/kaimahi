@@ -11,7 +11,11 @@ import (
 )
 
 func newModelCommand(state *commandState) *cobra.Command {
-	group := &cobra.Command{Use: "model", Short: "Inspect model access and manage explicit Copilot sign-in", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
+	group := &cobra.Command{Use: "model", Short: "List models and manage Copilot sign-in",
+		Long: "Inspect local model inventory or explicitly list Copilot access.\n" +
+			"Login and logout manage Copilot credentials, not model installations.",
+		Example: "  kmx model list\n  kmx model list --provider copilot\n  kmx model login --gh",
+		Args:    cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
 	format, provider := "table", "local"
 	list := &cobra.Command{Use: "list", Short: "List local models or available Copilot models", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		if format != "table" && format != "json" {

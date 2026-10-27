@@ -141,6 +141,17 @@ cluster, so a silent switch can target the wrong one.
 
 ## Commands
 
+Root help leads with `create`, `run`, `test`, `chat`, `model`, then `package`,
+`cluster` and `version`. `kmx mcp`, `kmx completion` and `kmx help` still work;
+they are not root help entries. Command help uses concise descriptions and
+examples; file Run/Test/Explain link to the single
+[preview caveats page](local-preview.md#cli-storage-privacy-and-evidence-caveats)
+for local content retention, privacy and the limits of preview results.
+
+Create still authors native workspace source; Chat still targets a live Orka
+Agent, and Package Build still consumes an AgentSuite directory. Short help does
+not imply paired-file creation, folder Test or agent-file package compilation.
+
 ### Test compatibility (unreleased)
 
 **Test is unreleased.** v0.8.1 uses `kmx eval` with the same arguments.
