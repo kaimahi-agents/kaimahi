@@ -314,9 +314,9 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Changed
 
-- Source plugin manifests report version 0.9.0-rc.4 for the paired release.
+- The rc.4 paired release stamped both source plugin manifests to 0.9.0-rc.4.
 
-- The `kmx-plugins` marketplace pins both Copilot plugins to the published v0.9.0-rc.4 release commit. Refresh the catalog and update the plugin after installing the rc.4 binary.
+- The rc.4 `kmx-plugins` marketplace update pinned both Copilot plugins to that published release commit. For rc.5, install the matching binary and refresh the catalog and plugin after the rc.5 repin.
 
 - Root help leads with Create, Run, Test, Chat and Model, followed by Package,
   Cluster and Version. MCP, Completion and Help remain callable but are omitted
