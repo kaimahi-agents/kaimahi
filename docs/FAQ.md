@@ -18,7 +18,7 @@ published tag, not the tip of `main`.
 
 No. Installation creates platform resources and, by default, a local Provider.
 It does not adopt an existing application or redirect its traffic. Author an
-native workspace member with [`kmx create`](kmx.md#kmx-create), then evaluate,
+native workspace member with [`kmx package create`](kmx.md#kmx-package-create), then evaluate,
 publish and Deploy with private evidence. Placement readiness is not an answer. Execution and enforcement belong to the selected runtime.
 
 ## Why does status show a version different from the pin?

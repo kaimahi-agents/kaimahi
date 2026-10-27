@@ -39,7 +39,7 @@ canonical evidence retains its exact-subject reuse gate.
 mkdir my-agents && cd my-agents && git init
 printf '%s\n' 'Greet people briefly.' > instructions.md
 
-kmx create greeter --workspace . \
+kmx package create greeter --workspace . \
   --model qwen2.5:3b --instructions instructions.md
 
 mkdir -m 700 ../private-evidence

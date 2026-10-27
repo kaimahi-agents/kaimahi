@@ -15,7 +15,7 @@ import (
 )
 
 func TestMissingNameOffersRootCreate(t *testing.T) {
-	if err := ValidateName(""); err == nil || !strings.Contains(err.Error(), "kmx create <name>") {
+	if err := ValidateName(""); err == nil || !strings.Contains(err.Error(), "kmx package create <name>") {
 		t.Fatalf("missing-name recovery does not use root create: %v", err)
 	}
 }

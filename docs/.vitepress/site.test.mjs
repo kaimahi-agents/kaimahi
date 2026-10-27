@@ -224,13 +224,13 @@ test('the front doors lead with composed Deploy and its prerequisites', async ()
   const firstPanel = homepage.match(/<article[^>]*id="journey-panel-0"[\s\S]*?<\/article>/)?.[0]
   assert.ok(firstPanel, 'the default journey is rendered')
   const chooser = plainText(firstPanel)
-  assert.match(chooser, /kmx create[^\n]*kmx package deploy --to NAME/)
+  assert.match(chooser, /kmx package create[^\n]*kmx package deploy --to NAME/)
   for (const prerequisite of ['prepared runtime', 'inference', 'registry authentication', 'kmx.yaml', 'publishRepository', 'evaluationTarget']) {
     assert.ok(chooser.includes(prerequisite), `chooser prerequisite: ${prerequisite}`)
   }
   for (const page of ['index.html', 'docs/getting-started.html', 'docs/workflow-overview.html']) {
     const text = plainText(await readFile(path.join(dist, page), 'utf8'))
-    const create = text.indexOf('kmx create ')
+    const create = text.indexOf('kmx package create ')
     const lift = text.indexOf('kmx package deploy --to ')
     assert.ok(create >= 0 && lift > create, `${page}: create precedes composed Deploy`)
     const quickstart = text.indexOf('kmx cluster quickstart')

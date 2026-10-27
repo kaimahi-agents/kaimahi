@@ -107,7 +107,7 @@ an adopter should learn that here, not at their first model call.
 
 ## Author an Orka Agent and get an answer
 
-[Root create](kmx.md#kmx-create) authors native workspace source offline. Prepare
+[Package create](kmx.md#kmx-package-create) authors native workspace source offline. Prepare
 the runtime/model/Ready openai Provider and result access separately; create
 never bootstraps them. Review authored cases, run full native eval, publish the
 exact graph with matching private evidence and Deploy its digest. See the

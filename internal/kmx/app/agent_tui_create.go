@@ -478,7 +478,7 @@ func (m agentTUIModel) updateCreatePane(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		} else if msg.Code == tea.KeyEnter {
 			if strings.TrimSpace(p.input.Value()) == "" {
-				p.err = fmt.Errorf("explicit workspace root required; author offline with kmx create first")
+				p.err = fmt.Errorf("explicit workspace root required; author offline with kmx package create first")
 				return m, nil
 			}
 			p.err = nil
@@ -582,7 +582,7 @@ func (m agentTUIModel) creationView() string {
 			rows = append(rows, fit(p.err.Error()))
 		}
 	default:
-		rows = append(rows, "", fit("Select an already AUTHORED one-member native Orka workspace."), fit("Explicit root (no discovery fallback):"), fit(p.input.View()), fit("kmx create authors offline separately; this flow does not author."), fit("Review all source/cases before authorizing evaluation Tasks."))
+		rows = append(rows, "", fit("Select an already AUTHORED one-member native Orka workspace."), fit("Explicit root (no discovery fallback):"), fit(p.input.View()), fit("kmx package create authors offline separately; this flow does not author."), fit("Review all source/cases before authorizing evaluation Tasks."))
 		if p.err != nil {
 			rows = append(rows, fit(p.err.Error()))
 		}

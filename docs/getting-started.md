@@ -73,7 +73,7 @@ the local setup path below can prepare a test environment.
 From that workspace root, provide an exact model name and an instructions file:
 
 ```bash
-kmx create my-agent --workspace . \
+kmx package create my-agent --workspace . \
   --model qwen2.5:3b --instructions ./instructions.md
 kmx package deploy --to prod
 ```
