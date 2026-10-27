@@ -32,7 +32,7 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 	validate := &cobra.Command{
 		Use:   "validate <path>",
 		Short: "Validate a portable AgentSuite artifact",
-		Args:  usageArgs(1, 1, "kmx suite validate <path> [-o text|json]"),
+		Args:  usageArgs(1, 1, "kmx package validate <path> [-o text|json]"),
 	}
 	validate.Flags().StringVarP(&output, "output", "o", "text", "output: text|json")
 	_ = validate.RegisterFlagCompletionFunc("output", staticCompletion([]string{"text", "json"}))
@@ -66,7 +66,7 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 			"WARNING: --model-api-key-env accepts the environment variable name, never the API key value.\n\n" +
 			"Profiled suites require --runtime-profile ID and an exact --platform when ambiguous. Selection resolves public requirements offline; the current AgentKit producer refuses every profiled plan, without falling back to Orka or another builder.\n\n" +
 			"The current implementation treats the build profile's harness image as a monolithic AgentKit adapter and does not yet compose the runtime-base image, so its output is not AgentSuite-conformant.",
-		Args: usageArgs(1, 1, "kmx suite build <directory> --agent <id> --platform <platform> --output <file> [--suite-ref <ref>@<digest>]"),
+		Args: usageArgs(1, 1, "kmx package build <directory> --agent <id> --platform <platform> --output <file> [--suite-ref <ref>@<digest>]"),
 	}
 	build.Flags().StringVar(&buildAgent, "agent", "", "agent id (optional only when the suite contains one agent)")
 	build.Flags().StringVar(&buildPlatform, "platform", "", "exact platform (optional only when the selected profile has one composition)")
@@ -196,9 +196,9 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 			"Credentials are never sent over HTTP to non-loopback registries or token endpoints.\n\n" +
 			"A registry pull also lists kmx provenance referrers that name the pulled digest. They are unsigned\n" +
 			"claims, shown for information; anyone with push access can attach one, and none blocks a pull.",
-		Example: "  kmx suite pull registry.example.com/team:v1 --output ./suite\n" +
-			"  kmx suite pull agentsuites/team:v1 --from-layout ./layout --output ./suite",
-		Args: usageArgs(1, 1, "kmx suite pull <reference> [--from-layout <layout>] [--plain-http] --output <directory>"),
+		Example: "  kmx package pull registry.example.com/team:v1 --output ./suite\n" +
+			"  kmx package pull agentsuites/team:v1 --from-layout ./layout --output ./suite",
+		Args: usageArgs(1, 1, "kmx package pull <reference> [--from-layout <layout>] [--plain-http] --output <directory>"),
 	}
 	pull.Flags().StringVar(&pullSource, "from-layout", "", "local OCI image-layout source directory")
 	pull.Flags().StringVar(&pullOutput, "output", "", "extracted AgentSuite output directory")
@@ -278,8 +278,8 @@ func newSuitePushCommand(state *commandState, workspaceMode bool) *cobra.Command
 			"Sign the suite digest where you push, for example in CI. An attach failure is a warning unless\n" +
 			"--require-provenance is set. Registries without the referrers API also get a sha256-<digest> index tag.\n" +
 			"Local layouts get none: a conformant AgentSuite layout holds exactly one manifest.",
-		Example: "  kmx suite push ./suite registry.example.com/team:v1\n" +
-			"  kmx suite push ./suite --to-layout ./layout agentsuites/team:v1",
+		Example: "  kmx package suite push ./suite registry.example.com/team:v1\n" +
+			"  kmx package suite push ./suite --to-layout ./layout agentsuites/team:v1",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if workspaceMode {
 				for _, name := range []string{"runtime-profile", "platform"} {
@@ -310,7 +310,7 @@ func newSuitePushCommand(state *commandState, workspaceMode bool) *cobra.Command
 				}
 				return nil
 			}
-			return usageArgs(2, 2, "kmx suite push <directory> [--to-layout <layout>] [--plain-http] [--force] [--provenance=false] [--require-provenance] <reference>")(cmd, args)
+			return usageArgs(2, 2, "kmx package suite push <directory> [--to-layout <layout>] [--plain-http] [--force] [--provenance=false] [--require-provenance] <reference>")(cmd, args)
 		},
 	}
 	if workspaceMode {
@@ -322,11 +322,11 @@ func newSuitePushCommand(state *commandState, workspaceMode bool) *cobra.Command
 			"SchemaVersion 3 packages all explicit runtime profiles. Select an offline view with --runtime-profile ID and, when ambiguous, --platform OS/ARCH. Selection never strips profiles or changes S. Profiled publication requires --unevaluated; evaluated push, private/public proof export, execution and Deploy are unavailable even for runtime.id=orka. Image/policy declarations are not enforcement or execution support. Legacy workspaces reject these selectors.\n" +
 			"Stderr names the absolute workspace path and prepared OCI manifest digest. Legacy native members require no images; this does not deploy or evaluate an Agent.\n" +
 			"--evaluation consumes a private full-passing native receipt file and refuses a different exact suite manifest or incoherent case inventory before transfer. Unsigned observations are not authentication or a policy gate.\n\n" + push.Long
-		push.Example = "  kmx push registry.example.com/team:v1\n" +
-			"  kmx push\n" +
-			"  kmx push --unevaluated registry.example.com/team:v1\n" +
-			"  kmx push --to-layout ./layout agentsuites/team:v1\n" +
-			"  kmx push --workspace ./workspace registry.example.com/team:v1"
+		push.Example = "  kmx package push registry.example.com/team:v1\n" +
+			"  kmx package push\n" +
+			"  kmx package push --unevaluated registry.example.com/team:v1\n" +
+			"  kmx package push --to-layout ./layout agentsuites/team:v1\n" +
+			"  kmx package push --workspace ./workspace registry.example.com/team:v1"
 		push.Flags().StringVar(&pushWorkspace, "workspace", "", "select exactly this workspace instead of nearest-ancestor discovery")
 		push.Flags().StringVar(&evaluation, "evaluation", "", "explicit private full-passing receipt; overrides managed lookup without fallback")
 		push.Flags().BoolVar(&unevaluated, "unevaluated", false, "explicitly publish without passing evidence; never evaluates or deploys")

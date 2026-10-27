@@ -124,7 +124,7 @@ The Secret must be provisioned separately. The `openai` configuration above is
 still the route for the v1-compatible `/openai/v1` endpoint. Native Orka
 `azure-openai` instead takes the resource root URL, an Azure deployment and an
 optional API version through `kmx create --live`; see the
-[create guide](kmx.md#kmx-create). The `kmx quickstart --interactive` hosted Foundry
+[create guide](kmx.md#kmx-create). The `kmx cluster quickstart --interactive` hosted Foundry
 choice continues to use host inference with a local Provider fallback, not a
 native hosted Provider. Its agent-create wizard can author a native Azure
 Provider separately. An already-configured local Agent using the v1 Provider

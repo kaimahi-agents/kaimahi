@@ -14,24 +14,22 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 	var opt app.RunAgentOptions
 	var file fileCommandOptions
 	cmd := &cobra.Command{
-		Use: "run [FILE [input]]", Short: "Preview an agent file or run an existing Orka Agent",
-		Long: "Run FILE previews saved examples; FILE \"input\" runs only that input. Answers go to stdout; route/model to stderr.\n" +
-			"File output is text/JSON; --case selects a partial preview. No native evidence or source edits.\n" +
-			"File previews on fake, local and Copilot models use embedded Agent Sessions and retain instructions, inputs, answers, judge payloads and reasoning in cleartext SQLite journals under the kmx state directory (KMX_HOME when set), in local-preview/journals. Retention keeps the newest 20 runs at each start; active runs are kept and concurrent starts can leave more. Stop previews before removing journal files there to clear retained content. Copilot content checks stay provider-owned and run before journaling. Replay makes zero model calls. This is not native execution evidence.\n" +
-			"--verbose prints content-free file execution diagnostics and timings on stderr.\n" +
-			"Select a live Orka Agent with --agent (without FILE).\n" +
-			"Task name, state and recovery instructions go to stderr; stdout contains only the answer.\n" +
-			"A Task is never retried or deleted; exit code 2 means the wait expired and\n" +
-			"the answer may not yet be readable. Use kmx task result to retrieve it later.",
-		Args: usageArgs(0, 0, "kmx run --agent <name> --prompt <text>"),
+		Use: "run [FILE [input]]", Short: "Run an agent file or an existing Orka Agent",
+		Long: "Run FILE previews examples; FILE \"input\" previews only that input.\n" +
+			"Answers: stdout. Route/diagnostics: stderr. File results are not evidence.\n" +
+			"Live --agent: exit code 2 is pending; Tasks are never retried or deleted.\n" +
+			"Read pending Tasks: kmx cluster task result. File retention and privacy:\n" +
+			previewCaveatsURL,
+		Example: "  kmx run greeter.agent.md\n  kmx run greeter.agent.md \"Say hello\"\n  kmx run --agent greeter --prompt \"Say hello\"",
+		Args:    usageArgs(0, 0, "kmx run --agent <name> --prompt <text>"),
 	}
-	cmd.Flags().StringVar(&opt.Agent, "agent", "", "run this live Orka Agent (required without FILE)")
-	cmd.Flags().StringVar(&opt.Namespace, "namespace", "", "live Agent namespace (default: "+app.OrkaNamespace+")")
-	cmd.Flags().StringVar(&opt.Prompt, "prompt", "", "one-shot Task prompt")
-	cmd.Flags().StringVar(&opt.PromptFile, "prompt-file", "", "read Task prompt from file, or - for stdin")
-	cmd.Flags().StringVar(&opt.EnforcementFile, "enforcement-file", "", "complete Orka Task enforcement requirement JSON (live Agent only)")
-	cmd.Flags().DurationVar(&opt.Wait, "wait", 5*time.Minute, "time to wait for the answer (default 5m; 10s to 9m)")
-	cmd.Flags().StringVar(&opt.ResultPort, "result-port", "", "loopback result-forward port (omitted: choose automatically)")
+	cmd.Flags().StringVar(&opt.Agent, "agent", "", "Live Orka Agent (required without FILE)")
+	cmd.Flags().StringVar(&opt.Namespace, "namespace", "", "Agent namespace (default: "+app.OrkaNamespace+")")
+	cmd.Flags().StringVar(&opt.Prompt, "prompt", "", "Input text (FILE or live Agent)")
+	cmd.Flags().StringVar(&opt.PromptFile, "prompt-file", "", "Input file, or - for stdin (FILE/live Agent)")
+	cmd.Flags().StringVar(&opt.EnforcementFile, "enforcement-file", "", "Task enforcement requirement JSON")
+	cmd.Flags().DurationVar(&opt.Wait, "wait", 5*time.Minute, "Wait for answer (10s to 9m)")
+	cmd.Flags().StringVar(&opt.ResultPort, "result-port", "", "Loopback forward port (chosen automatically)")
 	registerFileCommandFlags(cmd, &file, true)
 	cmd.Args = func(cmd *cobra.Command, args []string) error {
 		if len(args) == 1 || len(args) == 2 {
@@ -102,13 +100,13 @@ func newTaskResultCommand(state *commandState) *cobra.Command {
 		Long: "Read an AI Task's phase. If its answer is available, print only the answer on stdout.\n" +
 			"With --wait <duration> (10s to 9m), wait for completion. Phase changes and recovery instructions go to stderr.\n" +
 			"exit code 2 means the Task is pending or its successful answer is not yet readable; retry later. Failed or Cancelled exits 1.",
-		Args: usageArgs(1, 1, "kmx task result <task> [--context <ctx>] [--namespace <ns>] [--wait 5m]"),
+		Args: usageArgs(1, 1, "kmx cluster task result <task> [--context <ctx>] [--namespace <ns>] [--wait 5m]"),
 	}
 	cmd.Flags().StringVar(&opt.Namespace, "namespace", "", "Task namespace (default: "+app.OrkaNamespace+")")
 	cmd.Flags().DurationVar(&opt.Wait, "wait", 0, "wait up to this duration for an answer (10s to 9m; omitted: inspect once)")
 	cmd.Flags().StringVar(&opt.ResultPort, "result-port", "", "loopback result-forward port (omitted: choose automatically)")
 	cmd.Args = func(cmd *cobra.Command, args []string) error {
-		if err := usageArgs(1, 1, "kmx task result <task> [--namespace <ns>] [--context <ctx>] [--wait 5m]")(cmd, args); err != nil {
+		if err := usageArgs(1, 1, "kmx cluster task result <task> [--namespace <ns>] [--context <ctx>] [--wait 5m]")(cmd, args); err != nil {
 			return err
 		}
 		if cmd.Flags().Changed("wait") && opt.Wait == 0 {

@@ -18,7 +18,7 @@ and Deploy.
 
 **Run** invokes an existing live Orka Agent with `kmx run --agent`; it is not
 workspace-local execution. **Test** evaluates the workspace's authored cases with
-`kmx test`. **Publish** transfers the exact tested package with `kmx push`, not a
+`kmx package test`. **Publish** transfers the exact tested package with `kmx package push`, not a
 numbered local-version workflow. **Deploy** places it on the selected real target.
 Create authors the source; runtime and model setup remain separate.
 
@@ -30,7 +30,7 @@ these. Provide an exact model name and an instructions file:
 
 ```bash
 kmx create NAME --workspace . --model MODEL --instructions FILE
-kmx deploy --to NAME
+kmx package deploy --to NAME
 ```
 
 Deploy freezes the exact suite and selectors, runs missing evaluation, publication
@@ -53,16 +53,16 @@ it does not prove every promotion, creation or partial-outcome path.
 | Stage | Current checkout |
 |---|---|
 | **Create** | `kmx create NAME --workspace DIR --model MODEL --instructions FILE` authors one tool-free workspace member offline: Orka by default, exact Go kagent with `--runtime kagent`, or pinned chat with `--runtime agentsessions`. No Kubernetes, image build or model call. |
-| **Test** | Orka uses `kmx test --workspace DIR --to-context CTX --inference provider:NAME --out RECEIPT`; kagent uses `--bindings FILE` instead of `--inference`. Native AgentSessions instead requires `--development-host FILE`, a private literal-loopback host JSON, plus `--bindings FILE`, an `AgentSessionsBinding` whose model must equal the packaged model, with no cluster selectors. Each evaluates ordered cases with optional `runs`/`minPasses` (default once), stops after a case misses its threshold or any unknown/error, and writes private evidence only when the full policy passes. |
-| **Publish** | `kmx push --workspace DIR --evaluation RECEIPT REF` checks that evidence against the exact OCI manifest and publishes that graph. Plain `kmx push REF` requires passing evidence; `--unevaluated` explicitly opts out. Neither form deploys. |
-| **Deploy** | `kmx deploy REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME --promote` for candidate evidence or kagent `--bindings FILE` deploys the matching packaged runtime without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets. Orka candidate evidence requires `--promote`, even in the same environment. Inspect placement with `kmx status --to NAME`; retirement remains unavailable. AgentSessions `--to NAME` creates an immutable Agent with the package/member and operator default model binding; exact acknowledged specs are GET-only no-ops. Registered is not live availability or target evaluation. Its separate offline render takes no destination selectors: `kmx deploy REF@sha256:DIGEST --harness-image IMAGE@sha256:DIGEST --bindings FILE --evidence RECEIPT --plan` renders a substrate ActorTemplate and harness registration offline and applies nothing. |
+| **Test** | Orka uses `kmx package test --workspace DIR --to-context CTX --inference provider:NAME --out RECEIPT`; kagent uses `--bindings FILE` instead of `--inference`. Native AgentSessions instead requires `--development-host FILE`, a private literal-loopback host JSON, plus `--bindings FILE`, an `AgentSessionsBinding` whose model must equal the packaged model, with no cluster selectors. Each evaluates ordered cases with optional `runs`/`minPasses` (default once), stops after a case misses its threshold or any unknown/error, and writes private evidence only when the full policy passes. |
+| **Publish** | `kmx package push --workspace DIR --evaluation RECEIPT REF` checks that evidence against the exact OCI manifest and publishes that graph. Plain `kmx package push REF` requires passing evidence; `--unevaluated` explicitly opts out. Neither form deploys. |
+| **Deploy** | `kmx package deploy REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME --promote` for candidate evidence or kagent `--bindings FILE` deploys the matching packaged runtime without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets. Orka candidate evidence requires `--promote`, even in the same environment. Inspect placement with `kmx package status --to NAME`; retirement remains unavailable. AgentSessions `--to NAME` creates an immutable Agent with the package/member and operator default model binding; exact acknowledged specs are GET-only no-ops. Registered is not live availability or target evaluation. Its separate offline render takes no destination selectors: `kmx package deploy REF@sha256:DIGEST --harness-image IMAGE@sha256:DIGEST --bindings FILE --evidence RECEIPT --plan` renders a substrate ActorTemplate and harness registration offline and applies nothing. |
 
 Root test also keeps completed passing metadata in private KMX state, so `--out`
-is optional. With named `evalTarget`, `kmx test` needs no selectors; then
-`kmx push REPO:TAG` uses the latest completed exact-suite proof and preserves TAG.
-Bare `kmx push` requires saved `publishRepository` and derives `s-<full-S-hex>`.
+is optional. With named `evalTarget`, `kmx package test` needs no selectors; then
+`kmx package push REPO:TAG` uses the latest completed exact-suite proof and preserves TAG.
+Bare `kmx package push` requires saved `publishRepository` and derives `s-<full-S-hex>`.
 Explicit-reference Deploy still requires its digest and private evidence; use
-`kmx deploy --to NAME` without a reference to compose the missing stages.
+`kmx package deploy --to NAME` without a reference to compose the missing stages.
 
 Create and push discover the nearest ancestor `workspace.yaml`; `--workspace DIR`
 selects an exact root without fallback. Read the [workspace lifecycle](suite-workspace.md)
@@ -95,12 +95,12 @@ Check what was installed, then run the fixed, non-interactive local proof:
 
 ```bash
 kmx version
-kmx quickstart
+kmx cluster quickstart
 ```
 
-`kmx quickstart` creates a local kind environment, starts Ollama and pinned Orka,
+`kmx cluster quickstart` creates a local kind environment, starts Ollama and pinned Orka,
 and succeeds only after a fresh Task returns a readable answer. Use
-`kmx quickstart --interactive` for guided native workspace authoring, full eval, publication and reviewed Deploy.
+`kmx cluster quickstart --interactive` for guided native workspace authoring, full eval, publication and reviewed Deploy.
 Follow [getting started](getting-started.md) for prerequisites and explicit
 context selection.
 
@@ -108,8 +108,8 @@ context selection.
 
 | Path | What it means |
 |---|---|
-| Workspace | Default `kmx create`, root `test`, and root `push` operate on editable source; `kmx deploy --to NAME` composes missing evaluation, publication and placement from that workspace. Digest-based root `deploy` does not consume workspace source; it uses the packaged artifact and separate private evidence with explicit target and inference inputs. Run/chat still target live Agents. |
-| Local environment | `kmx local up` prepares kind, model and runtime without creating an Agent. The experimental Go `AgentEnvironment` interface is setup-only and is not wired to this command yet. |
+| Workspace | Default `kmx create`, `package test`, and `package push` operate on editable source; `kmx package deploy --to NAME` composes missing evaluation, publication and placement from that workspace. Digest-based `package deploy` does not consume workspace source; it uses the packaged artifact and separate private evidence with explicit target and inference inputs. Run/chat still target live Agents. |
+| Local environment | `kmx cluster up` prepares kind, model and runtime without creating an Agent. The experimental Go `AgentEnvironment` interface is setup-only and is not wired to this command yet. |
 | Live Agent | `kmx run --agent NAME --prompt TEXT` performs one Task; `kmx chat NAME` opens an Orka session. Both target live Agents, including suite-owned Agents; neither is workspace-local execution or suite evaluation. |
 | Legacy bundle | Removed outright: user `agent.yaml` readers/writers, commands and receipts, `create --live` including previews/wizard, run's bundle mode and `--bundles` flags. Old receipts are unreadable; no conversion, migration or on-disk/resource deletion. Public AgentSuite implementation bundles are a different format and remain supported. |
 
@@ -147,17 +147,17 @@ records exact pins and evidence rather than claiming feature parity.
 > mutation, and remember that hosted model calls can incur charges.
 
 - Readiness, a readable answer, and passing evaluation are different evidence.
-- [`kmx status --to NAME`](destination-status.md) inventories deployed
+- [`kmx package status --to NAME`](destination-status.md) inventories deployed
   Orka/kagent Agents and per-object Deploy provenance without writes. Unknown is not
-  absent, and recorded observations are unsigned. `kmx orka status` retains the
+  absent, and recorded observations are unsigned. `kmx cluster orka status` retains the
   table-only Orka runtime report.
 - Quickstart adds cluster resources and result-reader RBAC, then authors, fully
   evaluates, publishes and Deploys a tool-free native suite. Placement verification
   precedes its separate fresh answer Task. Console Ready means placement only.
-- Chat `/lift` and console Deploy only print `Deploy moved: kmx deploy <ref>@<digest> --to-context … --evidence …`; no release GUI or live-copy fallback remains.
+- Chat `/lift` and console Deploy only print `Deploy moved: kmx package deploy <ref>@<digest> --to-context … --evidence …`; no release GUI or live-copy fallback remains.
 - Automatic wizard tools and live tools/inference editing are retired; ordinary
   host Foundry/Copilot chat controls remain independent.
-- Cancellation can leave completed resources in place. `kmx local down` deletes
+- Cancellation can leave completed resources in place. `kmx cluster down` deletes
   the entire named local cluster and its data.
 - Unsigned evaluation receipts and provenance are observations, not
   authentication or promotion authority.

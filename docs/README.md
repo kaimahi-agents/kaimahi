@@ -20,7 +20,7 @@ runtime contract when extending or comparing implementations.
 | Set up the current development CLI and understand prerequisites | [Getting started](getting-started.md) |
 | Understand the unreleased native Windows day-zero commands, release availability, trust and state limits | [Native Windows](windows.md) |
 | Review Run, Test, Publish and Deploy stages, workspace/live paths and safety limits | [Workflow overview](workflow-overview.md) |
-| Inspect compiled runtime support and qualification evidence with `kmx targets`; understand runtime and inference boundaries | [Runtime contract and support matrix](runtime-adapters.md) |
+| Inspect compiled runtime support and qualification evidence with `kmx cluster targets`; understand runtime and inference boundaries | [Runtime contract and support matrix](runtime-adapters.md) |
 | Install Orka, inspect before applying, or see the version actually running | [Orka](orka.md) |
 | Read the single-file charter format and offline parser boundary | [Agent file](agent-file.md) |
 | Run or Test a single-file agent in process, inspect retained non-pass diagnostics, and understand journal/privacy limits | [Local preview](local-preview.md) |

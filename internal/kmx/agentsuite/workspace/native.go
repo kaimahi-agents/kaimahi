@@ -42,7 +42,7 @@ const nativeLayoutVersion = "kmx.native-suite-evals/v2"
 
 const nativeRecordVersion = 2
 
-var errPreviousNativeSuite = errors.New("packaged by an earlier kmx; rerun kmx eval and kmx push with this kmx")
+var errPreviousNativeSuite = errors.New("packaged by an earlier kmx; rerun kmx eval and kmx package push with this kmx")
 
 // refusal is safe to show for untrusted suites.
 type refusal struct{ err error }

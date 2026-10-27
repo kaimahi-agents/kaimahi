@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -49,7 +50,7 @@ func TestOrkaPathNamespacesAreTheTwoTheOrkaPathWritesTo(t *testing.T) {
 // from either change.
 func TestGuardCreateInScopesTheBannerAndOrdinaryGuardsDoNot(t *testing.T) {
 	scoped := guardBanner(t, func(a *App) error {
-		return a.GuardCreateIn("create a local cluster and a first agent", "kmx quickstart", OrkaPathNamespaces)
+		return a.GuardCreateIn("create a local cluster and a first agent", "kmx cluster quickstart", OrkaPathNamespaces)
 	})
 	assertOrkaOnlyBanner(t, "GuardCreateIn's banner", scoped)
 
@@ -57,9 +58,9 @@ func TestGuardCreateInScopesTheBannerAndOrdinaryGuardsDoNot(t *testing.T) {
 		name string
 		call func(*App) error
 	}{
-		{"Guard", func(a *App) error { return a.Guard("act", "kmx status") }},
-		{"GuardCreate", func(a *App) error { return a.GuardCreate("act", "kmx local up --step cluster") }},
-		{"GuardKnown", func(a *App) error { return a.GuardKnown("act", "kmx local down") }},
+		{"Guard", func(a *App) error { return a.Guard("act", "kmx package status") }},
+		{"GuardCreate", func(a *App) error { return a.GuardCreate("act", "kmx cluster up --step cluster") }},
+		{"GuardKnown", func(a *App) error { return a.GuardKnown("act", "kmx cluster down") }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			banner := guardBanner(t, tc.call)
@@ -90,15 +91,15 @@ func TestQuickstartGuardBannerNamesOnlyTheOrkaNamespaces(t *testing.T) {
 	assertOrkaOnlyBanner(t, "the quickstart banner", errOut.String())
 }
 
-// A bare `kmx local up` is the Orka runtime and nothing else — CI greps its
+// A bare `kmx cluster up` is the Orka runtime and nothing else — CI greps its
 // transcript for the legacy runtime too.
 func TestBareUpGuardBannerNamesOnlyTheOrkaNamespaces(t *testing.T) {
 	a, errOut, _ := upFixture(t)
 	a.guarded = false
 	if err := a.Up(""); err != nil {
-		t.Fatalf("a bare Orka-only `kmx local up` failed: %v\n%s", err, errOut)
+		t.Fatalf("a bare Orka-only `kmx cluster up` failed: %v\n%s", err, errOut)
 	}
-	assertOrkaOnlyBanner(t, "the bare `kmx local up` banner", errOut.String())
+	assertOrkaOnlyBanner(t, "the bare `kmx cluster up` banner", errOut.String())
 }
 
 // Every addressable step is on the Orka path now, so every one of them gets
@@ -113,7 +114,7 @@ func TestEveryUpStepBannerNamesOnlyTheOrkaNamespaces(t *testing.T) {
 			if err := a.Up(step); err != nil {
 				t.Fatalf("the %s step failed: %v\n%s", step, err, errOut)
 			}
-			assertOrkaOnlyBanner(t, "the `kmx local up --step "+step+"` banner", errOut.String())
+			assertOrkaOnlyBanner(t, "the `kmx cluster up --step "+step+"` banner", errOut.String())
 		})
 	}
 }
@@ -137,6 +138,33 @@ func TestQuickstartWizardTargetIsScopedOnBothPaths(t *testing.T) {
 		t.Fatalf("a confirmed remote target must proceed: %v\n%s", err, errOut)
 	}
 	assertOrkaOnlyBanner(t, "the wizard's guard banner", errOut.String())
+}
+
+func TestQuickstartFallbackGuardCommandsUseClusterGroup(t *testing.T) {
+	for _, interactive := range []bool{false, true} {
+		t.Run(fmt.Sprintf("interactive=%t", interactive), func(t *testing.T) {
+			a, _ := guardFixture(t)
+			path := filepath.Join(os.Getenv("PATH"), "kubectl")
+			source, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			source = bytes.ReplaceAll(source, []byte("https://127.0.0.1:6443"), []byte("https://example.invalid:443"))
+			if err := os.WriteFile(path, source, 0755); err != nil {
+				t.Fatal(err)
+			}
+			args := []string{"cluster", "quickstart"}
+			if interactive {
+				args = append(args, "--interactive")
+				_, err = a.quickstartWizardTarget()
+			} else {
+				err = a.Quickstart(QuickstartOptions{})
+			}
+			if err == nil || !strings.Contains(err.Error(), a.operationCommand(args...)) {
+				t.Fatalf("guard did not offer canonical recovery: %v", err)
+			}
+		})
+	}
 }
 
 // guardFixture is a cluster boundary that answers `kubectl config view` and

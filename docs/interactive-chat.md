@@ -53,7 +53,7 @@ coordinates. Resize itself never submits a message or approval. The non-full-scr
 raw-input fallback retains its conservative resize-abort behavior.
 
 Chat `/lift` and console Deploy only print
-`Deploy moved: kmx deploy <ref>@<digest> --to-context … --evidence …`.
+`Deploy moved: kmx package deploy <ref>@<digest> --to-context … --evidence …`.
 They perform no release workflow or source-less copy. Host Foundry/Copilot
 controls remain independent; live source tools/inference editing is retired.
 

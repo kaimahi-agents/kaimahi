@@ -22,7 +22,7 @@ func TestTargetsOfflineDoesNotLoadConfigOrTools(t *testing.T) {
 		t.Run(output, func(t *testing.T) {
 			var out, diagnostics bytes.Buffer
 			deps, loads := testDependencies(&out, &diagnostics)
-			if err := execute([]string{"targets", "-o", output}, deps); err != nil {
+			if err := execute([]string{"cluster", "targets", "-o", output}, deps); err != nil {
 				t.Fatal(err)
 			}
 			if *loads != 0 || diagnostics.Len() != 0 {
@@ -106,7 +106,7 @@ func TestTargetsInvalidFlagsFailBeforeConfig(t *testing.T) {
 	} {
 		var out, diagnostics bytes.Buffer
 		deps, loads := testDependencies(&out, &diagnostics)
-		err := execute(append([]string{"targets"}, tc.args...), deps)
+		err := execute(append([]string{"cluster", "targets"}, tc.args...), deps)
 		if err == nil || !strings.Contains(err.Error(), tc.want) || *loads != 0 || out.Len() != 0 {
 			t.Fatalf("%v: loads=%d out=%s err=%v", tc.args, *loads, &out, err)
 		}
@@ -136,7 +136,7 @@ func TestTargetsSessionsProbeSurvivesUnreadableKubeConfiguration(t *testing.T) {
 			loads++
 			return nil, errors.New("PRIVATE-CONFIG-PAYLOAD")
 		}
-		args := []string{"targets", "--sessions", listener.Addr().String(), "-o", "json"}
+		args := []string{"cluster", "targets", "--sessions", listener.Addr().String(), "-o", "json"}
 		if detect {
 			args = append(args, "--detect")
 		}
@@ -167,7 +167,7 @@ func TestTargetsSessionsProbeSurvivesUnreadableKubeConfiguration(t *testing.T) {
 func TestTargetsHelpDoesNotLoadConfiguration(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
-	if err := execute([]string{"targets", "--help"}, deps); err != nil {
+	if err := execute([]string{"cluster", "targets", "--help"}, deps); err != nil {
 		t.Fatal(err)
 	}
 	if *loads != 0 || !strings.Contains(out.String(), "--detect") || !strings.Contains(out.String(), "--sessions") {

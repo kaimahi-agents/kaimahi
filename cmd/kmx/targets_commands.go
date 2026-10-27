@@ -19,7 +19,7 @@ func newTargetsCommand(state *commandState) *cobra.Command {
 			"the explicit or saved Kubernetes context. --sessions independently probes only\n" +
 			"the supplied Sessions API, not its harness or registry. No runtime is selected,\n" +
 			"installed or deployed. Unreadable probes produce a complete report and exit nonzero.",
-		Args: usageArgs(0, 0, "kmx targets [--detect] [--sessions <host:port>] [-o table|json]"),
+		Args: usageArgs(0, 0, "kmx cluster targets [--detect] [--sessions <host:port>] [-o table|json]"),
 	}
 	cmd.Flags().StringVarP(&opt.Output, "output", "o", "table", "output: table|json")
 	cmd.Flags().BoolVar(&opt.Detect, "detect", false, "read Orka controller installation evidence in the selected Kubernetes context")

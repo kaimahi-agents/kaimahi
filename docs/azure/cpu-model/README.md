@@ -15,10 +15,10 @@ to self-hosted inference. For the shared lifecycle contract, see
 ## Before you start
 
 The main path uses **Bash on Linux**, with Azure CLI and the Kubernetes tools
-in the same environment. Start in the repository root. The `kmx test` and
-`kmx deploy` spellings are unreleased; use a main checkout build for these examples.
+in the same environment. Start in the repository root. The `kmx package test` and
+`kmx package deploy` spellings are unreleased; use a main checkout build for these examples.
 v0.8.1 uses `kmx eval` and `kmx lift` with the same arguments instead. This applies
-to helpers too: replace `kmx test cleanup` with `kmx eval cleanup` in the cleanup
+to helpers too: replace `kmx package test cleanup` with `kmx eval cleanup` in the cleanup
 examples below. See [Test compatibility](../../kmx.md#test-compatibility-unreleased)
 and [Deploy compatibility](../../kmx.md#deploy-compatibility-unreleased).
 **Windows users:** run KMX in WSL; see [Windows setup](#windows-setup) for the
@@ -351,7 +351,7 @@ assertions:
 Evaluate the complete workspace on **local kind**, not AKS:
 
 ```bash
-KUBECONFIG="$LOCAL_KUBECONFIG" kmx test --workspace "$WORKSPACE" \
+KUBECONFIG="$LOCAL_KUBECONFIG" kmx package test --workspace "$WORKSPACE" \
   --to-context "$LOCAL_CONTEXT" --to-namespace orka-system \
   --inference provider:cpu-inference --out "$STATE/passing.json"
 ```
@@ -376,7 +376,7 @@ Windows users use the handoff below instead. Publish with the matching receipt:
 
 ```bash
 PUBLISH_REF="$REGISTRY.azurecr.io/agents/release-notes:<unique-tag>"
-kmx push --workspace "$WORKSPACE" "$PUBLISH_REF" --evaluation "$STATE/passing.json"
+kmx package push --workspace "$WORKSPACE" "$PUBLISH_REF" --evaluation "$STATE/passing.json"
 ```
 
 Require success and retain the returned manifest digest. Set `RELEASE_REF` to
@@ -391,7 +391,7 @@ the destination must satisfy the same packaged runtime/model requirements:
 
 ```bash
 RELEASE_REF="$REGISTRY.azurecr.io/agents/release-notes@sha256:<published-digest>"
-KUBECONFIG="$AKS_KUBECONFIG" kmx deploy "$RELEASE_REF" --plan --promote \
+KUBECONFIG="$AKS_KUBECONFIG" kmx package deploy "$RELEASE_REF" --plan --promote \
   --to-context "$AKS_CONTEXT" --to-namespace orka-system \
   --inference provider:cpu-inference --evidence "$STATE/passing.json"
 ```
@@ -399,7 +399,7 @@ KUBECONFIG="$AKS_KUBECONFIG" kmx deploy "$RELEASE_REF" --plan --promote \
 Approve that exact plan and remote context, then Deploy:
 
 ```bash
-KUBECONFIG="$AKS_KUBECONFIG" kmx deploy "$RELEASE_REF" --promote \
+KUBECONFIG="$AKS_KUBECONFIG" kmx package deploy "$RELEASE_REF" --promote \
   --to-context "$AKS_CONTEXT" --to-namespace orka-system \
   --inference provider:cpu-inference --evidence "$STATE/passing.json"
 ```
@@ -494,7 +494,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Private WSL credential setup failed' }
 | API timeout | Check the actual VPN/tunnel route and approved public egress CIDR. Never use `0.0.0.0/0`, an empty allowlist or a private VPN adapter IP. Follow local security policy. |
 | TLS-verified HTTP 401 | Network/TLS works; authenticated Kubernetes access is not yet proved. Check the exec plugin and cluster RBAC. |
 | Slow cleanup; “scope changed or unknown” | Measure payload-free API timings and compare cluster/namespace UIDs. Windows authentication took 2–3 seconds per subprocess in this test, exhausting the fixed 90-second budget. An approved expiry-aware private credential cache resolved cleanup; do not raise timeouts or use static kubeconfig tokens. |
-| Leftover candidates | List with `KUBECONFIG="$LOCAL_KUBECONFIG" kmx test cleanup --to-context "$LOCAL_CONTEXT" --to-namespace orka-system`; confirm with `KUBECONFIG="$LOCAL_KUBECONFIG" kmx test cleanup <full-run-id> --to-context "$LOCAL_CONTEXT" --to-namespace orka-system`. Do not bulk-delete Agents. |
+| Leftover candidates | List with `KUBECONFIG="$LOCAL_KUBECONFIG" kmx package test cleanup --to-context "$LOCAL_CONTEXT" --to-namespace orka-system`; confirm with `KUBECONFIG="$LOCAL_KUBECONFIG" kmx package test cleanup <full-run-id> --to-context "$LOCAL_CONTEXT" --to-namespace orka-system`. Do not bulk-delete Agents. |
 | `unresolved` assertion fails | Require the literal prefix in instructions. The first local version ran successfully but passed 0/3; revised instructions passed 3/3 without weakening assertions. |
 | Pending model or policy denial | Inspect scheduling/allocatable resources and policy-owner guidance. Do not bypass policy or infer usage from readiness. |
 | Run Command needed | Use Windows `az aks command invoke` with explicit subscription/group/cluster; inspect returned `exitCode`, not just CLI success. Attached scripts need LF endings. Keep logs private. This is not a way to run the entire KMX lifecycle remotely. |

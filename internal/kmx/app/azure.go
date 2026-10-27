@@ -232,13 +232,13 @@ func (a *App) azAccount() (account, error) {
 	var acct account
 	out, err := a.captureAzure("account", "show", "-o", "json")
 	if err != nil {
-		return acct, fmt.Errorf("kmx aks: the Azure CLI is not signed in — run: az login")
+		return acct, fmt.Errorf("kmx cluster aks: the Azure CLI is not signed in — run: az login")
 	}
 	if err := json.Unmarshal([]byte(out), &acct); err != nil {
-		return acct, fmt.Errorf("kmx aks: could not read the signed-in account: %w", err)
+		return acct, fmt.Errorf("kmx cluster aks: could not read the signed-in account: %w", err)
 	}
 	if strings.TrimSpace(acct.ID) == "" {
-		return acct, fmt.Errorf("kmx aks: the Azure CLI reported no subscription — refusing to act without knowing where")
+		return acct, fmt.Errorf("kmx cluster aks: the Azure CLI reported no subscription — refusing to act without knowing where")
 	}
 	return acct, nil
 }

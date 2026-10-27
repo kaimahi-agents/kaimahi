@@ -30,7 +30,7 @@ var errSuitePassingReceipt = errors.New("invalid native passing receipt")
 var errSuiteSessionsReceiptV1 = fmt.Errorf("%w: AgentSessions passing receipt v1 does not record an AgentSessionsBinding; evaluate again with --development-host FILE --bindings FILE", errSuitePassingReceipt)
 
 // errPreviousSuiteReceipt marks receipts for the old case layout.
-var errPreviousSuiteReceipt = fmt.Errorf("%w: recorded against cases under metadata/kmx/eval by an earlier kmx; rerun kmx eval and kmx push with this kmx", errSuitePassingReceipt)
+var errPreviousSuiteReceipt = fmt.Errorf("%w: recorded against cases under metadata/kmx/eval by an earlier kmx; rerun kmx eval and kmx package push with this kmx", errSuitePassingReceipt)
 
 type suitePassingReceipt struct {
 	SchemaVersion     int                        `json:"schemaVersion"`

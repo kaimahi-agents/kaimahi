@@ -15,68 +15,75 @@ version, with one stderr notice and unchanged legacy output/exit contracts. See
 
 ## Installed command tree
 
-Visible product commands:
+Root help shows `create`, `run`, `test`, `chat`, `model`, `package`, `cluster`,
+then `version`, with the tagline “Write, run and test agent files.” The tree below
+expands those visible product commands:
 
 ```text
 kmx
-├── create <name>
-├── test [FILE]
-│   ├── cleanup [<run-id>]
-│   ├── diff <before.json> <after.json>
-│   ├── explain [failure-id]
-│   ├── export --member <id> --out <file>
-│   ├── verify --suite <layout-or-digest> --evidence <file> --expect <file>
-│   └── from-sessions <session-uid>...
-├── push [reference]
-├── deploy [<ref>@<digest>]
-├── run [FILE] | --agent <name>
-├── run-profile
-│   └── export FILE
+├── create <name>                 (native workspace authoring, unchanged)
+├── run [FILE [input]] | --agent <name>
+├── test FILE
+│   └── explain [failure-id] --file FILE
 ├── chat <name> [message...]
-├── quickstart
-├── status
-├── console
-├── targets
-├── mcp --root <directory>
 ├── model
 │   ├── list [--provider local|copilot] [-o table|json]
 │   ├── login [--gh]
 │   └── logout
-├── context
-│   ├── show
-│   └── use <context>
-├── local
-│   ├── up
-│   └── down
-├── orka
-│   ├── install
-│   ├── status
-│   ├── show <name>
-│   └── list
-├── suite
+├── package
+│   ├── test
+│   │   ├── cleanup [run-id]
+│   │   ├── diff <before.json> <after.json>
+│   │   ├── explain [failure-id]
+│   │   ├── export --member <id> --out <file>
+│   │   ├── verify --suite <layout-or-digest> --evidence <file> --expect <file>
+│   │   └── from-sessions <session-uid>...
+│   ├── push [reference]
+│   ├── deploy [<ref>@<digest>]
+│   ├── status --to <destination>
+│   ├── ctx [--check]
 │   ├── validate <path>
 │   ├── build <directory>
-│   ├── policy <file>
-│   ├── push <directory> <reference>
 │   ├── push-image <archive> <reference>
-│   └── pull <reference>
-├── task
-│   └── result <task>
-├── completion bash|zsh|fish
+│   ├── pull <reference>
+│   ├── policy <file>
+│   ├── suite
+│   │   └── push <directory> <reference>
+│   └── run-profile
+│       └── export FILE
+├── cluster
+│   ├── up
+│   ├── down
+│   ├── status                     (same Orka runtime report as orka status)
+│   ├── context
+│   │   ├── show
+│   │   └── use <context>
+│   ├── quickstart
+│   ├── console
+│   ├── targets
+│   ├── orka
+│   │   ├── install
+│   │   ├── status
+│   │   ├── show <name>
+│   │   └── list
+│   └── task
+│       └── result <task>
 └── version
 ```
 
-`test` is an operational workspace command with offline diff and independent
+`package test` is an operational workspace command with offline diff and independent
 read-only reference extraction/export helpers; explicit `test FILE` is a local
 preview whose completed non-pass diagnostics can be explained offline with
 `test explain --file FILE`. Explicit `run FILE` is the corresponding preview Run.
-Cobra also supplies `help`.
-Experimental `suite push-image` publishes a verified OCI image graph, including
+`kmx mcp --root DIR`, `kmx completion bash|zsh|fish` and `kmx help [TOPIC...]`
+remain operational but are omitted from root help. MCP and Completion are also
+omitted from root completion suggestions; explicit invocation still works.
+Experimental `package push-image` publishes a verified OCI image graph, including
 attestations, independently of deployment admission. Replacing a different tag
-requires `--force`; same-digest publication is a no-op. `suite build --suite-ref`
+requires `--force`; same-digest publication is a no-op. `package build --suite-ref`
 checks complete source content through the shared bounded materializer.
 
-On native Windows, this full command tree remains visible for help/completion but
+On native Windows, the same discovery rules apply. Visibility in help/completion
 is not an enabled capability list. Current `main` permits only version/help/
 completion, package-free fake `run FILE` / `test FILE`, and offline
 `test explain ... --file FILE` (plus the hidden legacy Explain spelling for
@@ -111,8 +118,8 @@ Hidden but callable:
 |---|---|
 | `kmx eval` and `cleanup/diff/explain/export/verify/from-sessions` | Deprecated Test spellings; same arguments/flags/stdout/exit/state, exactly one stderr notice per legacy invocation |
 | `kmx lift [<ref>@<digest>]` | Deprecated deployment spelling; same arguments/flags, one stderr notice, legacy stdout and stderr stage labels retained |
-| `kmx aks up/down` | Guarded AKS compatibility path with historical ownership records |
-| `kmx quickstart-wizard` | Retirement stub directing callers to `quickstart --interactive` |
+| `kmx cluster aks up/down` | Guarded AKS compatibility path with historical ownership records |
+| `kmx cluster quickstart-wizard` | Retirement stub directing callers to `quickstart --interactive` |
 
 Removed outright: `kmx agent`, root `ctx`, `up`, `down`, the former
 AKS-provisioning meaning of root `lift`, and `lift down`. They are not
@@ -170,7 +177,7 @@ Root `run --agent` and supported Orka chat select live Agents by
 context/namespace/name, including suite-owned Agents. They are not workspace-local
 execution or fresh suite evaluation and grant no adoption/update/copy/retirement
 authority. Chat `/lift` and console Deploy only print
-`Deploy moved: kmx deploy <ref>@<digest> --to-context … --evidence …`.
+`Deploy moved: kmx package deploy <ref>@<digest> --to-context … --evidence …`.
 No new GUI or source-less copying. Console Ready means placement, not an answer.
 
 ## Context, environment, target and inference
@@ -178,12 +185,12 @@ No new GUI or source-less copying. Console Ready means placement, not an answer.
 - A **context** is a kubeconfig access selector. KMX does not follow kubectl's
   mutable current-context.
 - An experimental **Environment** is logical setup identity. The setup-only
-  `pkg/kmx.AgentEnvironment` is not wired to `kmx local up`.
+  `pkg/kmx.AgentEnvironment` is not wired to `kmx cluster up`.
 - A **target** is an exact runtime, physical destination and namespace.
 - **Inference** is an independent model route; choosing it does not select a
   runtime.
 
-`kmx targets` is an offline compiled capability report by default. Explicit
+`kmx cluster targets` is an offline compiled capability report by default. Explicit
 probes distinguish present, absent and unreadable; they do not select, install
 or deploy a runtime.
 

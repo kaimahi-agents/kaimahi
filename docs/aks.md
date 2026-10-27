@@ -13,7 +13,7 @@ For a copyable end-to-end example, see the
 then provisions a disposable Free-tier control plane, publishes to ACR, and reviews
 an explicit source-evidence promotion before Deploy.
 
-`kmx aks up` and `kmx aks down` are **temporary compatibility routes**,
+`kmx cluster aks up` and `kmx cluster aks down` are **temporary compatibility routes**,
 not a first-class KMX domain. They are hidden from root help and shell
 completion. Provisioning installs Orka and optionally enables Azure monitoring;
 it does not deploy the model plane. Historical records, recovery and safe teardown
@@ -40,38 +40,40 @@ it has no Azure credential and does not re-prove live cloud behavior.
   AKS setup deploys no Ollama and creates no Provider.
 - No checkout, local Docker engine, plane build or Copilot login is needed for AKS setup.
 
-## One command: `kmx aks up`
+<a id="one-command-kmx-aks-up"></a>
+
+## One command: `kmx cluster aks up`
 
 ```bash
-kmx aks up --plan --resource-group <your-rg> --registry <registry> --cluster <cluster>
-kmx aks up --resource-group <your-rg> --registry <registry> --cluster <cluster>
+kmx cluster aks up --plan --resource-group <your-rg> --registry <registry> --cluster <cluster>
+kmx cluster aks up --resource-group <your-rg> --registry <registry> --cluster <cluster>
 ```
 
 ### `--payload` defaults to `orka`, and is the only payload
 
-`kmx aks up` bills money and installs a platform, so the flag states what:
+`kmx cluster aks up` bills money and installs a platform, so the flag states what:
 
 | payload | what lands | phases |
 |---|---|---|
-| `orka` | Orka v0.2.0 chart — the same verified chart `kmx orka install` puts on a local cluster | cluster, **orka**, observability, verify |
+| `orka` | Orka v0.2.0 chart — the same verified chart `kmx cluster orka install` puts on a local cluster | cluster, **orka**, observability, verify |
 
 The legacy payload is **refused as retired**, by name rather than as an unknown
 value: a script that still names it asked for a platform this command installed
 until the legacy runtime was removed, and a typo message would send its author
 looking for a spelling instead of a replacement. An existing legacy lift can
-still be inspected and torn down with `kmx aks down`; what is refused is
+still be inspected and torn down with `kmx cluster aks down`; what is refused is
 creating or resuming one.
 
 The former root `lift` AKS-provisioning alias and `lift down` are removed
-outright. Use `kmx aks up` and `kmx aks down`; root
-`kmx deploy REF@sha256:DIGEST` now means one-member packaged native deployment:
+outright. Use `kmx cluster aks up` and `kmx cluster aks down`; root
+`kmx package deploy REF@sha256:DIGEST` now means one-member packaged native deployment:
 Orka or exact-v0.10.3 Go kagent. Runtime-specific selectors come from the package
 contract.
 Existing run records and historical ownership teardown remain unchanged.
 
 **This is a fresh-install path, not a version upgrade.** An existing v0.1.3
 manifest installation or foreign Helm release is refused. On an existing AKS
-cluster, do not simply remove the old release and rerun `kmx aks up`: first back up
+cluster, do not simply remove the old release and rerun `kmx cluster aks up`: first back up
 the existing controller PVC and other data volumes, resources and Secrets,
 including a snapshot key if this installation has one, **without printing key
 values**; verify your
@@ -80,10 +82,10 @@ limits](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/
 and [installation guide](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/installation.md).
 The new kmx installation generates `orka-api-agent-execution-snapshot` under
 `fullnameOverride=orka-api`; retain that key with its new volume. Neither
-`kmx aks up` nor `kmx aks down` migrates Orka's SQLite data, Tasks or key.
+`kmx cluster aks up` nor `kmx cluster aks down` migrates Orka's SQLite data, Tasks or key.
 Avoid `helm upgrade --force`; Orka does not support version upgrades here.
 
-**`kmx aks up` creates no Provider.** A managed cluster has no
+**`kmx cluster aks up` creates no Provider.** A managed cluster has no
 in-cluster model server — this path deploys no Ollama — and kmx holds no
 credential for a hosted one. Orka refuses every model call until a Provider
 exists, so the phase installs the platform and names the step that is yours:
@@ -96,7 +98,7 @@ printf %s "$ORKA_API_KEY" | kubectl --context <cluster> -n orka-system \
 ```
 
 The Secret command **names the cluster**. Provider configuration must use that
-same explicit destination. `kmx aks up` moves only its own process's
+same explicit destination. `kmx cluster aks up` moves only its own process's
 context, so if your current-context is still a local kind cluster, an unpinned
 pair sends the Secret one way and the Agent the other — and the half that lands
 locally looks like success. The key is read from **stdin** rather than passed as
@@ -118,7 +120,7 @@ run requires the cluster name typed at a terminal or
 For an existing cluster, add `--byo` explicitly:
 
 ```bash
-kmx aks up --byo --resource-group <your-rg> --registry <registry> --cluster <cluster>
+kmx cluster aks up --byo --resource-group <your-rg> --registry <registry> --cluster <cluster>
 ```
 
 **BYO never creates, deletes or adopts the cluster or resource group.** It
@@ -137,10 +139,10 @@ workload image pull permissions remain owner decisions.
 `--step <phase>` runs **one phase only**, not that phase and all following ones.
 Failures leave earlier work in place and print a target-preserving retry. Fix
 the cause, rerun that phase, then run the remaining phases or the full
-`kmx aks up` command:
+`kmx cluster aks up` command:
 
 ```bash
-kmx aks up --step orka --resource-group <your-rg> --registry <registry> --cluster <cluster>
+kmx cluster aks up --step orka --resource-group <your-rg> --registry <registry> --cluster <cluster>
 ```
 
 Retain the same identity/options and `--byo` where used. A run is recorded with
@@ -153,11 +155,11 @@ remaining fully readable so the cluster can still be inspected and torn down.
 Completing a single phase proves nothing about phases not run by that
 invocation.
 
-`--step` is validated against the `kmx aks up` phases, so a retired phase such
+`--step` is validated against the `kmx cluster aks up` phases, so a retired phase such
 as `--step agents` is refused and names the phases that exist.
 
 Recovery commands preserve the executable that started the operation. A run
-started as `./bin/kmx aks up ...` therefore prints `./bin/kmx ... --step orka`,
+started as `./bin/kmx cluster aks up ...` therefore prints `./bin/kmx ... --step orka`,
 not bare `kmx`; this prevents a copied retry from resolving to an older install
 earlier on `PATH`.
 
@@ -176,13 +178,13 @@ model proxy. See [models](models.md) for native Provider configuration.
 |---|---|
 | Region | `westus3`; `--location` |
 | Node | one `Standard_B4ms` (4 vCPU / 16 GiB); `--node-count`, `--node-size` |
-| OS disk | `kmx aks up`: 64 GiB; standalone `aks-up.sh`: 32 GiB, configurable with `AKS_NODE_OSDISK_SIZE` |
+| OS disk | `kmx cluster aks up`: 64 GiB; standalone `aks-up.sh`: 32 GiB, configurable with `AKS_NODE_OSDISK_SIZE` |
 | Network | Azure CNI Overlay + Cilium (`--network-policy cilium`); `azure` or `calico` accepted but not live-verified here |
 | Control plane | Free tier, no SLA; not exposed as an `aks up` flag |
 | Registry | private ACR Basic, admin user disabled; `--registry` |
 | Monitoring | enabled; `--observability=false` skips new Azure monitoring setup |
 
-The larger `kmx aks up` disk follows a recorded 32 GiB `DiskPressure`/eviction failure
+The larger `kmx cluster aks up` disk follows a recorded 32 GiB `DiskPressure`/eviction failure
 with both monitoring add-ons. It is not a sizing guarantee for Orka, a larger
 model, more applications or a production workload. Scheduling isolation is a
 separate concern, and this repository makes no scheduling-isolation claim.
@@ -206,14 +208,14 @@ node pools; workload network policies remain the owner's responsibility.
 
 ## Remaining checkout helpers
 
-Use native `kmx aks up` and its phases for managed provisioning; the former
+Use native `kmx cluster aks up` and its phases for managed provisioning; the former
 `make up`, `make ollama` and `make aks-down` shims are removed. The
 [Makefile](../Makefile) retains repository helpers, including Azure credential
 refresh. Set `KUBE_CTX=<cluster>` and confirmation explicitly where applicable;
 do not infer the target from kubectl's current-context. Plane-only probes and
 assets are removed; native provisioning and guarded teardown remain.
 
-`kmx aks up` carries its provisioning scripts. It needs no plane image, manifest,
+`kmx cluster aks up` carries its provisioning scripts. It needs no plane image, manifest,
 certificate or database to install Orka.
 
 ## Observability
@@ -235,10 +237,10 @@ Keep your own OpenTelemetry instrumentation and verify its data path separately.
 
 ## Teardown
 
-Cloud resources keep billing until cleaned up. For a `kmx aks up`-created cluster:
+Cloud resources keep billing until cleaned up. For a `kmx cluster aks up`-created cluster:
 
 ```bash
-KAIMAHI_CONFIRM=<your-rg> kmx aks down --resource-group <your-rg> --cluster <cluster>
+KAIMAHI_CONFIRM=<your-rg> kmx cluster aks down --resource-group <your-rg> --cluster <cluster>
 ```
 
 Confirmation names the **resource group**, not the cluster. Before recursive
@@ -250,7 +252,7 @@ the group. Its conclusion covers that group and its record, not all billing.
 ### Teardown on a cluster you did not create
 
 ```bash
-KAIMAHI_CONFIRM=<cluster> kmx aks down --byo \
+KAIMAHI_CONFIRM=<cluster> kmx cluster aks down --byo \
   --resource-group <your-rg> --cluster <cluster>
 ```
 
@@ -328,6 +330,6 @@ bash scripts/check-no-azure-ids.sh path/to/transcript.txt
 
 The scanner catches identifier **shapes** such as GUIDs, resource IDs, hostnames
 and public IPs, not bare resource-group, cluster, registry or workspace names.
-The `kmx aks up` banner omits the subscription ID, but echoed Azure commands can contain
+The `kmx cluster aks up` banner omits the subscription ID, but echoed Azure commands can contain
 full resource IDs. Scan **and manually redact names** before sharing transcripts,
 attachments or PR evidence. Never commit live Azure or Slack identifiers.

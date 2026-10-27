@@ -22,6 +22,12 @@ actually contains the Windows assets described below.
 | Package-free fake Test | `kmx test FILE` for the same offline fake route. A completed pass or failure is a local preview only. |
 | Offline file diagnostics | `kmx test explain [failure-id] --file FILE`, including its file-scoped content and clear options. Hidden `kmx eval explain ... --file FILE` may remain callable only as the deprecated compatibility spelling. |
 
+Flag-parsing errors label their help hint **PowerShell** on native Windows.
+The hint uses PowerShell's `&` call operator and quotes the executable path,
+including doubled apostrophes inside the quoted path. Run that hint in
+PowerShell, not `cmd.exe`. POSIX hints on other platforms and the older
+operational recovery commands keep their existing quoting.
+
 For example, after downloading a qualified amd64 artifact:
 
 ```powershell

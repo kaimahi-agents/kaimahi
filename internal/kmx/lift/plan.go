@@ -46,7 +46,7 @@ type Options struct {
 	// Payload selects WHAT lands on the cluster this command provisions.
 	//
 	// Only `orka` remains: the kagent payload is retired along with the rest
-	// of the legacy runtime. `kmx aks up` defaults to Orka, but the flag
+	// of the legacy runtime. `kmx cluster aks up` defaults to Orka, but the flag
 	// remains a statement about what a command that bills money will install.
 	// An existing script that says `--payload kagent` must be told its platform
 	// is gone rather than quietly handed a different one.
@@ -117,23 +117,23 @@ func AllSteps() []string {
 // "unknown payload" would send them looking for the right spelling of
 // something that is gone.
 //
-// An explicitly empty payload is invalid even though `kmx aks up` defaults
+// An explicitly empty payload is invalid even though `kmx cluster aks up` defaults
 // to Orka when the flag is omitted.
 func ValidPayload(payload string) error {
 	switch payload {
 	case PayloadOrka:
 		return nil
 	case PayloadKagent:
-		return errors.New("kmx aks up: --payload kagent is retired — the legacy kagent runtime has been\n" +
+		return errors.New("kmx cluster aks up: --payload kagent is retired — the legacy kagent runtime has been\n" +
 			"  retired as an AKS installer payload; this command no longer installs it or its demo agents.\n" +
 			"  Use --payload orka, which lands Orka on the same provisioned cluster.\n" +
-			"  Run kmx targets to see supported operations on separately installed runtimes.\n" +
-			"  An existing kagent AKS provisioning run can still be inspected and torn down (`kmx aks down`);\n" +
+			"  Run kmx cluster targets to see supported operations on separately installed runtimes.\n" +
+			"  An existing kagent AKS provisioning run can still be inspected and torn down (`kmx cluster aks down`);\n" +
 			"  creating or resuming that retired provisioning flow is refused.")
 	case "":
-		return errors.New("kmx aks up: --payload must not be empty; use --payload orka (the default).")
+		return errors.New("kmx cluster aks up: --payload must not be empty; use --payload orka (the default).")
 	default:
-		return fmt.Errorf("kmx aks up: unknown --payload %q — one of: %s", payload, strings.Join(Payloads, ", "))
+		return fmt.Errorf("kmx cluster aks up: unknown --payload %q — one of: %s", payload, strings.Join(Payloads, ", "))
 	}
 }
 
@@ -264,7 +264,7 @@ func (o Options) Validate() error {
 	if len(problems) > 1 {
 		noun = "problems"
 	}
-	return fmt.Errorf("kmx aks up: %d %s with what was asked for:\n\n- %s", len(problems), noun, strings.Join(problems, "\n- "))
+	return fmt.Errorf("kmx cluster aks up: %d %s with what was asked for:\n\n- %s", len(problems), noun, strings.Join(problems, "\n- "))
 }
 
 // ValidateForTeardown checks the flags that say WHICH lift is being removed.
@@ -287,7 +287,7 @@ func (o Options) ValidateForTeardown() error {
 	if len(problems) == 0 {
 		return nil
 	}
-	return fmt.Errorf("kmx aks down: %s\n\n  Without both, there is no record to read, and this refuses to go looking\n  by name — on a subscription that is not ours, a name can belong to\n  somebody else.", strings.Join(problems, "\n  "))
+	return fmt.Errorf("kmx cluster aks down: %s\n\n  Without both, there is no record to read, and this refuses to go looking\n  by name — on a subscription that is not ours, a name can belong to\n  somebody else.", strings.Join(problems, "\n  "))
 }
 
 func validStep(step, payload string) bool {
@@ -325,9 +325,9 @@ func (o Options) Banner(account, subscriptionName string) string {
 	var b strings.Builder
 	b.WriteString("----------------------------------------------------------------\n")
 	if o.BringYourOwn {
-		b.WriteString("  kmx aks up — onto a cluster YOU created\n")
+		b.WriteString("  kmx cluster aks up — onto a cluster YOU created\n")
 	} else {
-		b.WriteString("  kmx aks up — creating a cluster and everything around it\n")
+		b.WriteString("  kmx cluster aks up — creating a cluster and everything around it\n")
 	}
 	fmt.Fprintf(&b, "  subscription:    %s\n", subscriptionName)
 	fmt.Fprintf(&b, "  signed in as:    %s\n", account)
@@ -346,13 +346,13 @@ func (o Options) Banner(account, subscriptionName string) string {
 	b.WriteString("\n")
 	if o.BringYourOwn {
 		b.WriteString("  YOUR CLUSTER AND RESOURCE GROUP ARE NEVER DELETED and never\n")
-		b.WriteString("  adopted. `kmx aks down` removes only the monitoring resources\n")
+		b.WriteString("  adopted. `kmx cluster aks down` removes only the monitoring resources\n")
 		b.WriteString("  this run creates, and only by the id it recorded when it made\n")
 		b.WriteString("  them. Anything it cannot prove is its own is left alone and\n")
 		b.WriteString("  named, so you can remove it yourself.\n")
 	} else {
 		b.WriteString("  Everything above is created inside that ONE resource group and\n")
-		b.WriteString("  comes back down with it: `kmx aks down`. It bills until it does.\n")
+		b.WriteString("  comes back down with it: `kmx cluster aks down`. It bills until it does.\n")
 	}
 	b.WriteString("----------------------------------------------------------------\n")
 	return b.String()

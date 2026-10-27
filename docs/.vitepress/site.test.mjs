@@ -76,17 +76,17 @@ test('the homepage renders the interactive journey and channel boundary', async 
 
 test('Test is canonical while compatibility and current runtime limits stay explicit', async () => {
   const runtimes = plainText(await readFile(path.join(dist, 'docs/runtime-adapters.html'), 'utf8'))
-  assert.match(runtimes, /profiles support root test,/)
+  assert.match(runtimes, /profiles support package test,/)
   assert.doesNotMatch(runtimes, /testuat/i)
   const reference = plainText(await readFile(path.join(dist, 'docs/kmx.html'), 'utf8'))
   for (const helper of ['cleanup', 'diff', 'explain', 'export', 'verify', 'from-sessions']) {
-    assert.ok(reference.includes(`kmx test ${helper}`), `canonical helper: ${helper}`)
+    assert.ok(reference.includes(`kmx package test ${helper}`), `canonical helper: ${helper}`)
   }
   const html = await readFile(path.join(dist, 'docs/kmx.html'), 'utf8')
   assert.ok(html.includes('id="test-compatibility-unreleased"'))
   for (const marker of [
     'v0.8.1 uses kmx eval', 'at least one released version',
-    'kmx eval is deprecated; use kmx test (same arguments).',
+    'kmx eval is deprecated; use kmx package test (same arguments).',
     'stdout', 'exit codes', 'state', 'evalTarget', 'evaluationTarget'
   ]) assert.ok(reference.includes(marker), `compatibility boundary: ${marker}`)
   for (const page of ['index.html', 'docs/getting-started.html', 'docs/workflow-overview.html']) {
@@ -104,10 +104,10 @@ test('Test is canonical while compatibility and current runtime limits stay expl
     assert.match(text, /v0\.8\.1 uses kmx eval and kmx lift/, `${page}: both stable substitutions`)
   }
   const azure = plainText(await readFile(path.join(dist, 'docs/azure/cpu-model/index.html'), 'utf8')).replace(/\s+/g, ' ')
-  assert.match(azure, /kmx test cleanup[^.]*kmx eval cleanup/, 'Azure cleanup uses the stable helper spelling')
+  assert.match(azure, /kmx package test cleanup[^.]*kmx eval cleanup/, 'Azure cleanup uses the stable helper spelling')
   const workflow = plainText(await readFile(path.join(dist, 'docs/workflow-overview.html'), 'utf8'))
   assert.match(workflow, /kmx run --agent NAME --prompt TEXT[^\n]*live Agents[^\n]*neither is workspace-local execution/)
-  assert.match(workflow, /kmx push --workspace DIR --evaluation RECEIPT REF/)
+  assert.match(workflow, /kmx package push --workspace DIR --evaluation RECEIPT REF/)
 })
 
 test('native Windows documentation keeps the day-zero and release boundary narrow', async () => {
@@ -189,8 +189,22 @@ test('agent-file CI reports retain failure status and content-free summaries', a
     'content-free table',
     'Neither output creates automatic local history'
   ]) assert.ok(app.includes(marker), `CI report contract: ${marker}`)
-  assert.match(app, /--github-summary[^.]*unreleased on main/i)
-  assert.match(app, /v0\.9\.0 release candidates do not contain it/i)
+  assert.match(app, /CLI section follows current main, not the rc\.4 app walkthrough/)
+  assert.match(app, /1\s*A completed assertion failed/)
+  assert.match(app, /2\s*Could not run or decide/)
+  assert.doesNotMatch(app, /release candidates do not contain it/i)
+  const previewHtml = await readFile(path.join(dist, 'docs/local-preview.html'), 'utf8')
+  const preview = plainText(previewHtml).replace(/\s+/g, ' ')
+  for (const marker of [
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: This asserts literal GitHub Actions syntax.
+    'COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}',
+    'kmx test ./release-notes.agent.md --provider copilot -o json --github-summary',
+    'workflow-provided GITHUB_TOKEN is not a substitute',
+    'Exit 0 means pass, 1 means assertion failure, 2 means it could not run or decide'
+  ]) assert.ok(preview.includes(marker), `CI sign-in contract: ${marker}`)
+  assert.ok(previewHtml.includes('id="copilot-sign-in-in-ci"'))
+  const appHtml = await readFile(path.join(dist, 'docs/copilot-app.html'), 'utf8')
+  assert.match(appHtml, /href="\.\/local-preview(?:\.html)?#copilot-sign-in-in-ci"/)
 
   const reference = plainText(await readFile(path.join(dist, 'docs/kmx.html'), 'utf8')).replace(/\s+/g, ' ')
   for (const marker of [
@@ -210,16 +224,16 @@ test('the front doors lead with composed Deploy and its prerequisites', async ()
   const firstPanel = homepage.match(/<article[^>]*id="journey-panel-0"[\s\S]*?<\/article>/)?.[0]
   assert.ok(firstPanel, 'the default journey is rendered')
   const chooser = plainText(firstPanel)
-  assert.match(chooser, /kmx create[^\n]*kmx deploy --to NAME/)
+  assert.match(chooser, /kmx create[^\n]*kmx package deploy --to NAME/)
   for (const prerequisite of ['prepared runtime', 'inference', 'registry authentication', 'kmx.yaml', 'publishRepository', 'evaluationTarget']) {
     assert.ok(chooser.includes(prerequisite), `chooser prerequisite: ${prerequisite}`)
   }
   for (const page of ['index.html', 'docs/getting-started.html', 'docs/workflow-overview.html']) {
     const text = plainText(await readFile(path.join(dist, page), 'utf8'))
     const create = text.indexOf('kmx create ')
-    const lift = text.indexOf('kmx deploy --to ')
+    const lift = text.indexOf('kmx package deploy --to ')
     assert.ok(create >= 0 && lift > create, `${page}: create precedes composed Deploy`)
-    const quickstart = text.indexOf('kmx quickstart')
+    const quickstart = text.indexOf('kmx cluster quickstart')
     assert.ok(quickstart > lift, `${page}: composed path precedes quickstart`)
     const introduction = text.slice(0, lift)
     for (const prerequisite of ['prepared', 'inference', 'registry authentication', 'kmx.yaml', 'publishRepository', 'evaluationTarget']) {
@@ -248,6 +262,24 @@ test('active installation guidance pins the stable CLI without rewriting history
   assert.match(help, /Pin @v0\.8\.1 for a repeatable build/)
   const reference = plainText(await readFile(path.join(dist, 'docs/kmx.html'), 'utf8'))
   assert.match(reference, /historical v0\.5\.1 uses the/)
+})
+
+test('command groups do not rewrite stable or historical instructions', async () => {
+  const homepage = await readFile(path.join(dist, 'index.html'), 'utf8')
+  const section = homepage.slice(homepage.indexOf('<h2 id="try-it-locally"'))
+  const trial = plainText(section.match(/<pre[^>]*>[\s\S]*?<\/pre>/)?.[0] ?? '')
+  assert.match(trial, /brew install kaimahi-agents\/tap\/kmx\nkmx version\nkmx quickstart\n/)
+  assert.doesNotMatch(trial, /kmx cluster quickstart/)
+  assert.match(plainText(section), /unreleased main[^\n]*kmx cluster quickstart/)
+
+  const faq = plainText(await readFile(path.join(dist, 'docs/FAQ.html'), 'utf8'))
+  assert.match(faq, /Stable v0\.8\.1 uses kmx orka --help/)
+  assert.match(faq, /kmx cluster orka --help requires an unreleased main build/)
+  const reference = plainText(await readFile(path.join(dist, 'docs/kmx.html'), 'utf8'))
+  assert.match(reference, /Bare kmx package status refuses and names both usage routes/)
+  assert.doesNotMatch(reference, /Bare kmx status refuses and names both usage routes/)
+  const historical = plainText(await readFile(path.join(dist, 'docs/kmx-public-interface.html'), 'utf8'))
+  assert.match(historical, /Tagged v0\.4\.1 and earlier use kmx quickstart-wizard/)
 })
 
 test('checkout-only references point to source while guide links stay local', async () => {

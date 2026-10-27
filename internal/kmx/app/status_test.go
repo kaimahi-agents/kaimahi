@@ -38,7 +38,7 @@ const orkaStatusScript = `case "$*" in
 *"get providers"*) printf '%s' 'local=true ';;
 esac`
 
-// `kmx status` reports the runtime this repository installs, not unrelated
+// `kmx package status` reports the runtime this repository installs, not unrelated
 // cluster objects that would give a false impression of coverage.
 func TestStatusReportsTheOrkaRuntimeAndNotTheLegacyOne(t *testing.T) {
 	a, out, calls := statusFixture(t, orkaStatusScript)

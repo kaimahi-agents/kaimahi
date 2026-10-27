@@ -208,8 +208,8 @@ class WorkflowTests(unittest.TestCase):
             ("kmx run demo --runtime kagent --runtime-version v0.10.3", False),
             ("kmx bundle retire ./bundle --runtime kagent --runtime-version v0.10.3", False),
             ("kmx bundle verify receipt.json --runtime kagent --runtime-version v0.10.3", False),
-            ("kmx local up --step kagent", False),
-            ("kmx aks up --payload kagent", False),
+            ("kmx cluster up --step kagent", False),
+            ("kmx cluster aks up --payload kagent", False),
         ]
         with tempfile.TemporaryDirectory(prefix="kmx-ci-evaluation-guards-") as directory:
             root = pathlib.Path(directory)

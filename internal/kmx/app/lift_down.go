@@ -50,10 +50,10 @@ func (a *App) LiftDown(opt lift.Options) error {
   you created it for this.`, err)
 	}
 	if record.Subscription != acct.ID {
-		return fmt.Errorf("kmx aks down: the record was written against a different subscription than the CLI is signed in to. Refusing to delete anything (az account set --subscription ...)")
+		return fmt.Errorf("kmx cluster aks down: the record was written against a different subscription than the CLI is signed in to. Refusing to delete anything (az account set --subscription ...)")
 	}
 	if record.Branch != opt.Branch() {
-		return fmt.Errorf("kmx aks down: this infrastructure was recorded as %q and you asked for %q teardown. These have opposite rules, so the difference is refused rather than reconciled", record.Branch, opt.Branch())
+		return fmt.Errorf("kmx cluster aks down: this infrastructure was recorded as %q and you asked for %q teardown. These have opposite rules, so the difference is refused rather than reconciled", record.Branch, opt.Branch())
 	}
 
 	if record.Branch == lift.BringYourOwn {
@@ -110,9 +110,9 @@ func (a *App) liftDownCreated(opt lift.Options, record *lift.Record) error {
 	state, err := a.groupExists(opt.ResourceGroup)
 	switch {
 	case err != nil, state == lift.Unusable:
-		return fmt.Errorf("kmx aks down: the delete returned, but the resource group's state could not be re-checked — NOT claiming it is gone. If it is still there it is still billing:\n    az group exists --name %s", shellArg(opt.ResourceGroup))
+		return fmt.Errorf("kmx cluster aks down: the delete returned, but the resource group's state could not be re-checked — NOT claiming it is gone. If it is still there it is still billing:\n    az group exists --name %s", shellArg(opt.ResourceGroup))
 	case state == lift.Present:
-		return fmt.Errorf("kmx aks down: resource group %s still exists after the delete returned", opt.ResourceGroup)
+		return fmt.Errorf("kmx cluster aks down: resource group %s still exists after the delete returned", opt.ResourceGroup)
 	}
 	a.forgetLiftRecord(opt)
 	fmt.Fprintf(a.Err, "\nkmx aks down: resource group %s is gone (az group exists says false).\n"+
@@ -124,7 +124,7 @@ func (a *App) liftDownCreated(opt lift.Options, record *lift.Record) error {
 // does not own, and nothing else.
 func (a *App) liftDownBringYourOwn(opt lift.Options, record *lift.Record) error {
 	fmt.Fprintf(a.Err, `----------------------------------------------------------------
-  kmx aks down — on a cluster YOU created
+  kmx cluster aks down — on a cluster YOU created
 
   cluster %q and resource group %q are NOT deleted. They were
   not created here and they are not deleted here.
@@ -153,7 +153,7 @@ func (a *App) liftDownBringYourOwn(opt lift.Options, record *lift.Record) error 
 	// had already done the work. Neither is this command doing what it says.
 	// Removed first, the deletion is ours and is observable.
 	if err := a.removeInClusterObservability(record); err != nil {
-		return fmt.Errorf("kmx aks down: in-cluster cleanup is incomplete; the run record has been kept.\n  Retry: %s\n%w", a.liftCommand(opt, true), err)
+		return fmt.Errorf("kmx cluster aks down: in-cluster cleanup is incomplete; the run record has been kept.\n  Retry: %s\n%w", a.liftCommand(opt, true), err)
 	}
 
 	// Then the add-ons. They hold references to the workspaces, and a
@@ -334,7 +334,7 @@ func (a *App) removeRecorded(resources []lift.Resource) error {
 		return nil
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "kmx aks down: %d resource(s) were NOT removed, and they may still be billing.\n\n", len(left))
+	fmt.Fprintf(&b, "kmx cluster aks down: %d resource(s) were NOT removed, and they may still be billing.\n\n", len(left))
 	for _, rm := range left {
 		// PlanRemoval's diagnostic contains a raw command; quote its id here.
 		rm.Reason = strings.ReplaceAll(rm.Reason, "az resource show --ids "+rm.Resource.ID, "az resource show --ids "+shellArg(rm.Resource.ID))
@@ -359,14 +359,14 @@ func (a *App) confirmLiftDown(opt lift.Options) error {
 		if c == name {
 			return nil
 		}
-		return fmt.Errorf("kmx aks down: KAIMAHI_CONFIRM does not name this %s — refusing.\n%s", kind, proceed)
+		return fmt.Errorf("kmx cluster aks down: KAIMAHI_CONFIRM does not name this %s — refusing.\n%s", kind, proceed)
 	}
 	if a.Stdin == nil || !isTerminalFile(a.Stdin) {
-		return fmt.Errorf("kmx aks down: no TTY and no KAIMAHI_CONFIRM — refusing to act unattended on a cloud subscription.\n%s", proceed)
+		return fmt.Errorf("kmx cluster aks down: no TTY and no KAIMAHI_CONFIRM — refusing to act unattended on a cloud subscription.\n%s", proceed)
 	}
 	fmt.Fprintf(a.Err, "Type the %s name to confirm teardown (anything else aborts): ", kind)
 	if readTrimmedLine(a.Stdin) != name {
-		return errors.New("kmx aks down: not confirmed — nothing was deleted")
+		return errors.New("kmx cluster aks down: not confirmed — nothing was deleted")
 	}
 	return nil
 }

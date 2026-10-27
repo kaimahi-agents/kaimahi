@@ -50,7 +50,7 @@ func TestWorkspaceBarePushReadsSavedRepositoryAndTransportOnce(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(root, "kmx.yaml"), []byte(cfg), 0600); err != nil {
 				t.Fatal(err)
 			}
-			args := []string{"push", "--workspace", root, "--provenance=false"}
+			args := []string{"package", "push", "--workspace", root, "--provenance=false"}
 			if mode != "missing proof" {
 				args = append(args, "--unevaluated")
 			}
@@ -80,7 +80,7 @@ func TestWorkspacePushEvaluatedDefaultAndBareValidation(t *testing.T) {
 			t.Setenv("KMX_HOME", t.TempDir())
 			root, _ := suiteEvalSource(t)
 			layout := filepath.Join(t.TempDir(), "layout")
-			args := []string{"push", "--workspace", root, "--to-layout", layout, "agents:slide-v1"}
+			args := []string{"package", "push", "--workspace", root, "--to-layout", layout, "agents:slide-v1"}
 			want := "no completed passing evidence"
 			switch mode {
 			case "false opt-out":
@@ -95,7 +95,7 @@ func TestWorkspacePushEvaluatedDefaultAndBareValidation(t *testing.T) {
 				args = append(args, "--evaluation=")
 				want = "non-empty --evaluation"
 			case "bare missing repository":
-				args = []string{"push", "--workspace", root}
+				args = []string{"package", "push", "--workspace", root}
 				want = "publishRepository"
 			case "bare layout":
 				args = args[:len(args)-1]

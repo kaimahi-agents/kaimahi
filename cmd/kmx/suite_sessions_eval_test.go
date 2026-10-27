@@ -153,7 +153,7 @@ func TestSuiteSessionsCLIExplicitDevelopmentAndNoClusterConfiguration(t *testing
 	// Plan-only AgentSessions deploy from the evaluated package and evidence.
 	layout := filepath.Join(t.TempDir(), "layout")
 	diagnostics.Reset()
-	if err := execute([]string{"push", "--workspace", root, "--evaluation", filepath.Join(dir, "pass.json"), "--to-layout", layout, "suite:v1"}, deps); err != nil {
+	if err := execute([]string{"package", "push", "--workspace", root, "--evaluation", filepath.Join(dir, "pass.json"), "--to-layout", layout, "suite:v1"}, deps); err != nil {
 		t.Fatal(err)
 	}
 	digest := regexp.MustCompile(`sha256:[0-9a-f]{64}`).FindString(diagnostics.String() + out.String())
@@ -162,7 +162,7 @@ func TestSuiteSessionsCLIExplicitDevelopmentAndNoClusterConfiguration(t *testing
 	}
 	image := "registry.example.invalid/harnessnode@sha256:" + strings.Repeat("e", 64)
 	receiptV1 := writeSessionsEvidenceV1(t, filepath.Join(dir, "pass.json"))
-	deploy := []string{"deploy", "suite@" + digest, "--from-layout", layout, "--harness-image", image, "--bindings", binding, "--evidence", filepath.Join(dir, "pass.json")}
+	deploy := []string{"package", "deploy", "suite@" + digest, "--from-layout", layout, "--harness-image", image, "--bindings", binding, "--evidence", filepath.Join(dir, "pass.json")}
 	for _, tc := range []struct {
 		extra []string
 		want  string
@@ -186,11 +186,11 @@ func TestSuiteSessionsCLIExplicitDevelopmentAndNoClusterConfiguration(t *testing
 			t.Fatalf("deploy %v: %v, want %q", tc.extra, err, tc.want)
 		}
 	}
-	noBindings := []string{"deploy", "suite@" + digest, "--from-layout", layout, "--harness-image", image, "--evidence", filepath.Join(dir, "pass.json"), "--plan"}
+	noBindings := []string{"package", "deploy", "suite@" + digest, "--from-layout", layout, "--harness-image", image, "--evidence", filepath.Join(dir, "pass.json"), "--plan"}
 	if err := execute(noBindings, deps); err == nil || !strings.Contains(err.Error(), "requires --bindings FILE") {
 		t.Fatalf("deploy without bindings: %v", err)
 	}
-	noEvidence := []string{"deploy", "suite@" + digest, "--from-layout", layout, "--harness-image", image, "--bindings", binding, "--plan"}
+	noEvidence := []string{"package", "deploy", "suite@" + digest, "--from-layout", layout, "--harness-image", image, "--bindings", binding, "--plan"}
 	if err := execute(noEvidence, deps); err == nil || !strings.Contains(err.Error(), "explicit-reference deploy requires --evidence FILE") {
 		t.Fatalf("deploy without evidence: %v", err)
 	}
@@ -205,9 +205,9 @@ func TestSuiteSessionsCLIExplicitDevelopmentAndNoClusterConfiguration(t *testing
 		args []string
 		want string
 	}{
-		{[]string{"deploy", "--to", "prod", "--harness-image", image, "--plan"}, "workspace deploy refuses --harness-image"},
-		{[]string{"deploy", "--to", "prod", "--plan"}, "native Orka only"},
-		{[]string{"deploy", "--to", "prod"}, "native Orka only"},
+		{[]string{"package", "deploy", "--to", "prod", "--harness-image", image, "--plan"}, "workspace deploy refuses --harness-image"},
+		{[]string{"package", "deploy", "--to", "prod", "--plan"}, "native Orka only"},
+		{[]string{"package", "deploy", "--to", "prod"}, "native Orka only"},
 		{[]string{"lift", "--to", "prod", "--harness-image", image, "--plan"}, "workspace lift refuses --harness-image"},
 	} {
 		if err := execute(tc.args, deps); err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -247,7 +247,7 @@ func TestSuiteSessionsCLIExplicitDevelopmentAndNoClusterConfiguration(t *testing
 	deployPlan := out.String()
 	out.Reset()
 	diagnostics.Reset()
-	legacy := append([]string{"lift"}, deploy[1:]...)
+	legacy := append([]string{"lift"}, deploy[2:]...)
 	if err := execute(append(append([]string{}, legacy...), "--plan", "-o", "json"), deps); err != nil {
 		t.Fatal(err)
 	}
@@ -263,7 +263,7 @@ func TestSuiteSessionsCLIExplicitDevelopmentAndNoClusterConfiguration(t *testing
 	if *loads != 0 || calls.Load() != 1 {
 		t.Fatal("legacy AgentSessions lift plan loaded cluster configuration or reached the model")
 	}
-	for _, helper := range [][]string{{"eval", "--help"}, {"__complete", "eval", "--development-host", ""}, {"deploy", "--help"}, {"lift", "--help"}} {
+	for _, helper := range [][]string{{"eval", "--help"}, {"__complete", "eval", "--development-host", ""}, {"package", "deploy", "--help"}, {"lift", "--help"}} {
 		if err := execute(helper, deps); err != nil {
 			t.Fatal(err)
 		}
@@ -273,8 +273,7 @@ func TestSuiteSessionsCLIExplicitDevelopmentAndNoClusterConfiguration(t *testing
 	}
 	// Reuse the same real hermetic host/judge fixture for the canonical route;
 	// it must produce fresh complete proof with no compatibility notice.
-	canonical := append([]string{}, args...)
-	canonical[0] = "test"
+	canonical := append([]string{"package", "test"}, args[1:]...)
 	canonical[len(canonical)-1] = filepath.Join(dir, "test-pass.json")
 	out.Reset()
 	diagnostics.Reset()

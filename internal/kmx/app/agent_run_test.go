@@ -313,7 +313,7 @@ func TestRunAgentTimeoutReturnsPendingRecoveryWithoutRetry(t *testing.T) {
 	if f.taskCreates(t) != 1 || f.out.Len() != 0 {
 		t.Fatalf("creates=%d stdout=%q", f.taskCreates(t), f.out)
 	}
-	if !strings.Contains(err.Error(), "kmx task result ") || !strings.Contains(err.Error(), "--context kind-test --namespace orka-system --wait") {
+	if !strings.Contains(err.Error(), "kmx cluster task result ") || !strings.Contains(err.Error(), "--context kind-test --namespace orka-system --wait") {
 		t.Fatalf("recovery=%v", err)
 	}
 }
@@ -523,7 +523,7 @@ func TestRunAgentPromptFileStdin(t *testing.T) {
 func TestTaskRecoveryQuotesContext(t *testing.T) {
 	a := &App{Executable: "./bin with space/kmx"}
 	got := a.taskRecovery("safe-task", "kind-prod;echo-danger", "orka-system")
-	want := "'./bin with space/kmx' task result safe-task --context 'kind-prod;echo-danger' --namespace orka-system --wait 5m"
+	want := "'./bin with space/kmx' cluster task result safe-task --context 'kind-prod;echo-danger' --namespace orka-system --wait 5m"
 	if got != want {
 		t.Fatalf("recovery command = %q, want %q", got, want)
 	}

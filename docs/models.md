@@ -198,12 +198,12 @@ supported tools, per-turn limits and authentication boundaries.
 
 ## Swapping the local model
 
-A full `kmx local up` first probes the host's loopback Ollama API. It offers reuse
+A full `kmx cluster up` first probes the host's loopback Ollama API. It offers reuse
 only when `/api/tags` reports at least one installed model. Reuse is opt-in;
 KMX's bundled model remains the default. Redirected sessions,
-`kmx local up --step ...`, and an explicit `MODEL` never probe or prompt.
+`kmx cluster up --step ...`, and an explicit `MODEL` never probe or prompt.
 
-`kmx quickstart` never probes or prompts at all. It is deterministic and
+`kmx cluster quickstart` never probes or prompts at all. It is deterministic and
 non-interactive on purpose — there is no host-model picker on that path, so
 it always deploys the in-cluster Ollama and the bundled model, and the same
 command on the same machine produces the same fixed native suite source. It does
@@ -219,17 +219,17 @@ skips both the in-cluster Ollama deployment and model pull. Limit host Ollama's
 exposure to the container network rather than publishing its unauthenticated
 API to the LAN.
 
-`kmx local up` writes the verified route into the **Orka** `local` Provider
+`kmx cluster up` writes the verified route into the **Orka** `local` Provider
 (`defaultModel` and `baseURL` in `orka-system`), which is the only model
-configuration that run creates. `kmx local up --step orka` refuses to replace an
+configuration that run creates. `kmx cluster up --step orka` refuses to replace an
 existing `local` Provider whose endpoint differs; its error names an explicit
-`kmx orka install --model-url` command that **replaces the host route** if you
+`kmx cluster orka install --model-url` command that **replaces the host route** if you
 choose to run it. Quickstart does not require that replacement. The follow-up
-commands printed after `kmx local up` carry no explicit host endpoint — the Provider
+commands printed after `kmx cluster up` carry no explicit host endpoint — the Provider
 holds it.
 
-`MODEL=<tag> kmx local up --step model` pulls another Ollama model into the pod; a
-full `kmx local up` then resolves that model through the Orka Provider it wires. Test
+`MODEL=<tag> kmx cluster up --step model` pulls another Ollama model into the pod; a
+full `kmx cluster up` then resolves that model through the Orka Provider it wires. Test
 it with several fresh chats before trusting it: small models misfire a
 runtime's built-in question tool, and small models that call a tool correctly
 can still garble its output in the summary

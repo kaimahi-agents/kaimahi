@@ -45,7 +45,7 @@ func TestSuitePushImagePlatformValidationBeforeArchiveIO(t *testing.T) {
 		t.Run(tc.platform, func(t *testing.T) {
 			var out, diagnostics bytes.Buffer
 			deps, loads := testDependencies(&out, &diagnostics)
-			err := execute([]string{"suite", "push-image", archive, "registry.example.com/image:v1", "--platform", tc.platform}, deps)
+			err := execute([]string{"package", "push-image", archive, "registry.example.com/image:v1", "--platform", tc.platform}, deps)
 			if tc.valid {
 				var pathErr *os.PathError
 				if !errors.Is(err, fs.ErrNotExist) || !errors.As(err, &pathErr) || pathErr.Path != archive {
@@ -96,7 +96,7 @@ func TestSuitePushImageTagPolicyAndOfflineConfiguration(t *testing.T) {
 			}))
 			defer server.Close()
 			ref := strings.TrimPrefix(server.URL, "http://") + "/image:v1"
-			args := []string{"suite", "push-image", file, ref, "--plain-http"}
+			args := []string{"package", "push-image", file, ref, "--plain-http"}
 			if tc.force {
 				args = append(args, "--force")
 			}
@@ -124,14 +124,14 @@ func TestSuitePushImageTagPolicyAndOfflineConfiguration(t *testing.T) {
 func TestSuiteDiffIsRemovedBeforeConfiguration(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
-	err := execute([]string{"suite", "diff", "missing-before", "missing-after"}, deps)
+	err := execute([]string{"package", "suite", "diff", "missing-before", "missing-after"}, deps)
 	if err == nil || !strings.Contains(err.Error(), `unknown command "diff"`) {
 		t.Fatalf("removed command error = %v", err)
 	}
 	if *loads != 0 || out.Len() != 0 {
 		t.Fatalf("removed command loaded config or wrote stdout: loads=%d stdout=%q", *loads, out.String())
 	}
-	for _, args := range [][]string{{"suite", "--help"}, {"__complete", "suite", ""}} {
+	for _, args := range [][]string{{"package", "suite", "--help"}, {"__complete", "package", "suite", ""}} {
 		out.Reset()
 		diagnostics.Reset()
 		if err := execute(args, deps); err != nil {
@@ -155,8 +155,8 @@ func TestSuiteValidateMinimalLayout(t *testing.T) {
 		args []string
 		json bool
 	}{
-		{name: "text", args: []string{"suite", "validate", fixture}},
-		{name: "json", args: []string{"suite", "validate", fixture, "--output", "json"}, json: true},
+		{name: "text", args: []string{"package", "validate", fixture}},
+		{name: "json", args: []string{"package", "validate", fixture, "--output", "json"}, json: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out, diagnostics bytes.Buffer
@@ -213,8 +213,7 @@ func TestSuiteBuildUsesAgentKitBackend(t *testing.T) {
 			}, err
 		})
 	}
-	if err := execute([]string{
-		"suite", "build", fixture,
+	if err := execute([]string{"package", "build", fixture,
 		"--model-base-url", "https://models.example/v1",
 		"--model-api-key-env", "AZURE_OPENAI_API_KEY",
 		"--verbose",
@@ -257,8 +256,7 @@ func TestSuiteBuildRejectsInvalidModelKeyEnvBeforeBuilderOrFiles(t *testing.T) {
 			}
 			// Missing input and output parent prove validation precedes suite reads
 			// and staging, not just that a failed build removes its staged file.
-			args := []string{
-				"suite", "build", filepath.Join(root, "missing-suite"),
+			args := []string{"package", "build", filepath.Join(root, "missing-suite"),
 				"--model-base-url", "https://models.example/v1",
 				"--model-api-key-env", invalid,
 				"--output", filepath.Join(root, "missing-output-parent", "writer.oci.tar"),
@@ -302,8 +300,7 @@ func TestSuiteBuildShowsBuilderWarningsWithoutVerbose(t *testing.T) {
 			}, err
 		})
 	}
-	if err := execute([]string{
-		"suite", "build", fixture,
+	if err := execute([]string{"package", "build", fixture,
 		"--model-base-url", "https://models.example/v1",
 		"--output", output,
 	}, deps); err != nil {
@@ -325,8 +322,7 @@ func TestSuitePushMinimalDirectory(t *testing.T) {
 
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
-	if err := execute([]string{
-		"suite", "push", fixture,
+	if err := execute([]string{"package", "suite", "push", fixture,
 		"--to-layout", firstOutput,
 		"agentsuites/minimal:v1",
 	}, deps); err != nil {
@@ -350,8 +346,7 @@ func TestSuitePushMinimalDirectory(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := execute([]string{
-		"suite", "push", fixture,
+	if err := execute([]string{"package", "suite", "push", fixture,
 		"--to-layout", secondOutput,
 		"agentsuites/minimal:v1",
 	}, deps); err != nil {
@@ -373,8 +368,7 @@ func TestSuitePushAddsReferencesToExistingLayout(t *testing.T) {
 	deps, _ := testDependencies(&out, &diagnostics)
 	for i, reference := range []string{"agentsuites/alpha:v1", "agentsuites/beta:v1"} {
 		out.Reset()
-		if err := execute([]string{
-			"suite", "push", fixture,
+		if err := execute([]string{"package", "suite", "push", fixture,
 			"--to-layout", target,
 			reference,
 		}, deps); err != nil {
@@ -410,8 +404,7 @@ func TestSuitePushRefusesNestedTarget(t *testing.T) {
 	target := filepath.Join(fixture, "layout")
 	var out, diagnostics bytes.Buffer
 	deps, _ := testDependencies(&out, &diagnostics)
-	if err := execute([]string{
-		"suite", "push", fixture,
+	if err := execute([]string{"package", "suite", "push", fixture,
 		"--to-layout", target,
 		"agentsuites/minimal:v1",
 	}, deps); err == nil {
@@ -427,8 +420,7 @@ func TestSuitePushFailureLeavesNoNewTarget(t *testing.T) {
 	target := filepath.Join(t.TempDir(), "layout")
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
-	if err := execute([]string{
-		"suite", "push", source,
+	if err := execute([]string{"package", "suite", "push", source,
 		"--to-layout", target,
 		"agentsuites/invalid:v1",
 	}, deps); err == nil {
@@ -449,8 +441,7 @@ func TestSuitePullExtractsDirectory(t *testing.T) {
 	reference := "agentsuites/minimal:v1"
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
-	if err := execute([]string{
-		"suite", "push", fixture,
+	if err := execute([]string{"package", "suite", "push", fixture,
 		"--to-layout", layout,
 		reference,
 	}, deps); err != nil {
@@ -458,8 +449,7 @@ func TestSuitePullExtractsDirectory(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := execute([]string{
-		"suite", "pull", reference,
+	if err := execute([]string{"package", "pull", reference,
 		"--from-layout", layout,
 		"--output", output,
 	}, deps); err != nil {
@@ -494,12 +484,12 @@ func TestSuiteTransferHelpCoversLayoutsAndRegistries(t *testing.T) {
 		example string
 	}{
 		{
-			args:    []string{"suite", "push", "--help"},
-			example: "kmx suite push ./suite registry.example.com/team:v1",
+			args:    []string{"package", "suite", "push", "--help"},
+			example: "kmx package suite push ./suite registry.example.com/team:v1",
 		},
 		{
-			args:    []string{"suite", "pull", "--help"},
-			example: "kmx suite pull registry.example.com/team:v1 --output ./suite",
+			args:    []string{"package", "pull", "--help"},
+			example: "kmx package pull registry.example.com/team:v1 --output ./suite",
 		},
 	} {
 		var out, diagnostics bytes.Buffer
@@ -566,35 +556,35 @@ func TestSuiteTransferRejectsInvalidLayoutFlags(t *testing.T) {
 		want string
 	}{
 		{
-			[]string{"suite", "push", t.TempDir(), "--to-layout", filepath.Join(t.TempDir(), "layout"), "--plain-http", "suite:v1"},
+			[]string{"package", "suite", "push", t.TempDir(), "--to-layout", filepath.Join(t.TempDir(), "layout"), "--plain-http", "suite:v1"},
 			"--plain-http cannot be used with --to-layout",
 		},
 		{
-			[]string{"suite", "pull", "suite:v1", "--from-layout", t.TempDir(), "--plain-http", "--output", filepath.Join(t.TempDir(), "suite")},
+			[]string{"package", "pull", "suite:v1", "--from-layout", t.TempDir(), "--plain-http", "--output", filepath.Join(t.TempDir(), "suite")},
 			"--plain-http cannot be used with --from-layout",
 		},
 		{
-			[]string{"suite", "push", t.TempDir(), "--to-layout", filepath.Join(t.TempDir(), "layout"), "--force", "suite:v1"},
+			[]string{"package", "suite", "push", t.TempDir(), "--to-layout", filepath.Join(t.TempDir(), "layout"), "--force", "suite:v1"},
 			"--force cannot be used with --to-layout",
 		},
 		{
-			[]string{"suite", "push", t.TempDir(), "--to-layout", filepath.Join(t.TempDir(), "layout"), "--provenance=false", "suite:v1"},
+			[]string{"package", "suite", "push", t.TempDir(), "--to-layout", filepath.Join(t.TempDir(), "layout"), "--provenance=false", "suite:v1"},
 			"--provenance and --require-provenance cannot be used with --to-layout",
 		},
 		{
-			[]string{"suite", "push", t.TempDir(), "--to-layout", filepath.Join(t.TempDir(), "layout"), "--require-provenance", "suite:v1"},
+			[]string{"package", "suite", "push", t.TempDir(), "--to-layout", filepath.Join(t.TempDir(), "layout"), "--require-provenance", "suite:v1"},
 			"--provenance and --require-provenance cannot be used with --to-layout",
 		},
 		{
-			[]string{"suite", "push", t.TempDir(), "--provenance=false", "--require-provenance", "registry.example.com/team:v1"},
+			[]string{"package", "suite", "push", t.TempDir(), "--provenance=false", "--require-provenance", "registry.example.com/team:v1"},
 			"--require-provenance cannot be used with --provenance=false",
 		},
 		{
-			[]string{"suite", "push", t.TempDir(), "--to-layout=", "registry.example.com/team:v1"},
+			[]string{"package", "suite", "push", t.TempDir(), "--to-layout=", "registry.example.com/team:v1"},
 			"--to-layout cannot be empty",
 		},
 		{
-			[]string{"suite", "pull", "registry.example.com/team:v1", "--from-layout=", "--output", filepath.Join(t.TempDir(), "suite")},
+			[]string{"package", "pull", "registry.example.com/team:v1", "--from-layout=", "--output", filepath.Join(t.TempDir(), "suite")},
 			"--from-layout cannot be empty",
 		},
 	} {

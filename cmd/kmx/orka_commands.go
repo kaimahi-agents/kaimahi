@@ -14,11 +14,11 @@ import (
 // and an interface over one implementation is the most expensive kind. When
 // a second one earns the abstraction it can have it.
 //
-// It is a separate command from `kmx local up` rather than the only way to get
+// It is a separate command from `kmx cluster up` rather than the only way to get
 // Orka. `up` installs the pinned release as its own runtime step, on the
 // cluster it just created; this group is how the same install reaches a
 // cluster kmx did not bring up, and how that install is inspected. What it
-// does NOT carry is the runtime identity: `kmx local up --step orka` provisions the
+// does NOT carry is the runtime identity: `kmx cluster up --step orka` provisions the
 // Task result account, and a standalone install deliberately does not, so
 // installing somebody else's platform — 17 CRDs, four
 // ValidatingAdmissionPolicies and two Deployments — never mints a grant as a

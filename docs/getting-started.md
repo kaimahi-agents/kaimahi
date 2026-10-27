@@ -1,8 +1,8 @@
 # Getting started
 
 **Run / Test / Publish** are the developer operations: Run invokes an existing
-live Orka Agent, Test checks workspace cases with `kmx test`, and Publish transfers
-the package with `kmx push`. Run is not workspace-local execution.
+live Orka Agent, Test checks workspace cases with `kmx package test`, and Publish transfers
+the package with `kmx package push`. Run is not workspace-local execution.
 
 Install kmx, then create and Deploy an agent of your own with two commands.
 Deploy composes missing evaluation, publication and placement on real targets;
@@ -35,11 +35,11 @@ kmx version
 ```
 
 Put Go's binary directory on PATH. Inspect the effective context with
-`kmx context show` or select one with `kmx context use <context>`.
+`kmx cluster context show` or select one with `kmx cluster context use <context>`.
 See [release upgrades](releases.md#upgrading-kmx) when moving from an older version,
 and [command alignment](command-semantics.md) for compatibility and retirement details.
 The root `create/chat/run/push` commands below are available in v0.8.1.
-`kmx test` and `kmx deploy` are unreleased; v0.8.1 uses `eval` and `lift` with
+`kmx package test` and `kmx package deploy` are unreleased; v0.8.1 uses `eval` and `lift` with
 the same arguments. Use a main checkout build for the `test`/`deploy` examples
 below, or `eval`/`lift` with v0.8.1. See
 [Test compatibility](kmx.md#test-compatibility-unreleased) and
@@ -75,7 +75,7 @@ From that workspace root, provide an exact model name and an instructions file:
 ```bash
 kmx create my-agent --workspace . \
   --model qwen2.5:3b --instructions ./instructions.md
-kmx deploy --to prod
+kmx package deploy --to prod
 ```
 
 Create authors one tool-free workspace member offline. Deploy freezes the exact
@@ -96,7 +96,7 @@ See [workspace authoring, evaluation, publication and digest Deploy](suite-works
 For manual stages, packaged workspace evaluation is implemented for native Orka
 with `--inference` and exact-v0.10.3 Go kagent with `--bindings`; matching
 full-passing evidence can authorize evaluated push. Standalone package evaluation
-remains unavailable; explicit-reference `kmx deploy REF@sha256:DIGEST` instead
+remains unavailable; explicit-reference `kmx package deploy REF@sha256:DIGEST` instead
 deploys an exact registry or local-layout native package using a separate matching
 private evidence file and explicit target. Orka uses a Ready `openai` inference
 Provider; its public evaluation produces candidate evidence, so manual reference
@@ -128,7 +128,7 @@ Choose a local cluster name you own and pin its context:
 ```bash
 export KIND_CLUSTER=kmx-local
 export KUBE_CTX=kind-kmx-local
-kmx quickstart
+kmx cluster quickstart
 ```
 
 On a fresh cluster this creates kind, keyless Ollama, the pinned **Orka v0.2.0
@@ -140,7 +140,7 @@ The local model defaults to `qwen2.5:3b`; `MODEL` can override it.
 On an uncached first run, the default model downloads roughly **1.9GB**.
 Startup and first-answer latency depend on your network and host hardware.
 
-New local kind nodes created by `kmx quickstart` or `kmx local up` use a **5s
+New local kind nodes created by `kmx cluster quickstart` or `kmx cluster up` use a **5s
 kubelet sync frequency** with either Docker or Podman. This default is intended
 to reduce waits for Orka's webhook Secret file projection; it does not fix
 Orka's upstream coupling to projection. The shorter node-wide cadence means
@@ -156,7 +156,7 @@ For model selection and custom authoring, use the wizard below.
 Optional machine-readable output also runs a new Task:
 
 ```bash
-kmx quickstart --output json --task 'Who are you?'
+kmx cluster quickstart --output json --task 'Who are you?'
 ```
 
 JSON stdout is one document; subprocess/progress output goes to stderr.
@@ -164,29 +164,29 @@ See [output contracts](kmx.md#output-contracts).
 
 ## Guided native authoring
 
-`kmx quickstart --interactive` guides native source/case review, full eval,
+`kmx cluster quickstart --interactive` guides native source/case review, full eval,
 publication and reviewed Deploy before a separate fresh answer Task. Console
 creation selects authored native source; Ready there is placement only.
 
 Automatic tools and host Foundry/Copilot wizard modes are retired; ordinary
 host-backed chat controls stay independent. Chat `/lift` and console Deploy only
-print `Deploy moved: kmx deploy <ref>@<digest> --to-context … --evidence …`.
+print `Deploy moved: kmx package deploy <ref>@<digest> --to-context … --evidence …`.
 Use [digest Deploy](suite-workspace.md#digest-lift) with exact package/private evidence
 and explicit target/bindings, not a release GUI/live-copy fallback. Cancellation
 can leave completed resources in place.
 
 ### The whole runtime
 
-To prepare the runtime without creating an Agent, use `kmx local up` instead of quickstart:
+To prepare the runtime without creating an Agent, use `kmx cluster up` instead of quickstart:
 
 ```bash
-kmx local up
-kmx orka status
+kmx cluster up
+kmx cluster orka status
 # For an existing live Agent, including one placed by Deploy:
 kmx chat --namespace orka-system <agent-name>
 ```
 
-`kmx local up` brings up kind, keyless Ollama with the configured `MODEL`, and pinned
+`kmx cluster up` brings up kind, keyless Ollama with the configured `MODEL`, and pinned
 Orka with its Provider and Task result-reader account. It deploys **no Agent**.
 Orka chat is a session; a message after the name is its first turn, not a one-shot.
 
@@ -213,7 +213,7 @@ does not repoint existing tools. Interactive `/help` lists local controls.
 ```bash
 kmx --container-engine podman quickstart
 # Equivalently for automation:
-CONTAINER_ENGINE=podman kmx quickstart
+CONTAINER_ENGINE=podman kmx cluster quickstart
 ```
 
 The flag overrides `CONTAINER_ENGINE`. Keep the same engine for **every** operation:
@@ -230,10 +230,10 @@ nodes and checks API/DNS. kmx supplies `KIND_EXPERIMENTAL_PROVIDER=podman` autom
 - The default local model is small and tool-capable, not a guarantee of reliable
   prose. Validate actual tool payloads; [FAQ](FAQ.md) covers small-model failures.
 - Ollama models are in `emptyDir`; a pod restart requires another model pull.
-- `kmx local down` deletes the **whole local cluster
+- `kmx cluster down` deletes the **whole local cluster
   and its data**, including any historical database. Export needed data first;
   see [Orka backup cautions](orka.md#preserve-the-charts-generated-snapshot-key).
-  For AKS use [`kmx aks down`](aks.md#teardown), not kind down. Azure resources can
+  For AKS use [`kmx cluster aks down`](aks.md#teardown), not kind down. Azure resources can
   remain billable after a failed operation; verify cleanup rather than assuming cancellation deleted them.
 
 Next: [CLI reference](kmx.md), [models and endpoints](models.md),

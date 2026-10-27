@@ -64,7 +64,7 @@ exclusive hard link, not history or replacement. The private receipt-file push
 consumer parses before cache writes, compares exact S, and validates packaged
 subject/render/inventory coherence before provenance or transfer. Source
 fingerprint is authored spelling, not a durable publication lock. These unsigned
-observations prove neither authenticity nor cross-object atomicity. Root `test`
+observations prove neither authenticity nor cross-object atomicity. `package test`
 prepares workspace/inventory/export offline before configuration, then consents
 once to native pair placement and all ordered one-shot Tasks. Public Orka eval
 also covers bounded UID/RV cleanup and verified owner-UID child closure before
@@ -312,18 +312,18 @@ Keep existing CI budgets.
 make
 export KIND_CLUSTER=dev-local
 export KUBE_CTX=kind-dev-local
-bin/kmx quickstart
-bin/kmx orka status
+bin/kmx cluster quickstart
+bin/kmx cluster orka status
 # Quickstart verifies placement before its separate fresh answer Task.
-bin/kmx local down
+bin/kmx cluster down
 ```
 
-A bare `bin/kmx local up` installs the runtime without an Agent: kind, Ollama, the
+A bare `bin/kmx cluster up` installs the runtime without an Agent: kind, Ollama, the
 model and pinned Orka with its keyless `local` Provider. Author source with
 `bin/kmx create NAME --workspace DIR --model MODEL --instructions FILE`, then
 full eval, evaluated push and digest Deploy with private evidence; or use guided
-`bin/kmx quickstart --interactive`. `orka status` is table-only runtime state;
-root `status --to NAME` independently observes destination Agent placement and
+`bin/kmx cluster quickstart --interactive`. `orka status` is table-only runtime state;
+`package status --to NAME` independently observes destination Agent placement and
 unsigned Deploy provenance with GETs only. It does not read suite member content,
 private history or Secrets, and does not imply retirement.
 
@@ -334,7 +334,7 @@ all bundle lifecycle/readers/receipts are removed.
 
 Pick a distinct cluster name and explicit context. Keep
 `CONTAINER_ENGINE=podman` consistent if selected; Docker and Podman inventories
-are separate. `kmx local down` destroys all data in the named local cluster,
+are separate. `kmx cluster down` destroys all data in the named local cluster,
 including any historical database still present; export needed data first.
 Cloud cleanup has different [ownership rules](aks.md#teardown).
 
@@ -498,7 +498,7 @@ containerd debug logging for the endpoint report.
 Compound quickstart and clone-free journeys use a CI-only Docker-named symlink
 wrapper. It forwards Docker calls unchanged, then hooks a successful kind-node
 creation identified by reserved kind cluster and node-role labels, configuring
-hosts and debug logging before kind returns. This keeps full `kmx local up`
+hosts and debug logging before kind returns. This keeps full `kmx cluster up`
 and fetched-kind proof intact without changing KMX or kind. Clone-free CI
 fetches only this helper at the workflow SHA into `RUNNER_TEMP`; it does not check out the repository.
 
@@ -587,6 +587,6 @@ signal ownership, or detach work from cancellation.
   PEP 604 annotations. Ignore rules such as `bin/` match at every depth; verify
   tracked membership and beware newly unignored files entering `stash -u`.
 
-Use `kmx orka status`, Agent/Provider/Task conditions and
+Use `kmx cluster orka status`, Agent/Provider/Task conditions and
 context-pinned controller logs. Never paste live infrastructure IDs into
 evidence: scan shapes and manually redact names too.

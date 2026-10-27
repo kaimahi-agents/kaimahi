@@ -147,7 +147,7 @@ jobs:
           $status = $LASTEXITCODE
           $output | Write-Output
           if ($status -ne 0) { exit $status }
-          if ($output -match '--- SKIP:') { throw 'a selected cmd/kmx test skipped' }
+          if ($output -match '--- SKIP:') { throw 'a selected cmd/kmx package test skipped' }
           foreach ($test in $tests) {
             if (-not ($output -match ("--- PASS: " + [regex]::Escape($test) + " \("))) { throw "$test did not pass" }
           }
@@ -575,7 +575,7 @@ jobs:
       # ever exercise the one branch it runs on (local kind). These tests
       # build their own kubeconfig, so all of them are covered keyless in
       # seconds: local kind proceeds, an unwritten kind context proceeds
-      # (that is `kmx local up` on an empty machine), and a typo, a kind-NAMED
+      # (that is `kmx cluster up` on an empty machine), and a typo, a kind-NAMED
       # remote, a remote with no confirmation, and a confirmation naming a
       # different context are all refused.
       - name: Context guard fails closed
@@ -615,14 +615,14 @@ jobs:
           # Keep this list explicit so rewriting a shard cannot silently
           # remove it from the guard.
           converted = ["e2e-quickstart"]
-          # A bare `kmx local up` installs Orka. Bounded exact-v0.10.2 create and
+          # A bare `kmx cluster up` installs Orka. Bounded exact-v0.10.2 create and
           # exact-v0.10.3 Go bundle lift/status/evaluate do not let these converted
           # Orka shards install the alternate runtime or use unsupported verbs.
           # API-group text is not globally forbidden; these controls name
           # unsupported operations, not runtime-version qualification.
           forbidden = [
               (re.compile(r"\b(?:bundle\s+(?:lift|status|evaluate|retire|verify)|create\s+--live)\b"), "a removed bundle or live-create operation"),
-              (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+(?:local\s+)?up\s+--step(?:=|\s+)(?:kagent|agent|tools-agent)\b"),
+              (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+(?:(?:local|cluster)\s+)?up\s+--step(?:=|\s+)(?:kagent|agent|tools-agent)\b"),
                "an explicit legacy step installs the legacy runtime or its demo agents"),
               (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+govern\b"),
                "the legacy governance command repoints a legacy Agent"),
@@ -630,7 +630,7 @@ jobs:
                "the retired preset switch selects the legacy runtime"),
               (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+agent\s+edit\b"),
                "the retired source editor edits a legacy Agent"),
-              (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+(?:chat|run|orka\s+(?:list|show)|bundle\s+(?:verify|retire)|bundle\s+evaluate\b(?![^;\n]*--runtime-version(?:=|\s+)v0\.10\.3(?:\s|$))|agent\s+(?:chat|list|show|evaluate)|console|quickstart(?:-wizard)?|status)\b[^\n]*--runtime(?:=|\s+)kagent\b"),
+              (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+(?:chat|run|(?:cluster\s+)?orka\s+(?:list|show)|bundle\s+(?:verify|retire)|bundle\s+evaluate\b(?![^;\n]*--runtime-version(?:=|\s+)v0\.10\.3(?:\s|$))|agent\s+(?:chat|list|show|evaluate)|(?:cluster\s+)?console|(?:cluster\s+)?quickstart(?:-wizard)?|(?:package\s+)?status)\b[^\n]*--runtime(?:=|\s+)kagent\b"),
                "an unsupported command aimed at the alternate runtime"),
               (re.compile(r"--payload(?:=|\s+)kagent\b"), "the retired alternate-runtime AKS payload"),
               (re.compile(r"\bKAGENT_VERSION\b|kagent-(?:values|tool-server|tools|shim|cli)\b|\bkagent(?:cli|compat)\b"),
@@ -649,22 +649,22 @@ jobs:
               "kmx agent chat --runtime kagent hello-world",
               "kmx agent list --runtime=kagent",
               "kmx chat --runtime kagent hello-world",
-              "kmx orka list --runtime=kagent",
+              "kmx cluster orka list --runtime=kagent",
               "kmx bundle evaluate ./bundle --runtime kagent",
               "kmx bundle evaluate ./bundle --runtime kagent --runtime-version v0.10.2",
               "kmx bundle evaluate ./bundle --runtime kagent --runtime-version v0.10.3-other",
               "kmx agent evaluate ./bundle --runtime kagent --runtime-version v0.10.3",
               "kmx chat demo --runtime kagent --runtime-version v0.10.3",
               "kmx bundle retire ./bundle --runtime kagent --runtime-version v0.10.3",
-              "kmx aks up --payload kagent",
+              "kmx cluster aks up --payload kagent",
               "KAGENT_VERSION=0.10.2",
               "helm install -f kagent-values.yaml kagent",
           ]
           must_not_match = [
               "kmx chat --namespace orka-system hello-world-agent",
               "kmx chat --runtime orka hello-world-agent",
-              "kmx orka list --namespace orka-system",
-              "kmx local up",
+              "kmx cluster orka list --namespace orka-system",
+              "kmx cluster up",
               "kmx --context kind-x local up",
               "kmx run demo --namespace orka-system",
               "kubectl get ns kagent",
@@ -703,7 +703,7 @@ jobs:
           EOF
       # `kmx-clone-free` is the only proof that the published binary works
       # with no checkout anywhere, so it must set up the way a reader is told
-      # to: a BARE `kmx local up`, which is the Orka runtime and which provisions
+      # to: a BARE `kmx cluster up`, which is the Orka runtime and which provisions
       # the `orka-result-reader` account its Task proof reads a result
       # through. An `orka install` step or a hand-made ServiceAccount beside
       # it would make that proof a statement about the job's own fixture
@@ -711,7 +711,7 @@ jobs:
       #
       # Reject explicit legacy install steps and retired commands: the
       # clone-free journey must remain an Orka-only setup.
-      - name: The clone-free journey sets up with a bare `kmx local up`, and runs no retired command
+      - name: The clone-free journey sets up with a bare `kmx cluster up`, and runs no retired command
         run: |
           python3 - <<'EOF'
           import re, sys, yaml
@@ -725,26 +725,26 @@ jobs:
           bodies = [commands(s) for s in wf["jobs"]["kmx-clone-free"]["steps"]]
           joined = "\n".join(bodies)
           problems = []
-          if not any(re.search(r"^\s*kmx local up\s*$", b, re.M) for b in bodies):
-              problems.append("no bare `kmx local up`: the job must set the runtime up the way the docs say to")
-          # A separate Orka install would bypass the bare `kmx local up` proof.
-          if re.search(r"kmx (?:--\S+[ =]\S+ )*orka install\b", joined):
-              problems.append("a standalone `orka install`: the bare `kmx local up` already installs Orka")
+          if not any(re.search(r"^\s*kmx cluster up\s*$", b, re.M) for b in bodies):
+              problems.append("no bare `kmx cluster up`: the job must set the runtime up the way the docs say to")
+          # A separate Orka install would bypass the bare `kmx cluster up` proof.
+          if re.search(r"kmx (?:--\S+[ =]\S+ )*(?:cluster )?orka install\b", joined):
+              problems.append("a standalone `orka install`: the bare `kmx cluster up` already installs Orka")
           if "create serviceaccount orka-result-reader" in joined:
-              problems.append("the result account is made by hand: `kmx local up --step orka` provisions it")
+              problems.append("the result account is made by hand: `kmx cluster up --step orka` provisions it")
           proof = [r"(?s)^Orka says hello[.]\n*$", 'receipt["candidateCleanup"] == "complete"',
                    "kubectl --context kind-kmx-clone-free -n orka-system get tasks.core.orka.ai",
                    "--ignore-not-found", 'test -z "$remaining"', "--promote"]
-          if "kmx test --workspace" not in joined or any(part not in joined for part in proof):
+          if "kmx package test --workspace" not in joined or any(part not in joined for part in proof):
               problems.append("no exact authored evaluation, complete cleanup, independent Task absence and explicit promotion proof")
           logical = joined.replace("\\\n", " ")
-          if not re.search(r"^\s*kmx deploy [^\n]*--promote(?:\s|$)", logical, re.M):
+          if not re.search(r"^\s*kmx package deploy [^\n]*--promote(?:\s|$)", logical, re.M):
               problems.append("the source-only evidence promotion flag must belong to Deploy")
           if "type: regex" not in joined or "> workspace/eval/example.yaml" not in joined:
               problems.append("the exact-answer regex must be authored before evaluation")
           if "task result" in joined:
               problems.append("a deleted candidate Task cannot supply a post-evaluation result")
-          eval_at, push_at, lift_at = [joined.find("kmx " + verb + " ") for verb in ("test", "push", "deploy")]
+          eval_at, push_at, lift_at = [joined.find("kmx " + verb + " ") for verb in ("package test", "package push", "package deploy")]
           if not (0 <= eval_at < joined.find('receipt["candidateCleanup"]') <
                   joined.find('test -z "$remaining"') < push_at < lift_at):
               problems.append("candidate cleanup/absence must be checked before push and explicit Deploy")
@@ -754,7 +754,7 @@ jobs:
           # or use its retired AKS payload.
           forbidden = [
                   (r"\b(?:bundle\s+(?:lift|status|evaluate|retire|verify)|create\s+--live)\b", "a removed bundle or live-create operation"),
-                  (r"kmx(?:\s+--\S+(?:=|\s+)\S+)*\s+(?:local\s+)?up\s+--step(?:=|\s+)(?:kagent|agent|tools-agent)",
+                  (r"kmx(?:\s+--\S+(?:=|\s+)\S+)*\s+(?:(?:local|cluster)\s+)?up\s+--step(?:=|\s+)(?:kagent|agent|tools-agent)",
                    "an explicit legacy install step"),
                   (r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+govern\b",
                    "the retired governance command"),
@@ -762,7 +762,7 @@ jobs:
                    "the retired preset switch"),
                    (r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+agent\s+edit\b",
                     "the retired source editor"),
-                   (r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+(?:chat|run|orka\s+(?:list|show)|bundle\s+(?:verify|retire)|bundle\s+evaluate\b(?![^;\n]*--runtime-version(?:=|\s+)v0\.10\.3(?:\s|$))|agent\s+(?:chat|list|show|evaluate)|console|quickstart(?:-wizard)?|status)\b[^\n]*--runtime(?:=|\s+)kagent\b",
+                   (r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+(?:chat|run|(?:cluster\s+)?orka\s+(?:list|show)|bundle\s+(?:verify|retire)|bundle\s+evaluate\b(?![^;\n]*--runtime-version(?:=|\s+)v0\.10\.3(?:\s|$))|agent\s+(?:chat|list|show|evaluate)|(?:cluster\s+)?console|(?:cluster\s+)?quickstart(?:-wizard)?|(?:package\s+)?status)\b[^\n]*--runtime(?:=|\s+)kagent\b",
                     "an unsupported command aimed at the alternate runtime"),
                    (r"--payload(?:=|\s+)kagent\b", "the retired alternate-runtime AKS payload"),
                    (r"\bKAGENT_VERSION\b|kagent-(?:values|tool-server|tools|shim|cli)\b|\bkagent(?:cli|compat)\b",
@@ -773,7 +773,7 @@ jobs:
           if problems:
               print("kmx-clone-free no longer proves the supported setup:", *problems, sep="\n  ")
               sys.exit(1)
-          print("kmx-clone-free: bare `kmx local up` for Orka, its result account unmade by hand, "
+          print("kmx-clone-free: bare `kmx cluster up` for Orka, its result account unmade by hand, "
                 "no retired command anywhere in the job")
           EOF
       # Nightly/manual qualification invokes the fixed full Orka worker.
@@ -1295,10 +1295,10 @@ jobs:
           # Full suite eval/lift precedes the separate fresh answer Task.
           grep -q 'Install Orka v' quickstart.out
           grep -q 'Deploy the hello-world-agent agent' quickstart.out
-      # `kmx local up` on the same cluster is the RUNTIME and nothing more: it
+      # `kmx cluster up` on the same cluster is the RUNTIME and nothing more: it
       # must reconcile Orka without deploying an agent, and without bringing
       # back a legacy runtime that no longer has a caller.
-      - name: kmx local up is the runtime, and deploys no agent
+      - name: kmx cluster up is the runtime, and deploys no agent
         if: steps.changes.outputs.docs_only != 'true'
         env:
           KIND_CLUSTER: kmx-quickstart
@@ -1307,11 +1307,11 @@ jobs:
           export PATH="$HOME/.local/bin:$PATH"
           k="$HOME/.config/kmx/path/kubectl"
           source_before=$("$k" --context kind-kmx-quickstart -n orka-system get providers.core.orka.ai local -o jsonpath='{.metadata.resourceVersion}')
-          kmx local up 2>&1 | tee up-after-quickstart.out
+          kmx cluster up 2>&1 | tee up-after-quickstart.out
           source_after=$("$k" --context kind-kmx-quickstart -n orka-system get providers.core.orka.ai local -o jsonpath='{.metadata.resourceVersion}')
           test "$source_before" = "$source_after"
           if grep -qi 'kagent' up-after-quickstart.out; then
-            echo "a bare kmx local up still names the legacy runtime:"
+            echo "a bare kmx cluster up still names the legacy runtime:"
             grep -i kagent up-after-quickstart.out; exit 1
           fi
           k="$HOME/.config/kmx/path/kubectl"
@@ -1362,7 +1362,7 @@ jobs:
           # Show what the run said if anything below fails: a step that hides
           # its own evidence costs a whole CI cycle to diagnose.
           trap 'echo "--- stderr ---"; tail -40 quickstart2.err; echo "--- stdout (first 400 bytes) ---"; head -c 400 quickstart.json' ERR
-          kmx quickstart --output json > quickstart.json 2> quickstart2.err
+          kmx cluster quickstart --output json > quickstart.json 2> quickstart2.err
           # stdout must be ONE json document and nothing else — the caller is
           # a parser, not a person.
           head -c 1 quickstart.json | grep -q '{'
@@ -1387,7 +1387,7 @@ jobs:
           assert [argv[:3] for argv in commands] == [["kmx", "--context", r["context"]]] * 3, commands
           assert commands[0][3:4] == ["chat"], commands
           assert commands[1][3:] == ["create", "--help"], commands
-          assert commands[2][3:] == ["orka", "status"], commands
+          assert commands[2][3:] == ["cluster", "orka", "status"], commands
           print("second run:", round(r["elapsed_seconds"], 1), "s ·", r["answer"][:80])
           EOF
       # Rerunning is how an agent in a harness uses this command. The third
@@ -1405,7 +1405,7 @@ jobs:
             agents.core.orka.ai hello-world-agent -o jsonpath='{.metadata.uid}')
           tasks_before=$("$k" --context kind-kmx-quickstart -n orka-system get \
             tasks.core.orka.ai -o name | wc -l)
-          kmx quickstart 2>&1 | tee quickstart3.out
+          kmx cluster quickstart 2>&1 | tee quickstart3.out
           grep -q 'Provider/hello-world-agent: reused; observed Ready=true' quickstart3.out
           grep -q 'Agent/hello-world-agent: reused; observed Ready=true' quickstart3.out
           grep -q 'COMPLETE  An agent answered' quickstart3.out
@@ -1430,7 +1430,7 @@ jobs:
             agents.core.orka.ai hello-world-agent --type merge \
             -p '{"spec":{"systemPrompt":{"inline":"edited by an operator"}}}'
           tasks_before=$("$k" --context kind-kmx-quickstart -n orka-system get tasks.core.orka.ai -o name | wc -l)
-          if kmx quickstart > drift.out 2>&1; then
+          if kmx cluster quickstart > drift.out 2>&1; then
             echo "a drifted Agent was overwritten instead of refused"; cat drift.out; exit 1
           fi
           grep -q 'native placement refused: Agent/hello-world-agent differs from the reviewed suite' drift.out
@@ -1467,7 +1467,7 @@ jobs:
         env:
           KIND_CLUSTER: kmx-quickstart
         run: |
-          "$HOME/.local/bin/kmx" --context kind-kmx-quickstart local down || true
+          "$HOME/.local/bin/kmx" --context kind-kmx-quickstart cluster down || true
           # Put back what was moved aside, so nothing after this job (or any
           # post step) meets a runner missing its own toolchain.
           for hidden in /usr/bin/*.kmx-ci-hidden /usr/local/bin/*.kmx-ci-hidden /usr/local/go/bin/*.kmx-ci-hidden; do
@@ -1771,7 +1771,7 @@ jobs:
           # above this directory, the published binary's embedded native
           # assets would no longer be the only setup inputs.
           test ! -e ./go.mod && test ! -e /home/runner/go.mod && test ! -e /home/runner/k8s
-      # The setup a reader is told to run, run verbatim: a bare `kmx local up` IS
+      # The setup a reader is told to run, run verbatim: a bare `kmx cluster up` IS
       # the Orka runtime — kind, Ollama, the model, the pinned Orka release
       # with its Provider and its `orka-result-reader` account. Nothing here
       # installs Orka a second time, and nothing creates that account by
@@ -1782,7 +1782,7 @@ jobs:
         working-directory: /home/runner/journey
         env:
           KIND_CLUSTER: kmx-clone-free
-        run: kmx local up
+        run: kmx cluster up
       - name: create — native Orka Task returns an actual local-model answer
         if: steps.changes.outputs.docs_only != 'true'
         working-directory: /home/runner/journey
@@ -1793,7 +1793,7 @@ jobs:
           kmx create orka-hello --workspace workspace --model qwen2.5:3b --instructions instructions.txt
           printf '%s\n' 'id: example' 'input: "Reply with exactly this text: Orka says hello."' \
             'assertions:' '  - id: exact-answer' '    type: regex' "    pattern: '(?s)^Orka says hello[.]\n*$'" > workspace/eval/example.yaml
-          kmx test --workspace workspace --to-context kind-kmx-clone-free --to-namespace orka-system \
+          kmx package test --workspace workspace --to-context kind-kmx-clone-free --to-namespace orka-system \
             --inference provider:local --out evidence/passing.json
           task=$(python3 - <<'PY'
           import json
@@ -1806,9 +1806,9 @@ jobs:
           )
           remaining=$(kubectl --context kind-kmx-clone-free -n orka-system get tasks.core.orka.ai "$task" --ignore-not-found -o name)
           test -z "$remaining"
-          kmx push --workspace workspace --evaluation evidence/passing.json --to-layout layout hello:v1
+          kmx package push --workspace workspace --evaluation evidence/passing.json --to-layout layout hello:v1
           digest=$(python3 -c 'import json; print(json.load(open("layout/index.json"))["manifests"][0]["digest"])')
-          kmx deploy "hello@$digest" --from-layout layout --to-context kind-kmx-clone-free \
+          kmx package deploy "hello@$digest" --from-layout layout --to-context kind-kmx-clone-free \
             --to-namespace orka-system --inference provider:local --evidence evidence/passing.json --promote
       - name: Cluster state on failure
         if: failure() && steps.changes.outputs.docs_only != 'true'

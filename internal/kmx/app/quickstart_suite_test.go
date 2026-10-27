@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
 // A changed instruction or case must never be silently replaced by quickstart's
@@ -41,6 +42,42 @@ func TestQuickstartSuiteSourceRefusesAuthoredDrift(t *testing.T) {
 				t.Fatal("operator source was overwritten")
 			}
 		})
+	}
+}
+
+func TestQuickstartSuiteSourceReusesPreGroupingWorkspace(t *testing.T) {
+	t.Setenv("KMX_HOME", t.TempDir())
+	a := &App{Out: io.Discard, Err: io.Discard, Cfg: newQuickstartConfig()}
+	base, err := quickstartSuiteState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := filepath.Join(t.TempDir(), "instructions.md")
+	if err := os.WriteFile(input, []byte(scaffold.DefaultOrkaInstructions(QuickstartAgent)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(base, QuickstartAgent)
+	if err := workspace.Create(t.Context(), root, workspace.CreateOptions{
+		Name: QuickstartAgent, Model: a.Cfg.Model,
+		Description:      "The agent kmx quickstart deploys to answer a first question",
+		InstructionsFile: input,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := workspace.Prepare(t.Context(), root, filepath.Join(t.TempDir(), "cache"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotRoot, gotDigest, err := a.quickstartSuiteSource(t.Context())
+	if err != nil || gotRoot != root || gotDigest != before.Descriptor.Digest.String() {
+		t.Fatalf("pre-grouping fixed source not reused unchanged: root=%q digest=%q err=%v", gotRoot, gotDigest, err)
+	}
+}
+
+func TestQuickstartCreateOptionsRetainsSourceDescription(t *testing.T) {
+	a := &App{Cfg: newQuickstartConfig()}
+	if got := a.quickstartCreateOptions().Description; got != "The agent kmx quickstart deploys to answer a first question" {
+		t.Fatalf("persisted Quickstart description changed: %q", got)
 	}
 }
 

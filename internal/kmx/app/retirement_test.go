@@ -29,7 +29,7 @@ func TestChatRefusesTheRetiredKagentRuntimeWithoutReachingACluster(t *testing.T)
 	if err == nil {
 		t.Fatal("the retired runtime was accepted")
 	}
-	for _, want := range []string{"kagent", "unsupported for chat", "kmx targets", "orka"} {
+	for _, want := range []string{"kagent", "unsupported for chat", "kmx cluster targets", "orka"} {
 		if !strings.Contains(strings.ToLower(err.Error()), want) {
 			t.Errorf("the refusal does not name %q: %v", want, err)
 		}

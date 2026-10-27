@@ -117,7 +117,7 @@ def qualify(binary, work):
                 "suite payload escaped identity-only output")
         cli(binary, ["eval", "diff", str(receipt), str(receipt)])
         layout = work / "suite-layout"
-        cli(binary, ["push", "--workspace", str(root), "--evaluation", str(receipt), "--to-layout", str(layout), "suite:v1"])
+        cli(binary, ["package", "push", "--workspace", str(root), "--evaluation", str(receipt), "--to-layout", str(layout), "suite:v1"])
         # A new attempt cannot adopt the already occupied target or resend Tasks.
         denied = work / "suite-denied.json"
         cli(binary, args[:args.index("--out") + 1] + [str(denied)] + args[args.index("--out") + 2:], refusal=b"suite Kagent target occupied without complete caller-retained proof; no adoption or updates")
@@ -125,7 +125,7 @@ def qualify(binary, work):
         # Supplementary case bytes change S even when public graph G is unchanged.
         (root / "eval/two.yml").write_text("id: two\ninput: changed case\nexpectContains: ['KMX suite proof:']\n")
         stale_layout = work / "stale-layout"
-        cli(binary, ["push", "--workspace", str(root), "--evaluation", str(receipt), "--to-layout", str(stale_layout), "suite:v1"], refusal=b"prepared suite does not match the expected publication identity")
+        cli(binary, ["package", "push", "--workspace", str(root), "--evaluation", str(receipt), "--to-layout", str(stale_layout), "suite:v1"], refusal=b"prepared suite does not match the expected publication identity")
         require(not stale_layout.exists(), "stale suite evidence authorized publication")
         # Remove authored source before lifting: S/E/layout, not the workspace,
         # authorize this source-only promotion into a new prepared namespace.

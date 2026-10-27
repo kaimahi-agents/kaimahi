@@ -25,7 +25,7 @@ and kmx.yaml containing publishRepository, context/namespace/inference selectors
 and the destination's evaluationTarget. Create supplies none of these.
 ```bash
 kmx create NAME --workspace . --model MODEL --instructions FILE
-kmx deploy --to NAME
+kmx package deploy --to NAME
 ```
 Deploy freezes inputs and runs missing evaluation, publication and placement stages.
 It discloses source-only promotion, not destination evaluation.
@@ -34,9 +34,9 @@ It discloses source-only promotion, not destination evaluation.
 JOURNEY = RELEASE_NOTE + """| Stage | Current checkout |
 |---|---|
 | **Create** | `kmx create NAME --workspace DIR` authors source. |
-| **Test** | `kmx test --workspace DIR` evaluates ordered cases with optional `runs`/`minPasses` (default once), stops after a case misses its threshold or any unknown/error, and writes evidence only when the full policy passes. |
-| **Publish** | `kmx push --workspace DIR --evaluation RECEIPT REF` copies the suite. Plain `kmx push REF` requires passing evidence; `--unevaluated` explicitly opts out. Neither form deploys. |
-| **Deploy** | `kmx deploy REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME --promote` for candidate evidence or kagent `--bindings FILE` deploys without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets; legacy bundle lift is separate. Orka candidate evidence requires `--promote`, even in the same environment. |
+| **Test** | `kmx package test --workspace DIR` evaluates ordered cases with optional `runs`/`minPasses` (default once), stops after a case misses its threshold or any unknown/error, and writes evidence only when the full policy passes. |
+| **Publish** | `kmx package push --workspace DIR --evaluation RECEIPT REF` copies the suite. Plain `kmx package push REF` requires passing evidence; `--unevaluated` explicitly opts out. Neither form deploys. |
+| **Deploy** | `kmx package deploy REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME --promote` for candidate evidence or kagent `--bindings FILE` deploys without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets; legacy bundle lift is separate. Orka candidate evidence requires `--promote`, even in the same environment. |
 """
 GOOD = """<img src="brand/ketu.svg" alt="Kaimahi ketu mark">
 **Agent Builder CLI for Kubernetes.**
@@ -50,13 +50,13 @@ GOOD = """<img src="brand/ketu.svg" alt="Kaimahi ketu mark">
 """ + INSTALL + """```
 ```bash
 kmx version
-kmx quickstart
+kmx cluster quickstart
 ```
 ## Workspace And Live Paths
 | Path | What it means |
 |---|---|
-| Workspace | Default `kmx create`, root `test`, and root `push` operate on editable source. Digest-based root `deploy` does not consume workspace source; it uses the packaged artifact and separate private evidence with explicit target and inference inputs. Run/chat still target live Agents. |
-| Local environment | `kmx local up` prepares kind, model and runtime without creating an Agent. The experimental Go `AgentEnvironment` interface is setup-only and is not wired to this command yet. |
+| Workspace | Default `kmx create`, `package test`, and `package push` operate on editable source. Digest-based `package deploy` does not consume workspace source; it uses the packaged artifact and separate private evidence with explicit target and inference inputs. Run/chat still target live Agents. |
+| Local environment | `kmx cluster up` prepares kind, model and runtime without creating an Agent. The experimental Go `AgentEnvironment` interface is setup-only and is not wired to this command yet. |
 | Live Agent | `kmx run --agent NAME --prompt TEXT` performs one Task; `kmx chat NAME` opens an Orka session. Both target live Agents, including suite-owned Agents; neither is workspace-local execution or suite evaluation. |
 | Legacy bundle | Removed outright: `agent.yaml` readers/writers, commands and receipts, `create --live`. Old receipts are unreadable; no conversion, migration or on-disk/resource deletion. Public AgentSuite implementation bundles are a different format. |
 ## Runtime Boundaries
@@ -98,13 +98,13 @@ for label, literal in [
     ("release installer", "curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh\n"),
     ("pinned Go install", "go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.8.1\n"),
     ("kmx version", "kmx version\n"),
-    ("kmx quickstart", "kmx quickstart\n"),
+    ("kmx cluster quickstart", "kmx cluster quickstart\n"),
 ]:
     CASES.append((f"missing {label}", GOOD.replace(literal, ""), f"{label} is missing"))
 
 CASES += [
     ("missing composed path", GOOD.replace(COMPOSED, ""), "two-command workspace path"),
-    ("composed commands reversed", GOOD.replace("kmx create NAME --workspace . --model MODEL --instructions FILE\nkmx deploy --to NAME", "kmx deploy --to NAME\nkmx create NAME --workspace . --model MODEL --instructions FILE"), "two-command workspace path"),
+    ("composed commands reversed", GOOD.replace("kmx create NAME --workspace . --model MODEL --instructions FILE\nkmx package deploy --to NAME", "kmx package deploy --to NAME\nkmx create NAME --workspace . --model MODEL --instructions FILE"), "two-command workspace path"),
     ("composed path after manual stages", GOOD.replace(COMPOSED, "").replace("## Getting Started", COMPOSED + "## Getting Started"), "two-command workspace path"),
     ("missing runtime prerequisite", GOOD.replace("prepared runtime and inference", "inference"), "prepared runtime"),
     ("missing inference prerequisite", GOOD.replace("prepared runtime and inference", "prepared runtime"), "inference prerequisite"),
@@ -119,15 +119,15 @@ CASES += [
     ("candidate command omits promotion", GOOD.replace("--inference provider:NAME --promote", "--inference provider:NAME"), "Deploy row must preserve runtime-specific bindings"),
     ("command in purpose column only", GOOD.replace("| **Create** | `kmx create", "| Author | **Create** with `kmx create"), "Create row is missing"),
     ("suite rows out of order", GOOD.replace("| **Create** |", "| **TEMP** |").replace("| **Test** |", "| **Create** |").replace("| **TEMP** |", "| **Test** |"), "Create row is missing"),
-    ("missing test", GOOD.replace("`kmx test --workspace DIR`", "`kmx run`"), "Test row is missing"),
-    ("legacy eval in Test row", GOOD.replace("`kmx test --workspace DIR`", "`kmx eval --workspace DIR`"), "Test row is missing"),
-    ("legacy eval in workspace row", GOOD.replace("root `test`", "root `eval`"), "Workspace path boundary is missing"),
+    ("missing test", GOOD.replace("`kmx package test --workspace DIR`", "`kmx run`"), "Test row is missing"),
+    ("legacy eval in Test row", GOOD.replace("`kmx package test --workspace DIR`", "`kmx eval --workspace DIR`"), "Test row is missing"),
+    ("legacy eval in workspace row", GOOD.replace("`package test`", "root `eval`"), "Workspace path boundary is missing"),
     ("partial evidence accepted", GOOD.replace("only when the full policy passes", "after any case"), "Test row must require a full pass"),
     ("repeat policy missing", GOOD.replace("optional `runs`/`minPasses` (default once)", "unbounded repeats"), "Test row must describe declared repeats"),
     ("later cases continue after failure", GOOD.replace("stops after a case misses its threshold or any unknown/error", "continues through every case"), "Test row must preserve fail-fast execution"),
     ("unknown ignored", GOOD.replace(" or any unknown/error", ""), "Test row must preserve fail-fast execution"),
     ("push implies deployment", GOOD.replace("Neither form deploys", "Then it deploys"), "Publish row must say it does not deploy"),
-    ("plain push bypasses evidence", GOOD.replace("Plain `kmx push REF` requires passing evidence; `--unevaluated` explicitly opts out. ", ""), "Publish row must require evidence or explicit opt-out"),
+    ("plain push bypasses evidence", GOOD.replace("Plain `kmx package push REF` requires passing evidence; `--unevaluated` explicitly opts out. ", ""), "Publish row must require evidence or explicit opt-out"),
     ("lift builds", GOOD.replace("without building, repacking, or publishing", "after rebuilding and publishing"), "Deploy row must stay deploy-only"),
     ("lift plan writes", GOOD.replace("`--plan` is GET-only", "`--plan` applies resources"), "Deploy row must preserve the GET-only plan boundary"),
     ("lift runtime binding missing", GOOD.replace(" or kagent `--bindings FILE`", ""), "Deploy row must preserve runtime-specific bindings"),
@@ -160,8 +160,8 @@ CASES += [
     ("old Go release", GOOD.replace("cmd/kmx@v0.8.1", "cmd/kmx@v0.8.0"), "pinned Go install is missing"),
     ("wrong installer", GOOD.replace("kaimahi/main/install.sh", "other/main/install.sh"), "release installer is missing"),
     ("install routes out of order", GOOD.replace("brew install kaimahi-agents/tap/kmx\n# or\ncurl", "curl").replace("install.sh | sh\n# or\ngo install", "install.sh | sh\n# or\nbrew install kaimahi-agents/tap/kmx\n# or\ngo install"), "release installer is missing"),
-    ("first answer out of order", GOOD.replace("kmx version\nkmx quickstart", "kmx quickstart\nkmx version"), "kmx quickstart is missing"),
-    ("missing workspace path", GOOD.replace("| Workspace | Default `kmx create`, root `test`, and root `push` operate on editable source. Digest-based root `deploy` does not consume workspace source; it uses the packaged artifact and separate private evidence with explicit target and inference inputs. Run/chat still target live Agents. |\n", ""), "workspace/live paths must contain the exact four rows"),
+    ("first answer out of order", GOOD.replace("kmx version\nkmx cluster quickstart", "kmx cluster quickstart\nkmx version"), "kmx cluster quickstart is missing"),
+    ("missing workspace path", GOOD.replace("| Workspace | Default `kmx create`, `package test`, and `package push` operate on editable source. Digest-based `package deploy` does not consume workspace source; it uses the packaged artifact and separate private evidence with explicit target and inference inputs. Run/chat still target live Agents. |\n", ""), "workspace/live paths must contain the exact four rows"),
     ("duplicate workspace path", GOOD.replace("| Local environment |", "| Workspace | Duplicate. |\n| Local environment |"), "workspace/live paths must contain the exact four rows"),
     ("workspace runs directly", GOOD.replace("does not consume workspace source", "runs workspace source directly"), "Workspace path boundary is missing"),
     ("environment interface wired", GOOD.replace("is setup-only and is not wired", "is fully wired"), "Local environment path boundary is missing"),
@@ -224,6 +224,7 @@ for name, literal, expected in [
     FRONT_CASES.append((name, FRONT.replace(literal, ""), WORKFLOW, expected))
 FRONT_CASES += [
     ("front-door commands reversed", FRONT.replace("kmx version\nkmx quickstart", "kmx quickstart\nkmx version"), WORKFLOW, "kmx quickstart is missing from the local trial"),
+    ("unreleased route after stable install", FRONT.replace("kmx quickstart\n", "kmx cluster quickstart\n"), WORKFLOW, "kmx quickstart is missing from the local trial"),
     ("late status", FRONT.replace("**Status: experimental. Not recommended for production use.**\n", "") + "\n**Status: experimental. Not recommended for production use.**\n", WORKFLOW, "experimental status must precede"),
     ("missing workflow file", FRONT, None, "cannot read required documentation"),
     ("unsafe linked workflow", FRONT, WORKFLOW.replace("only when the full policy passes", "after any case"), "Test row must require a full pass"),

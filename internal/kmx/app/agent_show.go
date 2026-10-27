@@ -1,6 +1,6 @@
 package app
 
-// `kmx orka show` — one screen for "will this agent actually work, and if
+// `kmx cluster orka show` — one screen for "will this agent actually work, and if
 // not, which hop is broken".
 //
 // An Orka Agent depends on a Provider, which depends on a Secret, and the
@@ -28,7 +28,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 )
 
-// ShowOptions are `kmx orka show`'s knobs.
+// ShowOptions are `kmx cluster orka show`'s knobs.
 type ShowOptions struct {
 	// Namespace the Orka controller watches. Orka watches namespaces explicitly,
 	// and a default that guessed wrong would report "not found" about a namespace
@@ -131,7 +131,7 @@ const unknownHop = "unknown"
 // ShowAgent renders one Orka Agent and the chain it depends on.
 func (a *App) ShowAgent(name string, opt ShowOptions) error {
 	if strings.TrimSpace(opt.Namespace) == "" {
-		return fmt.Errorf("kmx orka show %s: --namespace is required.\n"+
+		return fmt.Errorf("kmx cluster orka show %s: --namespace is required.\n"+
 			"  Orka watches namespaces explicitly, so there is no safe default to guess:\n"+
 			"  a wrong one would report \"not found\" about a namespace you never meant", name)
 	}
@@ -171,7 +171,7 @@ func (a *App) readOrkaAgent(namespace, name string) (*orkaAgentSpec, error) {
 			return nil, fmt.Errorf("no Orka Agent %q in namespace %s.\n"+
 				"  `%s` shows what is there. Author workspace source with `%s`, prove it with eval, then Lift its immutable digest",
 				name, namespace,
-				a.operationCommand("orka", "list", "--namespace", namespace),
+				a.operationCommand("cluster", "orka", "list", "--namespace", namespace),
 				a.operationCommand("create", "<name>", "--workspace", "<directory>", "--model", "<exact-model>", "--instructions", "<file>"))
 		}
 		return nil, fmt.Errorf("cannot read Orka Agent %q in namespace %s: %w", name, namespace, err)

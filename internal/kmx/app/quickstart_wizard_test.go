@@ -27,7 +27,7 @@ func TestQuickstartWizardViewKeepsInfrastructureAboveNumberedAgentStep(t *testin
 		t.Fatal(err)
 	}
 	m := quickstartWizardModel{create: create, setup: [6]string{"done", "done", "active", "pending", "pending", "pending"}, frame: 3,
-		target: quickstartTarget{Context: "kind-demo", Source: "kmx ctx", Server: "127.0.0.1", Namespaces: "orka-system, ollama", Posture: "local kind"}}
+		target: quickstartTarget{Context: "kind-demo", Source: "kmx package ctx", Server: "127.0.0.1", Namespaces: "orka-system, ollama", Posture: "local kind"}}
 	view := ansi.Strip(m.View().Content)
 	for _, want := range []string{"kind-demo", "local kind", "Setup 2/6", "Model runtime", "3/4", "Description"} {
 		if !strings.Contains(view, want) {

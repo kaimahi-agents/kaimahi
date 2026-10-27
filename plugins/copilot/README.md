@@ -1,6 +1,6 @@
 # kmx in macOS Copilot
 
-Use this plugin on **macOS** (also usable with a Linux kmx on PATH). On
+Use this plugin on **macOS** (also usable with a Linux kmx at `/usr/local/bin/kmx`). On
 **Windows**, use the [WSL plugin](../copilot-wsl/README.md) instead. Both contain
 skills, a canvas and MCP configuration, not an engine or a fixed working folder.
 
@@ -23,8 +23,13 @@ The Homebrew tap tracks final releases, not release candidates; use this binary
 for rc.4. Use Homebrew for a final release only when its formula matches the
 version named by the marketplace catalog.
 
-The plugin starts `kmx mcp` from PATH; `/usr/local/bin` must be on Copilot's PATH.
-No root, model or binary is configured inside the plugin. The MCP schema has no
+The source plugin starts `/usr/local/bin/kmx mcp`, matching the installer's
+`--bin-dir`; it does not depend on Copilot's PATH, which normally omits
+`/usr/local/bin` when the Mac app is launched from the Dock. rc.4's pinned plugin
+still starts `kmx` from PATH; see the [temporary MCP setup](../../docs/copilot-app.md#macos-rc4-server-not-available)
+until a newer paired release contains this fix. Restart Copilot after installing
+or updating the plugin and start a fresh session.
+No root, model or bundled binary is configured inside the plugin. The MCP schema has no
 per-OS command selector, so Windows keeps its separate WSL manifest. The PATH
 source plugin is named `kmx-agent-builder-path`; WSL and legacy native bundles
 keep `kmx-agent-builder`. Use only one variant per host profile: their MCP server

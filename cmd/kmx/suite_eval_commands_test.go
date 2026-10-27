@@ -367,14 +367,14 @@ func TestRootPushEvaluationRoutesToPrivateFileConsumer(t *testing.T) {
 			if err := os.WriteFile(file, []byte("{}"), 0600); err != nil {
 				t.Fatal(err)
 			}
-			args := []string{"push", "--workspace", root, "--evaluation", file, "--to-layout", filepath.Join(t.TempDir(), "layout"), "suite:v1"}
+			args := []string{"package", "push", "--workspace", root, "--evaluation", file, "--to-layout", filepath.Join(t.TempDir(), "layout"), "suite:v1"}
 			want := "invalid native passing receipt"
 			if stage == "empty" {
-				args[4] = ""
+				args[5] = ""
 				want = "non-empty --evaluation"
 			}
 			if stage == "extracted" {
-				args = []string{"suite", "push", root, "suite:v1", "--evaluation", file}
+				args = []string{"package", "suite", "push", root, "suite:v1", "--evaluation", file}
 				want = "unknown flag"
 			}
 			var out, diagnostics bytes.Buffer

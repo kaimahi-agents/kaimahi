@@ -16,7 +16,7 @@ func TestOrkaInstallRejectsInvalidChartSelectorsBeforeConfiguration(t *testing.T
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			var out, errOut bytes.Buffer
 			deps, loads := testDependencies(&out, &errOut)
-			if err := execute(append([]string{"orka", "install"}, args...), deps); err == nil || *loads != 0 {
+			if err := execute(append([]string{"cluster", "orka", "install"}, args...), deps); err == nil || *loads != 0 || !strings.Contains(err.Error(), "--chart") {
 				t.Fatalf("invalid chart selection reached configuration: err=%v loads=%d", err, *loads)
 			}
 		})

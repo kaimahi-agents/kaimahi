@@ -165,8 +165,19 @@ esac
 # `kmx version` prints a banner of pinned component versions, and a first
 # answer should open with the thing the reader asked for rather than with a
 # list of versions they did not.
+# A pinned old release still uses the old root spelling. Probe only inert help;
+# never retry a failed setup operation using another route.
+QUICKSTART_COMMAND=quickstart
+# Old Cobra releases can return successful root help for an unknown group.
+if cluster_help=$("$BIN_DIR/kmx" cluster --help 2>/dev/null) &&
+  printf '%s\n' "$cluster_help" | grep -Eq '^[[:space:]]+kmx cluster \[command\][[:space:]]*$'; then
+  QUICKSTART_COMMAND="cluster quickstart"
+fi
 if [ "$RUN_QUICKSTART" = yes ]; then
   say ""
+  if [ "$QUICKSTART_COMMAND" = "cluster quickstart" ]; then
+    exec "$BIN_DIR/kmx" cluster quickstart
+  fi
   exec "$BIN_DIR/kmx" quickstart
 fi
 
@@ -179,6 +190,6 @@ if [ "$VERSION" = v0.1.0 ]; then
   say "For Orka quickstart, install the latest release:"
   say "  go install github.com/kaimahi-agents/kaimahi/cmd/kmx@latest"
 else
-  say "Next:  kmx quickstart      # a cluster and an agent that answers a question"
-  say "       kmx quickstart -o json   # the same, for something driving kmx"
+  say "Next:  kmx $QUICKSTART_COMMAND      # a cluster and an agent that answers a question"
+  say "       kmx $QUICKSTART_COMMAND -o json   # the same, for something driving kmx"
 fi

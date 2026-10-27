@@ -16,7 +16,7 @@ func TestCobraCompletionIncludesCompleteCommandTree(t *testing.T) {
 	deps := productionDependencies()
 	deps.stdout, deps.stderr = &out, &errOut
 	root := newRootCommand(&commandState{deps: deps})
-	root.SetArgs([]string{"__complete", "qu"})
+	root.SetArgs([]string{"__complete", "cluster", "qu"})
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestCompletionExcludesRetiredApprovalCommands(t *testing.T) {
 		want      []string
 		forbidden []string
 	}{
-		{[]string{"__complete", ""}, []string{"create", "chat", "run", "test", "push", "quickstart", "status", ":4"}, []string{"eval\t", "approve", "approvals", "deny", "request", "grants", "audit", "budget", "credential", "flow", "watch"}},
+		{[]string{"__complete", ""}, []string{"create", "chat", "run", "test", "package", "cluster", ":4"}, []string{"eval\t", "approve", "approvals", "deny", "request", "grants", "audit", "budget", "credential", "flow", "watch"}},
 		{[]string{"__complete", "ap"}, []string{":4"}, []string{"approve", "approvals"}},
 		{[]string{"__complete", "au"}, []string{":4"}, []string{"audit"}},
 	} {
@@ -142,7 +142,7 @@ func TestGuardedWindowsDeferredCompletionIsInert(t *testing.T) {
 	t.Setenv("PATH", dir)
 	for _, args := range [][]string{
 		{"__complete", "--context", ""},
-		{"__complete", "context", "use", ""},
+		{"__complete", "cluster", "context", "use", ""},
 		{"__complete", "run", "--agent", ""},
 		{"__complete", "deploy", "--to", ""},
 	} {

@@ -619,15 +619,28 @@ func TestFileHelpIsCanonicalOnly(t *testing.T) {
 				t.Fatalf("canonical file preview missing from %s help: %s", verb, out.String())
 			}
 			if verb != "eval" {
+				if strings.Count(out.String(), previewCaveatsURL) != 1 {
+					t.Error("help must link the preview caveats once")
+				}
+				data, err := os.ReadFile("../../docs/local-preview.md")
+				if err != nil {
+					t.Fatal(err)
+				}
+				caveats := strings.Join(strings.Fields(string(data)), " ")
 				for _, disclosure := range []string{"cleartext SQLite journals", "local-preview/journals", "newest 20 runs", "active runs", "Stop previews", "fake, local and Copilot models", "embedded Agent Sessions", "judge payloads and reasoning", "provider-owned", "before journaling", "Replay makes zero model calls"} {
-					if !strings.Contains(out.String(), disclosure) {
-						t.Errorf("%s help omits retention disclosure %q", verb, disclosure)
+					if !strings.Contains(caveats, disclosure) {
+						t.Errorf("linked caveats omit disclosure %q", disclosure)
 					}
 				}
 				if verb == "test" {
-					for _, disclosure := range []string{"eval-failures", "last 10 per resolved file subject", "test explain --file FILE", "deleting journals does not clear failure diagnostics", "--github-summary", "GITHUB_STEP_SUMMARY"} {
+					for _, disclosure := range []string{"eval-failures", "last 10 per resolved file subject", "deleting journals does not clear failure diagnostics"} {
+						if !strings.Contains(caveats, disclosure) {
+							t.Errorf("linked caveats omit file-failure disclosure %q", disclosure)
+						}
+					}
+					for _, disclosure := range []string{"test explain --file FILE", "--github-summary", "GITHUB_STEP_SUMMARY"} {
 						if !strings.Contains(out.String(), disclosure) {
-							t.Errorf("test help omits file-failure disclosure %q", disclosure)
+							t.Errorf("test help omits %q", disclosure)
 						}
 					}
 				}

@@ -62,7 +62,7 @@ func (a *App) liftNextSteps(opt lift.Options) {
   Then follow https://kaimahi.dev/docs/aks-demo for offline Create, Prove,
   publication and digest Lift.
 
-`, a.operationCommand("orka", "status"),
+`, a.operationCommand("cluster", "orka", "status"),
 		shellArg(a.Cfg.KubeContext), OrkaNamespace)
 	if opt.Observability {
 		fmt.Fprintln(a.Err, "  Azure monitoring add-ons and their owned resources were configured.\n"+

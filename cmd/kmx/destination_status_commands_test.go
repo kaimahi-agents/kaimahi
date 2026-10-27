@@ -23,18 +23,18 @@ func TestDestinationStatusRefusesBeforeConfiguration(t *testing.T) {
 		args []string
 		want []string
 	}{
-		{[]string{"status"}, []string{"kmx status --to <destination>", "kmx orka status"}},
-		{[]string{"status", "--to="}, []string{"--to"}},
-		{[]string{"status", "--to", " "}, []string{"--to"}},
-		{[]string{"status", "--to", "prod", "-o", "yaml"}, []string{"table", "json"}},
-		{[]string{"status", "--to", "prod", "-o", "text"}, []string{"table", "json"}},
-		{[]string{"status", "--to", "prod", "-o", ""}, []string{"table", "json"}},
-		{[]string{"status", "--to", "prod", "--workspace="}, []string{"--workspace"}},
-		{[]string{"status", "--to", "prod", "extra"}, nil},
-		{[]string{"status", "--to", "prod", "--namespace", "other"}, []string{"unknown flag"}},
-		{[]string{"status", "--to", "prod", "--inference", "provider:other"}, []string{"unknown flag"}},
-		{[]string{"status", "--to", "prod", "--bindings", "other.yaml"}, []string{"unknown flag"}},
-		{[]string{"status", "--to", "prod", "--runtime", "orka"}, []string{"unknown flag"}},
+		{[]string{"package", "status"}, []string{"kmx package status --to <destination>", "kmx cluster orka status"}},
+		{[]string{"package", "status", "--to="}, []string{"--to"}},
+		{[]string{"package", "status", "--to", " "}, []string{"--to"}},
+		{[]string{"package", "status", "--to", "prod", "-o", "yaml"}, []string{"table", "json"}},
+		{[]string{"package", "status", "--to", "prod", "-o", "text"}, []string{"table", "json"}},
+		{[]string{"package", "status", "--to", "prod", "-o", ""}, []string{"table", "json"}},
+		{[]string{"package", "status", "--to", "prod", "--workspace="}, []string{"--workspace"}},
+		{[]string{"package", "status", "--to", "prod", "extra"}, nil},
+		{[]string{"package", "status", "--to", "prod", "--namespace", "other"}, []string{"unknown flag"}},
+		{[]string{"package", "status", "--to", "prod", "--inference", "provider:other"}, []string{"unknown flag"}},
+		{[]string{"package", "status", "--to", "prod", "--bindings", "other.yaml"}, []string{"unknown flag"}},
+		{[]string{"package", "status", "--to", "prod", "--runtime", "orka"}, []string{"unknown flag"}},
 	} {
 		t.Run(strings.Join(tc.args, "_"), func(t *testing.T) {
 			var out, diag bytes.Buffer
@@ -79,7 +79,7 @@ func TestDestinationStatusSelectionBeforeConfiguration(t *testing.T) {
 				}
 				return nil, boundary
 			}
-			args := []string{"status", "--workspace", root, "--to", "prod"}
+			args := []string{"package", "status", "--workspace", root, "--to", "prod"}
 			if tc.context != "" {
 				args = append(args, "--context", tc.context)
 			}
@@ -164,7 +164,7 @@ esac
 				configured = app.New(cfg)
 				return configured
 			}
-			args := []string{"status", "--to", "prod", "--workspace", root, "-o", tc.output}
+			args := []string{"package", "status", "--to", "prod", "--workspace", root, "-o", tc.output}
 			if tc.context != "" {
 				args = append(args, "--context", tc.context)
 			}
@@ -242,10 +242,10 @@ func TestDestinationStatusHelpAndCompletionAreInert(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"status", "--help"}, "--to"},
-		{[]string{"__complete", "status", "--output", ""}, "json\ntable\n:4\n"},
-		{[]string{"__complete", "status", "--to", ""}, ":4\n"},
-		{[]string{"__complete", "status", "--workspace", ""}, ":4\n"},
+		{[]string{"package", "status", "--help"}, "--to"},
+		{[]string{"__complete", "package", "status", "--output", ""}, "json\ntable\n:4\n"},
+		{[]string{"__complete", "package", "status", "--to", ""}, ":4\n"},
+		{[]string{"__complete", "package", "status", "--workspace", ""}, ":4\n"},
 	} {
 		var out, diag bytes.Buffer
 		deps, loads := testDependencies(&out, &diag)

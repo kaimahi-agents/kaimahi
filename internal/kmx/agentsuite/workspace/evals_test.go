@@ -152,7 +152,7 @@ func TestLoadNamesContentFreeRefusalReasons(t *testing.T) {
 				t.Fatal("native metadata fixture did not change")
 			}
 			writeFile(t, name, old)
-		}, "rerun kmx eval and kmx push"},
+		}, "rerun kmx eval and kmx package push"},
 		"runs over limit": {func(t *testing.T, out string) {
 			rebindEvals(t, out, func(_ *suitecore.EvaluationIndex, c map[string]any) { c["runs"] = 101 })
 		}, "runs <= 100"},

@@ -44,7 +44,7 @@ func profileCommandSource(t *testing.T) (string, *workspace.Prepared) {
 		t.Fatal(err)
 	}
 	rows := ""
-	for _, id := range []string{"orka", "sessions"} {
+	for _, id := range []string{"cluster", "orka", "sessions"} {
 		rp := suitecore.RuntimeProfile{SchemaVersion: suitecore.SpecVersion, MediaType: suitecore.MediaTypeRuntimeProfile, ID: id, Runtime: suitecore.EvidenceImplementation{ID: id, Version: "test-only", Digest: bp.RuntimeBase[0].Image.Digest}, Harness: suitecore.EvidenceImplementation{ID: "test-harness", Version: "test-only", Digest: bp.Harness[0].Image.Digest}, Renderer: suitecore.EvidenceImplementation{ID: "test-renderer", Version: "test-only", Digest: bp.Harness[0].Image.Digest}, ConfigurationABI: "test-only", ImageRequired: true}
 		b, err := suitecore.Marshal(rp)
 		if err != nil {
@@ -67,9 +67,9 @@ func TestProfiledCLITransferAndOfflineRefusals(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	var out, diag bytes.Buffer
 	deps, loads := testDependencies(&out, &diag)
-	for _, id := range []string{"orka", "sessions"} {
+	for _, id := range []string{"cluster", "orka", "sessions"} {
 		layout := filepath.Join(t.TempDir(), "layout")
-		if err := execute([]string{"push", "--workspace", root, "--runtime-profile", id, "--platform", "linux/amd64", "--unevaluated", "--to-layout", layout, "suite:v1"}, deps); err != nil {
+		if err := execute([]string{"package", "push", "--workspace", root, "--runtime-profile", id, "--platform", "linux/amd64", "--unevaluated", "--to-layout", layout, "suite:v1"}, deps); err != nil {
 			t.Fatal(err)
 		}
 		artifact, err := suiteoras.ReadArtifactLayout(t.Context(), layout, p.Descriptor.Digest.String())
@@ -84,7 +84,7 @@ func TestProfiledCLITransferAndOfflineRefusals(t *testing.T) {
 		out.Reset()
 		diag.Reset()
 		layout := filepath.Join(t.TempDir(), "layout")
-		args := append([]string{"push", "--workspace", root, "--to-layout", layout, "suite:v1"}, flags...)
+		args := append([]string{"package", "push", "--workspace", root, "--to-layout", layout, "suite:v1"}, flags...)
 		if err := execute(args, deps); err == nil || out.Len() != 0 {
 			t.Fatal("invalid selection published", flags, err)
 		}
@@ -120,7 +120,7 @@ func TestProfiledCLIBuilderSelectionAndInertHelp(t *testing.T) {
 		})
 	}
 	for _, sel := range [][]string{{}, {"--runtime-profile", "missing"}, {"--runtime-profile", "sessions"}} {
-		args := append([]string{"suite", "build", outDir, "--output", filepath.Join(t.TempDir(), "image.tar"), "--model-base-url", "https://models.example.test/v1"}, sel...)
+		args := append([]string{"package", "build", outDir, "--output", filepath.Join(t.TempDir(), "image.tar"), "--model-base-url", "https://models.example.test/v1"}, sel...)
 		err := execute(args, deps)
 		if err == nil {
 			t.Fatal("build unexpectedly completed")
@@ -132,7 +132,7 @@ func TestProfiledCLIBuilderSelectionAndInertHelp(t *testing.T) {
 	if calls != 1 || *loads != 0 {
 		t.Fatal("selection/config boundary", calls, *loads)
 	}
-	for _, args := range [][]string{{"push", "--help"}, {"suite", "build", "--help"}, {"__complete", "push", "--runtime-profile", ""}, {"__complete", "suite", "build", "--runtime-profile", ""}} {
+	for _, args := range [][]string{{"package", "push", "--help"}, {"package", "build", "--help"}, {"__complete", "package", "push", "--runtime-profile", ""}, {"__complete", "package", "build", "--runtime-profile", ""}} {
 		if err := execute(args, deps); err != nil {
 			t.Fatal(err)
 		}
@@ -141,7 +141,7 @@ func TestProfiledCLIBuilderSelectionAndInertHelp(t *testing.T) {
 		t.Fatal("help/completion had effects")
 	}
 	// New selectors are deliberately absent from live and extracted-transfer paths.
-	for _, args := range [][]string{{"suite", "push", outDir, "suite:v1", "--runtime-profile", "sessions"}, {"eval", "--workspace", root, "--platform", "linux/amd64"}} {
+	for _, args := range [][]string{{"package", "suite", "push", outDir, "suite:v1", "--runtime-profile", "sessions"}, {"eval", "--workspace", root, "--platform", "linux/amd64"}} {
 		if err := execute(args, deps); err == nil {
 			t.Fatal("unsupported flag accepted")
 		}

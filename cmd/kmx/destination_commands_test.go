@@ -55,7 +55,7 @@ func TestDestinationsCheckBoundariesAndIndependentFailures(t *testing.T) {
 			t.Setenv("NO_PROXY", "")
 			var out, diagnostics bytes.Buffer
 			deps, loads := testDependencies(&out, &diagnostics)
-			err := execute([]string{"ctx", "--workspace", root, "--check", "-o", "json"}, deps)
+			err := execute([]string{"package", "ctx", "--workspace", root, "--check", "-o", "json"}, deps)
 			if (err != nil) != (status != 200) || *loads != 0 {
 				t.Fatalf("check status: %v loads=%d", err, *loads)
 			}
@@ -84,7 +84,7 @@ func TestDestinationsCheckUnknownSanitizesToolFailure(t *testing.T) {
 	t.Setenv("PATH", tools)
 	var out bytes.Buffer
 	deps, loads := testDependencies(&out, &out)
-	err := execute([]string{"ctx", "--workspace", root, "--check", "-o", "json"}, deps)
+	err := execute([]string{"package", "ctx", "--workspace", root, "--check", "-o", "json"}, deps)
 	if err == nil || *loads != 0 || strings.Contains(out.String()+err.Error(), "PRIVATE_TOOL") || strings.Count(out.String(), `"contextCheck":"unknown"`) != 2 {
 		t.Fatalf("unknown handling: %v %s", err, &out)
 	}
@@ -102,7 +102,7 @@ targets:
 	for _, format := range []string{"table", "json"} {
 		var out, diagnostics bytes.Buffer
 		deps, loads := testDependencies(&out, &diagnostics)
-		err := execute([]string{"ctx", "--workspace", root, "-o", format}, deps)
+		err := execute([]string{"package", "ctx", "--workspace", root, "-o", format}, deps)
 		if err != nil || *loads != 0 {
 			t.Fatalf("offline listing: %v loads=%d", err, *loads)
 		}
@@ -126,14 +126,14 @@ func TestDestinationsHelpCompletionAndLegacySyntaxAreInert(t *testing.T) {
 	root := destinationWorkspace(t, "malformed: [\n")
 	t.Chdir(root)
 	t.Setenv("PATH", t.TempDir())
-	for _, args := range [][]string{{"ctx", "--help"}, {"help", "ctx"}, {"__complete", "ctx", ""}, {"__complete", "eval", "--to", ""}, {"__complete", "lift", "--to", ""}} {
+	for _, args := range [][]string{{"package", "ctx", "--help"}, {"help", "package", "ctx"}, {"__complete", "package", "ctx", ""}, {"__complete", "eval", "--to", ""}, {"__complete", "lift", "--to", ""}} {
 		var out bytes.Buffer
 		deps, loads := testDependencies(&out, &out)
 		if err := execute(args, deps); err != nil || *loads != 0 {
 			t.Fatalf("%v: %v loads=%d", args, err, *loads)
 		}
 	}
-	for _, args := range [][]string{{"ctx", "prod"}, {"ctx", "use", "prod"}} {
+	for _, args := range [][]string{{"package", "ctx", "prod"}, {"package", "ctx", "use", "prod"}} {
 		var out bytes.Buffer
 		deps, loads := testDependencies(&out, &out)
 		if err := execute(args, deps); err == nil || *loads != 0 || strings.Contains(err.Error(), "kmx.yaml") {

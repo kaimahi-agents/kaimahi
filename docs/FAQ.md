@@ -3,12 +3,15 @@
 Start with [getting started](getting-started.md) for installation and a first
 answer and [suite workspace](suite-workspace.md) for author/eval/push/digest Deploy.
 
-## Why is `kmx orka` missing?
+<a id="why-is-kmx-orka-missing"></a>
+
+## Why is `kmx cluster orka` missing?
 
 Check `kmx version` and which binary is on your `PATH`. The historical v0.1.0
-release predates Orka; v0.2.0 and newer provide these commands. Install the
-pinned release as described in [getting started](getting-started.md), then
-check `kmx orka --help`. `@latest` and the installer default select the newest
+release predates Orka. Orka support starts with v0.2.0.
+Stable v0.8.1 uses `kmx orka --help`; `kmx cluster orka --help` requires an unreleased main build.
+Install the pinned release as described in [getting started](getting-started.md)
+for the stable commands. `@latest` and the installer default select the newest
 published tag, not the tip of `main`.
 
 ## Does installing Orka govern my application?
@@ -20,14 +23,14 @@ publish and Deploy with private evidence. Placement readiness is not an answer. 
 
 ## Why does status show a version different from the pin?
 
-`kmx orka status` reads the running controller image. The pin is what kmx
+`kmx cluster orka status` reads the running controller image. The pin is what kmx
 would install, not proof of what someone else installed. An unreadable
 cluster is not an empty cluster. See [Orka installation](orka.md) for
 inspection, no-write planning, dry-run and upgrade limits.
 
 ## How do I ship v2 or roll back?
 
-The unreleased Orka lifecycle adds opt-in `kmx deploy --to prod --update`.
+The unreleased Orka lifecycle adds opt-in `kmx package deploy --to prod --update`.
 Plain Deploy remains create-only, including its narrow exact evaluated reuse and
 GET-only workspace skip checks. Kagent updates are not supported.
 
@@ -105,6 +108,6 @@ command arguments or committed YAML.
 ### A local model disappeared after a restart
 
 The local Ollama model cache is an `emptyDir`; a pod restart may require another
-model pull. Pod restarts are not cluster deletion. `kmx local down` removes the whole
+model pull. Pod restarts are not cluster deletion. `kmx cluster down` removes the whole
 named kind cluster and its persistent data. Export needed resources, Secrets and
 volumes before replacing it; see [Orka's data-retention limits](orka.md#limits-stated).

@@ -1,6 +1,6 @@
 # Installing Orka, and what installing it does not do
 
-`kmx orka install` puts [Orka](https://github.com/orka-agents/orka) —
+`kmx cluster orka install` puts [Orka](https://github.com/orka-agents/orka) —
 "Cloud and AI-native multi-agent orchestration platform for Kubernetes" — on
 the cluster kmx is pointed at, in one command, with no API key.
 
@@ -17,7 +17,7 @@ Installation and authoring are deliberately separate operations.
 ## The command
 
 ```console
-$ kmx orka install
+$ kmx cluster orka install
 ```
 
 The install checks each boundary before proceeding:
@@ -29,7 +29,7 @@ The install checks each boundary before proceeding:
 | Apply CRDs and install | server-side applies CRDs extracted from the verified chart with field manager `kmx-orka`, waits for establishment, then runs `helm install orka` with `--kube-context`, `controller.mode=harness-v2`, `fullnameOverride=orka-api` and `--wait`; no `helm upgrade --force` |
 | Provision result reader and keyless Provider | installs the namespace-scoped Task-get result account, then a `Provider` pointing at the in-cluster model server, so no model key is needed on the local path |
 
-Check the selected cluster with `kmx orka status` and
+Check the selected cluster with `kmx cluster orka status` and
 `kubectl --context <ctx> -n orka-system get deployments,pvc`. The chart's
 controller Deployment is `orka-api-controller`; status lists the running
 Deployments, CRDs and Provider readiness separately from kmx's v0.2.0 pin.
@@ -42,8 +42,8 @@ authorize reinstallation over an older release.
 Both flags the other writing commands carry, for the same reasons:
 
 ```console
-$ kmx orka install --no-apply     # fetch, verify chart and count its CRDs; write nothing
-$ kmx orka install --dry-run      # verify chart, check existing install, server-dry-run its CRDs
+$ kmx cluster orka install --no-apply     # fetch, verify chart and count its CRDs; write nothing
+$ kmx cluster orka install --dry-run      # verify chart, check existing install, server-dry-run its CRDs
 COMPLETE  Validated; nothing was written
 ```
 
@@ -60,7 +60,7 @@ still requires explicit operator recovery; kmx does not adopt or retry it.
 ### Installing an exact local candidate
 
 ```console
-$ kmx orka install --chart ./orka-candidate.tgz --chart-sha256 <64-lowercase-hex> --provider -
+$ kmx cluster orka install --chart ./orka-candidate.tgz --chart-sha256 <64-lowercase-hex> --provider -
 ```
 
 Both flags are required together and reject explicitly empty values before
@@ -106,7 +106,7 @@ cluster namespace access. This does not change local up/quickstart defaults.
 
 ### Testing and deploying against that candidate
 
-Native Orka workspace `test` and explicit-digest `deploy` can select an already
+Native Orka workspace `package test` and explicit-digest `package deploy` can select an already
 installed candidate with `--orka-chart PATH --orka-chart-sha256 SHA256`.
 Both flags are required together, and `--to-namespace` must match that chart's
 Task namespace. Selection does not install or upgrade anything. It verifies
@@ -166,7 +166,7 @@ Orka v0.2.0 does not require an LLM API key to install; model calls need a
 Provider and an endpoint the cluster can reach. Its `Provider` type accepts
 `baseURL` — "an optional custom API endpoint (for proxies or self-hosted)" —
 so kmx creates one of `type: openai` pointing at the keyless in-cluster model
-server `kmx local up` already deployed:
+server `kmx cluster up` already deployed:
 
 ```yaml
 spec:
@@ -241,7 +241,7 @@ arbitrary condition messages are not displayed.
 ### Runtime and result access
 
 For an explicitly split installation, pass the watched Task namespace to
-`run`, `chat`, `test` and `task result`. Result credentials remain in that
+`run`, `chat`, `package test` and `cluster task result`. Result credentials remain in that
 namespace. If it has no Orka API Service, kmx checks the existing management
 namespace `orka-system` and requires one non-terminating controller whose
 joined `--watch-namespace=<task-namespace>` configuration matches exactly.
@@ -266,12 +266,12 @@ transport failures remain explicit errors.
 ## The whole journey, from nothing
 
 ```console
-$ kmx quickstart                            # a cluster, model, Orka Agent and fresh Task answer
+$ kmx cluster quickstart                            # a cluster, model, Orka Agent and fresh Task answer
 ```
 
-Use `kmx local up` instead to install the runtime without creating an Agent, then
+Use `kmx cluster up` instead to install the runtime without creating an Agent, then
 follow the [native create guide](#author-an-orka-agent-and-get-an-answer).
-Both setup paths install Orka, so neither needs a separate `kmx orka install`.
+Both setup paths install Orka, so neither needs a separate `kmx cluster orka install`.
 
 ## Authoring an agent for Orka
 
@@ -317,11 +317,11 @@ traffic. Configure its runtime and model access through the upstream interfaces.
 - **One pinned install.** `v0.2.0` chart, harness-v2, release `orka`, namespace
   `orka-system`, fullname `orka-api`. A recognized matching kmx installation
   keeps its chart, key and data on rerun only when its image overrides match
-  the pin and its controller is Ready. `kmx orka install` also ensures the
+  the pin and its controller is Ready. `kmx cluster orka install` also ensures the
   read-only Task result account. An existing namespace alone is not an Orka
   installation; kmx refuses a legacy controller/CRD or foreign Helm release,
   not a pre-created `orka-system` namespace containing only Secrets or ServiceAccounts.
-  On an existing kind cluster, `kmx local up` performs this refusal and checks a
+  On an existing kind cluster, `kmx cluster up` performs this refusal and checks a
   recognized controller's readiness before starting the long model pull.
 - **Partial installs require operator review.** Applying CRDs or creating a
   failed Helm release can leave cluster state even if installation times out.
@@ -331,7 +331,7 @@ traffic. Configure its runtime and model access through the upstream interfaces.
   SHA-256-verified chart with
   `helm --kube-context <ctx> -n orka-system upgrade orka <verified-orka-0.2.0.tgz> --reuse-values --wait`
   (never `--force`), or clean the failed target before retrying kmx. On a
-  disposable local kind cluster you created, `kmx local down` then `kmx local up` replaces
+  disposable local kind cluster you created, `kmx cluster down` then `kmx cluster up` replaces
   it, losing its data. On AKS, stop and use the verified backup/recovery plan.
 - **No supported version upgrade.** [Orka v0.2.0 explicitly supports only new
   installations](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/upgrading.md).
@@ -339,9 +339,9 @@ traffic. Configure its runtime and model access through the upstream interfaces.
   release that publishes a tested procedure*, not instructions to upgrade
   v0.1.3 to v0.2.0. Do not use `helm upgrade --force`.
 - **Local kind replacement loses data.** If replacing an old local install,
-  first export anything you need; `kmx local down` deletes the named kind cluster,
+  first export anything you need; `kmx cluster down` deletes the named kind cluster,
   including Orka Tasks, custom resources, Secrets, SQLite volumes, snapshots,
-  model data and any historical database still present. Only then run `kmx local up`
+  model data and any historical database still present. Only then run `kmx cluster up`
   for a new v0.2.0 installation. This is not a migration and does not restore the deleted data.
 - **AKS replacement is operator-managed.** Before retiring v0.1.3, make and
   verify backups of the existing controller data volumes, Orka resources/Secrets
@@ -352,7 +352,7 @@ traffic. Configure its runtime and model access through the upstream interfaces.
   and [upgrade limits](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/upgrading.md)
   for a fresh new install on a clean target, not an in-place upgrade or an
   assumption that old SQLite data or running Tasks can be restored into v0.2.0.
-  `kmx aks up` is not a backup/restore tool; never delete cloud resources
+  `kmx cluster aks up` is not a backup/restore tool; never delete cloud resources
   without an independently verified recovery plan. Orka warns Helm uninstall
   can delete PVCs (and, with a Delete reclaim policy, their underlying data),
   while deleting CRDs deletes their custom resources.

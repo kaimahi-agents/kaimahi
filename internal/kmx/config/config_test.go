@@ -211,7 +211,7 @@ func TestContextResolutionOrder(t *testing.T) {
 		t.Errorf("KIND_CLUSTER: got %q from %q, want kind-mine from KIND_CLUSTER", c.KubeContext, c.ContextSource)
 	}
 
-	// 3. a context selected by `kmx context use` beats the default.
+	// 3. a context selected by `kmx cluster context use` beats the default.
 	if _, err := WriteSelectedContext("kind-selected"); err != nil {
 		t.Fatal(err)
 	}

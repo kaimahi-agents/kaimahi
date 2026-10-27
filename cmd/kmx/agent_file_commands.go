@@ -45,18 +45,18 @@ func fileModelRoute(provider, endpoint string) modelaccess.Route {
 }
 
 func registerFileCommandFlags(cmd *cobra.Command, f *fileCommandOptions, output bool) {
-	cmd.Flags().BoolVar(&f.Verbose, "verbose", false, "show content-free file preview diagnostics and timings on stderr (requires FILE)")
-	cmd.Flags().StringVar(&f.CaseID, "case", "", "run only this saved example ID (partial local preview)")
-	cmd.Flags().StringVar(&f.Provider, "provider", "", "file-model provider: copilot (default), fake (use --model fake), ollama, foundry-local or compatible; no fallback")
-	cmd.Flags().StringVar(&f.Endpoint, "provider-url", "", "model endpoint (required for local providers; fixed for Copilot)")
-	cmd.Flags().StringVar(&f.Model, "model", "", "override the file model for this invocation")
-	cmd.Flags().BoolVar(&f.NoContent, "no-content", false, "omit answers, failure operands and judge content (requires FILE)")
-	cmd.Flags().StringVar(&f.ToolBindings, "tool-bindings", "", "explicit host-owned tool binding file (requires FILE; supports local and Copilot models)")
+	cmd.Flags().BoolVar(&f.Verbose, "verbose", false, "Content-free diagnostics and timings on stderr")
+	cmd.Flags().StringVar(&f.CaseID, "case", "", "One saved example ID (partial preview)")
+	cmd.Flags().StringVar(&f.Provider, "provider", "", "copilot (default), fake, ollama, foundry-local, compatible")
+	cmd.Flags().StringVar(&f.Endpoint, "provider-url", "", "Required local model URL; fixed for Copilot")
+	cmd.Flags().StringVar(&f.Model, "model", "", "Model override for this invocation")
+	cmd.Flags().BoolVar(&f.NoContent, "no-content", false, "Hide answers and failed assertion content")
+	cmd.Flags().StringVar(&f.ToolBindings, "tool-bindings", "", "Host-owned tool binding file (local/Copilot)")
 	if cmd.Name() == "test" {
-		cmd.Flags().BoolVar(&f.GitHubSummary, "github-summary", false, "append the content-free JSON report summary to $GITHUB_STEP_SUMMARY (requires FILE and -o json)")
+		cmd.Flags().BoolVar(&f.GitHubSummary, "github-summary", false, "JSON summary to $GITHUB_STEP_SUMMARY (-o json)")
 	}
 	if output {
-		cmd.Flags().StringVarP(&f.Output, "output", "o", "text", "file preview output: text|json")
+		cmd.Flags().StringVarP(&f.Output, "output", "o", "text", "File output: text or json")
 	}
 }
 func validateFileCommand(cmd *cobra.Command, state *commandState, f fileCommandOptions) error {

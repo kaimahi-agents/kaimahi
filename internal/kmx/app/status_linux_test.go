@@ -51,8 +51,8 @@ func reportApp(t *testing.T, out io.Writer, script string) *App {
 		Run: &run.Runner{Stdout: out, Stderr: io.Discard}}
 }
 
-// `kmx context show` explains incomplete local setup and its repair path. Keep that
-// context guidance separate from `kmx status`, which delegates to the native
+// `kmx cluster context show` explains incomplete local setup and its repair path. Keep that
+// context guidance separate from `kmx package status`, which delegates to the native
 // Orka status report.
 func TestCtxShowsHowToCompleteMissingDefaultSetup(t *testing.T) {
 	var out bytes.Buffer
@@ -63,7 +63,7 @@ esac`)
 	if err := a.Ctx(""); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "setup:   incomplete") || !strings.Contains(out.String(), "kmx quickstart") {
+	if !strings.Contains(out.String(), "setup:   incomplete") || !strings.Contains(out.String(), "kmx cluster quickstart") {
 		t.Fatalf("context report did not offer the repair path: %s", out.String())
 	}
 }

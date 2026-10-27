@@ -437,13 +437,13 @@ cat >&2 <<EOF
 
 aks-up: ready.
 
-  context:   $CLUSTER   (NOT a kind context — kmx aks up already confirmed it)
+  context:   $CLUSTER   (NOT a kind context — kmx cluster aks up already confirmed it)
   registry:  $ACR.azurecr.io
   netpol:    $NETWORK_POLICY engine (present; workload enforcement is not proved here)
   continue:  $KMX_LIFT_CONTINUE
   teardown:  $teardown
 
-The invoking kmx aks up continues automatically. Use the commands above only
+The invoking kmx cluster aks up continues automatically. Use the commands above only
 to resume after interruption or to tear the billed resources down.
 EOF
 else
@@ -461,6 +461,6 @@ aks-up: ready.
 This standalone script does not create a KMX ownership record. Continue runtime
 setup using an explicitly selected context (see docs/aks.md); do not change this
 created environment to --byo merely to resume. Use the script teardown above for
-this standalone run. For KMX-managed setup and recovery, start with kmx aks up.
+this standalone run. For KMX-managed setup and recovery, start with kmx cluster aks up.
 EOF
 fi

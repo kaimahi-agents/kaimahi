@@ -21,7 +21,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
-// The fake cluster boundary for `kmx local up`. The legacy read answers the way a
+// The fake cluster boundary for `kmx cluster up`. The legacy read answers the way a
 // cluster WITHOUT the kagent CRDs answers — "the server doesn't have a
 // resource type" — so any run that touches it fails, and a run that completes
 // has demonstrably not touched it.
@@ -132,7 +132,7 @@ func upCalls(t *testing.T, args string) string {
 	return string(body)
 }
 
-// `kmx local up` is the Orka runtime and nothing else, so it must never ask this
+// `kmx cluster up` is the Orka runtime and nothing else, so it must never ask this
 // cluster about the legacy runtime. The fake answers that read the way a
 // cluster with no kagent CRD answers — the command completing at all is the
 // proof that it was not asked.
@@ -338,11 +338,11 @@ func TestOrkaUpRefusesUnreadyOwnedReleaseBeforeModelPull(t *testing.T) {
 func TestBareOrkaUpCompletesWithoutQueryingTheLegacyRuntime(t *testing.T) {
 	a, errOut, args := upFixture(t)
 	if err := a.Up(""); err != nil {
-		t.Fatalf("a bare Orka-only `kmx local up` failed: %v\n%s", err, errOut)
+		t.Fatalf("a bare Orka-only `kmx cluster up` failed: %v\n%s", err, errOut)
 	}
 	calls := upCalls(t, args)
 	if strings.Contains(calls, "kagent") || strings.Contains(calls, "modelconfigs") {
-		t.Errorf("a bare `kmx local up` read the legacy runtime:\n%s", calls)
+		t.Errorf("a bare `kmx cluster up` read the legacy runtime:\n%s", calls)
 	}
 	for _, want := range []string{"COMPLETE", "Runtime setup finished", "[4/4]"} {
 		if !strings.Contains(errOut.String(), want) {
@@ -350,7 +350,7 @@ func TestBareOrkaUpCompletesWithoutQueryingTheLegacyRuntime(t *testing.T) {
 		}
 	}
 	if strings.Contains(errOut.String(), "Collect runtime status") {
-		t.Errorf("a bare `kmx local up` still collects the legacy status:\n%s", errOut)
+		t.Errorf("a bare `kmx cluster up` still collects the legacy status:\n%s", errOut)
 	}
 }
 
@@ -410,7 +410,7 @@ func TestUpOrkaRefusesToReplaceHostLocalEndpoint(t *testing.T) {
 	if err == nil {
 		t.Fatal("overwrote the existing host endpoint")
 	}
-	for _, want := range []string{"http://172.18.0.1:11434/v1", orkaDefaultModelURL, "kmx --context kind-test orka install", "--model-url", "replaces the host route"} {
+	for _, want := range []string{"http://172.18.0.1:11434/v1", orkaDefaultModelURL, "kmx --context kind-test cluster orka install", "--model-url", "replaces the host route"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("refusal missing %q: %v", want, err)
 		}
@@ -445,9 +445,9 @@ func TestBareUpWaitsForCurrentGenerationProviderReady(t *testing.T) {
 func TestOrkaOnlyUpPointsAtNativeAuthoring(t *testing.T) {
 	a, errOut, _ := upFixture(t)
 	if err := a.Up(""); err != nil {
-		t.Fatalf("a bare Orka-only `kmx local up` failed: %v\n%s", err, errOut)
+		t.Fatalf("a bare Orka-only `kmx cluster up` failed: %v\n%s", err, errOut)
 	}
-	for _, want := range []string{"quickstart --interactive", "create --help", "author workspace source offline"} {
+	for _, want := range []string{a.operationCommand("cluster", "quickstart", "--interactive"), "create --help", "author workspace source offline"} {
 		if !strings.Contains(errOut.String(), want) {
 			t.Errorf("the Orka-only run offers no current authoring route %q:\n%s", want, errOut)
 		}

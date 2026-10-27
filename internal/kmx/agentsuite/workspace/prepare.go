@@ -48,7 +48,7 @@ func SourceFiles(ctx context.Context, root string, prepared *Prepared) (map[stri
 
 // ErrCacheMigration is payload-free so offline consumers can retain the remedy
 // when redacting untrusted preparation errors.
-var ErrCacheMigration = errors.New("prepared cache uses an earlier or unknown packaging policy; move aside only the affected prepared cache entry and retry; if the rebuilt artifact identity changes, rerun kmx test before kmx push; keep existing receipts and managed passing evidence")
+var ErrCacheMigration = errors.New("prepared cache uses an earlier or unknown packaging policy; move aside only the affected prepared cache entry and retry; if the rebuilt artifact identity changes, rerun kmx package test before kmx package push; keep existing receipts and managed passing evidence")
 
 const cachePackaging = "kmx.directory-modes/v1"
 

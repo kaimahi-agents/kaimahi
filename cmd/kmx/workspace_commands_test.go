@@ -51,13 +51,13 @@ func TestWorkspaceCreateAndPushAreOfflineAndPreserveDigest(t *testing.T) {
 	}
 	// An explicit nested root without a marker must not fall back to the valid
 	// ancestor that the following bare push will discover.
-	if err := execute([]string{"push", "--workspace", ".", "--to-layout", layout, "team:v1"}, deps); !errors.Is(err, workspace.ErrNotFound) {
+	if err := execute([]string{"package", "push", "--workspace", ".", "--to-layout", layout, "team:v1"}, deps); !errors.Is(err, workspace.ErrNotFound) {
 		t.Fatalf("exact override fell back or lost error identity: %v", err)
 	}
 	if _, err := os.Stat(layout); !os.IsNotExist(err) || *loads != 0 || out.Len() != 0 || diagnostics.Len() != 0 {
 		t.Fatal("missing exact override wrote destination, loaded config or emitted output")
 	}
-	if err := execute([]string{"push", "--unevaluated", "--to-layout", layout, "team:v1"}, deps); err != nil {
+	if err := execute([]string{"package", "push", "--unevaluated", "--to-layout", layout, "team:v1"}, deps); err != nil {
 		t.Fatal(err)
 	}
 	first := out.String()
@@ -87,7 +87,7 @@ func TestWorkspaceCreateAndPushAreOfflineAndPreserveDigest(t *testing.T) {
 	t.Chdir(unrelated)
 	diagnostics.Reset()
 	out.Reset()
-	if err := execute([]string{"push", "--unevaluated", "--workspace", root, "--to-layout", layout, "team:v1"}, deps); err != nil {
+	if err := execute([]string{"package", "push", "--unevaluated", "--workspace", root, "--to-layout", layout, "team:v1"}, deps); err != nil {
 		t.Fatal(err)
 	}
 	if out.String() != first || diagnostics.String() != identity {
@@ -97,7 +97,7 @@ func TestWorkspaceCreateAndPushAreOfflineAndPreserveDigest(t *testing.T) {
 		t.Fatal("workspace publication loaded operational configuration")
 	}
 	pulled := filepath.Join(t.TempDir(), "pulled")
-	if err := execute([]string{"suite", "pull", "team:v1", "--from-layout", layout, "--output", pulled}, deps); err != nil {
+	if err := execute([]string{"package", "pull", "team:v1", "--from-layout", layout, "--output", pulled}, deps); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(filepath.Join(pulled, "instructions", "greeter.md"))
@@ -132,7 +132,7 @@ func TestCreateWithoutLiveAuthorsNonOrkaMember(t *testing.T) {
 			if err != nil || suite.Runtime != profile {
 				t.Fatalf("wrong authored runtime: %v, %v", suite, err)
 			}
-			if err = execute([]string{"push", "--unevaluated", "--workspace", root, "--to-layout", layout, "team:v1"}, deps); err != nil {
+			if err = execute([]string{"package", "push", "--unevaluated", "--workspace", root, "--to-layout", layout, "team:v1"}, deps); err != nil {
 				t.Fatal(err)
 			}
 			store, err := oci.New(layout)
@@ -241,8 +241,8 @@ func TestWorkspaceSelectorsRejectEmptyAndAmbiguousSource(t *testing.T) {
 	for _, args := range [][]string{
 		{"create", "greeter", "--workspace", ""},
 		{"create", "--workspace", "."},
-		{"push", "--workspace", "", "team:v1"},
-		{"push", "directory", "team:v1", "--workspace", "."},
+		{"package", "push", "--workspace", "", "team:v1"},
+		{"package", "push", "directory", "team:v1", "--workspace", "."},
 	} {
 		var out, diagnostics bytes.Buffer
 		deps, loads := testDependencies(&out, &diagnostics)
@@ -288,7 +288,7 @@ func TestWorkspaceRegistryPushProvenanceControls(t *testing.T) {
 			}
 			var out, diagnostics bytes.Buffer
 			deps, loads := testDependencies(&out, &diagnostics)
-			args := append([]string{"push", "--unevaluated", "--workspace", root, ref, "--plain-http"}, tc.flags...)
+			args := append([]string{"package", "push", "--unevaluated", "--workspace", root, ref, "--plain-http"}, tc.flags...)
 			err := execute(args, deps)
 			if tc.required {
 				if err == nil || !strings.Contains(err.Error(), "tag was not changed") {
@@ -331,7 +331,7 @@ func TestWorkspaceProvenanceFlagsRefuseConflictsBeforePreparation(t *testing.T) 
 		t.Setenv("KMX_HOME", state)
 		var out, diagnostics bytes.Buffer
 		deps, loads := testDependencies(&out, &diagnostics)
-		args := append([]string{"push", "--workspace", "missing-workspace", "team:v1"}, flags...)
+		args := append([]string{"package", "push", "--workspace", "missing-workspace", "team:v1"}, flags...)
 		if err := execute(args, deps); err == nil || !strings.Contains(err.Error(), "provenance") {
 			t.Fatalf("invalid provenance flags: %v", err)
 		}
@@ -392,7 +392,7 @@ func TestWorkspaceProfileParseErrorsDoNotDiscloseContent(t *testing.T) {
 			t.Fatal(err)
 		}
 		out.Reset()
-		err := execute([]string{"push", "--workspace", root, "--to-layout", filepath.Join(t.TempDir(), "published"), "team:v1"}, deps)
+		err := execute([]string{"package", "push", "--workspace", root, "--to-layout", filepath.Join(t.TempDir(), "published"), "team:v1"}, deps)
 		if err == nil || !strings.Contains(err.Error(), "profile") {
 			t.Fatal("invalid profile should refuse with a profile diagnostic")
 		}
@@ -412,7 +412,7 @@ func TestWorkspaceHelpAndCompletionHaveNoOperationalEffects(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, args := range [][]string{
-		{"create", "--help"}, {"push", "--help"}, {"suite", "push", "--help"},
+		{"create", "--help"}, {"package", "push", "--help"}, {"package", "suite", "push", "--help"},
 		{"__complete", "create", "--workspace", ""},
 		{"__complete", "create", "--l"},
 		{"__complete", "push", "--workspace", ""},
@@ -436,17 +436,17 @@ func TestWorkspacePushRoutingAndArity(t *testing.T) {
 		args  []string
 		want  string
 	}{
-		{"missing", []string{"push"}, []string{"team:v1"}, "no workspace found"},
-		{"context", []string{"push"}, []string{"team:v1", "--context", "unused"}, "--context"},
-		{"engine", []string{"push"}, []string{"team:v1", "--container-engine", "docker"}, "--container-engine"},
-		{"bare layout", []string{"push"}, nil, "explicit reference"},
-		{"two positional", []string{"push"}, []string{fixture, "team:v1"}, "at most one"},
-		{"extra positional", []string{"push"}, []string{"one", "two", "three"}, "at most one"},
-		{"blank override", []string{"push"}, []string{"team:v1", "--workspace", " "}, "non-empty --workspace"},
-		{"ambiguous override", []string{"push"}, []string{"directory", "team:v1", "--workspace", "."}, "at most one"},
-		{"suite one positional", []string{"suite", "push"}, []string{"team:v1"}, "usage:"},
-		{"suite workspace removed", []string{"suite", "push"}, []string{"team:v1", "--workspace", "."}, "unknown flag: --workspace"},
-		{"extracted bypass", []string{"suite", "push"}, []string{fixture, "team:v1"}, ""},
+		{"missing", []string{"package", "push"}, []string{"team:v1"}, "no workspace found"},
+		{"context", []string{"package", "push"}, []string{"team:v1", "--context", "unused"}, "--context"},
+		{"engine", []string{"package", "push"}, []string{"team:v1", "--container-engine", "docker"}, "--container-engine"},
+		{"bare layout", []string{"package", "push"}, nil, "explicit reference"},
+		{"two positional", []string{"package", "push"}, []string{fixture, "team:v1"}, "at most one"},
+		{"extra positional", []string{"package", "push"}, []string{"one", "two", "three"}, "at most one"},
+		{"blank override", []string{"package", "push"}, []string{"team:v1", "--workspace", " "}, "non-empty --workspace"},
+		{"ambiguous override", []string{"package", "push"}, []string{"directory", "team:v1", "--workspace", "."}, "at most one"},
+		{"suite one positional", []string{"package", "suite", "push"}, []string{"team:v1"}, "usage:"},
+		{"suite workspace removed", []string{"package", "suite", "push"}, []string{"team:v1", "--workspace", "."}, "unknown flag: --workspace"},
+		{"extracted bypass", []string{"package", "suite", "push"}, []string{fixture, "team:v1"}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root, state := t.TempDir(), t.TempDir()

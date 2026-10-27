@@ -104,7 +104,7 @@ func deploymentRecoveryArgs(argv []string) []string {
 			continue
 		default:
 			if args[i] == "lift" {
-				args[i] = "deploy"
+				return append(args[:i], append([]string{"package", "deploy"}, args[i+1:]...)...)
 			}
 			return args
 		}

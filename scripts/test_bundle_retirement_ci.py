@@ -136,11 +136,11 @@ if pathlib.Path(sys.argv[0]).name == "kubectl":
     print(os.environ.get("SURVIVING", ""), end="")
 elif args[0] == "create":
     pathlib.Path("workspace/eval").mkdir()
-elif args[0] == "test":
+elif args[:2] == ["package", "test"]:
     pathlib.Path("evidence/passing.json").write_text(json.dumps({
         "candidateCleanup": os.environ.get("CLEANUP", "complete"), "result": "pass",
         "cases": [{"taskName": "candidate-task", "assertions": [{"verdict": "pass"}]}]}))
-elif args[0] == "push":
+elif args[:2] == ["package", "push"]:
     pathlib.Path("layout").mkdir()
     pathlib.Path("layout/index.json").write_text('{"manifests":[{"digest":"sha256:fixture"}]}')
 '''
@@ -160,8 +160,8 @@ elif args[0] == "push":
                 authored = yaml.safe_load((root / "workspace/eval/example.yaml").read_bytes())
                 self.assertEqual(authored["assertions"], [{"id": "exact-answer", "type": "regex", "pattern": "(?s)^Orka says hello[.]\\n*$"}])
                 calls = [json.loads(line) for line in (root / "calls.jsonl").read_text().splitlines()]
-                lifted = [c for c in calls if c[:2] == ["kmx", "deploy"]]
-                pushed = [c for c in calls if c[:2] == ["kmx", "push"]]
+                lifted = [c for c in calls if c[:3] == ["kmx", "package", "deploy"]]
+                pushed = [c for c in calls if c[:3] == ["kmx", "package", "push"]]
                 self.assertEqual(bool(lifted), success)
                 self.assertEqual(bool(pushed), success)
                 if success:

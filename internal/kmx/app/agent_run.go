@@ -56,7 +56,7 @@ func orkaResultPort(port string) (string, error) {
 }
 
 func (a *App) taskRecovery(name, contextName, namespace string) string {
-	return fmt.Sprintf("%s task result %s --context %s --namespace %s --wait 5m", shellArg(a.commandExecutable()), shellArg(name), shellArg(contextName), shellArg(namespace))
+	return fmt.Sprintf("%s cluster task result %s --context %s --namespace %s --wait 5m", shellArg(a.commandExecutable()), shellArg(name), shellArg(contextName), shellArg(namespace))
 }
 
 func (a *App) pendingTask(name, contextName, namespace string) error {

@@ -58,7 +58,7 @@ func (a *App) QuickstartWizard(opt QuickstartWizardOptions) error {
 	a.chatVerbose = opt.Verbose
 	started := a.timeNow()
 	if a.Stdin == nil || !isInteractiveTerminal(a.Stdin) || !isInteractiveTerminal(a.Err) || os.Getenv("TERM") == "dumb" {
-		return fmt.Errorf("kmx quickstart --interactive requires an interactive terminal; use `kmx quickstart` for automation")
+		return fmt.Errorf("kmx cluster quickstart --interactive requires an interactive terminal; use `kmx cluster quickstart` for automation")
 	}
 	if err := a.validateKindTarget(); err != nil {
 		return err
@@ -186,7 +186,7 @@ func (a *App) quickstartWizardTarget() (quickstartTarget, error) {
 	// Only the already-safe local path moves its banner into the TUI. A remote
 	// or unverified target retains GuardCreate's visible confirmation flow.
 	if !posture.Local {
-		if err := a.GuardCreateIn(action, a.operationCommand("quickstart", "--interactive"), a.orkaSetupNamespaces()); err != nil {
+		if err := a.GuardCreateIn(action, a.operationCommand("cluster", "quickstart", "--interactive"), a.orkaSetupNamespaces()); err != nil {
 			return quickstartTarget{}, err
 		}
 	} else {

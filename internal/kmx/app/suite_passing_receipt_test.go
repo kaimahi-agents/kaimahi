@@ -433,7 +433,7 @@ func TestSuitePassingReceiptRefusesPreviousCaseLayoutWithRemedy(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = parseSuitePassingReceipt(raw)
-	if !errors.Is(err, errPreviousSuiteReceipt) || !errors.Is(err, errSuitePassingReceipt) || !strings.Contains(err.Error(), "rerun kmx eval and kmx push") {
+	if !errors.Is(err, errPreviousSuiteReceipt) || !errors.Is(err, errSuitePassingReceipt) || !strings.Contains(err.Error(), "rerun kmx eval and kmx package push") {
 		t.Fatalf("previous layout receipt error = %v", err)
 	}
 }
@@ -457,7 +457,7 @@ func TestSuitePassingReceiptRefusesPreviousRuntimeReceiptWithRemedy(t *testing.T
 				t.Fatal(err)
 			}
 			_, err = parseSuitePassingReceipt(raw)
-			if !errors.Is(err, errPreviousSuiteReceipt) || !strings.Contains(err.Error(), "rerun kmx eval and kmx push") {
+			if !errors.Is(err, errPreviousSuiteReceipt) || !strings.Contains(err.Error(), "rerun kmx eval and kmx package push") {
 				t.Fatalf("previous %s receipt error = %v", mode, err)
 			}
 		})

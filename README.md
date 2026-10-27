@@ -24,11 +24,11 @@ Copilot app, shows what broke and why, compares models and replays tool calls.
 ## Package and deploy to Kubernetes
 
 **Run / Test / Publish:** Run invokes an existing live Orka Agent; Test checks
-workspace cases with `kmx test`; Publish transfers the tested package with
-`kmx push`. Deploy places that package on a real target. Run is not local
+workspace cases with `kmx package test`; Publish transfers the tested package with
+`kmx package push`. Deploy places that package on a real target. Run is not local
 workspace execution.
 
-These docs follow main. `kmx test` and `kmx deploy` are unreleased; v0.8.1 uses
+These docs follow main. `kmx package test` and `kmx package deploy` are unreleased; v0.8.1 uses
 `kmx eval` and `kmx lift` with the same arguments. See
 [Test compatibility](docs/kmx.md#test-compatibility-unreleased) and
 [Deploy compatibility](docs/kmx.md#deploy-compatibility-unreleased).
@@ -43,11 +43,15 @@ package-free fake `run FILE` / `test FILE`, and offline
 `test explain --file FILE`. Stable v0.8.1 and `@latest` have no Windows `.exe`;
 use WSL for quickstart and every broader workflow.
 
+For stable v0.8.1:
+
 ```sh
 brew install kaimahi-agents/tap/kmx
 kmx version
 kmx quickstart
 ```
+
+On unreleased main, use `kmx cluster quickstart` instead.
 
 Quickstart prepares a local Kubernetes test cluster and runs a sample agent.
 It succeeds only after the agent returns an answer. On an uncached first run,

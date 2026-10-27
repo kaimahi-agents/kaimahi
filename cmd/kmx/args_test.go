@@ -13,8 +13,8 @@ func TestContextIsExtractedFromAnywhere(t *testing.T) {
 		wantKept []string
 		wantCtx  string
 	}{
-		{[]string{"--context", "kind-x", "local", "up"}, []string{"local", "up"}, "kind-x"},
-		{[]string{"local", "up", "--context", "kind-x"}, []string{"local", "up"}, "kind-x"},
+		{[]string{"--context", "kind-x", "cluster", "up"}, []string{"cluster", "up"}, "kind-x"},
+		{[]string{"cluster", "up", "--context", "kind-x"}, []string{"cluster", "up"}, "kind-x"},
 		{[]string{"chat", "hello", "hi", "-context=kind-x"}, []string{"chat", "hello", "hi"}, "kind-x"},
 	} {
 		kept, context, err := extractContext(tc.argv)
@@ -25,7 +25,7 @@ func TestContextIsExtractedFromAnywhere(t *testing.T) {
 			t.Fatalf("%v -> %v %q", tc.argv, kept, context)
 		}
 	}
-	for _, argv := range [][]string{{"local", "up", "--context"}, {"local", "up", "--context="}, {"local", "up", "--context", " "}} {
+	for _, argv := range [][]string{{"cluster", "up", "--context"}, {"cluster", "up", "--context="}, {"cluster", "up", "--context", " "}} {
 		if _, _, err := extractContext(argv); err == nil {
 			t.Errorf("empty context accepted: %v", argv)
 		}
@@ -112,7 +112,7 @@ func TestBareUsageNamesEveryTopLevelCommand(t *testing.T) {
 		if child.Hidden {
 			// Retirement stubs and compatibility routes remain parseable but
 			// are not advertised alongside canonical commands.
-			if child.Name() != "quickstart-wizard" && child.Name() != "aks" && child.Name() != "bundle" && child.Name() != "lift" && child.Name() != "eval" {
+			if child.Name() != "quickstart-wizard" && child.Name() != "aks" && child.Name() != "bundle" && child.Name() != "lift" && child.Name() != "eval" && child.Name() != "mcp" && child.Name() != "completion" {
 				t.Errorf("command %q is unexpectedly hidden", child.Name())
 			}
 			continue
@@ -128,7 +128,7 @@ func TestBareUsageNamesEveryTopLevelCommand(t *testing.T) {
 	}
 	// The behavioral front-door checks pin the retained surface independently;
 	// this guard keeps the derived help check from passing on an empty tree.
-	if named == 0 || !strings.Contains(out.String(), "quickstart ") || !strings.Contains(out.String(), "create ") {
+	if named == 0 || !strings.Contains(out.String(), "cluster ") || !strings.Contains(out.String(), "create ") {
 		t.Fatalf("usage page lost its native front door (%d commands):\n%s", named, out.String())
 	}
 }

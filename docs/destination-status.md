@@ -1,16 +1,16 @@
 # Inspect a destination
 
-`kmx status --to NAME` inventories deployed Orka, kagent and AgentSessions Agents throughout one
+`kmx package status --to NAME` inventories deployed Orka, kagent and AgentSessions Agents throughout one
 named destination namespace. It does not select this workspace's suite, evaluate
 an agent, repair resources, or report controller installation qualification.
 
 ```bash
-kmx status --to prod
-kmx status --to prod --workspace ./operator-workspace -o json
+kmx package status --to prod
+kmx package status --to prod --workspace ./operator-workspace -o json
 ```
 
-Use `kmx orka status` for the existing table-only Orka runtime report. Bare
-`kmx status` now refuses before application configuration and names both routes.
+Use `kmx cluster orka status` for the existing table-only Orka runtime report. Bare
+`kmx package status` now refuses before application configuration and names both routes.
 There is no new `suite status` or legacy bundle-status command.
 
 ## Selection and access

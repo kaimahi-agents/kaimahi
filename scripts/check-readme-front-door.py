@@ -29,13 +29,17 @@ INSTALL_COMMANDS = [
 ]
 FIRST_ANSWER_COMMANDS = [
     ("kmx version", r"^kmx version$"),
+    ("kmx cluster quickstart", r"^kmx cluster quickstart$"),
+]
+STABLE_FIRST_ANSWER_COMMANDS = [
+    ("kmx version", r"^kmx version$"),
     ("kmx quickstart", r"^kmx quickstart$"),
 ]
 JOURNEY_ROWS = [
     ("Create", r"`kmx create NAME\b"),
-    ("Test", r"`kmx test --workspace DIR\b"),
-    ("Publish", r"`kmx push --workspace DIR --evaluation RECEIPT REF`"),
-    ("Deploy", r"`kmx deploy REF@sha256:DIGEST --to-context CTX --evidence RECEIPT`"),
+    ("Test", r"`kmx package test --workspace DIR\b"),
+    ("Publish", r"`kmx package push --workspace DIR --evaluation RECEIPT REF`"),
+    ("Deploy", r"`kmx package deploy REF@sha256:DIGEST --to-context CTX --evidence RECEIPT`"),
 ]
 FENCE = re.compile(r"^```[^\n]*\n(.*?)^```", re.M | re.S)
 NEXT_SECTION = re.compile(r"^## ", re.M)
@@ -134,7 +138,7 @@ def check_workflow(text: str) -> str | None:
     blocks = list(FENCE.finditer(preamble))
     if not blocks or ordered_in(blocks[0].group(1), [
         ("create", r"^kmx create NAME --workspace \. --model MODEL --instructions FILE$"),
-        ("composed Deploy", r"^kmx deploy --to NAME$"),
+        ("composed Deploy", r"^kmx package deploy --to NAME$"),
     ]) is not None:
         return "README front door: two-command workspace path must precede manual stages"
     prerequisites = " ".join(preamble[:blocks[0].start()].split())
@@ -167,7 +171,7 @@ def check_workflow(text: str) -> str | None:
         return "README front door: Test row must preserve fail-fast execution"
     if "Neither form deploys" not in rows[2][1]:
         return "README front door: Publish row must say it does not deploy"
-    if "Plain `kmx push REF` requires passing evidence; `--unevaluated` explicitly opts out" not in rows[2][1]:
+    if "Plain `kmx package push REF` requires passing evidence; `--unevaluated` explicitly opts out" not in rows[2][1]:
         return "README front door: Publish row must require evidence or explicit opt-out"
     if "without building, repacking, or publishing" not in rows[3][1]:
         return "README front door: Deploy row must stay deploy-only"
@@ -200,8 +204,8 @@ def check_workflow(text: str) -> str | None:
     if list(paths) != PATH_ROWS:
         return "README front door: workspace/live paths must contain the exact four rows"
     for label, required in {
-        "Workspace": ["`kmx create`", "root `test`", "root `push`", "does not consume workspace source", "separate private evidence"],
-        "Local environment": ["`kmx local up`", "without creating an Agent", "setup-only", "not wired"],
+        "Workspace": ["`kmx create`", "`package test`", "`package push`", "does not consume workspace source", "separate private evidence"],
+        "Local environment": ["`kmx cluster up`", "without creating an Agent", "setup-only", "not wired"],
         "Live Agent": ["`kmx run --agent NAME --prompt TEXT`", "`kmx chat NAME`", "including suite-owned Agents", "neither is workspace-local execution or suite evaluation"],
         "Legacy bundle": ["Removed outright", "`agent.yaml` readers/writers", "Old receipts are unreadable", "no conversion, migration or on-disk/resource deletion", "Public AgentSuite implementation bundles"],
     }.items():
@@ -246,7 +250,7 @@ def check(text: str, workflow: str) -> str | None:
     blocks = list(FENCE.finditer(section_after(text, answer)))
     if not blocks:
         return "README front door: local trial command block is missing"
-    missing = ordered_in(blocks[0].group(1), INSTALL_COMMANDS[:1] + FIRST_ANSWER_COMMANDS)
+    missing = ordered_in(blocks[0].group(1), INSTALL_COMMANDS[:1] + STABLE_FIRST_ANSWER_COMMANDS)
     if missing is not None:
         return f"README front door: {missing} is missing from the local trial"
     if "](docs/workflow-overview.md)" not in section_after(text, guides):

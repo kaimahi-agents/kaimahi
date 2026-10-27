@@ -29,10 +29,10 @@ func TestRemovedRootAliasesRejectBeforeConfiguration(t *testing.T) {
 
 func TestEntrypointHelpAndCompletionAreNonOperational(t *testing.T) {
 	for _, args := range [][]string{
-		{"context"}, {"context", "show", "--help"}, {"context", "use", "--help"}, {"ctx", "--help"}, {"__complete", "ctx", ""},
-		{"local"}, {"local", "up", "--help"}, {"local", "down", "--help"},
-		{"--help"}, {"aks", "up", "--help"}, {"aks", "down", "--help"},
-		{"__complete", ""}, {"__complete", "context", ""}, {"__complete", "local", ""},
+		{"cluster", "context"}, {"cluster", "context", "show", "--help"}, {"cluster", "context", "use", "--help"}, {"package", "ctx", "--help"}, {"__complete", "package", "ctx", ""},
+		{"cluster"}, {"cluster", "up", "--help"}, {"cluster", "down", "--help"},
+		{"--help"}, {"cluster", "aks", "up", "--help"}, {"cluster", "aks", "down", "--help"},
+		{"__complete", ""}, {"__complete", "cluster", "context", ""}, {"__complete", "cluster", ""},
 	} {
 		t.Run(strings.Join(args, "_"), func(t *testing.T) {
 			var out, diagnostics bytes.Buffer
@@ -52,7 +52,7 @@ func TestEntrypointHelpAndCompletionAreNonOperational(t *testing.T) {
 				}
 			}
 			if args[0] == "__complete" && len(args) == 2 {
-				for _, name := range []string{"context", "local", "ctx"} {
+				for _, name := range []string{"cluster", "package"} {
 					if !strings.Contains(out.String(), name+"\t") {
 						t.Fatalf("canonical command missing: %s", out.String())
 					}
@@ -70,11 +70,11 @@ func TestEntrypointHelpAndCompletionAreNonOperational(t *testing.T) {
 
 func TestEntrypointsRejectInvalidArgumentsBeforeConfiguration(t *testing.T) {
 	for _, args := range [][]string{
-		{"context", "show", "extra"}, {"context", "use"}, {"context", "use", ""},
-		{"context", "use", " "}, {"context", "use", "one", "two"}, {"context", "unknown"},
-		{"local", "unknown"}, {"local", "up", "extra"}, {"local", "down", "extra"},
+		{"cluster", "context", "show", "extra"}, {"cluster", "context", "use"}, {"cluster", "context", "use", ""},
+		{"cluster", "context", "use", " "}, {"cluster", "context", "use", "one", "two"}, {"cluster", "context", "unknown"},
+		{"cluster", "unknown"}, {"cluster", "up", "extra"}, {"cluster", "down", "extra"},
 		// ctx is deliberately list-only, not the removed switching alias.
-		{"ctx", "kind-demo"}, {"ctx", "use", "prod"},
+		{"package", "ctx", "kind-demo"}, {"package", "ctx", "use", "prod"},
 	} {
 		var out, diagnostics bytes.Buffer
 		deps, loads := testDependencies(&out, &diagnostics)
@@ -85,7 +85,7 @@ func TestEntrypointsRejectInvalidArgumentsBeforeConfiguration(t *testing.T) {
 }
 
 func TestQuickstartHelpDistinguishesAnswerFromGuidedReadiness(t *testing.T) {
-	for _, args := range [][]string{{"quickstart", "--help"}, {"quickstart", "--interactive", "--help"}} {
+	for _, args := range [][]string{{"cluster", "quickstart", "--help"}, {"cluster", "quickstart", "--interactive", "--help"}} {
 		t.Run(strings.Join(args, "_"), func(t *testing.T) {
 			var out, diagnostics bytes.Buffer
 			deps, loads := testDependencies(&out, &diagnostics)
@@ -99,7 +99,7 @@ func TestQuickstartHelpDistinguishesAnswerFromGuidedReadiness(t *testing.T) {
 				"The fixed-mode default question is not submitted in guided mode",
 				"not run for an existing Agent",
 				"deployed Provider, not host-backed chat inference",
-				"kmx quickstart -o json", "kmx quickstart --interactive",
+				"kmx cluster quickstart -o json", "kmx cluster quickstart --interactive",
 			} {
 				if !strings.Contains(out.String(), text) {
 					t.Errorf("help lacks %q", text)
@@ -149,7 +149,7 @@ func TestContextCommandsPreserveSelectionAndReadOnlyOutput(t *testing.T) {
 	deps.loadConfig = func(_, _ string) (*config.Config, error) {
 		return &config.Config{KubeContext: "kind-demo", ContextSource: config.SourceSelected}, nil
 	}
-	if err := execute([]string{"context", "show"}, deps); err != nil {
+	if err := execute([]string{"cluster", "context", "show"}, deps); err != nil {
 		t.Fatal(err)
 	}
 	if selected, err := config.ReadSelectedContext(); err != nil || selected != "" {
@@ -162,7 +162,7 @@ func TestContextCommandsPreserveSelectionAndReadOnlyOutput(t *testing.T) {
 		t.Fatalf("canonical command emitted deprecation: stdout=%s stderr=%s", &out, &diagnostics)
 	}
 	deps, _ = testDependencies(&out, &diagnostics)
-	if err := execute([]string{"context", "use", "kind-demo"}, deps); err != nil {
+	if err := execute([]string{"cluster", "context", "use", "kind-demo"}, deps); err != nil {
 		t.Fatal(err)
 	}
 	if selected, err := config.ReadSelectedContext(); err != nil || selected != "kind-demo" {
@@ -171,14 +171,14 @@ func TestContextCommandsPreserveSelectionAndReadOnlyOutput(t *testing.T) {
 	// A refused remote selection cannot replace the saved local context.
 	deps, _ = testDependencies(&out, &diagnostics)
 	deps.stdin = nil
-	err := execute([]string{"context", "use", "remote team"}, deps)
+	err := execute([]string{"cluster", "context", "use", "remote team"}, deps)
 	if err == nil {
 		t.Fatal("remote context selected without named consent")
 	}
 	if selected, _ := config.ReadSelectedContext(); selected != "kind-demo" {
 		t.Fatalf("refusal changed selection to %q", selected)
 	}
-	if !strings.Contains(err.Error(), "kmx context use 'remote team'") {
+	if !strings.Contains(err.Error(), "kmx cluster context use 'remote team'") {
 		t.Fatalf("recovery does not quote the selected context: %v", err)
 	}
 }
@@ -191,7 +191,7 @@ func TestLocalUpPreservesStepAndTargetRefusals(t *testing.T) {
 			deps.loadConfig = func(context, engine string) (*config.Config, error) {
 				return &config.Config{KubeContext: context, KindCluster: "demo", ContainerEngine: engine}, nil
 			}
-			args := []string{"local", "up", "--step", step, "--context", "kind-other", "--container-engine", "podman"}
+			args := []string{"cluster", "up", "--step", step, "--context", "kind-other", "--container-engine", "podman"}
 			err := execute(args, deps)
 			if err == nil {
 				t.Fatalf("%v accepted invalid setup", args)
@@ -211,8 +211,8 @@ func TestLocalUpPreservesStepAndTargetRefusals(t *testing.T) {
 
 func TestLocalDownPreservesClusterAndEngine(t *testing.T) {
 	for _, args := range [][]string{
-		{"local", "down", "--context", "kind-demo", "--container-engine", "podman"},
-		{"--context", "kind-demo", "local", "down", "--container-engine", "podman"},
+		{"cluster", "down", "--context", "kind-demo", "--container-engine", "podman"},
+		{"--context", "kind-demo", "cluster", "down", "--container-engine", "podman"},
 	} {
 		t.Run(strings.Join(args, "_"), func(t *testing.T) {
 			log := entrypointTools(t)

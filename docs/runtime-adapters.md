@@ -2,7 +2,7 @@
 
 Orka is the default native workspace runtime, chat and quickstart runtime.
 Explicit kagent workspaces use exact v0.10.3 Go/linux-amd64. Both packaged
-profiles support root `test`, evaluated publication and digest Deploy with
+profiles support `package test`, evaluated publication and digest Deploy with
 runtime-specific evidence/bindings. Kagent Deploy is create-only, refusing occupied
 targets. Pinned AgentSessions chat separately supports native offline authoring,
 prepare/source-free load/ordinary push and explicit `--development-host FILE`
@@ -13,13 +13,13 @@ host/model observations; no cluster settings or selectors, tools, auth,
 chat or remote evaluation. Named AgentSessions Deploy creates an immutable Agent
 and status reads last observed registration, not live availability. The offline
 `--harness-image --plan` Deploy form remains a render:
-`kmx deploy REF@DIGEST --harness-image IMAGE@sha256:... --bindings FILE --evidence
+`kmx package deploy REF@DIGEST --harness-image IMAGE@sha256:... --bindings FILE --evidence
 FILE --plan` renders a substrate ActorTemplate and HarnessRegistration offline;
 that form applies nothing. Live create and legacy bundle lifecycle/readers/
 receipts/replay are removed. GET-only destination status is separate inspection;
 legacy status readers and retirement remain unavailable.
 Independent reference extraction/export and availability probes remain.
-These facts set no preference in `kmx targets`.
+These facts set no preference in `kmx cluster targets`.
 
 The selected runtime owns execution, credentials, policy and retention. KMX owns
 authoring, revision identity, target-aware lifecycle commands and evidence.
@@ -28,11 +28,11 @@ Supported operations differ by runtime; model selection is a separate choice.
 ## Read-only target view
 
 ```bash
-kmx targets                         # offline table
-kmx targets -o json                 # schemaVersion 1
+kmx cluster targets                         # offline table
+kmx cluster targets -o json                 # schemaVersion 1
 kmx --context <context> targets --detect
-kmx targets --sessions 127.0.0.1:8080
-kmx targets --detect --sessions <host:port> --sessions-ca <ca.pem>
+kmx cluster targets --sessions 127.0.0.1:8080
+kmx cluster targets --detect --sessions <host:port> --sessions-ca <ca.pem>
 ```
 
 Table and JSON rows are alphabetical: **agentsessions, kagent, orka**. Tiers
@@ -46,7 +46,7 @@ deploy a runtime, and does not change other commands' defaults.
 
 - `--detect` reads controller Deployments in `orka-system`, not workload
   namespaces. It uses existing `--context`, `KUBE_CTX`, a saved
-  `kmx context use` selection, or kind context resolution and an available
+  `kmx cluster context use` selection, or kind context resolution and an available
   kubectl; it downloads nothing. A labelled controller is `present`; a successful list with no matching controller is
   `absent` within that namespace. Both kubectl's `List` and the API's
   `DeploymentList` envelopes are accepted; missing or null `items` is malformed,

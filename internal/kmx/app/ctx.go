@@ -32,7 +32,7 @@ func (a *App) Ctx(context string) error {
 		Source:     config.SourceSelected,
 		Namespaces: config.GuardNamespaceHint,
 		Confirm:    a.Cfg.Confirm,
-		Command:    shellArg(a.commandExecutable()) + " context use " + shellArg(context),
+		Command:    shellArg(a.commandExecutable()) + " cluster context use " + shellArg(context),
 	}, a.Err, a.Stdin); err != nil {
 		return err
 	}
@@ -74,7 +74,7 @@ func (a *App) showCtx() error {
 			posture.Context, a.Cfg.ContextSource, host, posture.Label)
 	}
 	if posture.Host == "" && a.Cfg.ContextSource == config.SourceDefault {
-		fmt.Fprintln(a.Out, "setup:   incomplete — run `kmx quickstart` to create or repair this local cluster")
+		fmt.Fprintln(a.Out, "setup:   incomplete — run `kmx cluster quickstart` to create or repair this local cluster")
 	}
 	return nil
 }

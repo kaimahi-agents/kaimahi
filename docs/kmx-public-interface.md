@@ -133,9 +133,11 @@ The package also exposes the request, result, reference, and receipt values used
 by these interfaces. Important durable identities include `EnvironmentRef`,
 `TargetRef`, `RuntimeRef`, `DeploymentRef`, and the receipt types.
 
-## Conceptual mapping for `kmx local up`
+<a id="conceptual-mapping-for-kmx-local-up"></a>
 
-The setup-only Go operation maps conceptually to a bare `kmx local up`; the
+## Conceptual mapping for `kmx cluster up`
+
+The setup-only Go operation maps conceptually to a bare `kmx cluster up`; the
 installed command does not call it yet:
 
 ```go
@@ -235,18 +237,18 @@ The intended conceptual mapping is:
 
 | CLI operation | Go service operation |
 |---|---|
-| bare `kmx local up` | Conceptually `AgentEnvironment.Up`; not wired today |
-| `kmx local down` | No `AgentEnvironment` method; current behavior is unchanged |
-| `kmx suite validate` | Related to `AgentSuites.Validate`, but current command does not materialize its staged result |
-| `kmx suite build` | Current one-member experimental command is not `AgentSuites.Build` |
-| `kmx suite push` / root `kmx push --workspace DIR REF` | Current extracted-definition/workspace transfer is not `AgentSuites.Push` |
+| bare `kmx cluster up` | Conceptually `AgentEnvironment.Up`; not wired today |
+| `kmx cluster down` | No `AgentEnvironment` method; current behavior is unchanged |
+| `kmx package validate` | Related to `AgentSuites.Validate`, but current command does not materialize its staged result |
+| `kmx package build` | Current one-member experimental command is not `AgentSuites.Build` |
+| `kmx package suite push` / root `kmx package push --workspace DIR REF` | Current extracted-definition/workspace transfer is not `AgentSuites.Push` |
 | Future suite-wide build/push workflow | `AgentSuites.Build` / `AgentSuites.Push` |
-| Root digest `kmx deploy` (unreleased; v0.8.1 uses `kmx lift`) | Related lifecycle vocabulary, not `AgentDeployments.Lift` wiring |
-| Root `status --to NAME` destination inventory | GET-only internal observer, not `AgentDeployments.Status` wiring; that interface remains alpha design evidence |
+| Root digest `kmx package deploy` (unreleased; v0.8.1 uses `kmx lift`) | Related lifecycle vocabulary, not `AgentDeployments.Lift` wiring |
+| `package status --to NAME` destination inventory | GET-only internal observer, not `AgentDeployments.Status` wiring; that interface remains alpha design evidence |
 | Suite retirement (unavailable) | `AgentDeployments.Retire` remains alpha design evidence |
 
 This is a product-level direction, not shared implementation today. The current
-CLI does not call these northbound interfaces. It also provides `kmx suite pull`
+CLI does not call these northbound interfaces. It also provides `kmx package pull`
 for artifact retrieval; retrieval remains an internal input/materialization
 capability rather than another northbound suite workflow method.
 
@@ -257,11 +259,11 @@ For an end-to-end local runtime, use the CLI:
 ```bash
 export KIND_CLUSTER=kmx-local
 export KUBE_CTX=kind-kmx-local
-kmx local up
-kmx orka status
+kmx cluster up
+kmx cluster orka status
 ```
 
-`kmx local up` without `--step` runs these steps in order:
+`kmx cluster up` without `--step` runs these steps in order:
 
 ```text
 cluster -> ollama -> model -> orka
@@ -270,26 +272,26 @@ cluster -> ollama -> model -> orka
 One step can be selected explicitly:
 
 ```bash
-kmx local up --step cluster
-kmx local up --step ollama
-kmx local up --step model
-kmx local up --step orka
+kmx cluster up --step cluster
+kmx cluster up --step ollama
+kmx cluster up --step model
+kmx cluster up --step orka
 ```
 
-`kmx local up` prepares the runtime but does not create an agent. Use one of these
+`kmx cluster up` prepares the runtime but does not create an agent. Use one of these
 afterward:
 
 ```bash
 # Author and prove one native AgentSuite workspace locally.
 kmx create greeter --workspace ./greeter --model qwen2.5:3b --instructions instructions.md
-kmx test --workspace ./greeter --to-context kind-kmx-local \
+kmx package test --workspace ./greeter --to-context kind-kmx-local \
   --inference provider:local --out ../private/passing.json
 
 # Fixed demonstration that ends with an answer.
-kmx quickstart
+kmx cluster quickstart
 
 # Interactive custom authoring on current development builds.
-kmx quickstart --interactive
+kmx cluster quickstart --interactive
 ```
 
 Tagged v0.4.1 and earlier use `kmx quickstart-wizard` for custom authoring;

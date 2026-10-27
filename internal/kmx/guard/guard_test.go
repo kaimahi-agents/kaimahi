@@ -16,7 +16,7 @@ import (
 //	aks-remote   other name  + remote     -> remote
 //
 // A fourth name, kind-not-created-yet, is tested precisely by being ABSENT
-// from this fixture — that is `kmx local up` on an empty machine.
+// from this fixture — that is `kmx cluster up` on an empty machine.
 //
 // The fixture is the JSON shape of `kubectl config view -o json`, so these
 // tests exercise the same decode path the binary uses.
@@ -87,7 +87,7 @@ func TestGuardDecisions(t *testing.T) {
 				Context: tc.context,
 				Source:  config.SourceKubeCtx,
 				Confirm: tc.confirm,
-				Command: "kmx local up",
+				Command: "kmx cluster up",
 			}, &out, nil)
 			switch {
 			case tc.wantErr == "" && err != nil:
@@ -110,7 +110,7 @@ func TestBannerNamesWhereTheActionLands(t *testing.T) {
 		Source:  config.SourceKubeCtx,
 		Action:  "banner check",
 		Context: "kind-real",
-		Command: "kmx local up",
+		Command: "kmx cluster up",
 	}, &out, nil); err != nil {
 		t.Fatalf("local kind must proceed: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestRefusalStillPrintsTheBanner(t *testing.T) {
 		Source:  config.SourceKubeCtx,
 		Action:  "delete the cluster",
 		Context: "aks-remote",
-		Command: "kmx local down",
+		Command: "kmx cluster down",
 	}, &out, nil); err == nil {
 		t.Fatal("a remote context with no confirmation must be refused")
 	}
@@ -199,12 +199,12 @@ func TestAContextNobodyChoseIsRefusedWhenThereAreClustersToConfuseItWith(t *test
 		Action:  "install orka",
 		Context: "kind-kaimahi-p1",
 		Source:  config.SourceDefault,
-		Command: "kmx local up",
+		Command: "kmx cluster up",
 	}, &out, nil)
 	if err == nil {
 		t.Fatal("acted on a cluster nobody chose")
 	}
-	for _, want := range []string{"nothing chose a cluster", "kmx context use <name>", "kind-kaimahi-p1"} {
+	for _, want := range []string{"nothing chose a cluster", "kmx cluster context use <name>", "kind-kaimahi-p1"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("refusal does not say %q:\n%s", want, err)
 		}
@@ -230,7 +230,7 @@ func TestTheDefaultStandsOnAMachineWithNoClusters(t *testing.T) {
 		Action:  "create the cluster",
 		Context: "kind-kaimahi-p1",
 		Source:  config.SourceDefault,
-		Command: "kmx local up",
+		Command: "kmx cluster up",
 	}, &out, nil); err != nil {
 		t.Fatalf("refused on an empty machine, which breaks bring-up: %v", err)
 	}
@@ -240,14 +240,14 @@ func TestACreatingCommandMayUseItsAbsentDefaultBesideUnrelatedContexts(t *testin
 	var out bytes.Buffer
 	if err := Check(load(t), Request{
 		Action: "create the cluster", Context: "kind-kaimahi-p1",
-		Source: config.SourceDefault, Command: "kmx quickstart", CreatesContext: true,
+		Source: config.SourceDefault, Command: "kmx cluster quickstart", CreatesContext: true,
 	}, &out, nil); err != nil {
 		t.Fatalf("creating the explicit kind target was blocked by an unrelated context: %v", err)
 	}
 }
 
 // A context somebody actually named is not affected, whichever way they
-// named it. This is what keeps CI and `KIND_CLUSTER=mine kmx local up` unchanged.
+// named it. This is what keeps CI and `KIND_CLUSTER=mine kmx cluster up` unchanged.
 func TestAChosenContextIsNeverRefusedForBeingUnchosen(t *testing.T) {
 	for _, source := range []string{
 		config.SourceFlag, config.SourceKubeCtx, config.SourceSelected, config.SourceKindCluster,
@@ -257,7 +257,7 @@ func TestAChosenContextIsNeverRefusedForBeingUnchosen(t *testing.T) {
 			Action:  "install orka",
 			Context: "kind-real",
 			Source:  source,
-			Command: "kmx local up",
+			Command: "kmx cluster up",
 		}, &out, nil); err != nil {
 			t.Errorf("source %q was refused: %v", source, err)
 		}
@@ -282,7 +282,7 @@ func TestTheDefaultStandsWhenItIsAlreadyTheContextYouArePointedAt(t *testing.T) 
 		Action:  "install orka",
 		Context: "kind-real", // the fixture's current-context
 		Source:  config.SourceDefault,
-		Command: "kmx local up",
+		Command: "kmx cluster up",
 	}, &out, nil); err != nil {
 		t.Fatalf("refused a default that matches the current context: %v", err)
 	}
@@ -291,8 +291,8 @@ func TestTheDefaultStandsWhenItIsAlreadyTheContextYouArePointedAt(t *testing.T) 
 	}
 }
 
-// MustBeKnown is what separates bring-up from teardown. `kmx local up` names a
-// kind context before there is one and must proceed; `kmx local down` deletes by
+// MustBeKnown is what separates bring-up from teardown. `kmx cluster up` names a
+// kind context before there is one and must proceed; `kmx cluster down` deletes by
 // CONTAINER name, which no kubeconfig has a say in, so the same absent
 // context must not read as "nothing is there".
 func TestAnAbsentContextIsCreatableButNotDeletable(t *testing.T) {
@@ -302,7 +302,7 @@ func TestAnAbsentContextIsCreatableButNotDeletable(t *testing.T) {
 			Action:      "act on a context that is not in the kubeconfig",
 			Context:     "kind-not-created-yet",
 			Source:      config.SourceKubeCtx,
-			Command:     "kmx local down",
+			Command:     "kmx cluster down",
 			MustBeKnown: mustBeKnown,
 		}
 	}
@@ -342,7 +342,7 @@ func TestAnAbsentContextCanStillBeConfirmedByName(t *testing.T) {
 		Context:     "kind-not-created-yet",
 		Source:      config.SourceKubeCtx,
 		Confirm:     "kind-not-created-yet",
-		Command:     "kmx local down",
+		Command:     "kmx cluster down",
 		MustBeKnown: true,
 	}, &out, nil); err != nil {
 		t.Fatalf("a confirmation naming the context must admit it: %v\n%s", err, out.String())
@@ -358,7 +358,7 @@ func TestMustBeKnownStillProceedsOnARealLocalCluster(t *testing.T) {
 		Action:      "DELETE the kind cluster",
 		Context:     "kind-real",
 		Source:      config.SourceKubeCtx,
-		Command:     "kmx local down",
+		Command:     "kmx cluster down",
 		MustBeKnown: true,
 	}, &out, nil); err != nil {
 		t.Fatalf("a real local kind cluster must still proceed without asking: %v\n%s", err, out.String())

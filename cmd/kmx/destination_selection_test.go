@@ -33,13 +33,13 @@ func TestWorkspacePushSavedExactHostHTTPAndExplicitFalse(t *testing.T) {
 				policyHost = "127.0.0.1:1"
 			}
 			os.WriteFile(filepath.Join(root, "kmx.yaml"), []byte(fmt.Sprintf("version: 1\nregistries:\n  '%s': {plainHTTP: true}\n", policyHost)), 0600)
-			args := []string{"push", "--unevaluated", "--workspace", root, host + "/agents:v1", "--provenance=false"}
+			args := []string{"package", "push", "--unevaluated", "--workspace", root, host + "/agents:v1", "--provenance=false"}
 			if mode == "explicit false" {
 				args = append(args, "--plain-http=false")
 			}
 			if mode == "layout" {
 				os.WriteFile(filepath.Join(root, "kmx.yaml"), []byte("malformed: [\n"), 0600)
-				args = []string{"push", "--unevaluated", "--workspace", root, "agents:v1", "--to-layout", filepath.Join(t.TempDir(), "layout")}
+				args = []string{"package", "push", "--unevaluated", "--workspace", root, "agents:v1", "--to-layout", filepath.Join(t.TempDir(), "layout")}
 			}
 			var out, diag bytes.Buffer
 			deps, loads := testDependencies(&out, &diag)

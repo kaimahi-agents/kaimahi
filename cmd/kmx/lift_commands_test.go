@@ -19,37 +19,37 @@ func TestAKSRefusesAnUnusableRequestBeforeTouchingAnything(t *testing.T) {
 	}{
 		{
 			"nothing at all",
-			[]string{"aks", "up"},
+			[]string{"cluster", "aks", "up"},
 			[]string{"--resource-group", "--cluster", "--registry"},
 		},
 		{
 			"a cluster shape flag on somebody else's cluster",
-			[]string{"aks", "up", "--byo", "--resource-group", "rg", "--cluster", "c", "--registry", "reg12345", "--node-count", "3"},
+			[]string{"cluster", "aks", "up", "--byo", "--resource-group", "rg", "--cluster", "c", "--registry", "reg12345", "--node-count", "3"},
 			[]string{"--node-count", "never reshapes it"},
 		},
 		{
 			"a policy engine that does not enforce",
-			[]string{"aks", "up", "--payload", "orka", "--resource-group", "rg", "--cluster", "c", "--registry", "reg12345", "--network-policy", ""},
+			[]string{"cluster", "aks", "up", "--payload", "orka", "--resource-group", "rg", "--cluster", "c", "--registry", "reg12345", "--network-policy", ""},
 			[]string{"present but inert"},
 		},
 		{
 			"a registry name Azure would reject",
-			[]string{"aks", "up", "--payload", "orka", "--resource-group", "rg", "--cluster", "c", "--registry", "not-alphanumeric"},
+			[]string{"cluster", "aks", "up", "--payload", "orka", "--resource-group", "rg", "--cluster", "c", "--registry", "not-alphanumeric"},
 			[]string{"alphanumeric"},
 		},
 		{
 			"a phase that does not exist",
-			[]string{"aks", "up", "--payload", "orka", "--resource-group", "rg", "--cluster", "c", "--registry", "reg12345", "--step", "observabilty"},
+			[]string{"cluster", "aks", "up", "--payload", "orka", "--resource-group", "rg", "--cluster", "c", "--registry", "reg12345", "--step", "observabilty"},
 			[]string{"--step", "orka"},
 		},
 		{
 			"an explicitly empty payload",
-			[]string{"aks", "up", "--payload", "", "--resource-group", "rg", "--cluster", "c", "--registry", "reg12345"},
+			[]string{"cluster", "aks", "up", "--payload", "", "--resource-group", "rg", "--cluster", "c", "--registry", "reg12345"},
 			[]string{"--payload must not be empty", "--payload orka"},
 		},
 		{
 			"a retired plane phase",
-			[]string{"aks", "up", "--resource-group", "rg", "--cluster", "cluster", "--registry", "reg12345", "--step", "plane"},
+			[]string{"cluster", "aks", "up", "--resource-group", "rg", "--cluster", "cluster", "--registry", "reg12345", "--step", "plane"},
 			[]string{"--step", "not a phase", "cluster, orka, observability, verify"},
 		},
 		{
@@ -58,12 +58,12 @@ func TestAKSRefusesAnUnusableRequestBeforeTouchingAnything(t *testing.T) {
 			// existed, and a typo message would send its author looking for a
 			// spelling instead of a replacement.
 			"the retired payload, which a live script may still name",
-			[]string{"aks", "up", "--payload", "kagent", "--resource-group", "rg", "--cluster", "c", "--registry", "reg12345"},
+			[]string{"cluster", "aks", "up", "--payload", "kagent", "--resource-group", "rg", "--cluster", "c", "--registry", "reg12345"},
 			[]string{"--payload kagent is retired", "--payload orka"},
 		},
 		{
 			"teardown with no target identity",
-			[]string{"aks", "down"},
+			[]string{"cluster", "aks", "down"},
 			[]string{"--resource-group", "--cluster"},
 		},
 	} {
@@ -94,7 +94,7 @@ func TestAKSRefusesAnUnusableRequestBeforeTouchingAnything(t *testing.T) {
 func TestAnExplicitlyEmptyPolicyEngineIsNotTheDefault(t *testing.T) {
 	var out, errOut bytes.Buffer
 	deps, _ := testDependencies(&out, &errOut)
-	err := execute([]string{"aks", "up", "--payload", "orka", "--resource-group", "rg", "--cluster", "c",
+	err := execute([]string{"cluster", "aks", "up", "--payload", "orka", "--resource-group", "rg", "--cluster", "c",
 		"--registry", "reg12345", "--network-policy", ""}, deps)
 	if err == nil || !strings.Contains(err.Error(), "is not a policy engine") {
 		t.Fatalf("an explicitly empty engine was not refused on its own terms: %v", err)
@@ -107,7 +107,7 @@ func TestAnExplicitlyEmptyPolicyEngineIsNotTheDefault(t *testing.T) {
 // to exist for the operator to state which they mean.
 func TestAKSTeardownTakesTheSameIdentityAndBranchFlagsAsSetup(t *testing.T) {
 	root := newRootCommand(&commandState{deps: productionDependencies()})
-	for _, path := range [][]string{{"aks", "up"}, {"aks", "down"}} {
+	for _, path := range [][]string{{"cluster", "aks", "up"}, {"cluster", "aks", "down"}} {
 		cmd, _, err := root.Find(path)
 		if err != nil {
 			t.Fatalf("%v: %v", path, err)
@@ -126,7 +126,7 @@ func TestAKSUpDefaultsToOrkaWithoutContactingAzure(t *testing.T) {
 	t.Setenv("KMX_HOME", t.TempDir())
 	var out, errOut bytes.Buffer
 	deps, _ := testDependencies(&out, &errOut)
-	err := execute([]string{"aks", "up", "--resource-group", "rg", "--cluster", "c", "--registry", "reg12345", "--network-policy", ""}, deps)
+	err := execute([]string{"cluster", "aks", "up", "--resource-group", "rg", "--cluster", "c", "--registry", "reg12345", "--network-policy", ""}, deps)
 	if err == nil || !strings.Contains(err.Error(), "is not a policy engine") {
 		t.Fatalf("expected the Orka default to reach policy validation, got %v", err)
 	}
@@ -136,7 +136,7 @@ func TestAKSDownStillReachesTeardownValidation(t *testing.T) {
 	t.Setenv("KMX_HOME", t.TempDir())
 	var out, errOut bytes.Buffer
 	deps, _ := testDependencies(&out, &errOut)
-	err := execute([]string{"aks", "down"}, deps)
+	err := execute([]string{"cluster", "aks", "down"}, deps)
 	if err == nil || !strings.Contains(err.Error(), "--resource-group") || !strings.Contains(err.Error(), "--cluster") {
 		t.Fatalf("expected teardown identity validation, got %v", err)
 	}
@@ -149,13 +149,13 @@ func TestAKSDownStillReachesTeardownValidation(t *testing.T) {
 // until teardown. Keep cloud identity and ownership flags off local setup.
 func TestTheLocalBringUpHasNoCloudFlag(t *testing.T) {
 	root := newRootCommand(&commandState{deps: productionDependencies()})
-	up, _, err := root.Find([]string{"local", "up"})
+	up, _, err := root.Find([]string{"cluster", "up"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, flag := range []string{"resource-group", "registry", "byo", "cluster"} {
 		if up.Flags().Lookup(flag) != nil {
-			t.Errorf("`kmx local up` grew a --%s; the managed path is its own command for a reason", flag)
+			t.Errorf("`kmx cluster up` grew a --%s; the managed path is its own command for a reason", flag)
 		}
 	}
 }

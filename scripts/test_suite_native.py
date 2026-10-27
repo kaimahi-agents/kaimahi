@@ -78,7 +78,7 @@ with open(os.environ["CALLS"], "a") as stream:
 if name == "kind" and args == ["get", "clusters"]:
     print(os.environ.get("CLUSTERS", ""))
     sys.exit(int(os.environ.get("LIST_EXIT", "0")))
-if name == "kmx" and args == ["local", "up", "--step", "cluster"]:
+if name == "kmx" and args == ["cluster", "up", "--step", "cluster"]:
     sys.exit(int(os.environ.get("CREATE_EXIT", "0")))
 if name == "kmx" and "install" in args:
     print("PRIVATE_INSTALL_CANARY")
@@ -124,7 +124,7 @@ if name == "python3" and "nodes" in args:
         calls = self.calls()
         self.assertEqual([(c["tool"], c["args"]) for c in calls], [
             ("kind", ["get", "clusters"]),
-            ("kmx", ["local", "up", "--step", "cluster"]),
+            ("kmx", ["cluster", "up", "--step", "cluster"]),
             ("python3", [str(self.root / "scripts/ci/registry-mirrors.py"), "nodes", "--cluster", "kmx-orka-promote"])])
         self.assertEqual((calls[1]["cluster"], calls[1]["context"]), ("kmx-orka-promote", "kind-kmx-orka-promote"))
         self.assertNotIn("KMX_ORKA_PROMOTION_CREATED=1", calls[1]["owned"])
