@@ -27,6 +27,9 @@ type Request struct {
 	JudgeRoute *modelaccess.Route
 	Input      *string
 	Progress   func(string) error
+	// BeforeExecute runs after credential/content preflight, before journaling or
+	// inference. A failed diagnostic sink must prevent all sends.
+	BeforeExecute func() error
 	// ExampleFinished is synchronous, observational and runner-dependent. It
 	// reports a checked case before the next starts; finalization can still fail.
 	ExampleFinished func(ExampleOutcome)

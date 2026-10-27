@@ -152,6 +152,14 @@ class SourceReleaseTests(unittest.TestCase):
         self.assertEqual(self.run_check("--write").returncode, 0)
         self.assertEqual(self.run_check().returncode, 0)
 
+    def test_generated_module_allows_checkout_line_endings_without_rewriting(self):
+        module = self.root / "plugins/copilot-wsl" / VIEW / "failure-wording.mjs"
+        crlf = module.read_bytes().replace(b"\n", b"\r\n")
+        module.write_bytes(crlf)
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(module.read_bytes(), crlf)
+
     def test_real_source_tree_is_synchronized(self):
         result = subprocess.run([sys.executable, str(HERE / "source_release.py")],
                                 cwd=HERE.parents[1], capture_output=True, text=True, check=False, timeout=10)

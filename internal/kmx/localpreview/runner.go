@@ -291,6 +291,11 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 	if request.Input != nil && planErr != nil {
 		return abort(planErr)
 	}
+	if request.BeforeExecute != nil {
+		if err := request.BeforeExecute(); err != nil {
+			return abort(fmt.Errorf("%w: %w", agentpreview.ErrDiagnosticsFailed, err))
+		}
+	}
 	dir, dirErr := r.options.JournalDir()
 	if dirErr != nil {
 		return abort(fmt.Errorf("%w: %w", agentpreview.ErrJournalFailed, dirErr))

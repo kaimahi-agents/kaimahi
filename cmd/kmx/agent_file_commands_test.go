@@ -34,6 +34,11 @@ func (f *cliPreviewFake) Run(ctx context.Context, r agentpreview.Request) (agent
 	f.deadline, _ = ctx.Deadline()
 	f.calls++
 	f.request = r
+	if r.BeforeExecute != nil && f.cause == nil {
+		if err := r.BeforeExecute(); err != nil {
+			return agentpreview.Outcome{State: agentpreview.Failed}, errors.Join(agentpreview.ErrDiagnosticsFailed, err)
+		}
+	}
 	complete := func(id string) agentpreview.Completion {
 		return agentpreview.Completion{State: agentpreview.Complete, ID: id, FileRevision: r.Agent.Revision, Provider: r.Route.Provider, Model: r.Route.Model, Answer: "PRIVATE ANSWER"}
 	}

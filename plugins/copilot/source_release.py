@@ -77,7 +77,7 @@ def check(root: Path, version: str | None = None) -> None:
         if path.is_symlink() or not path.is_file() or path.read_bytes() != expected:
             raise ValueError(f"{path.relative_to(root)}: regenerate with source_release.py --write")
     module = root / f"{WORDING}.mjs"
-    if module.is_symlink() or not module.is_file() or module.read_bytes() != wording(root):
+    if module.is_symlink() or not module.is_file() or module.read_text(encoding="utf-8") != wording(root).decode("utf-8"):
         raise ValueError(f"{module.relative_to(root)}: regenerate with source_release.py --write")
 
 

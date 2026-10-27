@@ -159,15 +159,37 @@ func TestSessionsCopilotCredentialRefusalWithholdsPrefilledAppMetadata(t *testin
 			case "assertion":
 				parsed.Examples[0].Assertions[0].ID = "opaquecredential"
 			}
+			var diagnostics strings.Builder
+			opt.RouteSelected = func(route FilePreviewRoute) error {
+				diagnostics.WriteString(route.Provider + "/" + route.Model)
+				return nil
+			}
 			result, err := (&App{FileRunner: newLocalFileRunner(provider.PreviewClient)}).PreviewAgentSnapshot(t.Context(), parsed, opt)
 			data, _ := json.Marshal(result)
-			if err == nil || provider.sends != 0 || strings.Contains(string(data)+err.Error(), "opaquecredential") || len(result.Examples) != 0 {
-				t.Fatalf("credential escaped: %s / %v sends=%d", data, err, provider.sends)
+			if err == nil || provider.sends != 0 || diagnostics.Len() != 0 || strings.Contains(string(data)+diagnostics.String()+err.Error(), "opaquecredential") || len(result.Examples) != 0 {
+				t.Fatalf("credential escaped: %s / %v sends=%d diagnostics=%q", data, err, provider.sends, diagnostics.String())
 			}
 			if _, err := os.Stat(filepath.Join(home, "local-preview")); !errors.Is(err, os.ErrNotExist) {
 				t.Fatalf("journal touched before preflight: %v", err)
 			}
 		})
+	}
+}
+
+func TestSessionsRouteDiagnosticFailureStopsBeforeJournal(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("KMX_HOME", home)
+	provider := &journalCopilotAccess{}
+	opt := directOptions(t, "gpt-test", true)
+	route := copilotPreviewRoute()
+	opt.Route = &route
+	opt.RouteSelected = func(FilePreviewRoute) error { return errors.New("diagnostic sink failed") }
+	result, err := (&App{FileRunner: newLocalFileRunner(provider.PreviewClient)}).PreviewAgentFile(t.Context(), opt)
+	if err == nil || result.ReasonCode != "diagnostics_failed" || provider.sends != 0 {
+		t.Fatalf("unsafe diagnostic failure: %+v / %v / sends=%d", result, err, provider.sends)
+	}
+	if _, err := os.Stat(filepath.Join(home, "local-preview")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("journal touched before diagnostics: %v", err)
 	}
 }
 
