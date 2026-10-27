@@ -73,7 +73,10 @@ Ordinary installation and local setup retain the shipped release pin.
 The candidate must be an Orka v2 chart with version/appVersion, harness-v2
 defaults, digest-pinned controller/workers/publisher and all four ACP runtimes.
 Dependencies must already be bundled without repository URLs. kmx passes the
-verified chart's exact image repositories/digests to Helm and records its archive
+chart version through Helm's label normalization and truncation and refuses
+an invalid resulting Kubernetes label before cluster access. Valid build
+metadata and long versions with valid normalized labels remain supported.
+kmx passes the verified chart's exact image repositories/digests to Helm and records its archive
 SHA256 in release values. Repeat installation recognizes only that same owned,
 deployed archive and image set, including the live controller image. Changed,
 foreign or partial releases still refuse adoption, replacement or automatic

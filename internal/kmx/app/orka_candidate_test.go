@@ -194,6 +194,50 @@ func TestOrkaLocalChartInstallsCandidatePinsAndArchiveIdentity(t *testing.T) {
 	}
 }
 
+func TestOrkaLocalChartVersionLabelBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		name, version string
+		valid         bool
+	}{
+		{"ordinary version", "0.3.0", true},
+		{"build metadata", "0.3.0+build.1", true},
+		{"truncated alphanumeric", "0.3.0-" + strings.Repeat("a", 80), true},
+		{"trimmed trailing dash", "0.3.0-" + strings.Repeat("a", 51) + "-tail", true},
+		{"truncated metadata separator", "0.3.0-" + strings.Repeat("a", 51) + "+build", false},
+		{"truncated prerelease separator", "0.3.0-" + strings.Repeat("a", 51) + ".x", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			chart := candidateOrkaArchive(t, func(files map[string]string) {
+				files["orka/Chart.yaml"] = "apiVersion: v2\nname: orka\nversion: " + tc.version + "\nappVersion: v0.3.0\n"
+			})
+			f := newOrkaFixture(t, nil)
+			err := f.app.OrkaInstall(candidateOrkaOptions(t, chart))
+			if !tc.valid {
+				if err == nil || !strings.Contains(err.Error(), "invalid Helm chart label") {
+					t.Fatalf("invalid derived label did not refuse at inspection: %v", err)
+				}
+				if writes := f.writes(t); writes != "" {
+					t.Fatalf("invalid chart changed cluster resources: %s", writes)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("valid candidate refused installation: %v", err)
+			}
+			spec, err := localOrkaInstallSpec(chart, digestOf(chart))
+			if err != nil {
+				t.Fatal(err)
+			}
+			controller, _ := nativeCandidateFixture(t)
+			controller.Metadata.Labels["helm.sh/chart"] = orkaHelmChartLabel(tc.version)
+			runtime, err := suiteNativeControllerRuntimeFor(controller, spec.taskNamespace, &spec)
+			if err != nil || runtime.CandidateChartDigest != "sha256:"+digestOf(chart) {
+				t.Fatalf("installed candidate failed exact runtime recognition: runtime=%+v err=%v", runtime, err)
+			}
+		})
+	}
+}
+
 func TestOrkaLocalChartDryRunDoesNotInstall(t *testing.T) {
 	chart := candidateOrkaArchive(t, nil)
 	f := newOrkaFixture(t, nil)

@@ -232,6 +232,9 @@ func localOrkaInstallSpec(chart []byte, digest string) (orkaInstallSpec, error) 
 		!version.MatchString(info.Version) || !version.MatchString(info.AppVersion) {
 		return fail("expected versioned Orka v2 metadata and appVersion")
 	}
+	if !orkaChartLabelPattern.MatchString(orkaHelmChartLabel(info.Version)) {
+		return fail("chart version yields an invalid Helm chart label")
+	}
 	for _, dependency := range info.Dependencies {
 		if dependency.Repository != "" {
 			return fail("dependencies must already be bundled without repository URLs")
