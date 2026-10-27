@@ -55,8 +55,8 @@ The existing Python developer tools and legacy templates below are inert files
 in the source plugin, not additional extensions or installation steps. Node
 tests live separately under `plugins/tests/copilot`.
 
-The `macos-install` CI job installs the catalog's darwin binary and checks its
-SHA256. A separate Linux check requires a published tag and binary asset set.
+The `macos-install` CI job first requires a published tag and binary asset set,
+then installs the catalog's darwin binary and checks its SHA256.
 Private-profile marketplace checks cover both variants, direct-registration
 replacement, refresh/update and installed bytes against the frozen commit.
 The existing direct-source check still verifies the PR's own cache bytes before

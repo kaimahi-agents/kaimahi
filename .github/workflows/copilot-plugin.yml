@@ -52,11 +52,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Check marketplace pins and published release
-        if: runner.os == 'Linux'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 plugins/copilot/marketplace.py --release
       - name: Build Go runtime fixture
         if: runner.os != 'Windows'
         shell: bash
@@ -82,11 +77,14 @@ jobs:
         with:
           node-version: '24'
       # Pair both source-install checks with the binary named by the catalog.
-      - name: Install the release darwin binary and check its checksum
+      # Catalog C follows publication of S; this must not enter pre-publish contracts.
+      - name: Check published catalog pair and install the darwin binary
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          python3 plugins/copilot/marketplace.py
+          python3 plugins/copilot/marketplace.py --release
           version=$(python3 -c 'import json; print("v" + json.load(open(".github/plugin/marketplace.json"))["plugins"][0]["version"])')
           curl -fsSL "https://raw.githubusercontent.com/kaimahi-agents/kaimahi/$version/install.sh" | sudo sh -s -- --version="$version" --bin-dir=/usr/local/bin
           kmx version
