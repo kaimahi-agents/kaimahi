@@ -94,7 +94,7 @@ func (a *App) Up(step string) error {
 
 	if step == "" {
 		a.complete("Runtime setup finished", started)
-		a.notef("\nNEXT  %s  # guided first answer", a.operationCommand("quickstart", "--interactive"))
+		a.notef("\nNEXT  %s  # guided first answer", a.operationCommand("cluster", "quickstart", "--interactive"))
 		a.notef("      %s  # author workspace source offline", a.operationCommand("create", "--help"))
 	}
 	return nil

@@ -122,7 +122,7 @@ func (a *App) Quickstart(opt QuickstartOptions) error {
 		toolchain.Report(a.Err, a.provisioned)
 	}
 
-	if err := a.GuardCreateIn("create a local cluster and a first agent", a.operationCommand("quickstart"), OrkaPathNamespaces); err != nil {
+	if err := a.GuardCreateIn("create a local cluster and a first agent", a.operationCommand("cluster", "quickstart"), OrkaPathNamespaces); err != nil {
 		return err
 	}
 
@@ -208,7 +208,7 @@ func (a *App) quickstartCreateOptions() CreateOptions {
 	return CreateOptions{
 		Name:                 QuickstartAgent,
 		Namespace:            OrkaNamespace,
-		Description:          "The agent kmx cluster quickstart deploys to answer a first question",
+		Description:          "The agent kmx quickstart deploys to answer a first question",
 		ProviderType:         "openai",
 		Model:                a.Cfg.Model,
 		BaseURL:              orkaDefaultModelURL,

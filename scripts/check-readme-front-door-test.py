@@ -201,7 +201,7 @@ Have Docker running and Homebrew installed.
 ```bash
 brew install kaimahi-agents/tap/kmx
 kmx version
-kmx cluster quickstart
+kmx quickstart
 ```
 
 ## Go deeper
@@ -218,12 +218,13 @@ for name, literal, expected in [
     ("missing front-door status", "**Status: experimental. Not recommended for production use.**\n", "experimental status must precede"),
     ("missing preferred install", "brew install kaimahi-agents/tap/kmx\n", "Homebrew install is missing from the local trial"),
     ("missing front-door version", "kmx version\n", "kmx version is missing from the local trial"),
-    ("missing front-door quickstart", "kmx cluster quickstart\n", "kmx cluster quickstart is missing from the local trial"),
+    ("missing front-door quickstart", "kmx quickstart\n", "kmx quickstart is missing from the local trial"),
     ("missing workflow navigation", "[Workflow and runtime details](docs/workflow-overview.md)\n", "linked workflow guide is missing"),
 ]:
     FRONT_CASES.append((name, FRONT.replace(literal, ""), WORKFLOW, expected))
 FRONT_CASES += [
-    ("front-door commands reversed", FRONT.replace("kmx version\nkmx cluster quickstart", "kmx cluster quickstart\nkmx version"), WORKFLOW, "kmx cluster quickstart is missing from the local trial"),
+    ("front-door commands reversed", FRONT.replace("kmx version\nkmx quickstart", "kmx quickstart\nkmx version"), WORKFLOW, "kmx quickstart is missing from the local trial"),
+    ("unreleased route after stable install", FRONT.replace("kmx quickstart\n", "kmx cluster quickstart\n"), WORKFLOW, "kmx quickstart is missing from the local trial"),
     ("late status", FRONT.replace("**Status: experimental. Not recommended for production use.**\n", "") + "\n**Status: experimental. Not recommended for production use.**\n", WORKFLOW, "experimental status must precede"),
     ("missing workflow file", FRONT, None, "cannot read required documentation"),
     ("unsafe linked workflow", FRONT, WORKFLOW.replace("only when the full policy passes", "after any case"), "Test row must require a full pass"),

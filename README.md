@@ -43,11 +43,15 @@ package-free fake `run FILE` / `test FILE`, and offline
 `test explain --file FILE`. Stable v0.8.1 and `@latest` have no Windows `.exe`;
 use WSL for quickstart and every broader workflow.
 
+For stable v0.8.1:
+
 ```sh
 brew install kaimahi-agents/tap/kmx
 kmx version
-kmx cluster quickstart
+kmx quickstart
 ```
+
+On unreleased main, the command is `kmx cluster quickstart`.
 
 Quickstart prepares a local Kubernetes test cluster and runs a sample agent.
 It succeeds only after the agent returns an answer. On an uncached first run,

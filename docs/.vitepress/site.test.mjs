@@ -250,6 +250,21 @@ test('active installation guidance pins the stable CLI without rewriting history
   assert.match(reference, /historical v0\.5\.1 uses the/)
 })
 
+test('command groups do not rewrite stable or historical instructions', async () => {
+  const homepage = await readFile(path.join(dist, 'index.html'), 'utf8')
+  const section = homepage.slice(homepage.indexOf('<h2 id="try-it-locally"'))
+  const trial = plainText(section.match(/<pre[^>]*>[\s\S]*?<\/pre>/)?.[0] ?? '')
+  assert.match(trial, /brew install kaimahi-agents\/tap\/kmx\nkmx version\nkmx quickstart\n/)
+  assert.doesNotMatch(trial, /kmx cluster quickstart/)
+  assert.match(plainText(section), /unreleased main[^\n]*kmx cluster quickstart/)
+
+  const faq = plainText(await readFile(path.join(dist, 'docs/FAQ.html'), 'utf8'))
+  assert.match(faq, /Stable v0\.8\.1 uses kmx orka --help/)
+  assert.match(faq, /kmx cluster orka --help requires an unreleased main build/)
+  const historical = plainText(await readFile(path.join(dist, 'docs/kmx-public-interface.html'), 'utf8'))
+  assert.match(historical, /Tagged v0\.4\.1 and earlier use kmx quickstart-wizard/)
+})
+
 test('checkout-only references point to source while guide links stay local', async () => {
   const development = await readFile(path.join(dist, 'docs', 'development.html'), 'utf8')
   assert.ok(development.includes(`https://github.com/kaimahi-agents/kaimahi/blob/${sourceRef}/CONTRIBUTING.md`))

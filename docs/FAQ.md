@@ -8,9 +8,10 @@ answer and [suite workspace](suite-workspace.md) for author/eval/push/digest Dep
 ## Why is `kmx cluster orka` missing?
 
 Check `kmx version` and which binary is on your `PATH`. The historical v0.1.0
-release predates Orka; v0.2.0 and newer provide these commands. Install the
-pinned release as described in [getting started](getting-started.md), then
-check `kmx cluster orka --help`. `@latest` and the installer default select the newest
+release predates Orka. Orka support starts with v0.2.0.
+Stable v0.8.1 uses `kmx orka --help`; `kmx cluster orka --help` requires an unreleased main build.
+Install the pinned release as described in [getting started](getting-started.md)
+for the stable commands. `@latest` and the installer default select the newest
 published tag, not the tip of `main`.
 
 ## Does installing Orka govern my application?

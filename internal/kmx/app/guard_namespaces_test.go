@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -137,6 +138,33 @@ func TestQuickstartWizardTargetIsScopedOnBothPaths(t *testing.T) {
 		t.Fatalf("a confirmed remote target must proceed: %v\n%s", err, errOut)
 	}
 	assertOrkaOnlyBanner(t, "the wizard's guard banner", errOut.String())
+}
+
+func TestQuickstartFallbackGuardCommandsUseClusterGroup(t *testing.T) {
+	for _, interactive := range []bool{false, true} {
+		t.Run(fmt.Sprintf("interactive=%t", interactive), func(t *testing.T) {
+			a, _ := guardFixture(t)
+			path := filepath.Join(os.Getenv("PATH"), "kubectl")
+			source, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			source = bytes.ReplaceAll(source, []byte("https://127.0.0.1:6443"), []byte("https://example.invalid:443"))
+			if err := os.WriteFile(path, source, 0755); err != nil {
+				t.Fatal(err)
+			}
+			args := []string{"cluster", "quickstart"}
+			if interactive {
+				args = append(args, "--interactive")
+				_, err = a.quickstartWizardTarget()
+			} else {
+				err = a.Quickstart(QuickstartOptions{})
+			}
+			if err == nil || !strings.Contains(err.Error(), a.operationCommand(args...)) {
+				t.Fatalf("guard did not offer canonical recovery: %v", err)
+			}
+		})
+	}
 }
 
 // guardFixture is a cluster boundary that answers `kubectl config view` and

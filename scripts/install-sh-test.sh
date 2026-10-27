@@ -41,7 +41,13 @@ mkdir -p "$release"
 cat > "$release/kmx-$os-$arch" <<'FAKE'
 #!/bin/sh
 printf '%s\n' "$*" >> "$KMX_CALLS"
-if [ "$*" = 'cluster --help' ] && [ "${KMX_TEST_LEGACY:-no}" = yes ]; then exit 1; fi
+if [ "$*" = 'cluster --help' ]; then
+  case "${KMX_TEST_LEGACY:-no}" in
+    yes) exit 1 ;;
+    root-help) printf 'Usage:\n  kmx [flags]\n  kmx [command]\n'; exit 0 ;;
+    *) printf 'Usage:\n  kmx cluster [flags]\n  kmx cluster [command]\n' ;;
+  esac
+fi
 exit 0
 FAKE
 chmod 0755 "$release/kmx-$os-$arch"
@@ -96,6 +102,15 @@ fi
 if KMX_TEST_LEGACY=yes install_run "old release keeps its quickstart spelling" --quickstart; then
   check "old release dispatches quickstart after an inert group probe" \
     "$(grep -q '^quickstart$' "$workdir/calls" && ! grep -q '^cluster quickstart$' "$workdir/calls" && echo ok || echo no)"
+fi
+
+if KMX_TEST_LEGACY=root-help install_run "legacy successful root help is not a group" --quickstart; then
+  check "successful root help keeps root quickstart" \
+    "$(grep -q '^quickstart$' "$workdir/calls" && ! grep -q '^cluster quickstart$' "$workdir/calls" && echo ok || echo no)"
+fi
+if KMX_TEST_LEGACY=root-help install_run "legacy plain install uses supported hint"; then
+  check "successful root help keeps the stable next-step hint" \
+    "$(grep -q 'Next:.*kmx quickstart ' "$workdir/out" && echo ok || echo no)"
 fi
 
 # The published v0.1.0 cannot provide the new Orka path. Refuse before

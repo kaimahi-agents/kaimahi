@@ -447,7 +447,7 @@ func TestOrkaOnlyUpPointsAtNativeAuthoring(t *testing.T) {
 	if err := a.Up(""); err != nil {
 		t.Fatalf("a bare Orka-only `kmx cluster up` failed: %v\n%s", err, errOut)
 	}
-	for _, want := range []string{"quickstart --interactive", "create --help", "author workspace source offline"} {
+	for _, want := range []string{a.operationCommand("cluster", "quickstart", "--interactive"), "create --help", "author workspace source offline"} {
 		if !strings.Contains(errOut.String(), want) {
 			t.Errorf("the Orka-only run offers no current authoring route %q:\n%s", want, errOut)
 		}

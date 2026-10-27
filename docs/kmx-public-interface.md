@@ -294,7 +294,7 @@ kmx cluster quickstart
 kmx cluster quickstart --interactive
 ```
 
-Tagged v0.4.1 and earlier use `kmx cluster quickstart-wizard` for custom authoring;
+Tagged v0.4.1 and earlier use `kmx quickstart-wizard` for custom authoring;
 `quickstart --interactive` is not available in those releases.
 
 ## Current limitations

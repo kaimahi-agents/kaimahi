@@ -168,7 +168,9 @@ esac
 # A pinned old release still uses the old root spelling. Probe only inert help;
 # never retry a failed setup operation using another route.
 QUICKSTART_COMMAND=quickstart
-if "$BIN_DIR/kmx" cluster --help >/dev/null 2>&1; then
+# Old Cobra releases can return successful root help for an unknown group.
+if cluster_help=$("$BIN_DIR/kmx" cluster --help 2>/dev/null) &&
+  printf '%s\n' "$cluster_help" | grep -Eq '^[[:space:]]+kmx cluster \[command\][[:space:]]*$'; then
   QUICKSTART_COMMAND="cluster quickstart"
 fi
 if [ "$RUN_QUICKSTART" = yes ]; then

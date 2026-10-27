@@ -31,6 +31,10 @@ FIRST_ANSWER_COMMANDS = [
     ("kmx version", r"^kmx version$"),
     ("kmx cluster quickstart", r"^kmx cluster quickstart$"),
 ]
+STABLE_FIRST_ANSWER_COMMANDS = [
+    ("kmx version", r"^kmx version$"),
+    ("kmx quickstart", r"^kmx quickstart$"),
+]
 JOURNEY_ROWS = [
     ("Create", r"`kmx create NAME\b"),
     ("Test", r"`kmx package test --workspace DIR\b"),
@@ -246,7 +250,7 @@ def check(text: str, workflow: str) -> str | None:
     blocks = list(FENCE.finditer(section_after(text, answer)))
     if not blocks:
         return "README front door: local trial command block is missing"
-    missing = ordered_in(blocks[0].group(1), INSTALL_COMMANDS[:1] + FIRST_ANSWER_COMMANDS)
+    missing = ordered_in(blocks[0].group(1), INSTALL_COMMANDS[:1] + STABLE_FIRST_ANSWER_COMMANDS)
     if missing is not None:
         return f"README front door: {missing} is missing from the local trial"
     if "](docs/workflow-overview.md)" not in section_after(text, guides):
