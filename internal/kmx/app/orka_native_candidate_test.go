@@ -142,16 +142,25 @@ func TestOrkaNativeCandidateProofSeparatesArchivesAndExportsActualImages(t *test
 }
 
 func TestOrkaNativeCandidateSelectionRequiresExactOwnedInstallation(t *testing.T) {
-	for _, name := range []string{"matching", "archive changed", "namespace changed", "not installed", "missing pair"} {
+	for _, name := range []string{"matching", "enrollment enabled", "archive changed", "namespace changed", "not installed", "missing pair"} {
 		t.Run(name, func(t *testing.T) {
 			f := newOrkaFixture(t, nil)
 			chart := candidateOrkaArchive(t, nil)
+			if name == "enrollment enabled" {
+				chart = enrollmentOrkaChart(t, func(values map[string]any) {
+					values["enforcement"].(map[string]any)["enabled"] = true
+				})
+			}
 			opt := candidateOrkaOptions(t, chart)
 			spec, err := localOrkaInstallSpec(chart, digestOf(chart))
 			if err != nil {
 				t.Fatal(err)
 			}
 			values := candidateOrkaValues(t)
+			values["controller"].(map[string]any)["watchNamespace"] = spec.taskNamespace
+			if spec.enforcementBundled {
+				values["enforcement"] = map[string]any{"enabled": true, "image": spec.enforcementImage}
+			}
 			values["kmxInstallerSHA256"] = digestOf(chart)
 			if name == "archive changed" {
 				values["kmxInstallerSHA256"] = strings.Repeat("b", 64)
@@ -173,15 +182,52 @@ func TestOrkaNativeCandidateSelectionRequiresExactOwnedInstallation(t *testing.T
 				opt.ChartSHA256 = ""
 			}
 			err = f.app.selectOrkaNativeCandidate(t.Context(), opt.Chart, opt.ChartSHA256, namespace)
-			if name == "matching" {
+			if name == "matching" || name == "enrollment enabled" {
 				if err != nil || f.app.orkaNativeCandidate == nil || f.app.orkaNativeCandidate.archiveDigest != digestOf(chart) {
 					t.Fatalf("exact installation selection failed: %v", err)
 				}
+
 			} else if err == nil || f.app.orkaNativeCandidate != nil {
 				t.Fatal("unowned, missing, or mismatched selection accepted")
 			}
 			if writes := f.writes(t); writes != "" {
 				t.Fatalf("runtime selection mutated installation: %s", writes)
+			}
+		})
+	}
+}
+
+func TestOrkaNativeCandidateChartLabelsRetainArchiveAuthority(t *testing.T) {
+	var previous *suiteNativeRuntime
+	for _, test := range []struct{ version, label string }{
+		{"0.3.0+build.1", "orka-0.3.0_build.1"},
+		{"0.3.0-" + strings.Repeat("a", 80) + "1", "orka-0.3.0-" + strings.Repeat("a", 52)},
+		{"0.3.0-" + strings.Repeat("a", 80) + "2", "orka-0.3.0-" + strings.Repeat("a", 52)},
+		{"0.3.0-" + strings.Repeat("a", 51) + "-tail", "orka-0.3.0-" + strings.Repeat("a", 51)},
+	} {
+		t.Run(test.version, func(t *testing.T) {
+			chart := candidateOrkaArchive(t, func(files map[string]string) {
+				files["orka/Chart.yaml"] = strings.Replace(files["orka/Chart.yaml"],
+					"version: 0.3.0-local.1\n", "version: "+test.version+"\n", 1)
+			})
+			spec, err := localOrkaInstallSpec(chart, digestOf(chart))
+			if err != nil {
+				t.Fatal(err)
+			}
+			controller, _ := nativeCandidateFixture(t)
+			controller.Metadata.Labels["helm.sh/chart"] = test.label
+			runtime, err := suiteNativeControllerRuntimeFor(controller, spec.taskNamespace, &spec)
+			if err != nil || !suiteNativePinnedRuntime(runtime, spec.taskNamespace) ||
+				spec.chartVersion != test.version || runtime.CandidateVersion != strings.TrimPrefix(spec.appVersion, "v") {
+				t.Fatalf("valid Helm label lost exact candidate identity: runtime=%#v err=%v", runtime, err)
+			}
+			if previous != nil && previous.Helm.Chart == runtime.Helm.Chart && sameReleaseRuntimeProfile(*previous, runtime) {
+				t.Fatal("colliding chart labels concealed different verified archive digests")
+			}
+			previous = &runtime
+			controller.Metadata.Labels["helm.sh/chart"] = test.label + "x"
+			if _, err := suiteNativeControllerRuntimeFor(controller, spec.taskNamespace, &spec); err == nil {
+				t.Fatal("mismatched candidate chart label accepted")
 			}
 		})
 	}

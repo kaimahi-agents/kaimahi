@@ -34,7 +34,7 @@ func (a *App) selectOrkaNativeCandidate(ctx context.Context, chart, digest, name
 		spec = a.orkaSetup.spec
 	} else {
 		var err error
-		_, spec, err = worker.loadOrkaInstaller(OrkaOptions{Chart: chart, ChartSHA256: digest})
+		_, spec, err = worker.inspectLocalOrkaChart(chart, digest)
 		if err != nil {
 			return err
 		}

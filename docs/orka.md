@@ -63,7 +63,8 @@ still requires explicit operator recovery; kmx does not adopt or retry it.
 $ kmx orka install --chart ./orka-candidate.tgz --chart-sha256 <64-lowercase-hex> --provider -
 ```
 
-Both flags are required together. kmx reads one regular local archive without
+Both flags are required together and reject explicitly empty values before
+loading configuration. kmx reads one regular local archive without
 following symlinks, verifies the operator-supplied SHA256 before extracting
 anything, and bounds compressed and expanded input. This is exact-byte selection,
 not a publisher signature or a claim of runtime/enforcement compatibility.
@@ -111,8 +112,10 @@ Both flags are required together, and `--to-namespace` must match that chart's
 Task namespace. Selection does not install or upgrade anything. It verifies
 the exact kmx-owned deployed archive and images, then rechecks installed identity
 at each runtime observation. Helm must already be available; no tool is fetched.
+Read-only selection does not require installation-time enrollment consent, even
+when the verified chart defaults enrollment on. It never changes that setting.
 
-Passing evidence binds the candidate archive SHA256, version, controller/worker
+Passing evidence binds the candidate archive SHA256, application version, controller/worker
 images and ordinary live controller/worker identities. Digest Deploy must select
 the matching candidate explicitly; a receipt never selects a runtime implicitly.
 The reviewed plan freezes that selection through apply and placement verification.

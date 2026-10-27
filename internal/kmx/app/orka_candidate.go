@@ -19,6 +19,7 @@ import (
 )
 
 var orkaChartVersionPattern = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?(\+[A-Za-z0-9.-]+)?$`)
+var orkaChartLabelPattern = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9_.-]{0,61}[A-Za-z0-9])?$`)
 var orkaImageRepositoryPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._:/-]*$`)
 
 func orkaLiteralDigestImage(image string) bool {
@@ -96,10 +97,33 @@ func (a *App) loadOrkaInstaller(opt OrkaOptions) ([]byte, orkaInstallSpec, error
 		chart, err := a.fetchOrkaInstaller()
 		return chart, publishedOrkaInstallSpec(), err
 	}
-	if !verificationDigest(opt.ChartSHA256) {
+	chart, spec, err := a.inspectLocalOrkaChart(opt.Chart, opt.ChartSHA256)
+	if err != nil {
+		return nil, orkaInstallSpec{}, err
+	}
+	if opt.Enforcement != nil && !spec.enforcementBundled {
+		return nil, orkaInstallSpec{}, fmt.Errorf("--enforcement requires a bundled Guardd chart aliased enforcement")
+	}
+	if spec.enforcementDefault && opt.Enforcement == nil {
+		return nil, orkaInstallSpec{}, fmt.Errorf("local chart enables privileged enrollment by default; select --enforcement explicitly")
+	}
+	if opt.Enforcement != nil && *opt.Enforcement {
+		if spec.taskNamespace == OrkaNamespace {
+			return nil, orkaInstallSpec{}, fmt.Errorf("enforcement requires a distinct precreated controller.watchNamespace for Tasks")
+		}
+		if spec.enforcementImage == "" {
+			return nil, orkaInstallSpec{}, fmt.Errorf("enforcement requires a digest-pinned Guardd image in the verified chart")
+		}
+	}
+	spec.enrollment = opt.Enforcement
+	return chart, spec, nil
+}
+
+func (a *App) inspectLocalOrkaChart(chartPath, digest string) ([]byte, orkaInstallSpec, error) {
+	if !verificationDigest(digest) {
 		return nil, orkaInstallSpec{}, fmt.Errorf("--chart requires --chart-sha256 with 64 lowercase hexadecimal characters")
 	}
-	absolute, err := filepath.Abs(opt.Chart)
+	absolute, err := filepath.Abs(chartPath)
 	if err != nil {
 		return nil, orkaInstallSpec{}, fmt.Errorf("resolve local Orka chart: %w", err)
 	}
@@ -122,31 +146,24 @@ func (a *App) loadOrkaInstaller(opt OrkaOptions) ([]byte, orkaInstallSpec, error
 		return nil, orkaInstallSpec{}, fmt.Errorf("local Orka chart exceeds 8 MiB bound")
 	}
 	sum := sha256.Sum256(chart)
-	if hex.EncodeToString(sum[:]) != opt.ChartSHA256 {
+	if hex.EncodeToString(sum[:]) != digest {
 		return nil, orkaInstallSpec{}, fmt.Errorf("local Orka chart SHA256 does not match; nothing was applied")
 	}
-	spec, err := localOrkaInstallSpec(chart, opt.ChartSHA256)
+	spec, err := localOrkaInstallSpec(chart, digest)
 	if err != nil {
 		return nil, orkaInstallSpec{}, err
 	}
-	if opt.Enforcement != nil && !spec.enforcementBundled {
-		return nil, orkaInstallSpec{}, fmt.Errorf("--enforcement requires a bundled Guardd chart aliased enforcement")
-	}
-	if spec.enforcementDefault && opt.Enforcement == nil {
-		return nil, orkaInstallSpec{}, fmt.Errorf("local chart enables privileged enrollment by default; select --enforcement explicitly")
-	}
-	if opt.Enforcement != nil && *opt.Enforcement {
-		if spec.taskNamespace == OrkaNamespace {
-			return nil, orkaInstallSpec{}, fmt.Errorf("enforcement requires a distinct precreated controller.watchNamespace for Tasks")
-		}
-		if spec.enforcementImage == "" {
-			return nil, orkaInstallSpec{}, fmt.Errorf("enforcement requires a digest-pinned Guardd image in the verified chart")
-		}
-	}
-	spec.enrollment = opt.Enforcement
 	a.notef("Local installer verified: sha256 %s; chart %s, app %s; Task namespace %s. Operator-supplied bytes, not publisher attestation.",
-		opt.ChartSHA256, spec.chartVersion, spec.appVersion, spec.taskNamespace)
+		digest, spec.chartVersion, spec.appVersion, spec.taskNamespace)
 	return chart, spec, nil
+}
+
+func orkaHelmChartLabel(version string) string {
+	label := strings.ReplaceAll("orka-"+version, "+", "_")
+	if len(label) > 63 {
+		label = label[:63]
+	}
+	return strings.TrimSuffix(label, "-")
 }
 
 func localOrkaInstallSpec(chart []byte, digest string) (orkaInstallSpec, error) {

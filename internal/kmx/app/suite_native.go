@@ -357,10 +357,6 @@ func suiteNativeControllerFlag(args []string, name string) (string, error) {
 	return value, nil
 }
 
-func suiteNativeControllerRuntime(controller orkaDeployment, namespace string) (suiteNativeRuntime, error) {
-	return suiteNativeControllerRuntimeFor(controller, namespace, nil)
-}
-
 func suiteNativeControllerRuntimeFor(controller orkaDeployment, namespace string, candidate *orkaInstallSpec) (suiteNativeRuntime, error) {
 	var out suiteNativeRuntime
 	if controller.Kind != "Deployment" || controller.Metadata.Namespace != OrkaNamespace || controller.Metadata.UID == "" || controller.Metadata.Generation < 1 || controller.Metadata.DeletionTimestamp != nil {
@@ -375,7 +371,7 @@ func suiteNativeControllerRuntimeFor(controller orkaDeployment, namespace string
 		out.CandidateVersion = strings.TrimPrefix(candidate.appVersion, "v")
 		expectedController = candidate.controllerImage()
 		expectedWorker = candidate.images["workers.ai.image.repository"] + "@" + candidate.images["workers.ai.image.digest"]
-		helmMatches = out.Helm == (suiteNativeHelmIdentity{Chart: "orka-" + candidate.chartVersion, Instance: orkaRelease, App: "orka", ManagedBy: "Helm"})
+		helmMatches = out.Helm == (suiteNativeHelmIdentity{Chart: orkaHelmChartLabel(candidate.chartVersion), Instance: orkaRelease, App: "orka", ManagedBy: "Helm"})
 		if candidate.taskNamespace != namespace {
 			helmMatches = false
 		}
@@ -432,7 +428,7 @@ func suiteNativePinnedRuntime(r suiteNativeRuntime, namespace string) bool {
 	return suitePrefixedDigest(r.CandidateChartDigest) && len(r.CandidateVersion) <= 128 &&
 		orkaChartVersionPattern.MatchString(r.CandidateVersion) && !strings.HasPrefix(r.CandidateVersion, "v") &&
 		r.Helm.Instance == orkaRelease && r.Helm.App == "orka" && r.Helm.ManagedBy == "Helm" &&
-		strings.HasPrefix(r.Helm.Chart, "orka-") && orkaChartVersionPattern.MatchString(strings.TrimPrefix(r.Helm.Chart, "orka-")) &&
+		strings.HasPrefix(r.Helm.Chart, "orka-") && orkaChartLabelPattern.MatchString(r.Helm.Chart) &&
 		orkaLiteralDigestImage(r.ControllerImage) && orkaLiteralDigestImage(r.AIWorkerImage)
 }
 
