@@ -18,7 +18,7 @@ actually contains the Windows assets described below.
 | Operation | Native Windows contract |
 |---|---|
 | Identity and documentation | `kmx version`, root or command help, and existing `completion bash\|zsh\|fish` generation. Help and completion are inert; seeing another command in their output does not enable it. There is no PowerShell completion claim. |
-| Package-free fake Run | `kmx run FILE`, optionally with inline `--prompt TEXT`, for a canonical Markdown agent whose effective model is `fake`. KMX opens no workspace, package, cluster, provider, network or tool-binding route. |
+| Package-free fake Run | `kmx run FILE ["input"]`, optionally with legacy inline `--prompt TEXT` or `--no-content`, for a Markdown agent whose effective model is `fake`. KMX opens no workspace, package, cluster, provider, network or tool-binding route. |
 | Package-free fake Test | `kmx test FILE` for the same offline fake route. A completed pass or failure is a local preview only. |
 | Offline file diagnostics | `kmx test explain [failure-id] --file FILE`, including its file-scoped content and clear options. Hidden `kmx eval explain ... --file FILE` may remain callable only as the deprecated compatibility spelling. |
 

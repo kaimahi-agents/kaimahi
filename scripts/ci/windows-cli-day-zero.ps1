@@ -158,13 +158,13 @@ try {
     $fixtureBytes = [IO.File]::ReadAllBytes($fixturePath)
     [IO.File]::WriteAllBytes($agent, $fixtureBytes)
 
-    $run = Invoke-Kmx -CommandArgs @('run', $agent, '--prompt', 'Grace', '--show-content', '--output', 'json')
+    $run = Invoke-Kmx -CommandArgs @('run', $agent, '--prompt', 'Grace', '--output', 'json')
     $runJSON = $run.Stdout | ConvertFrom-Json -Depth 20
     Assert-Contract ($runJSON.schemaVersion -eq 1 -and $runJSON.kind -ceq 'kmx.agent-file-preview') 'Run JSON schema contract changed.'
     Assert-Contract ($runJSON.operation -ceq 'run' -and $runJSON.state -ceq 'complete' -and $runJSON.verdict -ceq 'pass' -and $runJSON.fullPass -eq $true -and $runJSON.reasonCode -ceq 'checks_passed') 'Run JSON outcome contract changed.'
     Assert-Contract ($runJSON.modelRoute.provider -ceq 'fake' -and $runJSON.modelRoute.model -ceq 'fake') 'Run did not use the offline fake route.'
     Assert-Contract ($runJSON.selection.scope -ceq 'full' -and $runJSON.selection.totalCases -eq 1 -and @($runJSON.selection.caseIds).Count -eq 1 -and $runJSON.selection.caseIds[0] -ceq 'greeting') 'Run selection contract changed.'
-    Assert-Contract ($runJSON.adHoc.state -ceq 'complete' -and $runJSON.adHoc.answerExcerpt -ceq 'Hello, Grace') 'Run ad-hoc answer contract changed.'
+    Assert-Contract ($runJSON.adHoc.state -ceq 'complete' -and $runJSON.adHoc.answer -ceq 'Hello, Grace') 'Run ad-hoc answer contract changed.'
     Assert-Contract ($runJSON.retention.status -ceq 'not_requested') 'Run unexpectedly requested failure retention.'
 
     $source = [Text.Encoding]::UTF8.GetString($fixtureBytes)
@@ -172,7 +172,7 @@ try {
     Assert-Contract ($regressed -cne $source) 'Fixture does not contain the expected fake instruction.'
     [IO.File]::WriteAllText($agent, $regressed, [Text.UTF8Encoding]::new($false))
 
-    $failed = Invoke-Kmx -CommandArgs @('test', $agent, '--output', 'json') -ExpectedExitCodes @(2)
+    $failed = Invoke-Kmx -CommandArgs @('test', $agent, '--output', 'json') -ExpectedExitCodes @(1)
     $failedJSON = $failed.Stdout | ConvertFrom-Json -Depth 20
     Assert-Contract ($failedJSON.schemaVersion -eq 1 -and $failedJSON.kind -ceq 'kmx.agent-file-preview') 'Test JSON schema contract changed.'
     Assert-Contract ($failedJSON.operation -ceq 'test' -and $failedJSON.state -ceq 'complete' -and $failedJSON.verdict -ceq 'fail' -and $failedJSON.fullPass -eq $false -and $failedJSON.reasonCode -ceq 'assertion_failed') 'Regressed Test outcome contract changed.'

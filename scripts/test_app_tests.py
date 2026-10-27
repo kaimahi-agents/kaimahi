@@ -211,7 +211,7 @@ class AppShardWorkflowTests(unittest.TestCase):
                 "'HTTP_PROXY'", "'HTTPS_PROXY'", "'ALL_PROXY'", "'NO_PROXY'",
                 "[Net.WebRequest]::DefaultWebProxy",
                 "$savedDefaultProxy",
-                "ConvertFrom-Json -Depth 20", "-ExpectedExitCodes @(2)",
+                "ConvertFrom-Json -Depth 20", "-ExpectedExitCodes @(1)",
                 "@('completion', 'bash')", "__start_kmx()",
                 "retention.status -ceq 'retained'", "Assert-NoCanary",
                 "Assert-SnapshotEqual", "'historical'", "'create'",

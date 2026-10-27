@@ -168,6 +168,15 @@ func TestMCPCommandUnboundStartup(t *testing.T) {
 	if err := execute([]string{"test", path}, cliDeps); err != nil || *cliLoads != 0 || runner.request.Route.Provider != "copilot" || runner.request.Route.Model != "claude-haiku-5.5" {
 		t.Fatalf("canvas-to-CLI route: %+v / %v / %s", runner.request.Route, err, cliOut.String())
 	}
+	frontmatterPath := filepath.Join(t.TempDir(), "copilot.agent.md")
+	frontmatter := "---\nname: greeter\ndescription: Greet.\n---\nGreet the input.\n\n## Examples" + strings.SplitN(string(source), "## Examples", 2)[1]
+	saved, err := cs.CallTool(ctx, &sdk.CallToolParams{Name: "create", Arguments: map[string]any{"schemaVersion": 1, "path": frontmatterPath, "content": frontmatter, "acknowledgeCopilotTests": true}})
+	if err != nil || saved.IsError {
+		t.Fatalf("create Copilot file: %+v / %v", saved, err)
+	}
+	if err := execute([]string{"test", frontmatterPath}, cliDeps); err != nil || *cliLoads != 0 || runner.request.Route.Provider != "copilot" || runner.request.Route.Model != "gpt-5.6-terra" {
+		t.Fatalf("frontmatter canvas-to-CLI route: %+v / %v", runner.request.Route, err)
+	}
 	for _, operation := range []string{"run", "test"} {
 		result, err := cs.CallTool(ctx, &sdk.CallToolParams{Name: operation, Arguments: map[string]any{"schemaVersion": 1, "path": path}})
 		want := modelaccess.Route{Provider: "copilot", Model: "claude-haiku-5.5", Endpoint: modelaccess.CopilotEndpoint, Auth: "copilot"}

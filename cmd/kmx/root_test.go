@@ -105,12 +105,13 @@ func TestGuardedWindowsAllowsPackageFreeFileCommands(t *testing.T) {
 		args func(string) []string
 	}{
 		{"run", func(file string) []string { return []string{"run", file} }},
+		{"run positional input", func(file string) []string { return []string{"run", file, "Grace"} }},
 		{"run presentation", func(file string) []string {
-			return []string{"run", file, "--case", "greeting", "--output", "json", "--prompt", "hello", "--show-content", "--verbose"}
+			return []string{"run", file, "--case", "greeting", "--output", "json", "--prompt", "hello", "--no-content", "--verbose"}
 		}},
 		{"test", func(file string) []string { return []string{"test", file} }},
 		{"test presentation", func(file string) []string {
-			return []string{"test", file, "--case", "greeting", "--output", "json", "--show-content", "--verbose"}
+			return []string{"test", file, "--case", "greeting", "--output", "json", "--no-content", "--verbose"}
 		}},
 	}
 	for _, tc := range cases {
@@ -166,7 +167,7 @@ func TestGuardedWindowsFileCommandsRefuseEveryExternalRouteBeforeEffects(t *test
 		args []string
 	}{
 		{"run provider", []string{"run", file, "--provider", "copilot"}},
-		{"run endpoint", []string{"run", file, "--endpoint", "https://example.invalid"}},
+		{"run endpoint", []string{"run", file, "--provider-url", "https://example.invalid"}},
 		{"run tool bindings", []string{"run", file, "--tool-bindings", "bindings.json"}},
 		{"run prompt file", []string{"run", file, "--prompt-file", "prompt.txt"}},
 		{"run live selector", []string{"run", file, "--agent", "live"}},
@@ -178,7 +179,7 @@ func TestGuardedWindowsFileCommandsRefuseEveryExternalRouteBeforeEffects(t *test
 		{"run tool charter", []string{"run", toolFile}},
 		{"run nonfake charter", []string{"run", realModelFile}},
 		{"test provider", []string{"test", file, "--provider", "copilot"}},
-		{"test endpoint", []string{"test", file, "--endpoint", "https://example.invalid"}},
+		{"test endpoint", []string{"test", file, "--provider-url", "https://example.invalid"}},
 		{"test tool bindings", []string{"test", file, "--tool-bindings", "bindings.json"}},
 		{"test GitHub summary", []string{"test", file, "--output", "json", "--github-summary"}},
 		{"test workspace", []string{"test", file, "--workspace", filepath.Dir(file)}},
@@ -363,8 +364,7 @@ func TestGuardedWindowsFileExplainClearStaysSubjectScoped(t *testing.T) {
 		out.Reset()
 		errOut.Reset()
 		err := execute([]string{"test", file, "--output", "json"}, deps)
-		var previewErr *app.FilePreviewError
-		if !errors.As(err, &previewErr) || previewErr.ExitCode() != 2 {
+		if err == nil || exitCode(err) != 1 {
 			t.Fatalf("test %q = %v", file, err)
 		}
 		var result app.FilePreviewResult
@@ -406,8 +406,8 @@ func TestGuardedWindowsSupportedCommandFlagsAreExhaustivelyAllowlisted(t *testin
 		allFlags   []string
 		allowFlags []string
 	}{
-		{[]string{"run"}, []string{file}, []string{"agent", "case", "container-engine", "context", "endpoint", "namespace", "output", "prompt", "prompt-file", "provider", "result-port", "show-content", "tool-bindings", "verbose", "wait"}, []string{"case", "output", "prompt", "show-content", "verbose"}},
-		{[]string{"test"}, []string{file}, []string{"bindings", "case", "case-timeout", "container-engine", "context", "development-host", "endpoint", "github-summary", "inference", "judge-base-url", "judge-key-env", "out", "output", "provider", "result-port", "show-content", "to", "to-context", "to-namespace", "tool-bindings", "verbose", "workspace"}, []string{"case", "output", "show-content", "verbose"}},
+		{[]string{"run"}, []string{file}, []string{"agent", "case", "container-engine", "context", "model", "namespace", "no-content", "output", "prompt", "prompt-file", "provider", "provider-url", "result-port", "tool-bindings", "verbose", "wait"}, []string{"case", "no-content", "output", "prompt", "verbose"}},
+		{[]string{"test"}, []string{file}, []string{"bindings", "case", "case-timeout", "container-engine", "context", "development-host", "github-summary", "inference", "judge-base-url", "judge-key-env", "model", "no-content", "out", "output", "provider", "provider-url", "result-port", "show-content", "to", "to-context", "to-namespace", "tool-bindings", "verbose", "workspace"}, []string{"case", "no-content", "output", "verbose"}},
 		{[]string{"test", "explain"}, nil, []string{"clear", "container-engine", "context", "file", "show-content", "workspace"}, []string{"clear", "file", "show-content"}},
 		{[]string{"eval", "explain"}, nil, []string{"clear", "container-engine", "context", "file", "show-content", "workspace"}, []string{"clear", "file", "show-content"}},
 	}
