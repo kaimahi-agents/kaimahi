@@ -232,6 +232,31 @@ func TestFileCreateRefusesOccupiedPair(t *testing.T) {
 	}
 }
 
+func TestFileCreateRefusesUnusableSourceWithoutEcho(t *testing.T) {
+	credentialShape := "ghp_" + strings.Repeat("a", 36)
+	for _, field := range []string{"name", "description"} {
+		t.Run(field, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			var out, diag bytes.Buffer
+			deps, loads := testDependencies(&out, &diag)
+			name, description := "greeter", "Greeting"
+			if field == "name" {
+				name = credentialShape
+			} else {
+				description = credentialShape
+			}
+			err := execute([]string{"create", name, "--description", description, "--path", "new-folder"}, deps)
+			if err == nil || exitCode(err) != 2 || !strings.Contains(err.Error(), "invalid name or description") || strings.Contains(err.Error(), credentialShape) || out.Len() != 0 || diag.Len() != 0 || *loads != 0 {
+				t.Fatalf("unusable source was written or echoed (field %s)", field)
+			}
+			entries, _ := os.ReadDir(".")
+			if len(entries) != 0 {
+				t.Fatal("unusable source created a directory or file")
+			}
+		})
+	}
+}
+
 func TestFileCreateRefusesOperationalSelectors(t *testing.T) {
 	for _, flag := range []string{"--context", "--container-engine"} {
 		t.Run(flag, func(t *testing.T) {
@@ -253,7 +278,7 @@ func TestFileCreateRefusesOperationalSelectors(t *testing.T) {
 func TestFileCreateInvalidInputs(t *testing.T) {
 	for _, args := range [][]string{
 		{}, {"a", "b"}, {"../outside"}, {"a/b"}, {`a\b`}, {"."}, {".."}, {""}, {"a\nb"},
-		{"greeter", "--path", ""}, {"greeter", "--description", "line\nbreak"},
+		{"greeter", "--path", ""}, {"greeter", "--path", "folder\x1b]0;title\a"}, {"greeter", "--description", "line\nbreak"},
 		{"greeter", "--workspace", "."}, {"greeter", "--model", "fake"}, {"greeter", "--instructions", "prompt.md"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {

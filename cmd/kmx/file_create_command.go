@@ -12,6 +12,8 @@ import (
 	"unicode"
 
 	"github.com/spf13/cobra"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 )
 
 const starterPrompt = "Greet the user by name.\nReply with a short, friendly greeting.\n"
@@ -68,11 +70,24 @@ func createAgentFiles(ctx context.Context, directory, name, description string, 
 	if strings.TrimSpace(name) == "" || name == "." || name == ".." || strings.ContainsAny(name, `/\`) || strings.IndexFunc(name, unicode.IsControl) >= 0 {
 		return "", "", fmt.Errorf("NAME must be a nonempty filename stem, without path separators or control characters")
 	}
-	if strings.TrimSpace(directory) == "" {
-		return "", "", fmt.Errorf("--path requires a nonempty directory")
+	if strings.TrimSpace(directory) == "" || strings.IndexFunc(directory, unicode.IsControl) >= 0 {
+		return "", "", fmt.Errorf("--path requires a nonempty directory without control characters")
 	}
 	if strings.IndexFunc(description, unicode.IsControl) >= 0 {
 		return "", "", fmt.Errorf("--description must be one line without control characters")
+	}
+	// JSON double-quoted scalars are also YAML scalars, without interpolation.
+	yamlName, _ := json.Marshal(name)
+	yamlDescription, _ := json.Marshal(description)
+	contents := []string{
+		fmt.Sprintf("---\nname: %s\ndescription: %s\n---\n\n%s", yamlName, yamlDescription, starterPrompt),
+		fmt.Sprintf("---\nschemaVersion: 1\n---\n\n# %s tests\n\n%s", name, starterTest),
+	}
+	// Use the reader's existing content policy before paths can echo an invalid
+	// name or any source bytes become visible. Parser diagnostics may carry the
+	// filename, so expose only a fixed refusal here.
+	if _, err := agentfile.Parse("created.agent.md", []byte(contents[0])); err != nil {
+		return "", "", fmt.Errorf("cannot create agent file: invalid name or description")
 	}
 	absolute, err := filepath.Abs(directory)
 	if err != nil {
@@ -98,13 +113,6 @@ func createAgentFiles(ctx context.Context, directory, name, description string, 
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return "", "", fmt.Errorf("cannot create directory %q: %q", dir, err.Error())
 		}
-	}
-	// JSON double-quoted scalars are also YAML scalars, without interpolation.
-	yamlName, _ := json.Marshal(name)
-	yamlDescription, _ := json.Marshal(description)
-	contents := []string{
-		fmt.Sprintf("---\nname: %s\ndescription: %s\n---\n\n%s", yamlName, yamlDescription, starterPrompt),
-		fmt.Sprintf("---\nschemaVersion: 1\n---\n\n# %s tests\n\n%s", name, starterTest),
 	}
 	var created []string
 	for i, path := range []string{agent, tests} {
