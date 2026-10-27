@@ -30,8 +30,14 @@ name must be uninstalled as `kmx-agent-builder` before installing this variant.
 Direct repository installs currently work but Copilot warns that they are
 deprecated; a marketplace install will come later.
 
-Ask Copilot to create an agent through kmx and open its canvas. Give it a full
-Mac path when the file is outside the current directory. Add or edit tests;
+Ask Copilot: `Create a kmx agent called Release notes that writes a short release
+note from a supplied pull request title, and open its canvas.` Give it a full
+Mac path when the file is outside the current directory. See the
+[launch table and CLI spellings](../../docs/copilot-app.md#launch-commands-and-phrases)
+for explicit create/open/run/test requests and saved-snapshot test additions.
+In the interactive CLI, use `copilot --experimental` for native commands; without
+the extension, both the canvas opener and `/agent-view` are unavailable.
+Add or edit tests;
 Enter saves and runs them. Change the prompt and press Enter again to see the
 results change. The runtime model is picker override → authored model → current
 chat model (when available) → `gpt-5.6-terra`; existing `gh` sign-in supplies credentials without an install-time
@@ -204,19 +210,34 @@ The remaining path is not trimmed, split or shell-unquoted: keep spaces within
 filenames, omit surrounding quotes and avoid accidental trailing spaces.
 Nested agent and canonical Squad paths work too.
 
-The separate **kmx** skill still accepts `/kmx open PATH` and `/kmx help`.
-Unlike **kmx-canvas**, it uses a host-model turn. The distinct native name avoids
-selecting that skill's `/kmx` menu alias by mistake. The skill
-asks for one built-in `open_canvas` call with the installed provider and a stable
+The separate **kmx** skill uses a host-model turn. In interactive CLI 1.0.103,
+this PATH plugin exposes `/kmx-agent-builder-path:kmx open FULL_PATH` and
+`/kmx-agent-builder-path:kmx help`; the builder entry is
+`/kmx-agent-builder-path:kmx-agent-builder` followed by a task. Short `/kmx open`
+and `/kmx help` were unknown commands there, even though the skill's help can
+still print those short spellings. App menu aliases are host-specific: select
+the full installed entry rather than assuming a short alias.
+
+The skill asks for one built-in `open_canvas` call with the installed provider and a stable
 instance ID. The provider checks the agent resource before every open, including
 reopening an existing instance. Full paths distinguish same-named agents in
 different repositories. An unreadable resource does not close an already-running
 view. Opening does not edit, run or test the agent; the existing authoring
 controls and their checks remain unchanged. No folder confirmation is required.
 
-Without the built-in canvas opener, the skill uses the native opener's text
-fallback. The manual native command `/agent-view greeter.agent.md` also displays
-the projection as read-only text; canonical Squad paths work there too.
+When the extension is loaded but the host cannot open a canvas, the native
+opener can return a text fallback. `/agent-view FULL_PATH` also displays the
+projection as read-only text; canonical Squad paths work there too. Neither
+fallback exists when the extension itself is absent. Native commands must be
+submitted interactively: slash text passed to `copilot -p` is interpreted by the
+model instead. A headless CLI canvas acknowledgement/browser URL does not prove
+that the Copilot app rendered the view.
+
+Native open was checked with matching main plugin and binary, newer than the
+pinned rc.3 install. On rc.3, try `Open the kmx canvas for FULL_PATH` if the native
+command fails or shows nothing. These CLI checks do not certify the Mac or
+Windows app on main or the released rc.3 pair. Historical release notes retain their original
+command spellings; use this host/version-specific guidance for current commands.
 
 The main view shows the **Prompt** and an ordered list of **Tests**. Open a test
 for **The agent gets**, **Passes if** and the actual **The agent answered** excerpt.

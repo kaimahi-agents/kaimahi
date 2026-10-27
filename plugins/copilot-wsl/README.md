@@ -33,9 +33,24 @@ marketplace install will come later.
 
 ## Use
 
-In Copilot, ask it to create an agent through kmx and open the agent canvas. Give
-it a full WSL path when the file is outside the current directory. The same
-server handles files in unrelated repositories.
+In Copilot, ask: `Create a kmx agent called Release notes that writes a short
+release note from a supplied pull request title, and open its canvas.` Give it a
+full WSL path when the file is outside the current directory. The same server
+handles files in unrelated repositories.
+
+To open an existing file without a model turn, use
+`/kmx-canvas open /mnt/c/work/release-notes.agent.md`. Keep path spaces literal,
+without surrounding quotes. `/kmx-canvas` or `/kmx-canvas help` shows usage;
+`/agent-view FULL_PATH` shows read-only text. Native open was checked with matching
+main plugin and binary, not the pinned rc.3 pair. If it fails or shows nothing on
+rc.3, try `Open the kmx canvas for FULL_PATH` through chat.
+
+In the interactive CLI, use `copilot --experimental` to load those native
+commands. Without the extension, `/agent-view` is unavailable too. Select the
+full installed plugin skill entry; short `/kmx` is not a universal CLI command.
+See the [launch table and CLI spellings](../../docs/copilot-app.md#launch-commands-and-phrases)
+for create/open/run/test requests, saved-snapshot test additions and recovery.
+CLI command checks are not a new Copilot-app acceptance claim.
 
 Choose a runtime model in the canvas: picker override → authored `Model.Preferred`
 → known chat model → `gpt-5.6-terra`. Model may be omitted; a picker choice never
