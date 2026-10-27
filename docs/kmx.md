@@ -1456,7 +1456,7 @@ recorded monitoring, not agents/plane; unknown ownership is left alone. Read
   `unknown` and `not kmx-owned` remain distinct. Exit1 unknown/unhealthy/drift
   overrides2 known pending;0 requires complete ready/empty. Missing fields are
   never filled from companions or local history. Candidate roots remain separate.
-  Bare `kmx status` refuses and names both usage routes;
+  Bare `kmx package status` refuses and names both usage routes;
   `kmx cluster orka status` remains table-only and refuses JSON/YAML. See [destination status](destination-status.md).
 
 Completion (`source <(kmx completion bash)`, similarly zsh; fish uses
