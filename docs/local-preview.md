@@ -192,7 +192,9 @@ Calls checks count Enabled requests, including requests to unavailable tools;
 they do not prove successful live execution. A Test can therefore pass a Calls
 check while reporting `source=unavailable`. Inspect the source as well as the
 verdict. Recorded tool replay is offline, but a hosted model or judge still needs
-network access. A fake-model test without judge assertions is fully offline.
+network access. A fake-model test without judge assertions or live tool sources
+is fully offline. Selecting `fake` does not disable an Enabled live binding;
+`--tool-bindings` can still make a network request.
 
 ## Folder tool settings
 
