@@ -57,7 +57,7 @@ while nonterminal use requires both flags. Core authoring stays strict;
 create/push share workspace discovery.
 No runtime/model bootstrap belongs in workspace create. Root test registers
 completed exact-suite passing metadata in private managed state; --out is optional.
-Root push requires that proof by default, or explicit --evaluation FILE without
+Package Push requires that proof by default, or explicit --evaluation FILE without
 fallback; --unevaluated retains ordinary publication. Explicit REPO:TAG is preserved,
 while bare push requires saved publishRepository and derives only its tag from S.
 Private Quickstart/console and extracted-directory transfer keep their contracts.
@@ -66,14 +66,14 @@ User `agent.yaml` readers/writers/receipts, `bundle` commands, `create --live`
 including previews/wizard, run bundle mode and `--bundles` flags are removed
 outright. Old Orka/kagent/AgentSessions bundle receipts are unreadable; no migration
 or on-disk/resource deletion. Legacy bundle status and retirement have no
-replacement. Root `status --to NAME` is separate GET-only destination inspection,
+replacement. `package status --to NAME` is separate GET-only destination inspection,
 not suite-source evaluation or a retired-state reader. Preserve public AgentSuite/ToolProvider implementation-bundle graph,
 build/pull/extracted-directory transfer and alpha `pkg/kmx` interfaces.
 
 Quickstart/console use native source → full eval → exact publication → reviewed
 Deploy Apply/Verify. Quickstart then sends a separate fresh answer Task; console
 Ready means placement only. Chat `/lift` and console Deploy only print
-`Deploy moved: kmx deploy <ref>@<digest> --to-context … --evidence …`.
+`Deploy moved: kmx package deploy <ref>@<digest> --to-context … --evidence …`.
 No release GUI/live-copy fallback. Wizard tools/host modes and live tools/inference
 editing are retired; host Foundry/Copilot chat controls remain independent.
 Standalone AKS up/down and internal App.Lift are independent operations.

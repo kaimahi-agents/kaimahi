@@ -32,7 +32,7 @@ func (a *App) liftObservability(opt lift.Options, record *lift.Record, save func
 
 	_, state := a.resourceID(managedClusterAzureArgs(opt)...)
 	if state != lift.Present {
-		return fmt.Errorf("kmx aks up: cannot resolve the cluster's resource id — refusing to wire monitoring to something that could not be identified")
+		return fmt.Errorf("kmx cluster aks up: cannot resolve the cluster's resource id — refusing to wire monitoring to something that could not be identified")
 	}
 
 	// The workspaces go inside the cluster's resource group. The add-on's
@@ -227,7 +227,7 @@ func (a *App) refuseIfMonitoringWasAlreadyOn(opt lift.Options, record *lift.Reco
 	// (Pre.WeEnabledMetrics and its siblings); this is the same rule pointing
 	// the other way.
 	if !record.Before.Recorded {
-		return fmt.Errorf("kmx aks up: what monitoring this cluster had before this run was never established, so whether this would be enabling it or taking it over is unknown — refusing rather than proceeding blind")
+		return fmt.Errorf("kmx cluster aks up: what monitoring this cluster had before this run was never established, so whether this would be enabling it or taking it over is unknown — refusing rather than proceeding blind")
 	}
 
 	var already []string

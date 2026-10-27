@@ -9,7 +9,7 @@ import (
 )
 
 func TestConsoleLiftMovedWithoutDispatch(t *testing.T) {
-	want := "Deploy moved: kmx deploy <ref>@<digest> --to-context … --evidence …"
+	want := "Deploy moved: kmx package deploy <ref>@<digest> --to-context … --evidence …"
 	for _, entry := range []string{"key", "/lift", "/lift sample new"} {
 		t.Run(entry, func(t *testing.T) {
 			m := newAgentTUIModel(AgentTUIOptions{Demo: true})

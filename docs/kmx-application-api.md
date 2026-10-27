@@ -91,7 +91,7 @@ producing a different target identity.
 This first interface intentionally does not promise inspection, teardown,
 registration, operation recovery or ownership receipts. Those methods require
 production persistence and fail-closed semantics before they become public
-contract. The current `kmx local down`, AKS ownership records and context
+contract. The current `kmx cluster down`, AKS ownership records and context
 selection remain separate installed behavior.
 
 ## AgentSuite shipping lifecycle
@@ -368,9 +368,9 @@ Potential CLI adapters are:
 
 | CLI operation | Service |
 |---|---|
-| bare `kmx local up` | Conceptually `AgentEnvironment.Up`; current command is not wired to the interface |
-| `kmx local down` | No current `AgentEnvironment` method; installed teardown behavior is unchanged |
-| `kmx suite validate` | Conceptually `AgentSuites.Validate`; current command does not materialize the northbound result |
+| bare `kmx cluster up` | Conceptually `AgentEnvironment.Up`; current command is not wired to the interface |
+| `kmx cluster down` | No current `AgentEnvironment` method; installed teardown behavior is unchanged |
+| `kmx package validate` | Conceptually `AgentSuites.Validate`; current command does not materialize the northbound result |
 | future suite-wide build/push workflow | `AgentSuites.Build` / `AgentSuites.Push` |
 | Historical `kmx bundle lift/status/retire` (removed) | `AgentDeployments` |
 
@@ -390,7 +390,7 @@ workspace create -> local setup -> workspace eval -> package push
 That is evidence for keeping workspace/AgentSuite identity separate from
 environment setup, not evidence that the commands use the northbound interfaces.
 The native execution profile requires no member image and does not implement the
-first image-backed northbound Build/Push contract. Root digest `kmx deploy` is
+first image-backed northbound Build/Push contract. Root digest `kmx package deploy` is
 unreleased; v0.8.1 uses `kmx lift` with the same arguments. This internal
 runtime-dispatched Orka/exact-kagent path is not an implementation of the alpha
 suite-wide `AgentDeployments` model above. The public `Lift`/`RecoverLift` API

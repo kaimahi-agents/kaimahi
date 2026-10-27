@@ -15,8 +15,8 @@ import (
 
 func TestCLIMigrationRoutesAndOfflineHelp(t *testing.T) {
 	for _, path := range [][]string{
-		{"create"}, {"chat"}, {"run"}, {"orka", "show"}, {"orka", "list"},
-		{"eval"}, {"eval", "diff"}, {"eval", "from-sessions"}, {"push"}, {"task", "result"},
+		{"create"}, {"chat"}, {"run"}, {"cluster", "orka", "show"}, {"cluster", "orka", "list"},
+		{"eval"}, {"eval", "diff"}, {"eval", "from-sessions"}, {"package", "push"}, {"cluster", "task", "result"},
 	} {
 		t.Run(strings.Join(path, "_"), func(t *testing.T) {
 			var out, diagnostics bytes.Buffer
@@ -98,16 +98,16 @@ func TestCLIMigrationPushRefusalsPrecedeConfigurationAndPreparation(t *testing.T
 		args []string
 		want string
 	}{
-		{[]string{"push", "team:v1"}, "no workspace found"},
-		{[]string{"push", "directory", "team:v1"}, "at most one"},
-		{[]string{"push", "--workspace=", "team:v1"}, "--workspace"},
-		{[]string{"push", "--workspace", "missing", "directory", "team:v1"}, "at most one"},
-		{[]string{"push", "--workspace", "missing", "team:v1", "--context", "kind-demo"}, "--context"},
-		{[]string{"push", "--workspace", "missing", "team:v1", "--container-engine", "podman"}, "--container-engine"},
-		{[]string{"push", "--workspace", "missing", "team:v1", "--to-layout="}, "--to-layout"},
-		{[]string{"push", "--workspace", "missing", "team:v1", "--to-layout", "layout", "--force"}, "--force"},
-		{[]string{"push", "--workspace", "missing", "team:v1", "--to-layout", "layout", "--plain-http"}, "--plain-http"},
-		{[]string{"suite", "push", "--workspace", "missing", "team:v1"}, "unknown flag: --workspace"},
+		{[]string{"package", "push", "team:v1"}, "no workspace found"},
+		{[]string{"package", "push", "directory", "team:v1"}, "at most one"},
+		{[]string{"package", "push", "--workspace=", "team:v1"}, "--workspace"},
+		{[]string{"package", "push", "--workspace", "missing", "directory", "team:v1"}, "at most one"},
+		{[]string{"package", "push", "--workspace", "missing", "team:v1", "--context", "kind-demo"}, "--context"},
+		{[]string{"package", "push", "--workspace", "missing", "team:v1", "--container-engine", "podman"}, "--container-engine"},
+		{[]string{"package", "push", "--workspace", "missing", "team:v1", "--to-layout="}, "--to-layout"},
+		{[]string{"package", "push", "--workspace", "missing", "team:v1", "--to-layout", "layout", "--force"}, "--force"},
+		{[]string{"package", "push", "--workspace", "missing", "team:v1", "--to-layout", "layout", "--plain-http"}, "--plain-http"},
+		{[]string{"package", "suite", "push", "--workspace", "missing", "team:v1"}, "unknown flag: --workspace"},
 	} {
 		t.Run(strings.Join(tc.args, "_"), func(t *testing.T) {
 			state := t.TempDir()
@@ -193,12 +193,12 @@ func TestCLIMigrationOrkaStatusFormats(t *testing.T) {
 	} {
 		var out, diagnostics bytes.Buffer
 		deps, loads := testDependencies(&out, &diagnostics)
-		err := execute(append([]string{"orka", "status"}, tc.flags...), deps)
+		err := execute(append([]string{"cluster", "orka", "status"}, tc.flags...), deps)
 		if err == nil || !strings.Contains(err.Error(), tc.want) || *loads != 1 || out.Len() != 0 {
 			t.Fatalf("orka status %v: err=%v loads=%d stdout=%q", tc.flags, err, *loads, &out)
 		}
 	}
-	for _, path := range [][]string{{"orka", "status"}} {
+	for _, path := range [][]string{{"cluster", "orka", "status"}} {
 		var out, diagnostics bytes.Buffer
 		deps, loads := testDependencies(&out, &diagnostics)
 		args := append([]string{"__complete"}, path...)
@@ -208,7 +208,7 @@ func TestCLIMigrationOrkaStatusFormats(t *testing.T) {
 		}
 	}
 	root := newRootCommand(&commandState{deps: productionDependencies()})
-	orka, _, _ := root.Find([]string{"orka"})
+	orka, _, _ := root.Find([]string{"cluster", "orka"})
 	count := 0
 	for _, child := range orka.Commands() {
 		if child.Name() == "status" {
@@ -240,7 +240,7 @@ esac
 		t.Fatal(err)
 	}
 	var reports, reads []string
-	for _, path := range [][]string{{"orka", "status"}, {"orka", "status", "-o", "table"}} {
+	for _, path := range [][]string{{"cluster", "orka", "status"}, {"cluster", "orka", "status", "-o", "table"}} {
 		if err := os.WriteFile(log, nil, 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -292,7 +292,7 @@ func TestCLIMigrationPushMalformedNearestMarkerStopsDiscovery(t *testing.T) {
 	// A valid ancestor must not hide an invalid nearer marker, even when the
 	// destination is a registry that would otherwise require network access.
 	for _, flags := range [][]string{nil, {"--to-layout", layout}} {
-		err := execute(append([]string{"push", "registry.invalid/team:v1"}, flags...), deps)
+		err := execute(append([]string{"package", "push", "registry.invalid/team:v1"}, flags...), deps)
 		if err == nil || !strings.Contains(err.Error(), "invalid workspace descriptor") || strings.Contains(err.Error(), "canary") || *loads != 0 || out.Len() != 0 || diagnostics.Len() != 0 {
 			t.Fatalf("nearest marker refusal: err=%v loads=%d stdout=%q stderr=%q", err, *loads, &out, &diagnostics)
 		}

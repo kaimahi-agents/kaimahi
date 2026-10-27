@@ -70,7 +70,7 @@ sys.stdout.write(urlparse(sys.stdin.read().strip()).hostname or "")
 fi
 
 # Classify. Order matters: an ABSENT context is not automatically unsafe —
-# `kmx local up` on an empty machine legitimately names a kind context that
+# `kmx cluster up` on an empty machine legitimately names a kind context that
 # does not exist yet, and CI depends on that. Absent + kind-named is
 # "about to be created"; absent + anything else is a typo, which is
 # exactly what this guard exists to catch.
@@ -91,7 +91,7 @@ if [ -z "$server" ]; then
     echo "kube-guard: context '$CTX' is not in the kubeconfig." >&2
     echo "  Nothing was applied. Check the name with: kubectl config get-contexts" >&2
     echo "  (Only a kind-* context may be named before it exists — that is" >&2
-    echo "   'kmx local up' creating it. Any other name here is a typo.)" >&2
+    echo "   'kmx cluster up' creating it. Any other name here is a typo.)" >&2
     exit 1
   fi
 elif [ "$named_kind" = yes ] && [ "$loopback" = yes ]; then

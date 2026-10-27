@@ -13,7 +13,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/guard"
 )
 
-// AgentTUIOptions selects the two environments shown by kmx console.
+// AgentTUIOptions selects the two environments shown by kmx cluster console.
 type AgentTUIOptions struct {
 	LocalContext, RemoteContext, Namespace string
 	Demo                                   bool

@@ -100,7 +100,7 @@ files enter the fingerprint and provenance closure, with the existing 1 MiB
 per-file and 8 MiB aggregate source/artifact limits.
 
 ```sh
-kmx push --workspace ./profiled --runtime-profile orka --platform linux/amd64 \
+kmx package push --workspace ./profiled --runtime-profile orka --platform linux/amd64 \
   --unevaluated --to-layout ./layout greeter:v1
 ```
 
@@ -118,7 +118,7 @@ both inventory loaders refuse profiled input even with one profile. The retained
 verified graph resolves exact same-S composition digests without rereading source
 or aliasing mutable selected bytes. There is no profiled inventory API.
 
-`suite build DIRECTORY --runtime-profile ID [--platform OS/ARCH]` resolves an
+`package build DIRECTORY --runtime-profile ID [--platform OS/ARCH]` resolves an
 exact composition/build profile offline, but the existing AgentKit producer
 **refuses every profiled plan** before exporting or invoking Docker. There is no
 producer fallback or Sessions image-build adapter.
@@ -242,11 +242,11 @@ rewriting source.
 
 Preparation uses the internal workspace API (`Prepare` then `LoadInventory`);
 there is no new CLI prepare command. The execution loaders remain single-member
-only. Root `test`, root workspace `push` (including `--unevaluated`) and composed
+only. `package test`, root workspace `push` (including `--unevaluated`) and composed
 workspace Deploy refuse this format before operational state, output or target
 activity. Exact-reference Deploy also refuses verified multi-member native artifacts
 before target observations; existing prerequisite validation remains unchanged.
-General extracted-directory `suite push` is still format transfer, not execution
+General extracted-directory `package suite push` is still format transfer, not execution
 or evaluated publication. None of these paths can use a one-member receipt to
 qualify a larger suite. Multi-member runtime support is a separate change.
 
@@ -366,11 +366,11 @@ registries:
 ```
 
 ```sh
-kmx ctx
-kmx ctx --check -o json
-kmx test --to dev --out ../private/passing.json
-kmx push --evaluation ../private/passing.json registry.example/team/agents:v1
-kmx deploy registry.example/team/agents@sha256:<digest> --to prod \
+kmx package ctx
+kmx package ctx --check -o json
+kmx package test --to dev --out ../private/passing.json
+kmx package push --evaluation ../private/passing.json registry.example/team/agents:v1
+kmx package deploy registry.example/team/agents@sha256:<digest> --to prod \
   --evidence ../private/passing.json --promote --plan
 ```
 
@@ -407,7 +407,7 @@ cluster defaults and refuses named destination selection.
 Root workspace registry push and named Deploy may use an **exact registry-host**
 `plainHTTP` policy; explicit `--plain-http=false` wins. TLS remains the default;
 there is no HTTP fallback after TLS failure, and existing credential restrictions
-remain. Local layouts and extracted-directory `suite push` are unchanged.
+remain. Local layouts and extracted-directory `package suite push` are unchanged.
 The config is closed, bounded and credential-free (Secret references only);
 invalid or unreadable nearest state refuses rather than falling back. No user
 config merging. Operational config is excluded from prepared S, source fingerprint
@@ -434,8 +434,8 @@ never bypass remote confirmation.
 With the Orka prerequisites and named configuration above already prepared:
 
 ```sh
-kmx deploy --to prod --plan
-kmx deploy --to prod
+kmx package deploy --to prod --plan
+kmx package deploy --to prod
 ```
 
 Without a positional reference, Deploy discovers the nearest workspace and freezes
@@ -554,7 +554,7 @@ means private observations were persisted, not that placement or evaluation pass
 A cold composed Deploy checks known storage constraints before evaluation/publication;
 late failures can still leave published content or acknowledged resources.
 `--plan`, all-reuse and already-deployed paths do not open this provenance store.
-[Root `status --to NAME`](destination-status.md) reads the destination namespace
+[`package status --to NAME`](destination-status.md) reads the destination namespace
 and these per-object annotations without private history, writes or repair. It
 preserves missing/unknown/foreign distinctions; `orka status` remains runtime-only.
 
@@ -655,15 +655,15 @@ placements and missing completion acknowledgments refuse; no enrollment or repai
 
 ```bash
 # Review a desired workspace version without contacting the cluster.
-kmx deploy --to prod --update --plan
+kmx package deploy --to prod --update --plan
 # Compose missing evaluation/publication, then update the eligible retained pair.
-kmx deploy --to prod --update
+kmx package deploy --to prod --update
 # Or place an already-published passing version, including a previous version.
-kmx deploy registry.example/team/agents@sha256:<passing-digest> --to prod \
+kmx package deploy registry.example/team/agents@sha256:<passing-digest> --to prod \
   --evidence ../private/original-pass.json --promote --update --plan
-kmx deploy registry.example/team/agents@sha256:<passing-digest> --to prod \
+kmx package deploy registry.example/team/agents@sha256:<passing-digest> --to prod \
   --evidence ../private/original-pass.json --promote --update
-kmx status --to prod
+kmx package status --to prod
 ```
 
 Digest update/rollback consumes the exact artifact and original full passing
@@ -695,7 +695,7 @@ states; unknown effects or checkpoint failures remain blocked. See recovery abov
 
 ## Create
 
-Root `kmx create <name>` authors offline by default. Create and root `push`
+Root `kmx create <name>` authors offline by default. Create and `package push`
 share discovery: walk upward from the current directory to the nearest
 `workspace.yaml`, including across Git repository boundaries. `--workspace DIR`
 selects that exact root without fallback; if no marker exists there, create
@@ -737,7 +737,7 @@ To author the offline AgentSessions chat profile in a separate workspace:
 ```sh
 kmx create greeter --workspace ./sessions-workspace --runtime agentsessions \
   --model fixture-model --instructions ./instructions.md
-kmx push --workspace ./sessions-workspace --to-layout ./sessions-layout --unevaluated greeter:v1
+kmx package push --workspace ./sessions-workspace --to-layout ./sessions-layout --unevaluated greeter:v1
 ```
 
 This fixes `runtime.version` to upstream commit
@@ -814,9 +814,9 @@ This evaluation path adds no registry, authentication, chat or remote-host suppo
 Kubernetes operations; development evaluation is not target evaluation.
 
 ```sh
-kmx test --workspace ./sessions-workspace --development-host ./private/host.json \
+kmx package test --workspace ./sessions-workspace --development-host ./private/host.json \
   --bindings ./private/binding.yaml --out ./private/passing.json --case-timeout 30s
-kmx push --workspace ./sessions-workspace --evaluation ./private/passing.json \
+kmx package push --workspace ./sessions-workspace --evaluation ./private/passing.json \
   --to-layout ./sessions-layout greeter:v1
 ```
 
@@ -966,11 +966,11 @@ targets:
 ```
 
 ```sh
-kmx deploy registry.example/suite@sha256:<digest> --to sessions \
+kmx package deploy registry.example/suite@sha256:<digest> --to sessions \
   --evidence ./private/passing.json --plan -o json
-kmx deploy registry.example/suite@sha256:<digest> --to sessions \
+kmx package deploy registry.example/suite@sha256:<digest> --to sessions \
   --evidence ./private/passing.json
-kmx status --to sessions
+kmx package status --to sessions
 ```
 
 Deploy still verifies the exact packaged member and its full-passing private
@@ -1013,7 +1013,7 @@ requests are made by Deploy or status.
 ### AgentSessions deploy plan
 
 ```sh
-kmx deploy suite@sha256:<digest> --from-layout ./sessions-layout \
+kmx package deploy suite@sha256:<digest> --from-layout ./sessions-layout \
   --harness-image registry.example/agentsessions/harnessnode@sha256:<digest> \
   --bindings ./prod-binding.yaml --evidence ./private/passing.json --plan -o json
 ```
@@ -1068,12 +1068,12 @@ member images remain `[]`.
 
 ```sh
 mkdir -m 700 ../private-evidence
-kmx test --to-context kind-demo --inference provider:inference \
+kmx package test --to-context kind-demo --inference provider:inference \
   --out ../private-evidence/passing.json
-kmx push --evaluation ../private-evidence/passing.json ghcr.io/me/my-agents:v1
+kmx package push --evaluation ../private-evidence/passing.json ghcr.io/me/my-agents:v1
 ```
 
-Root `test` discovers the nearest workspace, or selects an exact root without
+`package test` discovers the nearest workspace, or selects an exact root without
 fallback using `--workspace DIR`. It accepts no positional package reference.
 A destination context (explicit `--to-context`, named `--to`, or saved `evalTarget`)
 is required. Root test stores completed passing metadata privately under KMX
@@ -1237,7 +1237,7 @@ comes only from the packaged member. Explicit `--to-namespace` must agree with
 bindings; `--result-port` refuses. For example:
 
 ```sh
-kmx test --workspace ./kagent-workspace --to-context kind-demo \
+kmx package test --workspace ./kagent-workspace --to-context kind-demo \
   --bindings ./private/kagent-bindings.yaml --out ../private-evidence/kagent-pass.json
 ```
 
@@ -1277,11 +1277,11 @@ answer or rationale.
 ### Inspect or clear local evaluation failures
 
 ```bash
-kmx test explain --workspace ./workspace
-kmx test explain f-<32-hex-digits> --workspace ./workspace
-kmx test explain f-<32-hex-digits> --workspace ./workspace --show-content
-kmx test explain f-<32-hex-digits> --workspace ./workspace --clear
-kmx test explain --workspace ./workspace --clear
+kmx package test explain --workspace ./workspace
+kmx package test explain f-<32-hex-digits> --workspace ./workspace
+kmx package test explain f-<32-hex-digits> --workspace ./workspace --show-content
+kmx package test explain f-<32-hex-digits> --workspace ./workspace --clear
+kmx package test explain --workspace ./workspace --clear
 ```
 
 Saved runs print an opaque `f-` diagnostic ID. Inspection is offline: it reads the
@@ -1362,10 +1362,10 @@ payloads or execution history. Runtime/model/audit retention may outlive cleanup
 ### Inspect and clean candidate leftovers
 
 ```sh
-kmx test cleanup --to dev
-kmx test cleanup <full-run-id> --to dev
+kmx package test cleanup --to dev
+kmx package test cleanup <full-run-id> --to dev
 # Explicit access also works without the original workspace or inference:
-kmx test cleanup <full-run-id> --to-context kind-demo --to-namespace orka-system
+kmx package test cleanup <full-run-id> --to-context kind-demo --to-namespace orka-system
 ```
 
 Without a run ID this is read-only: no prompt, deletion or passing receipt. A full
@@ -1390,7 +1390,7 @@ one 90-second budget. Large namespaces, unreadable pages or stuck finalizers
 fail closed; these limits are not proof that a selected run has no leftovers.
 Prefer a dedicated evaluation namespace. If a limit prevents recovery, have the
 cluster owner inspect retained resources and reduce unrelated inventory through
-their own verified-ownership process, then rerun read-only `kmx test cleanup`.
+their own verified-ownership process, then rerun read-only `kmx package test cleanup`.
 Missing anchors instead require independent operator-reviewed, UID-specific
 inspection/cleanup; do not infer ownership from labels, prefixes or age, or use
 a namespace-wide delete to work around a refusal. KMX never authorizes shared
@@ -1401,8 +1401,8 @@ prepared manifest digest plus full offline case/subject coherence before transfe
 or provenance. Equivalent authored spelling with the same artifact identity is
 allowed; a changed case/model/instruction artifact is refused. Unsigned receipts
 are observations, not authentication, policy gates or release authorization.
-Root push requires matching completed evidence by default; `--unevaluated`
-explicitly opts out. Extracted-directory `suite push` does not gain the
+Package Push requires matching completed evidence by default; `--unevaluated`
+explicitly opts out. Extracted-directory `package suite push` does not gain the
 `--evaluation` flag. `test diff` reads strict passing suite receipts and
 compares only compatible same-runtime subjects/case inventories; Orka/kagent
 comparison refuses as incompatible, never as equivalent behavior. Comparison
@@ -1455,8 +1455,8 @@ execution. Standalone package evaluation remains unavailable.
 ## Export portable evaluation evidence
 
 ```sh
-kmx test --to dev
-kmx test export --workspace ./workspace --member greeter --out ../evidence.json
+kmx package test --to dev
+kmx package test export --workspace ./workspace --member greeter --out ../evidence.json
 ```
 
 `test export` is offline. It prepares the exact selected workspace snapshot,
@@ -1557,7 +1557,7 @@ setup, run the gate without network access or KMX configuration/state:
 
 ```sh
 set -eu
-kmx test verify --suite ./verification/suite-layout \
+kmx package test verify --suite ./verification/suite-layout \
   --evidence ./verification/evidence.json \
   --expect ./verification/expected.json -o json
 ```
@@ -1566,7 +1566,7 @@ The digest form pins the same local artifact explicitly. It **still needs the
 bytes**; it never fetches them or searches a private preparation cache:
 
 ```sh
-kmx test verify --suite sha256:<reviewed-manifest-digest> \
+kmx package test verify --suite sha256:<reviewed-manifest-digest> \
   --from-layout ./verification/suite-layout \
   --evidence ./verification/evidence.json \
   --expect ./verification/expected.json
@@ -1648,18 +1648,18 @@ readiness. It does not authorize private evaluated push or Deploy.
 ## Publish
 
 ```sh
-kmx test                             # saved evalTarget, no --out needed
-kmx push ghcr.io/me/my-agents:v1       # supplied tag stays v1
-kmx push                             # saved publishRepository:s-<full-S-hex>
+kmx package test                             # saved evalTarget, no --out needed
+kmx package push ghcr.io/me/my-agents:v1       # supplied tag stays v1
+kmx package push                             # saved publishRepository:s-<full-S-hex>
 ```
 
-Legacy native root push requires completed full-passing evidence for the exact prepared OCI
+Legacy native package Push requires completed full-passing evidence for the exact prepared OCI
 manifest S by default. It selects the latest completed pass for this workspace/S,
 validates its packaged runtime/cases, and identifies the selected record on stderr
 before transfer. It does not evaluate or contact the cluster to repair missing proof.
 `--evaluation FILE` selects an explicit standalone receipt with no lookup fallback.
 `--unevaluated` explicitly publishes without evidence; it cannot be combined with
-`--evaluation`. Extracted-directory `suite push` remains ordinary artifact transfer.
+`--evaluation`. Extracted-directory `package suite push` remains ordinary artifact transfer.
 
 With an explicit `REPO:TAG`, the tag is unchanged, including force/replacement rules.
 Only bare push derives `s-<full-S-hex>` from the same frozen graph it transfers;
@@ -1696,7 +1696,7 @@ To recover, stop operations using that workspace and **move aside only the
 identified prepared-cache entry**, then rerun the command. Ordinary preparation
 errors name that entry under `KMX_HOME/suites/<source-fingerprint-hex>/` (or the
 platform KMX state location). Public evidence export and eval use payload-free
-errors; retry the workspace's ordinary preparation through `kmx push` to identify
+errors; retry the workspace's ordinary preparation through `kmx package push` to identify
 the entry if needed—the old entry refuses before transfer. Keep
 `KMX_HOME/passing/` and standalone receipts; do not clear all KMX state or add the
 marker to an old entry by hand. Avoid sharing preparation entries between kmx
@@ -1709,7 +1709,7 @@ Normal generated native packages already used non-executable regular files, so
 this cache-format upgrade preserves their artifact S and authored fingerprint.
 Repreparation with the same S retains eligible exact-S managed, explicit and
 public proof. If S changes, previous proof cannot qualify the new artifact:
-rerun `kmx test` before evaluated `kmx push`, and obtain fresh approval/signing
+rerun `kmx package test` before evaluated `kmx package push`, and obtain fresh approval/signing
 where required. An explicit mismatched `--evaluation` refuses without falling
 back; managed lookup considers only the new exact-S partition. Source-free digest
 Lift still consumes the original artifact and its matching receipt, without
@@ -1762,7 +1762,7 @@ it never falls back to the current directory or a parent workspace.
 Missing workspaces refuse with a hint to pass `--workspace`. An invalid,
 unreadable, nonregular or symlinked marker also refuses rather than falling back
 to a parent. Help and completion do not resolve workspaces.
-It replaces workspace-mode `suite push`, which no longer accepts `--workspace`
+It replaces workspace-mode `package suite push`, which no longer accepts `--workspace`
 or a single positional reference.
 
 The command resolves an allowlisted snapshot into the existing AgentSuite format,
@@ -1810,7 +1810,7 @@ and refuses public features KMX cannot execute (`critical: false`, extension
 assertion types, more than 100 runs) instead of ignoring them, and names that
 reason in its error. Suites packaged
 by v0.6.0 no longer validate; receipts recorded against them refuse with a
-remedy to rerun `kmx test` and `kmx push`. There is no migration reader.
+remedy to rerun `kmx package test` and `kmx package push`. There is no migration reader.
 
 `native-orka.json` records the member, renderer version and required images.
 The alternative kagent declaration is
@@ -1851,9 +1851,9 @@ artifact authentication, see [sign the published suite digest in CI](#sign-the-p
 For offline transfer, the local target's parent directory must exist:
 
 ```sh
-kmx push --unevaluated --to-layout ../suite-layout my-agents:v1
-kmx suite pull my-agents:v1 --from-layout ../suite-layout --output ../extracted
-kmx suite validate ../extracted
+kmx package push --unevaluated --to-layout ../suite-layout my-agents:v1
+kmx package pull my-agents:v1 --from-layout ../suite-layout --output ../extracted
+kmx package validate ../extracted
 ```
 
 Local layouts receive no provenance. `--plain-http`, `--force`, explicit
@@ -1863,12 +1863,12 @@ index, including extracted-directory pushes. A competing invocation refuses;
 references from successful publications remain intact. An interrupted writer can
 leave a sibling lock directory: remove it only after verifying the publisher has
 stopped. Registry tag preflight remains separately non-atomic.
-Existing extracted-directory transfer remains `suite push DIRECTORY REFERENCE`
+Existing extracted-directory transfer remains `package suite push DIRECTORY REFERENCE`
 and does not discover a workspace. Root push takes at most one positional destination
 reference; explicit workspace selection is also available from anywhere:
 
 ```sh
-kmx push --workspace ./my-agents ghcr.io/me/my-agents:v1
+kmx package push --workspace ./my-agents ghcr.io/me/my-agents:v1
 ```
 
 Root push refuses two positional arguments and explicit cluster-context and
@@ -1913,7 +1913,7 @@ steps:
     run: |
       set -euo pipefail
       printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
-      kmx push "$SUITE_REPOSITORY:$GITHUB_SHA" > "$RUNNER_TEMP/suite-push.txt"
+      kmx package push "$SUITE_REPOSITORY:$GITHUB_SHA" > "$RUNNER_TEMP/suite-push.txt"
       SUITE_REF=$(awk 'sub(/^Pin this AgentSuite: /, "") { print }' "$RUNNER_TEMP/suite-push.txt")
       SUITE_DIGEST=${SUITE_REF#"$SUITE_REPOSITORY@"}
       [[ "$SUITE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || {
@@ -1968,9 +1968,9 @@ pre-Lift signature/attestation checks in [#374](https://github.com/kaimahi-agent
 ## Digest deploy
 
 ```sh
-kmx deploy registry.example/suite@sha256:<digest> --to-context prod \
+kmx package deploy registry.example/suite@sha256:<digest> --to-context prod \
   --inference provider:inference --evidence ../private/passing.json --promote --plan
-kmx deploy suite@sha256:<digest> --from-layout ./oci --to-context kind-demo \
+kmx package deploy suite@sha256:<digest> --from-layout ./oci --to-context kind-demo \
   --inference provider:inference --evidence ../private/passing.json --promote -o json
 ```
 
@@ -2062,7 +2062,7 @@ real cluster deployment qualification.
 ### Kagent digest deploy
 
 ```sh
-kmx deploy suite@sha256:<digest> --from-layout ./oci --to-context prod \
+kmx package deploy suite@sha256:<digest> --from-layout ./oci --to-context prod \
   --bindings ./prod-bindings.yaml --evidence ../private/kagent-passing.json --promote --plan
 ```
 

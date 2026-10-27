@@ -9,6 +9,17 @@ changes in the package's Go doc comment.
 
 ## Command consistency
 
+- Infrastructure and Orka commands live under `kmx cluster`; native workspace
+  Test, publication, Deploy, destination inventory and artifact operations live
+  under `kmx package`. Moved root routes are removed, not aliases. Root `test FILE`
+  is file-only; its Explain requires `--file`. Native workspace evaluation and
+  all six helpers are `package test`; package Explain retains the existing offline
+  file reader for Eval compatibility. Hidden `eval`/`lift` remain callable with
+  one notice naming `package test`/`package deploy`. Native root Create stays
+  unchanged until the agent-file Create replacement lands; move that native
+  constructor to `package create` atomically then, never early. See the full
+  command map in the command-group upgrade fragment.
+
 - `model list [-o table|json]` defaults to config-free bounded local discovery.
   Explicit `--provider copilot` lists available Chat/Responses routes without
   starting sign-in. `model login` uses GitHub device flow; `--gh` explicitly
@@ -68,18 +79,18 @@ changes in the package's Go doc comment.
   [command alignment record](docs/command-semantics.md). Track outstanding
   renames and decisions in [#301](https://github.com/kaimahi-agents/kaimahi/issues/301).
   Proposed spellings are not implemented capabilities.
-- Canonical context commands are `kmx context show` and
-  `kmx context use <context>`; canonical local setup/teardown commands are
-  `kmx local up/down`. Root `up`, `down`, the AKS `lift` alias and `lift down`
+- Canonical context commands are `kmx cluster context show` and
+  `kmx cluster context use <context>`; canonical local setup/teardown commands are
+  `kmx cluster up/down`. Root `up`, `down`, the AKS `lift` alias and `lift down`
   are removed outright, not compatibility routes or retirement stubs. The old
-  context-switching `ctx` alias remains removed; new `kmx ctx [--check]` only
+  context-switching `ctx` alias remains removed; new `kmx package ctx [--check]` only
   lists named workspace destinations, never selects or remembers one. Current
-  deployment is digest `kmx deploy`; cloud and runtime setup
-  remain `kmx aks up/down` and `kmx orka install/status`.
+  deployment is digest `kmx package deploy`; cloud and runtime setup
+  remain `kmx cluster aks up/down` and `kmx cluster orka install/status`.
   The AKS group is a hidden compatibility route, not a public root domain.
-  Guided quickstart is `kmx quickstart --interactive` (`-i`); the old wizard
+  Guided quickstart is `kmx cluster quickstart --interactive` (`-i`); the old wizard
   command is a retirement stub. `kmx chat` is always interactive and no
-  longer accepts `--interactive`. `kmx targets` is the read-only capability view.
+  longer accepts `--interactive`. `kmx cluster targets` is the read-only capability view.
   Plane administration, model overlays, migration and their demo are removed;
   do not restore or regroup their commands.
 - Named destination selectors live in versioned workspace-root `kmx.yaml`, not
@@ -118,7 +129,7 @@ changes in the package's Go doc comment.
 - Everyday operations are root `create/chat/run`; live inspection is `orka show/list`.
   Legacy `bundle` operations are removed outright without aliases/stubs.
   `kmx agent` is removed entirely, without an alias or retirement stub.
-  Root `status --to NAME [--workspace DIR] [-o table|json]` is a separate GET-only
+  `package status --to NAME [--workspace DIR] [-o table|json]` is a separate GET-only
   destination inventory, not runtime setup or a suite-source observer. Require a
   saved namespace and freeze concrete selectors once; explicit global context wins.
   Preserve readable partial rows, candidate-root segregation and the distinct
@@ -132,7 +143,7 @@ changes in the package's Go doc comment.
   `--runtime agentsessions` separately authors a built-in chat
   profile pinned to ca85f47a2ec17ca6e16029cfa69419cfe29442b3 (engine chat), with
   empty required images and complete ordered cases. Prepare/load/ordinary push
-  support it; root test requires explicit --development-host FILE for literal
+  support it; package test requires explicit --development-host FILE for literal
   loopback, unauthenticated operator-observed chat. It loads no cluster settings,
   sends exact config once per fresh Session, requires a complete five-record
   qualified journal and full ordered pass, then exports private runtime-specific
@@ -162,7 +173,7 @@ changes in the package's Go doc comment.
   Optional create --runtime-version must match the AgentSessions pin above;
   --kagent-runtime refuses.
   Runtime is member-owned KMX-private metadata, not a public AgentSuite field.
-  Root test supports the packaged kagent profile with author-owned --bindings;
+  Package test supports the packaged kagent profile with author-owned --bindings;
   evaluated push consumes matching runtime-specific full-passing suite evidence.
   Legacy status readers and retirement remain unavailable; digest deploy uses the common release
   seam with runtime-matching evidence and author-owned kagent bindings. Kagent
@@ -188,10 +199,10 @@ changes in the package's Go doc comment.
   without changing authored files. Help/completion is inert.
   Workspace push names its absolute root and prepared OCI manifest digest on
   stderr, then copies that exact graph and authored cases.
-  `suite push DIRECTORY REFERENCE` remains extracted-directory transfer without
+  `package suite push DIRECTORY REFERENCE` remains extracted-directory transfer without
   discovery and no longer accepts `--workspace`. The native member image
   requirement is empty. Neither offline command evaluates, deploys, builds images
-  or loads cluster settings. Workspace evaluation is root `test`; deploy-only packaged deployment is root
+  or loads cluster settings. Workspace evaluation is `package test`; deploy-only packaged deployment is root
   `deploy <ref>@<digest>` with explicit private `--evidence`; no-reference workspace
   `deploy --to NAME` separately composes the missing stages.
   User `agent.yaml` readers/writers/receipts, `bundle` commands,
@@ -202,7 +213,7 @@ changes in the package's Go doc comment.
   unavailable. Quickstart uses native source → full eval → exact local publication
   → reviewed Deploy Apply/Verify, then a separate fresh answer Task. Console Ready
   is placement only. Chat `/lift` and console Deploy print only
-  `Deploy moved: kmx deploy <ref>@<digest> --to-context … --evidence …`.
+  `Deploy moved: kmx package deploy <ref>@<digest> --to-context … --evidence …`.
   No release GUI/live-copy fallback. Wizard tools/host modes and live tools/inference
   edits are retired; host Foundry/Copilot chat controls remain independent.
   Preserve public AgentSuite/ToolProvider implementation-bundle graph/build/pull,
@@ -273,7 +284,7 @@ changes in the package's Go doc comment.
   [AgentSuite §8.2.2](https://github.com/agent-primitives/suite/blob/main/spec.md#822-case-documents-and-assertions):
   minPasses requires runs and both are positive integers. KMX additionally caps
   runs at 100 under the spec's consumer resource-limit allowance.
-  Root push requires latest completed private exact-S evidence by default;
+  Package Push requires latest completed private exact-S evidence by default;
   `--evaluation FILE` explicitly overrides lookup without fallback, and
   `--unevaluated` explicitly retains ordinary publication. Explicit REPO:TAG
   remains unchanged; bare push requires saved publishRepository and derives only
@@ -307,7 +318,7 @@ changes in the package's Go doc comment.
   even with one profile. Selected views keep a private immutable graph marker;
   receipt-only legacy declaration projection must preserve it and cannot qualify
   public implementation pins or manufacture observed runtime/host facts.
-  `suite build` resolves exact profile tuples but AgentKit refuses profiled plans.
+  `package build` resolves exact profile tuples but AgentKit refuses profiled plans.
   All profiled execution/private proof creation or export/evaluated publication/
   native public evidence export/Deploy remain unsupported. Internal detached
   SessionsAssociationV1 creation/checking binds frozen selected declarations
@@ -324,7 +335,7 @@ changes in the package's Go doc comment.
   selector (including explicit defaults) refuses. Missing development selection
   never falls back. Sessions proof feeds only the plan-only deploy render and is
   refused by receipt diff; there is no registry or caller-auth integration.
-- Root `test` evaluates the full packaged Orka/kagent workspace inventory with
+- `package test` evaluates the full packaged Orka/kagent workspace inventory with
   a destination context (explicit `--to-context`, named `--to` or saved evalTarget)
   and optional new private `--out`; Orka uses --inference
   provider:NAME, kagent uses author-owned --bindings FILE, never both. Namespace
@@ -403,17 +414,17 @@ changes in the package's Go doc comment.
   invokes an existing live Orka Agent, not workspace-local execution; `test`
   evaluates workspace cases; Publish is current registry `push`, not numbered
   local versions or a new command. Deploy remains real-target placement.
-  Canonical `kmx test` is unreleased; v0.8.1 uses `kmx eval`. Keep hidden `eval`
+  Canonical `kmx package test` is unreleased; v0.8.1 uses `kmx eval`. Keep hidden `eval`
   and all six helpers callable for at least one released version, with exactly
-  one stderr notice: `kmx eval is deprecated; use kmx test (same arguments).`
+  one stderr notice: `kmx eval is deprecated; use kmx package test (same arguments).`
   Preserve arguments, flags, stdout, exit codes, state and existing stderr labels
   apart from the notice. Keep `eval/`/`evals/`, `evalTarget`/`evaluationTarget`,
   schemas, APIs and machine JSON unchanged. See
   [Test compatibility](docs/kmx.md#test-compatibility-unreleased).
-  Canonical `kmx deploy` is also unreleased; v0.8.1 uses `kmx lift` with the same arguments. Keep deprecated
+  Canonical `kmx package deploy` is also unreleased; v0.8.1 uses `kmx lift` with the same arguments. Keep deprecated
   `kmx lift` hidden but callable for at least one released version, with exactly
   one stderr notice per legacy invocation:
-  `kmx lift is deprecated; use kmx deploy (same arguments).`
+  `kmx lift is deprecated; use kmx package deploy (same arguments).`
   Preserve legacy stdout, stderr stage labels, arguments, flags and exit codes;
   help/completion remain inert. Canonical human help/output uses Deploy, while
   JSON keys/values (including `targets` operation `"lift"` and stage/result keys),
@@ -423,8 +434,8 @@ changes in the package's Go doc comment.
   Keep old guide fragments resolving with explicit anchors before renamed headings;
   preserve tagged release records and design history. Plain Deploy remains
   create-only; only explicit eligible retained Orka `--update` permits updates or
-  rollback. Kagent refuses updates. Root `deploy` never provisions AKS;
-  use `kmx aks up/down` for AKS.
+  rollback. Kagent refuses updates. `package deploy` never provisions AKS;
+  use `kmx cluster aks up/down` for AKS.
 - Prefer singular resource/domain groups and explicit actions. Avoid introducing
   another synonym for an existing operation. CLI, chat and console should use
   the same operation vocabulary where their scopes match.
@@ -455,7 +466,7 @@ changes in the package's Go doc comment.
 - Experimental `pkg/kmx.AgentEnvironment` is setup-only and unwired:
   `Up(EnvironmentSpec)` establishes a logical `Environment`, not a context,
   exact target, runtime selection, inference binding or teardown authority.
-  Bare `kmx local up` is only its current conceptual mapping. Do not claim CLI
+  Bare `kmx cluster up` is only its current conceptual mapping. Do not claim CLI
   integration, inspection, persistence, recovery or down semantics until those
   capabilities have production implementations and evidence.
 - Preserve historical release records and explicit compatibility tests when
@@ -929,12 +940,12 @@ link, README-front-door and repository-map checks and run
 current exact alpha framework pin is a draft choice, not approval to publish;
 custom-domain and versioned-site changes require a separate review.
 
-The experimental `suite build --suite-ref` mode checks all local packaged files
+The experimental `package build --suite-ref` mode checks all local packaged files
 against a bounded SHA256-pinned published source, including cases and supplemental
 metadata, builds from the fetched bytes and emits image execution metadata.
 The full suite digest remains authoritative; an unchanged public graph alone is
 insufficient. Capability-based sources bind models
-at deployment, so omit model build flags. `suite push-image` publishes the full
+at deployment, so omit model build flags. `package push-image` publishes the full
 image index/attestation graph (flat or nested) and prints the runnable platform
 digest without requiring deployment admission metadata. Different existing tags
 require explicit --force; same-digest publication is a no-op. The AgentKit adapter

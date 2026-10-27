@@ -27,6 +27,10 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 
 // Both spellings own independent flag storage but share every operational path.
 func newReleaseCommand(state *commandState, verb string) *cobra.Command {
+	commandPath := verb
+	if verb == "deploy" {
+		commandPath = "package deploy"
+	}
 	label := "Deploy"
 	if verb == "lift" {
 		label = "Lift"
@@ -66,7 +70,7 @@ func newReleaseCommand(state *commandState, verb string) *cobra.Command {
 			"  kmx lift registry.example/suite@sha256:<digest> --to-context prod --inference provider:inference --evidence ../private/pass.json --promote --plan\n" +
 			"  kmx lift suite@sha256:<digest> --from-layout ./oci --to-context kind-demo --inference provider:inference --evidence ../private/pass.json --promote -o json\n" +
 			"  kmx lift suite@sha256:<digest> --from-layout ./oci --harness-image registry.example/harnessnode@sha256:<digest> --bindings binding.yaml --evidence ../private/pass.json --plan -o json",
-		Args: usageArgs(0, 1, "kmx "+verb+" --to NAME | kmx "+verb+" <ref>@<digest> (--to NAME | --to-context <ctx>) (--inference provider:NAME | --bindings FILE) --evidence FILE [--from-layout DIR] [--promote] [--update] [--plan] | kmx "+verb+" <ref>@<digest> --to <AgentSessions-destination> --evidence FILE [--name NAME] [--from-layout DIR] [--plan] | kmx "+verb+" <ref>@<digest> --harness-image IMAGE --bindings FILE --evidence FILE --plan"),
+		Args: usageArgs(0, 1, "kmx "+commandPath+" --to NAME | kmx "+commandPath+" <ref>@<digest> (--to NAME | --to-context <ctx>) (--inference provider:NAME | --bindings FILE) --evidence FILE [--from-layout DIR] [--promote] [--update] [--plan] | kmx "+commandPath+" <ref>@<digest> --to <AgentSessions-destination> --evidence FILE [--name NAME] [--from-layout DIR] [--plan] | kmx "+commandPath+" <ref>@<digest> --harness-image IMAGE --bindings FILE --evidence FILE --plan"),
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if err := validateContainerEngineFlag(cmd, args); err != nil {
 				return err
@@ -235,7 +239,7 @@ func newReleaseCommand(state *commandState, verb string) *cobra.Command {
 	// Help is authored CLI copy, not operation data. Both routes teach the
 	// canonical spelling while the hidden route retains its own usage/flags.
 	cmd.Long = strings.NewReplacer("Lift", "Deploy", "lift", "deploy").Replace(cmd.Long)
-	cmd.Example = strings.ReplaceAll(cmd.Example, "kmx lift", "kmx deploy")
+	cmd.Example = strings.ReplaceAll(cmd.Example, "kmx lift", "kmx package deploy")
 	if verb == "lift" {
 		cmd.Hidden = true
 		noticed := false
@@ -244,7 +248,7 @@ func newReleaseCommand(state *commandState, verb string) *cobra.Command {
 				return nil
 			}
 			noticed = true
-			_, err := fmt.Fprintln(cmd.ErrOrStderr(), "kmx lift is deprecated; use kmx deploy (same arguments).")
+			_, err := fmt.Fprintln(cmd.ErrOrStderr(), "kmx lift is deprecated; use kmx package deploy (same arguments).")
 			return err
 		}
 		args := cmd.Args

@@ -82,13 +82,13 @@ Inference selection is independent from runtime and target selection.
 ### Local environment and first answer
 
 ```text
-kmx local up
+kmx cluster up
   -> kind cluster
   -> Ollama
   -> configured model
   -> pinned Orka runtime and keyless Provider
 
-kmx quickstart
+kmx cluster quickstart
   -> the same local setup
   -> fixed live Agent
   -> one fresh Task
@@ -113,19 +113,19 @@ workspace.Prepare
   -> public evaluation index and cases, plus private native profile
   -> validated private OCI layout in KMX state
 
-kmx test
+kmx package test
   -> exact prepared suite
   -> observed target, runtime and runtime-specific model binding
   -> Orka Provider/Agent or kagent ModelConfig/Agent placement
   -> one fresh, never-retried Orka or blocking A2A Task per ordered case
   -> private receipt only after a full pass
 
-kmx push [--evaluation RECEIPT] REF
+kmx package push [--evaluation RECEIPT] REF
   -> exact prepared OCI graph copied to layout or registry
   -> required passing-proof coherence check unless --unevaluated
   -> optional unsigned provenance on registry publication
 
-kmx deploy REF@sha256:DIGEST --to-context CTX \
+kmx package deploy REF@sha256:DIGEST --to-context CTX \
   --evidence RECEIPT (--inference provider:NAME | --bindings FILE)
   -> source-free bounded retrieval of that exact OCI graph
   -> evidence and packaged identity revalidation
@@ -148,7 +148,7 @@ Deploy observations independently of private state. Retirement is not implemente
 ### Native digest Deploy
 
 Root digest Lift is available in v0.7.0.
-Root `kmx deploy` and `App.PrepareReleaseLift` ingest one exact registry or read-only OCI-layout
+Root `kmx package deploy` and `App.PrepareReleaseLift` ingest one exact registry or read-only OCI-layout
 digest, validate the packaged native suite, require a matching private passing
 receipt, observe the selected target and inspect desired resources with GETs.
 Preparation returns an immutable identity-only plan. `--plan` stops there,

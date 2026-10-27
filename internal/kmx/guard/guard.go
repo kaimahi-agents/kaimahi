@@ -113,7 +113,7 @@ func isLoopback(host string) bool {
 // Classify applies the two-check "local kind" rule.
 //
 // Order matters, exactly as in the shell script: an ABSENT context is not
-// automatically unsafe — `kmx local up` on an empty machine legitimately names a
+// automatically unsafe — `kmx cluster up` on an empty machine legitimately names a
 // kind context that does not exist yet, and CI depends on that. Absent +
 // kind-named is "about to be created"; absent + anything else is a typo,
 // which is precisely what this guard exists to catch.
@@ -138,7 +138,7 @@ func Classify(cfg *Kubeconfig, context string) (Posture, error) {
 		return Posture{}, fmt.Errorf("context %q is not in the kubeconfig.\n"+
 			"  Nothing was applied. Check the name with: kubectl config get-contexts\n"+
 			"  (Only a kind-* context may be named before it exists — that is\n"+
-			"   'kmx local up' creating it. Any other name here is a typo.)", context)
+			"   'kmx cluster up' creating it. Any other name here is a typo.)", context)
 	case namedKind && isLoopback(host):
 		return Posture{Context: context, Host: host, Label: "local kind", Local: true}, nil
 	default:
@@ -152,7 +152,7 @@ type Request struct {
 	Action string
 	// Context is the kube context the action would land on.
 	Context string
-	// Source says who chose Context — a flag, a variable, `kmx context use`, or
+	// Source says who chose Context — a flag, a variable, `kmx cluster context use`, or
 	// nobody. It is printed on every run and it decides one thing: a
 	// context nobody chose is refused rather than acted on.
 	Source string
@@ -167,7 +167,7 @@ type Request struct {
 	// describe the cluster, so the "about to be created" allowance below
 	// does not apply to it.
 	//
-	// That allowance exists for bring-up: `kmx local up` names a kind context
+	// That allowance exists for bring-up: `kmx cluster up` names a kind context
 	// before there is one, and treating that as local is what makes
 	// one-command bring-up work on an empty machine. It is wrong for
 	// anything that DESTROYS, because `kind delete cluster` deletes by
@@ -276,7 +276,7 @@ func CheckContext(ctx context.Context, cfg *Kubeconfig, req Request, out io.Writ
 			"  It would have used %q, which is a name kmx made up, and your kubeconfig\n"+
 			"  holds %d context(s) it could have meant instead.%s\n"+
 			"  Nothing was applied. Choose one, and it is remembered:\n"+
-			"    kmx context use <name>    # kubectl config get-contexts lists them\n"+
+			"    kmx cluster context use <name>    # kubectl config get-contexts lists them\n"+
 			"    kmx --context <name> ...  # or just this once",
 			req.Context, len(cfg.Contexts), currentContextNote(cfg.CurrentContext))
 	}

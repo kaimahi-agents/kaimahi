@@ -58,7 +58,7 @@ func TestSuitePolicyCommandNetworkV2(t *testing.T) {
 			if err := os.WriteFile(policyPath, []byte(`{"version":"agentsuite.policy/v2","network":{"egressAllow":[`+other+`,`+endpoint+`]},"requiredCapabilities":["network/egress-allow/v1"]}`), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			args := []string{"suite", "policy", policyPath}
+			args := []string{"package", "policy", policyPath}
 			if tc.admin != "" {
 				adminPath := filepath.Join(dir, "admin.json")
 				if err := os.WriteFile(adminPath, []byte(tc.admin), 0o600); err != nil {
@@ -122,7 +122,7 @@ func TestSuitePolicyCommandSanitizesMalformedInputDiagnostics(t *testing.T) {
 			}
 			var output, diagnostics bytes.Buffer
 			deps, loads := testDependencies(&output, &diagnostics)
-			err := execute([]string{"suite", "policy", policyPath, "--administrative-policy", adminPath}, deps)
+			err := execute([]string{"package", "policy", policyPath, "--administrative-policy", adminPath}, deps)
 			if *loads != 0 {
 				t.Fatalf("offline policy command loaded operational configuration %d times", *loads)
 			}
@@ -165,7 +165,7 @@ func TestSuitePolicyCommandRefusesExplicitEmptyAdministrativePolicy(t *testing.T
 		t.Run(tc.name, func(t *testing.T) {
 			var output, diagnostics bytes.Buffer
 			deps, loads := testDependencies(&output, &diagnostics)
-			args := append([]string{"suite", "policy", policyPath}, tc.flags...)
+			args := append([]string{"package", "policy", policyPath}, tc.flags...)
 			err := execute(args, deps)
 			if *loads != 0 {
 				t.Fatalf("offline policy command loaded operational configuration %d times", *loads)

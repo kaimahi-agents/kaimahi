@@ -57,7 +57,7 @@ func (a *App) listOrkaAgents(output, namespace string) error {
 		if noSuchResourceType(err) {
 			return fmt.Errorf("no Orka Agent kind on this cluster, so nothing here is an Orka agent.\n"+
 				"  Install Orka with `%s`",
-				a.operationCommand("orka", "install"))
+				a.operationCommand("cluster", "orka", "install"))
 		}
 		return err
 	}

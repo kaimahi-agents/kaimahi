@@ -28,7 +28,7 @@ var (
 	// errSuitePassSessionsV1 is the latest record holding an AgentSessions
 	// passing receipt v1. It is not proof and older records are not selected
 	// instead; a new evaluation commits after it.
-	errSuitePassSessionsV1 = errors.New("latest managed AgentSessions passing evidence for this exact suite is receipt v1, which does not record an AgentSessionsBinding, and is not eligible; run kmx test --development-host FILE --bindings FILE again, select --evaluation FILE, or explicitly push --unevaluated")
+	errSuitePassSessionsV1 = errors.New("latest managed AgentSessions passing evidence for this exact suite is receipt v1, which does not record an AgentSessionsBinding, and is not eligible; run kmx package test --development-host FILE --bindings FILE again, select --evaluation FILE, or explicitly push --unevaluated")
 	suitePassRecordName    = regexp.MustCompile(`^[0-9]{20}\.json$`)
 )
 

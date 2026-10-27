@@ -16,9 +16,9 @@ These are distinct objects, not interchangeable names for one directory. “Rele
 |---|---|---|---|---|
 | Workspace | Directory and authored revision; Git commit is provenance, not the resolved suite digest | `create` adds a member | Yes | Local directory, usually a Git repository |
 | Resolved AgentSuite | Canonical digest of `agentsuite.json`, rooting the digest-bound agent, ToolProvider, composition and build-profile graph | Resolution inside current `eval` and `push` | No; edits produce a new graph | Validated local content, then the artifact payload |
-| Member images (Agent Sandbox Images) | Runnable OCI manifest digest per member/platform, linked to the exact suite artifact, composition, build profile and sandbox binding; retain any index digest separately | Current `suite build` is an experimental one-composition builder; complete suite build remains future | No; rebuilding may produce new digests | Local image store/archive, then registry |
+| Member images (Agent Sandbox Images) | Runnable OCI manifest digest per member/platform, linked to the exact suite artifact, composition, build profile and sandbox binding; retain any index digest separately | Current `package build` is an experimental one-composition builder; complete suite build remains future | No; rebuilding may produce new digests | Local image store/archive, then registry |
 | Release artifact | AgentSuite OCI manifest digest plus an immutable association to every required member image digest; native profiles currently require no member images, while general release association remains open | Current workspace preparation produces the exact native OCI artifact; general release assembly remains future | No | KMX private local layout, portable layout or registry |
-| Published release | The same artifact and image identities, with retrieval references; a tag is a mutable locator, not identity | Current root `push` | Content no; tags/locations yes | OCI registry or local OCI layout |
+| Published release | The same artifact and image identities, with retrieval references; a tag is a mutable locator, not identity | Current `package push` | Content no; tags/locations yes | OCI registry or local OCI layout |
 | Target-bound placement | Exact artifact, runtime, target and runtime-specific binding observations; durable aggregate deployment identity is open | Root `lift` places one-member native Orka packages by create/exact reuse or exact-v0.10.3 Go kagent packages by create-only placement | Live state yes; changed packaged identity requires new evidence, while explicit promotion requires an eligible destination with both suite-owned resources absent | Runtime resources and ownership markers; the opaque successful placement remains in process, with no aggregate deployment record |
 | Evaluation evidence | Evaluation run ID and immutable subject/case-set identities, with per-case outcomes and execution references | Current root `eval` for packaged Orka or exact-v0.10.3 Go kagent; only a full pass exports runtime-specific private evidence | Completed evidence no; another run creates new evidence | Private evidence file; distributable attestations remain future |
 
@@ -46,7 +46,7 @@ mkdir -m 700 ../private-evidence
 kmx eval --workspace . --to-context kind-demo \
   --inference provider:local --out ../private-evidence/passing.json
 
-kmx push --workspace . --evaluation ../private-evidence/passing.json \
+kmx package push --workspace . --evaluation ../private-evidence/passing.json \
   ghcr.io/me/my-agents:v1
 
 kmx lift ghcr.io/me/my-agents@sha256:<digest> --to-context kind-demo \
@@ -72,8 +72,8 @@ The command split is:
 kmx lift REF@sha256:DIGEST --to-context CTX --evidence FILE \
   (--inference provider:NAME | --bindings FILE)
                          # current: retrieve, verify, gate and place; never build
-kmx status --to NAME     # GET-only destination Agent inventory and Lift provenance
-kmx orka status          # table-only Orka runtime report
+kmx package status --to NAME     # GET-only destination Agent inventory and Lift provenance
+kmx cluster orka status          # table-only Orka runtime report
 kmx run / kmx chat       # current: select an existing live Orka Agent
 ```
 
@@ -92,7 +92,7 @@ Everyday create/chat/run/eval/push commands now sit at the root and `kmx agent`
 is removed. Less frequent operations stay under nouns: `suite
 build|diff|pull|push|validate`, `eval diff|from-sessions|cleanup`, `task`, hidden `aks`,
 `local`, `orka` and `targets`. Removed root AKS aliases leave `lift` reserved for
-the packaged-suite operation. Root `status --to NAME` is destination inventory;
+the packaged-suite operation. `package status --to NAME` is destination inventory;
 `orka status` retains the runtime report. See [destination status](destination-status.md).
 
 | Current path | Relationship to the direction |
@@ -101,7 +101,7 @@ the packaged-suite operation. Root `status --to NAME` is destination inventory;
 | Root `lift REF@sha256:DIGEST` | Implemented deploy-only packaged Orka/kagent placement with mandatory runtime-matching private evidence; Orka exact reuse and kagent fresh-target creation have bounded live qualification. |
 | Root `chat`, `run --agent NAME` | Live Orka Agents, including suite-owned Agents, selected by context/namespace/name; not workspace-local execution or fresh suite evaluation, and no adoption/copy/retirement authority. |
 | Legacy user bundle lifecycle / `create --live` | Removed outright including readers/writers/receipts and previews/wizard; no migration or conversion. |
-| `suite push DIRECTORY REFERENCE` | Existing extracted-artifact transfer without workspace discovery; root `push` is the workspace-aware operation. |
+| `package suite push DIRECTORY REFERENCE` | Existing extracted-artifact transfer without workspace discovery; `package push` is the workspace-aware operation. |
 | Future image-backed path | Member authoring joins root create; publication joins root push; deployment uses root lift rather than `suite lift`. |
 
 Keep **Create → Prove → Lift**, as [#302](https://github.com/kaimahi-agents/kaimahi/pull/302) and the [command alignment record](command-semantics.md) decided. Root `lift` now implements the bounded packaged Orka and exact-kagent paths. Follow the [command conventions](command-conventions.md), including aligned help, interactive labels, recovery commands and compatibility tests, when extending it.

@@ -16,7 +16,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 )
 
-const legacyEvalNotice = "kmx eval is deprecated; use kmx test (same arguments).\n"
+const legacyEvalNotice = "kmx eval is deprecated; use kmx package test (same arguments).\n"
 
 // Missing canonical registration, shared flag storage, or a leaked compatibility
 // route must fail without performing an operation.
@@ -24,7 +24,7 @@ func TestTestCommandTreesAndDiscovery(t *testing.T) {
 	var out, diag bytes.Buffer
 	deps, _ := testDependencies(&out, &diag)
 	root := newRootCommand(&commandState{deps: deps})
-	canonical, _, err := root.Find([]string{"test"})
+	canonical, _, err := root.Find([]string{"package", "test"})
 	if err != nil || canonical == root || canonical.Name() != "test" {
 		t.Fatalf("canonical test missing: %v", err)
 	}
@@ -33,7 +33,7 @@ func TestTestCommandTreesAndDiscovery(t *testing.T) {
 		t.Fatalf("independent tree visibility: err=%v canonical=%v legacy=%v", err, canonical, legacy)
 	}
 	for _, cmd := range []*cobra.Command{canonical, legacy} {
-		if !strings.Contains(cmd.Long, "use test explain") || strings.Contains(cmd.Long, "eval explain") {
+		if !strings.Contains(cmd.Long, "use package test explain") || strings.Contains(cmd.Long, "eval explain") {
 			t.Fatalf("%s help teaches legacy failure inspection: %s", cmd.Name(), cmd.Long)
 		}
 	}
@@ -67,7 +67,7 @@ func TestTestCommandTreesAndDiscovery(t *testing.T) {
 		}
 	}
 	for _, name := range []string{"case", "provider", "provider-url", "model", "no-content"} {
-		if canonical.Flag(name) == nil || legacy.Flag(name) != nil {
+		if canonical.Flag(name) != nil || legacy.Flag(name) != nil {
 			t.Fatalf("file flag %s leaked into legacy workspace eval", name)
 		}
 	}
@@ -91,8 +91,8 @@ func TestTestLegacyNoticeAtEveryNode(t *testing.T) {
 	t.Setenv("KMX_HOME", home)
 	t.Chdir(t.TempDir())
 	for _, child := range []string{"", "cleanup", "diff", "explain", "export", "verify", "from-sessions"} {
-		for _, verb := range []string{"eval", "test"} {
-			path := []string{verb}
+		for _, verb := range []string{"eval", "package test"} {
+			path := strings.Fields(verb)
 			if child != "" {
 				path = append(path, child)
 			}
@@ -163,12 +163,12 @@ func TestTestLegacyNoticeRequiredFlagsAndOfflineHelpers(t *testing.T) {
 		{"--", "eval", "extra"},
 	} {
 		var legacyError, legacyOut, legacyDiag string
-		for _, verb := range []string{"eval", "test"} {
+		for _, verb := range []string{"eval", "package test"} {
 			var out, diag bytes.Buffer
 			deps, loads := testDependencies(&out, &diag)
 			boundary := errors.New("cleanup configured boundary")
 			deps.loadConfig = func(string, string) (*config.Config, error) { *loads++; return nil, boundary }
-			err := execute(append([]string{verb}, tail...), deps)
+			err := execute(append(strings.Fields(verb), tail...), deps)
 			if err == nil || out.Len() != 0 || *loads != 0 && tail[0] != "cleanup" {
 				t.Fatalf("%s %v: err=%v loads=%d stdout=%q", verb, tail, err, *loads, &out)
 			}
@@ -190,11 +190,11 @@ func TestTestLegacyNoticeRequiredFlagsAndOfflineHelpers(t *testing.T) {
 }
 
 func TestTestExplicitHelpRefusalsNoticeOnce(t *testing.T) {
-	for _, verb := range []string{"eval", "test"} {
+	for _, verb := range []string{"eval", "package test"} {
 		for _, tail := range [][]string{{"--unknown"}, {"diff", "--unknown"}, {"--container-engine="}, {"export", "--container-engine="}} {
 			var out, diag bytes.Buffer
 			deps, loads := testDependencies(&out, &diag)
-			args := append([]string{"help", verb}, tail...)
+			args := append(append([]string{"help"}, strings.Fields(verb)...), tail...)
 			err := execute(args, deps)
 			want := ""
 			if verb == "eval" {
@@ -210,12 +210,12 @@ func TestTestExplicitHelpRefusalsNoticeOnce(t *testing.T) {
 func TestTestCompletionIsInert(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "absent-state")
 	t.Setenv("KMX_HOME", home)
-	for _, verb := range []string{"test", "eval"} {
+	for _, verb := range []string{"package test", "eval"} {
 		for _, mode := range []string{"__complete", "__completeNoDesc"} {
 			for _, tail := range [][]string{{""}, {"--judge-base-url", ""}, {"cleanup", ""}, {"diff", ""}, {"explain", ""}, {"export", "--member", ""}, {"verify", "--output", ""}, {"from-sessions", "--sessions", ""}, {"--context="}, {"--help"}} {
 				var out, diag bytes.Buffer
 				deps, loads := testDependencies(&out, &diag)
-				args := append([]string{mode, verb}, tail...)
+				args := append(append([]string{mode}, strings.Fields(verb)...), tail...)
 				if err := execute(args, deps); err != nil || *loads != 0 || strings.Contains(diag.String()+out.String(), legacyEvalNotice) {
 					t.Fatalf("%v completion operational/noticed: err=%v loads=%d stdout=%q stderr=%q", args, err, *loads, &out, &diag)
 				}
@@ -241,7 +241,7 @@ func TestTestLegacyNoticeMalformedContextAndOpaqueValues(t *testing.T) {
 		{[]string{"help", "eval", "export", "--context="}, true},
 		{[]string{"--context=", "help", "eval"}, true},
 		{[]string{"--help", "--context=", "eval"}, true},
-		{[]string{"test", "--context="}, false},
+		{[]string{"package", "test", "--context="}, false},
 		{[]string{"create", "eval", "--context="}, false},
 		{[]string{"run", "--agent", "eval", "--context="}, false},
 		{[]string{"--context", "eval", "--context="}, false},
@@ -262,7 +262,7 @@ func TestTestLegacyNoticeMalformedContextAndOpaqueValues(t *testing.T) {
 			t.Fatalf("%v: err=%v loads=%d stdout=%q stderr=%q want=%q", tc.args, err, *loads, &out, &diag, want)
 		}
 	}
-	for _, args := range [][]string{{"test", "--unknown", "eval"}, {"test", "--", "eval"}, {"test", "--workspace", "eval", "--output=yaml"}, {"help", "test"}, {"help", "frob", "eval"}, {"help", "--unknown", "eval"}, {"--unknown", "eval"}, {"--container-engine", "eval"}, {"--context", "eval"}, {"--", "eval"}} {
+	for _, args := range [][]string{{"package", "test", "--unknown", "eval"}, {"package", "test", "--", "eval"}, {"package", "test", "--workspace", "eval", "--output=yaml"}, {"help", "test"}, {"help", "frob", "eval"}, {"help", "--unknown", "eval"}, {"--unknown", "eval"}, {"--container-engine", "eval"}, {"--context", "eval"}, {"--", "eval"}} {
 		var out, diag bytes.Buffer
 		deps, loads := testDependencies(&out, &diag)
 		_ = execute(args, deps)
@@ -276,7 +276,7 @@ func TestTestEvaluationJSONAndRecoveryCompatibility(t *testing.T) {
 	t.Setenv("KMX_HOME", t.TempDir())
 	root, _ := suiteEvalSource(t)
 	var legacyJSON []byte
-	for _, verb := range []string{"eval", "test"} {
+	for _, verb := range []string{"eval", "package test"} {
 		var out, diag bytes.Buffer
 		deps, loads := testDependencies(&out, &diag)
 		deps.executable = "/build with space/kmx"
@@ -290,7 +290,7 @@ func TestTestEvaluationJSONAndRecoveryCompatibility(t *testing.T) {
 			operation = app.New(cfg)
 			return operation
 		}
-		args := []string{"--container-engine", "podman", verb, "--workspace", root, "--to-context", "eval", "--inference", "provider:eval", "-o", "json"}
+		args := append([]string{"--container-engine", "podman"}, append(strings.Fields(verb), "--workspace", root, "--to-context", "eval", "--inference", "provider:eval", "-o", "json")...)
 		err := execute(args, deps)
 		var report map[string]any
 		if err == nil || *loads != 1 || operation == nil || json.Unmarshal(out.Bytes(), &report) != nil || report["status"] != "failed" {
@@ -302,7 +302,7 @@ func TestTestEvaluationJSONAndRecoveryCompatibility(t *testing.T) {
 			t.Fatalf("machine JSON changed: legacy=%s canonical=%s", legacyJSON, &out)
 		}
 		wantCommand := "KIND_CLUSTER=demo CONTAINER_ENGINE=podman '/build with space/kmx' --container-engine podman " + verb + " --workspace " + root + " --to-context eval --inference provider:eval -o json"
-		if operation.InvocationCommand != wantCommand || operation.TestPresentation != (verb == "test") {
+		if operation.InvocationCommand != wantCommand || operation.TestPresentation != (verb == "package test") {
 			t.Fatalf("%s recovery rewrote opaque values/invoked route or lost presentation selection: %s test=%v", verb, operation.InvocationCommand, operation.TestPresentation)
 		}
 		want := 0
@@ -316,7 +316,7 @@ func TestTestEvaluationJSONAndRecoveryCompatibility(t *testing.T) {
 }
 
 func TestTestCleanupRecoveryUsesInvokedRoot(t *testing.T) {
-	for _, verb := range []string{"eval", "test"} {
+	for _, verb := range []string{"eval", "package test"} {
 		var out, diag bytes.Buffer
 		deps, loads := testDependencies(&out, &diag)
 		deps.executable = "/build with space/kmx"
@@ -330,23 +330,23 @@ func TestTestCleanupRecoveryUsesInvokedRoot(t *testing.T) {
 			operation = app.New(cfg)
 			return operation
 		}
-		err := execute([]string{verb, "cleanup", "--to-context", "eval's context", "--to-namespace", "team"}, deps)
+		err := execute(append(strings.Fields(verb), "cleanup", "--to-context", "eval's context", "--to-namespace", "team"), deps)
 		if err == nil || *loads != 1 || operation == nil || out.Len() != 0 {
 			t.Fatalf("cleanup did not reach safe configured refusal: err=%v loads=%d stdout=%q", err, *loads, &out)
 		}
 		want := "'/build with space/kmx' " + verb + " cleanup --to-context 'eval'\"'\"'s context' --to-namespace team"
-		if operation.InvocationCommand != want || operation.TestPresentation != (verb == "test") {
+		if operation.InvocationCommand != want || operation.TestPresentation != (verb == "package test") {
 			t.Fatalf("%s cleanup lost invoked root/quoting/presentation: %q test=%v", verb, operation.InvocationCommand, operation.TestPresentation)
 		}
 	}
 }
 
 func TestTestUsagePreservesInvokedSpelling(t *testing.T) {
-	for _, verb := range []string{"test", "eval"} {
+	for _, verb := range []string{"package test", "eval"} {
 		for _, tail := range [][]string{{"diff", "one"}, {"cleanup", "one", "two"}, {"from-sessions"}} {
 			var out, diag bytes.Buffer
 			deps, loads := testDependencies(&out, &diag)
-			err := execute(append([]string{verb}, tail...), deps)
+			err := execute(append(strings.Fields(verb), tail...), deps)
 			if err == nil || !strings.HasPrefix(err.Error(), "usage: kmx "+verb+" "+tail[0]+" ") || out.Len() != 0 || *loads != 0 {
 				t.Fatalf("%s %v wrong usage boundary: err=%v stdout=%q loads=%d", verb, tail, err, &out, *loads)
 			}
@@ -355,9 +355,9 @@ func TestTestUsagePreservesInvokedSpelling(t *testing.T) {
 }
 
 func TestTestRecoveryArgsRetainOpaqueValuesAndRedactJudge(t *testing.T) {
-	for _, verb := range []string{"eval", "test"} {
-		args := []string{verb, "--workspace", "eval", "--bindings", "proof's eval.yaml", "--judge-base-url", "https://private.invalid/eval", "--judge-key-env", "eval", "--judge-base-url=https://other.invalid/eval", "--out", "eval"}
-		want := []string{verb, "--workspace", "eval", "--bindings", "proof's eval.yaml", "--judge-key-env", "eval", "--out", "eval"}
+	for _, verb := range []string{"eval", "package test"} {
+		args := append(strings.Fields(verb), "--workspace", "eval", "--bindings", "proof's eval.yaml", "--judge-base-url", "https://private.invalid/eval", "--judge-key-env", "eval", "--judge-base-url=https://other.invalid/eval", "--out", "eval")
+		want := append(strings.Fields(verb), "--workspace", "eval", "--bindings", "proof's eval.yaml", "--judge-key-env", "eval", "--out", "eval")
 		if got := suiteEvaluationRecoveryArgs(args); !reflect.DeepEqual(got, want) {
 			t.Fatalf("redaction changed opaque values: got=%q want=%q", got, want)
 		}

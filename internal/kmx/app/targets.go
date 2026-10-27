@@ -90,7 +90,7 @@ func compiledTargets() []TargetInfo {
 				{Operation: "lift", Supported: true, Reason: "create-only immutable Agent at a named --to destination; exact acknowledged spec is GET-only; Registered is not live availability; separate offline --harness-image --bindings --plan render"},
 				{Operation: "chat", Reason: "no standalone AgentSessions chat"},
 				{Operation: "run", Reason: "no standalone AgentSessions run"},
-				{Operation: "inspect", Supported: true, Reason: "kmx status --to reads Agent registration only; no host or inference availability check"},
+				{Operation: "inspect", Supported: true, Reason: "kmx package status --to reads Agent registration only; no host or inference availability check"},
 				{Operation: "diff", Reason: "development AgentSessions receipts are refused by eval diff"},
 			},
 			Detection: TargetDetection{State: "not-probed", Scope: "Sessions API only", Detail: "use --sessions host:port; HarnessRegistry is not probed or qualified"}},

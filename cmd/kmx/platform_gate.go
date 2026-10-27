@@ -41,7 +41,7 @@ func installPlatformGate(root *cobra.Command, state *commandState) {
 					return errors.Join(state.noticeLegacyEval(cmd), errWindowsOperationUnsupported)
 				}
 				if strings.TrimPrefix(cmd.CommandPath(), "kmx ") == "lift" {
-					_, noticeErr := fmt.Fprintln(cmd.ErrOrStderr(), "kmx lift is deprecated; use kmx deploy (same arguments).")
+					_, noticeErr := fmt.Fprintln(cmd.ErrOrStderr(), "kmx lift is deprecated; use kmx package deploy (same arguments).")
 					return errors.Join(noticeErr, errWindowsOperationUnsupported)
 				}
 				return errWindowsOperationUnsupported
@@ -75,7 +75,7 @@ func windowsCommandAllowed(cmd *cobra.Command, args []string, state *commandStat
 		return windowsFlagsAllowed(cmd, "case", "output", "prompt", "no-content", "verbose") && windowsPackageFreeFakeFile(args)
 	case "test":
 		return windowsFlagsAllowed(cmd, "case", "output", "no-content", "verbose") && windowsPackageFreeFakeFile(args)
-	case "test explain", "eval explain":
+	case "test explain", "eval explain", "package test explain":
 		file := cmd.Flag("file")
 		return len(args) <= 1 && file != nil && file.Changed && strings.TrimSpace(file.Value.String()) != "" &&
 			windowsFlagsAllowed(cmd, "clear", "file", "show-content")

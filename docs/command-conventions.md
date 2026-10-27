@@ -17,15 +17,15 @@ kmx <noun> <verb> [object] [flags]
 ```
 
 - **Everyday workflows use root verbs:** `create`, `chat`, `run` and workspace
-  `push` and full-workspace `test`. Root `test` also retains helpers (`diff`,
+  `push` and full-workspace `test`. `package test` also retains helpers (`diff`,
   `explain`, `export`, `verify`, `from-sessions`, `cleanup`); root digest `deploy` deploys an evaluated package. Standalone packaged evaluation remains unimplemented.
 - **Resource and domain operations use noun first, then verb:** `task result`,
-  `suite build/push/push-image/pull/validate`, `run-profile export` and `orka install/status/show/list`. `kmx agent` is removed entirely,
+  `package build/push/push-image/pull/validate`, `run-profile export` and `orka install/status/show/list`. `kmx agent` is removed entirely,
   with no alias or retirement stub.
 - **Singular nouns.** Use `orka list`, not `orkas`. A plural may exist only
   as an explicitly approved hidden alias.
 - **Whole-tool entry points** include `quickstart`, `status`, `console`, `version`
-  and `completion`. Root `status --to NAME` is GET-only destination inventory with
+  and `completion`. `package status --to NAME` is GET-only destination inventory with
   table/JSON output; `orka status` retains the table-only runtime report. Neither
   restores legacy bundle status or implies evaluation.
   New root verbs need an explicit workflow decision, not a synonym.
@@ -40,24 +40,24 @@ Use one verb per meaning. Do not add a synonym for an existing verb.
 
 | Verb | Meaning | Example |
 |---|---|---|
-| `list` | Read many resources, one summary row each. | `kmx orka list` |
-| `show` | Read one resource and what it depends on, from live state. | `kmx orka show <name>` |
-| `status` | Report readiness, health or drift. | `kmx orka status` |
+| `list` | Read many resources, one summary row each. | `kmx cluster orka list` |
+| `show` | Read one resource and what it depends on, from live state. | `kmx cluster orka show <name>` |
+| `status` | Report readiness, health or drift. | `kmx cluster orka status` |
 | `create` | Author one tool-free workspace member offline; terminal prompts complete missing model/file inputs, scripts require both flags. No runtime/model bootstrap. | `kmx create <name>` |
-| `install` | Install runtime software onto a cluster. | `kmx orka install` |
-| `up` / `down` | Bring an environment up, or tear it down including its data. | `kmx aks up` |
+| `install` | Install runtime software onto a cluster. | `kmx cluster orka install` |
+| `up` / `down` | Bring an environment up, or tear it down including its data. | `kmx cluster aks up` |
 | `run` | Execute once on a live Orka Agent, including a suite-owned Agent; not workspace-local execution or suite evaluation. | `kmx run --agent NAME` |
 | `chat` | Open an interactive session. | `kmx chat <name>` |
-| `test` | Place and evaluate the full packaged native workspace inventory. | Orka: `kmx test --to-context <ctx> --inference provider:NAME --out <private.json>`; kagent: replace `--inference` with `--bindings FILE` |
-| `export` | Write a portable offline artifact without execution: evaluation evidence from completed exact-suite proof, or a frozen source-file run profile. | `kmx test export --member greeter --out ../evidence.json`; `kmx run-profile export FILE` |
+| `test` | Place and evaluate the full packaged native workspace inventory. | Orka: `kmx package test --to-context <ctx> --inference provider:NAME --out <private.json>`; kagent: replace `--inference` with `--bindings FILE` |
+| `export` | Write a portable offline artifact without execution: evaluation evidence from completed exact-suite proof, or a frozen source-file run profile. | `kmx package test export --member greeter --out ../evidence.json`; `kmx package run-profile export FILE` |
 | `explain` | Inspect private local evaluation failures offline; content opt-in. `--clear` deletes one ID, or all only with explicit workspace or agent-file selection. | `kmx test explain [failure-id] [--workspace DIR\|--file FILE] [--show-content\|--clear]` |
-| `verify` | Check public evidence against a local suite and independent accepted subject/policy, offline. | `kmx test verify --suite ./layout --evidence evidence.json --expect expected.json` |
+| `verify` | Check public evidence against a local suite and independent accepted subject/policy, offline. | `kmx package test verify --suite ./layout --evidence evidence.json --expect expected.json` |
 | `mcp` | Serve five original-server agent/settings tools over stdio, optionally root-bound; preview children retain four; no network listener | `kmx mcp --root DIRECTORY` |
-| `cleanup` | Inspect candidate runs; delete one explicitly selected run after confirmation. | `kmx test cleanup [run-id] --to dev` |
-| `validate` | Check an artifact offline, without a cluster. | `kmx suite validate <path>` |
-| `policy` | Resolve portable suite restrictions offline without granting authority or selecting an enforcement provider. | `kmx suite policy POLICY.json [--administrative-policy ADMIN.json]` |
-| `deploy` | Deploy an evaluated suite; no-reference workspace mode composes missing Orka eval/push/Deploy. | `kmx deploy --to NAME`; deploy-only: `kmx deploy <ref>@<digest> --to-context <ctx> --evidence FILE` plus Orka `--inference` or kagent `--bindings` |
-| `result` | Retrieve the outcome of an existing execution. | `kmx task result <task>` |
+| `cleanup` | Inspect candidate runs; delete one explicitly selected run after confirmation. | `kmx package test cleanup [run-id] --to dev` |
+| `validate` | Check an artifact offline, without a cluster. | `kmx package validate <path>` |
+| `policy` | Resolve portable suite restrictions offline without granting authority or selecting an enforcement provider. | `kmx package policy POLICY.json [--administrative-policy ADMIN.json]` |
+| `deploy` | Deploy an evaluated suite; no-reference workspace mode composes missing Orka eval/push/Deploy. | `kmx package deploy --to NAME`; deploy-only: `kmx package deploy <ref>@<digest> --to-context <ctx> --evidence FILE` plus Orka `--inference` or kagent `--bindings` |
+| `result` | Retrieve the outcome of an existing execution. | `kmx cluster task result <task>` |
 
 Keep these distinctions:
 
@@ -166,10 +166,10 @@ Keep these distinctions:
   non-interactive command, or provide one.
 - **Slash commands use the CLI vocabulary.** Prefer `/<noun> <verb>` where the
   scope matches a CLI command. Retired `/lift` and console Deploy only print
-  `Deploy moved: kmx deploy <ref>@<digest> --to-context … --evidence …`;
+  `Deploy moved: kmx package deploy <ref>@<digest> --to-context … --evidence …`;
   do not open a new release GUI or copy source-less live Agents.
 - **Modes are arguments, not separate commands.** On the CLI, use
-  `kmx quickstart --interactive`, not a separate `quickstart-wizard`. In
+  `kmx cluster quickstart --interactive`, not a separate `quickstart-wizard`. In
   slash commands, prefer `/verbose on|off` over separate on and off commands.
 - **A command with only one mode takes no mode flag.** `kmx chat` is
   always a session, so it has no `--interactive`.
@@ -191,7 +191,7 @@ Keep these distinctions:
 
 The `lift` → `deploy` transition must keep `lift` hidden but callable for at
 least one released version. Each legacy invocation adds exactly one stderr line:
-`kmx lift is deprecated; use kmx deploy (same arguments).` Keep legacy stdout,
+`kmx lift is deprecated; use kmx package deploy (same arguments).` Keep legacy stdout,
 stderr stage labels, arguments, flags and exit codes unchanged. Canonical human
 help/output says Deploy; machine JSON keys/values (including `targets` operation
 `"lift"`), public Go/API/internal identifiers, evidence, storage and annotations
@@ -237,7 +237,7 @@ row when its rename lands.
 | Current command | Rule it breaks | Proposed |
 |---|---|---|
 | `ctx [--check]` | Abbreviated root name and a list action without a verb. | Explicitly approved list-only named destinations; not the removed context-switching alias. Keep `--to` explicit and `targets` separate. |
-| `suite push <directory> <reference>` | Two positional arguments: extracted source directory and OCI destination reference. | Retain extracted-artifact transfer syntax without workspace discovery or `--workspace`; root `push [--workspace <directory>] [reference]` discovers a workspace and publishes a prepared native suite with at most one positional destination. An explicit tag is preserved; bare push derives a full-S tag from saved publishRepository. Completed private exact-S proof is required unless --unevaluated explicitly opts out. `--workspace` selects an exact root without fallback. |
-| `suite build --output <file>`, `suite pull --output <directory>` | `--output` is an artifact path, not a report format; neither command has the report-format `-o` shorthand. | Retain current syntax until a replacement is agreed. |
-| `suite build --attestations` | Defaults to true; `--attestations=false` opts out of SBOM and provenance requests. | Keep the documented default; `--require-attestations` refuses missing or unsupported attestations. |
-| `suite push-image <archive> <reference>` | Two positional arguments: built OCI archive and registry destination. | Explicit experimental exception matching extracted `suite push`; keeps image transport separate from suite publication and deployment admission. `--force` permits changing an existing tag; platform is `--platform OS/ARCH`. |
+| `package suite push <directory> <reference>` | Two positional arguments: extracted source directory and OCI destination reference. | Retain extracted-artifact transfer syntax without workspace discovery or `--workspace`; root `push [--workspace <directory>] [reference]` discovers a workspace and publishes a prepared native suite with at most one positional destination. An explicit tag is preserved; bare push derives a full-S tag from saved publishRepository. Completed private exact-S proof is required unless --unevaluated explicitly opts out. `--workspace` selects an exact root without fallback. |
+| `package build --output <file>`, `package pull --output <directory>` | `--output` is an artifact path, not a report format; neither command has the report-format `-o` shorthand. | Retain current syntax until a replacement is agreed. |
+| `package build --attestations` | Defaults to true; `--attestations=false` opts out of SBOM and provenance requests. | Keep the documented default; `--require-attestations` refuses missing or unsupported attestations. |
+| `package push-image <archive> <reference>` | Two positional arguments: built OCI archive and registry destination. | Explicit experimental exception matching extracted `package suite push`; keeps image transport separate from suite publication and deployment admission. `--force` permits changing an existing tag; platform is `--platform OS/ARCH`. |

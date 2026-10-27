@@ -41,6 +41,7 @@ mkdir -p "$release"
 cat > "$release/kmx-$os-$arch" <<'FAKE'
 #!/bin/sh
 printf '%s\n' "$*" >> "$KMX_CALLS"
+if [ "$*" = 'cluster --help' ] && [ "${KMX_TEST_LEGACY:-no}" = yes ]; then exit 1; fi
 exit 0
 FAKE
 chmod 0755 "$release/kmx-$os-$arch"
@@ -85,11 +86,16 @@ check() {
 if install_run "--quickstart installs and runs quickstart" --quickstart; then
   first=$(head -n 1 "$workdir/calls")
   check "quickstart is the first thing kmx is asked to do" \
-    "$([ "$first" = quickstart ] && echo ok || echo no)"
+    "$([ "$first" = 'cluster --help' ] && grep -q '^cluster quickstart$' "$workdir/calls" && echo ok || echo no)"
   check "the quickstart path never runs 'kmx version'" \
     "$(grep -q '^version' "$workdir/calls" && echo no || echo ok)"
   check "the quickstart path says nothing about the legacy runtime" \
     "$(grep -qi 'k''agent' "$workdir/out" && echo no || echo ok)"
+fi
+
+if KMX_TEST_LEGACY=yes install_run "old release keeps its quickstart spelling" --quickstart; then
+  check "old release dispatches quickstart after an inert group probe" \
+    "$(grep -q '^quickstart$' "$workdir/calls" && ! grep -q '^cluster quickstart$' "$workdir/calls" && echo ok || echo no)"
 fi
 
 # The published v0.1.0 cannot provide the new Orka path. Refuse before
@@ -135,7 +141,7 @@ if install_run "plain install still prints the version"; then
 fi
 if install_run "plain v0.1.0 install" --version=v0.1.0; then
   check "plain v0.1.0 does not offer legacy quickstart as Orka" \
-    "$(grep -q 'Next:.*kmx quickstart' "$workdir/out" && echo no || echo ok)"
+    "$(grep -q 'Next:.*kmx cluster quickstart' "$workdir/out" && echo no || echo ok)"
   check "plain v0.1.0 offers the latest Orka-capable release" \
     "$(grep -q 'go install github.com/kaimahi-agents/kaimahi/cmd/kmx@latest' "$workdir/out" && echo ok || echo no)"
 fi

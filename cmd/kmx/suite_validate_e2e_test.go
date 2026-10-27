@@ -33,7 +33,7 @@ func TestSuiteValidateRejectsMissingProviderExtensionCriticalityEndToEnd(t *test
 		t.Fatalf("build kmx: %v\n%s", err, output)
 	}
 
-	runKMX(t, binary, "suite", "validate", afterSuite)
+	runKMX(t, binary, "package", "validate", afterSuite)
 
 	// Rebind every ancestor so only the missing extension criticality is invalid.
 	var provider map[string]any
@@ -61,7 +61,7 @@ func TestSuiteValidateRejectsMissingProviderExtensionCriticalityEndToEnd(t *test
 	suite.Compositions[0].Descriptor = descriptorFor(suitecore.MediaTypeComposition, compositionDigest, compositionSize)
 	suite.ToolProviderCompositions[0].Descriptor = descriptorFor(suitecore.MediaTypeToolProviderComposition, providerCompositionDigest, providerCompositionSize)
 	writeJSON(t, afterSuite, "agentsuite.json", suite)
-	command = exec.CommandContext(t.Context(), binary, "suite", "validate", afterSuite)
+	command = exec.CommandContext(t.Context(), binary, "package", "validate", afterSuite)
 	if output, err := command.CombinedOutput(); err == nil || !strings.Contains(string(output), "non-null critical") {
 		t.Fatalf("missing provider extension criticality: error = %v, output = %s", err, output)
 	}

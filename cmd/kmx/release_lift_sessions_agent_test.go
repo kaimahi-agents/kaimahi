@@ -10,11 +10,11 @@ import (
 )
 
 func TestSessionsAgentDeployArgumentUsage(t *testing.T) {
-	for _, verb := range []string{"deploy", "lift"} {
+	for _, verb := range []string{"package deploy", "lift"} {
 		t.Run(verb, func(t *testing.T) {
 			var out, diag bytes.Buffer
 			deps, loads := testDependencies(&out, &diag)
-			err := execute([]string{verb, "unexpected", "extra"}, deps)
+			err := execute(append(strings.Fields(verb), "unexpected", "extra"), deps)
 			if err == nil || *loads != 0 {
 				t.Fatalf("argument refusal: %v, config loads=%d", err, *loads)
 			}
@@ -51,7 +51,7 @@ func TestSessionsAgentDeploySelectors(t *testing.T) {
 				return nil, boundary
 			}
 			t.Chdir(root)
-			args := []string{"deploy", "registry.example/suite@sha256:" + strings.Repeat("a", 64), "--to", "sessions", "--evidence", "private.json"}
+			args := []string{"package", "deploy", "registry.example/suite@sha256:" + strings.Repeat("a", 64), "--to", "sessions", "--evidence", "private.json"}
 			err := execute(append(args, tc.flags...), deps)
 			if err == nil || *loads != tc.loads || tc.loads == 1 && !errors.Is(err, boundary) {
 				t.Fatalf("err=%v loads=%d", err, *loads)

@@ -1,6 +1,6 @@
 package app
 
-// `kmx orka` — the front door for a platform this project did not write.
+// `kmx cluster orka` — the front door for a platform this project did not write.
 //
 // kmx verifies Orka's release chart before using its CRDs and installing the
 // harness-v2 controller. The chart owns its generated snapshot encryption key;
@@ -44,8 +44,8 @@ const (
 
 	// OrkaPathNamespaces is the guard banner's namespace list for the
 	// supported Orka path: the model server and the Orka runtime, which are
-	// the only two namespaces `kmx quickstart`, the wizard and a bare
-	// `kmx local up` write to. Other commands can write to caller-selected namespaces;
+	// the only two namespaces `kmx cluster quickstart`, the wizard and a bare
+	// `kmx cluster up` write to. Other commands can write to caller-selected namespaces;
 	// naming a namespace this path never touches would describe another command.
 	OrkaPathNamespaces = "ollama, " + OrkaNamespace
 
@@ -56,18 +56,18 @@ const (
 	// <p> is what makes a model called `<p>/<model>` resolvable.
 	orkaProviderKind = "providers.core.orka.ai"
 
-	// orkaModelNamespace is where `kmx local up` puts the keyless model server
+	// orkaModelNamespace is where `kmx cluster up` puts the keyless model server
 	// the default Provider points at.
 	orkaModelNamespace = "ollama"
 
 	// orkaDefaultProvider and orkaDefaultModelURL are the keyless Provider
-	// `kmx local up --step orka` wires and the in-cluster endpoint it resolves
+	// `kmx cluster up --step orka` wires and the in-cluster endpoint it resolves
 	// against. Quickstart creates its own fixed Provider for its Agent but
 	// shares this endpoint and the placeholder key with the local Provider.
 	orkaDefaultProvider = "local"
 	orkaDefaultModelURL = "http://ollama.ollama.svc.cluster.local:11434/v1"
 
-	// orkaResultAccount is the read-only Task result account `kmx local up --step
+	// orkaResultAccount is the read-only Task result account `kmx cluster up --step
 	// orka` provisions. Task RESULTS are read over Orka's API with a
 	// short-lived token for this account, so the account has to exist before
 	// any command can retrieve one. It is provisioned by the runtime step and
@@ -98,7 +98,7 @@ func (a *App) installerDigest() string {
 	return OrkaInstallerDigest
 }
 
-// OrkaOptions are `kmx orka install`'s knobs.
+// OrkaOptions are `kmx cluster orka install`'s knobs.
 //
 // There is deliberately no flag that could carry a credential. The wrapper
 // token is generated here and never leaves the pipe into kubectl; a provider
@@ -164,7 +164,7 @@ func (a *App) OrkaInstall(opt OrkaOptions) error {
 	}
 
 	if err := a.Guard(fmt.Sprintf("install Orka %s (chart CRDs, harness-v2 controller) into namespace %s",
-		OrkaVersion, OrkaNamespace), a.operationCommand("orka", "install")); err != nil {
+		OrkaVersion, OrkaNamespace), a.operationCommand("cluster", "orka", "install")); err != nil {
 		return err
 	}
 
@@ -225,14 +225,14 @@ func (a *App) OrkaInstall(opt OrkaOptions) error {
 	}
 
 	a.complete("Orka "+OrkaVersion+" is running", started)
-	a.notef("  kmx orka status       # what is installed, and what it can resolve")
+	a.notef("  kmx cluster orka status       # what is installed, and what it can resolve")
 	return nil
 }
 
-// stepOrka is `kmx local up --step orka`: the pinned runtime, its keyless Provider
+// stepOrka is `kmx cluster up --step orka`: the pinned runtime, its keyless Provider
 // and the account a Task result is read with.
 //
-// It is `kmx orka install`'s work without `kmx orka install`'s framing — the
+// It is `kmx cluster orka install`'s work without `kmx cluster orka install`'s framing — the
 // same fetch, digest refusal, and chart-CRDs-before-Helm order
 // — because `local up` supplies its own phase, guard and completion lines. Calling
 // OrkaInstall here would nest a four-phase command inside one phase of
@@ -259,7 +259,7 @@ func (a *App) stepOrka() error {
 	if current != nil && current.Endpoint != opt.ModelURL {
 		return fmt.Errorf("Provider %s/%s has a different endpoint:\n  - existing: %s\n  + requested: %s\n  Refusing to overwrite it. The following command explicitly replaces the host route:\n  %s",
 			OrkaNamespace, opt.Provider, current.Endpoint, opt.ModelURL,
-			a.operationCommand("orka", "install", "--provider", opt.Provider, "--model", opt.Model, "--model-url", opt.ModelURL))
+			a.operationCommand("cluster", "orka", "install", "--provider", opt.Provider, "--model", opt.Model, "--model-url", opt.ModelURL))
 	}
 	if err := a.orkaProvider(opt); err != nil {
 		return err
@@ -444,7 +444,7 @@ func (a *App) fetchOrkaInstaller() ([]byte, error) {
 		return nil, fmt.Errorf("Orka's installer at %s does not hash to the digest kmx pins.\n"+
 			"  expected %s\n  got      %s\n"+
 			"  Nothing was applied. Either the tag moved or the bytes were changed in transit;\n"+
-			"  neither is something to install past. `kmx orka install` pins one tested version.",
+			"  neither is something to install past. `kmx cluster orka install` pins one tested version.",
 			OrkaVersion, a.installerDigest(), got)
 	}
 	a.notef("Installer verified: %d kB, sha256 %s.", len(body)/1024, got[:12])
@@ -476,7 +476,7 @@ func (a *App) orkaProvider(opt OrkaOptions) error {
 			if isNotFound(err) {
 				return fmt.Errorf("no in-cluster model server at %s, so Provider %q would resolve nothing.\n"+
 					"  `%s` deploys one on the selected local kind target. To install Orka without a Provider: --provider -",
-					opt.ModelURL, opt.Provider, a.operationCommand("local", "up"))
+					opt.ModelURL, opt.Provider, a.operationCommand("cluster", "up"))
 			}
 			return fmt.Errorf("cannot tell whether an in-cluster model server exists (refusing to guess): %w", err)
 		}
@@ -666,7 +666,7 @@ func (a *App) OrkaReady() error {
 		case d.Spec.Replicas <= 0:
 			return fmt.Errorf("Orka's %s is scaled to %d in namespace %s, so nothing is running to verify.\n"+
 				"  Scale it up, or reinstall with `%s`",
-				name, d.Spec.Replicas, OrkaNamespace, a.operationCommand("orka", "install"))
+				name, d.Spec.Replicas, OrkaNamespace, a.operationCommand("cluster", "orka", "install"))
 		case d.Status.ObservedGeneration < d.Metadata.Generation:
 			return fmt.Errorf("Orka's %s has a spec its controller has not observed yet in namespace %s "+
 				"(generation %d, observed %d), so this lift is not complete.\n"+
@@ -713,7 +713,7 @@ func (a *App) OrkaStatus() error {
 		return fmt.Errorf("cannot read Orka Deployments in %s: kubectl request failed; check the selected context and permissions", OrkaNamespace)
 	}
 	if isNotFound(err) || strings.TrimSpace(deployments) == "" {
-		fmt.Fprintf(a.Out, "%-22s %s\n", "orka", "not installed (`kmx orka install`)")
+		fmt.Fprintf(a.Out, "%-22s %s\n", "orka", "not installed (`kmx cluster orka install`)")
 		return nil
 	}
 

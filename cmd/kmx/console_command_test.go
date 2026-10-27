@@ -9,7 +9,7 @@ import (
 func TestConsoleHelpAndNonterminal(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
-	if err := execute([]string{"console", "--help"}, deps); err != nil {
+	if err := execute([]string{"cluster", "console", "--help"}, deps); err != nil {
 		t.Fatal(err)
 	}
 	if *loads != 0 {
@@ -25,7 +25,7 @@ func TestConsoleHelpAndNonterminal(t *testing.T) {
 			t.Fatalf("help omits %q", want)
 		}
 	}
-	if err := execute([]string{"console", "--demo"}, deps); err == nil || !strings.Contains(err.Error(), "interactive terminal") {
+	if err := execute([]string{"cluster", "console", "--demo"}, deps); err == nil || !strings.Contains(err.Error(), "interactive terminal") {
 		t.Fatalf("err=%v", err)
 	}
 }

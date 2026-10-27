@@ -20,12 +20,12 @@ import (
 func TestLocalRecoveryCommandsPreserveShellSelectors(t *testing.T) {
 	a := &App{Cfg: &config.Config{KindCluster: "demo '$(false)", KubeContext: "kind-demo '$(false)", ContainerEngine: "podman"}}
 	for _, action := range []string{"up", "down"} {
-		command := a.operationCommand("local", action)
+		command := a.operationCommand("cluster", action)
 		out, err := exec.Command("/bin/sh", "-c", `kmx() { printf '%s\000' "$KIND_CLUSTER" "$CONTAINER_ENGINE" "$@"; }; `+command).Output()
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := []string{a.Cfg.KindCluster, "podman", "--context", a.Cfg.KubeContext, "local", action}
+		want := []string{a.Cfg.KindCluster, "podman", "--context", a.Cfg.KubeContext, "cluster", action}
 		if got := strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00"); !reflect.DeepEqual(got, want) {
 			t.Fatalf("%s: argv/env=%q want %q", command, got, want)
 		}
@@ -155,7 +155,7 @@ func TestQuickstartDeletionConsequenceSurvivesRichAndPlainOutput(t *testing.T) {
 		var out bytes.Buffer
 		a := &App{Cfg: &config.Config{KindCluster: "test", KubeContext: "kind-test", ContainerEngine: "podman"}, Err: &out}
 		a.quickstartNext(cliui.WithCapabilities(cliui.Capabilities{Rich: rich, Width: 80}), QuickstartResult{Next: []string{"chat", "create", "orka status"}})
-		for _, want := range []string{"delete the cluster and everything in it", a.operationCommand("local", "down"), "docs/kmx.md#kmx-create", "what is installed, and what it can resolve"} {
+		for _, want := range []string{"delete the cluster and everything in it", a.operationCommand("cluster", "down"), "docs/kmx.md#kmx-create", "what is installed, and what it can resolve"} {
 			if !strings.Contains(strings.Join(strings.Fields(strings.ReplaceAll(out.String(), "│", "")), " "), want) {
 				t.Errorf("rich=%v lost %q:\n%s", rich, want, out.String())
 			}

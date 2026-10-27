@@ -57,9 +57,9 @@ jobs:
           go build -o bin/orka-native-reference ./scripts/ci/orka-native-reference.go
       - name: Configure CI registry mirrors
         run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" setup
-      # Component steps only. `kmx orka install` is the command under test
+      # Component steps only. `kmx cluster orka install` is the command under test
       # here, and the next step runs it with its digest verification and its
-      # Provider's readiness asserted — a bare `kmx local up` would have installed
+      # Provider's readiness asserted — a bare `kmx cluster up` would have installed
       # Orka already, and that step would then be asserting about somebody
       # else's work. The other half of this shard's point is what the Orka
       # path does NOT install: no legacy namespace or harness wrapper.
@@ -69,11 +69,11 @@ jobs:
           if kind get clusters | grep -qx kmx-orka; then
             echo 'refusing to reuse or delete an existing kind cluster'; exit 1
           fi
-          bin/kmx local up --step cluster
+          bin/kmx cluster up --step cluster
           echo 'KMX_ORKA_RUNTIME_CREATED=1' >> "$GITHUB_ENV"
           python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" nodes --cluster "$KIND_CLUSTER"
-          bin/kmx local up --step ollama
-          bin/kmx local up --step model
+          bin/kmx cluster up --step ollama
+          bin/kmx cluster up --step model
           # Fail closed on the premise. If a later edit made any of the three
           # steps above pull in the legacy runtime, every Orka claim below
           # would still pass while proving something else entirely.
@@ -84,7 +84,7 @@ jobs:
       - name: Orka — install the pinned release and its keyless Provider
         run: |
           set -euo pipefail
-          bin/kmx orka install 2>&1 | tee orka-install.out
+          bin/kmx cluster orka install 2>&1 | tee orka-install.out
           # The digest pin is the point of the command, so require that it
           # was actually verified rather than that the command exited 0.
           grep -q 'Installer verified:' orka-install.out
@@ -101,7 +101,7 @@ jobs:
             echo "Provider local never became Ready; a model call would be refused"
             exit 1
           }
-      # `kmx orka install` provisions the Task result account. Prove the
+      # `kmx cluster orka install` provisions the Task result account. Prove the
       # installed grant is Task-get only; do not hand-create its resources.
       - name: Orka — verify the installed Task result account
         run: |
@@ -359,7 +359,7 @@ jobs:
             echo 'refusing to reuse or delete an existing promotion cluster'; exit 1
           fi
           # Failed creation is ambiguous: only acknowledged success owns cleanup.
-          KIND_CLUSTER=kmx-orka-promote KUBE_CTX=kind-kmx-orka-promote bin/kmx local up --step cluster
+          KIND_CLUSTER=kmx-orka-promote KUBE_CTX=kind-kmx-orka-promote bin/kmx cluster up --step cluster
           echo 'KMX_ORKA_PROMOTION_CREATED=1' >> "$GITHUB_ENV"
           python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" nodes --cluster kmx-orka-promote
       - name: Native promotion — install pinned Orka without inference

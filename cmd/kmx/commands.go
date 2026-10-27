@@ -30,13 +30,6 @@ func newContextCommand(state *commandState) *cobra.Command {
 	return group
 }
 
-func newLocalCommand(state *commandState) *cobra.Command {
-	group := &cobra.Command{Use: "local", Short: "Provision or delete the local kind environment", Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
-	group.AddCommand(newUpCommand(state), newDownCommand(state))
-	return group
-}
-
 // newQuickstartCommand is the front door: one command, from a machine with a
 // container engine to an agent that has answered a question.
 //
@@ -73,14 +66,14 @@ The fixed-mode default question is not submitted in guided mode.
 An explicit --task requests a first Orka Task when creating a new Agent. It is
 not run for an existing Agent. The first Task uses the Agent's deployed Provider, not host-backed chat inference.`,
 		Example: `  # Fixed first-answer path
-  kmx quickstart
-  kmx quickstart -o json
+  kmx cluster quickstart
+  kmx cluster quickstart -o json
 
   # Experimental guided setup (terminal required)
-  kmx quickstart --interactive
+  kmx cluster quickstart --interactive
 
   # Request a first Orka Task when authoring a new Agent
-  kmx quickstart --interactive --task "Who are you?"`,
+  kmx cluster quickstart --interactive --task "Who are you?"`,
 	}
 	flags := cmd.Flags()
 	flags.BoolVarP(&interactive, "interactive", "i", false, "choose or author an Orka agent in an experimental guided terminal UI")
@@ -130,13 +123,13 @@ func quickstartModeFlags(cmd *cobra.Command, interactive bool) error {
 	flags := cmd.Flags()
 	if interactive {
 		if flags.Changed("output") {
-			return fmt.Errorf("--output does not apply to kmx quickstart --interactive: the guided setup has no machine-readable output; use kmx quickstart -o json for automation")
+			return fmt.Errorf("--output does not apply to kmx cluster quickstart --interactive: the guided setup has no machine-readable output; use kmx cluster quickstart -o json for automation")
 		}
 		return nil
 	}
 	for _, name := range quickstartInteractiveOnly {
 		if flags.Changed(name) {
-			return fmt.Errorf("--%s requires --interactive: use kmx quickstart --interactive --%s ...", name, name)
+			return fmt.Errorf("--%s requires --interactive: use kmx cluster quickstart --interactive --%s ...", name, name)
 		}
 	}
 	return nil

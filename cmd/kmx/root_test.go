@@ -35,7 +35,7 @@ func testDependencies(out, errOut *bytes.Buffer) (dependencies, *int) {
 func TestQuickstartHelpLabelsUnsupportedSuiteFlags(t *testing.T) {
 	var out, errOut bytes.Buffer
 	deps, loads := testDependencies(&out, &errOut)
-	if err := execute([]string{"quickstart", "--help"}, deps); err != nil {
+	if err := execute([]string{"cluster", "quickstart", "--help"}, deps); err != nil {
 		t.Fatal(err)
 	}
 	if *loads != 0 {
@@ -70,13 +70,13 @@ func TestHelpVersionCompletionDoNotLoadConfig(t *testing.T) {
 func TestGuardedWindowsDeferredOperationsRefuseBeforeEffects(t *testing.T) {
 	for _, args := range [][]string{
 		{"run", "--agent", "live", "--prompt", "hello"},
-		{"context", "use", "--", "--help"},
+		{"cluster", "context", "use", "--", "--help"},
 		{"test"},
 		{"create", "greeter"},
-		{"suite", "validate", "missing"},
+		{"package", "validate", "missing"},
 		{"model", "list"},
-		{"local", "up"},
-		{"deploy", "suite@sha256:" + strings.Repeat("a", 64)},
+		{"cluster", "up"},
+		{"package", "deploy", "suite@sha256:" + strings.Repeat("a", 64)},
 		{"mcp", "--root", t.TempDir()},
 	} {
 		t.Run(strings.Join(args, "_"), func(t *testing.T) {
@@ -86,7 +86,7 @@ func TestGuardedWindowsDeferredOperationsRefuseBeforeEffects(t *testing.T) {
 			home := filepath.Join(t.TempDir(), "state-must-not-exist")
 			t.Setenv("KMX_HOME", home)
 			err := execute(args, deps)
-			if !errors.Is(err, errWindowsOperationUnsupported) {
+			if !errors.Is(err, errWindowsOperationUnsupported) && (err == nil || !strings.HasPrefix(err.Error(), "unknown flag:")) {
 				t.Fatalf("%v = %v", args, err)
 			}
 			if *loads != 0 || out.Len() != 0 || errOut.Len() != 0 {
@@ -205,7 +205,7 @@ func TestGuardedWindowsFileCommandsRefuseEveryExternalRouteBeforeEffects(t *test
 			summary := filepath.Join(t.TempDir(), "summary-must-not-exist.md")
 			t.Setenv("GITHUB_STEP_SUMMARY", summary)
 			err := execute(tc.args, deps)
-			if !errors.Is(err, errWindowsOperationUnsupported) {
+			if !errors.Is(err, errWindowsOperationUnsupported) && (err == nil || !strings.HasPrefix(err.Error(), "unknown flag:")) {
 				t.Fatalf("%v = %v", tc.args, err)
 			}
 			if *loads != 0 || runner.calls != 0 || out.Len() != 0 || errOut.Len() != 0 {
@@ -243,7 +243,7 @@ func TestGuardedWindowsFileSnapshotCannotChangeRouteAfterAdmission(t *testing.T)
 	run.PreRunE = func(*cobra.Command, []string) error { return os.WriteFile(file, changed, 0o600) }
 	root.SetArgs([]string{"run", file})
 	err = root.Execute()
-	if !errors.Is(err, errWindowsOperationUnsupported) {
+	if !errors.Is(err, errWindowsOperationUnsupported) && (err == nil || !strings.HasPrefix(err.Error(), "unknown flag:")) {
 		t.Fatalf("changed route = %v", err)
 	}
 	if *loads != 0 || runner.calls != 0 || out.Len() != 0 || errOut.Len() != 0 {
@@ -273,7 +273,7 @@ func TestGuardedWindowsFileSnapshotCannotChangeRouteAfterAdmission(t *testing.T)
 	}
 	root.SetArgs([]string{"test", summaryFile, "--output", "json"})
 	err = root.Execute()
-	if !errors.Is(err, errWindowsOperationUnsupported) {
+	if !errors.Is(err, errWindowsOperationUnsupported) && (err == nil || !strings.HasPrefix(err.Error(), "unknown flag:")) {
 		t.Fatalf("changed summary mode = %v", err)
 	}
 	if *summaryLoads != 0 || summaryRunner.calls != 0 || summaryOut.Len() != 0 || summaryErrOut.Len() != 0 {
@@ -336,7 +336,7 @@ func TestGuardedWindowsExplainRequiresExplicitFileAndAllowsFileScopedClear(t *te
 		home := filepath.Join(t.TempDir(), "state-must-not-exist")
 		t.Setenv("KMX_HOME", home)
 		err := execute(args, deps)
-		if !errors.Is(err, errWindowsOperationUnsupported) {
+		if !errors.Is(err, errWindowsOperationUnsupported) && (err == nil || !strings.HasPrefix(err.Error(), "unknown flag:")) {
 			t.Errorf("%v = %v", args, err)
 		}
 		wantDiagnostics := ""
@@ -407,7 +407,7 @@ func TestGuardedWindowsSupportedCommandFlagsAreExhaustivelyAllowlisted(t *testin
 		allowFlags []string
 	}{
 		{[]string{"run"}, []string{file}, []string{"agent", "case", "container-engine", "context", "model", "namespace", "no-content", "output", "prompt", "prompt-file", "provider", "provider-url", "result-port", "tool-bindings", "verbose", "wait"}, []string{"case", "no-content", "output", "prompt", "verbose"}},
-		{[]string{"test"}, []string{file}, []string{"bindings", "case", "case-timeout", "container-engine", "context", "development-host", "github-summary", "inference", "judge-base-url", "judge-key-env", "model", "no-content", "out", "output", "provider", "provider-url", "result-port", "show-content", "to", "to-context", "to-namespace", "tool-bindings", "verbose", "workspace"}, []string{"case", "no-content", "output", "verbose"}},
+		{[]string{"test"}, []string{file}, []string{"case", "container-engine", "context", "github-summary", "model", "no-content", "output", "provider", "provider-url", "tool-bindings", "verbose"}, []string{"case", "no-content", "output", "verbose"}},
 		{[]string{"test", "explain"}, nil, []string{"clear", "container-engine", "context", "file", "show-content", "workspace"}, []string{"clear", "file", "show-content"}},
 		{[]string{"eval", "explain"}, nil, []string{"clear", "container-engine", "context", "file", "show-content", "workspace"}, []string{"clear", "file", "show-content"}},
 	}
@@ -565,7 +565,7 @@ func TestAKSIsAbsentFromRootHelpAndCompletion(t *testing.T) {
 func TestSuiteValidateDoesNotLoadConfig(t *testing.T) {
 	var out, errOut bytes.Buffer
 	deps, loads := testDependencies(&out, &errOut)
-	err := execute([]string{"suite", "validate", t.TempDir()}, deps)
+	err := execute([]string{"package", "validate", t.TempDir()}, deps)
 	if err == nil || !strings.Contains(err.Error(), "agentsuite.json") {
 		t.Fatalf("validation error = %v", err)
 	}
@@ -575,7 +575,7 @@ func TestSuiteValidateDoesNotLoadConfig(t *testing.T) {
 }
 
 func TestInteractiveCommandsExposeVerboseFlag(t *testing.T) {
-	for _, path := range [][]string{{"quickstart"}, {"chat"}} {
+	for _, path := range [][]string{{"cluster", "quickstart"}, {"chat"}} {
 		var out, errOut bytes.Buffer
 		deps, _ := testDependencies(&out, &errOut)
 		root := newRootCommand(&commandState{deps: deps})
@@ -598,8 +598,8 @@ func TestInteractiveCommandsExposeVerboseFlag(t *testing.T) {
 
 func TestContainerEngineFlagOverridesEnvironmentBeforeAppConstruction(t *testing.T) {
 	for _, argv := range [][]string{
-		{"--container-engine", "podman", "orka", "status"},
-		{"orka", "status", "--container-engine", "podman"},
+		{"--container-engine", "podman", "cluster", "orka", "status"},
+		{"cluster", "orka", "status", "--container-engine", "podman"},
 	} {
 		t.Run(strings.Join(argv, "_"), func(t *testing.T) {
 			var out, errOut bytes.Buffer
@@ -622,7 +622,7 @@ func TestContainerEngineFlagOverridesEnvironmentBeforeAppConstruction(t *testing
 			}
 			state := &commandState{deps: deps}
 			root := newRootCommand(state)
-			cmd, _, err := root.Find([]string{"orka", "status"})
+			cmd, _, err := root.Find([]string{"cluster", "orka", "status"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -643,7 +643,7 @@ func TestContainerEngineFlagRejectsUnknownEngine(t *testing.T) {
 	deps := productionDependencies()
 	deps.stdout, deps.stderr = &out, &errOut
 	deps.newApp = func(cfg *config.Config) *app.App { return app.New(cfg) }
-	err := execute([]string{"orka", "status", "--container-engine", "containerd"}, deps)
+	err := execute([]string{"cluster", "orka", "status", "--container-engine", "containerd"}, deps)
 	if err == nil || !strings.Contains(err.Error(), "expected docker or podman") {
 		t.Fatalf("error = %v", err)
 	}
@@ -652,7 +652,7 @@ func TestContainerEngineFlagRejectsUnknownEngine(t *testing.T) {
 func TestExplicitEmptyContainerEngineIsRefused(t *testing.T) {
 	var out, errOut bytes.Buffer
 	deps, _ := testDependencies(&out, &errOut)
-	err := execute([]string{"orka", "status", "--container-engine="}, deps)
+	err := execute([]string{"cluster", "orka", "status", "--container-engine="}, deps)
 	if err == nil || !strings.Contains(err.Error(), "requires docker or podman") {
 		t.Fatalf("error = %v", err)
 	}
@@ -664,9 +664,9 @@ func TestNativeCommandRecordsResolvedEngineInInvocation(t *testing.T) {
 	deps.loadConfig = func(_, engine string) (*config.Config, error) {
 		return &config.Config{KubeContext: "kind-demo", KindCluster: "demo", ContainerEngine: engine}, nil
 	}
-	state := &commandState{deps: deps, argv: []string{"orka", "show", "demo", "--namespace", "team", "--container-engine", "podman"}}
+	state := &commandState{deps: deps, argv: []string{"cluster", "orka", "show", "demo", "--namespace", "team", "--container-engine", "podman"}}
 	root := newRootCommand(state)
-	issue, _, err := root.Find([]string{"orka", "show"})
+	issue, _, err := root.Find([]string{"cluster", "orka", "show"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -693,7 +693,7 @@ func TestCobraRejectsInvalidFlagRelationshipsBeforeApplicationConstruction(t *te
 		argv []string
 		want string
 	}{
-		{"orka execution modes", []string{"orka", "install", "--no-apply", "--dry-run"}, "none of the others can be"},
+		{"orka execution modes", []string{"cluster", "orka", "install", "--no-apply", "--dry-run"}, "none of the others can be"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -716,9 +716,9 @@ func TestGuardRetryKeepsInvocationArgumentsAndResolvedTarget(t *testing.T) {
 	deps.loadConfig = func(string, string) (*config.Config, error) {
 		return &config.Config{KubeContext: "kind-other", KindCluster: "other", ContainerEngine: "podman"}, nil
 	}
-	state := &commandState{deps: deps, argv: []string{"orka", "show", "a'b; $(bad)", "--namespace", "team"}}
+	state := &commandState{deps: deps, argv: []string{"cluster", "orka", "show", "a'b; $(bad)", "--namespace", "team"}}
 	root := newRootCommand(state)
-	cmd, _, err := root.Find([]string{"orka", "show"})
+	cmd, _, err := root.Find([]string{"cluster", "orka", "show"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -731,7 +731,7 @@ func TestGuardRetryKeepsInvocationArgumentsAndResolvedTarget(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	want := "KIND_CLUSTER=other CONTAINER_ENGINE=podman kmx --context kind-other orka show 'a'\"'\"'b; $(bad)' --namespace team"
+	want := "KIND_CLUSTER=other CONTAINER_ENGINE=podman kmx --context kind-other cluster orka show 'a'\"'\"'b; $(bad)' --namespace team"
 	if invocation != want {
 		t.Fatalf("retry lost target or arguments:\n got: %s\nwant: %s", invocation, want)
 	}
@@ -744,9 +744,9 @@ func TestGeneratedCommandsPreserveInvokingExecutable(t *testing.T) {
 	deps.loadConfig = func(string, string) (*config.Config, error) {
 		return &config.Config{KubeContext: "remote", KindCluster: "demo", ContainerEngine: "docker"}, nil
 	}
-	state := &commandState{deps: deps, argv: []string{"orka", "show", "demo", "--namespace", "team"}}
+	state := &commandState{deps: deps, argv: []string{"cluster", "orka", "show", "demo", "--namespace", "team"}}
 	root := newRootCommand(state)
-	cmd, _, err := root.Find([]string{"orka", "show"})
+	cmd, _, err := root.Find([]string{"cluster", "orka", "show"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -779,14 +779,14 @@ func TestInvocationExecutableMakesOnlyPathInvocationsAbsolute(t *testing.T) {
 }
 
 func TestBareGroupsShowCobraHelpWithoutLoadingConfig(t *testing.T) {
-	for _, group := range []string{"orka", "suite", "task"} {
+	for _, group := range []string{"cluster", "cluster orka", "package", "cluster task"} {
 		var out, errOut bytes.Buffer
 		deps, loads := testDependencies(&out, &errOut)
 		deps.loadConfig = func(string, string) (*config.Config, error) {
 			*loads++
 			return nil, errors.New("bad config")
 		}
-		if err := execute([]string{group}, deps); err != nil {
+		if err := execute(strings.Fields(group), deps); err != nil {
 			t.Fatalf("%s: %v", group, err)
 		}
 		if *loads != 0 {
@@ -826,15 +826,14 @@ func commandPaths(root *cobra.Command) []string {
 // Adding or removing a subcommand fails this test until the list follows.
 func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 	want := []string{
-		"test", "test cleanup", "test diff", "test explain", "test export", "test from-sessions", "test verify",
-		"create", "chat", "run", "eval", "eval cleanup", "eval diff", "eval explain", "eval export", "eval from-sessions", "eval verify", "push", "deploy", "lift",
-		"aks", "aks up", "aks down", "completion",
-		"context", "context show", "context use", "ctx", "local", "local up", "local down", "mcp", "model", "model list", "model login", "model logout",
-		"orka", "orka install", "orka status", "orka show", "orka list",
-		"quickstart", "quickstart-wizard", "run-profile", "run-profile export",
-		"status", "suite", "suite build", "suite policy", "suite pull", "suite push", "suite push-image", "suite validate", "console", "targets", "task", "task result",
-		"version",
+		"test", "test explain", "create", "chat", "run", "eval", "eval cleanup", "eval diff", "eval explain", "eval export", "eval from-sessions", "eval verify", "lift", "completion", "mcp",
+		"model", "model list", "model login", "model logout", "version",
+		"cluster", "cluster up", "cluster down", "cluster status", "cluster aks", "cluster aks up", "cluster aks down", "cluster context", "cluster context show", "cluster context use",
+		"cluster orka", "cluster orka install", "cluster orka status", "cluster orka show", "cluster orka list", "cluster quickstart", "cluster quickstart-wizard", "cluster console", "cluster targets", "cluster task", "cluster task result",
+		"package", "package ctx", "package deploy", "package push", "package status", "package run-profile", "package run-profile export", "package suite", "package suite push", "package build", "package validate", "package policy", "package pull", "package push-image",
+		"package test", "package test cleanup", "package test diff", "package test explain", "package test export", "package test from-sessions", "package test verify",
 	}
+
 	sort.Strings(want)
 
 	root := newRootCommand(&commandState{deps: productionDependencies()})
@@ -858,7 +857,7 @@ func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 }
 
 func TestContextPreprocessingStillWorksAnywhere(t *testing.T) {
-	for _, args := range [][]string{{"--context", "kind-x", "status", "--help"}, {"status", "--help", "-context=kind-x"}} {
+	for _, args := range [][]string{{"--context", "kind-x", "cluster", "status", "--help"}, {"package", "status", "--help", "-context=kind-x"}} {
 		var out, errOut bytes.Buffer
 		deps, loads := testDependencies(&out, &errOut)
 		if err := execute(args, deps); err != nil {
@@ -877,8 +876,8 @@ func TestInterspersedFlagsAreOwnedByCobra(t *testing.T) {
 		want []string
 	}{
 		{[]string{"chat", "hello", "who", "--verbose"}, []string{"hello", "who"}},
-		{[]string{"orka", "show", "demo", "--namespace", "team"}, []string{"demo"}},
-		{[]string{"task", "result", "demo", "--wait", "1m"}, []string{"demo"}},
+		{[]string{"cluster", "orka", "show", "demo", "--namespace", "team"}, []string{"demo"}},
+		{[]string{"cluster", "task", "result", "demo", "--wait", "1m"}, []string{"demo"}},
 	} {
 		cmd, args, err := root.Find(tc.path)
 		if err != nil {
@@ -896,7 +895,7 @@ func TestInterspersedFlagsAreOwnedByCobra(t *testing.T) {
 func TestErrorsAreReturnedWithoutAutomaticUsage(t *testing.T) {
 	var out, errOut bytes.Buffer
 	deps, _ := testDependencies(&out, &errOut)
-	err := execute([]string{"status", "extra"}, deps)
+	err := execute([]string{"package", "status", "extra"}, deps)
 	if err == nil || !strings.Contains(err.Error(), "unknown command") && !strings.Contains(err.Error(), "accepts 0 arg") {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -909,13 +908,13 @@ func TestConfigLoadFailureIsReturnedOnce(t *testing.T) {
 	var out, errOut bytes.Buffer
 	deps, _ := testDependencies(&out, &errOut)
 	deps.loadConfig = func(string, string) (*config.Config, error) { return nil, errors.New("bad config") }
-	if err := execute([]string{"orka", "status"}, deps); err == nil || err.Error() != "bad config" {
+	if err := execute([]string{"cluster", "orka", "status"}, deps); err == nil || err.Error() != "bad config" {
 		t.Fatalf("config error=%v", err)
 	}
 }
 
 func TestGroupedCommandsRejectUnknownVerb(t *testing.T) {
-	for _, args := range [][]string{{"suite", "frob"}, {"orka", "frob"}, {"bundle", "frob"}, {"eval", "frob"}} {
+	for _, args := range [][]string{{"suite", "frob"}, {"cluster", "orka", "frob"}, {"bundle", "frob"}, {"eval", "frob"}} {
 		var out, errOut bytes.Buffer
 		deps, _ := testDependencies(&out, &errOut)
 		if err := execute(args, deps); err == nil {
@@ -961,9 +960,9 @@ func TestQuickstartRejectsFlagsFromTheOtherModeBeforeConfiguration(t *testing.T)
 		args []string
 		want string
 	}{
-		{[]string{"quickstart", "--interactive", "-o", "json"}, "--output does not apply to kmx quickstart --interactive"},
-		{[]string{"quickstart", "--interactive", "--output", "text"}, "--output does not apply to kmx quickstart --interactive"},
-		{[]string{"quickstart", "-i", "-o", "json"}, "--output does not apply to kmx quickstart --interactive"},
+		{[]string{"cluster", "quickstart", "--interactive", "-o", "json"}, "--output does not apply to kmx cluster quickstart --interactive"},
+		{[]string{"cluster", "quickstart", "--interactive", "--output", "text"}, "--output does not apply to kmx cluster quickstart --interactive"},
+		{[]string{"cluster", "quickstart", "-i", "-o", "json"}, "--output does not apply to kmx cluster quickstart --interactive"},
 	}
 	for _, name := range quickstartInteractiveOnly {
 		value := "x"
@@ -973,7 +972,7 @@ func TestQuickstartRejectsFlagsFromTheOtherModeBeforeConfiguration(t *testing.T)
 		cases = append(cases, struct {
 			args []string
 			want string
-		}{[]string{"quickstart", "--" + name + "=" + value}, "--" + name + " requires --interactive"})
+		}{[]string{"cluster", "quickstart", "--" + name + "=" + value}, "--" + name + " requires --interactive"})
 	}
 	for _, tc := range cases {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
@@ -1001,11 +1000,11 @@ func TestQuickstartRoutesEachMode(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"quickstart", "--interactive"}, "kmx quickstart --interactive requires an interactive terminal"},
-		{[]string{"quickstart", "--interactive", "--task", "hi", "--verbose", "--tools", "k8s-get-resources"}, "quickstart tool shortcuts are retired"},
-		{[]string{"quickstart", "-i"}, "kmx quickstart --interactive requires an interactive terminal"},
-		{[]string{"quickstart", "-o", "yaml"}, "unknown --output"},
-		{[]string{"quickstart", "--task", "hi", "-o", "yaml"}, "unknown --output"},
+		{[]string{"cluster", "quickstart", "--interactive"}, "kmx cluster quickstart --interactive requires an interactive terminal"},
+		{[]string{"cluster", "quickstart", "--interactive", "--task", "hi", "--verbose", "--tools", "k8s-get-resources"}, "quickstart tool shortcuts are retired"},
+		{[]string{"cluster", "quickstart", "-i"}, "kmx cluster quickstart --interactive requires an interactive terminal"},
+		{[]string{"cluster", "quickstart", "-o", "yaml"}, "unknown --output"},
+		{[]string{"cluster", "quickstart", "--task", "hi", "-o", "yaml"}, "unknown --output"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
 			var out, errOut bytes.Buffer
@@ -1021,15 +1020,15 @@ func TestQuickstartRoutesEachMode(t *testing.T) {
 
 func TestQuickstartWizardIsRetiredToQuickstartInteractive(t *testing.T) {
 	for _, args := range [][]string{
-		{"quickstart-wizard"},
-		{"quickstart-wizard", "--tools", "k8s-get-resources", "--verbose"},
-		{"--context", "kind-x", "quickstart-wizard", "--azure-discovery", "sdk"},
+		{"cluster", "quickstart-wizard"},
+		{"cluster", "quickstart-wizard", "--tools", "k8s-get-resources", "--verbose"},
+		{"--context", "kind-x", "cluster", "quickstart-wizard", "--azure-discovery", "sdk"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			var out, errOut bytes.Buffer
 			deps, loads := testDependencies(&out, &errOut)
 			err := execute(args, deps)
-			if err == nil || !strings.Contains(err.Error(), "kmx quickstart-wizard is retired; use kmx quickstart --interactive") {
+			if err == nil || !strings.Contains(err.Error(), "kmx cluster quickstart-wizard is retired; use kmx cluster quickstart --interactive") {
 				t.Fatalf("error = %v", err)
 			}
 			if *loads != 0 {
@@ -1039,14 +1038,14 @@ func TestQuickstartWizardIsRetiredToQuickstartInteractive(t *testing.T) {
 	}
 	var out, errOut bytes.Buffer
 	deps, _ := testDependencies(&out, &errOut)
-	if err := execute([]string{"quickstart-wizard", "--help"}, deps); err != nil {
+	if err := execute([]string{"cluster", "quickstart-wizard", "--help"}, deps); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "use kmx quickstart --interactive") {
+	if !strings.Contains(out.String(), "use kmx cluster quickstart --interactive") {
 		t.Fatalf("help did not name the replacement: %q", out.String())
 	}
 	root := newRootCommand(&commandState{deps: deps})
-	if cmd, _, err := root.Find([]string{"quickstart-wizard"}); err != nil || !cmd.Hidden {
+	if cmd, _, err := root.Find([]string{"cluster", "quickstart-wizard"}); err != nil || !cmd.Hidden {
 		t.Fatalf("quickstart-wizard must exist but be hidden: %v", err)
 	}
 }

@@ -15,13 +15,13 @@ func newStatusCommand(state *commandState) *cobra.Command {
 	var opt app.DestinationStatusOptions
 	cmd := &cobra.Command{
 		Use: "status --to <destination>", Short: "Inspect deployed agents at a named destination",
-		Long: "Inspect deployed agents across a saved destination namespace using read-only observations. Readiness is not an answer or evaluation. Use kmx orka status for the Orka runtime report.",
+		Long: "Inspect deployed agents across a saved destination namespace using read-only observations. Readiness is not an answer or evaluation. Use kmx cluster orka status for the Orka runtime report.",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if err := cobra.NoArgs(cmd, args); err != nil {
 				return err
 			}
 			if strings.TrimSpace(destination) == "" {
-				return fmt.Errorf("status requires --to: use kmx status --to <destination> or kmx orka status for the runtime report")
+				return fmt.Errorf("status requires --to: use kmx package status --to <destination> or kmx cluster orka status for the runtime report")
 			}
 			if opt.Output != "table" && opt.Output != "json" {
 				return fmt.Errorf("status output must be table or json")

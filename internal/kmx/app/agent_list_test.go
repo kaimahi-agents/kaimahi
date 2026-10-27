@@ -65,7 +65,7 @@ func TestOrkaAgentListSeparatesAbsentKindFromEmptyNamespace(t *testing.T) {
 	if err == nil {
 		t.Fatal("a cluster with no Orka kind reported an empty list")
 	}
-	if !strings.Contains(err.Error(), "kmx --context kind-test orka install") {
+	if !strings.Contains(err.Error(), "kmx --context kind-test cluster orka install") {
 		t.Errorf("the refusal does not say how to fix it: %v", err)
 	}
 }

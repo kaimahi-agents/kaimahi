@@ -18,7 +18,7 @@ func newEvalCleanupCommand(state *commandState, verb string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "cleanup [full-run-id]", Short: "List candidate leftovers or confirm cleanup of one exact run",
 		Long:              "Without a run ID, report candidates read-only. With one full 32-character lowercase hex run ID, preview target and exact root UIDs, then require context-naming confirmation even on local kind (KAIMAHI_CONFIRM=CONTEXT for automation). This may interrupt an active run; liveness is unknown. Only identity-safe Provider/Agent/Task roots are deleted with foreground GC. Unanchored descendants or incomplete inventories refuse. Runtime/model logs are not erased.\nRequires explicit --to or --to-context; no evalTarget/current/default fallback. Named targets copy only context, namespace and runtime declaration, ignoring inference and bindings. --workspace locates kmx.yaml only with --to; explicit context needs no workspace/source.",
-		Example:           "  kmx test cleanup --to dev\n  kmx test cleanup <full-run-id> --to dev",
+		Example:           "  kmx package test cleanup --to dev\n  kmx package test cleanup <full-run-id> --to dev",
 		PersistentPreRunE: validateContainerEngineFlag,
 		Args: func(cmd *cobra.Command, args []string) error {
 			if err := usageArgs(0, 1, "kmx "+verb+" cleanup [full-run-id] --to NAME | --to-context CONTEXT")(cmd, args); err != nil {
@@ -85,7 +85,7 @@ func newEvalCleanupCommand(state *commandState, verb string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			a.TestPresentation = verb == "test"
+			a.TestPresentation = verb == "package test"
 			a.Cfg.ContextSource = source
 			// Never synthesize root --context in recovery advice for this route.
 			parts := []string{quoteShell(state.executable()), verb, "cleanup"}

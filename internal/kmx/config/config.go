@@ -69,7 +69,7 @@ func env(name, fallback string) string {
 // Context resolution order, most explicit first:
 //  1. --context on the command line
 //  2. KUBE_CTX in the environment (what the Makefile exports)
-//  3. the context selected by `kmx context use <name>`
+//  3. the context selected by `kmx cluster context use <name>`
 //  4. kind-<KIND_CLUSTER>, when KIND_CLUSTER is in the environment
 //  5. kind-kaimahi-p1, the bare default — which nobody chose
 //
@@ -274,7 +274,7 @@ func PrepareLocalPreviewJournalDir() (string, error) {
 	return dir, nil
 }
 
-// ReadSelectedContext returns the context chosen by `kmx context use`, or "".
+// ReadSelectedContext returns the context chosen by `kmx cluster context use`, or "".
 func ReadSelectedContext() (string, error) {
 	path, err := contextFile()
 	if err != nil {
@@ -290,7 +290,7 @@ func ReadSelectedContext() (string, error) {
 	return strings.TrimSpace(string(b)), nil
 }
 
-// WriteSelectedContext records the context `kmx context use` selected.
+// WriteSelectedContext records the context `kmx cluster context use` selected.
 func WriteSelectedContext(context string) (string, error) {
 	path, err := contextFile()
 	if err != nil {

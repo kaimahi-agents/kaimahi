@@ -1,6 +1,6 @@
 package app
 
-// `kmx orka install` against a fake cluster and a fake origin.
+// `kmx cluster orka install` against a fake cluster and a fake origin.
 //
 // The installer is fetched over HTTP, so these tests serve their own bytes
 // and assert on the pin rather than reaching the internet: a test that
@@ -305,7 +305,7 @@ func TestOrkaInstallRefusesExistingV013BeforeAnyWrites(t *testing.T) {
 			if err == nil {
 				t.Fatal("installed Helm on top of existing manifest resources")
 			}
-			for _, want := range []string{f.app.operationCommand("local", "down"), f.app.operationCommand("local", "up"), "Tasks", "Secrets", "model data", "ledger", "AKS", "snapshot key"} {
+			for _, want := range []string{f.app.operationCommand("cluster", "down"), f.app.operationCommand("cluster", "up"), "Tasks", "Secrets", "model data", "ledger", "AKS", "snapshot key"} {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("legacy recovery does not say %q: %v", want, err)
 				}
@@ -349,7 +349,7 @@ func TestOrkaInstallRefusesForeignOrMismatchedHelmRelease(t *testing.T) {
 			if err == nil {
 				t.Fatal("adopted or replaced a different Helm release")
 			}
-			for _, want := range []string{f.app.operationCommand("local", "down"), f.app.operationCommand("local", "up"), "Tasks", "AKS", "snapshot key"} {
+			for _, want := range []string{f.app.operationCommand("cluster", "down"), f.app.operationCommand("cluster", "up"), "Tasks", "AKS", "snapshot key"} {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("foreign release recovery does not say %q: %v", want, err)
 				}
@@ -407,7 +407,7 @@ func TestOrkaInstallFailedReleaseNamesRecoverySteps(t *testing.T) {
 			for _, want := range []string{"kmx-owned", state,
 				`helm --kube-context 'team'"'"'s cluster; staging' -n orka-system status orka`,
 				`helm --kube-context 'team'"'"'s cluster; staging' -n orka-system upgrade orka <verified-orka-0.2.0.tgz> --reuse-values --wait`,
-				f.app.operationCommand("local", "down"), f.app.operationCommand("local", "up"), "Tasks", "AKS", "snapshot key"} {
+				f.app.operationCommand("cluster", "down"), f.app.operationCommand("cluster", "up"), "Tasks", "AKS", "snapshot key"} {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("missing %q in recovery: %v", want, err)
 				}
@@ -445,7 +445,7 @@ func TestOrkaInstallUnavailableReleaseValuesRefusesWithSafeRecovery(t *testing.T
 	if err == nil {
 		t.Fatal("unreadable release values accepted")
 	}
-	for _, want := range []string{f.app.operationCommand("local", "down"), "AKS", `helm --kube-context 'team'"'"'s cluster; staging' -n orka-system status orka`} {
+	for _, want := range []string{f.app.operationCommand("cluster", "down"), "AKS", `helm --kube-context 'team'"'"'s cluster; staging' -n orka-system status orka`} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("unreadable release lacks %q: %v", want, err)
 		}
@@ -747,7 +747,7 @@ func TestOrkaInstallOffersNativeStatusWithoutPlaneAdvice(t *testing.T) {
 		t.Fatalf("install: %v", err)
 	}
 	notes := f.errOut.String()
-	if !strings.Contains(notes, "kmx orka status") {
+	if !strings.Contains(notes, "kmx cluster orka status") {
 		t.Errorf("install did not offer native status:\n%s", notes)
 	}
 	for _, forbidden := range []string{"kmx migrate", "kmx plane", "seam"} {
@@ -1184,7 +1184,7 @@ func TestOrkaReadyRefusesARolloutThatNeverLanded(t *testing.T) {
 			}
 			var recovery []string
 			if tc.want == "nothing is running to verify" {
-				recovery = []string{`kmx --context 'team'"'"'s cluster; staging' orka install`}
+				recovery = []string{`kmx --context 'team'"'"'s cluster; staging' cluster orka install`}
 			} else {
 				recovery = []string{`kubectl --context 'team'"'"'s cluster; staging' -n orka-system rollout status deploy/orka-controller-manager`}
 				if tc.want == "not finished rolling out" {

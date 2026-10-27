@@ -71,7 +71,7 @@ func TestSuiteEvaluatedFilePushContract(t *testing.T) {
 				want := "invalid native passing receipt"
 				if change == "other S" || change == "case changed" {
 					want = "expected publication identity"
-					if err == nil || !strings.Contains(err.Error(), "rerun kmx test") {
+					if err == nil || !strings.Contains(err.Error(), "rerun kmx package test") {
 						t.Fatalf("changed artifact needs a fresh-evaluation remedy: %v", err)
 					}
 				}

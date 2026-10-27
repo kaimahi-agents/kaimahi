@@ -189,8 +189,9 @@ def command_hits(parts):
             hits.add("retired root govern/use or agent edit")
         if "--legacy-kagent" in flags:
             hits.add("retired --legacy-kagent opt-in")
-        local = words[:1] == ["up"] or words[:2] == ["local", "up"]
-        cloud = words[:1] in (["deploy"], ["lift"]) or words[:2] == ["aks", "up"]
+        local = words[:1] == ["up"] or words[:2] in (["local", "up"], ["cluster", "up"])
+        cloud = (words[:1] in (["deploy"], ["lift"]) or words[:2] in (["aks", "up"], ["package", "deploy"])
+                 or words[:3] == ["cluster", "aks", "up"])
         if local and LOCAL_STEPS.intersection(flags.get("--step", [])):
             hits.add("retired local installation step")
         if cloud and "kagent" in flags.get("--payload", []):
@@ -352,7 +353,8 @@ def selftest():
     retired = [
         'kmx local up --step "kagent"', "kmx aks up --payload 'kagent'",
         'kagent invoke --agent demo', 'kagent --kagent-url http://localhost:8083 invoke demo',
-        'kmx govern demo', 'kmx use orka', 'make use PRESET=orka', 'kmx agent edit demo',
+        'kmx cluster up --step agent', 'kmx cluster aks up --payload kagent',
+        'kmx package deploy --step credential', 'kmx govern demo', 'kmx use orka', 'make use PRESET=orka', 'kmx agent edit demo',
         'bin/kmx --context "remote team" agent --container-engine=podman edit demo',
         'kmx --context=kind-x --confirm use orka', 'kmx up --step=agent',
         'kmx local up --step tools-agent', 'kmx quickstart --legacy-kagent',

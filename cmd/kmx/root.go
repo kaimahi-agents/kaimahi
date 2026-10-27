@@ -132,7 +132,7 @@ func execute(argv []string, deps dependencies) error {
 			// refusal, but still disclose a recognizable legacy invocation.
 			notice := ""
 			if legacyCommandInvocation(original, "lift") {
-				notice = "kmx lift is deprecated; use kmx deploy (same arguments)."
+				notice = "kmx lift is deprecated; use kmx package deploy (same arguments)."
 			} else if legacyCommandInvocation(original, "eval") {
 				notice = evalDeprecationNotice
 			}
@@ -154,8 +154,14 @@ func execute(argv []string, deps dependencies) error {
 	help, _, _ := root.Find([]string{"help"})
 	// Cobra otherwise reports an unknown help topic on stdout but exits zero.
 	help.Args = func(cmd *cobra.Command, args []string) error {
-		if len(args) > 0 && args[0] == "agent" {
-			return fmt.Errorf("unknown command %q for %q", args[0], root.Name())
+		if len(args) > 0 {
+			topic, remaining, err := root.Find(args)
+			if err != nil {
+				return err
+			}
+			if len(remaining) != 0 {
+				return fmt.Errorf("unknown help topic %q for %q", strings.Join(args, " "), topic.CommandPath())
+			}
 		}
 		if legacyCommandInvocation(argv, "eval") {
 			return state.noticeLegacyEval(cmd)
@@ -219,13 +225,10 @@ func newRootCommand(state *commandState) *cobra.Command {
 	_ = root.RegisterFlagCompletionFunc("context", completeContexts)
 	_ = root.RegisterFlagCompletionFunc("container-engine", staticCompletion([]string{"docker", "podman"}))
 	root.AddCommand(
-		newVersionCommand(state), newMCPCommand(state), newCompletionCommand(root), newModelCommand(state), newContextCommand(state), newLocalCommand(state), newDestinationsCommand(state),
-		newQuickstartCommand(state), newAKSCommand(state),
-		newConsoleCommand(state), newOrkaCommand(state),
-		newStatusCommand(state), newAgentCreateCommand(state), newAgentChatCommand(state), newAgentRunCommand(state),
-		newAgentTestCommand(state), newAgentEvalCommand(state), newReleaseDeployCommand(state), newReleaseLiftCommand(state), newTaskCommand(state),
-		newSuiteCommand(state), newSuitePushCommand(state, true), newTargetsCommand(state), newRunProfileCommand(state),
-		retiredCommand("quickstart-wizard", "kmx quickstart --interactive"),
+		newVersionCommand(state), newMCPCommand(state), newCompletionCommand(root), newModelCommand(state),
+		newAgentCreateCommand(state), newAgentChatCommand(state), newAgentRunCommand(state),
+		newAgentTestCommand(state), newAgentEvalCommand(state), newReleaseLiftCommand(state),
+		newClusterCommand(state), newPackageCommand(state),
 	)
 	installPlatformGate(root, state)
 	return root

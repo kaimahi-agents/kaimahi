@@ -18,7 +18,7 @@ func newRunProfileCommand(state *commandState) *cobra.Command {
 		Long: "Export one canonical agent file offline through the same parser as file Run/Test. The deterministic JSON on stdout contains authored instructions, model identity, ordered examples/assertions and SHA-256 hashes. Every example has targetStatus not_run; no configuration, credentials, model or runtime is accessed.\n\n" +
 			"This content-bearing source projection is not a package, evaluation receipt, provider attestation or deployment authorization. Authored model and judge identities are preserved without overrides. A run profile is not an AgentSuite runtime profile.\n\n" +
 			"Keep stdout private: it includes instructions, inputs and rubrics. Shell redirection is caller-owned, may truncate before validation, and has no kmx privacy or exclusive-create guarantee. No --out writer is provided.",
-		Example: "  kmx run-profile export ./release-writer.agent.md",
+		Example: "  kmx package run-profile export ./release-writer.agent.md",
 		Args:    cobra.ExactArgs(1),
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			if flag := cmd.Flag("context"); state.contextFlag != "" || flag != nil && flag.Changed {

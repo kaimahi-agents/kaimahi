@@ -66,7 +66,7 @@ func (a *App) Lift(opt lift.Options) error {
 		// two lines above that say WHERE this would land. Nothing was
 		// created, and nothing on the cluster or in the subscription was
 		// read beyond that.
-		fmt.Fprintln(a.Err, "kmx aks up: --plan, so nothing was created.")
+		fmt.Fprintln(a.Err, "kmx cluster aks up: --plan, so nothing was created.")
 		return nil
 	}
 	if err := a.confirmLift(opt); err != nil {
@@ -213,7 +213,7 @@ func (a *App) preflightLift(opt lift.Options, goos string) error {
 
 func liftPlatformError(steps []string, goos string) error {
 	if goos == "windows" && liftUsesScripts(steps) {
-		return fmt.Errorf("kmx aks up: %s is not supported on Windows: it runs embedded bash scripts. Run this phase from Linux, macOS, or WSL", strings.Join(scriptSteps(steps), ", "))
+		return fmt.Errorf("kmx cluster aks up: %s is not supported on Windows: it runs embedded bash scripts. Run this phase from Linux, macOS, or WSL", strings.Join(scriptSteps(steps), ", "))
 	}
 	return nil
 }
@@ -244,17 +244,17 @@ func (a *App) confirmLift(opt lift.Options) error {
 	proceed := fmt.Sprintf("  to proceed:  KAIMAHI_CONFIRM=%s %s", shellArg(opt.Cluster), a.liftCommand(opt, false))
 	if c := strings.TrimSpace(a.Cfg.Confirm); c != "" {
 		if c == opt.Cluster {
-			fmt.Fprintln(a.Err, "kmx aks up: confirmed via KAIMAHI_CONFIRM.")
+			fmt.Fprintln(a.Err, "kmx cluster aks up: confirmed via KAIMAHI_CONFIRM.")
 			return nil
 		}
-		return fmt.Errorf("kmx aks up: KAIMAHI_CONFIRM does not name this cluster — refusing.\n%s", proceed)
+		return fmt.Errorf("kmx cluster aks up: KAIMAHI_CONFIRM does not name this cluster — refusing.\n%s", proceed)
 	}
 	if a.Stdin == nil || !isTerminalFile(a.Stdin) {
-		return fmt.Errorf("kmx aks up: this acts on a cloud subscription and there is no TTY to ask.\n%s", proceed)
+		return fmt.Errorf("kmx cluster aks up: this acts on a cloud subscription and there is no TTY to ask.\n%s", proceed)
 	}
 	fmt.Fprint(a.Err, "Type the cluster name to continue (anything else aborts): ")
 	if readTrimmedLine(a.Stdin) != opt.Cluster {
-		return errors.New("kmx aks up: not confirmed — nothing was created")
+		return errors.New("kmx cluster aks up: not confirmed — nothing was created")
 	}
 	return nil
 }
@@ -277,9 +277,9 @@ func (a *App) liftCommand(opt lift.Options, down bool) string {
 	cfg := *a.Cfg
 	target.Cfg = &cfg
 	target.aimAtTheCluster(opt)
-	args := []string{"aks", "up"}
+	args := []string{"cluster", "aks", "up"}
 	if down {
-		args = []string{"aks", "down"}
+		args = []string{"cluster", "aks", "down"}
 	} else {
 		opt = withLiftDefaults(opt)
 		// Include the selected payload so a retry preserves the platform,
@@ -310,7 +310,7 @@ func (a *App) liftCommand(opt lift.Options, down bool) string {
 func (a *App) liftWorkspace() (string, func(), error) {
 	dir, err := os.MkdirTemp("", "kmx-lift-")
 	if err != nil {
-		return "", func() {}, fmt.Errorf("kmx aks: cannot create a working directory: %w", err)
+		return "", func() {}, fmt.Errorf("kmx cluster aks: cannot create a working directory: %w", err)
 	}
 	cleanup := func() { _ = os.RemoveAll(dir) }
 
@@ -319,7 +319,7 @@ func (a *App) liftWorkspace() (string, func(), error) {
 	}, name string, mode os.FileMode) error {
 		body, err := fsys.ReadFile(name)
 		if err != nil {
-			return fmt.Errorf("kmx aks: %s is missing from this build: %w", name, err)
+			return fmt.Errorf("kmx cluster aks: %s is missing from this build: %w", name, err)
 		}
 		target := filepath.Join(dir, filepath.FromSlash(name))
 		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
@@ -350,7 +350,7 @@ func (a *App) liftStep(step string, opt lift.Options, record *lift.Record, save 
 	case "verify":
 		return a.liftVerify(opt)
 	default:
-		return fmt.Errorf("kmx aks up: no such phase %q", step)
+		return fmt.Errorf("kmx cluster aks up: no such phase %q", step)
 	}
 }
 
@@ -395,7 +395,7 @@ func (a *App) liftCluster(opt lift.Options, work string) error {
 func randomRunID() (string, error) {
 	b := make([]byte, 4)
 	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("kmx aks up: cannot generate a run id: %w", err)
+		return "", fmt.Errorf("kmx cluster aks up: cannot generate a run id: %w", err)
 	}
 	return hex.EncodeToString(b), nil
 }
@@ -419,13 +419,13 @@ func (a *App) openLiftRecord(opt lift.Options, subscription string) (*lift.Recor
 			return nil, nil, err
 		}
 		if record.Subscription != subscription {
-			return nil, nil, fmt.Errorf("kmx aks up: the record for %s/%s was written against a DIFFERENT subscription than the one the CLI is signed in to.\n"+
+			return nil, nil, fmt.Errorf("kmx cluster aks up: the record for %s/%s was written against a DIFFERENT subscription than the one the CLI is signed in to.\n"+
 				"  Refusing to add to it: the resources it lists are not the ones you would be creating now.\n"+
 				"  Remove %s by hand once you are sure it is finished with, or switch subscription (az account set).",
 				opt.ResourceGroup, opt.Cluster, path)
 		}
 	} else if !os.IsNotExist(err) {
-		return nil, nil, fmt.Errorf("kmx aks up: cannot read %s: %w", path, err)
+		return nil, nil, fmt.Errorf("kmx cluster aks up: cannot read %s: %w", path, err)
 	} else {
 		runID, err := randomRunID()
 		if err != nil {
@@ -448,7 +448,7 @@ func (a *App) openLiftRecord(opt lift.Options, subscription string) (*lift.Recor
 	// directly, so a cluster carrying the retired payload stays inspectable
 	// and removable; what is refused is adding to it.
 	if recorded := record.PayloadOrLegacy(); recorded == lift.PayloadKagent {
-		return nil, nil, fmt.Errorf("kmx aks up: %s/%s was provisioned with --payload kagent, which is retired.\n"+
+		return nil, nil, fmt.Errorf("kmx cluster aks up: %s/%s was provisioned with --payload kagent, which is retired.\n"+
 			"  The phases that installed that runtime have been removed, so there is\n"+
 			"  nothing here that could resume it. The cluster and this record are untouched.\n"+
 			"  Tear it down when you are finished with it:\n\n    %s\n",
@@ -458,7 +458,7 @@ func (a *App) openLiftRecord(opt lift.Options, subscription string) (*lift.Recor
 	// resuming a run with a different one would install BOTH products on one
 	// cluster, which is the outcome the split exists to prevent.
 	if recorded := record.PayloadOrLegacy(); recorded != opt.Payload {
-		return nil, nil, fmt.Errorf("kmx aks up: %s/%s was provisioned with --payload %s and this run says %s.\n"+
+		return nil, nil, fmt.Errorf("kmx cluster aks up: %s/%s was provisioned with --payload %s and this run says %s.\n"+
 			"  Refusing: resuming with the other payload would install both platforms on one cluster.\n"+
 			"  Inspect the recorded payload %q before retrying; infrastructure teardown is separate.",
 			opt.ResourceGroup, opt.Cluster, recorded, opt.Payload, recorded)
@@ -468,7 +468,7 @@ func (a *App) openLiftRecord(opt lift.Options, subscription string) (*lift.Recor
 	}
 
 	if record.Branch != opt.Branch() {
-		return nil, nil, fmt.Errorf("kmx aks up: %s/%s was provisioned as %q and this run says %q.\n"+
+		return nil, nil, fmt.Errorf("kmx cluster aks up: %s/%s was provisioned as %q and this run says %q.\n"+
 			"  These have opposite teardown rules, so the difference is refused rather than reconciled.",
 			opt.ResourceGroup, opt.Cluster, record.Branch, opt.Branch())
 	}

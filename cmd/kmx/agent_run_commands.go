@@ -22,7 +22,7 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 			"Select a live Orka Agent with --agent (without FILE).\n" +
 			"Task name, state and recovery instructions go to stderr; stdout contains only the answer.\n" +
 			"A Task is never retried or deleted; exit code 2 means the wait expired and\n" +
-			"the answer may not yet be readable. Use kmx task result to retrieve it later.",
+			"the answer may not yet be readable. Use kmx cluster task result to retrieve it later.",
 		Args: usageArgs(0, 0, "kmx run --agent <name> --prompt <text>"),
 	}
 	cmd.Flags().StringVar(&opt.Agent, "agent", "", "run this live Orka Agent (required without FILE)")
@@ -95,13 +95,13 @@ func newTaskResultCommand(state *commandState) *cobra.Command {
 		Long: "Read an AI Task's phase. If its answer is available, print only the answer on stdout.\n" +
 			"With --wait <duration> (10s to 9m), wait for completion. Phase changes and recovery instructions go to stderr.\n" +
 			"exit code 2 means the Task is pending or its successful answer is not yet readable; retry later. Failed or Cancelled exits 1.",
-		Args: usageArgs(1, 1, "kmx task result <task> [--context <ctx>] [--namespace <ns>] [--wait 5m]"),
+		Args: usageArgs(1, 1, "kmx cluster task result <task> [--context <ctx>] [--namespace <ns>] [--wait 5m]"),
 	}
 	cmd.Flags().StringVar(&opt.Namespace, "namespace", "", "Task namespace (default: "+app.OrkaNamespace+")")
 	cmd.Flags().DurationVar(&opt.Wait, "wait", 0, "wait up to this duration for an answer (10s to 9m; omitted: inspect once)")
 	cmd.Flags().StringVar(&opt.ResultPort, "result-port", "", "loopback result-forward port (omitted: choose automatically)")
 	cmd.Args = func(cmd *cobra.Command, args []string) error {
-		if err := usageArgs(1, 1, "kmx task result <task> [--namespace <ns>] [--context <ctx>] [--wait 5m]")(cmd, args); err != nil {
+		if err := usageArgs(1, 1, "kmx cluster task result <task> [--namespace <ns>] [--context <ctx>] [--wait 5m]")(cmd, args); err != nil {
 			return err
 		}
 		if cmd.Flags().Changed("wait") && opt.Wait == 0 {

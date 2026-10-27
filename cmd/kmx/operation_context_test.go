@@ -37,7 +37,7 @@ func TestOperationApplicationContextIsInvocationLocal(t *testing.T) {
 	defer cancelSecond()
 	var runners []*run.Runner
 	for _, ctx := range []context.Context{firstCtx, secondCtx} {
-		state := &commandState{deps: deps, argv: []string{"orka", "status"}}
+		state := &commandState{deps: deps, argv: []string{"cluster", "orka", "status"}}
 		configured, err := state.application()
 		if err != nil {
 			t.Fatal(err)

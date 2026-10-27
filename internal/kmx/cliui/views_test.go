@@ -28,8 +28,8 @@ func TestFocusInputOwnsOneBoundedFrameAndCursor(t *testing.T) {
 
 func TestNoColorKeepsRichHierarchyWithoutANSI(t *testing.T) {
 	o := WithCapabilities(Capabilities{Rich: true, Color: false, Width: 80})
-	got := o.Actions("Next", []Action{{Label: "Inspect", Command: "kmx status"}})
-	for _, want := range []string{"Next", "Inspect", "kmx status", "└"} {
+	got := o.Actions("Next", []Action{{Label: "Inspect", Command: "kmx package status"}})
+	for _, want := range []string{"Next", "Inspect", "kmx package status", "└"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("rich no-color output lacks %q: %q", want, got)
 		}

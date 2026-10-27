@@ -25,7 +25,7 @@ func TestRunProfileExportOffline(t *testing.T) {
 	deps, loads := testDependencies(&out, &diagnostics)
 	runner := &cliPreviewFake{}
 	deps.fileRunner = runner
-	if err := execute([]string{"run-profile", "export", path}, deps); err != nil {
+	if err := execute([]string{"package", "run-profile", "export", path}, deps); err != nil {
 		t.Fatal(err)
 	}
 	want, err := agentfile.ExportRunProfile(path)
@@ -56,13 +56,13 @@ func TestRunProfileExportRefusesBeforeConfiguration(t *testing.T) {
 		args []string
 		want string
 	}{
-		{"missing file", []string{"run-profile", "export"}, "arg"},
-		{"extra file", []string{"run-profile", "export", path, "PRIVATE_EXPORT_CANARY"}, "arg"},
-		{"context prefix", []string{"--context", "PRIVATE_EXPORT_CANARY", "run-profile", "export", path}, "--context"},
-		{"context suffix", []string{"run-profile", "export", path, "--context", "PRIVATE_EXPORT_CANARY"}, "--context"},
-		{"engine", []string{"run-profile", "export", path, "--container-engine", "PRIVATE_EXPORT_CANARY"}, "--container-engine"},
-		{"model override", []string{"run-profile", "export", path, "--model", "PRIVATE_EXPORT_CANARY"}, "unknown flag: --model"},
-		{"output file", []string{"run-profile", "export", path, "--out", "PRIVATE_EXPORT_CANARY"}, "unknown flag: --out"},
+		{"missing file", []string{"package", "run-profile", "export"}, "arg"},
+		{"extra file", []string{"package", "run-profile", "export", path, "PRIVATE_EXPORT_CANARY"}, "arg"},
+		{"context prefix", []string{"--context", "PRIVATE_EXPORT_CANARY", "package", "run-profile", "export", path}, "--context"},
+		{"context suffix", []string{"package", "run-profile", "export", path, "--context", "PRIVATE_EXPORT_CANARY"}, "--context"},
+		{"engine", []string{"package", "run-profile", "export", path, "--container-engine", "PRIVATE_EXPORT_CANARY"}, "--container-engine"},
+		{"model override", []string{"package", "run-profile", "export", path, "--model", "PRIVATE_EXPORT_CANARY"}, "unknown flag: --model"},
+		{"output file", []string{"package", "run-profile", "export", path, "--out", "PRIVATE_EXPORT_CANARY"}, "unknown flag: --out"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out, diagnostics bytes.Buffer
@@ -83,7 +83,7 @@ func TestRunProfileExportRefusesBeforeConfiguration(t *testing.T) {
 	}
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
-	err := execute([]string{"run-profile", "export", path}, deps)
+	err := execute([]string{"package", "run-profile", "export", path}, deps)
 	var refusal *agentfile.Error
 	if !errors.As(err, &refusal) || out.Len() != 0 || *loads != 0 || strings.Contains(err.Error(), "PRIVATE_EXPORT_CANARY") {
 		t.Fatal("display-only source exported or parser diagnostic lost", err)
@@ -92,8 +92,8 @@ func TestRunProfileExportRefusesBeforeConfiguration(t *testing.T) {
 
 func TestRunProfileExportHelpCompletionInert(t *testing.T) {
 	for _, args := range [][]string{
-		{"run-profile"}, {"run-profile", "--help"}, {"run-profile", "export", "--help"},
-		{"__complete", "run-profile", ""}, {"__complete", "run-profile", "export", ""},
+		{"package", "run-profile"}, {"package", "run-profile", "--help"}, {"package", "run-profile", "export", "--help"},
+		{"__complete", "package", "run-profile", ""}, {"__complete", "package", "run-profile", "export", ""},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			home := filepath.Join(t.TempDir(), "absent-state")
@@ -124,7 +124,7 @@ func TestRunProfileExportOutputFailureIsNotSuccess(t *testing.T) {
 		var out, diagnostics bytes.Buffer
 		deps, loads := testDependencies(&out, &diagnostics)
 		deps.stdout = runProfileFailWriter{short: short}
-		err := execute([]string{"run-profile", "export", cliPreviewFile(t)}, deps)
+		err := execute([]string{"package", "run-profile", "export", cliPreviewFile(t)}, deps)
 		if err == nil || !strings.Contains(err.Error(), "write run profile") || strings.Contains(err.Error()+diagnostics.String(), "PRIVATE_WRITER_DETAIL") || *loads != 0 {
 			t.Fatal("output failure reported success or leaked writer detail", err)
 		}

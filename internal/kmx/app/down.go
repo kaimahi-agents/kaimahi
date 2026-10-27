@@ -5,14 +5,14 @@ import (
 	"strings"
 )
 
-// Down deletes the kind cluster `kmx local up` created.
+// Down deletes the kind cluster `kmx cluster up` created.
 //
 // Two things have to agree before anything is deleted, and neither is the
 // kubeconfig on its own.
 //
 // The guard vouches for KUBE_CTX; this deletes KIND_CLUSTER. They agree by
 // default, but both are overridable, so `KUBE_CTX=kind-safe
-// KIND_CLUSTER=other kmx local down` would show a banner naming one cluster and
+// KIND_CLUSTER=other kmx cluster down` would show a banner naming one cluster and
 // destroy another. Refuse when the thing confirmed is not the thing deleted.
 //
 // And `kind delete cluster` deletes by CONTAINER name: it never reads the
@@ -46,7 +46,7 @@ func (a *App) Down() error {
 		a.notef("no kind cluster named %q — nothing to delete.", a.Cfg.KindCluster)
 		return nil
 	}
-	if err := a.GuardKnown(fmt.Sprintf("DELETE the kind cluster %q", a.Cfg.KindCluster), a.operationCommand("local", "down")); err != nil {
+	if err := a.GuardKnown(fmt.Sprintf("DELETE the kind cluster %q", a.Cfg.KindCluster), a.operationCommand("cluster", "down")); err != nil {
 		return err
 	}
 	return a.Run.Run("kind", "delete", "cluster", "--name", a.Cfg.KindCluster)

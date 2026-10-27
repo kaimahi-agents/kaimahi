@@ -303,7 +303,7 @@ const (
 	consoleProviderKind = "providers.core.orka.ai"
 )
 
-const interactiveLiftRetirement = "Deploy moved: kmx deploy <ref>@<digest> --to-context … --evidence …"
+const interactiveLiftRetirement = "Deploy moved: kmx package deploy <ref>@<digest> --to-context … --evidence …"
 
 const agentMutationRetirement = "In-place agent tools/inference/prompt editing is retired; edit the authored member/workspace, then test → push → deploy."
 

@@ -31,7 +31,7 @@
   },
   {
     "path": ".github/workflows/ci.yml",
-    "text": "\"kmx aks up --payload kagent\",",
+    "text": "\"kmx cluster aks up --payload kagent\",",
     "reason": "Inert negative CI control for the retired cloud payload."
   },
   {
@@ -41,12 +41,12 @@
   },
   {
     "path": "internal/kmx/app/lift.go",
-    "text": "return nil, nil, fmt.Errorf(\"kmx aks up: %s/%s was provisioned with --payload kagent, which is retired.\\n\"+",
+    "text": "return nil, nil, fmt.Errorf(\"kmx cluster aks up: %s/%s was provisioned with --payload kagent, which is retired.\\n\"+",
     "reason": "Refusal to resume historical cloud ownership records; teardown remains separate."
   },
   {
     "path": "internal/kmx/lift/plan.go",
-    "text": "return errors.New(\"kmx aks up: --payload kagent is retired — the legacy kagent runtime has been\\n\" +",
+    "text": "return errors.New(\"kmx cluster aks up: --payload kagent is retired — the legacy kagent runtime has been\\n\" +",
     "reason": "New cloud placement refuses the retired payload by name."
   }
 ]

@@ -38,7 +38,7 @@ frozen by this rule: the audit exceptions below apply in plain and rich modes.
 | Surface | Default human format | Machine/raw format | Compatibility rule |
 |---|---|---|---|
 | `quickstart` | phases, answer, governance warning, action tree | `-o json` | JSON stdout is one document; rich output is text mode only. |
-| root `status --to NAME` | Destination Agent inventory, per-object provenance and readiness; separate candidate roots | table, JSON | GET-only; incomplete rows remain visible; unknown is not absent. No local-history fallback or legacy bundle reader. |
+| `package status --to NAME` | Destination Agent inventory, per-object provenance and readiness; separate candidate roots | table, JSON | GET-only; incomplete rows remain visible; unknown is not absent. No local-history fallback or legacy bundle reader. |
 | `orka status` | Orka runtime fields and tables | table only | Running controller identity, Deployments, CRDs and Providers; no plane suffix or legacy object counts. |
 | `orka list` | heading and table | `-o json\|yaml` | Structured modes remain kubectl-native and are never decoded or restyled. |
 | `completion` | none | shell source / Cobra protocol | Permanently raw and executable. |
@@ -124,7 +124,7 @@ indentation to imply ownership.
 
 The layout example uses `Width`, `lipgloss.Width`, `JoinHorizontal`, and
 `JoinVertical` to compose columns, then clamps the result to the physical
-terminal width. This can improve wide reports such as `kmx orka list`:
+terminal width. This can improve wide reports such as `kmx cluster orka list`:
 
 - related summaries side by side when there is room;
 - one vertical flow on narrow terminals;
@@ -266,7 +266,7 @@ they are not evidence of a new live kind/AKS deployment or every terminal/platfo
 combination.
 
 The former one-shot chat transport retries and question-only resampling are
-removed. `kmx quickstart` creates one Orka Task and polls its result without
+removed. `kmx cluster quickstart` creates one Orka Task and polls its result without
 resubmitting. Interactive `/retry` explicitly resends a message and does not
 promise exactly-once execution. Cancellation restores terminal state but does
 not undo completed external actions.

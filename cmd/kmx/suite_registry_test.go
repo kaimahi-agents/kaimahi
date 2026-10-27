@@ -102,7 +102,7 @@ func TestSuiteRegistryPullPrintsPinForTagsOnly(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			var out, diagnostics bytes.Buffer
 			deps, loads := testDependencies(&out, &diagnostics)
-			err := execute([]string{"suite", "pull", test.reference, "--plain-http", "--output", filepath.Join(t.TempDir(), "suite")}, deps)
+			err := execute([]string{"package", "pull", test.reference, "--plain-http", "--output", filepath.Join(t.TempDir(), "suite")}, deps)
 			if err != nil {
 				t.Fatalf("pull: %v\n%s", err, diagnostics.String())
 			}
@@ -134,7 +134,7 @@ func TestSuiteRegistryPushPrintsDigestAndPassesForce(t *testing.T) {
 	fixture := copySuiteFixture(t, filepath.Join("..", "..", "testdata", "agentsuite", "minimal"))
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
-	args := []string{"suite", "push", fixture, reference, "--plain-http"}
+	args := []string{"package", "suite", "push", fixture, reference, "--plain-http"}
 	if err := execute(args, deps); err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +197,7 @@ func TestSuiteRegistryProvenanceFailureHasSafeDiagnostics(t *testing.T) {
 		t.Run(strconv.FormatBool(require), func(t *testing.T) {
 			var out, diagnostics bytes.Buffer
 			deps, _ := testDependencies(&out, &diagnostics)
-			args := []string{"suite", "push", fixture, reference, "--plain-http"}
+			args := []string{"package", "suite", "push", fixture, reference, "--plain-http"}
 			if require {
 				args = append(args, "--require-provenance")
 			}
@@ -231,7 +231,7 @@ func TestSuiteRegistryProvenanceFailureHasSafeDiagnostics(t *testing.T) {
 func TestSuiteRegistryPushHelpExplainsPreflight(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	deps, _ := testDependencies(&out, &diagnostics)
-	if err := execute([]string{"suite", "push", "--help"}, deps); err != nil {
+	if err := execute([]string{"package", "suite", "push", "--help"}, deps); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"--force", "preflight", "NOT ATOMIC", "concurrent"} {

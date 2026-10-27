@@ -23,11 +23,11 @@ package to the selected cluster. It is not an agent runtime.
 **Status: experimental. Not recommended for production use.**
 
 **Run / Test / Publish:** Run invokes an existing live Orka Agent; Test checks
-workspace cases with `kmx test`; Publish transfers the tested package with
-`kmx push`. Deploy places that package on a real target. Run is not local
+workspace cases with `kmx package test`; Publish transfers the tested package with
+`kmx package push`. Deploy places that package on a real target. Run is not local
 workspace execution.
 
-These docs follow main. `kmx test` and `kmx deploy` are unreleased; v0.8.1 uses
+These docs follow main. `kmx package test` and `kmx package deploy` are unreleased; v0.8.1 uses
 `kmx eval` and `kmx lift` with the same arguments. See
 [Test compatibility](docs/kmx.md#test-compatibility-unreleased) and
 [Deploy compatibility](docs/kmx.md#deploy-compatibility-unreleased).
@@ -48,7 +48,7 @@ use WSL for quickstart and every broader workflow.
 ```sh
 brew install kaimahi-agents/tap/kmx
 kmx version
-kmx quickstart
+kmx cluster quickstart
 ```
 
 Quickstart prepares a local Kubernetes test cluster and runs a sample agent.

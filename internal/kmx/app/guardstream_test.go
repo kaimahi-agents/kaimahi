@@ -38,7 +38,7 @@ func TestTheGuardNamesTheClusterOnStderrAndNeverOnStdout(t *testing.T) {
 		Action:  "install orka",
 		Context: a.Cfg.KubeContext,
 		Source:  a.Cfg.ContextSource,
-		Command: "kmx local up",
+		Command: "kmx cluster up",
 	}, a.Err, nil); err != nil {
 		t.Fatalf("a local kind cluster should proceed: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestAGuardRequestThatDoesNotSayWhoChoseIsRefused(t *testing.T) {
 	}
 	var errOut bytes.Buffer
 	err = guard.Check(kubeconfig, guard.Request{
-		Action: "install orka", Context: "kind-real", Command: "kmx local up",
+		Action: "install orka", Context: "kind-real", Command: "kmx cluster up",
 	}, &errOut, nil)
 	if err == nil || !strings.Contains(err.Error(), "did not record who chose") {
 		t.Fatalf("a sourceless request was allowed through: %v", err)

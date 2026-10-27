@@ -328,7 +328,7 @@ without inventing charter sections or rewriting the file.
 tested AgentSuite artifact handed off by digest (kmx pushes; the host pulls).
 This export does not implement that deployment path or define a host-side API.
 
-`kmx run-profile export FILE` uses `agentfile.ExportRunProfile`, which calls
+`kmx package run-profile export FILE` uses `agentfile.ExportRunProfile`, which calls
 `Load`/`Parse` once, without configuration, state, provider selection, credentials
 or execution. It accepts the same agent-file shapes as Parse, not the distinct native Squad
 profile. Existing tools/settings and safe parser refusals apply unchanged.

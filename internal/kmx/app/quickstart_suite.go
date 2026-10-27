@@ -79,7 +79,7 @@ func (a *App) quickstartSuiteSource(ctx context.Context) (string, string, error)
 	if err := os.WriteFile(input, []byte(scaffold.DefaultOrkaInstructions(QuickstartAgent)), 0600); err != nil {
 		return "", "", err
 	}
-	opt := workspace.CreateOptions{Name: QuickstartAgent, Model: a.Cfg.Model, Description: "The agent kmx quickstart deploys to answer a first question", InstructionsFile: input}
+	opt := workspace.CreateOptions{Name: QuickstartAgent, Model: a.Cfg.Model, Description: "The agent kmx cluster quickstart deploys to answer a first question", InstructionsFile: input}
 	candidate := filepath.Join(stage, "workspace")
 	if err := workspace.Create(ctx, candidate, opt); err != nil {
 		return "", "", err

@@ -11,12 +11,12 @@ updates below are unreleased. Historical section names remain for stable links.
 
 | Command | Contract |
 |---|---|
-| `kmx ctx [--check]` | List named workspace destinations only; optional bounded local-context/anonymous registry checks. No selection or switching. `targets` remains runtime capabilities. |
-| `kmx context show` | Read the effective context, selection source and posture. |
-| `kmx context use <context>` | Remember KMX's access selection after the existing context guard; never change kubectl current-context. |
-| `kmx local up` | Provision the local kind environment, model and Orka; no agent. The existing `--step` choices remain. |
-| `kmx local down` | Delete the named local kind cluster, including its data, under the existing context/container-engine guard. |
-| `kmx aks up/down` | Retain the guarded AKS provisioning/teardown operations and historical ownership records; hidden from root help and completion. |
+| `kmx package ctx [--check]` | List named workspace destinations only; optional bounded local-context/anonymous registry checks. No selection or switching. `targets` remains runtime capabilities. |
+| `kmx cluster context show` | Read the effective context, selection source and posture. |
+| `kmx cluster context use <context>` | Remember KMX's access selection after the existing context guard; never change kubectl current-context. |
+| `kmx cluster up` | Provision the local kind environment, model and Orka; no agent. The existing `--step` choices remain. |
+| `kmx cluster down` | Delete the named local kind cluster, including its data, under the existing context/container-engine guard. |
+| `kmx cluster aks up/down` | Retain the guarded AKS provisioning/teardown operations and historical ownership records; hidden from root help and completion. |
 
 Bare `context` and `local` display help. Canonical commands use the existing
 operations, settings, saved-selection file and guards. Root `up`, `down`,
@@ -26,7 +26,7 @@ retirement stubs. The old context-selecting `ctx` alias remains removed; the new
 respectively. Tagged v0.4.1 used the old context/local spellings; the grouped
 commands require a newer build.
 
-The redirected context report retains its `source: kmx ctx` provenance label
+The redirected context report retains its `source: kmx package ctx` provenance label
 for saved selections as a compatibility format. That label is not a next-step
 command. Generated selection and local teardown instructions use the canonical
 spellings. Invocation-specific confirmation preserves the invoking executable,
@@ -52,13 +52,13 @@ arguments instead of a deleted Make target or an invented BYO recovery route.
 | `agent verify` / `bundle verify` | Removed | Legacy replay/judges and RecordedExecution are removed without a native replacement. |
 | `agent eval diff <before.json> <after.json>` | `test diff <before.json> <after.json>` | Offline receipt comparison, not evaluation execution. |
 | `agent eval from-sessions <session-uid>...` | `test from-sessions <session-uid>...` | Private reference-case preparation, not execution. |
-| `suite push --workspace DIR REF` / `suite push REF` | `push [--workspace DIR] [REF]` | Exact prepared workspace graph publication; discovers the nearest ancestor `workspace.yaml`, or selects an exact root without fallback with `--workspace`. |
+| `package suite push --workspace DIR REF` / `package suite push REF` | `push [--workspace DIR] [REF]` | Exact prepared workspace graph publication; discovers the nearest ancestor `workspace.yaml`, or selects an exact root without fallback with `--workspace`. |
 
 The entire `kmx agent` group is removed, including its hidden edit stub, with no
 aliases or retirement stubs. Use kubectl to edit live Orka resources. Root
 `status --to NAME` separately inventories deployed Orka/kagent Agents and per-object
 Deploy provenance with GET-only table/JSON reports; `orka status` retains the table-only
-runtime report. There is no legacy-status reader or retirement replacement. Root `test` executes a full native workspace inventory with explicit
+runtime report. There is no legacy-status reader or retirement replacement. `package test` executes a full native workspace inventory with explicit
 target selection, optional private output and exactly one runtime-derived model binding: Orka
 `--inference` or packaged kagent `--bindings`. Standalone packaged-reference
 evaluation remains unimplemented. Root digest `deploy` deploys a packaged native
@@ -68,12 +68,12 @@ Deploy stays create-only, including its narrow exact evaluated reuse. Explicit
 `--update` permits only eligible retained Orka updates or rollback with original
 passing evidence; kagent refuses updates. No enrollment, repair or automatic
 rollback. See [update and rollback](suite-workspace.md#update-and-rollback). `task result` and
-`suite push DIRECTORY REFERENCE` and `suite pull/validate` retain their
-contracts. Experimental `suite build --suite-ref REF@DIGEST` adds verified
-published-source selection. `suite push-image ARCHIVE REFERENCE` publishes the
+`package suite push DIRECTORY REFERENCE` and `package pull/validate` retain their
+contracts. Experimental `package build --suite-ref REF@DIGEST` adds verified
+published-source selection. `package push-image ARCHIVE REFERENCE` publishes the
 inspected image/attestation graph, with explicit `--force` for tag replacement;
 it neither evaluates nor deploys and does not require deployment labels.
-`suite policy FILE [--administrative-policy FILE]` resolves portable policy
+`package policy FILE [--administrative-policy FILE]` resolves portable policy
 offline and prints canonical effective-policy bytes plus their digest; it does
 not authenticate, authorize, select or invoke an enforcement provider. See the
 [portable policy contract](portable-policy.md).
@@ -157,7 +157,7 @@ fields, including an explicit false transport flag. Config is not packaged or
 included in source identity. Explicit digest Deploy without `--to` never discovers a
 workspace. See [configuration and checks](suite-workspace.md#named-destinations).
 
-No-reference `kmx deploy --to NAME` composes missing Orka workspace eval, push and
+No-reference `kmx package deploy --to NAME` composes missing Orka workspace eval, push and
 Deploy. It requires saved publishRepository and destination evaluationTarget, freezes
 one source/selector plan, automatically discloses promotion, and confirms that plan
 once. Four default stage lines retain skips; verbose/JSON carries details. Private
@@ -197,7 +197,7 @@ that member and its shareable authored cases as an ordinary AgentSuite, then
 copies the exact OCI manifest/blob graph. A single stderr line names the absolute
 workspace and prepared OCI manifest digest; result stdout is unchanged. Native
 member image requirements are empty. Registry auth, plain-HTTP and non-atomic tag
-replacement remain as documented. Old `suite push <directory> <reference>` retains
+replacement remain as documented. Old `package suite push <directory> <reference>` retains
 extracted-artifact transfer behavior without workspace discovery; suite push no
 longer accepts `--workspace` or one positional reference. Root push refuses two
 positional arguments.
@@ -270,23 +270,23 @@ promotion, creation or partial-outcome path. See [suite workspace](suite-workspa
 ## Vocabulary
 
 **Decided: Run / Test / Publish.** Run invokes an existing live Orka Agent;
-Test checks workspace cases; Publish transfers the OCI graph with `kmx push`.
+Test checks workspace cases; Publish transfers the OCI graph with `kmx package push`.
 This does not add local workspace Run, numbered versions, a plugin or a new
 Publish command. Deploy remains real-target placement.
 
-Canonical `kmx test` is unreleased; v0.8.1 uses `kmx eval` with the same
+Canonical `kmx package test` is unreleased; v0.8.1 uses `kmx eval` with the same
 arguments. Hidden `eval` and all six helpers remain callable for at least one
 released version. Each legacy invocation adds exactly one stderr line:
-`kmx eval is deprecated; use kmx test (same arguments).`
+`kmx eval is deprecated; use kmx package test (same arguments).`
 Arguments, flags, stdout, existing stderr labels, exit codes and state are
 unchanged apart from that notice. Authored `eval/`, packaged `evals/`,
 `evalTarget`/`evaluationTarget`, schemas, APIs and machine JSON remain unchanged.
 See [Test compatibility](kmx.md#test-compatibility-unreleased).
 
-Canonical `kmx deploy` is also unreleased;
+Canonical `kmx package deploy` is also unreleased;
 v0.8.1 uses `kmx lift` with the same arguments. The hidden deprecated `lift`
 route remains callable for at least one released version. Each legacy invocation
-adds exactly one stderr line: `kmx lift is deprecated; use kmx deploy (same arguments).`
+adds exactly one stderr line: `kmx lift is deprecated; use kmx package deploy (same arguments).`
 Legacy stdout, stderr stage labels, arguments, flags and exit codes stay unchanged;
 help/completion is inert. Canonical human output says Deploy; machine JSON
 keys/values (including `targets` operation `"lift"`), Go/API/internal `Lift` names,
@@ -296,7 +296,7 @@ announced breaking release. See [Deploy compatibility](kmx.md#deploy-compatibili
 Root digest Deploy deploys an exact
 packaged native suite using private full-passing evidence, not old bundle state.
 Chat `/lift` and console Deploy only print
-`Deploy moved: kmx deploy <ref>@<digest> --to-context … --evidence …`.
+`Deploy moved: kmx package deploy <ref>@<digest> --to-context … --evidence …`.
 No release GUI or live-copy fallback remains. Standalone AKS up/down and internal
 App.Lift cloud setup remain independent. Removal does not change AKS ownership,
 recovery or teardown behavior. Ready/answered/evaluated are distinct evidence.
@@ -327,7 +327,7 @@ completion are not operational leaves.
 Other implemented alignment in development builds includes
 `quickstart --interactive` (`-i`) and intrinsically interactive root `chat`.
 `quickstart-wizard` is a retirement stub, and chat no longer accepts
-`--interactive`; tagged v0.4.1 still uses those older forms. `kmx targets` is the
+`--interactive`; tagged v0.4.1 still uses those older forms. `kmx cluster targets` is the
 read-only runtime capability view. Plane commands, administration, migration,
 model overlays and the hello-to-governed demo are removed, not candidates for
 regrouping. Current native setup does not deploy a model plane.
@@ -352,11 +352,11 @@ These are tracked in #301 rather than silently treated as part of this slice.
 | [#223](https://github.com/kaimahi-agents/kaimahi/issues/223) | Cloud extraction, infrastructure ownership, recovery and teardown. |
 | [#224](https://github.com/kaimahi-agents/kaimahi/issues/224), [draft #225](https://github.com/kaimahi-agents/kaimahi/pull/225) | Target identity, runtime selection, lifecycle contracts and extensions. |
 | [#238](https://github.com/kaimahi-agents/kaimahi/issues/238), [#294](https://github.com/kaimahi-agents/kaimahi/issues/294) | Runtime qualification and supported operations. |
-| [#289](https://github.com/kaimahi-agents/kaimahi/issues/289) | Read-only capability reporting, implemented as `kmx targets`. |
+| [#289](https://github.com/kaimahi-agents/kaimahi/issues/289) | Read-only capability reporting, implemented as `kmx cluster targets`. |
 | [#276](https://github.com/kaimahi-agents/kaimahi/issues/276), [#286](https://github.com/kaimahi-agents/kaimahi/issues/286) | Shared operations and authoring/execution/adapter/UI extraction. |
 | [#284](https://github.com/kaimahi-agents/kaimahi/issues/284) | Historical model-plane work; the plane is now removed. |
 | [#292](https://github.com/kaimahi-agents/kaimahi/issues/292) | Verbosity levels and redaction. |
-| [#299](https://github.com/kaimahi-agents/kaimahi/issues/299), [#300](https://github.com/kaimahi-agents/kaimahi/pull/300) | AgentSuite artifact and validation contracts; `suite validate` remains. |
+| [#299](https://github.com/kaimahi-agents/kaimahi/issues/299), [#300](https://github.com/kaimahi-agents/kaimahi/pull/300) | AgentSuite artifact and validation contracts; `package validate` remains. |
 
 Merged [#203](https://github.com/kaimahi-agents/kaimahi/pull/203) is the precedent
 for separating AKS provisioning from agent lift. #301 owns command consistency
@@ -384,7 +384,7 @@ preserve raw and answer-only stdout.
    compatibility routes, hidden from root help and completion.
 2. **Runtime setup:** retain `orka install/status` pending agreement on a
    generic runtime setup family; a name cannot imply installer support.
-3. **Capability view:** `kmx targets` is implemented for #289; retain that
+3. **Capability view:** `kmx cluster targets` is implemented for #289; retain that
    spelling and its read-only/offline-default contract rather than adding synonyms.
 4. **Authoring/execution verbs:** default `create` now authors offline;
    live create is removed. `test` is now the canonical workspace evaluation

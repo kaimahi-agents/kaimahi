@@ -49,11 +49,11 @@ func TestSuiteFailureExplainCommand(t *testing.T) {
 	for _, tc := range []struct {
 		verb string
 		show bool
-	}{{"eval", false}, {"eval", true}, {"test", false}, {"test", true}} {
+	}{{"eval", false}, {"eval", true}, {"package test", false}, {"package test", true}} {
 		show := tc.show
 		var out, diagnostics bytes.Buffer
 		deps, loads := testDependencies(&out, &diagnostics)
-		args := []string{tc.verb, "explain", id, "--workspace", workspace}
+		args := append(strings.Fields(tc.verb), "explain", id, "--workspace", workspace)
 		if show {
 			args = append(args, "--show-content")
 		}
@@ -136,10 +136,10 @@ func TestFileFailureExplainCommand(t *testing.T) {
 	}
 	id := result.Retention.Diagnostics[0].ID
 	loadsBefore := *loads
-	for _, verb := range []string{"test", "eval"} {
+	for _, verb := range []string{"test", "package test", "eval"} {
 		out.Reset()
 		diagnostics.Reset()
-		args := []string{verb, "explain", id, "--file", file}
+		args := append(strings.Fields(verb), "explain", id, "--file", file)
 		if err := execute(args, deps); err != nil || *loads != loadsBefore || !strings.Contains(out.String(), id) || !strings.Contains(out.String(), result.File.Revision) || strings.Contains(out.String(), "PRIVATE ANSWER") {
 			t.Fatalf("%s file explain = %q, %v loads=%d", verb, out.String(), err, *loads)
 		}
@@ -151,9 +151,9 @@ func TestFileFailureExplainCommand(t *testing.T) {
 		args   []string
 		reason string
 	}{
-		{[]string{"test", "explain", "--workspace", root, "--file", file}, "mutually exclusive"},
-		{[]string{"test", "explain", "--file", ""}, "--file requires"},
-		{[]string{"test", "explain", "--clear"}, "requires explicit --workspace DIR or --file FILE"},
+		{[]string{"package", "test", "explain", "--workspace", root, "--file", file}, "mutually exclusive"},
+		{[]string{"package", "test", "explain", "--file", ""}, "--file requires"},
+		{[]string{"package", "test", "explain", "--clear"}, "requires explicit --workspace DIR or --file FILE"},
 	} {
 		if err := execute(tc.args, deps); err == nil || !strings.Contains(err.Error(), tc.reason) || *loads != loadsBefore {
 			t.Fatalf("file explain refusal = %v want %q", err, tc.reason)

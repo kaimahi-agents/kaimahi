@@ -22,8 +22,8 @@ func TestRunAndResultCommandValidation(t *testing.T) {
 		{[]string{"run", "agents/sample", "--prompt", "hello", "--context", "kind-test"}, "usage"},
 		{[]string{"run", "--agent", "sample", "--prompt", "hello", "--to-context", "kind-test"}, "--to-context"},
 		{[]string{"run", "--agent", "sample", "--prompt", "hello", "--wait", "0s"}, "--wait"},
-		{[]string{"task", "result", "sample", "--wait", "0s"}, "--wait"},
-		{[]string{"task", "result"}, "usage"},
+		{[]string{"cluster", "task", "result", "sample", "--wait", "0s"}, "--wait"},
+		{[]string{"cluster", "task", "result"}, "usage"},
 	} {
 		t.Run(strings.Join(tc.args, "_"), func(t *testing.T) {
 			var out, errOut bytes.Buffer
@@ -45,7 +45,7 @@ func TestRunAndResultHelpShowTimeoutContract(t *testing.T) {
 		want []string
 	}{
 		{[]string{"run", "--help"}, []string{"--prompt-file", "--wait", "exit code 2", "automatically"}},
-		{[]string{"task", "result", "--help"}, []string{"--wait", "exit code 2", "automatically"}},
+		{[]string{"cluster", "task", "result", "--help"}, []string{"--wait", "exit code 2", "automatically"}},
 		{[]string{"eval", "--help"}, []string{"--result-port", "automatically"}},
 		{[]string{"lift", "--help"}, []string{"--result-port", "automatically"}},
 	} {
@@ -77,7 +77,7 @@ func TestPendingTaskHasDistinctExitCode(t *testing.T) {
 func TestTaskResultWaitRequiresDuration(t *testing.T) {
 	var out, errOut bytes.Buffer
 	deps, _ := testDependencies(&out, &errOut)
-	cmd, _, err := newRootCommand(&commandState{deps: deps}).Find([]string{"task", "result"})
+	cmd, _, err := newRootCommand(&commandState{deps: deps}).Find([]string{"cluster", "task", "result"})
 	if err != nil {
 		t.Fatal(err)
 	}

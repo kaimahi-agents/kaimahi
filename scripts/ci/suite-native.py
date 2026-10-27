@@ -392,7 +392,7 @@ def qualify_status(work, placement, evidence, run_id, run, env, kubectl, name="d
     for format in ("json", "table"):
         require(not home.exists(), "status-created-home")
         start = len(audit.read_text().splitlines()) if audit.exists() else 0
-        result = run(["status", "--to", "qualified", "--workspace", str(workspace), "-o", format], env)
+        result = run(["package", "status", "--to", "qualified", "--workspace", str(workspace), "-o", format], env)
         require(result.returncode == 0 and not result.stderr and not home.exists() and snapshot(workspace) == original, "status-command-or-state")
         frames = [json.loads(line) for line in audit.read_text().splitlines()][start:] if audit.exists() else []
         require(len(frames) >= 2 and len(frames) % 2 == 0, "status-missing-trace")
@@ -953,14 +953,14 @@ class Qualification:
         local = "native-suite@" + source["SuiteDigest"]
         results = {}
         with self.registry() as registry:
-            self.cli("push", "--workspace", workspace, "--evaluation", receipt_path, "--plain-http", "--provenance=false", registry)
+            self.cli("package", "push", "--workspace", workspace, "--evaluation", receipt_path, "--plain-http", "--provenance=false", registry)
             if revision:
                 revision["registry"] = registry.rsplit(":", 1)[0] + ":v2"
-                self.cli("push", "--workspace", revision["workspace"], "--evaluation", revision["path"],
+                self.cli("package", "push", "--workspace", revision["workspace"], "--evaluation", revision["path"],
                          "--plain-http", "--provenance=false", revision["registry"])
                 revision["registry"] = revision["registry"].rsplit(":", 1)[0] + "@" + revision["receipt"]["subject"]["SuiteDigest"]
                 pulled = self.work / "v2-registry-pulled"
-                self.cli("suite", "pull", "--plain-http", "--output", pulled, revision["registry"])
+                self.cli("package", "pull", "--plain-http", "--output", pulled, revision["registry"])
                 verify_transfer(revision["layout"], pulled, revision["receipt"]["subject"], cases)
             registry = registry.rsplit(":", 1)[0] + "@" + source["SuiteDigest"]
             hidden = self.work / "source-withheld"
@@ -1054,9 +1054,9 @@ class Qualification:
             self.audit.verify_cleanup_order(self.raw_frames())
             self.cleanup_proof(second["subject"], frames)
             self.phase = "transfer"
-            self.cli("push", "--workspace", workspace, "--evaluation", path, "--to-layout", layout, "native-suite:v2")
+            self.cli("package", "push", "--workspace", workspace, "--evaluation", path, "--to-layout", layout, "native-suite:v2")
             extracted = self.work / "v2-pulled"
-            self.cli("suite", "pull", "--from-layout", layout, "--output", extracted, "native-suite:v2")
+            self.cli("package", "pull", "--from-layout", layout, "--output", extracted, "native-suite:v2")
             verify_transfer(layout, extracted, second["subject"], cases)
             return {"workspace": workspace, "path": path, "layout": layout, "receipt": second,
                     "instructions": instructions.read_text(), "source": original, "layoutSnapshot": snapshot(layout)}
@@ -1486,20 +1486,20 @@ class Qualification:
         children = self.cleanup_proof(subject, frames)
         self.phase = "transfer"
         layout, extracted, reference = self.work / "layout", self.work / "pulled", "native-suite:v1"
-        self.cli("push", "--workspace", workspace, "--evaluation", receipt_path, "--to-layout", layout, reference)
-        self.cli("suite", "pull", "--from-layout", layout, "--output", extracted, reference)
+        self.cli("package", "push", "--workspace", workspace, "--evaluation", receipt_path, "--to-layout", layout, reference)
+        self.cli("package", "pull", "--from-layout", layout, "--output", extracted, reference)
         verify_transfer(layout, extracted, subject, cases)
         before = snapshot(layout)
         case_path = workspace / "eval" / sorted(cases)[0]
         changed_case = yaml.safe_load(cases[case_path.name])
         changed_case["input"] += " Answer in one word."
         case_path.write_text(yaml.safe_dump(changed_case))
-        rejected = self.cli("push", "--workspace", workspace, "--evaluation", receipt_path, "--to-layout", layout, reference, success=False)
+        rejected = self.cli("package", "push", "--workspace", workspace, "--evaluation", receipt_path, "--to-layout", layout, reference, success=False)
         verify_refusal(rejected.returncode, rejected.stderr, [], "expected publication identity")
         require(snapshot(layout) == before, "destination-changed")
         changed_layout, changed = self.work / "changed-layout", self.work / "changed-pulled"
-        self.cli("push", "--unevaluated", "--workspace", workspace, "--to-layout", changed_layout, reference)
-        self.cli("suite", "pull", "--from-layout", changed_layout, "--output", changed, reference)
+        self.cli("package", "push", "--unevaluated", "--workspace", workspace, "--to-layout", changed_layout, reference)
+        self.cli("package", "pull", "--from-layout", changed_layout, "--output", changed, reference)
         changed_s = json.loads((changed_layout / "index.json").read_bytes())["manifests"][0]["digest"]
         # Cases are in the graph, so a case edit changes S and G.
         require(changed_s != subject["SuiteDigest"] and sha(canonical(json.loads((changed / "agentsuite.json").read_bytes()))) != subject["GraphDigest"][7:], "mutation-S-and-G")

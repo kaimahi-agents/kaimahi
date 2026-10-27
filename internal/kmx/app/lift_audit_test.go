@@ -233,7 +233,7 @@ func TestLiftRecoveryCommandsPreserveOptionsAndShellArguments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("command is not shell-safe: %s: %v", command, err)
 	}
-	want := []string{"--context", opt.Cluster, "aks", "up", "--payload", opt.Payload, "--step", opt.Step, "--observability=false",
+	want := []string{"--context", opt.Cluster, "cluster", "aks", "up", "--payload", opt.Payload, "--step", opt.Step, "--observability=false",
 		"--location", opt.Location, "--node-size", opt.NodeSize, "--network-policy", opt.NetworkPolicy,
 		"--node-count", "3", "--resource-group", opt.ResourceGroup, "--cluster", opt.Cluster, "--registry", opt.Registry}
 	if got := strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00"); !reflect.DeepEqual(got, want) {
@@ -295,7 +295,7 @@ func TestAKSDownScriptRecoveryPreservesRecordedAndStandaloneOwnership(t *testing
 			}
 			var want []string
 			if recorded {
-				want = []string{opt.ResourceGroup, "--context", opt.Cluster, "aks", "down", "--resource-group", opt.ResourceGroup, "--cluster", opt.Cluster, "--registry", opt.Registry}
+				want = []string{opt.ResourceGroup, "--context", opt.Cluster, "cluster", "aks", "down", "--resource-group", opt.ResourceGroup, "--cluster", opt.Cluster, "--registry", opt.Registry}
 			} else {
 				want = []string{opt.ResourceGroup, opt.Cluster, opt.ResourceGroup, filepath.Join(work, "scripts/aks-down.sh")}
 			}
@@ -382,13 +382,13 @@ func TestLiftNextStepsDoNotClaimDisabledObservability(t *testing.T) {
 			opt := lift.Options{Payload: payload, BringYourOwn: byo, ResourceGroup: "demo(rg)", Cluster: "demo-cluster", Registry: "reg12345"}
 			a.aimAtTheCluster(opt)
 			a.liftNextSteps(opt)
-			for _, claim := range []string{"The dashboard is", "two monitoring workspaces", "kmx aks down --byo --byo"} {
+			for _, claim := range []string{"The dashboard is", "two monitoring workspaces", "kmx cluster aks down --byo --byo"} {
 				if strings.Contains(out.String(), claim) {
 					t.Errorf("%s: disabled observability claimed %q: %s", payload, claim, out)
 				}
 			}
 			want := []string{"Azure metrics and logs were not checked", a.liftCommand(opt, true)}
-			want = append(want, a.operationCommand("orka", "status"))
+			want = append(want, a.operationCommand("cluster", "orka", "status"))
 			for _, w := range want {
 				if !strings.Contains(out.String(), w) {
 					t.Errorf("%s: missing %q: %s", payload, w, out)

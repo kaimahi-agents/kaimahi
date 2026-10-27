@@ -30,7 +30,7 @@ func newAgentShowCommand(state *commandState) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show <name>",
 		Short: "Show an Orka Agent and the chain it depends on",
-		Args:  usageArgs(1, 1, "kmx orka show <name> --namespace <namespace>"),
+		Args:  usageArgs(1, 1, "kmx cluster orka show <name> --namespace <namespace>"),
 	}
 	cmd.Flags().StringVar(&opt.Namespace, "namespace", "", "namespace the Orka controller watches (required)")
 	cmd.Flags().StringVarP(&opt.Output, "output", "o", "table", "output: table|json")
@@ -47,7 +47,7 @@ func newAgentListCommand(state *commandState) *cobra.Command {
 		Short: "List the Orka Agents in a namespace",
 		Long: `List Orka Agent resources.
 
-These are live Agent resources; kmx orka show inspects their dependencies.
+These are live Agent resources; kmx cluster orka show inspects their dependencies.
 
 --namespace selects the namespace the Orka controller watches. It defaults to
 the namespace the pinned installer uses, which is the same default kmx chat

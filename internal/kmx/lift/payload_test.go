@@ -18,7 +18,7 @@ func TestAnEmptyPayloadIsRefused(t *testing.T) {
 	if err == nil {
 		t.Fatal("a lift with no payload was accepted")
 	}
-	for _, want := range []string{"kmx aks up", "--payload must not be empty", "--payload orka"} {
+	for _, want := range []string{"kmx cluster aks up", "--payload must not be empty", "--payload orka"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal does not mention %q: %v", want, err)
 		}
@@ -48,7 +48,7 @@ func TestTheKagentPayloadIsRefusedAsRetiredRatherThanUnknown(t *testing.T) {
 	if strings.Contains(err.Error(), "unknown --payload") {
 		t.Errorf("the retired payload is reported as a typo: %v", err)
 	}
-	for _, want := range []string{"--payload kagent", "retired", "installer payload", "--payload orka", "kmx targets", "AKS provisioning", "kmx aks down"} {
+	for _, want := range []string{"--payload kagent", "retired", "installer payload", "--payload orka", "kmx cluster targets", "AKS provisioning", "kmx cluster aks down"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal does not say %q: %v", want, err)
 		}

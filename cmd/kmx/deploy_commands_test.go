@@ -15,12 +15,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const legacyLiftNotice = "kmx lift is deprecated; use kmx deploy (same arguments).\n"
+const legacyLiftNotice = "kmx lift is deprecated; use kmx package deploy (same arguments).\n"
 
 // Removing canonical registration or leaking the compatibility route into discovery
 // must fail without ever loading operational configuration.
 func TestDeployDiscoveryAndLegacyHelpAreInert(t *testing.T) {
-	for _, args := range [][]string{{"--help"}, {"__complete", ""}, {"deploy", "--help"}, {"help", "deploy"}, {"lift", "--help"}, {"help", "lift"}, {"__complete", "lift", "--"}} {
+	for _, args := range [][]string{{"--help"}, {"__complete", ""}, {"package", "deploy", "--help"}, {"help", "package", "deploy"}, {"lift", "--help"}, {"help", "lift"}, {"__complete", "lift", "--"}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			var out, diag bytes.Buffer
 			deps, loads := testDependencies(&out, &diag)
@@ -29,7 +29,7 @@ func TestDeployDiscoveryAndLegacyHelpAreInert(t *testing.T) {
 			}
 			discovery := len(args) == 1 || len(args) == 2 && args[0] == "__complete"
 			if discovery {
-				if !strings.Contains(out.String(), "deploy") || strings.Contains(out.String(), "lift") {
+				if !strings.Contains(out.String(), "package") || strings.Contains(out.String(), "lift") {
 					t.Fatalf("canonical discovery: %s", &out)
 				}
 			} else {
@@ -64,11 +64,14 @@ func TestDeployLegacyNoticeAndRefusals(t *testing.T) {
 		{[]string{"--container-engine", ""}, "--container-engine requires docker or podman", nil},
 		{[]string{"repo/suite@sha256:" + strings.Repeat("a", 64), "--to-context", "target", "--inference", "provider:inference"}, "release lift planning refused; no native admission or placement: explicit-reference VERB requires --evidence FILE", app.ErrReleaseLift},
 	} {
-		for _, verb := range []string{"deploy", "lift"} {
+		for _, verb := range []string{"package deploy", "lift"} {
 			var out, diag bytes.Buffer
 			deps, loads := testDependencies(&out, &diag)
-			err := execute(append([]string{verb}, tc.tail...), deps)
-			wantError := strings.ReplaceAll(tc.want, "VERB", verb)
+			err := execute(append(strings.Fields(verb), tc.tail...), deps)
+			wantError := strings.ReplaceAll(tc.want, "VERB", strings.TrimPrefix(verb, "package "))
+			if verb == "package deploy" {
+				wantError = strings.ReplaceAll(wantError, "kmx deploy", "kmx package deploy")
+			}
 			if err == nil || err.Error() != wantError || exitCode(err) != 1 || *loads != 0 || out.Len() != 0 {
 				t.Errorf("%s %v: err=%v want=%q loads=%d stdout=%q", verb, tc.tail, err, wantError, *loads, &out)
 			}
@@ -89,10 +92,10 @@ func TestDeployLegacyNoticeAndRefusals(t *testing.T) {
 func TestDeployConsoleHelpUsesRetirementCopy(t *testing.T) {
 	var out, diag bytes.Buffer
 	deps, loads := testDependencies(&out, &diag)
-	if err := execute([]string{"console", "--help"}, deps); err != nil || *loads != 0 {
+	if err := execute([]string{"cluster", "console", "--help"}, deps); err != nil || *loads != 0 {
 		t.Fatalf("console help was operational: %v loads=%d", err, *loads)
 	}
-	if !strings.Contains(out.String(), "Deploy moved: kmx deploy <ref>@<digest> --to-context … --evidence …") || strings.Contains(out.String(), "Lift moved:") {
+	if !strings.Contains(out.String(), "Deploy moved: kmx package deploy <ref>@<digest> --to-context … --evidence …") || strings.Contains(out.String(), "Lift moved:") {
 		t.Fatalf("console help differs from current retirement notice: %s", &out)
 	}
 }
@@ -114,9 +117,9 @@ func TestDeployLegacyNoticeOnMalformedContext(t *testing.T) {
 		{[]string{"help", "lift", "--context="}, true},
 		{[]string{"--context=", "help", "lift"}, true},
 		{[]string{"--help", "--context=", "lift"}, true},
-		{[]string{"deploy", "--context="}, false},
-		{[]string{"deploy", "--context"}, false},
-		{[]string{"deploy", "--context", ""}, false},
+		{[]string{"package", "deploy", "--context="}, false},
+		{[]string{"package", "deploy", "--context"}, false},
+		{[]string{"package", "deploy", "--context", ""}, false},
 		{[]string{"--context=", "deploy"}, false},
 		{[]string{"--container-engine=podman", "--context", "", "deploy"}, false},
 		// A command argument or flag value equal to lift is never a route.
@@ -154,7 +157,7 @@ func TestDeployLegacyNoticeOnMalformedContext(t *testing.T) {
 func TestDeployDigestDispatchCompatibility(t *testing.T) {
 	ref := "repo/suite@sha256:" + strings.Repeat("a", 64)
 	for _, mode := range [][]string{nil, {"--plan"}, {"--update"}, {"--update", "--plan"}, {"--bindings", "author.yaml", "--update"}} {
-		for _, verb := range []string{"deploy", "lift"} {
+		for _, verb := range []string{"package deploy", "lift"} {
 			var out, diag bytes.Buffer
 			deps, loads := testDependencies(&out, &diag)
 			boundary := errors.New("configured digest boundary")
@@ -165,7 +168,7 @@ func TestDeployDigestDispatchCompatibility(t *testing.T) {
 				}
 				return nil, boundary
 			}
-			args := []string{verb, ref, "--to-context", "target", "--evidence", "private.json", "--container-engine", "podman"}
+			args := append(strings.Fields(verb), ref, "--to-context", "target", "--evidence", "private.json", "--container-engine", "podman")
 			unsupported := len(mode) > 0 && mode[0] == "--bindings"
 			if !unsupported {
 				args = append(args, "--inference", "provider:inference")
@@ -201,11 +204,11 @@ func TestDeployWorkspacePlanCompatibility(t *testing.T) {
 	}
 	for _, update := range []bool{false, true} {
 		var legacyJSON []byte
-		for _, verb := range []string{"lift", "deploy"} {
+		for _, verb := range []string{"lift", "package deploy"} {
 			for _, output := range []string{"json", "text"} {
 				var out, diag bytes.Buffer
 				deps, loads := testDependencies(&out, &diag)
-				args := []string{verb, "--to", "prod", "--plan", "-o", output}
+				args := append(strings.Fields(verb), "--to", "prod", "--plan", "-o", output)
 				if update {
 					args = append(args, "--update")
 				}
@@ -232,7 +235,7 @@ func TestDeployWorkspacePlanCompatibility(t *testing.T) {
 					}
 				} else {
 					label, disclosure := "Lift", "eval,push,lift;"
-					if verb == "deploy" {
+					if verb == "package deploy" {
 						label, disclosure = "Deploy", "eval,push,deploy;"
 					}
 					if out.Len() != 0 || len(strings.Split(strings.TrimSpace(stderr), "\n")) != 4 || !strings.Contains(stderr, "\n"+label+" · not-attempted · prod unchanged\n") || !strings.Contains(stderr, disclosure) || !strings.Contains(stderr, "registry.example/lift") {
@@ -249,7 +252,7 @@ func TestDeployWorkspaceExecutionKeepsFrozenSelections(t *testing.T) {
 	root, _ := suiteEvalSource(t)
 	t.Chdir(root)
 	path := filepath.Join(root, "kmx.yaml")
-	for _, verb := range []string{"deploy", "lift"} {
+	for _, verb := range []string{"package deploy", "lift"} {
 		if err := os.WriteFile(path, []byte(composedDestinationConfig), 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -266,7 +269,7 @@ func TestDeployWorkspaceExecutionKeepsFrozenSelections(t *testing.T) {
 			}
 			return nil, boundary
 		}
-		if err := execute([]string{verb, "--to", "prod", "--to-context", "explicit-prod", "--update"}, deps); !errors.Is(err, boundary) || *loads != 1 || out.Len() != 0 {
+		if err := execute(append(strings.Fields(verb), "--to", "prod", "--to-context", "explicit-prod", "--update"), deps); !errors.Is(err, boundary) || *loads != 1 || out.Len() != 0 {
 			t.Fatalf("%s selection: %v loads=%d stdout=%q", verb, err, *loads, &out)
 		}
 	}
@@ -276,7 +279,7 @@ func TestDeployAndLegacyFlagsMatch(t *testing.T) {
 	var out bytes.Buffer
 	deps, _ := testDependencies(&out, &out)
 	root := newRootCommand(&commandState{deps: deps})
-	deploy, _, err := root.Find([]string{"deploy"})
+	deploy, _, err := root.Find([]string{"package", "deploy"})
 	if err != nil || deploy == root {
 		t.Fatalf("canonical command missing: %v", err)
 	}
@@ -294,10 +297,10 @@ func TestDeployDigestResultStdoutAndExitCompatibility(t *testing.T) {
 	result := app.ReleaseLiftResult{Summary: summary, State: "partial", Resources: []app.ReleaseLiftOutcome{{ReleaseLiftResource: app.ReleaseLiftResource{Kind: "Agent", Name: "lift", UID: "uid"}, Outcome: "created"}}}
 	refusal := errors.New("retained partial outcome")
 	var legacyJSON []byte
-	for _, verb := range []string{"lift", "deploy"} {
+	for _, verb := range []string{"lift", "package deploy"} {
 		for _, output := range []string{"text", "json"} {
 			var out, diag bytes.Buffer
-			cmd := &cobra.Command{Use: verb}
+			cmd := &cobra.Command{Use: strings.TrimPrefix(verb, "package ")}
 			cmd.SetOut(&out)
 			cmd.SetErr(&diag)
 			err := reportReleaseLiftResult(cmd, output, summary, result, refusal)
@@ -313,7 +316,7 @@ func TestDeployDigestResultStdoutAndExitCompatibility(t *testing.T) {
 				continue
 			}
 			label := "Lift"
-			if verb == "deploy" {
+			if verb == "package deploy" {
 				label = "Deploy"
 			}
 			want := label + ": partial\nSuite: sha256:abc\nMember: lift\nTarget: \"lift\"/\"team\"\nAgent/lift: created (ready=false, UID=\"uid\")\n"
@@ -325,7 +328,7 @@ func TestDeployDigestResultStdoutAndExitCompatibility(t *testing.T) {
 }
 
 func TestDeployRecoveryPreservesExecutableSelectorsAndQuoting(t *testing.T) {
-	for _, verb := range []string{"lift", "deploy"} {
+	for _, verb := range []string{"lift", "package deploy"} {
 		var out, diag bytes.Buffer
 		deps, _ := testDependencies(&out, &diag)
 		deps.executable = "/build with space/kmx"
@@ -338,11 +341,11 @@ func TestDeployRecoveryPreservesExecutableSelectorsAndQuoting(t *testing.T) {
 			return operation
 		}
 		ref := "repo/lift@sha256:" + strings.Repeat("a", 64)
-		err := execute([]string{"--container-engine", "podman", verb, ref, "--to-context", "lift", "--inference", "provider:lift", "--evidence", "proof's lift.json", "--plan"}, deps)
+		err := execute(append([]string{"--container-engine", "podman"}, append(strings.Fields(verb), ref, "--to-context", "lift", "--inference", "provider:lift", "--evidence", "proof's lift.json", "--plan")...), deps)
 		if !errors.Is(err, app.ErrReleaseLift) || operation == nil {
 			t.Fatalf("missing-evidence plan reached wrong boundary: %v", err)
 		}
-		want := "KIND_CLUSTER=demo CONTAINER_ENGINE=podman '/build with space/kmx' --container-engine podman deploy " + ref + " --to-context lift --inference provider:lift --evidence 'proof'\"'\"'s lift.json' --plan"
+		want := "KIND_CLUSTER=demo CONTAINER_ENGINE=podman '/build with space/kmx' --container-engine podman package deploy " + ref + " --to-context lift --inference provider:lift --evidence 'proof'\"'\"'s lift.json' --plan"
 		if operation.InvocationCommand != want {
 			t.Fatalf("recovery changed executable/selectors/quoting:\ngot %s\nwant %s", operation.InvocationCommand, want)
 		}

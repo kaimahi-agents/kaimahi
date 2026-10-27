@@ -8,8 +8,8 @@ qualify an enforcement implementation.
 ## Resolve offline
 
 ```sh
-kmx suite policy policy.json
-kmx suite policy policy.json --administrative-policy admin.json
+kmx package policy policy.json
+kmx package policy policy.json --administrative-policy admin.json
 ```
 
 Stdout contains canonical effective-policy JSON on the first line and its

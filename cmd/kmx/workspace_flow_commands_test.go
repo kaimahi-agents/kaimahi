@@ -52,7 +52,7 @@ func TestFlowCreateCommandOffline(t *testing.T) {
 	if inv.Flow.ID != "release" || len(inv.Members) != 2 {
 		t.Fatal("CLI did not author full flow")
 	}
-	for _, operation := range [][]string{{"eval", "--workspace", args[3]}, {"push", "--workspace", args[3], "--unevaluated", "team:v1"}, {"lift", "--workspace", args[3], "--to", "missing"}} {
+	for _, operation := range [][]string{{"eval", "--workspace", args[3]}, {"package", "push", "--workspace", args[3], "--unevaluated", "team:v1"}, {"lift", "--workspace", args[3], "--to", "missing"}} {
 		out.Reset()
 		diagnostics.Reset()
 		if err := execute(operation, deps); err == nil {

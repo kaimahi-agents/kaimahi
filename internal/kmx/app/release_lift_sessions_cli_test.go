@@ -28,7 +28,7 @@ func TestSessionsAgentExecutableCLI(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	base := []string{"deploy", opt.Reference, "--from-layout", opt.FromLayout, "--to", "sessions", "--evidence", opt.Evidence}
+	base := []string{"package", "deploy", opt.Reference, "--from-layout", opt.FromLayout, "--to", "sessions", "--evidence", opt.Evidence}
 	for _, step := range []struct {
 		name string
 		args []string
@@ -37,7 +37,7 @@ func TestSessionsAgentExecutableCLI(t *testing.T) {
 		{"plan", append(append([]string{}, base...), "--plan"), "Agent/"},
 		{"create", base, "Agent: registered"},
 		{"no-op", base, "unchanged"},
-		{"status", []string{"status", "--to", "sessions"}, "registered: last controller-observed admission"},
+		{"status", []string{"package", "status", "--to", "sessions"}, "registered: last controller-observed admission"},
 	} {
 		cmd := exec.CommandContext(t.Context(), binary, step.args...)
 		cmd.Dir = root

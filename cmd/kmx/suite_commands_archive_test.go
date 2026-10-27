@@ -123,7 +123,7 @@ func TestSuiteBuildAttestationFlagsAndOutput(t *testing.T) {
 				})
 			}
 			fixture := safeSuiteFixture(t, filepath.Join("..", "..", "testdata", "agentsuite", "minimal"))
-			args := append([]string{"suite", "build", fixture, "--model-base-url", "https://models.example/v1", "--output", output}, tc.args...)
+			args := append([]string{"package", "build", fixture, "--model-base-url", "https://models.example/v1", "--output", output}, tc.args...)
 			if err := execute(args, deps); err != nil {
 				t.Fatal(err)
 			}
@@ -163,7 +163,7 @@ func TestSuiteBuildRejectsAttestationFlagConflicts(t *testing.T) {
 		deps, _ := testDependencies(&out, &diagnostics)
 		created := false
 		deps.newAgentKitBuilder = func(agentkitbuilder.Options) kmxsuite.SandboxBuilder { created = true; return nil }
-		args := append([]string{"suite", "build", "missing-suite", "--model-base-url", "https://models.example/v1", "--output", filepath.Join(t.TempDir(), "missing", "image.tar")}, tc.args...)
+		args := append([]string{"package", "build", "missing-suite", "--model-base-url", "https://models.example/v1", "--output", filepath.Join(t.TempDir(), "missing", "image.tar")}, tc.args...)
 		err := execute(args, deps)
 		if err == nil || !strings.Contains(err.Error(), tc.want) || created {
 			t.Fatalf("error=%v builder created=%v", err, created)
@@ -173,7 +173,7 @@ func TestSuiteBuildRejectsAttestationFlagConflicts(t *testing.T) {
 func TestSuiteBuildHelpExplainsBuilderAndAttestations(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	deps, _ := testDependencies(&out, &diagnostics)
-	if err := execute([]string{"suite", "build", "--help"}, deps); err != nil {
+	if err := execute([]string{"package", "build", "--help"}, deps); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"--builder", "--attestations", "--require-attestations", "SBOM", "provenance", "classic Docker image store", "OCI export", "does not enable", "image manifest", "index digest"} {

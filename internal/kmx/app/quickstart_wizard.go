@@ -49,7 +49,7 @@ func (a *App) QuickstartWizard(opt QuickstartWizardOptions) error {
 	a.chatVerbose = opt.Verbose
 	started := a.timeNow()
 	if a.Stdin == nil || !isInteractiveTerminal(a.Stdin) || !isInteractiveTerminal(a.Err) || os.Getenv("TERM") == "dumb" {
-		return fmt.Errorf("kmx quickstart --interactive requires an interactive terminal; use `kmx quickstart` for automation")
+		return fmt.Errorf("kmx cluster quickstart --interactive requires an interactive terminal; use `kmx cluster quickstart` for automation")
 	}
 	if err := a.validateKindTarget(); err != nil {
 		return err

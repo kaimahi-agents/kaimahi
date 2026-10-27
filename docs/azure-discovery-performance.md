@@ -3,7 +3,7 @@
 The SDK-backed AKS cluster picker belonged to the retired interactive Lift
 workflow. Chat and quickstart `--azure-discovery` are removed; these measurements
 are historical, not an available discovery alternative or a current qualification.
-Standalone `kmx aks up/down` and host inference discovery through the Azure CLI
+Standalone `kmx cluster aks up/down` and host inference discovery through the Azure CLI
 remain independent.
 
 The [archived implementation and reproduction instructions](https://github.com/kaimahi-agents/kaimahi/blob/4f91f248a542f379cad7163dec5d3ba4b981295d/docs/azure-discovery-performance.md)

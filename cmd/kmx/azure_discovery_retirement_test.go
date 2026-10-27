@@ -9,8 +9,8 @@ import (
 func TestAzureDiscoveryFlagsRemovedBeforeConfiguration(t *testing.T) {
 	for _, args := range [][]string{
 		{"chat", "demo", "--azure-discovery", "sdk"},
-		{"quickstart", "--azure-discovery", "sdk"},
-		{"quickstart", "--interactive", "--azure-discovery", "cli"},
+		{"cluster", "quickstart", "--azure-discovery", "sdk"},
+		{"cluster", "quickstart", "--interactive", "--azure-discovery", "cli"},
 	} {
 		t.Run(strings.Join(args, "_"), func(t *testing.T) {
 			var out, diagnostics bytes.Buffer

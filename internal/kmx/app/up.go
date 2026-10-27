@@ -10,14 +10,14 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
-// UpSteps are the individually addressable steps of `kmx local up`, and they are
+// UpSteps are the individually addressable steps of `kmx cluster up`, and they are
 // exactly the supported sequence. The three legacy installer steps that once
 // sat beyond them are gone rather than hidden: naming one is an unknown step,
 // refused locally, not a runtime kmx still knows how to put on a cluster.
 var UpSteps = []string{"cluster", "ollama", "model", "orka"}
 
-// UpDefaultSteps is what a bare `kmx local up` runs: a cluster, a keyless model
-// server and the pinned Orka runtime. It deploys no agent: `kmx quickstart`
+// UpDefaultSteps is what a bare `kmx cluster up` runs: a cluster, a keyless model
+// server and the pinned Orka runtime. It deploys no agent: `kmx cluster quickstart`
 // ends with one answering, while root create authors workspace source offline.
 //
 // It holds the same four names as UpSteps, and that is the point rather than
@@ -31,7 +31,7 @@ var UpDefaultSteps = []string{"cluster", "ollama", "model", "orka"}
 // Up runs the whole journey, or the single named step.
 //
 // On kind, runtime setup and quickstart share the cluster, Ollama, model and
-// Orka phases. RUNTIME ONLY: `kmx local up` does not deploy an agent or a
+// Orka phases. RUNTIME ONLY: `kmx cluster up` does not deploy an agent or a
 // model plane. Agents use native Orka Providers directly.
 func (a *App) Up(step string) error {
 	started := a.timeNow()
@@ -63,9 +63,9 @@ func (a *App) Up(step string) error {
 	}
 
 	action := "bring up the kmx runtime (kind, Ollama, Orka)"
-	command := a.operationCommand("local", "up")
+	command := a.operationCommand("cluster", "up")
 	if step != "" {
-		action, command = "run the '"+step+"' step", a.operationCommand("local", "up", "--step", step)
+		action, command = "run the '"+step+"' step", a.operationCommand("cluster", "up", "--step", step)
 	}
 	// Every step writes to the Orka path's two namespaces, so the banner
 	// names them exactly — for a bare run and for a single step alike. The
@@ -194,7 +194,7 @@ func (a *App) upDependencies(steps []string) []dependency {
 // only place that default survives the guard, and creating the cluster is
 // what puts a context in the kubeconfig — so without this, the NEXT bare
 // command would be refused for pointing at a name nobody picked, on a
-// machine where kmx had just picked it. An explicit `kmx context use` choice is
+// machine where kmx had just picked it. An explicit `kmx cluster context use` choice is
 // never overwritten, and a per-invocation KIND_CLUSTER or --context never
 // becomes sticky.
 func (a *App) rememberInventedContext() {
@@ -204,13 +204,13 @@ func (a *App) rememberInventedContext() {
 	path, err := config.WriteSelectedContext(a.Cfg.KubeContext)
 	if err != nil {
 		// Not fatal: the cluster is up, and the cost of failing here is one
-		// `kmx context use <name>` the operator types themselves.
-		a.notef("could not record %q as the context kmx acts on (%v) — set it with: %s context use %s",
+		// `kmx cluster context use <name>` the operator types themselves.
+		a.notef("could not record %q as the context kmx acts on (%v) — set it with: %s cluster context use %s",
 			a.Cfg.KubeContext, err, shellArg(a.commandExecutable()), shellArg(a.Cfg.KubeContext))
 		return
 	}
 	a.Cfg.ContextSource = config.SourceSelected
-	a.notef("kmx will act on context %q from now on (recorded in %s); change it with: %s context use <name>",
+	a.notef("kmx will act on context %q from now on (recorded in %s); change it with: %s cluster context use <name>",
 		a.Cfg.KubeContext, path, shellArg(a.commandExecutable()))
 }
 

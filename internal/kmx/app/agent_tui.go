@@ -82,7 +82,7 @@ func newAgentTUIModel(opt AgentTUIOptions) agentTUIModel {
 // then restores the dashboard and refreshes both inventories on return.
 func (a *App) AgentTUI(opt AgentTUIOptions) error {
 	if a.Stdin == nil || !isTerminalFile(a.Stdin) || !isInteractiveTerminal(a.Out) || os.Getenv("TERM") == "dumb" {
-		return fmt.Errorf("kmx console requires an interactive terminal on stdin and stdout; use kmx orka list for piped output")
+		return fmt.Errorf("kmx cluster console requires an interactive terminal on stdin and stdout; use kmx cluster orka list for piped output")
 	}
 	if opt.Namespace == "" {
 		opt.Namespace = OrkaNamespace
