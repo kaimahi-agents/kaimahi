@@ -105,7 +105,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       messageNode.textContent = state.message;
       for (const u of updates) u();
       for (const { node, guard } of controls) {
-        node.disabled = guard === "reload" ? state.busy || state.sourceUnavailable : invalidEditors.size > 0 || (guard === "nav" ? false
+        node.disabled = guard === "stop" ? !testing() || !state.run?.cancellable || state.run.state !== "running" : guard === "reload" ? state.busy || state.sourceUnavailable : invalidEditors.size > 0 || (guard === "nav" ? false
           : state.busy || state.blocked || (["save", "settings"].includes(guard) && !!state.candidate) || (guard === "clean" && hasDrafts()));
       }
     };
@@ -150,7 +150,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
 
   function header(updates) {
     const pill = resultPill(doc, resultSummary), actions = [pill.node]; updates.push(pill.update);
-    if (state.snap) {
+    if (state.snap && options.modelSelection !== false) {
       updates.push(modelControl.update); controls.push({ node: modelControl.trigger, guard: "idle" }); actions.push(modelControl.node);
     }
     return canvasHeader(doc, state.base, actions, !state.snap);
@@ -158,10 +158,11 @@ export function renderView(doc, root, payload, execute = postAction, options = {
 
   function makeEditor(section, label, updates) {
     const control = instructionEditor(doc, label, sectionText(section.key), {
-      disabled: () => state.busy || state.blocked,
+      disabled: () => state.blocked || state.busy && !(options.interruptOnEdit && testing() && state.run?.cancellable && ["running", "stopping"].includes(state.run.state)),
       hasDraft: () => sectionDrafts.has(section.key),
       change(node) {
         clearUndo();
+        if (options.interruptOnEdit && testing()) void actions.stop();
         try {
           const value = editorValue(node); invalidEditors.delete(section.key);
           if (value === section.text) sectionDrafts.delete(section.key); else sectionDrafts.set(section.key, value);
@@ -209,12 +210,17 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     foot.append(spinnerStatus(status, "all", updates));
     const saveRun = state.snap ? saveButton(doc, button, "Save and run all tests", submitAll) : undefined;
     if (saveRun) { foot.append(saveRun); updates.push(() => { saveRun.hidden = testing() && !!state.run; }); }
+    if (options.interruptOnEdit) {
+      const stop = button("Stop tests", () => actions.stop(), "sb", "stop");
+      updates.push(() => { stop.hidden = !testing() || !state.run?.cancellable; });
+      foot.append(stop);
+    }
     if (state.snap) foot.append(hostedNotice(updates));
     promptBox.append(foot); promptSection.append(promptLabel, promptBox);
 
     sourceActions(button, info, updates);
     const tests = testsSection(button, updates);
-    const tools = toolsSection(doc, button, { servers: toolServers, names: state.base.tools ?? [], settings: state.base.settingsInvalid ? null : state.base.toolSettings, editable: !!state.snap,
+    const tools = toolsSection(doc, button, { servers: toolServers, names: state.base.tools ?? [], settings: state.base.settingsInvalid ? null : state.base.toolSettings, editable: !!state.snap && options.toolsSelection !== false,
       omitted: state.base.copilotToolsOmitted === true && !(state.base.tools ?? []).length,
       loading: toolsLoading, loaded: toolsLoaded, error: toolsError, menuOpen: toolsMenu, onToggleMenu: () => {
         toolsMenu = !toolsMenu;
@@ -674,6 +680,11 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       cancel.setAttribute("title", "Discard this test's edits (Esc)");
       updates.push(() => { cancel.hidden = !draft(); });
       right.append(cancel, saveButton(doc, button, "Save and run this test", () => submitOne(key)));
+      if (options.interruptOnEdit) {
+        const stop = button("Stop tests", () => actions.stop(), "sb", "stop");
+        updates.push(() => { stop.hidden = !testing() || !state.run?.cancellable; });
+        right.append(stop);
+      }
       foot.append(right, hostedNotice(updates)); out.push(foot);
     } else {
       const foot = el(doc, "div", "detail-foot"); foot.append(status); out.push(foot);
@@ -716,6 +727,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     observeFailure,
     observation,
     idle: () => !state.busy && (!state.blocked || state.sourceUnavailable) && invalidEditors.size === 0,
+    dirty: hasDrafts,
     dispose() { disposed = true; clearUndo(); actions.dispose(); state.observationGeneration++; for (const cleanup of cleanups.splice(0)) cleanup(); },
   };
 }
@@ -738,4 +750,4 @@ async function main() {
     try { app.observe(await fetchView(), started); } catch (e) { app.observeFailure(e, started); /* Other failures: try again on the next tick. */ } finally { reading = false; }
   }, 4000);
 }
-if (typeof document !== "undefined" && document.getElementById) main();
+if (typeof document !== "undefined" && document.getElementById && document.getElementById("root")) main();

@@ -42,6 +42,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
   async function act(operation, values = {}, submitted = { sections: [], tests: [] }) {
     if (state.busy || state.sourceUnavailable || ((state.blocked || invalidEditors.size) && operation !== "reload")) return;
     const previousPrompt = submitted.sections.map(key => ({ key, text: state.snap.sections.find(s => s.key === key).text }));
+    const submittedPrompt = new Map(submitted.sections.map(key => [key, sectionDrafts.get(key)]));
     clearUndo(); state.confirm = undefined; state.lastAdHoc = undefined;
     if (["test", "save-and-test"].includes(operation)) state.history.started(effectiveModel(state.base.model, modelChoice.override, state.base.chatModel));
     state.observationGeneration++; state.run = undefined;
@@ -79,6 +80,8 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
       if (executing && !response.error && !response.stopped && response.view.latest.status === "current") state.sourceInvalidated = false;
       else response = { ...response, view: { ...response.view, latest: { status: "stale", badge: "stale" } } };
     }
+    // A native preview may be interrupted by newer prompt edits while awaiting its reply.
+    submitted = { ...submitted, sections: submitted.sections.filter(key => sectionDrafts.get(key) === submittedPrompt.get(key)) };
     const latest = response?.view?.latest;
     if (operation === "run" && response?.capture?.adHoc) state.lastAdHoc = response.capture;
     if (response?.capture) { state.history.noteCapture(response.capture, response.capture.savedRevision && matches(response.view) ? response.view : undefined); state.lastCapture = response.capture; }
@@ -133,7 +136,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     } else {
       state.blocked = true; state.message = "Outcome not confirmed. Do not resubmit. Reload deliberately to inspect the saved file.";
     }
-    if (previousPrompt.length && response?.saved === true && matches(response.view) && sourceIdentity(state.base) === sourceIdentity(response.view) && !state.blocked && !state.candidate) offerUndo(previousPrompt);
+    if (previousPrompt.length && response?.saved === true && matches(response.view) && sourceIdentity(state.base) === sourceIdentity(response.view) && !state.blocked && !state.candidate && sectionDrafts.size === 0) offerUndo(previousPrompt);
     render();
   }
 

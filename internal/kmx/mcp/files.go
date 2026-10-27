@@ -18,7 +18,8 @@
 // init/cast, operation-owned starter observations and byte-preserving enrichment.
 // Reopened member operations revalidate native casting state, never infer origin
 // or persist kmx mapping. Preview shares App snapshots, not native dispatch.
-// Native partial effects remain explicit; no extra native tool, downloader or canvas actions.
+// Native partial effects remain explicit. The canvas uses these operations and a
+// separate fixed, revision-checked shared brief, never a generic file writer.
 // The original-server settings writer uses agent/config byte revisions and retained
 // physical parents; preview roles never advertise or dispatch this fifth tool.
 // Canonical Edit optionally retains bounded private source preimages. Retention
@@ -131,6 +132,8 @@ type Files struct {
 	// exact is a private rootless capability for one CLI-selected physical file.
 	// OpenFiles and inbound MCP never set it.
 	exact string
+	// Only the native brief adapter sets this fixed internal destination.
+	privatePath string
 }
 
 func OpenFiles(root string, validate func(string, []byte) error) (*Files, error) {
@@ -288,6 +291,9 @@ func agentPath(p string) bool {
 func (f *Files) allowedPath(p string) bool {
 	if f.exact != "" {
 		return p == f.exact
+	}
+	if f.root != nil && f.privatePath != "" && p == f.privatePath {
+		return true
 	}
 	if f.root == nil {
 		return agentPath(p)
