@@ -668,6 +668,18 @@ team runtime or native Squad canvas actions. See [native authoring](docs/agent-f
 
 ## Single-file charter boundary
 
+The additive companion-reader foundation lives in `internal/kmx/agentfile`:
+`ParseTests`, `CompanionPath`, `ComposePair` and checked `LoadPair`. It accepts
+schemaVersion 1 frontmatter and per-case `yaml agent-test` fences with existing
+assertions/mocks semantics and suite-wide limits. Pair identity includes both
+source bindings and revisions; `Agent.Revision` remains agent-only. Separate
+handle-derived file/parent observations fence checked-snapshot comparisons;
+a pure composition is not checked-current or write authority. Keep external
+examples separate from `Pair.Agent.Examples` and prompt instructions. Existing
+`Load`, CLI/App/MCP execution, captures and writes stay single-source until their
+paired result/publication guards ship; do not silently wire in this loader.
+See [companion reader](docs/agent-file.md#companion-reader-foundation-unreleased).
+
 `internal/kmx/agentfile` accepts Copilot YAML-frontmatter/free-form prompts,
 minimal Markdown agents and existing complete charters as described in
 [agent-file.md](docs/agent-file.md), offline. Model/Tools and structured final
