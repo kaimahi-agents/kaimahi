@@ -10,9 +10,9 @@ kmx keeps the prompt and tests in one Markdown file. The Copilot app opens that
 file in a canvas where you can edit and test it. This path needs no Kubernetes
 cluster, Docker or local model download.
 
-**Experimental.** The app walkthrough describes v0.9.0-rc.3. The install below
+**Experimental.** The app walkthrough describes v0.9.0-rc.4. The install below
 pairs that prerelease binary with plugin source pinned to its release commit.
-Updating the plugin alone does not update kmx. Features merged after rc.3 need
+Updating the plugin alone does not update kmx. Features merged after rc.4 need
 a newer tested pair; a feature on main is not necessarily in your installed release.
 
 ## Install
@@ -25,7 +25,7 @@ Copilot plugin, so this path remains explicitly WSL-hosted.
 1. In WSL, install kmx:
 
    ```sh
-   curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.3/install.sh | sudo sh -s -- --version=v0.9.0-rc.3 --bin-dir=/usr/local/bin
+   curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.4/install.sh | sudo sh -s -- --version=v0.9.0-rc.4 --bin-dir=/usr/local/bin
    ```
 
 2. In a Windows terminal, register the marketplace and install the WSL variant:
@@ -118,10 +118,9 @@ avoids depending on the MCP server's working directory. After native `open`, the
 path is literal: keep spaces within a filename, omit surrounding quotes and avoid
 trailing spaces.
 
-**Version limit:** native opening was checked with matching main plugin and
-binary, newer than the pinned rc.3 install above. If native opening fails or shows
-nothing on rc.3, try the explicit chat-open phrase with a full path. The CLI check
-does not certify the Copilot app on main or the released rc.3 pair.
+**Version limit:** native opening was checked in the Copilot app with a main
+build before rc.4 that includes the fix, not with the released rc.4 pair. If native
+opening fails or shows nothing, try the explicit chat-open phrase with a full path.
 
 ### Copilot CLI spellings and fallback
 
@@ -181,7 +180,7 @@ cannot render the canvas, Copilot can still use kmx's tools in text.
 
 ## Choose tools for tests
 
-With a matching rc.3 plugin and binary, **Add tools** opens this app's
+With a matching rc.4 plugin and binary, **Add tools** opens this app's
 MCP servers. Tick tools to add them to the agent. A ticked tool's **Enabled** or
 **Disabled** word flips a draft; Disabled tools stay declared but do not run in tests.
 Enter saves edits, then tests. Esc discards Tools edits without discarding prompt
@@ -192,7 +191,7 @@ physical target and also affect other agents in that folder. These are separate
 saves, not one transaction. If a save is partial or unconfirmed, tests do not run:
 keep the draft and deliberately reload to inspect what was saved. Do not retry
 an uncertain write. This switch uses `set_tool_state`, included in the pinned
-v0.9.0-rc.3 binary above.
+v0.9.0-rc.4 binary above.
 
 ![Tools section showing one selected tool from the GitHub MCP server, with earlier test results marked out of date](images/copilot-tools.png)
 

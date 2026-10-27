@@ -22,7 +22,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
-## v0.9.0 — 2026-10-26
+## v0.9.0 — 2026-10-27
 
 ### Added
 
@@ -286,6 +286,32 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 - File tests accept per-test Live/Recorded tool responses and Calls/Doesn't call checks. Recorded responses replay without a live tool, mismatched arguments stop without fallback, and results identify live, recorded or unavailable sources.
 
+- Experimental `suite build --suite-ref REF@DIGEST` verifies all local packaged
+  source content against the published suite and builds from the fetched content,
+  preserving accepted file modes and confined links. Capability-based AgentKit
+  builds defer model configuration to deployment and declare the consumed serving
+  inputs. Image declarations remain publisher metadata, not deployment evidence
+  or a conformant sandbox binding.
+- `suite push-image ARCHIVE REFERENCE` publishes the inspected OCI image and its
+  complete attestation graph, including ordinary unlabeled build output. Same-digest
+  publication is a no-op; replacing a different tag digest requires `--force`.
+  Image metadata has a 4-MiB budget; suite provenance keeps its smaller limit.
+
+- A narrow native Windows day-zero CLI (`kmx-windows-amd64.exe`): inert
+  version/help/completion, package-free fake Markdown-file Run/Test and offline
+  file Explain. It creates no suite evidence, publication or deployment
+  authority; broader workflows remain on WSL. Windows amd64 receives native
+  executable qualification, while arm64 remains cross-build/vet/checksum only,
+  and stable v0.8.1 has no Windows `.exe`.
+
+- `kmx test FILE -o json` now includes total and per-test timings plus effective
+  judge and content-free tool setting/source/call details. Optional
+  `--github-summary` appends the same safe result to GitHub Actions while
+  preserving Test exit codes; saved JSON reports remain local-preview diagnostics,
+  not package evidence or publication/deployment authority.
+
+- Open and test Copilot `.agent.md` files with YAML frontmatter and a free-form prompt in the canvas and file CLI. Charter headings and inline Examples are optional. Preserve unknown frontmatter and prompt formatting on edits.
+
 ### Changed
 
 - Canonical `kmx test` replaces `kmx eval`, including all six helpers:
@@ -397,6 +423,28 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 - Windows storage internals now use checked private storage for preview journals and retained test-failure diagnostics. Native amd64 tests cover fake preview/replay, interrupted clearing and uncertain publication outcomes.
 
+- Image build and publication integrate with the shared flow-aware artifact loader
+  and AgentSuite v0.7.0 focused packages. Existing native, flow and AgentSessions
+  execution/deployment boundaries remain in force; image lifecycle qualification
+  is tracked in https://github.com/kaimahi-agents/kaimahi/issues/571.
+
+- The agent canvas's editor script is split into smaller modules, so each bundled canvas file has room under the 64 KiB asset limit. No behavior change.
+
+- The agent canvas's controller and provider scripts are split into smaller modules, so every bundled canvas file has at least 20% room under the 64 KiB asset limit. No behavior change.
+
+- Copilot source plugins are listed in the `kmx-plugins` marketplace with full release-commit pins. Choose `kmx-agent-builder` for Windows/WSL or `kmx-agent-builder-path` for macOS/PATH. Binary installation remains separate.
+
+- Copilot agents with omitted tools run tool-free with an explicit notice and an Add tools action in the canvas. Exact model IDs and explicit tool declarations use existing preview execution; unmapped host settings remain visible and preserved.
+- Before adding or changing inline tests in a Copilot file, the canvas and MCP ask for acknowledgment that Copilot includes those tests in its prompt. Existing kmx charters keep working unchanged.
+
+- `kmx run FILE "input"` writes the full sanitized answer to stdout and the selected
+  route/model to stderr. Without input it prints each saved example answer. JSON
+  includes Run answers. Failed tests show the canvas's check wording and the first
+  answer lines. `--no-content` omits answers, failure operands and judge content.
+- Non-fake file models default to Copilot with an existing sign-in, without prompts
+  or provider fallback. `--model` and `--provider` override per call. Without sign-in,
+  the error names `gh auth login` and `--provider ollama --provider-url URL`.
+
 ### Fixed
 
 - A private Orka ownership checkpoint could leave visible `4.json` after a
@@ -474,6 +522,25 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 - Windows drive-absolute agent paths resolve through mounted WSL drives for creation, editing, execution and resource reads. The builder uses the session folder's WSL path.
 
+- Refuse unsupported OCI subject graphs before image registry requests, and resolve
+  recursively nested indexes with global traversal and platform-ambiguity limits.
+- Reject known credential-shaped model-key environment selectors before build
+  effects. Mounted AgentKit builds refuse arm64 because the qualified harness pin
+  is amd64-only.
+- Refuse unreadable declared file/directory modes, including `0000`, before loose
+  build staging is created rather than producing an unusable source tree.
+
+- File tests with tools now run on Copilot models that add reasoning to their answers, such as Claude Haiku 5.5. A reply kmx cannot use now says so, instead of only "could not finish".
+- In the agent canvas, a model that doesn't finish no longer locks the next run as "Result unconfirmed". It is not picked again as the comparison model, and a comparison model that doesn't finish shows its own result.
+- After a run records tool calls, the test shows that run's result and "Recording saved." instead of "Not run yet". Enter on a focused Live/Recorded switch saves and runs the test.
+
+- While a save waits for Copilot approval before a canvas test, the canvas says "Copilot approval is waiting in chat." instead of only "Saving and running".
+- Tests, checks, tool modes and recordings added in the canvas are written as ordinary block YAML, not one-line JSON. Layouts that already use flow style keep it.
+- A test name typed in the canvas keeps its capitals ("CI") after saving and reloading.
+- `/kmx-canvas open PATH` opens the canvas even when a resumed session doesn't report canvas support, and shows usage and problems in the chat. A relative path is read in the session folder, and a missing file says "File not found".
+
+- Save GitHub MCP file-resource recordings without losing their nested result. Recorded arguments and results each allow 32 payload-relative nesting levels; other Examples structure stays at 12, with unchanged shared node and byte limits. Older kmx versions may refuse these deeper recordings; update the reader rather than truncate the data.
+
 ### Breaking
 
 - Older preparation-cache entries refuse without a current packing-policy marker.
@@ -514,6 +581,11 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 - Remove `kmx suite diff` and its package-comparison output. The upstream AgentSuite `oci.DiffPaths` API remains available.
 
+- File-mode exits are 0 for passed checks or a completed ad-hoc Run, 1 for failed
+  checks, and 2 when execution cannot run or decide. Output/summary write failures
+  and command-line parsing errors remain 1; cancellation remains 130. Workspace/live
+  exits are unchanged. `--github-summary` remains content-free.
+
 ### Upgrading
 
 - For unreleased main builds, change maintained `kmx eval` invocations and all
@@ -526,12 +598,22 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 - Before installing the renamed PATH source plugin, uninstall an existing direct PATH installation under its old `kmx-agent-builder` name. This does not update the kmx binary or add a marketplace install.
 
-For v0.9.0-rc.3 on Windows, [install kmx at `/usr/local/bin/kmx` in WSL](plugins/copilot-wsl/README.md#install), then run `copilot plugin install kaimahi-agents/kaimahi:plugins/copilot-wsl` in Windows. On macOS, [install the Darwin binary and plugin](plugins/copilot/README.md#install-on-macos) with the two commands in that guide.
+- Replace an existing direct-source plugin registration before installing its marketplace variant. Install the paired binary, add `kaimahi-agents/kaimahi` as a marketplace, and install the selected `plugin@kmx-plugins`. Later upgrades require both the matching kmx binary and a catalog/plugin refresh; registration changes do not migrate or delete agent files.
+
+- File commands remove `--show-content` (content is now on by default) and rename
+  `--endpoint` to `--provider-url`. Workspace Test, Deploy and Explain retain
+  `--show-content`; MCP startup retains `--endpoint`. File formats are unchanged.
+- Positional Run input executes only that input, unless `--case ID` also selects a
+  saved example. Legacy `--prompt` and `--prompt-file` retain their ad-hoc-plus-examples
+  behavior.
+
+For v0.9.0-rc.4 on Windows, [install kmx at `/usr/local/bin/kmx` in WSL](plugins/copilot-wsl/README.md#install), then register the `kmx-plugins` marketplace and install `kmx-agent-builder@kmx-plugins` in Windows. On macOS, [install the Darwin binary and the `kmx-agent-builder-path` plugin](plugins/copilot/README.md#install-on-macos) with the commands in that guide.
+
+Checked for this release: the marketplace install was walked in the Copilot app on Windows (register the catalog, install the plugin, open an agent canvas). The other changes since rc.3 are covered by CI, not by an app walk.
 
 Known gaps in this preview:
-- On some models, a comparison run can stop without a reason, and the next run may then ask you to reload the canvas.
-- `/kmx-canvas open PATH` appears in the menu but does not open the canvas yet. Ask Copilot to open the agent instead.
-- The Copilot CLI marks direct plugin installs as deprecated, though this install still works. A marketplace install will come later.
+- The `kmx-plugins` catalog still pins the rc.3 plugin sources until it is repinned after this release is published. Until then, pair this binary with a direct install, `copilot plugin install kaimahi-agents/kaimahi:plugins/copilot-wsl`; the Copilot CLI marks direct installs as deprecated, though they still work.
+- The native Windows `kmx.exe` covers version, help, completion and fake-model file Run/Test only. The Copilot app path still runs kmx in WSL.
 - Copilot may keep showing “Working” after a canvas run until the next chat turn. Test rows and the final Test reply show the observed results.
 - AgentSessions deployment is create-only by digest. Registered reports controller-observed admission, not live availability or destination evaluation.
 

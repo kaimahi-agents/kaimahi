@@ -7,10 +7,10 @@ skills, a canvas and MCP configuration, not an engine or a fixed working folder.
 ## Install on macOS
 
 With Copilot installed, run these three commands in a Mac terminal to install
-the paired v0.9.0-rc.3 prerelease:
+the paired v0.9.0-rc.4 prerelease:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.3/install.sh | sudo sh -s -- --version=v0.9.0-rc.3 --bin-dir=/usr/local/bin
+curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.4/install.sh | sudo sh -s -- --version=v0.9.0-rc.4 --bin-dir=/usr/local/bin
 copilot plugin marketplace add kaimahi-agents/kaimahi
 copilot plugin install kmx-agent-builder-path@kmx-plugins
 ```
@@ -20,7 +20,7 @@ The first command selects `kmx-darwin-arm64` on Apple Silicon and
 and installs it at `/usr/local/bin/kmx`. It uses the same binary installer as WSL,
 not a plugin setup script. It does not verify the separate signature bundle.
 The Homebrew tap tracks final releases, not release candidates; use this binary
-for rc.3. Use Homebrew for a final release only when its formula matches the
+for rc.4. Use Homebrew for a final release only when its formula matches the
 version named by the marketplace catalog.
 
 The plugin starts `kmx mcp` from PATH; `/usr/local/bin` must be on Copilot's PATH.
@@ -129,7 +129,7 @@ The existing native bundle builder below still produces the legacy
 to its configured directory; the new unbound server needs neither file nor a
 folder confirmation. Plugin installation is replaced separately.
 
-The v0.9.0-rc.3 engine pinned above exposes exactly lowercase `create`, `edit`,
+The v0.9.0-rc.4 engine pinned above exposes exactly lowercase `create`, `edit`,
 `run`, `test` and `set_tool_state`; internal preview children retain the first four.
 Older rc.2 binaries expose only those first four. Canonical branches require
 `schemaVersion: 1` and an agent `path`; Create
@@ -155,7 +155,7 @@ uses existing runtime credentials and an exact listed
 `Model.Preferred`, with a fixed endpoint. This sends instructions/inputs and
 any judge answers/rubrics to Copilot. Startup does not sign in or access credentials.
 In v0.9.0-rc.2 native bundles, Copilot previews use a direct, unjournaled runner.
-v0.9.0-rc.3 journals Copilot previews, including bound-tool calls, on embedded Sessions
+v0.9.0-rc.3 and later journal Copilot previews, including bound-tool calls, on embedded Sessions
 under `<kmx state>/local-preview/journals`, using the cleartext-content retention
 policy above, with one fresh Session per agent turn and judge sample. The provider
 owns pre-journal credential/content checks and captures one invocation-local
@@ -238,10 +238,9 @@ submitted interactively: slash text passed to `copilot -p` is interpreted by the
 model instead. A headless CLI canvas acknowledgement/browser URL does not prove
 that the Copilot app rendered the view.
 
-Native open was checked with matching main plugin and binary, newer than the
-pinned rc.3 install. On rc.3, try `Open the kmx canvas for FULL_PATH` if the native
-command fails or shows nothing. These CLI checks do not certify the Mac or
-Windows app on main or the released rc.3 pair. Historical release notes retain their original
+Native open was checked in the Windows Copilot app with a main build before rc.4
+that includes the fix, not the released rc.4 pair or the Mac app. If the native
+command fails or shows nothing, try `Open the kmx canvas for FULL_PATH`. Historical release notes retain their original
 command spellings; use this host/version-specific guidance for current commands.
 
 The main view shows the **Prompt** and an ordered list of **Tests**. Open a test

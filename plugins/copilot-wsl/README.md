@@ -2,7 +2,7 @@
 
 The plugin contains skills, canvas assets and MCP configuration. It uses the
 Linux kmx binary in your default WSL distribution; it does not bundle an engine.
-The v0.9.0-rc.3 install below exposes Create/Edit/Run/Test and the revision-checked
+The v0.9.0-rc.4 install below exposes Create/Edit/Run/Test and the revision-checked
 `set_tool_state` folder-settings writer. Older rc.2 binaries expose only the first
 four tools.
 Internal preview children retain only Create/Edit/Run/Test and never gain
@@ -10,10 +10,10 @@ config-write authority.
 
 ## Install
 
-1. In WSL, install the paired v0.9.0-rc.3 prerelease Linux binary at `/usr/local/bin/kmx`:
+1. In WSL, install the paired v0.9.0-rc.4 prerelease Linux binary at `/usr/local/bin/kmx`:
 
    ```sh
-   curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.3/install.sh | sudo sh -s -- --version=v0.9.0-rc.3 --bin-dir=/usr/local/bin
+   curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.4/install.sh | sudo sh -s -- --version=v0.9.0-rc.4 --bin-dir=/usr/local/bin
    ```
 
    The installer downloads the binary and checks its published SHA256 over HTTPS;
@@ -43,9 +43,9 @@ handles files in unrelated repositories.
 To open an existing file without a model turn, use
 `/kmx-canvas open /mnt/c/work/release-notes.agent.md`. Keep path spaces literal,
 without surrounding quotes. `/kmx-canvas` or `/kmx-canvas help` shows usage;
-`/agent-view FULL_PATH` shows read-only text. Native open was checked with matching
-main plugin and binary, not the pinned rc.3 pair. If it fails or shows nothing on
-rc.3, try `Open the kmx canvas for FULL_PATH` through chat.
+`/agent-view FULL_PATH` shows read-only text. Native open was checked in the Copilot
+app with a main build before rc.4 that includes the fix, not the released rc.4 pair.
+If it fails or shows nothing, try `Open the kmx canvas for FULL_PATH` through chat.
 
 In the interactive CLI, use `copilot --experimental` to load those native
 commands. Without the extension, `/agent-view` is unavailable too. Select the
