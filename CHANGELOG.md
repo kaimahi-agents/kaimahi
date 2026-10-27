@@ -609,12 +609,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   saved example. Legacy `--prompt` and `--prompt-file` retain their ad-hoc-plus-examples
   behavior.
 
-For v0.9.0-rc.4 on Windows, [install kmx at `/usr/local/bin/kmx` in WSL](plugins/copilot-wsl/README.md#install). Once the `kmx-plugins` catalog is repinned to rc.4 after publication, register the marketplace and install `kmx-agent-builder@kmx-plugins` in Windows; until then, install the plugin from main with `copilot plugin install kaimahi-agents/kaimahi:plugins/copilot-wsl`. On macOS, [install the Darwin binary and the `kmx-agent-builder-path` plugin](plugins/copilot/README.md#install-on-macos) with the commands in that guide.
+For v0.9.0-rc.4 on Windows, [install kmx at `/usr/local/bin/kmx` in WSL](plugins/copilot-wsl/README.md#install), then register the `kmx-plugins` marketplace and install `kmx-agent-builder@kmx-plugins` in Windows. On macOS, [install the Darwin binary and the `kmx-agent-builder-path` plugin](plugins/copilot/README.md#install-on-macos) with the commands in that guide.
 
 Checked for this release: the marketplace install was walked in the Copilot app on Windows (register the catalog, install the plugin, open an agent canvas). The other changes since rc.3 are covered by CI, not by an app walk.
 
 Known gaps in this preview:
-- The `kmx-plugins` catalog still pins the rc.3 plugin sources until it is repinned after this release is published; the direct install above follows main. The Copilot CLI marks direct installs as deprecated, though they still work.
+- The Copilot CLI marks direct plugin installs (`copilot plugin install kaimahi-agents/kaimahi:plugins/copilot-wsl`) as deprecated; they follow main and still work, but the marketplace install is the supported pair.
 - The native Windows `kmx.exe` covers version, help, completion and fake-model file Run/Test only. The Copilot app path still runs kmx in WSL.
 - Copilot may keep showing “Working” after a canvas run until the next chat turn. Test rows and the final Test reply show the observed results.
 - AgentSessions deployment is create-only by digest. Registered reports controller-observed admission, not live availability or destination evaluation.

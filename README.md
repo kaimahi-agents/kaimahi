@@ -81,8 +81,6 @@ copilot plugin marketplace add kaimahi-agents/kaimahi
 copilot plugin install kmx-agent-builder@kmx-plugins
 ```
 
-Until the `kmx-plugins` catalog is repinned to rc.4 after publication, the marketplace entry installs the rc.3 plugin. For the rc.4 pair meanwhile, install the plugin from main instead: `copilot plugin install kaimahi-agents/kaimahi:plugins/copilot-wsl`.
-
 Ask Copilot to create an agent through kmx and open its canvas. No folder or model
 is selected at install time. Choose a model in the canvas or use the agent file's
 model; Enter saves edits and tests it. This preview is not deployment evidence.

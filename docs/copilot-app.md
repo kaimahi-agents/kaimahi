@@ -35,8 +35,6 @@ Copilot plugin, so this path remains explicitly WSL-hosted.
    copilot plugin install kmx-agent-builder@kmx-plugins
    ```
 
-   Until the `kmx-plugins` catalog is repinned to rc.4 after publication, the marketplace entry installs the rc.3 plugin. For the rc.4 pair meanwhile, install the plugin from main instead: `copilot plugin install kaimahi-agents/kaimahi:plugins/copilot-wsl`.
-
 The installer checks the binary's published SHA256 over HTTPS, not its separate
 signature bundle. The plugin uses `/usr/local/bin/kmx` in your default WSL
 distribution. You do not select a folder or model during installation.
