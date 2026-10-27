@@ -605,7 +605,8 @@ provider-identity copies of both skills and `extension.mjs`. Regenerate these
 with `python3 plugins/copilot/source_release.py --write` in every PR that changes
 their canonical inputs; CI checks parity without writing. Its source plugin name
 is `kmx-agent-builder-path`; WSL/native bundles keep `kmx-agent-builder`, and the
-MCP server key remains unchanged. Its MCP command is `kmx mcp`.
+MCP server key remains unchanged. Its MCP command is `/usr/local/bin/kmx mcp`,
+matching the installer destination without relying on a Dock-launched app's PATH.
 Keep the WSL MCP command exactly `wsl.exe -e /usr/local/bin/kmx mcp`,
 without a bundled engine, root/model configuration or installation helper.
 Node tests stay outside both installable trees under `plugins/tests/copilot`.

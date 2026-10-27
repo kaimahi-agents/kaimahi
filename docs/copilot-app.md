@@ -44,6 +44,26 @@ Choose only one variant per host profile; their MCP server and skill names are s
 
 On macOS, use the [macOS install instructions](../plugins/copilot/README.md#install-on-macos)
 instead. They install a macOS binary and the plain Copilot plugin, not WSL.
+The source plugin now starts `/usr/local/bin/kmx mcp` directly, matching that
+installer destination rather than depending on the app's PATH. The pinned rc.4
+plugin still uses `kmx` from PATH; that fix needs a newer paired release.
+
+### macOS rc.4: server not available
+
+A Dock-launched Mac app normally has a PATH without `/usr/local/bin`. With rc.4,
+the skills can load while `kmx-agent-builder` fails to start. Restart Copilot and
+start a fresh session after installation first; an existing session may not pick
+up newly installed servers.
+
+Without a new release, use the app's **Settings → MCP Servers → Add Server →
+Add Custom server** to add a **Local** (stdio) server named `kmx-agent-builder`,
+with **Command** `/usr/local/bin/kmx` and **Arguments** `mcp`. Keep only one active
+server with that name; do not remove the plugin's skills or canvas. Start a fresh
+session to pick up the configuration. These controls are shown in Microsoft's
+[Copilot app MCP guide](https://github.com/microsoft/mcp-for-beginners/blob/main/12-tooling/01-copilot-app/README.md).
+This is a temporary local server definition, not a plugin or binary upgrade.
+Remove that manual definition when a paired release supplies the absolute-path
+plugin so it does not collide with the plugin's server.
 
 ### Existing direct installs and upgrades
 

@@ -1,7 +1,6 @@
-"""PATH plugin and offline loop; pinned-host checks opt in without model credentials."""
+"""macOS plugin and offline loop; pinned-host checks opt in without model credentials."""
 import json
 import os
-import shutil
 import subprocess
 import tempfile
 import threading
@@ -17,10 +16,10 @@ SHARED = HERE.with_name("copilot-wsl")
 
 @unittest.skipIf(os.name == "nt", "Windows uses the self-contained copilot-wsl plugin")
 class PlainPluginTests(unittest.TestCase):
-    def test_path_command_and_shared_assets_need_no_setup(self):
+    def test_absolute_command_and_shared_assets_need_no_setup(self):
         config = json.loads((HERE / "mcp.json").read_text())
         self.assertEqual(config["mcpServers"], {"kmx-agent-builder": {
-            "type": "stdio", "command": "kmx", "args": ["mcp"]}})
+            "type": "stdio", "command": "/usr/local/bin/kmx", "args": ["mcp"]}})
         self.assertFalse((HERE / "bin").exists())
         self.assertEqual(json.loads((HERE / "plugin.json").read_text())["name"], "kmx-agent-builder-path")
         derived = {"skills/kmx/SKILL.md", "skills/kmx-agent-builder/SKILL.md",
@@ -62,7 +61,7 @@ class PlainPluginTests(unittest.TestCase):
             host("plugin", "list")
             self.assertFalse(list((home / "installed-plugins").rglob("plugin.json")))
 
-    def test_path_mcp_create_cli_test_edit_and_rerun_offline(self):
+    def test_mcp_create_cli_test_edit_and_rerun_offline(self):
         with tempfile.TemporaryDirectory(prefix="plain kmx ") as temp:
             base = Path(temp).resolve()
             supplied = os.environ.get("KMX_PLAIN_BINARY")
@@ -75,17 +74,17 @@ class PlainPluginTests(unittest.TestCase):
                                env={**os.environ, "CGO_ENABLED": "0", "GOWORK": "off"},
                                check=True, capture_output=True, timeout=120)
             env = {**os.environ, "KMX_HOME": str(base / "state"),
-                   "PATH": str(binary.parent) + os.pathsep + os.environ["PATH"]}
-            resolved = shutil.which("kmx", path=env["PATH"])
-            assert resolved is not None
-            self.assertEqual(Path(resolved).resolve(), binary)
+                   "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}
             # The install job deliberately supplies a published pre-change CLI.
             # Keep its exit contract distinct from a checkout-built file CLI.
             help_text = subprocess.run([str(binary), "run", "--help"], cwd=base, env=env,
                                        capture_output=True, text=True, check=True, timeout=30).stdout
             failed_check_exit = 1 if "--no-content" in help_text else 2
             config = json.loads((HERE / "mcp.json").read_text())["mcpServers"]["kmx-agent-builder"]
-            process = subprocess.Popen([config["command"], *config["args"]], cwd=HERE,
+            # CI supplies the installed /usr/local/bin/kmx. Local runs use the
+            # checkout build without writing to that system installation path.
+            command = config["command"] if binary == Path(config["command"]) else str(binary)
+            process = subprocess.Popen([command, *config["args"]], cwd=HERE,
                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                        stderr=subprocess.PIPE, text=True, env=env)
             timer = threading.Timer(30, process.kill)

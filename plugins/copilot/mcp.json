@@ -3,7 +3,7 @@
   "mcpServers": {
     "kmx-agent-builder": {
       "type": "stdio",
-      "command": "kmx",
+      "command": "/usr/local/bin/kmx",
       "args": ["mcp"]
     }
   }
