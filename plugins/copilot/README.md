@@ -6,11 +6,13 @@ skills, a canvas and MCP configuration, not an engine or a fixed working folder.
 
 ## Install on macOS
 
-With Copilot installed, run these two commands in a Mac terminal:
+With Copilot installed, run these three commands in a Mac terminal to install
+the paired v0.9.0-rc.3 prerelease:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.3/install.sh | sudo sh -s -- --version=v0.9.0-rc.3 --bin-dir=/usr/local/bin
-copilot plugin install kaimahi-agents/kaimahi:plugins/copilot
+copilot plugin marketplace add kaimahi-agents/kaimahi
+copilot plugin install kmx-agent-builder-path@kmx-plugins
 ```
 
 The first command selects `kmx-darwin-arm64` on Apple Silicon and
@@ -18,7 +20,8 @@ The first command selects `kmx-darwin-arm64` on Apple Silicon and
 and installs it at `/usr/local/bin/kmx`. It uses the same binary installer as WSL,
 not a plugin setup script. It does not verify the separate signature bundle.
 The Homebrew tap tracks final releases, not release candidates; use this binary
-for rc.3. Homebrew is the install path for final v0.9.0.
+for rc.3. Use Homebrew for a final release only when its formula matches the
+version named by the marketplace catalog.
 
 The plugin starts `kmx mcp` from PATH; `/usr/local/bin` must be on Copilot's PATH.
 No root, model or binary is configured inside the plugin. The MCP schema has no
@@ -27,8 +30,8 @@ source plugin is named `kmx-agent-builder-path`; WSL and legacy native bundles
 keep `kmx-agent-builder`. Use only one variant per host profile: their MCP server
 and skill names are still shared. An existing direct install under the old PATH
 name must be uninstalled as `kmx-agent-builder` before installing this variant.
-Direct repository installs currently work but Copilot warns that they are
-deprecated; a marketplace install will come later.
+The catalog pins source to the binary release's full commit SHA, not main.
+A plugin update never upgrades kmx. See [direct-install migration and paired upgrades](../../docs/copilot-app.md#existing-direct-installs-and-upgrades); keep native bundle setup separate.
 
 Ask Copilot: `Create a kmx agent called Release notes that writes a short release
 note from a supplied pull request title, and open its canvas.` Give it a full
@@ -58,18 +61,21 @@ The existing Python developer tools and legacy templates below are inert files
 in the source plugin, not additional extensions or installation steps. Node
 tests live separately under `plugins/tests/copilot`.
 
-The `macos-install` CI job installs the published rc.2 darwin binary, checks its
-SHA256 and exercises the public plugin install command. On PRs, it additionally
-installs the PR's local plugin to verify the new bytes before merge; on main it
-checks the public source's installed contents. It verifies cached assets and
-Create → Test pass → prompt-only Edit → Test fail → restore → Test pass with
-`fake`. **CI does not exercise a Copilot model or the Copilot app.** An
-authenticated app walk on a Mac is still needed before claiming that path works.
+The `macos-install` CI job first requires a published tag and binary asset set,
+then installs the catalog's darwin binary and checks its SHA256.
+Private-profile marketplace checks cover both variants, direct-registration
+replacement, refresh/update and installed bytes against the frozen commit.
+The existing direct-source check still verifies the PR's own cache bytes before
+merge (public source on main pushes), not the older marketplace payload. Its
+offline Create → Test pass → prompt-only Edit → Test fail → restore → Test pass
+loop uses the catalog binary with `fake`. **CI does not exercise a Copilot model
+or the Copilot app.** Both Windows/WSL and Dock-launched Mac marketplace canvas
+providers need actual host walks before claiming support.
 
 ## Legacy native bundles
 
 The remaining sections describe the separate root-bound native archive tooling,
-not the two-command repository install above. Native bundles are generated and
+not the three-command marketplace install above. Native bundles are generated and
 signed by the release workflow. The legacy builder uses
 [native-mcp.json](native-mcp.json); the repository plugin uses [mcp.json](mcp.json).
 Canvas actions use existing MCP operations, not a second runner.
@@ -463,8 +469,10 @@ unchanged assertion and structured results; tool-call success alone is not pass.
 Deny shell/direct writes and enable only the kmx server; reading packaged skill
 resources uses the host read tool. Record host version and denied attempts too.
 The qualified CLI warns that local-directory installation is deprecated but
-still works; this does not authorize creating/publishing a marketplace. A future host
-removing that route is a compatibility blocker, not a reason to bypass approval.
+still works. These configured native archives are separate from the source
+plugins in `kmx-plugins`; the catalog does not install a bundled native engine.
+A future host removing direct-directory installation remains a native-bundle
+compatibility blocker, not a reason to bypass approval.
 
 ## Native archive CI qualification
 

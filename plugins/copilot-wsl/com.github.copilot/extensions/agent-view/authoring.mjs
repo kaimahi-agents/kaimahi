@@ -83,8 +83,7 @@ function fence(line) {
 
 // All offsets index the original UTF-16 string, never normalized Markdown.
 // Only canonical unindented H2s outside Go-compatible fences are boundaries.
-function locate(source) {
-  bounded(source);
+function locateCharter(source) {
   const sections = new Map();
   let offset = 0, title = false, current = null, open = null;
   while (offset < source.length) {
@@ -118,31 +117,140 @@ function locate(source) {
     if (marker) open = marker;
     offset = next;
   }
-  require(!open && HEADINGS.every((key) => key === "Model" || key === "Tools" || sections.has(key)), "Incomplete canonical source.");
+  require(!open && HEADINGS.every((key) => key === "Model" || key === "Tools" || key === "Examples" || sections.has(key)), "Incomplete canonical source.");
   for (const key of INSTRUCTIONS) {
-    const section = sections.get(key);
-    const raw = source.slice(section.start, section.end);
-    // Keep separator newlines/blank lines (including their spaces) outside edits.
-    const leading = /^(?:[ \t]*\r?\n)*/.exec(raw)[0].length;
-    let contentEnd = raw.length;
-    while (contentEnd > 0 && " \t\r\n".includes(raw[contentEnd - 1])) contentEnd--;
-    const newline = raw.indexOf("\n", contentEnd);
-    // Scan once rather than retrying a repeated trailing-blank regex at every
-    // line; a bounded document can still contain thousands of blank lines.
-    const end = newline < 0 ? raw.length : newline - (raw[newline - 1] === "\r" ? 1 : 0);
-    section.start += leading;
-    section.end = section.start - leading + end;
-    section.text = source.slice(section.start, section.end).replaceAll("\r\n", "\n");
+    const section = tighten(source, sections.get(key));
     require(section.text.trim(), "Canonical instruction bodies cannot be empty.");
   }
   return { sections, eol: /\r?\n/.exec(source)?.[0] || "\n" };
 }
 
+// Keep separator newlines/blank lines (including their spaces) outside edits.
+function tighten(source, section) {
+  const raw = source.slice(section.start, section.end);
+  const leading = /^(?:[ \t]*\r?\n)*/.exec(raw)[0].length;
+  let contentEnd = raw.length;
+  while (contentEnd > 0 && " \t\r\n".includes(raw[contentEnd - 1])) contentEnd--;
+  const newline = raw.indexOf("\n", contentEnd);
+  // Scan once rather than retrying a repeated trailing-blank regex at every
+  // line; a bounded document can still contain thousands of blank lines.
+  const end = Math.max(leading, newline < 0 ? raw.length : newline - (raw[newline - 1] === "\r" ? 1 : 0));
+  const start = section.start;
+  section.start = start + leading;
+  section.end = start + end;
+  section.text = source.slice(section.start, section.end).replaceAll("\r\n", "\n");
+  return section;
+}
+
 // Bodies are LF-normalized for editing. A no-op save retains the original bytes.
 export function instructionSections(source) {
-  const { sections } = locate(source);
-  return INSTRUCTIONS.map((key) => ({ key, text: sections.get(key).text }));
+  const { sections, free } = locate(source);
+  return (free ? ["Prompt"] : INSTRUCTIONS).map((key) => ({ key, text: sections.get(key).text }));
 }
+
+
+function* eachLine(source, from = 0) {
+  for (let offset = from; offset < source.length;) {
+    const newline = source.indexOf("\n", offset), next = newline < 0 ? source.length : newline + 1;
+    yield { offset, next, line: source.slice(offset, newline < 0 ? next : newline).replace(/\r$/, "") };
+    offset = next;
+  }
+}
+
+// Copilot's header is the first `---` block; everything after it is the prompt.
+function frontmatter(source) {
+  const first = /^---[ \t]*\r?(?:\n|$)/.exec(source);
+  if (!first) return;
+  for (const { offset, next, line } of eachLine(source, first[0].length)) {
+    if (/^---[ \t]*$/.test(line)) return { yamlStart: first[0].length, yamlEnd: offset, end: next };
+  }
+}
+export const hasFrontmatter = (source) => frontmatter(source) !== undefined;
+
+// Only a final yaml fence with an examples root key is structured tests.
+function structuredExamples(source, from) {
+  let state = 0, open; const body = [];
+  for (const { line } of eachLine(source, from)) {
+    const marker = fence(line);
+    if (state === 2) { if (line.trim()) return false; continue; }
+    if (state === 0) {
+      if (!line.trim()) continue;
+      if (marker?.info !== "yaml") return false;
+      [open, state] = [marker, 1]; continue;
+    }
+    if (marker && marker.marker === open.marker && marker.count >= open.count && !marker.info) state = 2;
+    else body.push(line);
+  }
+  return state === 2 && hasRootExamples(body);
+}
+
+// Root `examples` key of the fenced YAML, in block form (plain or quoted) or as
+// a flow mapping such as `{examples: []}`; nested or prose mentions never count.
+function hasRootExamples(rows) {
+  const text = rows.filter((l) => !/^\s*#/.test(l)).join("\n");
+  if (rows.some((l) => /^(?:examples|"examples"|'examples')[ \t]*:/.test(l))) return true;
+  if (!text.trimStart().startsWith("{")) return false;
+  let depth = 0, quote = "", token = "";
+  for (const ch of text) {
+    if (quote) { token += ch; if (ch === quote) quote = ""; continue; }
+    if (ch === "'" || ch === '"') { quote = ch; token += ch; } else if ("[{".includes(ch)) { depth++; token = ""; }
+    else if ("]}".includes(ch)) { depth--; token = ""; } else if (ch === "," ) token = "";
+    else if (ch === ":" && depth === 1) { if (/^(?:examples|"examples"|'examples')$/.test(token.trim())) return true; token = ""; }
+    else token += ch;
+  }
+  return false;
+}
+
+// A file without the complete charter structure is one free-form prompt. Its
+// own headings, comments and fences are prose; only a final Examples block and
+// (without frontmatter) Model/Tools controls are carved out.
+function locateFree(source, header) {
+  const sections = new Map(), eol = /\r?\n/.exec(source)?.[0] || "\n";
+  let from = header?.end ?? 0;
+  if (!header) {
+    const title = eachLine(source).find((l) => l.line.trim());
+    if (title && title.line.startsWith("# ") && title.line.slice(2).trim()) from = title.next;
+  }
+  const headings = [];
+  let open = null;
+  for (const entry of eachLine(source, from)) {
+    const marker = fence(entry.line);
+    if (open) {
+      if (marker && marker.marker === open.marker && marker.count >= open.count && !marker.info) open = null;
+    } else if (marker) open = marker;
+    else if (/^#{1,2} /.test(entry.line)) headings.push({ key: entry.line.startsWith("## ") ? entry.line.slice(3) : null, ...entry });
+  }
+  const last = headings.findLast((h) => h.key === "Examples");
+  let limit = source.length;
+  if (last && structuredExamples(source, last.next)) {
+    sections.set("Examples", { key: "Examples", heading: last.offset, start: last.next, end: source.length });
+    headings.length = headings.indexOf(last); limit = last.offset;
+  }
+  // Without frontmatter, Model and Tools sections may sit anywhere; each runs to
+  // the next heading. The prompt is the prose around them.
+  const controls = [];
+  if (!header) for (const key of ["Model", "Tools"]) {
+    const i = headings.findIndex((h) => h.key === key);
+    if (i < 0) continue;
+    const control = { key, heading: headings[i].offset, start: headings[i].next, end: headings[i + 1]?.offset ?? limit };
+    sections.set(key, control); controls.push(control);
+  }
+  const gaps = []; let at = from;
+  for (const c of controls.sort((a, b) => a.heading - b.heading)) { gaps.push({ key: "Prompt", start: at, end: c.heading }); at = c.end; }
+  gaps.push({ key: "Prompt", start: at, end: limit });
+  const spans = gaps.map((g) => tighten(source, g)), live = spans.filter((s) => s.text.trim());
+  // The projection joins the prose spans; an edit lands in the first and drops the rest.
+  const prompt = { ...(live[0] ?? spans[0]), text: live.map((s) => s.text).join("\n\n"), spans: live.length ? live : [spans[0]] };
+  return { sections: new Map([["Prompt", prompt], ...sections]), eol, free: true, header };
+}
+
+function locate(source) {
+  bounded(source);
+  const header = frontmatter(source);
+  if (!header) try { return locateCharter(source); } catch { /* Not a complete charter: free-form prompt. */ }
+  return locateFree(source, header);
+}
+export const hasExamples = (source) => locate(source).sections.has("Examples");
 
 function objectFields(value, allowed) {
   require(value !== null && typeof value === "object" && !Array.isArray(value), "Expected an object.");
@@ -150,17 +258,22 @@ function objectFields(value, allowed) {
 }
 
 export function replaceInstructions(source, changes) {
-  const { sections, eol } = locate(source);
+  const { sections, eol, free } = locate(source);
   require(Array.isArray(changes), "Instruction changes must be an array.");
   const seen = new Set(), patches = [];
   for (const change of changes) {
     objectFields(change, ["key", "text"]);
-    require(INSTRUCTIONS.includes(change.key) && !seen.has(change.key), "Unknown or duplicate instruction key.");
+    require((free ? change.key === "Prompt" : INSTRUCTIONS.includes(change.key)) && !seen.has(change.key), "Unknown or duplicate instruction key.");
     require(typeof change.text === "string" && change.text.trim(), "Instruction text cannot be empty.");
     seen.add(change.key);
     const text = change.text.replaceAll("\r\n", "\n");
     const section = sections.get(change.key);
-    if (text !== section.text) patches.push({ ...section, text: text.replaceAll("\n", eol) });
+    if (text === section.text) continue;
+    const [first, ...rest] = section.spans ?? [section];
+    // Into a prompt with nothing after it yet, keep a blank line before what follows.
+    const gap = first.start === first.end && source.length > first.end ? eol + eol : "";
+    patches.push({ start: first.start, end: first.end, text: text.replaceAll("\n", eol) + gap });
+    for (const span of rest) patches.push({ start: span.start, end: span.end + (source.startsWith("\r\n", span.end) ? 2 : source[span.end] === "\n" ? 1 : 0), text: "" });
   }
   // Work backwards so each patch still uses offsets from the original source.
   patches.sort((a, b) => b.start - a.start);
@@ -168,17 +281,93 @@ export function replaceInstructions(source, changes) {
   return bounded(source);
 }
 
-export function replaceTools(source, names) {
-  const { sections, eol } = locate(source), section = sections.get("Tools");
-  require(Array.isArray(names) && names.length <= 32 && new Set(names).size === names.length && names.every(name => typeof name === "string" && /^[A-Za-z_][A-Za-z0-9_-]{0,63}$/.test(name)), "Provide at most 32 unique tool names.");
+const TOOL_NAME = /^[A-Za-z_][A-Za-z0-9_-]{0,63}$/;
+
+// Blank-line separation before a section appended at the end of the source.
+const separator = (source, eol) => !source ? "" : (source.match(/(?:\r?\n)*$/)[0].match(/\n/g)?.length ?? 0) >= 2 ? "" : source.endsWith("\n") ? eol : eol + eol;
+
+const TOOLS_KEY = /^(?:tools|"tools"|'tools')[ \t]*:/;
+// The value of a double-quoted YAML scalar body, or undefined when it uses an escape
+// that is not also valid JSON (YAML-only escapes are not decoded here).
+function decodeDouble(body) {
+  if (/\\/.test(body.replace(/\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4})/g, ""))) return undefined;
+  try { return JSON.parse(`"${body}"`); } catch { return undefined; }
+}
+
+// Only the top-level `tools` property changes. Items this kmx did not map
+// (aliases, wildcards, namespaced sets) are kept exactly as written, as is every
+// other header line; anything beyond plain lists is refused rather than guessed.
+function replaceHeaderTools(source, header, names, mapped, eol) {
+  const rows = [...eachLine(source, header.yamlStart)].filter((l) => l.offset < header.yamlEnd);
+  const unsupported = () => { throw new Error("Unsupported Tools formatting."); };
+  // An escaped spelling of the key ("to\u006fls") is the tools property to a YAML reader: refuse, never guess.
+  for (const l of rows) {
+    const escaped = /^"((?:[^"\\]|\\.)*\\(?:[^"\\]|\\.)*)"[ \t]*:/.exec(l.line)?.[1];
+    if (escaped !== undefined && (decodeDouble(escaped) ?? "tools") === "tools") unsupported();
+  }
+  const at = rows.findIndex((l) => TOOLS_KEY.test(l.line));
+  const text = (name) => /^(?:true|false|null|yes|no|on|off|y|n)$/i.test(name) ? `'${name}'` : name;
+  if (at < 0) {
+    // New properties belong inside the YAML document, before a trailing `...` marker.
+    const end = rows.find((l) => /^\.\.\.(?:[ \t]+#.*)?[ \t]*$/.test(l.line)), insert = end?.offset ?? header.yamlEnd;
+    return names.length ? source.slice(0, insert) + `tools: [${names.map(text).join(", ")}]` + eol + source.slice(insert) : source;
+  }
+  let last = at;
+  while (rows[last + 1] && /^(?:[ \t]+\S|-(?:[ \t]|$))/.test(rows[last + 1].line)) last++;
+  // Items cut off from the property by a blank or comment line are not guessed at.
+  const after = rows.slice(last + 1).find((l) => l.line.trim() && !/^[ \t]*#/.test(l.line));
+  if (after && after !== rows[last + 1] && /^(?:[ \t]+\S|-(?:[ \t]|$))/.test(after.line)) unsupported();
+  const span = rows.slice(at, last + 1), key = /^(?:tools|"tools"|'tools')/.exec(span[0].line)[0], head = span[0].line.replace(TOOLS_KEY, "").replace(/^[ \t]+/, "");
+  if (span.some((l) => l.line.includes("#"))) unsupported();
+  let items;
+  if (head) {
+    const flow = [head, ...span.slice(1).map((l) => l.line.trim())].join(" ").trim();
+    if (!/^\[.*\]$/.test(flow)) unsupported();
+    items = []; let quote = "", item = "";
+    const chars = [...flow.slice(1, -1) + ","];
+    for (let i = 0; i < chars.length; i++) {
+      const ch = chars[i];
+      // A backslash escapes the next character inside double quotes.
+      if (quote === '"' && ch === "\\" && i + 1 < chars.length) { item += ch + chars[++i]; continue; }
+      if (quote) { item += ch; if (ch === quote) quote = ""; } else if (ch === "'" || ch === '"') { quote = ch; item += ch; }
+      else if (ch === ",") { if (item.trim()) items.push(item.trim()); item = ""; } else item += ch;
+    }
+    if (quote) unsupported();
+  } else {
+    items = span.slice(1).map((l) => /^[ \t]*-[ \t]+(\S.*?)[ \t]*$/.exec(l.line)?.[1] ?? unsupported());
+    if (!items.length) unsupported();
+  }
+  if (items.some((i) => /^[*&!\[{|>]/.test(i))) unsupported();
+  // Compare by the value a YAML reader sees; an escape this cannot decode safely refuses the edit.
+  const value = (raw) => {
+    const quoted = /^(["'])(.*)\1$/.exec(raw);
+    if (!quoted) return raw;
+    return quoted[1] === "'" ? quoted[2].replaceAll("''", "'") : decodeDouble(quoted[2]) ?? unsupported();
+  };
+  const known = new Set(mapped ?? items.map(value));
+  const keep = items.filter((raw) => !known.has(value(raw)) || names.includes(value(raw)));
+  const next = [...keep, ...names.filter((n) => !keep.some((raw) => value(raw) === n)).map(text)];
+  if (next.length === items.length && next.every((raw, i) => raw === items[i])) return source;
+  const indent = /^([ \t]*)-/.exec(span[1]?.line ?? "")?.[1] ?? "  ";
+  const body = !next.length || head ? `${key}: ${next.length ? `[${next.join(", ")}]` : "[]"}${eol}` : `${key}:${eol}${next.map((i) => `${indent}- ${i}${eol}`).join("")}`;
+  return source.slice(0, span[0].offset) + body + source.slice(rows[last].next);
+}
+
+// `mapped` is the exact tool set the resource reported; with it, other header
+// items are preserved. Without it every item is treated as a mapped name.
+export function replaceTools(source, names, mapped) {
+  const { sections, eol, header } = locate(source), section = sections.get("Tools");
+  require(Array.isArray(names) && names.length <= 32 && new Set(names).size === names.length && names.every(name => typeof name === "string" && TOOL_NAME.test(name)), "Provide at most 32 unique tool names.");
+  if (header) return bounded(replaceHeaderTools(source, header, names, mapped, eol));
   const current = section ? source.slice(section.start, section.end).split(/\r?\n/).filter(line => line.trim()).map(line => {
     require(/^- [A-Za-z_][A-Za-z0-9_-]{0,63}$/.test(line), "Unsupported Tools formatting.");
     return line.slice(2);
   }) : [];
   if (same(current, names)) return source;
-  const start = section?.heading ?? sections.get("Examples").heading, end = section?.end ?? start;
+  const examples = sections.get("Examples"), start = section?.heading ?? examples?.heading ?? source.length, end = section?.end ?? start;
   const body = names.length ? ["## Tools", ...names.map(name => `- ${name}`), "", ""].join(eol) : "";
-  return bounded(source.slice(0, start) + body + source.slice(end));
+  const gap = start === source.length && !section && body ? separator(source, eol) : "";
+  return bounded(source.slice(0, start) + gap + body + source.slice(end));
 }
 
 function nonblank(value) {
@@ -231,7 +420,7 @@ export function validateExamples(examples, recordings = false) {
 // Instruction-only saves never pass through this serializer. JSON-quoted scalar
 // strings are valid YAML and cannot introduce YAML keys, aliases or fences.
 export function replaceExamples(source, examples) {
-  const { sections, eol } = locate(source);
+  const { sections, eol } = locate(source), existing = sections.get("Examples");
   validateExamples(examples);
   // Zero tests stay an explicit empty sequence, never YAML null.
   const lines = ["## Examples", "```yaml", examples.length ? "examples:" : "examples: []"];
@@ -246,7 +435,8 @@ export function replaceExamples(source, examples) {
     }
   }
   lines.push("```", "");
-  return bounded(source.slice(0, sections.get("Examples").heading) + lines.join(eol));
+  // A free-form file may have no Examples yet; the first test only appends one.
+  return bounded(existing ? source.slice(0, existing.heading) + lines.join(eol) : source + separator(source, eol) + lines.join(eol));
 }
 
 export function uniqueIndex(items, key) {
@@ -311,8 +501,8 @@ export const readSnapshot = (view) => {
   try {
     if (view.authoring?.editable === true && typeof view.authoring.source === "string" && Array.isArray(view.authoring.examples)) {
       const sections = instructionSections(view.authoring.source);
-      const main = sections.find((s) => /accountable/i.test(s.key));
-      if (main && sections.length === 3) return { sections, main };
+      const main = sections.find((s) => s.key === "Prompt" || /accountable/i.test(s.key));
+      if (main) return { sections, main };
     }
   } catch { /* Old or noncanonical resources remain inspection-only. */ }
 };
@@ -362,3 +552,10 @@ export function compareDrafts(base, candidate, snap, sectionDrafts, testDrafts, 
   if (candidate.title !== base.title) items.push(["Title", base.title, base.title, candidate.title]);
   return items;
 }
+
+// A Recorded tool without calls writes them into the tests on its first live run.
+export const pendingCapture = (examples, settings, ids) => examples.filter(e => ids.includes(e.id)).some(e => e.mocks?.tools.some(t => t.mode === "recorded" && !t.calls?.length && settings.find(s => s.name === t.name)?.state !== "Disabled"));
+export const COPILOT_TESTS_NOTICE = "Tests added here become part of this agent's prompt in Copilot.";
+// Matches the server rule: any change to a frontmatter file's tests asks first;
+// prompt-only and header-only saves never do.
+export const testsNeedAcknowledgement = (source, before, after) => hasFrontmatter(source) && !same(before, after);

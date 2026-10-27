@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -33,6 +34,13 @@ type sourcePatch struct {
 // New values are written as block YAML when they read back exactly like the
 // JSON-only form; flow layouts and anything else keep that JSON form.
 func ApplyExampleEdits(source []byte, edits []ExampleEdit) ([]byte, error) {
+	if len(edits) == 0 || len(edits) > MaxExamples {
+		return nil, ErrRecordingInvalid
+	}
+	source, edits, err := withExamples(source, edits)
+	if err != nil {
+		return nil, err
+	}
 	exact, err := applyExampleEdits(source, edits, false)
 	if err != nil {
 		return nil, err
@@ -43,6 +51,42 @@ func ApplyExampleEdits(source []byte, edits []ExampleEdit) ([]byte, error) {
 	return exact, nil
 }
 
+// withExamples appends a final Examples section holding one placeholder test to a
+// file that has none, and deletes it in the edits, so the section is rewritten as
+// ordinary block YAML containing only the new tests. Existing bytes stay untouched;
+// only additions can seed one, and a prompt that swallows the section refuses.
+func withExamples(source []byte, edits []ExampleEdit) ([]byte, []ExampleEdit, error) {
+	before, err := Parse("edit.agent.md", source)
+	if err != nil {
+		return nil, nil, ErrRecordingInvalid
+	}
+	if _, ok := before.Locations["Examples"]; ok {
+		return source, edits, nil
+	}
+	if slices.ContainsFunc(edits, func(e ExampleEdit) bool { return e.BeforeID != "" || e.Delete }) {
+		return nil, nil, ErrRecordingChanged
+	}
+	eol, text := "\n", string(source)
+	if bytes.Contains(source, []byte("\r\n")) {
+		eol = "\r\n"
+	}
+	if text != "" && !strings.HasSuffix(text, "\n") {
+		text += eol
+	}
+	if text != "" && !strings.HasSuffix(strings.ReplaceAll(text, "\r\n", "\n"), "\n\n") {
+		text += eol
+	}
+	placeholder := "kmx-first-test-placeholder"
+	for i := 0; slices.ContainsFunc(edits, func(e ExampleEdit) bool { return e.ID == placeholder }); i++ {
+		placeholder = "kmx-first-test-placeholder-" + strconv.Itoa(i)
+	}
+	text += strings.Join([]string{"## Examples", "", "```yaml", "examples:", "  - id: " + placeholder, "    input: x", "    assertions: [{id: x, type: contains, value: x}]", "```", ""}, eol)
+	if seeded, err := Parse("edit.agent.md", []byte(text)); err != nil || seeded.Locations["Examples"].Line == 0 {
+		return nil, nil, ErrRecordingInvalid
+	}
+	return []byte(text), append([]ExampleEdit{{BeforeID: placeholder, Delete: true}}, edits...), nil
+}
+
 func sameAuthoring(a, b []byte) bool {
 	x, err1 := Parse("edit.agent.md", a)
 	y, err2 := Parse("edit.agent.md", b)
@@ -51,7 +95,7 @@ func sameAuthoring(a, b []byte) bool {
 
 func applyExampleEdits(source []byte, edits []ExampleEdit, block bool) ([]byte, error) {
 	before, err := Parse("edit.agent.md", source)
-	if err != nil || len(edits) == 0 || len(edits) > 128 {
+	if err != nil || len(edits) == 0 || len(edits) > MaxExamples+1 {
 		return nil, ErrRecordingInvalid
 	}
 	text := string(source)

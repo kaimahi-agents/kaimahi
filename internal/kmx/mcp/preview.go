@@ -41,6 +41,7 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 			schema.Properties["path"].MaxLength = new(256)
 		}
 		schema.Properties["expectedRevision"] = &jsonschema.Schema{Type: "string", Pattern: `^sha256:[a-f0-9]{64}$`}
+		schema.Properties["acknowledgeCopilotTests"] = &jsonschema.Schema{Type: "boolean", Description: copilotTestsNotice + " Ask before capturing tool recordings in a Copilot file; set true only after go-ahead."}
 		if name == "test" {
 			schema.Properties["recordedReplayOnly"] = &jsonschema.Schema{Type: "boolean"}
 			schema.Properties["expectedToolSettings"] = &jsonschema.Schema{Type: "array", MaxItems: new(32), Items: &jsonschema.Schema{Type: "object", Required: []string{"name", "state"}, Properties: map[string]*jsonschema.Schema{"name": {Type: "string"}, "state": {Type: "string", Enum: []any{"Enabled", "Disabled"}}}, AdditionalProperties: &jsonschema.Schema{Not: &jsonschema.Schema{}}}}
@@ -50,15 +51,16 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 		}
 		ops[name] = Operation{Schema: schema, Description: "kmx local preview of this charter; saved examples, optionally one case (always partial). Returns the shared revision, route, state and verdict; never deployment evidence. A successful first live call for a pending Recorded tool saves its result in this file.", Handler: func(ctx context.Context, req *sdk.CallToolRequest) (*sdk.CallToolResult, error) {
 			var input struct {
-				Path                 string                    `json:"path"`
-				Model                string                    `json:"model"`
-				CaseID               string                    `json:"caseId"`
-				Input                *string                   `json:"input"`
-				ShowContent          bool                      `json:"showContent"`
-				ShowFailedContent    bool                      `json:"showFailedContent"`
-				ExpectedRevision     string                    `json:"expectedRevision"`
-				RecordedReplayOnly   bool                      `json:"recordedReplayOnly"`
-				ExpectedToolSettings *[]localtools.ToolSetting `json:"expectedToolSettings"`
+				Path                    string                    `json:"path"`
+				Model                   string                    `json:"model"`
+				CaseID                  string                    `json:"caseId"`
+				Input                   *string                   `json:"input"`
+				ShowContent             bool                      `json:"showContent"`
+				ShowFailedContent       bool                      `json:"showFailedContent"`
+				ExpectedRevision        string                    `json:"expectedRevision"`
+				RecordedReplayOnly      bool                      `json:"recordedReplayOnly"`
+				AcknowledgeCopilotTests bool                      `json:"acknowledgeCopilotTests"`
+				ExpectedToolSettings    *[]localtools.ToolSetting `json:"expectedToolSettings"`
 			}
 			if json.Unmarshal(req.Params.Arguments, &input) != nil {
 				return nil, refusal("invalid_options")
@@ -85,6 +87,19 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 			}
 			if input.ExpectedRevision != "" && (parsed == nil || parsed.Revision != input.ExpectedRevision) {
 				return nil, refusal("stale_revision")
+			}
+			if parsed != nil && parsed.HasFrontmatter && !input.RecordedReplayOnly && !input.AcknowledgeCopilotTests {
+				settings, settingsErr := localtools.ReadSettingsSnapshot(ctx, sourcePath, parsed.Tools)
+				for _, example := range parsed.Examples {
+					if input.CaseID != "" && example.ID != input.CaseID || example.Mocks == nil {
+						continue
+					}
+					for _, tool := range example.Mocks.Tools {
+						if settingsErr == nil && tool.Mode == "recorded" && len(tool.Calls) == 0 && !localtools.IsDisabled(settings.Settings, tool.Name) {
+							return nil, refusal("confirmation_required")
+						}
+					}
+				}
 			}
 			executionRoute := selected
 			if executionRoute == nil && files.root == nil && parsed != nil {

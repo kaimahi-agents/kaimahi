@@ -851,3 +851,175 @@ test('closing the canvas while an Edit approval waits releases its observer with
  assert.equal((await n.act({operation:'progress',runId:'run-1'})).approvalWaiting,undefined);
  held.resolve();await pending.catch(()=>{});assert.equal(edits.length,1,'the Edit is neither cancelled nor retried');
 });
+
+const NOTICE = "Tests added here become part of this agent's prompt in Copilot.";
+const COPILOT = "---\nname: Greeter\ndescription: Greets people\nfuture: {keep: 'as written'}\n---\n\nGreet the caller by name.\n\n## Examples\n```yaml\nexamples: []\n```\n";
+const addedTest = [{id:'one',input:'Ada',assertions:[{id:'a',type:'contains',value:'Hello'}]}];
+const edits = h => h.calls.filter(c => c.name === 'owned-edit');
+const copilot = (over = {}) => {
+ const h = harness({fixture: COPILOT, ...over}), read = h.session.rpc.mcp.resources.read;
+ h.session.rpc.mcp.resources.read = async args => {const r = await read(args), raw = JSON.parse(r.contents[0].text); raw.title = 'Greeter'; raw.frontmatter = "name: Greeter\ndescription: Greets people\nfuture: {keep: 'as written'}\n"; raw.copilotToolsOmitted = true; r.contents[0].text = JSON.stringify(raw); return r};
+ return h;
+};
+
+test('resource parsing keeps the raw header and the omitted-tools flag, and rejects other shapes', async () => {
+ const h = copilot(), view = await readView(h.session, 'greeter.agent.md');
+ assert.equal(view.frontmatter, "name: Greeter\ndescription: Greets people\nfuture: {keep: 'as written'}\n");
+ assert.equal(view.copilotToolsOmitted, true);
+ assert.equal(view.authoring.editable, true);
+ assert.deepEqual(instructionSections(view.authoring.source).map(s => s.key), ['Prompt']);
+ const plain = await readView(harness().session, 'greeter.agent.md');
+ assert.equal(Object.hasOwn(plain, 'frontmatter') || Object.hasOwn(plain, 'copilotToolsOmitted'), false);
+ for (const bad of [{frontmatter: 3}, {copilotToolsOmitted: 'yes'}]) {
+  const g = copilot(), read = g.session.rpc.mcp.resources.read;
+  g.session.rpc.mcp.resources.read = async a => {const r = await read(a), raw = JSON.parse(r.contents[0].text); r.contents[0].text = JSON.stringify({...raw, ...bad}); return r};
+  await assert.rejects(readView(g.session, 'greeter.agent.md'));
+ }
+});
+
+test('new or changed tests in a frontmatter file need an explicit acknowledgement before any Edit', async () => {
+ const h = copilot();
+ for (const operation of ['save-and-test', 'save-examples']) {
+  const r = await h.act({operation, expectedRevision: revision(h.source()), examples: addedTest});
+  assert.equal(r.error, 'confirmation_required'); assert.equal(r.message, NOTICE); assert.equal(r.saved, false);
+ }
+ assert.equal(h.calls.length, 0, 'no MCP call without the user go-ahead'); assert.equal(h.source(), COPILOT);
+ h.o.nextExamples = addedTest;
+ const ok = await h.act({operation: 'save-examples', expectedRevision: revision(h.source()), examples: addedTest, acknowledgeCopilotTests: true});
+ assert.equal(ok.error, undefined); assert.equal(edits(h).length, 1);
+ assert.equal(edits(h)[0].arguments.acknowledgeCopilotTests, true);
+ const content = edits(h)[0].arguments.content;
+ assert.ok(content.startsWith(COPILOT.slice(0, COPILOT.indexOf('## Examples'))), 'header and prompt bytes are untouched');
+ assert.match(content, /## Examples\n```yaml\nexamples:\n  - id: "one"/);
+ // Later prompt-only and header-only saves reuse the existing tests and never ask.
+ const prompt = await h.act({operation: 'save-prompt', expectedRevision: revision(h.source()), sections: [{key: 'Prompt', text: 'Greet warmly.'}]});
+ assert.equal(prompt.error, undefined); assert.equal(Object.hasOwn(edits(h)[1].arguments, 'acknowledgeCopilotTests'), false);
+ const tools = await h.act({operation: 'save-and-test', expectedRevision: revision(h.source()), tools: ['lookup'], examples: addedTest});
+ assert.equal(tools.error, undefined); assert.equal(Object.hasOwn(edits(h)[2].arguments, 'acknowledgeCopilotTests'), false);
+});
+
+test('a header-only tools save splices the property and adds no Tools section', async () => {
+ const h = copilot(); h.o.nextExamples = [];
+ const r = await h.act({operation: 'save-prompt', expectedRevision: revision(h.source()), sections: []});
+ assert.equal(r.error, undefined); assert.equal(edits(h).length, 0, 'no-op saves do not Edit');
+ const tools = await h.act({operation: 'save-and-test', expectedRevision: revision(h.source()), tools: ['lookup']});
+ assert.equal(edits(h)[0].arguments.content, COPILOT.replace("---\n\nGreet", "tools: [lookup]\n---\n\nGreet"));
+ assert.doesNotMatch(edits(h)[0].arguments.content, /## Tools/);
+});
+
+test('the acknowledgement is a boolean only on example-saving actions and never reaches old files', async () => {
+ const h = copilot();
+ for (const bad of [{acknowledgeCopilotTests: 'true'}, {acknowledgeCopilotTests: 1}]) assert.equal((await h.act({operation: 'save-examples', expectedRevision: revision(h.source()), examples: addedTest, ...bad})).error, 'invalid-action');
+ for (const operation of ['save-prompt']) assert.equal((await h.act({operation, expectedRevision: revision(h.source()), acknowledgeCopilotTests: true})).error, 'invalid-action');
+ assert.equal(h.calls.length, 0);
+ const old = harness(); old.o.nextExamples = addedTest;
+ const r = await old.act({operation: 'save-examples', expectedRevision: revision(old.source()), examples: addedTest, acknowledgeCopilotTests: true});
+ assert.equal(r.error, undefined); assert.equal(Object.hasOwn(edits(old)[0].arguments, 'acknowledgeCopilotTests'), false);
+ const plain = harness(); plain.o.nextExamples = addedTest;
+ assert.equal((await plain.act({operation: 'save-examples', expectedRevision: revision(plain.source()), examples: addedTest})).error, undefined, 'old charters stay confirmation-free');
+});
+
+test('a server confirmation refusal maps to the same exact notice', async () => {
+ const h = copilot(), execute = h.session.rpc.tools.execute;
+ h.session.rpc.tools.execute = async req => req.name === 'owned-edit' ? {resultType: 'failure', error: 'confirmation_required: ' + NOTICE} : execute(req);
+ const r = await h.act({operation: 'save-examples', expectedRevision: revision(h.source()), examples: addedTest, acknowledgeCopilotTests: true});
+ assert.equal(r.error, 'confirmation_required'); assert.equal(r.message, NOTICE);
+});
+
+test('Suggest asks the chat to get the user go-ahead only for frontmatter files', async () => {
+ const h = copilot(), sent = [];
+ h.session.send = async prompt => sent.push(prompt);
+ await h.act({operation: 'suggest'});
+ assert.match(sent[0].prompt, /Tests added here become part of this agent's prompt in Copilot\./);
+ assert.match(sent[0].prompt, /go ahead or cancel[^]*acknowledgeCopilotTests/);
+ const old = harness(), oldSent = [];
+ old.session.send = async prompt => oldSent.push(prompt);
+ await old.act({operation: 'suggest'});
+ assert.doesNotMatch(oldSent[0].prompt, /acknowledgeCopilotTests|Copilot/);
+});
+
+// A Recorded tool with no calls is captured by the first live Test, which writes into the tests.
+const pendingMocks = {tools: [{name: 'ping', mode: 'recorded', calls: []}]};
+function capturing({fixture = COPILOT, mocks = pendingMocks} = {}) {
+ const h = harness({fixture}), read = h.session.rpc.mcp.resources.read, execute = h.session.rpc.tools.execute, seen = [];
+ h.session.rpc.mcp.resources.read = async args => {const r = await read(args), raw = JSON.parse(r.contents[0].text); Object.assign(raw, {tools: ['ping'], toolSettings: [{name: 'ping', state: 'Enabled'}], examples: [{...addedTest[0], mocks}]}); raw.authoring.recordingControls = true; r.contents[0].text = JSON.stringify(raw); return r};
+ h.session.rpc.tools.execute = async req => req.name === 'owned-test' ? (seen.push(req.arguments), {resultType: 'failure', error: 'stop here'}) : execute(req);
+ return {h, seen};
+}
+
+test('a first live capture in a frontmatter file needs the go-ahead before any Edit or Test', async () => {
+ const {h, seen} = capturing();
+ for (const input of [{operation: 'test'}, {operation: 'save-and-test', sections: [{key: 'Prompt', text: 'Greet warmly.'}]}]) {
+  const r = await h.act({expectedRevision: revision(h.source()), ...input});
+  assert.equal(r.error, 'confirmation_required'); assert.equal(r.message, NOTICE); assert.equal(r.saved, false);
+ }
+ assert.equal(h.calls.length, 0); assert.equal(seen.length, 0); assert.equal(h.source(), COPILOT);
+});
+
+test('the go-ahead is forwarded to the capturing Test only, once, even after a prompt save in the same action', async () => {
+ const {h, seen} = capturing();
+ await h.act({operation: 'save-and-test', expectedRevision: revision(h.source()), sections: [{key: 'Prompt', text: 'Greet warmly.'}], acknowledgeCopilotTests: true});
+ assert.equal(edits(h).length, 1); assert.equal(Object.hasOwn(edits(h)[0].arguments, 'acknowledgeCopilotTests'), false, 'a prompt-only Edit is not a test write');
+ assert.equal(seen.length, 1); assert.equal(seen[0].acknowledgeCopilotTests, true); assert.equal(seen[0].recordedReplayOnly, false);
+});
+
+test('replays, live tools, disabled tools and old files need no acknowledgement and forward none', async () => {
+ const replay = capturing({mocks: {tools: [{name: 'ping', mode: 'recorded', calls: [{arguments: {}, result: {ok: true}}]}]}});
+ const live = capturing({mocks: {tools: [{name: 'ping', mode: 'live'}]}});
+ const old = capturing({fixture: original});
+ for (const {h, seen} of [replay, live, old]) {
+  await h.act({operation: 'test', expectedRevision: revision(h.source()), acknowledgeCopilotTests: true});
+  assert.equal(seen.length, 1); assert.equal(Object.hasOwn(seen[0], 'acknowledgeCopilotTests'), false);
+ }
+ const {h, seen} = capturing(); const read = h.session.rpc.mcp.resources.read;
+ h.session.rpc.mcp.resources.read = async a => {const r = await read(a), raw = JSON.parse(r.contents[0].text); raw.toolSettings = [{name: 'ping', state: 'Disabled'}]; r.contents[0].text = JSON.stringify(raw); return r};
+ assert.notEqual((await h.act({operation: 'test', expectedRevision: revision(h.source())})).error, 'confirmation_required');
+ const ask = await old.h.act({operation: 'test', expectedRevision: revision(old.h.source())}); assert.notEqual(ask.error, 'confirmation_required');
+});
+
+// Run ("Try another input") shares the first-capture go-ahead with Test.
+function capturingRun({fixture = COPILOT, mocks = pendingMocks, saveAs} = {}) {
+ const h = harness({fixture}), read = h.session.rpc.mcp.resources.read, execute = h.session.rpc.tools.execute, seen = [];
+ h.session.rpc.mcp.resources.read = async args => {const r = await read(args), raw = JSON.parse(r.contents[0].text); Object.assign(raw, {tools: ['ping'], toolSettings: [{name: 'ping', state: 'Enabled'}], examples: [{...addedTest[0], mocks}]}); raw.authoring.recordingControls = true; r.contents[0].text = JSON.stringify(raw); return r};
+ h.session.rpc.tools.execute = async req => {
+  if (req.name !== 'owned-run') return execute(req);
+  seen.push(req.arguments);
+  const executed = revision(h.source()), body = {schemaVersion: 1, kind: 'kmx.agent-file-preview', file: {path: 'greeter.agent.md', revision: executed}, operation: 'run', state: 'complete', verdict: 'unknown', fullPass: false, modelRoute: {provider: 'fake', model: 'fake'}, selection: {scope: 'full', totalCases: 1, caseIds: [addedTest[0].id]},
+   examples: [{id: addedTest[0].id, state: 'complete', verdict: 'pass', assertions: addedTest[0].assertions.map(c => ({id: c.id, type: c.type, verdict: 'pass'})), tools: [{name: 'ping', mode: 'recorded', source: 'live', callCount: 1, ...(saveAs ? {recordingSaved: true} : {})}]}],
+   adHoc: {state: 'complete', verdict: 'unknown', reasonCode: 'completion_ready', reason: 'Answer ready.', answerExcerpt: 'Hello, Ada'}};
+  if (saveAs) {
+   const next = h.source() + saveAs.append;
+   await execute({name: 'owned-edit', arguments: {schemaVersion: 1, path: 'greeter.agent.md', expectedRevision: executed, content: next}});
+   body.savedRevision = saveAs.claim ?? revision(next);
+  } else Object.assign(h.raw().latest, {status: 'current', result: body});
+  return {resultType: 'success', structuredContent: body};
+ };
+ return {h, seen};
+}
+
+test('Run on a first capture in a frontmatter file needs the go-ahead, forwards it once, and stays ad hoc', async () => {
+ const {h, seen} = capturingRun();
+ const refused = await h.act({operation: 'run', expectedRevision: revision(h.source()), input: 'Ada'});
+ assert.equal(refused.error, 'confirmation_required'); assert.equal(refused.message, NOTICE); assert.equal(seen.length, 0);
+ const ok = await h.act({operation: 'run', expectedRevision: revision(h.source()), input: 'Ada', acknowledgeCopilotTests: true});
+ assert.equal(ok.error, undefined); assert.equal(seen.length, 1); assert.equal(seen[0].acknowledgeCopilotTests, true); assert.equal(seen[0].input, 'Ada');
+ const replay = capturingRun({mocks: {tools: [{name: 'ping', mode: 'recorded', calls: [{arguments: {}, result: {ok: true}}]}]}});
+ const free = await replay.h.act({operation: 'run', expectedRevision: revision(replay.h.source()), input: 'Ada', acknowledgeCopilotTests: true});
+ assert.equal(free.error, undefined); assert.equal(Object.hasOwn(replay.seen[0], 'acknowledgeCopilotTests'), false);
+ const old = capturingRun({fixture: original});
+ assert.equal((await old.h.act({operation: 'run', expectedRevision: revision(old.h.source()), input: 'Ada'})).error, undefined);
+});
+
+test('a Run that saved its capture reports the saved file without attributing the result to it', async () => {
+ const {h} = capturingRun({saveAs: {append: '\n'}});
+ const before = revision(h.source());
+ const r = await h.act({operation: 'run', expectedRevision: before, input: 'Ada', acknowledgeCopilotTests: true});
+ assert.equal(r.error, undefined); assert.equal(r.saved, true);
+ assert.equal(r.view.file.revision, revision(h.source())); assert.notEqual(r.view.file.revision, before);
+ assert.notEqual(r.view.latest.status, 'current', 'the new revision has no result of its own');
+ assert.equal(r.capture.executedRevision, before); assert.equal(r.capture.savedRevision, r.view.file.revision);
+ assert.equal(r.capture.adHoc.answerExcerpt, 'Hello, Ada');
+ const wrong = capturingRun({saveAs: {append: '\n', claim: 'sha256:' + 'a'.repeat(64)}});
+ const bad = await wrong.h.act({operation: 'run', expectedRevision: revision(wrong.h.source()), input: 'Ada', acknowledgeCopilotTests: true});
+ assert.equal(bad.error, 'outcome-unknown');
+});

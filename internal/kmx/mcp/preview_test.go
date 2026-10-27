@@ -393,14 +393,14 @@ func TestPreviewToolsRefusals(t *testing.T) {
 	fake := &previewFixture{verdict: runtime.EvaluationPass}
 	a := &app.App{FileRunner: fake}
 	cs := connectFixture(t, Operations(f, a, nil))
-	if err := os.WriteFile(filepath.Join(root, "greeter.agent.md"), []byte("invalid"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "greeter.agent.md"), []byte("\x00invalid"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	invalidOptions, _ := previewCall(t, cs, "run", map[string]any{"schemaVersion": 1, "path": "greeter.agent.md", "input": strings.Repeat("界", 6000)})
 	if invalidOptions.ReasonCode != "invalid_options" || invalidOptions.Diagnostic != nil {
 		t.Fatalf("option failure inherited parser diagnostic: %+v", invalidOptions)
 	}
-	for _, tc := range []struct{ source, code string }{{"invalid", "invalid_file"}, {strings.Replace(source, "**Preferred:** fake", "**Preferred:** local-model", 1), "model_unavailable"}} {
+	for _, tc := range []struct{ source, code string }{{"\x00invalid", "invalid_file"}, {strings.Replace(source, "**Preferred:** fake", "**Preferred:** local-model", 1), "model_unavailable"}} {
 		if err := os.WriteFile(filepath.Join(root, "greeter.agent.md"), []byte(tc.source), 0600); err != nil {
 			t.Fatal(err)
 		}

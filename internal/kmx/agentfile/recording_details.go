@@ -18,6 +18,9 @@ func RecordingDetails(source []byte) []RecordingDetail {
 	if err != nil {
 		return nil
 	}
+	if _, ok := a.Locations["Examples"]; !ok {
+		return nil
+	}
 	lines := strings.Split(string(source), "\n")
 	open := a.Locations["Examples"].Line
 	for strings.TrimSpace(lines[open]) == "" {

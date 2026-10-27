@@ -565,7 +565,12 @@ changes as well as revisions; never attribute another model's result as current.
 for charter content. After successful Create, open its returned file.path in the
 existing canvas. Give one plain notice before the first hosted-model send;
 ordinary agent-file creation stays confirmation-free, without path-character
-restrictions. Native Squad retains its existing proposal/setup-effects approval.
+restrictions. Before writing new or changed inline tests in a frontmatter-based
+Copilot file, canvas/MCP shows "Tests added here become part of this agent's
+prompt in Copilot." with go-ahead/cancel; MCP Create/Edit requires
+`acknowledgeCopilotTests: true` after user agreement. Prompt-only edits retain tests
+without another acknowledgment. MCP Run/Test uses the same acknowledgment before
+saving new pending tool recordings into a Copilot file's tests; replay is read-only. Native Squad retains its existing proposal/setup-effects approval.
 Safe model excerpts retain the existing showContent opt-in.
 Latest preview state is process-local, revision-bound and never inferred on read.
 The separate native Copilot view uses the host SDK and a private loopback asset
@@ -620,21 +625,27 @@ team runtime or native Squad canvas actions. See [native authoring](docs/agent-f
 
 ## Single-file charter boundary
 
-`internal/kmx/agentfile` keeps `Parse`/`Load` canonical as described in
-[agent-file.md](docs/agent-file.md), offline, with optional `## Tools` directly before required final Examples. Both are
-excluded from instructions; absent Tools preserves instruction bytes and all
-revisions bind exact original source. Tools declares at most 32 unique bounded
+`internal/kmx/agentfile` accepts Copilot YAML-frontmatter/free-form prompts,
+minimal Markdown agents and existing complete charters as described in
+[agent-file.md](docs/agent-file.md), offline. Model/Tools and structured final
+Examples are optional; frontmatter and control sections are excluded from preview
+instructions. Existing complete charter instructions stay unchanged and revisions
+bind exact original source. Unknown frontmatter remains visible and byte-preserved.
+Missing Copilot tools runs tool-free without refusal; canvas/CLI shows "Copilot
+gives this agent all tools; these tests run without tools. Add tools to choose
+which." and canvas offers Add tools. Never invent mappings for host tool sets,
+wildcards, model lists or imported MCP configurations. Tools declares at most 32 unique bounded
 names; parsing grants no schema, execution or endpoint/credential authority. Separate explicit `ParseSquad` accepts
 qualified Squad 1.1.0 native starters/enrichment with an approved cast mapping,
 original bytes and source spans. It returns a distinct `SquadCharter`, not a
-runnable `Agent`; ordinary file CLI/v1 MCP remain canonical-only. Explicit native
+runnable `Agent`; ordinary file CLI/v1 MCP never infer the native profile. Explicit native
 v2 preview projects a revalidated charter into the shared runner in memory only.
 Never auto-detect this profile, invent missing native identity fields or treat
 its release selector as cast-origin/registration proof. Reuse runtime assertion semantics;
 refuse tools and unsupported declarations. Parse/Load grant no execution,
 trusted route, source-write, Squad registration or native suite-loader authority.
-`Inspect` shares the scanner for read-only minimal titled-agent display while
-`Parse` remains the execution validator; inspection grants no Run/Test acceptance.
+`Inspect` shares parsing for display; Parse remains the Run/Test validator.
+Minimal and frontmatter files use the same validated preview path, not an importer.
 Keep payload-bearing parsed values out of default logs/results. Explicit offline
 `run-profile export FILE` instead emits content-bearing deterministic JSON on
 stdout, preserving authored models and ordered examples/hashes with every target

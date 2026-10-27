@@ -262,7 +262,7 @@ input[readonly]{color:var(--muted)}
 .test-tools .tool-mode{white-space:nowrap}.test-tools .tool-status{margin:4px 0}.test-tools pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:24rem;overflow:auto}
 
 /* Tools: source rows reuse the test-row control; the server page is a plain tick list. */
-.tools-section{display:flex;flex-direction:column;gap:6px}
+.tools-section,.preserved-settings{display:flex;flex-direction:column;gap:6px}.preserved-header{max-height:12rem;overflow:auto;font-size:12px}
 .tools-head{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:4px 0}
 .tools-add{position:relative}
 .tools-empty .tools-add{align-self:flex-start}

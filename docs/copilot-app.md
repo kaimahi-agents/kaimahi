@@ -10,9 +10,10 @@ kmx keeps the prompt and tests in one Markdown file. The Copilot app opens that
 file in a canvas where you can edit and test it. This path needs no Kubernetes
 cluster, Docker or local model download.
 
-**Experimental.** This page describes v0.9.0-rc.3. The install below pins that
-binary; updating the plugin alone does not update kmx. Features merged after
-rc.3 need a newer binary too.
+**Experimental.** The app walkthrough describes v0.9.0-rc.3. The install below
+pairs that prerelease binary with plugin source pinned to its release commit.
+Updating the plugin alone does not update kmx. Features merged after rc.3 need
+a newer tested pair; a feature on main is not necessarily in your installed release.
 
 ## Install
 
@@ -26,20 +27,58 @@ for this path.
    curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.3/install.sh | sudo sh -s -- --version=v0.9.0-rc.3 --bin-dir=/usr/local/bin
    ```
 
-2. In a Windows terminal, install the plugin:
+2. In a Windows terminal, register the marketplace and install the WSL variant:
 
    ```powershell
-   copilot plugin install kaimahi-agents/kaimahi:plugins/copilot-wsl
+   copilot plugin marketplace add kaimahi-agents/kaimahi
+   copilot plugin install kmx-agent-builder@kmx-plugins
    ```
 
 The installer checks the binary's published SHA256 over HTTPS, not its separate
 signature bundle. The plugin uses `/usr/local/bin/kmx` in your default WSL
 distribution. You do not select a folder or model during installation.
-The CLI warns that direct plugin installs are deprecated; a marketplace install
-is not available yet.
+A fresh install is three commands: binary, marketplace registration, plugin.
+The marketplace's `kmx-plugins` catalog pins each variant to a full release SHA.
+Choose only one variant per host profile; their MCP server and skill names are shared.
 
 On macOS, use the [macOS install instructions](../plugins/copilot/README.md#install-on-macos)
 instead. They install a macOS binary and the plain Copilot plugin, not WSL.
+
+### Existing direct installs and upgrades
+
+Close active Copilot sessions and inspect `copilot plugin list` in the host
+terminal. Existing direct installs do not move to a marketplace automatically.
+For the old WSL or pre-rename PATH source install, remove its old registration:
+
+```sh
+copilot plugin uninstall kmx-agent-builder
+```
+
+The renamed direct PATH source install uses `kmx-agent-builder-path` instead;
+uninstall that exact name if it is the installed source. The separate configured
+native bundle also uses `kmx-agent-builder`: inspect the source before removing
+it, and do not silently substitute a source plugin for its root-bound setup.
+Agent files and kmx state are not deleted by this registration change.
+
+Install the paired binary, then run the marketplace-add and selected-variant
+install commands above (macOS uses `kmx-agent-builder-path@kmx-plugins`). Restart
+Copilot and check `copilot plugin list`, `kmx version` in the binary's environment,
+and that only one kmx plugin/server is active. If manual MCP/skill definitions
+collide, inspect those separately; do not delete configuration or caches blindly.
+
+For later upgrades, install the binary named by the new catalog first, then:
+
+```sh
+copilot plugin marketplace update kmx-plugins
+copilot plugin update kmx-agent-builder
+```
+
+On macOS, use `copilot plugin update kmx-agent-builder-path` instead. Restart and
+check the pair. These operations are not atomic and the host does not enforce
+binary/plugin equality. Enterprise automatic plugin updates can also move the
+plugin independently; the external binary still needs its matching update.
+No direct-install removal date is assumed. Keep old source paths available;
+this changes the recommended install, not the user's agent-file format.
 
 ### Check model access
 

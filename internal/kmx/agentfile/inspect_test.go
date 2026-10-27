@@ -26,9 +26,6 @@ func TestInspectMinimalAndCanonical(t *testing.T) {
 			}
 		}
 	}
-	if _, err := Parse("greeter.agent.md", []byte(minimal)); err == nil {
-		t.Fatal("read-only inspection must not enable minimal execution")
-	}
 	a, err := Inspect(".squad/agents/greeter/charter.md", []byte(canonical))
 	if err != nil {
 		t.Fatal(err)
@@ -37,9 +34,13 @@ func TestInspectMinimalAndCanonical(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(a, b) {
 		t.Fatal("canonical interpretation changed")
 	}
-	for _, source := range []string{strings.Replace(minimal, "## Model", "## Models", 1), strings.Replace(minimal, "**Preferred:** fake", "**Preferred:** auto", 1), strings.Replace(minimal, "Reply with exactly `Hello, ` followed by the input name.", "", 1), strings.Replace(minimal, "## Examples", "", 1)} {
-		if _, err := Inspect("greeter.agent.md", []byte(source)); err == nil {
-			t.Fatal("invalid minimal shape accepted")
+	// Examples and the model are optional; a malformed control is still refused.
+	if _, err := Inspect("greeter.agent.md", []byte(strings.Replace(minimal, "**Preferred:** fake", "**Preferred:** auto", 1))); err == nil {
+		t.Fatal("invalid minimal model accepted")
+	}
+	for _, source := range []string{strings.Replace(minimal, "## Model", "## Models", 1), strings.Split(minimal, "## Examples")[0]} {
+		if _, err := Parse("greeter.agent.md", []byte(source)); err != nil {
+			t.Fatal(err)
 		}
 	}
 }

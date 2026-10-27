@@ -4361,3 +4361,150 @@ test("an Edit approval waiting while saving shows the same chat approval line", 
   assert.doesNotMatch(h.root.textContent, /Copilot approval is waiting in chat\./);
   finish({ view: h.view }); await tick(); await tick();
 });
+
+// --- Copilot-format agent files: one Prompt, preserved header, tools notice, test warning ---
+const FM_HEADER = "name: Greeter\ndescription: Greets people\nfuture: {keep: 'as written'}\n# comment\n";
+const FM_SOURCE = "---\n" + FM_HEADER + "---\n\nGreet the caller by name.\n\n## Tools\nProse heading.\n";
+const TOOLS_NOTICE = "Copilot gives this agent all tools; these tests run without tools. Add tools to choose which.";
+const TESTS_NOTICE = "Tests added here become part of this agent's prompt in Copilot.";
+async function copilotCanvas({ source = FM_SOURCE, extra = { frontmatter: FM_HEADER, copilotToolsOmitted: true }, ...options } = {}) {
+  const view = await viewFor(source, options.examples ?? [], { status: "none" }, "", extra);
+  const doc = fakeDoc(), root = doc.createElement("main"), calls = [];
+  const app = renderView(doc, root, view, async (action) => { calls.push(action); return { error: "refused", message: "Draft kept." }; }, { fetchTools: async () => toolsCatalog() });
+  return { doc, root, calls, app, view };
+}
+const addDraftTest = (h) => {
+  click(btn(h.root, "Add test"));
+  edited(byClass(h.root, "test-title-input")[0], "Greets Ada"); edited(byClass(h.root, "example-input")[0], "Ada"); edited(byClass(h.root, "check-value")[0], "Hello");
+};
+
+test("Copilot file shows one editable Prompt and the whole header as inert, read-only preserved settings", async t => {
+  const h = await copilotCanvas(); t.after(() => h.app.dispose());
+  assert.equal(byClass(h.root, "additional").length, 0, "no empty Additional instructions");
+  assert.equal(byClass(h.root, "instruction-body").length, 1);
+  assert.equal(editorValue(c18Prompt(h.root)), "Greet the caller by name.\n\n## Tools\nProse heading.");
+  const preserved = byClass(h.root, "preserved-settings")[0];
+  assert.ok(preserved, "preserved settings section");
+  assert.match(byClass(preserved, "lbl")[0].textContent, /Preserved settings/);
+  assert.equal(byClass(preserved, "preserved-header")[0].textContent, FM_HEADER);
+  assert.match(preserved.textContent, /read-only/i);
+  assert.match(preserved.textContent, /model and tools shown in this panel/i);
+  assert.equal(all(preserved).filter(e => ["button", "input", "textarea", "a"].includes(e.tag) || e.attrs.contenteditable).length, 0);
+  assert.deepEqual(h.calls, []);
+});
+
+test("omitted tools show the exact notice beside the existing Add tools action, without refusing anything", async t => {
+  const h = await copilotCanvas(); t.after(() => h.app.dispose());
+  const tools = byClass(h.root, "tools-section")[0];
+  assert.ok(tools.textContent.includes(TOOLS_NOTICE));
+  assert.ok(btn(tools, "+ Add tools"), "Add tools stays available");
+  assert.equal(byClass(h.root, "run-alert").length, 0);
+  for (const extra of [{ frontmatter: FM_HEADER }, { frontmatter: FM_HEADER, copilotToolsOmitted: false }, {}]) {
+    const other = await copilotCanvas({ extra }); t.after(() => other.app.dispose());
+    assert.ok(!other.root.textContent.includes(TOOLS_NOTICE), "only an omitted tools property shows it");
+  }
+  const withTools = await copilotCanvas({ source: FM_SOURCE.replace("---\n\nGreet", "tools: [lookup]\n---\n\nGreet"), extra: { frontmatter: FM_HEADER + "tools: [lookup]\n", tools: ["lookup"] } });
+  t.after(() => withTools.app.dispose()); assert.ok(!withTools.root.textContent.includes(TOOLS_NOTICE));
+});
+
+test("saving a new test to a Copilot file asks first; Cancel makes no call and keeps the draft", async t => {
+  const h = await copilotCanvas(); t.after(() => h.app.dispose());
+  addDraftTest(h); byClass(h.root, "save-run")[0].listeners.click[0]({ type: "click" }); await tick();
+  assert.deepEqual(h.calls, [], "nothing is sent before the user decides");
+  const notice = byClass(h.root, "copilot-tests")[0];
+  assert.ok(notice, "inline warning"); assert.equal(byClass(notice, "notice-text")[0].textContent, TESTS_NOTICE);
+  assert.deepEqual(all(notice).filter(e => e.tag === "button").map(e => e.textContent), ["Go ahead", "Cancel"]);
+  assert.equal(h.doc.activeElement, btn(notice, "Cancel"), "the safe choice has focus");
+  click(btn(notice, "Cancel")); await tick();
+  assert.deepEqual(h.calls, []); assert.equal(byClass(h.root, "copilot-tests").length, 0);
+  assert.equal(byClass(h.root, "test-title-input")[0].value, "Greets Ada", "the draft survives");
+});
+
+test("Go ahead saves once with the acknowledgement; prompt-only saves never ask", async t => {
+  const h = await copilotCanvas(); t.after(() => h.app.dispose());
+  addDraftTest(h); click(byClass(h.root, "save-run")[0]);
+  click(btn(byClass(h.root, "copilot-tests")[0], "Go ahead")); await tick();
+  assert.equal(h.calls.length, 1); assert.equal(h.calls[0].operation, "save-and-test");
+  assert.equal(h.calls[0].acknowledgeCopilotTests, true); assert.equal(h.calls[0].examples[0].id, "greets-Ada");
+  assert.equal(byClass(h.root, "copilot-tests").length, 0);
+  const prompt = await copilotCanvas(); t.after(() => prompt.app.dispose());
+  c18Prompt(prompt.root).textContent = "Greet warmly."; c18Prompt(prompt.root).listeners.input[0]();
+  click(byClass(prompt.root, "save-run")[0]); await tick();
+  assert.equal(prompt.calls.length, 1); assert.equal(Object.hasOwn(prompt.calls[0], "acknowledgeCopilotTests"), false);
+  assert.equal(byClass(prompt.root, "copilot-tests").length, 0);
+});
+
+test("unchanged tests in a Copilot file do not ask, and old charters never ask", async t => {
+  const tests = [{ id: "one", input: "Ada", assertions: [{ id: "a", type: "contains", value: "Hello" }] }];
+  const source = FM_SOURCE.replace(/\n## Tools[^]*$/, "\n") + replaceExamples(FM_SOURCE.replace(/\n## Tools[^]*$/, "\n"), tests).slice(FM_SOURCE.replace(/\n## Tools[^]*$/, "\n").length);
+  const h = await copilotCanvas({ source, examples: tests, extra: { frontmatter: FM_HEADER, copilotToolsOmitted: true } }); t.after(() => h.app.dispose());
+  c18Prompt(h.root).textContent = "Greet warmly."; c18Prompt(h.root).listeners.input[0]();
+  click(byClass(h.root, "save-run")[0]); await tick();
+  assert.equal(h.calls.length, 1); assert.equal(Object.hasOwn(h.calls[0], "acknowledgeCopilotTests"), false);
+  const old = await editableCanvas("Reply briefly."); t.after(() => old.app.dispose());
+  addDraftTest(old); click(byClass(old.root, "save-run")[0]); await tick();
+  assert.equal(old.calls.length, 1); assert.equal(Object.hasOwn(old.calls[0], "acknowledgeCopilotTests"), false);
+  assert.equal(byClass(old.root, "copilot-tests").length, 0);
+});
+
+function recordingExtra(source, mocks) {
+  return { frontmatter: FM_HEADER, copilotToolsOmitted: false, tools: ["ping"], toolSettings: [{ name: "ping", state: "Enabled" }], authoring: { source, editable: true, recordingControls: true, recordingDetails: [] } };
+}
+const CAPTURE_TEST = [{ id: "one", input: "Ada", assertions: [{ id: "a", type: "contains", value: "Hello" }], mocks: { tools: [{ name: "ping", mode: "recorded", calls: [] }] } }];
+const CAPTURE_SOURCE = replaceExamples(FM_SOURCE.replace(/\n## Tools[^]*$/, "\n"), []);
+const captureCanvas = (examples = CAPTURE_TEST) => copilotCanvas({ source: CAPTURE_SOURCE, examples, extra: recordingExtra(CAPTURE_SOURCE) });
+
+test("a pending first capture in a Copilot file asks before any Test; Cancel runs nothing", async t => {
+  const h = await captureCanvas(); t.after(() => h.app.dispose());
+  byClass(h.root, "first-run")[0].listeners.click[0]({ type: "click" }); await tick();
+  assert.deepEqual(h.calls, [], "no runner action before the user decides");
+  const notice = byClass(h.root, "copilot-tests")[0];
+  assert.equal(byClass(notice, "notice-text")[0].textContent, TESTS_NOTICE);
+  click(btn(notice, "Cancel")); await tick();
+  assert.deepEqual(h.calls, []); assert.equal(byClass(h.root, "copilot-tests").length, 0);
+});
+
+test("Go ahead forwards one acknowledgement to a capturing Test, including with an edited prompt", async t => {
+  const h = await captureCanvas(); t.after(() => h.app.dispose());
+  click(byClass(h.root, "first-run")[0]); click(btn(byClass(h.root, "copilot-tests")[0], "Go ahead")); await tick();
+  assert.equal(h.calls.length, 1); assert.equal(h.calls[0].operation, "test"); assert.equal(h.calls[0].acknowledgeCopilotTests, true);
+  const edit = await captureCanvas(); t.after(() => edit.app.dispose());
+  c18Prompt(edit.root).textContent = "Greet warmly."; c18Prompt(edit.root).listeners.input[0]();
+  click(byClass(edit.root, "save-run")[0]); assert.deepEqual(edit.calls, []);
+  click(btn(byClass(edit.root, "copilot-tests")[0], "Go ahead")); await tick();
+  assert.equal(edit.calls.length, 1, "one ask covers the save and the capture"); assert.equal(edit.calls[0].operation, "save-and-test"); assert.equal(edit.calls[0].acknowledgeCopilotTests, true);
+});
+
+test("replayed or live tests in a Copilot file run without asking", async t => {
+  for (const mocks of [{ tools: [{ name: "ping", mode: "live" }] }, { tools: [{ name: "ping", mode: "recorded", calls: [{ arguments: {}, result: { ok: true } }] }] }]) {
+    const h = await captureCanvas([{ ...CAPTURE_TEST[0], mocks }]); t.after(() => h.app.dispose());
+    click(byClass(h.root, "first-run")[0]); await tick();
+    assert.equal(byClass(h.root, "copilot-tests").length, 0); assert.equal(h.calls.length, 1); assert.equal(Object.hasOwn(h.calls[0], "acknowledgeCopilotTests"), false);
+  }
+});
+
+test('a captured ad-hoc answer is fenced by its runtime model and tool settings', async () => {
+  const {createRunViews} = await import('../../copilot-wsl/com.github.copilot/extensions/agent-view/run-views.mjs');
+  for (const [model, setting, visible] of [['fake', 'Enabled', true], ['other', 'Enabled', false], ['fake', 'Disabled', false]]) {
+    const doc = fakeDoc(), info = doc.createElement('section');
+    const state = {base: {file: {revision: REV}, model: 'fake', tools: ['ping'], toolSettings: [{name: 'ping', state: setting}], latest: {status: 'stale'}}, lastAdHoc: {model: 'fake', savedRevision: REV, toolSettings: [{name: 'ping', state: 'Enabled'}], adHoc: {state: 'complete', verdict: 'unknown', answerExcerpt: 'Captured answer'}}};
+    const views = createRunViews(state, {doc, hasDrafts: () => false, modelChoice: {override: model}});
+    views.sourceActions(() => assert.fail('no editable snapshot'), info, []);
+    assert.equal(info.textContent.includes('Last ad-hoc run'), visible, `${model}/${setting}`);
+  }
+});
+
+test("Try another input on a pending capture asks inline; Cancel makes no call, Go ahead forwards one acknowledgement", async t => {
+  const h = await captureCanvas(); t.after(() => h.app.dispose());
+  click(btn(h.root, "Run")); await tick();
+  assert.deepEqual(h.calls, [], "nothing is sent before the user decides");
+  const notice = byClass(h.root, "copilot-tests")[0];
+  assert.equal(byClass(notice, "notice-text")[0].textContent, TESTS_NOTICE);
+  click(btn(notice, "Cancel")); await tick();
+  assert.deepEqual(h.calls, []); assert.equal(byClass(h.root, "copilot-tests").length, 0);
+  click(btn(h.root, "Run")); click(btn(byClass(h.root, "copilot-tests")[0], "Go ahead")); await tick();
+  assert.equal(h.calls.length, 1); assert.equal(h.calls[0].operation, "run"); assert.equal(h.calls[0].acknowledgeCopilotTests, true);
+  const plain = await copilotCanvas(); t.after(() => plain.app.dispose());
+  click(btn(plain.root, "Run")); await tick();
+  assert.equal(plain.calls.length, 1); assert.equal(Object.hasOwn(plain.calls[0], "acknowledgeCopilotTests"), false); assert.equal(byClass(plain.root, "copilot-tests").length, 0);
+});

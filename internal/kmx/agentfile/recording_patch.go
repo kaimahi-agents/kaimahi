@@ -29,6 +29,9 @@ func applyRecordings(source []byte, recordings []Recording, block bool) ([]byte,
 	if err != nil {
 		return nil, ErrRecordingChanged
 	}
+	if _, ok := before.Locations["Examples"]; !ok {
+		return nil, ErrRecordingChanged // no tests, so no pending fixture to fill
+	}
 	if len(recordings) == 0 {
 		return nil, ErrRecordingInvalid
 	}

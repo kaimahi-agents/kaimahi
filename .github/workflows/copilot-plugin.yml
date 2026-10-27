@@ -3,6 +3,7 @@ name: copilot-plugin
 on:
   pull_request:
     paths:
+      - '.github/plugin/**'
       - 'plugins/copilot/**'
       - 'plugins/copilot-wsl/**'
       - 'plugins/tests/copilot/**'
@@ -15,6 +16,7 @@ on:
   push:
     branches: [main]
     paths:
+      - '.github/plugin/**'
       - 'plugins/copilot/**'
       - 'plugins/copilot-wsl/**'
       - 'plugins/tests/copilot/**'
@@ -40,6 +42,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -66,39 +69,36 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      # Deliberately qualify the published rc.2, not a locally built engine.
-      - name: Install the release darwin binary and check its checksum
+      # Pair both source-install checks with the binary named by the catalog.
+      # Catalog C follows publication of S; this must not enter pre-publish contracts.
+      - name: Check published catalog pair and install the darwin binary
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.2/install.sh | sudo sh -s -- --version=v0.9.0-rc.2 --bin-dir=/usr/local/bin
+          python3 plugins/copilot/marketplace.py --release
+          version=$(python3 -c 'import json; print("v" + json.load(open(".github/plugin/marketplace.json"))["plugins"][0]["version"])')
+          curl -fsSL "https://raw.githubusercontent.com/kaimahi-agents/kaimahi/$version/install.sh" | sudo sh -s -- --version="$version" --bin-dir=/usr/local/bin
           kmx version
       - name: Install pinned Copilot CLI
         run: npm install --prefix "$RUNNER_TEMP/copilot" --ignore-scripts --no-save @github/copilot@1.0.102
-      - name: Exercise the public install command (transport only before merge)
+      - name: Check frozen marketplace installs, migration, refresh and update
         env:
-          COPILOT_HOME: ${{ runner.temp }}/public-plugin-profile
-          COPILOT_CACHE_HOME: ${{ runner.temp }}/public-plugin-cache
-        run: |
-          set -euo pipefail
-          export PATH="$RUNNER_TEMP/copilot/node_modules/.bin:$PATH"
-          copilot --no-auto-update plugin install kaimahi-agents/kaimahi:plugins/copilot
-          copilot --no-auto-update plugin list
-          # Main may still have the old identity while a PR tests its renamed copy.
-          python3 - <<'PY'
-          import json, os, pathlib, subprocess
-          manifests = list((pathlib.Path(os.environ["COPILOT_HOME"]) / "installed-plugins").rglob("plugin.json"))
-          assert len(manifests) == 1, "expected one isolated public-source install"
-          name = json.loads(manifests[0].read_text())["name"]
-          assert name in ("kmx-agent-builder", "kmx-agent-builder-path"), name
-          subprocess.run(["copilot", "--no-auto-update", "plugin", "uninstall", name], check=True)
-          PY
+          KMX_MARKETPLACE_COPILOT: ${{ runner.temp }}/copilot/node_modules/.bin/copilot
+          # Use a remote Git catalog, not a local directory's live-loading semantics.
+          # CLI 1.0.102 accepts branch/tag refs, not raw catalog commit SHAs.
+          # Verify the fetched catalog head separately; entries still pin release S.
+          KMX_MARKETPLACE_SOURCE: ${{ format('{0}#{1}', github.event.pull_request.head.repo.full_name || github.repository, github.head_ref || github.ref_name) }}
+          KMX_MARKETPLACE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 -m unittest discover -s plugins/copilot -p test_marketplace.py -v
       - name: Check cached assets and offline create, test, edit, rerun
         env:
           KMX_PLAIN_COPILOT: ${{ runner.temp }}/copilot/node_modules/.bin/copilot

@@ -16,7 +16,7 @@ import (
 )
 
 func TestMCPPreviewCaptureThenOfflineFixtureAndStaleSave(t *testing.T) {
-	for _, scenario := range []string{"saved", "assertion-fail", "stale", "empty-description", "empty-description-space", "empty-description-uncalled", "empty-description-live"} {
+	for _, scenario := range []string{"saved", "copilot", "assertion-fail", "stale", "empty-description", "empty-description-space", "empty-description-uncalled", "empty-description-live"} {
 		t.Run(scenario, func(t *testing.T) {
 			files, _, source := canonicalFiles(t)
 			source = source[:strings.Index(source, "## Examples")] + "## Tools\n- ping\n\n## Examples\n```yaml\nexamples:\n  - id: capture\n    input: original\n    mocks:\n      tools:\n        - name: ping # keep this comment\n          mode: recorded\n          calls: [] # waiting\n    assertions:\n      - id: called\n        type: toolCalled\n        tool: ping\n```\n"
@@ -34,6 +34,10 @@ func TestMCPPreviewCaptureThenOfflineFixtureAndStaleSave(t *testing.T) {
 			}
 			if scenario == "assertion-fail" {
 				source = strings.Replace(source, "type: toolCalled", "type: toolNotCalled", 1)
+			}
+			const header = "---\ndescription: Record a call\nmodel: fake\ntools: [ping]\nfuture: {keep: 'as written'} # comment\n---\n"
+			if scenario == "copilot" {
+				source = header + "Call the tool `ping`. Reply with exactly `done`.\n\n" + source[strings.Index(source, "## Examples"):]
 			}
 			file, err := files.Create(t.Context(), "capture.agent.md", []byte(source))
 			if err != nil {
@@ -62,7 +66,11 @@ func TestMCPPreviewCaptureThenOfflineFixtureAndStaleSave(t *testing.T) {
 				}, func(...string) error { return nil })
 			}})
 			cs := connectFixture(t, Operations(files, &app.App{FileRunner: runner}, nil))
-			first, response := previewCall(t, cs, "test", map[string]any{"schemaVersion": 1, "path": file.Path})
+			args := map[string]any{"schemaVersion": 1, "path": file.Path}
+			if scenario == "copilot" {
+				args["acknowledgeCopilotTests"] = true
+			}
+			first, response := previewCall(t, cs, "test", args)
 			wantCalls := 1
 			if scenario == "empty-description" || scenario == "empty-description-space" || scenario == "empty-description-uncalled" {
 				wantCalls = 0
@@ -94,6 +102,12 @@ func TestMCPPreviewCaptureThenOfflineFixtureAndStaleSave(t *testing.T) {
 			}
 			if response.IsError || first.SavedRevision != current.Revision || first.SavedRevision == first.File.Revision || !first.Examples[0].Tools[0].RecordingSaved || current.Examples[0].Mocks.Tools[0].Calls[0].Result["value"] != "private-output-canary" {
 				t.Fatalf("save %+v response %+v", first, response)
+			}
+			if scenario == "copilot" {
+				_, saved, err := files.inspect(t.Context(), file.Path)
+				if err != nil || !strings.HasPrefix(string(saved), header) {
+					t.Fatal("capture changed unknown frontmatter", err)
+				}
 			}
 			want := runtime.EvaluationPass
 			if scenario == "assertion-fail" {

@@ -72,12 +72,12 @@ func TestParseRefusals(t *testing.T) {
 	original := sample(t)
 	replace := func(old, value string) string { return strings.Replace(original, old, value, 1) }
 	rows := []struct{ name, source, field string }{
-		{"missing all", "# Legacy\n", "Identity.ID"},
+		{"blank prompt", "\n", "Instructions"},
 		{"missing purpose", replace("- **Purpose:** Return a short greeting for the supplied name.", ""), "Identity.Purpose"},
 		{"blank id", replace("**ID:** greeter", "**ID:** "), "Identity.ID"},
 		{"unsafe id", replace("**ID:** greeter", "**ID:** ../greeter"), "Identity.ID"},
 		{"missing title", replace("# Greeter — Greeting specialist", ""), "Title"},
-		{"frontmatter", "---\nname: greeter\nmodel: fake\n---\n" + original, "Title"},
+		{"unclosed frontmatter", "---\nname: greeter\n" + original, "Frontmatter"},
 		{"missing preferred", replace("- **Preferred:** fake", ""), "Model.Preferred"},
 		{"blank model", replace("**Preferred:** fake", "**Preferred:** "), "Model.Preferred"},
 		{"auto model", replace("**Preferred:** fake", "**Preferred:** auto"), "Model.Preferred"},
@@ -88,7 +88,6 @@ func TestParseRefusals(t *testing.T) {
 		{"duplicate field", replace("**ID:** greeter", "**ID:** greeter\n- **ID:** other"), "Identity"},
 		{"empty responsibility", replace("Reply with exactly `Hello, ` followed by the input name.", ""), "Accountable Responsibilities"},
 		{"unknown section", replace("## Model", "## Tools\nexec: shell\n\n## Model"), "Sections"},
-		{"missing examples", strings.Split(original, "## Examples")[0], "Examples"},
 		{"trailing section", original + "\n## Model\n", "Examples"},
 		{"trailing text", original + "\nignored instructions\n", "Examples"},
 		{"unclosed fence", strings.TrimSuffix(original, "```\n"), "Examples"},
@@ -141,11 +140,13 @@ func TestParseRefusals(t *testing.T) {
 			}
 		})
 	}
-	a, err := Parse("legacy.md", []byte("# Legacy\n"))
+	// A charter that names Identity but gives no ID or Purpose still reports both.
+	bare := strings.Replace(strings.Replace(original, "- **ID:** greeter\n", "", 1), "- **Purpose:** Return a short greeting for the supplied name.\n", "", 1)
+	a, err := Parse("legacy.md", []byte(bare))
 	if a != nil || err == nil {
-		t.Fatal("legacy accepted")
+		t.Fatal("charter without ID and Purpose accepted")
 	}
-	for _, field := range []string{"Identity.ID", "Identity.Purpose", "Examples"} {
+	for _, field := range []string{"Identity.ID", "Identity.Purpose"} {
 		if !strings.Contains(err.Error(), field) {
 			t.Fatalf("missing field not named: %s: %v", field, err)
 		}
@@ -193,11 +194,17 @@ func FuzzParse(f *testing.F) {
 				t.Fatal("invalid success")
 			}
 			lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
-			line := a.Locations["Examples"].Line
-			if line < 1 || line > len(lines) || lines[line-1] != "## Examples" {
+			line, ok := a.Locations["Examples"]
+			if !ok {
+				if len(a.Examples) != 0 || strings.TrimSpace(a.Instructions) == "" {
+					t.Fatal("tests without a location, or a blank prompt")
+				}
+				return
+			}
+			if line.Line < 1 || line.Line > len(lines) || lines[line.Line-1] != "## Examples" {
 				t.Fatal("invalid Examples location")
 			}
-			if a.Instructions != strings.Join(lines[:line-1], "\n")+"\n" {
+			if _, charter := a.Locations["Identity"]; charter && a.Instructions != strings.Join(lines[:line.Line-1], "\n")+"\n" {
 				t.Fatal("instructions differ from the source prefix before Examples")
 			}
 		}

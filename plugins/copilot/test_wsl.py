@@ -59,11 +59,12 @@ class WSLPluginTests(unittest.TestCase):
             self.assertLessEqual(len(source), 65536, name)
             self.assertLessEqual(len(source.replace(b"\n", b"\r\n")), 65536, name)
 
-    def test_install_instructions_are_the_two_plain_steps(self):
+    def test_install_instructions_use_paired_binary_and_marketplace(self):
         self.assertTrue((ROOT / "README.md").is_file(), "WSL install instructions are missing")
         text = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn("/usr/local/bin/kmx", text)
-        self.assertIn("copilot plugin install kaimahi-agents/kaimahi:plugins/copilot-wsl", text)
+        self.assertIn("copilot plugin marketplace add kaimahi-agents/kaimahi", text)
+        self.assertIn("copilot plugin install kmx-agent-builder@kmx-plugins", text)
         self.assertNotIn("model login", text)
         self.assertNotIn("__SELECTED_ROOT__", text)
         self.assertNotIn("try-it.sh", text)

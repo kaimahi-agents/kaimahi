@@ -10,7 +10,7 @@ config-write authority.
 
 ## Install
 
-1. In WSL, install the v0.9.0-rc.3 Linux kmx binary at `/usr/local/bin/kmx`:
+1. In WSL, install the paired v0.9.0-rc.3 prerelease Linux binary at `/usr/local/bin/kmx`:
 
    ```sh
    curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.3/install.sh | sudo sh -s -- --version=v0.9.0-rc.3 --bin-dir=/usr/local/bin
@@ -22,14 +22,16 @@ config-write authority.
 2. In a Windows terminal with Copilot installed:
 
    ```powershell
-   copilot plugin install kaimahi-agents/kaimahi:plugins/copilot-wsl
+   copilot plugin marketplace add kaimahi-agents/kaimahi
+   copilot plugin install kmx-agent-builder@kmx-plugins
    ```
 
 There is no folder or model to configure during installation. The fixed command
-is `wsl.exe -e /usr/local/bin/kmx mcp`. The WSL and native-bundle plugins share the
-name `kmx-agent-builder`; installing one replaces the other. The Copilot CLI warns
-that direct plugin installs are deprecated; this install still works, and a
-marketplace install will come later.
+is `wsl.exe -e /usr/local/bin/kmx mcp`. The catalog pins this plugin's source to
+the matching release commit. It does not install or update `/usr/local/bin/kmx`.
+The WSL and native-bundle plugins share the name `kmx-agent-builder`; PATH uses
+`kmx-agent-builder-path`. Install only one variant per host profile.
+For an existing direct install, follow [migration and paired upgrades](../../docs/copilot-app.md#existing-direct-installs-and-upgrades), rather than leaving both registrations active.
 
 ## Use
 

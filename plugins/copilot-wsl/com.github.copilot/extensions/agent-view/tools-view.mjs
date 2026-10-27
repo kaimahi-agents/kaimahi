@@ -4,6 +4,8 @@
 import { el, icon, plural, saveButton } from "./editor.mjs";
 
 const EMPTY_SENTENCE = "A tool lets the agent read or change things through a server this app has. Tests use the same tools.";
+// Exact wording shared with the CLI and MCP notice.
+export const COPILOT_TOOLS_NOTICE = "Copilot gives this agent all tools; these tests run without tools. Add tools to choose which.";
 const SETTINGS_HELP = "Set up more servers in the app’s MCP settings.";
 const VISIBLE_ROWS = 9;
 
@@ -26,7 +28,7 @@ function ownership(servers, names, settings) {
 }
 const countText = (n, server, disabled = 0) => `${n} of ${plural(server.tools.length, "tool")}${disabled ? ` · ${disabled} disabled for tests` : ""}`;
 
-export function toolsSection(doc, button, { servers, names, settings, editable, loading, loaded = true, error, menuOpen, onToggleMenu, onOpen }) {
+export function toolsSection(doc, button, { servers, names, settings, editable, loading, loaded = true, error, menuOpen, onToggleMenu, onOpen, omitted }) {
   const section = el(doc, "section", "tools-section"), head = el(doc, "div", "tools-head");
   head.append(el(doc, "h2", "lbl", "Tools")); section.append(head);
   const ready = loaded && !loading && !error, owned = ownership(ready ? servers : [], names, settings);
@@ -54,7 +56,7 @@ export function toolsSection(doc, button, { servers, names, settings, editable, 
   if (loading || error) section.append(el(doc, "p", "meta tools-status", loading ? "Loading this app’s tools…" : "Couldn’t read this app’s tools."));
   if (!names.length) {
     const empty = el(doc, "div", "tools-empty"), text = el(doc, "div", "empty-text");
-    text.append(el(doc, "span", "", "No tools yet"), el(doc, "span", "quiet", EMPTY_SENTENCE));
+    text.append(el(doc, "span", "", "No tools yet"), el(doc, "span", "quiet", omitted ? COPILOT_TOOLS_NOTICE : EMPTY_SENTENCE));
     empty.append(text);
     if (editable) empty.append(addControl());
     section.append(empty);

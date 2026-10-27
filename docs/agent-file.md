@@ -1,12 +1,70 @@
-# Single-file agent charter
+# Single-file agent files
 
-`internal/kmx/agentfile` parses a small Markdown charter offline, with an optional host-tool name declaration.
+`internal/kmx/agentfile` parses Copilot custom agents, minimal Markdown prompts and existing kmx charters offline, with optional model, host-tool and test declarations.
 This is a **format and parser**, not an execution command. Existing native suite
 loaders, `create`, `run --agent`, and workspace `test` are unchanged. There is no
 model call, workspace discovery, source write or implicit conversion.
 
+## Copilot custom agents and minimal prompts
+
+Open an existing `.agent.md` with YAML frontmatter and a free-form Markdown prompt.
+No title or charter headings are required. For example:
+
+```markdown
+---
+name: Reviewer
+description: Review changes without editing files
+model: gpt-5.6-terra
+tools: []
+---
+Review the supplied changes for correctness and missing tests.
+Report actionable findings with file references. Do not edit files.
+```
+
+This follows [GitHub's custom-agent format](https://docs.github.com/en/copilot/reference/custom-agents-configuration)
+and [VS Code's custom-agent format](https://code.visualstudio.com/docs/agents/reference/custom-agent-file-reference).
+A plain prompt without frontmatter is also accepted. Existing complete kmx charters
+keep their original instruction projection and source revisions.
+
+Exact model IDs and exact supported tool names use the existing preview path.
+Copilot tool sets, wildcards, namespaced tool references, model preference lists
+and other unmapped settings are shown as preserved frontmatter in the canvas;
+kmx does not execute imported MCP server configuration or invent tool aliases.
+The canvas shows the model and tools actually selected for the preview.
+A frontmatter declaration with more than 32 mapped tool names stays wholly
+unmapped rather than silently activating only its first 32 names; its original
+header remains visible and unchanged.
+Unknown fields, comments and formatting are written back untouched when editing
+the prompt or tests. Runtime model selection is not written into the file.
+
+When a Copilot file omits `tools`, it opens and runs tool-free. The canvas and CLI say:
+
+> Copilot gives this agent all tools; these tests run without tools. Add tools to choose which.
+
+Use **Add tools** in the canvas to choose explicit tool names. `tools: []` is
+already explicitly tool-free and does not show that notice.
+
+A final `## Examples` with a fenced YAML `examples` mapping adds kmx tests.
+It is optional; the original prompt stays unchanged until you edit it. A prose
+Examples heading is still prompt text, not a test declaration.
+
+**Copilot includes everything below frontmatter in its prompt, including inline tests.**
+Before the canvas or MCP adds or changes tests in a Copilot file, it says:
+
+> Tests added here become part of this agent's prompt in Copilot.
+
+Choose **Go ahead** or **Cancel**. Cancel leaves the file unchanged. MCP Create/Edit
+uses `acknowledgeCopilotTests: true` only after the user agrees to that warning;
+MCP Run/Test also requires this acknowledgment before capturing pending tool
+recordings into a Copilot file's tests (replay-only runs do not write);
+without acknowledgment it reports `confirmation_required` and does not write.
+Prompt-only edits retaining identical tests do not ask again. Separate test files
+are not supported here.
+
+## Existing kmx charters
+
 The [complete greeter sample](../internal/kmx/agentfile/testdata/greeter.agent.md)
-is the canonical shape:
+remains supported unchanged:
 
 ````markdown
 # Greeter — Greeting specialist
@@ -44,8 +102,9 @@ examples:
 - Start with one nonblank H1 name (`# Name`). The ` — Role` suffix is optional;
   `# Name`, `# Name —` and `# Name — Role` are accepted display titles, not identity.
   Put all prose and fenced blocks after the first canonical H2 section.
-- Include exactly one of each H2 shown above except Model, which may be omitted,
-  with those exact unindented spellings. Examples must be last; the other sections can be reordered.
+- Charter sections are optional for minimal files. In a complete charter, keep
+  the exact unindented spellings shown above. A structured Examples section must
+  be last; the other charter sections can be reordered.
   An optional `## Tools` section may appear directly before Examples, containing
   1–32 unique names as `- tool_name` bullets and otherwise only blank lines.
   Names are 1–64 ASCII letters, digits, `_` or `-`, starting with a letter or `_`.
@@ -53,10 +112,10 @@ examples:
   function-name contract.
   The host supplies each tool's schema and description. No endpoints,
   schemas, credentials or other names are accepted. Unknown or duplicate H2 sections
-  refuse, including Hooks. No
-  frontmatter, legacy aliases, inferred fields or arbitrary charter importer.
-  Any `<!--` marker outside code fences refuses, even inside inline code, to
-  avoid host-dependent heading/fence scanning.
+  refuse in the complete charter profile. Frontmatter files instead treat their
+  Markdown body as a free-form prompt, not charter metadata. The complete charter
+  scanner refuses `<!--` outside fences to avoid ambiguous heading boundaries;
+  free-form prompts preserve HTML comments.
 - Identity contains only the two shown bullet fields. ID is 1–63 lowercase
   ASCII letters, digits or hyphens, starting with a letter. Purpose is nonblank
   single-line text. When present, Model contains only a nonblank Preferred bullet. Empty lines are
@@ -259,9 +318,9 @@ to 1:1; malformed YAML points to its document start. Authored values and underly
 YAML/OS errors are not echoed; control characters in filenames are quoted and
 known credential-shaped filenames are withheld. Parsed structures themselves
 contain source content and must not be used as default logs or result JSON.
-For example, `# Legacy` refuses with `Identity.ID`, `Identity.Purpose`,
-and the missing responsibility/Examples sections, without
-inferring identity from its folder or rewriting the file.
+For example, a complete charter with missing Identity values still reports
+`Identity.ID` and `Identity.Purpose`; a plain `# Legacy` prompt is accepted
+without inventing charter sections or rewriting the file.
 
 ## Frozen run-profile export (unreleased)
 
@@ -271,10 +330,9 @@ This export does not implement that deployment path or define a host-side API.
 
 `kmx run-profile export FILE` uses `agentfile.ExportRunProfile`, which calls
 `Load`/`Parse` once, without configuration, state, provider selection, credentials
-or execution. It accepts canonical runnable charters only, not `Inspect`'s minimal
-display files or the distinct native Squad profile. Existing tools/settings and
-safe parser refusals apply unchanged. Export still requires an explicit authored
-Model.Preferred; preview defaults and picker overrides are not export provenance.
+or execution. It accepts the same agent-file shapes as Parse, not the distinct native Squad
+profile. Existing tools/settings and safe parser refusals apply unchanged.
+Export still requires an explicit authored model; preview defaults and picker overrides are not export provenance.
 Zero-test authoring charters refuse export
 before any profile bytes are written. Packaging and deployment still require test
 evidence; saving a prompt or passing an ad-hoc Run grants neither. The original
@@ -353,7 +411,8 @@ prompts across hosts.
 
 ## Native Squad profile — internal foundation
 
-`Parse`/`Load`, file Run/Test and v1 MCP remain canonical-only. Explicit
+`Parse`/`Load`, file Run/Test and v1 MCP accept ordinary agent files, not the
+native Squad profile. Explicit
 `ParseSquad(filename, bytes, SquadProfile)` separately accepts the qualified
 **Squad 1.1.0** cast shapes; it does not auto-detect or import arbitrary charters.
 The [captured catalog and fallback fixtures](../internal/kmx/agentfile/testdata/squad-v1.1.0/README.md)

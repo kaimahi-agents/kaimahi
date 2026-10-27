@@ -1,4 +1,4 @@
-import { effectiveModel, validateDraft as validate } from "./authoring.mjs";
+import { effectiveModel, validateDraft as validate, testsNeedAcknowledgement, pendingCapture, hasFrontmatter } from "./authoring.mjs";
 import { isRefused, plainReason, quoted, clone } from "./editor.mjs";
 const CONFLICTS = ["revision_mismatch", "revision-mismatch"];
 const UNKNOWN = ["outcome-unknown", "uncertain-outcome", "uncertain_outcome"];
@@ -42,7 +42,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
   async function act(operation, values = {}, submitted = { sections: [], tests: [] }) {
     if (state.busy || ((state.blocked || invalidEditors.size) && operation !== "reload")) return;
     const previousPrompt = submitted.sections.map(key => ({ key, text: state.snap.sections.find(s => s.key === key).text }));
-    clearUndo();
+    clearUndo(); state.confirm = undefined; state.lastAdHoc = undefined;
     if (["test", "save-and-test"].includes(operation)) state.history.started(effectiveModel(state.base.model, modelChoice.override, state.base.chatModel));
     state.observationGeneration++; state.run = undefined;
     state.busy = true; state.pending = { operation, one: values.caseId !== undefined }; state.message = operation === "run" ? "Running…" : ""; state.runAlert = undefined; refresh();
@@ -72,6 +72,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     if (disposed) return;
     state.busy = false; state.pending = undefined; state.message = "";
     const latest = response?.view?.latest;
+    if (operation === "run" && response?.capture?.adHoc) state.lastAdHoc = response.capture;
     if (response?.capture) { state.history.noteCapture(response.capture, response.capture.savedRevision && matches(response.view) ? response.view : undefined); state.lastCapture = response.capture; }
     for (const result of response?.comparison?.results ?? []) if (matches(result)) state.history.remember(result, true);
     if (hostedAttempt && !response?.settingsIncomplete && (UNKNOWN.includes(response?.error) || CONFLICTS.includes(response?.error) || latest?.status === "current" && latest.result && !isRefused(latest.result))) state.hostedSent = true;
@@ -128,6 +129,27 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     render();
   }
 
+  // New or changed tests in a Copilot file become part of its prompt: ask first,
+  // and only a fresh go-ahead (never a stale one) adds the acknowledgement.
+  // The same go-ahead covers a first live capture, which writes recorded calls into the tests.
+  function acknowledged(values, again, ack, ids) {
+    const source = state.base.authoring.source, saved = rawExamples(), intended = values.examples ?? saved;
+    const settings = drafts.toolNames().map(name => ({ name, state: drafts.toolState(name) }));
+    if (!testsNeedAcknowledgement(source, saved, intended) && !(state.base.authoring.recordingControls && hasFrontmatter(source) && pendingCapture(intended, settings, ids))) return true;
+    if (ack !== true) { state.confirm = { go: again }; render(); return false; }
+    values.acknowledgeCopilotTests = true; return true;
+  }
+  // Try another input: a first live capture writes recorded calls into a Copilot file's tests,
+  // so it takes the same inline go-ahead; any other Run goes straight through.
+  function runInput(input, ack = false) {
+    if (!state.snap || state.busy || state.blocked || state.candidate || invalidEditors.size) return;
+    const saved = rawExamples(), settings = drafts.toolNames().map(name => ({ name, state: drafts.toolState(name) })), values = { input };
+    if (state.base.authoring?.recordingControls && hasFrontmatter(state.base.authoring.source) && pendingCapture(saved, settings, saved.map(e => e.id))) {
+      if (ack !== true) { state.confirm = { go: () => runInput(input, true) }; render(); return; }
+      values.acknowledgeCopilotTests = true;
+    }
+    act("run", values);
+  }
   function submitSettings(values, submitted) {
     if (!state.settingsDraft.size) return;
     values.toolSettings = drafts.toolNames().filter(name => state.settingsDraft.has(name)).map(name => ({ name, state: state.settingsDraft.get(name) }));
@@ -135,7 +157,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     submitted.settings = true;
   }
   // Enter saves all drafts once, then runs the suite.
-  function submitAll() {
+  function submitAll(ack = false) {
     if (!state.snap || state.busy || state.blocked || state.candidate || invalidEditors.size) return;
     const list = entries(), intended = localExamples();
     if ((state.toolsDraft?.length ?? 0) > 32) { state.message = "Keep at most 32 tools for this agent."; refresh(); return; }
@@ -150,10 +172,11 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     if (state.toolsDraft !== undefined) { values.tools = state.toolsDraft; submitted.tools = true; }
     submitSettings(values, submitted);
     if (!hasDrafts() && !intended.length) { state.message = "No tests yet — add or suggest one"; refresh(); return; }
+    if (!acknowledged(values, () => submitAll(true), ack, intended.map(e => e.id))) return;
     act(hasDrafts() ? "save-and-test" : "test", values, submitted);
   }
   // Detail Enter saves the prompt and this test, then runs its caseId.
-  function submitOne(key) {
+  function submitOne(key, ack = false) {
     if (!state.snap || state.busy || state.blocked || state.candidate || invalidEditors.size) return;
     const entry = entries().find((e) => e.key === key);
     if (!entry?.raw || entry.draft?.deleted) return;
@@ -173,8 +196,9 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     if (entry.draft) values.examples = intended;
     if (state.toolsDraft !== undefined) { values.tools = state.toolsDraft; submitted.tools = true; }
     submitSettings(values, submitted);
+    if (!acknowledged(values, () => submitOne(key, true), ack, [entry.raw.id])) return;
     act(state.toolsDraft !== undefined || state.settingsDraft.size || sectionDrafts.size || entry.draft ? "save-and-test" : "test", values, submitted);
   }
 
-  return { act, submitAll, submitOne, testing, clearUndo, stop, dispose() { disposed = true; stopWatching(); } };
+  return { act, runInput, submitAll, submitOne, testing, clearUndo, stop, dispose() { disposed = true; stopWatching(); } };
 }

@@ -39,17 +39,20 @@ func validateSquadMember(m SquadMember) error {
 			}
 		}
 	}
-	// This temporary display-only input reuses common source/model/Examples
-	// validation. It is never the native output or an execution authorization.
-	probe := "# " + m.Role + "\n\n" + m.DisplayRole + "\n\n" + m.TaskInstructions +
+	// A complete validation-only charter retains the native pre-cast rules even
+	// though ordinary minimal prompts accept arbitrary Markdown headings.
+	probe := "# " + m.Role + "\n\n## Identity\n- **ID:** " + m.ID + "\n- **Purpose:** " + m.DisplayRole +
+		"\n\n## Accountable Responsibilities\n" + m.TaskInstructions +
+		"\n\n## Non-Responsibilities\nNone.\n\n## Collaboration and Review Authority\nNone." +
 		"\n\n## Model\n\n- **Preferred:** " + m.Model + "\n\n## Examples\n\n" + m.Examples + "\n"
-	a, err := agentfile.Inspect(m.ID+".agent.md", []byte(probe))
-	if err != nil || a.Model != m.Model {
+	a, err := agentfile.Parse(m.ID+".agent.md", []byte(probe))
+	if err != nil || a.Model != m.Model || a.Locations["Identity.ID"].Line == 0 {
 		return bad()
 	}
 	for field := range a.Locations {
 		switch field {
-		case "Title", "Model", "Model.Preferred", "Examples":
+		case "Title", "Model", "Model.Preferred", "Examples", "Identity", "Identity.ID", "Identity.Purpose",
+			"Accountable Responsibilities", "Non-Responsibilities", "Collaboration and Review Authority":
 		default:
 			return bad()
 		}

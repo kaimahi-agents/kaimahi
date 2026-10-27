@@ -127,7 +127,8 @@ These checks do not exercise interactive desktop rendering, a real Windows/WSL
 app session, hosted inference or cluster runtimes. Dry-run artifacts contain
 `release-assets/` and `release-notes.md` under their common root.
 For Windows Copilot, use the [plain WSL plugin](../plugins/copilot-wsl/README.md):
-install the Linux binary in WSL, then install the plugin from the repository.
+install the paired Linux binary in WSL, register `kmx-plugins`, then install the
+WSL variant from the SHA-pinned catalog.
 On macOS, use the [plain PATH plugin](../plugins/copilot/README.md#install-on-macos)
 with the release's darwin binary. The tap is not updated for prereleases.
 The separate macOS plugin CI checks install and the offline fake-model loop;
@@ -620,6 +621,62 @@ than the first.
      kmx_prefix="$(brew --prefix kaimahi-agents/tap/kmx)" &&
      "$kmx_prefix/bin/kmx" version
    ```
+
+### Publish the paired Copilot catalog
+
+The source release is commit **S**. Publish the binary release and finish its
+qualification before advancing the catalog; the catalog PR merges later at
+commit **C** and points backward to S. Do not try to pin C to itself. An RC
+catalog is a prerelease pair, not a stable release or an automatic tap update.
+
+From fresh main, fetch the actual tag and resolve its commit (including annotated
+tags), substituting the real version including its RC suffix:
+
+```bash
+git fetch origin main
+git fetch origin tag vX.Y.Z
+git rev-parse 'refs/tags/vX.Y.Z^{commit}'
+```
+
+In a normal PR, change both `.github/plugin/marketplace.json` entries together:
+`version` is the tag without `v`, `source.sha` is the full resolved 40-character
+commit, and the variant paths/names stay unchanged. Update the prerequisite
+descriptions and install-version URLs in the front doors to the same pair.
+Then run:
+
+```bash
+python3 plugins/copilot/marketplace.py
+python3 plugins/copilot/marketplace.py --release
+```
+
+The offline check reads each `plugin.json` from S, not main. The release check
+also requires the tag to resolve to S and a published, non-draft GitHub release
+with all four platform binaries and `checksums.txt`. It reads public release
+metadata with `gh api`; it does not verify signatures or execute a binary.
+The existing installer and release signature guidance still apply. Missing tags,
+draft releases, inconsistent pins and source-version mismatches fail the check.
+A preparation PR for the next binary may legitimately have source manifests
+newer than the catalog: leave its old pin in place until the new pair is ready.
+No workflow writes the catalog or pushes to main, and no new secret is required.
+
+Verify actual remote catalog installation from the PR branch in private Copilot
+profiles. CLI 1.0.102 accepts branch/tag catalog refs, not raw commit SHAs.
+CI registers the PR branch (main on pushes) and requires the resolved checkout
+to match that run's expected head commit; a moving ref fails rather than testing
+other catalog bytes. Plugin entries independently retain full release-SHA pins.
+Local-directory catalogs load live and are not persistence evidence. Users
+normally add the repository without a ref so they can receive catalog updates. CI checks each installed variant's bytes against S and exercises direct
+registration replacement, refresh/update and uninstall. It separately retains
+the PR-source install check, so publishing S does not hide later source edits.
+Real Windows/WSL and Dock-launched Mac walks must also check both canvas provider
+identities; CLI cache checks are not desktop support evidence.
+
+Users update the external binary separately from the catalog/plugin. See
+[direct-install migration and paired upgrades](copilot-app.md#existing-direct-installs-and-upgrades).
+For a bad pin, use a reviewed catalog correction to the last known-good pair,
+then explicitly uninstall/reinstall the selected plugin and that paired binary.
+Do not assume `plugin update` downgrades an already installed higher version.
+Do not move a release tag, delete agent state or mutate cached plugin bytes.
 
 To rehearse without spending a version number, run the `release` workflow
 manually (`workflow_dispatch`) from a branch: it builds and checksums exactly

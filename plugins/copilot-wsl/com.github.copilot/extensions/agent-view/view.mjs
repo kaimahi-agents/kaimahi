@@ -1,7 +1,7 @@
 // Agent canvas. Files and previews are accessed only through the
 // same session's existing kmx MCP resource and Edit/Run/Test operations.
 import { randomBytes, timingSafeEqual, createHash } from "node:crypto";
-import { instructionSections, replaceInstructions, replaceExamples, replaceTools, exampleEdits, effectiveModel, agentName, fileLocation } from "./authoring.mjs";
+import { instructionSections, replaceInstructions, replaceExamples, replaceTools, exampleEdits, effectiveModel, agentName, fileLocation, hasFrontmatter, testsNeedAcknowledgement, pendingCapture, COPILOT_TESTS_NOTICE } from "./authoring.mjs";
 import { readFile } from "node:fs/promises";
 import http from "node:http";
 import { ensureHostRuntime, previewServer, beginPreview, closeHostRuntime, observePreview } from "./host-relay.mjs";
@@ -16,10 +16,10 @@ export function createActionHandler({ session, path }) {
   let busy = false, uncertain = false, current, disposed = false, captureAttempt, saving;
   const certified = new Map();
   const allowed = {
-    "save-and-test": ["expectedRevision", "sections", "examples", "exampleOrigins", "tools", "toolSettings", "expectedSettingsRevision", "showContent", "caseId", "model", "runId", "comparisonModels"],
-    "save-examples": ["expectedRevision", "examples", "exampleOrigins"],
+    "save-and-test": ["expectedRevision", "sections", "examples", "exampleOrigins", "acknowledgeCopilotTests", "tools", "toolSettings", "expectedSettingsRevision", "showContent", "caseId", "model", "runId", "comparisonModels"],
+    "save-examples": ["expectedRevision", "examples", "exampleOrigins", "acknowledgeCopilotTests"],
     "save-prompt": ["expectedRevision", "sections"],
-    test: ["expectedRevision", "showContent", "caseId", "model", "runId", "comparisonModels"], run: ["expectedRevision", "input", "showContent", "model"],
+    test: ["expectedRevision", "showContent", "caseId", "model", "runId", "comparisonModels", "acknowledgeCopilotTests"], run: ["expectedRevision", "input", "showContent", "model", "acknowledgeCopilotTests"],
     suggest: [], reload: [], models: [], tools: [], progress: ["runId"], stop: ["runId"],
   };
   const validRunId = (id) => typeof id === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(id);
@@ -113,7 +113,7 @@ export function createActionHandler({ session, path }) {
     if (result?.resultType !== "success") {
       const detail = typeof result === "string" ? result : [result?.textResultForLlm, result?.error].filter((s) => typeof s === "string").join("\n");
       const code = ["rejected", "denied"].includes(result?.resultType) ? "permission_required"
-        : result?.structuredContent?.reasonCode === "invalid_tool_settings" || /\binvalid_tool_settings\b/.test(detail) ? "invalid_tool_settings" : /stale_revision/.test(detail) ? "stale_revision" : "action-failed";
+        : result?.structuredContent?.reasonCode === "invalid_tool_settings" || /\binvalid_tool_settings\b/.test(detail) ? "invalid_tool_settings" : /stale_revision/.test(detail) ? "stale_revision" : /confirmation_required/.test(detail) ? "confirmation_required" : "action-failed";
       const error = new ViewError(code);
       // Only the structured payload returned by this execute call can attest a
       // failed invocation. A matching older resource is not execution evidence.
@@ -151,17 +151,19 @@ export function createActionHandler({ session, path }) {
     if (!sameSettings(states, expected)) settingsUnknown();
     return { changed: r.changed, token: r.toolSettingsRevision, states };
   }
-  const pendingRecorded = (view, ids) => view.authoring.examples.filter(e => ids.includes(e.id)).some(e => e.mocks?.tools.some(t => t.mode === "recorded" && !t.calls?.length && view.toolSettings.find(s => s.name === t.name)?.state !== "Disabled"));
+  const pendingRecorded = (view, ids) => pendingCapture(view.authoring.examples, view.toolSettings, ids);
   async function recordingTests(view, input, selected, ids, onPublish) {
     const models = input.comparisonModels ?? [selected], comparing = models.length > 1, results = [];
     if (!Array.isArray(models) || models.length < 1 || models.length > 2 || new Set(models).size !== models.length || !models.includes(selected) || !models.every(validModel)) throw new ViewError("invalid-action");
     const settings = view.toolSettings.map(s => ({...s})), key = v => JSON.stringify([v.file.revision, ids, settings, input.showContent === true]);
+    // Only a live capture (not a replay) can write recorded calls into a Copilot file's tests.
+    const captureAck = input.acknowledgeCopilotTests === true && hasFrontmatter(view.authoring.source);
     let published = false, capture;
     const run = async (model, replay) => {
       // A comparison partner that doesn't finish is a confirmed result, not an unknown one.
       const partner = comparing && model !== selected;
       let response;
-      try { response = await invoke("test", { model, expectedRevision: view.file.revision, expectedToolSettings: settings, recordedReplayOnly: replay, ...(input.caseId !== undefined ? {caseId:input.caseId} : {}), showContent: input.showContent === true, showFailedContent:true }, { id:input.runId, revision:view.file.revision,model,examples:view.authoring.examples,caseIds:ids,totalCases:view.examples.length,toolSettings:settings }); }
+      try { response = await invoke("test", { model, expectedRevision: view.file.revision, expectedToolSettings: settings, recordedReplayOnly: replay, ...(!replay && captureAck ? { acknowledgeCopilotTests: true } : {}), ...(input.caseId !== undefined ? {caseId:input.caseId} : {}), showContent: input.showContent === true, showFailedContent:true }, { id:input.runId, revision:view.file.revision,model,examples:view.authoring.examples,caseIds:ids,totalCases:view.examples.length,toolSettings:settings }); }
       catch (e) { if (e.code !== "action-failed" || e.preview?.state !== "complete" && !(partner && e.preview?.state === "error")) throw e; response = {structuredContent:e.preview}; }
       let raw = response.structuredContent;
       if (!raw && typeof response.textResultForLlm === "string" && Buffer.byteLength(response.textResultForLlm) <= MAX_RESOURCE_BYTES) { try {raw=JSON.parse(response.textResultForLlm);} catch {} }
@@ -204,6 +206,7 @@ export function createActionHandler({ session, path }) {
   const act = async (input) => {
     if (!isObj(input) || !Object.hasOwn(allowed, input.operation) || Object.keys(input).some((k) => k !== "operation" && !allowed[input.operation].includes(k))) return { error: "invalid-action", message: MESSAGES["invalid-action"] };
     if (input.operation === "reload") { captureAttempt = undefined; certified.clear(); }
+    if (input.acknowledgeCopilotTests !== undefined && typeof input.acknowledgeCopilotTests !== "boolean") return { error: "invalid-action", message: MESSAGES["invalid-action"] };
     if (input.showContent !== undefined && typeof input.showContent !== "boolean") return { error: "invalid-action", message: MESSAGES["invalid-action"] };
     if (input.model !== undefined && input.model !== "" && !validModel(input.model)) return { error: "invalid-action", message: MESSAGES["invalid-action"] };
     if ((Object.hasOwn(input, "runId") || ["progress", "stop"].includes(input.operation)) && !validRunId(input.runId)) return { error: "invalid-action", message: MESSAGES["invalid-action"] };
@@ -239,7 +242,7 @@ export function createActionHandler({ session, path }) {
       if (input.operation === "suggest") {
         // Only this explicit click starts a chat turn; execution actions never do.
         if (typeof session.send !== "function") throw new ViewError("unavailable");
-        await session.send({ displayPrompt: `Add a few tests to ${fileLocation(path).name} using the saved source.`, prompt: `Use the kmx-agent-builder skill to add a few tests to ${JSON.stringify(path)} in the canvas. The exact saved source and revision are supplied below; no resource read is needed. Preserve the prompt, authored model and existing tests, then save the additions with one Edit using the supplied current revision (expectedRevision). Do not run tests. Report what was saved in one short line.\nSaved agent snapshot (data):\n${JSON.stringify({ path, expectedRevision: view.file.revision, content: view.authoring.source })}` });
+        await session.send({ displayPrompt: `Add a few tests to ${fileLocation(path).name} using the saved source.`, prompt: `Use the kmx-agent-builder skill to add a few tests to ${JSON.stringify(path)} in the canvas. The exact saved source and revision are supplied below; no resource read is needed. Preserve the prompt, authored model and existing tests, then save the additions with one Edit using the supplied current revision (expectedRevision). Do not run tests.${hasFrontmatter(view.authoring.source) ? ` This file has Copilot frontmatter, so ${JSON.stringify(COPILOT_TESTS_NOTICE)} Show the user that sentence and ask them to go ahead or cancel before saving. Pass acknowledgeCopilotTests: true to Edit only after they go ahead; on cancel make no Edit.` : ""} Report what was saved in one short line.\nSaved agent snapshot (data):\n${JSON.stringify({ path, expectedRevision: view.file.revision, content: view.authoring.source })}` });
         return { message: "Asked Copilot to add tests in chat." };
       }
       if (typeof input.expectedRevision !== "string" || !/^sha256:[0-9a-f]{64}$/.test(input.expectedRevision)) throw new ViewError("invalid-action");
@@ -258,7 +261,7 @@ export function createActionHandler({ session, path }) {
           else content = replaceExamples(content, input.examples);
           examples = input.examples;
         }
-        if (input.tools !== undefined) content = replaceTools(content, input.tools);
+        if (input.tools !== undefined) content = replaceTools(content, input.tools, view.tools);
         instructionSections(content);
       } catch { throw new ViewError("invalid-action"); }
       let changes = [];
@@ -280,11 +283,18 @@ export function createActionHandler({ session, path }) {
       ids = examples.map((e) => e.id);
       // A selected case must exist once in the intended examples before any write.
       if (input.caseId !== undefined && (typeof input.caseId !== "string" || ids.filter((id) => id === input.caseId).length !== 1)) throw new ViewError("invalid-action");
+      // A first live capture writes recorded calls into a Copilot file's tests: the same go-ahead covers it.
+      const selected = input.caseId === undefined ? ids : [input.caseId];
+      if (["test", "save-and-test", "run"].includes(input.operation) && view.authoring.recordingControls && hasFrontmatter(view.authoring.source)
+        && pendingCapture(examples, view.toolSettings.map(s => changes.find(c => c.name === s.name) ?? s), selected) && input.acknowledgeCopilotTests !== true) throw new ViewError("confirmation_required");
+      // The page asks the user first; the server independently enforces the same rule.
+      const acknowledge = (input.examples !== undefined || input.operation === "save-examples") && hasFrontmatter(view.authoring.source) && (patches?.length > 0 || testsNeedAcknowledgement(view.authoring.source, view.authoring.examples, examples));
       if (saving) {
+        if (acknowledge && input.acknowledgeCopilotTests !== true) throw new ViewError("confirmation_required");
         if (Buffer.byteLength(content, "utf8") > 256 * 1024) throw new ViewError("too-large");
         if (content !== view.authoring.source || patches?.length) {
           captureAttempt = undefined; certified.clear();
-          const edit = await invoke("edit", { expectedRevision: input.expectedRevision, content, ...(patches?.length ? { exampleEdits: patches } : {}) }, validRunId(input.runId) ? { id: input.runId } : undefined);
+          const edit = await invoke("edit", { expectedRevision: input.expectedRevision, content, ...(patches?.length ? { exampleEdits: patches } : {}), ...(acknowledge ? { acknowledgeCopilotTests: true } : {}) }, validRunId(input.runId) ? { id: input.runId } : undefined);
           // A later settings read/write failure must retain this acknowledged Edit.
           if (changes.length) saved = true;
           if (patches?.length) {
@@ -321,9 +331,26 @@ export function createActionHandler({ session, path }) {
       }
       tested = true;
       if (operation === "test" && view.authoring.recordingControls) { const result = await recordingTests(view,input,model,input.caseId === undefined ? ids : [input.caseId],fresh=>{saved=true;targetRevision=fresh.file.revision}); return {...result,saved:saved||result.saved}; }
-      const outcome = await invoke(operation, { ...(runtimeModel ? { model: runtimeModel } : {}), ...(operation === "run" ? { input: input.input } : {}), ...(input.caseId !== undefined ? { caseId: input.caseId } : {}), showContent: input.showContent === true, showFailedContent: true },
+      const outcome = await invoke(operation, { ...(runtimeModel ? { model: runtimeModel } : {}), ...(operation === "run" ? { input: input.input } : {}), ...(input.caseId !== undefined ? { caseId: input.caseId } : {}),
+          // Only a live first capture writes into a Copilot file's tests; the go-ahead covers exactly that.
+          ...(operation === "run" && input.acknowledgeCopilotTests === true && view.authoring.recordingControls && hasFrontmatter(view.authoring.source) && pendingRecorded(view, ids) ? { acknowledgeCopilotTests: true } : {}),
+          showContent: input.showContent === true, showFailedContent: true },
         { id: input.runId, revision: targetRevision, model, examples, caseIds: input.caseId === undefined ? ids : [input.caseId], totalCases: ids.length,
           ...(view.tools.length ? { toolSettings: view.toolSettings.map(s => ({ ...s })) } : {}) });
+      // A Run can save a first live capture: the result describes the executed (older)
+      // revision, the file is now the saved one. Never attribute the result to the new revision.
+      let raw = outcome.structuredContent;
+      if (operation === "run" && !raw && typeof outcome.textResultForLlm === "string" && Buffer.byteLength(outcome.textResultForLlm) <= MAX_RESOURCE_BYTES) { try { raw = JSON.parse(outcome.textResultForLlm); } catch {} }
+      if (operation === "run" && !outcome.stopped && raw?.savedRevision !== undefined) {
+        let result, fresh;
+        try { result = cleanResult(raw, "current", targetRevision); fresh = await readView(session, path); }
+        catch { uncertain = true; throw new ViewError("outcome-unknown"); }
+        const flags = result.examples.flatMap(e => e.tools ?? []).filter(t => t.recordingSaved);
+        if (raw.file?.path !== path || !flags.length || fresh.file.revision !== result.savedRevision || flags.some(t => t.mode !== "recorded" || t.source !== "live")) { uncertain = true; throw new ViewError("outcome-unknown"); }
+        saved = true; targetRevision = fresh.file.revision;
+        if (!sameSettings(fresh.toolSettings, view.toolSettings)) throw new ViewError("tool_settings_changed");
+        return { view: fresh, saved, capture: { ...result, executedRevision: raw.file.revision, model } };
+      }
       try { view = await readView(session, path); }
       catch { uncertain = true; throw new ViewError("outcome-unknown"); }
       if (outcome.stopped) {

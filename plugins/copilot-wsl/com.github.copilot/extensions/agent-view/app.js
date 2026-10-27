@@ -2,7 +2,7 @@
 import { renderTestTools, setToolMode, withToolModes, toolUseText, duplicateTest } from "./test-tools.mjs";
 import { runtimeModelSelection, effectiveModel, readSnapshot, portableId, compareDrafts, same } from "./authoring.mjs";
 import { el, inlineText, editorValue, instructionsContent, runtimeModelControl, testNameControl, icon, statusIcon,
-  inspectCases, compareLabels, checkKey, uniqueIndex, clone, operandKey, EDITABLE_TYPES, quoted, checkLabel, oneLine, failureFacts, testRow, coherentSelection, ambiguousPassSet, countText, plural, resultHistory, resultPill, modelLabel, growTextarea, checkTypeControl, checkFields, convertCheck, inconclusiveJudge, judgeDetails, plainReason, isRefused, matchedAnswer, answerBlock, refusalContext, canvasHeader, instructionEditor, conflictNotice, saveButton } from "./editor.mjs";
+  inspectCases, compareLabels, checkKey, uniqueIndex, clone, operandKey, EDITABLE_TYPES, quoted, checkLabel, oneLine, failureFacts, testRow, coherentSelection, ambiguousPassSet, countText, plural, resultHistory, resultPill, modelLabel, growTextarea, checkTypeControl, checkFields, convertCheck, inconclusiveJudge, judgeDetails, plainReason, isRefused, matchedAnswer, answerBlock, refusalContext, canvasHeader, instructionEditor, conflictNotice, saveButton, preservedSettings, copilotTestsNotice } from "./editor.mjs";
 import { createDraftController } from "./draft-controller.mjs";
 import { createActionController } from "./action-controller.mjs";
 import { createObservationController } from "./observation-controller.mjs";
@@ -54,7 +54,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   const { act, submitAll, submitOne, testing, clearUndo } = actions;
   const { selectedModel, runFresh, currentRun, runSummary, runRow, resultSummary, total, footText, hostedNotice, refusedAlert, runAlertNode, sourceActions, explanation } = createRunViews(state, { act, actions, doc, entries, hasDrafts, history, invalidEditors, localExamples, modelChoice, render, sectionDrafts, sectionText, submitAll, submitOne, testDrafts, testing });
 
-  function navigate(next) { state.route = next; state.invalidCheck = undefined; if (!state.blocked && !state.savedUntested) { state.message = ""; state.runAlert = undefined; } }
+  function navigate(next) { state.route = next; state.invalidCheck = undefined; state.confirm = undefined; if (!state.blocked && !state.savedUntested) { state.message = ""; state.runAlert = undefined; } }
 
   // DOM
   function render() {
@@ -100,6 +100,10 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     const tests = parts.find(part => part.className === "tests-section");
     if (tests && state.message === "Asked Copilot to add tests in chat.") tests.append(line);
     else parts.splice(detail || tools ? 1 : Math.min(2, parts.length), 0, line);
+    if (state.confirm) {
+      const notice = copilotTestsNotice(doc, button, () => { const go = state.confirm.go; state.confirm = undefined; go(); }, () => { state.confirm = undefined; render(); });
+      parts.splice(1, 0, notice.node); state.confirm.focus = notice.focus;
+    }
     if (state.candidate) parts.splice(detail ? 1 : 1, 0, conflictNotice(doc, button, compareDrafts(state.base, state.candidate, state.snap, sectionDrafts, testDrafts, state.toolsDraft, state.settingsDraft), state.compareOpen,
       () => { state.compareOpen = !state.compareOpen; render(); }, keepMine, useTheirs));
     content.append(...parts);
@@ -107,6 +111,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     refresh();
     if (state.focusTestName) { activeTestName?.focus(); state.focusTestName = false; }
     if (state.focusIssue) { issueInput?.focus(); state.focusIssue = false; }
+    if (state.confirm?.focus) { state.confirm.focus(); state.confirm.focus = undefined; }
     if (focusedTool || focusedState) {
       const replacement = Array.from(root.querySelectorAll(focusedState ? ".tool-state" : ".tool-choice")).find(node => node.getAttribute(focusedState ? "data-tool-state" : "data-tool-name") === (focusedState ?? focusedTool));
       (replacement && !replacement.disabled ? replacement : root.querySelector(".tool-filter"))?.focus();
@@ -169,7 +174,8 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       additional.append(el(doc, "summary", "", "Additional instructions"));
       for (const section of state.snap.sections.filter((s) => s !== state.snap.main)) additional.append(el(doc, "h3", "", section.key), makeEditor(section, section.key, updates));
       if ([...sectionDrafts.keys()].some((k) => k !== state.snap.main.key)) additional.open = true;
-      info.append(additional);
+      // A free-form Copilot prompt has no further sections.
+      if (state.snap.sections.length > 1) info.append(additional);
     } else promptBox.append(instructionsContent(doc, state.base));
     foot.append(spinnerStatus(status, "all", updates));
     const saveRun = state.snap ? saveButton(doc, button, "Save and run all tests", submitAll) : undefined;
@@ -180,11 +186,12 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     sourceActions(button, info, updates);
     const tests = testsSection(button, updates);
     const tools = toolsSection(doc, button, { servers: toolServers, names: state.base.tools ?? [], settings: state.base.settingsInvalid ? null : state.base.toolSettings, editable: !!state.snap,
+      omitted: state.base.copilotToolsOmitted === true && !(state.base.tools ?? []).length,
       loading: toolsLoading, loaded: toolsLoaded, error: toolsError, menuOpen: toolsMenu, onToggleMenu: () => {
         toolsMenu = !toolsMenu;
         if (toolsMenu) loadTools(); else render();
       }, onOpen: openTools });
-    const out = [head, promptSection, tools, tests];
+    const out = [head, promptSection, ...(state.base.frontmatter ? [preservedSettings(doc, state.base.frontmatter)] : []), tools, tests];
     if (state.snap) out.push(pinnedBar(button, foot, tests, updates));
     return out;
   }

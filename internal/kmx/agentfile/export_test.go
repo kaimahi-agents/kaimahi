@@ -105,7 +105,7 @@ func TestExportRunProfileCRLFOnlyChangesRawRevision(t *testing.T) {
 
 func TestExportRunProfileCanonicalRefusals(t *testing.T) {
 	for _, row := range []struct{ source, field string }{
-		{"# Display-only\n\nNot a runnable canonical charter.\n", "Sections"},
+		{"# Display-only\n\nHas no authored model.\n", "Model.Preferred"},
 		{strings.Replace(sample(t), "## Model", "## Tools\nPRIVATE_EXPORT_CANARY\n\n## Model", 1), "Sections"},
 		{strings.Replace(sample(t), "**Preferred:** fake", "**Preferred:** fake\n- **Fallback:** PRIVATE_EXPORT_CANARY", 1), "Model"},
 		{strings.Replace(sample(t), "input: Ada", "input: Ada\n    PRIVATE_EXPORT_CANARY: value", 1), "Examples"},

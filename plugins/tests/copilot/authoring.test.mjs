@@ -98,7 +98,8 @@ test("tools edits preserve unrelated bytes and remove the final declaration rath
   }
   assert.equal(replaceTools(SOURCE, []), SOURCE);
   for (const names of [["duplicate", "duplicate"], ["invalid.name"], Array.from({length:33}, (_,i)=>"t"+i), null]) assert.throws(()=>replaceTools(SOURCE,names));
-  assert.throws(()=>replaceTools(SOURCE.slice(0,SOURCE.indexOf("## Examples")),["ping"]));
+  // Without a final Examples block this is a free-form file: Tools joins the Model control at the end.
+  assert.match(replaceTools(SOURCE.slice(0,SOURCE.indexOf("## Examples")),["ping"]), /## Model\n- \*\*Preferred:\*\* fake\n\n## Tools\n- ping\n\n$/);
 });
 
 const BODY = "Reply with exactly Hello.";
@@ -263,16 +264,16 @@ test("instruction updates reject unknown/duplicate keys, nonstrings and empty bo
   }
 });
 
-test("minimal, preamble, duplicated/indented headings, empty bodies and unclosed fences refuse", () => {
-  const bad = ["# Minimal\n\nGreet a name.\n## Model\nfake\n## Examples\n```yaml\nexamples: []\n```\n",
+test("incomplete or irregular charters are one free-form prompt, never half-parsed sections", () => {
+  const prompt = ["# Minimal\n\nGreet a name.\n## Model\nfake\n## Examples\n```yaml\nexamples: []\n```\n",
     SOURCE.replace("## Identity", "Unscoped preamble.\n\n## Identity"),
     SOURCE.replace("## Model", `## ${KEYS[0]}\nMore\n\n## Model`),
     SOURCE.replace(`## ${KEYS[0]}`, ` ## ${KEYS[0]}`),
     SOURCE.replace(BODY, " \t"), SOURCE.replace(BODY, "```md\nUnclosed")];
-  for (const source of bad) {
-    assert.throws(() => instructionSections(source));
-    assert.throws(() => replaceInstructions(source, []));
-    assert.throws(() => replaceExamples(source, examples()));
+  for (const source of prompt) {
+    assert.deepEqual(instructionSections(source).map(s => s.key), ["Prompt"]);
+    assert.equal(replaceInstructions(source, []), source);
+    assert.throws(() => replaceInstructions(source, [{ key: KEYS[0], text: "x" }]));
   }
 });
 
