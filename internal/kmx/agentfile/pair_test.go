@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func pairWrite(t *testing.T, path, source string) {
@@ -318,6 +319,52 @@ func TestLoadPairRegularBoundedSources(t *testing.T) {
 		t.Skipf("symlink creation unavailable: %v", err)
 	}
 	pairRefusal(t, path, link, "Tests", "symlinks or reparse")
+}
+
+func TestLoadPairSameByteVersionChanges(t *testing.T) {
+	for _, source := range []string{"agent", "tests"} {
+		for _, replace := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/replace=%t", source, replace), func(t *testing.T) {
+				root := realTemp(t)
+				agentPath := filepath.Join(root, "g.agent.md")
+				testsPath, _ := CompanionPath(agentPath)
+				pairWrite(t, agentPath, "# Greeter\nSay hello.\n")
+				pairWrite(t, testsPath, testsStarter)
+				before := pairLoad(t, agentPath, "")
+				target := agentPath
+				if source == "tests" {
+					target = testsPath
+				}
+				data, err := os.ReadFile(target)
+				if err != nil {
+					t.Fatal(err)
+				}
+				info, err := os.Stat(target)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if replace {
+					if err := os.Remove(target); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := os.WriteFile(target, data, 0600); err != nil {
+					t.Fatal(err)
+				}
+				stamp := info.ModTime().Add(2 * time.Second)
+				if err := os.Chtimes(target, stamp, stamp); err != nil {
+					t.Fatal(err)
+				}
+				after := pairLoad(t, agentPath, "")
+				if before.SnapshotRevision != after.SnapshotRevision {
+					t.Fatal("same-byte rewrite changed value identity")
+				}
+				if before.SameSnapshot(after) || after.SameSnapshot(before) {
+					t.Fatal("changed source version accepted as checked-current")
+				}
+			})
+		}
+	}
 }
 
 func TestLoadPairSameByteReplacements(t *testing.T) {

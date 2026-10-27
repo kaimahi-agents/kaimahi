@@ -27,7 +27,7 @@ func (o *pairObservation) same(other *pairObservation) bool {
 	if o.fileInfo == nil || other.fileInfo == nil {
 		return o.fileInfo == nil && other.fileInfo == nil
 	}
-	return os.SameFile(o.fileInfo, other.fileInfo)
+	return samePairFileVersion(o.fileInfo, other.fileInfo)
 }
 
 // LoadPair reads bounded CLI-style sources without changing Load or any existing
