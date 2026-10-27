@@ -224,6 +224,16 @@ class AppShardWorkflowTests(unittest.TestCase):
                           "wsl", "docker", "kubectl", "ollama pull"):
             self.assertNotIn(forbidden.lower(), helper.lower())
 
+    def test_windows_run_answers_without_a_test_verdict(self):
+        helper = (ROOT / "scripts/ci/windows-cli-day-zero.ps1").read_text()
+        for contract in ("$runJSON.verdict -ceq 'unknown'",
+                         "$runJSON.fullPass -eq $false",
+                         "$runJSON.reasonCode -ceq 'completion_ready'",
+                         "@($runJSON.examples[0].assertions).Count -eq 0"):
+            self.assertIn(contract, helper)
+        self.assertNotIn("$runJSON.verdict -ceq 'pass'", helper)
+        self.assertIn("$failedJSON.verdict -ceq 'fail'", helper)
+
     def test_final_gate_rejects_every_non_success_and_wrong_dependency_set(self):
         steps = self.jobs["hygiene"]["steps"]
         gate = steps[-1]

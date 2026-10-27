@@ -32,8 +32,15 @@ in the kmx process. Every result is labeled **local preview**. It is not
 deployment qualification, suite evidence, a passing receipt, or authority to
 publish or deploy. `kmx run FILE`, `kmx test FILE` and MCP Run/Test use it for
 fake/local and explicit Copilot routes through the `agentpreview.Runner` interface.
+CLI `kmx run FILE` executes the saved inputs and returns answers without evaluating
+assertions or setting up a judge. Explicit positional input runs that input; saved
+inputs explicitly selected alongside it keep their own fixtures. Completed Run
+rows are **ANSWERED**, not passing tests; JSON keeps an unknown verdict and
+`fullPass: false`. No judge is selected or authenticated for CLI Run. Test and the
+existing MCP Run/Test behavior continue to evaluate checks.
+
 Selected examples and optional ad-hoc input share one invocation-owned journal;
-each gets a fresh Session, as does each of the two samples per judge assertion. The adapter aborts later sends on execution or deadline
+each gets a fresh Session, as does each of the two samples when judging is requested. The adapter aborts later sends on execution or deadline
 failure, and only exposes a private journal handle after successful finalization.
 
 **Tool-free Copilot is journaled too.** Its transport performs credential checks
@@ -342,7 +349,9 @@ does not change a trusted startup provider, endpoint or credential source.
 ## Refusals
 
 The following refuse before any journal file is created or any request is sent.
-Each refusal says what to change:
+Each refusal says what to change. Assertion/judge setup refusals apply when checks
+are evaluated, not to answer-only CLI Run. Source validation and credential/content
+checks still cover the authored assertions even when Run does not evaluate them:
 
 - a non-fake model with no configured endpoint, or `fake` combined with an
   endpoint;
@@ -375,8 +384,10 @@ response bodies, prompts, answers or credentials.
 
 ## Judging
 
-Assertions reuse the existing `contains`, `notContains`, `regex` and
-`llmJudge` semantics. `llmJudge` uses the native two-sample judge through
+Test and the default MCP/library preview path evaluate assertions using the
+existing `contains`, `notContains`, `regex` and `llmJudge` semantics. CLI Run skips
+assertion evaluation, judge selection/authentication and judge sessions, while
+retaining completion attribution, tool evidence and journal-finalization checks. `llmJudge` uses the native two-sample judge through
 `app.LocalPreviewJudge`, so malformed, unavailable, split or inconclusive
 judgments are `unknown`, never a pass. The judge uses the agent's route by
 default, and the request names each assertion's authored `judgeModel`. With

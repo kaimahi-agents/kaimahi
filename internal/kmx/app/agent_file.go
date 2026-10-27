@@ -19,6 +19,8 @@ import (
 
 type FilePreviewOptions struct {
 	File, Operation, CaseID string
+	// SkipAssertions is answer-only Run; Test refuses it. Default false.
+	SkipAssertions bool
 	// SourceFile is the trusted physical filename when File is only a display label.
 	// CLI callers omit it and use their already-loaded File.
 	SourceFile string
@@ -220,7 +222,7 @@ func previewReason(code string) string {
 func (a *App) PreviewAgentFile(ctx context.Context, opt FilePreviewOptions) (FilePreviewResult, error) {
 	started := a.timeNow()
 	parsed, err := agentfile.Load(opt.File)
-	if err == nil && opt.RetentionFile != "" && opt.retentionScope == nil {
+	if err == nil && !opt.SkipAssertions && opt.RetentionFile != "" && opt.retentionScope == nil {
 		opt = WithFilePreviewRetention(opt, opt.RetentionFile, parsed.Revision)
 	}
 	return a.previewAgentSnapshot(ctx, parsed, opt, err, started)
@@ -265,8 +267,12 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		}
 		return fail(recordingReason(err), 1)
 	}
-	if opt.Operation != "run" && opt.Operation != "test" || opt.Operation == "test" && opt.Input != nil || opt.Input != nil && (len(*opt.Input) > agentfile.MaxInputBytes || !utf8.ValidString(*opt.Input)) {
+	if opt.Operation != "run" && opt.Operation != "test" || opt.Operation == "test" && (opt.Input != nil || opt.SkipAssertions) || opt.Input != nil && (len(*opt.Input) > agentfile.MaxInputBytes || !utf8.ValidString(*opt.Input)) {
 		return fail("invalid_options", 1)
+	}
+	if opt.SkipAssertions {
+		opt.JudgeRoute = nil
+		opt.RetentionFile, opt.retentionScope = "", nil
 	}
 	if parseErr != nil || parsed == nil {
 		var detail *agentfile.Error
@@ -329,10 +335,12 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	if opt.JudgeRoute != nil {
 		judge = *opt.JudgeRoute
 	}
-	if judge.Validate() != nil || secretshapes.Match(judge.Model) != nil || judge.Provider == "fake" && judge.Model != "fake" || judge.Provider != "fake" && judge.Model == "fake" {
-		return fail("model_unavailable", 1)
+	if !opt.SkipAssertions {
+		if judge.Validate() != nil || secretshapes.Match(judge.Model) != nil || judge.Provider == "fake" && judge.Model != "fake" || judge.Provider != "fake" && judge.Model == "fake" {
+			return fail("model_unavailable", 1)
+		}
+		parsed.Examples = agentfile.BindJudgeModels(parsed.Examples, judge.Model)
 	}
-	parsed.Examples = agentfile.BindJudgeModels(parsed.Examples, judge.Model)
 	selected := parsed.Examples
 	if opt.CaseID != "" {
 		selected = nil
@@ -355,7 +363,7 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 			usesJudge = usesJudge || assertion.Type == "llmJudge"
 		}
 	}
-	if usesJudge {
+	if usesJudge && !opt.SkipAssertions {
 		r.JudgeRoute = &FilePreviewRoute{judge.Provider, judge.Model}
 	}
 	if len(parsed.Tools) == 0 && opt.ToolBindings != "" {
@@ -365,6 +373,9 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		r.Selection.CaseIDs = append(r.Selection.CaseIDs, ex.ID)
 		row := FilePreviewExample{ID: ex.ID, FilePreviewCompletion: previewCompletion("not_run", "not_run"), Verdict: runtime.EvaluationUnknown, Assertions: []FilePreviewAssertion{}}
 		for _, as := range ex.Assertions {
+			if opt.SkipAssertions {
+				break
+			}
 			if as.Type == "llmJudge" && as.JudgeModel != "" && as.JudgeModel != judge.Model {
 				return fail("model_unavailable", 1)
 			}
@@ -451,13 +462,17 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	if prepareErr != nil {
 		return recordingFail(prepareErr)
 	}
-	request := agentpreview.Request{Agent: parsed, Examples: selected, Route: route, JudgeRoute: opt.JudgeRoute, Input: opt.Input, Progress: opt.Progress, ToolBindings: opt.ToolBindings, FileLabel: r.File.Path, ToolSettings: append([]localtools.ToolSetting(nil), r.ToolSettings...)}
-	request.ExampleFinished = previewCaseObserver(ctx, selected, parsed, route, opt.CaseFinished)
+	request := agentpreview.Request{SkipAssertions: opt.SkipAssertions, Agent: parsed, Examples: selected, Route: route, JudgeRoute: opt.JudgeRoute, Input: opt.Input, Progress: opt.Progress, ToolBindings: opt.ToolBindings, FileLabel: r.File.Path, ToolSettings: append([]localtools.ToolSetting(nil), r.ToolSettings...)}
+	request.ExampleFinished = previewCaseObserver(ctx, selected, parsed, route, opt.CaseFinished, opt.SkipAssertions)
 	if opt.RouteSelected != nil {
 		request.BeforeExecute = func() error { return opt.RouteSelected(r.ModelRoute) }
 	}
-	judgeCtx, judgeNotes := newFileJudgeContext(ctx)
-	outcome, cause := a.FileRunner.Run(judgeCtx, request)
+	runCtx := ctx
+	var judgeNotes fileJudgeNotes
+	if !opt.SkipAssertions {
+		runCtx, judgeNotes = newFileJudgeContext(ctx)
+	}
+	outcome, cause := a.FileRunner.Run(runCtx, request)
 	if errors.Is(cause, agentpreview.ErrUnsafeToolContent) || errors.Is(cause, agentpreview.ErrCredentialContent) || errors.Is(cause, copilot.ErrCredentialContent) {
 		r.File = FilePreviewIdentity{Path: "[agent file]"}
 		r.ModelRoute = FilePreviewRoute{}
@@ -524,7 +539,11 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		if row.Completion.State != agentpreview.Complete {
 			continue
 		}
-		if !validCompletion(row.Completion, ex) || len(row.Assertions) != len(ex.Assertions) {
+		expectedAssertions := len(ex.Assertions)
+		if opt.SkipAssertions {
+			expectedAssertions = 0
+		}
+		if !validCompletion(row.Completion, ex) || len(row.Assertions) != expectedAssertions {
 			malformed = true
 			break
 		}
@@ -538,6 +557,14 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		}
 		if malformed {
 			break
+		}
+		if opt.SkipAssertions {
+			completion := previewCompleted(row.Completion, opt.ShowContent)
+			if opt.IncludeAnswer {
+				completion.Answer = previewFullAnswer(row.Completion.Answer)
+			}
+			r.Examples[i].FilePreviewCompletion = completion
+			continue
 		}
 		verdict := runtime.EvaluationAssertionsVerdict(row.Assertions)
 		show := opt.ShowContent || opt.ShowFailedContent && verdict == runtime.EvaluationFail
@@ -607,7 +634,7 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		return fail("invalid_completion", 1)
 	}
 	for _, row := range r.Examples {
-		if row.State != "complete" || len(row.Assertions) == 0 {
+		if row.State != "complete" || !opt.SkipAssertions && len(row.Assertions) == 0 {
 			return fail("invalid_completion", 1)
 		}
 	}
@@ -623,8 +650,8 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		r.Retention.Status = "unavailable"
 	}
 	r.State = "complete"
-	if len(selected) == 0 {
-		// An ad-hoc answer is not evidence: no verdict and never a vacuous full pass.
+	if opt.SkipAssertions || len(selected) == 0 {
+		// An unchecked answer is not evidence: no verdict and never a vacuous full pass.
 		r.Verdict, r.FullPass, r.ReasonCode = runtime.EvaluationUnknown, false, "completion_ready"
 		r.Reason = previewReason(r.ReasonCode)
 		return r, nil

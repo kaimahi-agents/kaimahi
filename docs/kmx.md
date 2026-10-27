@@ -326,8 +326,12 @@ Strict workspace assertions and exported run profiles still require a model pin.
 
 Text `run FILE "input"` writes only the answer to stdout; the selected route/model
 and preview diagnostics go to stderr. Positional input runs only that input unless `--case ID` also explicitly selects
-a saved example to check. Without positional input, Run prints each saved example answer;
+a saved example to run. Without positional input, Run prints each saved example answer;
 legacy `--prompt`/`--prompt-file` still run their ad-hoc input plus saved examples.
+CLI Run does not evaluate checks or select/authenticate a judge. Completed example rows say ANSWERED and retain an unknown verdict with
+`fullPass: false`, never a test pass. Per-example tool modes, journal finalization
+and completion attribution still apply. Test and existing MCP preview behavior
+continue to evaluate checks.
 `test FILE` reports PASS/FAIL, test ID and duration, failed checks with the same
 wording as the canvas, then the first answer lines. `--no-content` suppresses
 answers, failure operands and judge content in both text and JSON. Known unsafe
@@ -368,8 +372,8 @@ A summary-write failure exits 1. Otherwise the command retains the normal
 not suite evidence or Publish/Deploy authority.
 
 File-mode exits: 0 means the selected checks completed and passed (a partial
-selection is **not** a full pass), or an ad-hoc Run completed; 1 means a completed
-check failed; 2 means it could not run or decide (including missing sign-in/tests,
+selection is **not** a full pass), or Run completed its selected answers; 1 means a completed
+Test check failed; 2 means it could not run or decide (including missing sign-in/tests,
 execution/deadline/journal failure or an inconclusive judge). Output/summary-write
 failures and command-line parsing errors (such as unknown flags) exit 1;
 cancellation exits 130. These file-mode statuses do not change

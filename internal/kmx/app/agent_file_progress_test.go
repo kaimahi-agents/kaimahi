@@ -125,7 +125,7 @@ func TestFileCaseProgressIdentifiesFirstFailedTextCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 	var rows []FilePreviewCaseProgress
-	observe := previewCaseObserver(t.Context(), selected, agent, route, func(row FilePreviewCaseProgress) { rows = append(rows, row) })
+	observe := previewCaseObserver(t.Context(), selected, agent, route, func(row FilePreviewCaseProgress) { rows = append(rows, row) }, false)
 	observe(out.Examples[0])
 	encoded, _ := json.Marshal(rows)
 	var got []map[string]any

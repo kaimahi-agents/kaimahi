@@ -560,6 +560,12 @@ File Run/Test `--verbose` is content-free stderr diagnostics only, never implici
 only validated local origins and standard endpoint paths may be shown. Failed
 diagnostic writes stop later sends and refuse a full pass.
 See [file preview](docs/kmx.md#agent-file-local-preview-unreleased-integration).
+CLI `run FILE` requests answer-only execution: selected inputs/mocks keep their
+order and one journal, but assertions and judge routes/access are skipped.
+Completed rows are ANSWERED with unknown verdict and never fullPass; journal,
+credential/content, completion attribution and tool/capture guards still apply.
+Test and default App/MCP preview callers retain assertion evaluation. The internal
+SkipAssertions option is valid only for Run; no public mode flag is introduced.
 
 ## Agent-file MCP boundary
 

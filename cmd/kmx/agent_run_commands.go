@@ -15,8 +15,8 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 	var file fileCommandOptions
 	cmd := &cobra.Command{
 		Use: "run [FILE [input]]", Short: "Run an agent file or an existing Orka Agent",
-		Long: "Run FILE previews examples; FILE \"input\" previews only that input.\n" +
-			"Answers: stdout. Route/diagnostics: stderr. File results are not evidence.\n" +
+		Long: "Run FILE answers without checks; FILE \"input\" answers only that input.\n" +
+			"Answers: stdout. Route/diagnostics: stderr. Not evidence; checks: kmx test FILE.\n" +
 			"Live --agent: exit code 2 is pending; Tasks are never retried or deleted.\n" +
 			"Read pending Tasks: kmx cluster task result. File retention and privacy:\n" +
 			previewCaveatsURL,

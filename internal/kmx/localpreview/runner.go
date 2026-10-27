@@ -84,8 +84,12 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 	out.State = agentpreview.Failed
 	examples := cloneRunnerExamples(request.Examples)
 	for _, ex := range examples {
-		c := agentruntime.EvaluationCase{ID: ex.ID, Input: ex.Input, Assertions: ex.Assertions}
-		out.Examples = append(out.Examples, agentpreview.ExampleOutcome{ID: ex.ID, Completion: agentpreview.Completion{State: agentpreview.NotRun}, Assertions: agentruntime.EvaluateAssertions(c, agentruntime.EvaluationEvidence{})})
+		row := agentpreview.ExampleOutcome{ID: ex.ID, Completion: agentpreview.Completion{State: agentpreview.NotRun}}
+		if !request.SkipAssertions {
+			c := agentruntime.EvaluationCase{ID: ex.ID, Input: ex.Input, Assertions: ex.Assertions}
+			row.Assertions = agentruntime.EvaluateAssertions(c, agentruntime.EvaluationEvidence{})
+		}
+		out.Examples = append(out.Examples, row)
 	}
 	if request.Input != nil {
 		out.AdHoc = &agentpreview.Completion{State: agentpreview.NotRun}
@@ -108,6 +112,10 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 		agent.Instructions = agent.NativeTaskInstructions
 	}
 	agent.Examples = examples
+	// An unused judge must never introduce route validation or credential access.
+	if request.SkipAssertions {
+		request.JudgeRoute = nil
+	}
 	judgeSelection := request.Route
 	if request.JudgeRoute != nil {
 		judgeSelection = *request.JudgeRoute
@@ -211,10 +219,13 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 	if routeErr != nil {
 		return abort(routeErr)
 	}
-	// Even an unused explicit route must be a supported, exact selection.
-	judgeRoute, routeErr := routeFor(judgeSelection)
-	if routeErr != nil {
-		return abort(routeErr)
+	judgeRoute := agentRoute
+	if !request.SkipAssertions {
+		// Default evaluation retains validation of explicit judge selections.
+		judgeRoute, routeErr = routeFor(judgeSelection)
+		if routeErr != nil {
+			return abort(routeErr)
+		}
 	}
 	seenExamples := map[string]bool{}
 	hasJudge := false
@@ -223,6 +234,9 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 			return abort(errRunnerExecution)
 		}
 		seenExamples[ex.ID] = true
+		if request.SkipAssertions {
+			continue
+		}
 		for _, a := range ex.Assertions {
 			if a.Type == "llmJudge" {
 				hasJudge = true
@@ -261,8 +275,16 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 			}
 		}
 	}
-	// A zero-example ad-hoc Run prepares no evaluation cases or judge.
-	p, prepareErr := prepare(&agent, options, len(examples) > 0)
+	// Keep authored assertions for credential checks, but never bind or prepare
+	// them for answer-only execution. Fixtures and inputs remain on their cases.
+	preparedAgent := agent
+	if request.SkipAssertions {
+		preparedAgent.Examples = agentfile.CloneExamples(examples)
+		for i := range preparedAgent.Examples {
+			preparedAgent.Examples[i].Assertions = nil
+		}
+	}
+	p, prepareErr := prepare(&preparedAgent, options, len(examples) > 0 && !request.SkipAssertions)
 	if prepareErr != nil {
 		return abort(prepareErr)
 	}
@@ -391,6 +413,8 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 				return completion, nil, captureErr
 			}
 			recordings = append(recordings, captured...)
+		}
+		if index >= 0 && !request.SkipAssertions {
 			evidence := agentruntime.EvaluationEvidence{Answer: execution.Answer, AnswerAvailable: true, ToolSupported: len(declared) > 0, ToolEvidenceComplete: execution.ToolEvidenceComplete, ToolCalls: execution.ToolCallCounts}
 			if p.judge != nil {
 				assertions = p.judge(turnCtx, p.cases[index], evidence)
@@ -432,7 +456,7 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 		}
 		out.AdHoc = &c
 	}
-	for i, ex := range examples {
+	for i, ex := range preparedAgent.Examples {
 		c, assertions, cause := execute(ex, i)
 		if cause != nil {
 			return abort(cause)

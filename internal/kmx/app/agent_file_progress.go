@@ -20,7 +20,7 @@ type FilePreviewCaseProgress struct {
 	FailedAssertionID string                    `json:"failedAssertionId,omitempty"`
 }
 
-func previewCaseObserver(ctx context.Context, selected []agentfile.Example, agent *agentfile.Agent, route modelaccess.Route, notify func(FilePreviewCaseProgress)) func(agentpreview.ExampleOutcome) {
+func previewCaseObserver(ctx context.Context, selected []agentfile.Example, agent *agentfile.Agent, route modelaccess.Route, notify func(FilePreviewCaseProgress), skipAssertions bool) func(agentpreview.ExampleOutcome) {
 	if notify == nil {
 		return nil
 	}
@@ -35,11 +35,15 @@ func previewCaseObserver(ctx context.Context, selected []agentfile.Example, agen
 		// Apply the final projection's attribution and assertion fences before any
 		// metadata escapes. A malformed runner event disables further observation,
 		// without changing the runner's eventual outcome or App's final validation.
+		assertionsOK := len(row.Assertions) == len(ex.Assertions) && len(row.Assertions) > 0
+		if skipAssertions {
+			assertionsOK = len(row.Assertions) == 0
+		}
 		valid := validPreviewTools(c, ex, agent.Tools) && row.ID == ex.ID && c.State == agentpreview.Complete && c.ID != "" && !seen[c.ID] &&
 			c.FileRevision == agent.Revision && c.Provider == route.Provider && c.Model == route.Model &&
 			len(c.Answer) <= 256*1024 && utf8.ValidString(c.Answer) &&
 			c.ToolCalls >= 0 && c.ToolCalls <= localtools.MaxCalls && (len(agent.Tools) > 0 || c.ToolCalls == 0) &&
-			len(row.Assertions) == len(ex.Assertions) && len(row.Assertions) > 0
+			assertionsOK
 		for j, as := range row.Assertions {
 			if j >= len(ex.Assertions) {
 				valid = false
@@ -57,6 +61,10 @@ func previewCaseObserver(ctx context.Context, selected []agentfile.Example, agen
 		}
 		seen[c.ID] = true
 		next++
+		if skipAssertions {
+			notify(FilePreviewCaseProgress{CaseID: ex.ID, Verdict: runtime.EvaluationUnknown, Reason: previewReason("completion_ready")})
+			return
+		}
 		progress := FilePreviewCaseProgress{CaseID: ex.ID, Verdict: runtime.EvaluationAssertionsVerdict(row.Assertions)}
 		for _, as := range row.Assertions {
 			if progress.Verdict != runtime.EvaluationPass && as.Verdict == progress.Verdict {

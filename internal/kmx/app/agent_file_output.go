@@ -59,6 +59,8 @@ func WriteFilePreview(w io.Writer, r FilePreviewResult, format string) error {
 		label := strings.ToUpper(string(ex.Verdict))
 		if ex.State != "complete" {
 			label = strings.ToUpper(ex.State)
+		} else if r.Operation == "run" && ex.ReasonCode == "completion_ready" && len(ex.Assertions) == 0 {
+			label = "ANSWERED"
 		}
 		fmt.Fprintf(&b, "%s %s (%dms)\n", label, ex.ID, ex.DurationMs)
 		writeFileTools(&b, ex.FilePreviewCompletion)

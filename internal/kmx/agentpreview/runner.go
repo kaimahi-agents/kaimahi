@@ -23,6 +23,8 @@ type Request struct {
 	Agent    *agentfile.Agent
 	Examples []agentfile.Example
 	Route    modelaccess.Route
+	// SkipAssertions executes answers only, ignoring JudgeRoute. Default false.
+	SkipAssertions bool
 	// Nil uses Route. Only the caller may choose an override.
 	JudgeRoute *modelaccess.Route
 	Input      *string

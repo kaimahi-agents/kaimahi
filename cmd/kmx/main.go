@@ -3,6 +3,7 @@
 // application operations. File Run/Test default to the canvas's Copilot route,
 // show Run answers and failed-check content unless --no-content is selected,
 // and map completed failures to exit 1 and execution refusals to exit 2.
+// File Run executes answers without assertions or judges; Test evaluates checks.
 // The guarded Windows tree additionally classifies
 // deferred operations before their argument or operational hooks can run.
 package main

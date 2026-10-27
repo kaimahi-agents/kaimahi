@@ -99,6 +99,7 @@ func fileFlagsWithoutFile(cmd *cobra.Command) error {
 func runFileCommand(cmd *cobra.Command, state *commandState, file string, f fileCommandOptions, prompt, promptFile string) error {
 	opt := app.FilePreviewOptions{File: file, Operation: cmd.Name(), CaseID: f.CaseID,
 		Model: f.Model, DefaultCopilot: true, AdHocOnly: f.PositionalInput && f.CaseID == "", ShowFailedContent: !f.NoContent,
+		SkipAssertions:        cmd.Name() == "run",
 		IncludeAnswer:         cmd.Name() == "run" && !f.NoContent,
 		IncludeFailureDetails: !f.NoContent, ToolBindings: f.ToolBindings}
 	opt.RouteSelected = func(route app.FilePreviewRoute) error {

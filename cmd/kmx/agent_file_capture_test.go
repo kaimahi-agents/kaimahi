@@ -65,7 +65,7 @@ func TestFileCommandsCaptureSelectedFileAndReplayWithoutLiveHost(t *testing.T) {
 				if err := json.Unmarshal(output.Bytes(), &result); err != nil {
 					t.Fatal(err)
 				}
-				if !result.FullPass || calls != 1 || resolves != 1 || *loads != 0 {
+				if result.FullPass != (operation == "test") || calls != 1 || resolves != 1 || *loads != 0 {
 					t.Fatalf("CLI result %+v calls %d resolve %d", result, calls, resolves)
 				}
 				if run == 0 {
