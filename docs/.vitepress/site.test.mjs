@@ -189,8 +189,22 @@ test('agent-file CI reports retain failure status and content-free summaries', a
     'content-free table',
     'Neither output creates automatic local history'
   ]) assert.ok(app.includes(marker), `CI report contract: ${marker}`)
-  assert.match(app, /--github-summary[^.]*unreleased on main/i)
-  assert.match(app, /v0\.9\.0 release candidates do not contain it/i)
+  assert.match(app, /CLI section follows current main, not the rc\.4 app walkthrough/)
+  assert.match(app, /1\s*A completed assertion failed/)
+  assert.match(app, /2\s*Could not run or decide/)
+  assert.doesNotMatch(app, /release candidates do not contain it/i)
+  const previewHtml = await readFile(path.join(dist, 'docs/local-preview.html'), 'utf8')
+  const preview = plainText(previewHtml).replace(/\s+/g, ' ')
+  for (const marker of [
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: This asserts literal GitHub Actions syntax.
+    'COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}',
+    'kmx test ./release-notes.agent.md --provider copilot -o json --github-summary',
+    'workflow-provided GITHUB_TOKEN is not a substitute',
+    'Exit 0 means pass, 1 means assertion failure, 2 means it could not run or decide'
+  ]) assert.ok(preview.includes(marker), `CI sign-in contract: ${marker}`)
+  assert.ok(previewHtml.includes('id="copilot-sign-in-in-ci"'))
+  const appHtml = await readFile(path.join(dist, 'docs/copilot-app.html'), 'utf8')
+  assert.match(appHtml, /href="\.\/local-preview(?:\.html)?#copilot-sign-in-in-ci"/)
 
   const reference = plainText(await readFile(path.join(dist, 'docs/kmx.html'), 'utf8')).replace(/\s+/g, ' ')
   for (const marker of [
@@ -261,6 +275,9 @@ test('command groups do not rewrite stable or historical instructions', async ()
   const faq = plainText(await readFile(path.join(dist, 'docs/FAQ.html'), 'utf8'))
   assert.match(faq, /Stable v0\.8\.1 uses kmx orka --help/)
   assert.match(faq, /kmx cluster orka --help requires an unreleased main build/)
+  const reference = plainText(await readFile(path.join(dist, 'docs/kmx.html'), 'utf8'))
+  assert.match(reference, /Bare kmx package status refuses and names both usage routes/)
+  assert.doesNotMatch(reference, /Bare kmx status refuses and names both usage routes/)
   const historical = plainText(await readFile(path.join(dist, 'docs/kmx-public-interface.html'), 'utf8'))
   assert.match(historical, /Tagged v0\.4\.1 and earlier use kmx quickstart-wizard/)
 })

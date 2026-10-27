@@ -51,7 +51,7 @@ kmx version
 kmx quickstart
 ```
 
-On unreleased main, the command is `kmx cluster quickstart`.
+On unreleased main, use `kmx cluster quickstart` instead.
 
 Quickstart prepares a local Kubernetes test cluster and runs a sample agent.
 It succeeds only after the agent returns an answer. On an uncached first run,
