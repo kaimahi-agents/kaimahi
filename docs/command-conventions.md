@@ -153,7 +153,7 @@ Keep these distinctions:
 |---|---|
 | `0` | Success. |
 | `1` | Failure. |
-| `2` | Not finished yet: a pending Task/wait, or known pending deployed placement in a complete destination-status observation. Unknown/unhealthy/drift takes precedence with1. |
+| `2` | File Run/Test: could not run or decide (missing sign-in/tests, execution failure or inconclusive judge); a completed failed check exits 1. Live Task/wait: pending. Destination status: known pending placement in a complete observation; unknown/unhealthy/drift takes precedence with 1. |
 
   A new exit code needs its own documentation in [kmx.md](kmx.md).
 - **Errors say what failed and what to run next.** Generated commands keep

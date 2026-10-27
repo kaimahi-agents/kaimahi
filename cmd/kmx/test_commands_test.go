@@ -66,7 +66,7 @@ func TestTestCommandTreesAndDiscovery(t *testing.T) {
 			}
 		}
 	}
-	for _, name := range []string{"case", "provider", "endpoint"} {
+	for _, name := range []string{"case", "provider", "provider-url", "model", "no-content"} {
 		if canonical.Flag(name) == nil || legacy.Flag(name) != nil {
 			t.Fatalf("file flag %s leaked into legacy workspace eval", name)
 		}

@@ -44,6 +44,9 @@ func WriteFilePreview(w io.Writer, r FilePreviewResult, format string) error {
 		for _, diagnostic := range r.Retention.Diagnostics {
 			fmt.Fprintf(&b, "  example %s: diagnostic %s\n", diagnostic.CaseID, diagnostic.ID)
 		}
+		if len(r.Retention.Diagnostics) > 0 {
+			fmt.Fprintln(&b, "Inspect retained failures with kmx test explain --file FILE [failure-id]; add --show-content for bounded content.")
+		}
 	}
 	if r.AdHoc != nil {
 		fmt.Fprintf(&b, "ad-hoc: %s\n", r.AdHoc.State)
@@ -53,17 +56,57 @@ func WriteFilePreview(w io.Writer, r FilePreviewResult, format string) error {
 		}
 	}
 	for _, ex := range r.Examples {
-		fmt.Fprintf(&b, "example %s: %s %s\n", ex.ID, ex.State, ex.Verdict)
+		label := strings.ToUpper(string(ex.Verdict))
+		if ex.State != "complete" {
+			label = strings.ToUpper(ex.State)
+		}
+		fmt.Fprintf(&b, "%s %s (%dms)\n", label, ex.ID, ex.DurationMs)
 		writeFileTools(&b, ex.FilePreviewCompletion)
 		for _, as := range ex.Assertions {
-			fmt.Fprintf(&b, "  %s %s %s: %s\n", as.ID, as.Type, as.Verdict, as.Reason)
+			reason := as.Reason
+			if as.Failure != "" {
+				reason = as.Failure
+			}
+			fmt.Fprintf(&b, "  %s %s %s: %s\n", as.ID, as.Type, as.Verdict, reason)
 		}
 		if ex.AnswerExcerpt != "" {
-			fmt.Fprintf(&b, "  answer excerpt: %q\n", ex.AnswerExcerpt)
+			lines := strings.Split(ex.AnswerExcerpt, "\n")
+			if len(lines) > 5 {
+				lines = lines[:5]
+			}
+			fmt.Fprintf(&b, "  answer:\n    %s\n", strings.Join(lines, "\n    "))
 		}
 	}
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+// WriteFileRunAnswers keeps completed text Run stdout usable as an answer pipe.
+// Ad-hoc input selects its answer; otherwise each saved example answer is emitted.
+func WriteFileRunAnswers(w io.Writer, r FilePreviewResult) error {
+	write := func(c FilePreviewCompletion) error {
+		if c.Answer == nil {
+			return nil
+		}
+		answer := *c.Answer
+		if _, err := io.WriteString(w, answer); err != nil {
+			return err
+		}
+		if answer != "" && !strings.HasSuffix(answer, "\n") {
+			_, err := io.WriteString(w, "\n")
+			return err
+		}
+		return nil
+	}
+	if r.AdHoc != nil {
+		return write(*r.AdHoc)
+	}
+	for _, row := range r.Examples {
+		if err := write(row.FilePreviewCompletion); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func writeFileTools(b *strings.Builder, c FilePreviewCompletion) {

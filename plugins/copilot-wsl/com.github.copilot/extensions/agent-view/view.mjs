@@ -440,6 +440,7 @@ const ASSETS = {
   "editor.mjs": ["editor.mjs", "text/javascript; charset=utf-8"],
   "dom.mjs": ["dom.mjs", "text/javascript; charset=utf-8"],
   "results.mjs": ["results.mjs", "text/javascript; charset=utf-8"],
+  "failure-wording.mjs": ["failure-wording.mjs", "text/javascript; charset=utf-8"],
   "check-controls.mjs": ["check-controls.mjs", "text/javascript; charset=utf-8"],
   "instruction-text.mjs": ["instruction-text.mjs", "text/javascript; charset=utf-8"],
   "run-views.mjs": ["run-views.mjs", "text/javascript; charset=utf-8"],

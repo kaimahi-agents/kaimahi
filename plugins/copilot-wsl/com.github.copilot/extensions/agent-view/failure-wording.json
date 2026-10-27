@@ -1,0 +1,7 @@
+{
+  "contains": "Missing \"{value}\"",
+  "notContains": "Found \"{value}\"",
+  "regex": "No match for {value}",
+  "toolCalled": "Not met: Calls {value}",
+  "toolNotCalled": "Not met: Doesn't call {value}"
+}

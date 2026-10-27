@@ -31,6 +31,12 @@ type FilePreviewOptions struct {
 	Input             *string
 	ShowContent       bool
 	ShowFailedContent bool
+	// CLI-only presentation choices; snapshot/MCP callers keep bounded opt-in content.
+	IncludeAnswer         bool
+	IncludeFailureDetails bool
+	DefaultCopilot        bool
+	AdHocOnly             bool
+	RouteSelected         func(FilePreviewRoute) error
 
 	RecordedReplayOnly   bool
 	ExpectedToolSettings *[]localtools.ToolSetting
@@ -115,6 +121,7 @@ type FilePreviewCompletion struct {
 	State         string                     `json:"state"`
 	ReasonCode    string                     `json:"reasonCode"`
 	Reason        string                     `json:"reason"`
+	Answer        *string                    `json:"answer,omitempty"`
 	AnswerExcerpt string                     `json:"answerExcerpt,omitempty"`
 	Truncated     bool                       `json:"truncated,omitempty"`
 	DurationMs    int64                      `json:"durationMs"`
@@ -134,6 +141,7 @@ type FilePreviewAssertion struct {
 	ReasonCode string                    `json:"reasonCode"`
 	Reason     string                    `json:"reason"`
 	Judge      *FilePreviewJudge         `json:"judge,omitempty"`
+	Failure    string                    `json:"failure,omitempty"`
 }
 
 // FilePreviewError contains fixed safe text or validated catalog choices, never raw provider content.
@@ -308,7 +316,10 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 			route.Model = parsed.Model
 		}
 	} else if parsed.Model != "fake" {
-		return fail("model_unavailable", 1)
+		if !opt.DefaultCopilot {
+			return fail("model_unavailable", 1)
+		}
+		route = modelaccess.Route{Provider: "copilot", Model: parsed.Model, Endpoint: modelaccess.CopilotEndpoint, Auth: "copilot"}
 	}
 	if route.Model != parsed.Model || route.Validate() != nil || route.Provider == "fake" && route.Model != "fake" || route.Provider != "fake" && route.Model == "fake" {
 		return fail("model_unavailable", 1)
@@ -333,6 +344,10 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		if len(selected) != 1 {
 			return fail("invalid_selection", 1)
 		}
+	}
+	if opt.AdHocOnly && opt.Input != nil {
+		selected = nil
+		r.Selection.Scope = "subset"
 	}
 	usesJudge := opt.JudgeRoute != nil
 	for _, ex := range selected {
@@ -438,6 +453,11 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	}
 	request := agentpreview.Request{Agent: parsed, Examples: selected, Route: route, JudgeRoute: opt.JudgeRoute, Input: opt.Input, Progress: opt.Progress, ToolBindings: opt.ToolBindings, FileLabel: r.File.Path, ToolSettings: append([]localtools.ToolSetting(nil), r.ToolSettings...)}
 	request.ExampleFinished = previewCaseObserver(ctx, selected, parsed, route, opt.CaseFinished)
+	if opt.RouteSelected != nil {
+		if err := opt.RouteSelected(r.ModelRoute); err != nil {
+			return fail("diagnostics_failed", 1)
+		}
+	}
 	judgeCtx, judgeNotes := newFileJudgeContext(ctx)
 	outcome, cause := a.FileRunner.Run(judgeCtx, request)
 	if errors.Is(cause, agentpreview.ErrUnsafeToolContent) || errors.Is(cause, agentpreview.ErrCredentialContent) || errors.Is(cause, copilot.ErrCredentialContent) {
@@ -482,6 +502,9 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	if outcome.AdHoc != nil {
 		if validCompletion(*outcome.AdHoc, agentfile.Example{}) {
 			c := previewCompleted(*outcome.AdHoc, opt.ShowContent)
+			if opt.IncludeAnswer {
+				c.Answer = previewFullAnswer(outcome.AdHoc.Answer)
+			}
 			r.AdHoc = &c
 		} else if outcome.AdHoc.State == agentpreview.Complete {
 			malformed = true
@@ -524,9 +547,15 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 			for j, as := range row.Assertions {
 				note := judgeNotes[fileJudgeKey{ex.ID, as.ID}]
 				r.Examples[i].Assertions[j].Judge = previewJudge(as, ex.Assertions[j], note, &judgeReasonBytes)
+				if opt.IncludeFailureDetails && as.Verdict == runtime.EvaluationFail {
+					r.Examples[i].Assertions[j].Failure = previewCheckFailure(ex.Assertions[j])
+				}
 			}
 		}
 		completion := previewCompleted(row.Completion, show)
+		if opt.IncludeAnswer {
+			completion.Answer = previewFullAnswer(row.Completion.Answer)
+		}
 		completion.ReasonCode = previewResultReasonCode(verdict)
 		completion.Reason = previewReason(completion.ReasonCode)
 		r.Examples[i].FilePreviewCompletion = completion

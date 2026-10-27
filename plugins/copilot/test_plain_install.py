@@ -127,7 +127,7 @@ class PlainPluginTests(unittest.TestCase):
                 edited = call("edit", path=str(path), content=wrong,
                               expectedRevision=created["file"]["revision"])
                 self.assertEqual(path.read_text().split("## Examples")[1], source.split("## Examples")[1])
-                cli_test("fail", 2)
+                cli_test("fail", 1)
                 call("edit", path=str(path), content=source,
                      expectedRevision=edited["file"]["revision"])
                 cli_test("pass", 0)

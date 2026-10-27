@@ -15,6 +15,7 @@ from pathlib import Path
 DERIVED = ("skills/kmx/SKILL.md", "skills/kmx-agent-builder/SKILL.md",
            "com.github.copilot/extensions/agent-view/extension.mjs")
 IDENTITIES = {"copilot-wsl": "kmx-agent-builder", "copilot": "kmx-agent-builder-path"}
+WORDING = "plugins/copilot-wsl/com.github.copilot/extensions/agent-view/failure-wording"
 PROVIDER = b"plugin:kmx-agent-builder:agent-view"
 PATH_PROVIDER = b"plugin:kmx-agent-builder-path:agent-view"
 NUMBER = r"(?:0|[1-9][0-9]*)"
@@ -59,11 +60,25 @@ def derived(root: Path) -> dict:
     return files
 
 
+def wording(root: Path) -> bytes:
+    """Browser-safe ESM from the canonical JSON; avoids JSON import attributes."""
+    templates = json.loads((root / f"{WORDING}.json").read_text(encoding="utf-8"))
+    return ("// Generated from failure-wording.json by source_release.py --write; do not edit.\n"
+            f"const TEMPLATES = {json.dumps(templates, indent=2)};\n"
+            "export function failureWording(type, value) {\n"
+            "  if (!Object.hasOwn(TEMPLATES, type)) return;\n"
+            "  return TEMPLATES[type].replace(\"{value}\", () => value);\n"
+            "}\n").encode()
+
+
 def check(root: Path, version: str | None = None) -> None:
     versions(manifests(root), version)
     for path, expected in derived(root).items():
         if path.is_symlink() or not path.is_file() or path.read_bytes() != expected:
             raise ValueError(f"{path.relative_to(root)}: regenerate with source_release.py --write")
+    module = root / f"{WORDING}.mjs"
+    if module.is_symlink() or not module.is_file() or module.read_bytes() != wording(root):
+        raise ValueError(f"{module.relative_to(root)}: regenerate with source_release.py --write")
 
 
 def sync(root: Path, version: str | None = None) -> None:
@@ -79,6 +94,7 @@ def sync(root: Path, version: str | None = None) -> None:
         if path.is_symlink():
             path.unlink()
         path.write_bytes(content)
+    (root / f"{WORDING}.mjs").write_bytes(wording(root))
     if version is not None:
         for path, value in values.items():
             path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")

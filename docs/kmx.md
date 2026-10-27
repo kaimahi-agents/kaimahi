@@ -233,7 +233,7 @@ routes use an explicit keyless local endpoint (HTTP or HTTPS on literal loopback
 Compatible/local transport waits at most 30 seconds for response headers, within
 the five-minute overall budget; slow non-streaming generation can hit that limit.
 Agent completions require an exact model-ID echo, with no automatic aliasing.
-Explicit `--provider copilot` uses the existing authenticated model-access
+Copilot is the default for non-fake models and uses the existing authenticated model-access
 transport at the fixed `https://api.githubcopilot.com` endpoint. Other remote
 endpoints still refuse. Copilot requires prior explicit sign-in and an exact
 enabled Chat/Responses model from `kmx model list --provider copilot`; it never falls back
@@ -248,7 +248,7 @@ cleartext, including reasoning. Neither previews nor replay produce native
 evaluation evidence.
 
 ```text
-kmx run ./greeter.agent.md --prompt Ada
+kmx run ./greeter.agent.md "Ada"
 kmx test ./greeter.agent.md --case greeting -o json
 kmx test ./greeter.agent.md
 ```
@@ -262,13 +262,13 @@ withheld. Journaled execution uses fixed-text refusals without per-request
 HTTP-status/timing or network-subclass diagnostics; it never forwards raw
 provider errors or invents a status for requests without a response.
 Absent, null, empty or different returned model identities refuse.
-Verbose is off by default and does not imply `--show-content`: instructions,
-inputs, answers, assertion operands, judge rationale and response bodies stay
-private. JSON stdout and exit contracts are unchanged. A failed diagnostic
+Verbose is off by default and does not opt into extra content: instructions,
+inputs and response bodies stay out of diagnostics. Run answers and failed-Test
+excerpts are shown by default; `--no-content` omits them and failure operands. A failed diagnostic
 write stops later sends and cannot report a full pass.
 
 ```text
-kmx run ./greeter.agent.md --provider ollama --endpoint http://127.0.0.1:11434/v1 --prompt Ada --verbose --show-content
+kmx run ./greeter.agent.md "Ada" --provider ollama --provider-url http://127.0.0.1:11434/v1 --verbose
 ```
 
 For this Ollama example, first set `Model.Preferred` in your own copy of the
@@ -280,14 +280,16 @@ for users without gh:
 
 ```bash
 kmx model list --provider copilot
-kmx run ./greeter.agent.md --provider copilot --prompt Ada --show-content
-kmx test ./greeter.agent.md --provider copilot
+kmx run ./greeter.agent.md "Ada"
+kmx test ./greeter.agent.md
 ```
 
 Selecting Copilot sends the authored instructions and each input/example to the
 hosted service; judging also sends the answer and rubric. Review the file before
 running it and account for subscription, policy and quota limits. The endpoint
-is pinned: omit `--endpoint` or supply exactly `https://api.githubcopilot.com`.
+is pinned: omit `--provider-url` or supply exactly `https://api.githubcopilot.com`.
+Without an available sign-in, Run/Test exits 2 and names `gh auth login` and the
+`--provider ollama --provider-url URL` alternative. Execution never starts login.
 Known authentication, entitlement, policy, quota and service failures produce
 safe `copilot_*` reasons and stop later sends, including after a judge failure.
 This remains preview on embedded Sessions, not a Copilot SDK harness
@@ -299,16 +301,26 @@ if the file contains only that example. Unknown/blank IDs refuse before inferenc
 An explicit `examples: []` can be saved and loaded while authoring. Ad-hoc Run
 with an input still works; Test refuses with “No tests yet — add or suggest one”.
 Missing/empty examples cannot pass, export a run profile or supply the evidence
-required for packaging/deployment. The exact CLI model comes from `Model.Preferred`
-or `gpt-5.6-terra` when the Model section is omitted;
-`fake` selects only the built-in fake route. A real model additionally requires
-an explicit trusted `--provider` and, for local routes, `--endpoint`, validated by model access;
-there is no discovery, installation, sign-in or fallback inside Run/Test. The
+required for packaging/deployment. The exact CLI model comes from `--model`, then
+`Model.Preferred`, then `gpt-5.6-terra` when the Model section is omitted.
+`fake` selects only the built-in fake route. Other models default to Copilot with
+an existing sign-in, matching the canvas. `--provider` overrides that selection;
+local providers require `--provider-url`, validated by model access. There is no
+discovery, installation, sign-in prompt or fallback inside Run/Test. The
 caller supplies any judge-route override through the App API; otherwise the
 judge uses the exact agent route, never an independently chosen route. A canonical
 file Judge without `judgeModel` follows that route; conflicting authored pins still
 refuse rather than silently switching. `judgeVersion` stays authored and required.
 Strict workspace assertions and exported run profiles still require a model pin.
+
+Text `run FILE "input"` writes only the answer to stdout; the selected route/model
+and preview diagnostics go to stderr. Positional input runs only that input unless `--case ID` also explicitly selects
+a saved example to check. Without positional input, Run prints each saved example answer;
+legacy `--prompt`/`--prompt-file` still run their ad-hoc input plus saved examples.
+`test FILE` reports PASS/FAIL, test ID and duration, failed checks with the same
+wording as the canvas, then the first answer lines. `--no-content` suppresses
+answers, failure operands and judge content in both text and JSON. Known unsafe
+content remains withheld; this is not a guarantee of detecting arbitrary secrets.
 
 Output defaults to text; `-o json` returns one versioned `schemaVersion: 1`,
 `kind: kmx.agent-file-preview` document. Both preserve operation, exact source-byte
@@ -322,9 +334,14 @@ Fake/local and Copilot execution retain a private journal handle internally,
 never in this safe result. A journaled preview pass is not deploy evidence. Paths
 are sanitized display basenames, not a file-targeting API. The optional structured
 `diagnostic` names safe parser fields, source line/column and repair advice.
-Default output contains no instructions, inputs, answers, operands, provider error
-text, endpoint or journal handle. `--show-content` explicitly adds sanitized answer
-excerpts, at most 4096 UTF-8 bytes each; treat them as untrusted content.
+CLI Run JSON includes a sanitized full `answer` per completion (including a known
+empty answer); unsafe content is marked withheld, never silently clipped to an
+excerpt. Failed Test rows include `failure` wording and sanitized `answerExcerpt`
+(up to 4096 UTF-8 bytes). `--no-content` omits these fields and judge content.
+Instructions, inputs, raw provider errors, endpoints and journal handles are never
+included. Treat all answer/operand content as untrusted. MCP retains its separate
+bounded content opt-in. File commands no longer accept `--show-content` or
+`--endpoint`; workspace/deploy/explain content flags and MCP startup are unchanged.
 
 `kmx test FILE -o json --github-summary` writes the JSON report to stdout and
 appends a bounded Markdown rendering of that same safe result to the file named by
@@ -336,12 +353,16 @@ explicit recording capture requested by the test. An unset, relative, linked or
 non-regular summary path is refused before model execution; a missing file at a
 valid absolute path is created with mode 0600.
 A summary-write failure exits 1. Otherwise the command retains the normal
-0/2/1/130 exit status. Reports and summaries are local-preview diagnostics only,
+0/1/2/130 file-mode exit status. Reports and summaries are local-preview diagnostics only,
 not suite evidence or Publish/Deploy authority.
 
 File-mode exits: 0 means the selected checks completed and passed (a partial
-selection is **not** a full pass); 2 means completed assertion fail/unknown;
-1 means refusal, execution/deadline/journal/output failure; 130 means cancellation.
+selection is **not** a full pass), or an ad-hoc Run completed; 1 means a completed
+check failed; 2 means it could not run or decide (including missing sign-in/tests,
+execution/deadline/journal failure or an inconclusive judge). Output/summary-write
+failures and command-line parsing errors (such as unknown flags) exit 1;
+cancellation exits 130. These file-mode statuses do not change
+workspace Test or live Run.
 Journal-finalization failure preserves available rows but makes the overall
 verdict unknown and returns an error, never a pass. Source edits do not rebind
 an in-flight result to a new revision. Completed non-pass Test examples retain
@@ -349,7 +370,7 @@ bounded private diagnostics under the existing `eval-failures` state root. Each
 record binds the resolved file subject, exact source revision, effective agent
 and judge provider/model, selection and assertion identity/result. The safe
 preview result reports `retention.status` and opaque diagnostic IDs; retention
-failure does not change the completed verdict or exit 2. Run, passing Test,
+failure does not change the completed verdict or file-mode exit status. Run, passing Test,
 cancellation, execution failure and journal-finalization failure retain no file
 diagnostic. This diagnostic store is separate from the cleartext Sessions journal
 and grants no evidence, Publish or Deploy authority.

@@ -185,7 +185,7 @@ test('agent-file CI reports retain failure status and content-free summaries', a
     'if: always() && hashFiles',
     'kmx-test-report',
     'Do not use continue-on-error',
-    'original 0/2/1/130 result',
+    'original 0/1/2/130 file-mode result',
     'content-free table',
     'Neither output creates automatic local history'
   ]) assert.ok(app.includes(marker), `CI report contract: ${marker}`)
@@ -196,7 +196,7 @@ test('agent-file CI reports retain failure status and content-free summaries', a
   for (const marker of [
     'durationMs', 'effective judge identity', 'Enabled/Disabled settings',
     'live/recorded/unavailable source', 'GITHUB_STEP_SUMMARY',
-    'omits file paths', '0/2/1/130 exit status', 'not suite evidence'
+    'omits file paths', '0/1/2/130 file-mode exit status', 'not suite evidence'
   ]) assert.ok(reference.includes(marker), `JSON/summary contract: ${marker}`)
 })
 

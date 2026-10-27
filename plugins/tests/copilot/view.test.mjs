@@ -361,7 +361,7 @@ test("bridge serves only token-protected same-host requests", async () => {
     assert.equal(page.headers["x-content-type-options"], "nosniff");
     assert.equal(page.headers["cache-control"], "no-store");
     assert.equal(page.headers["access-control-allow-origin"], undefined);
-    for (const name of ["app.js", "authoring.mjs", "editor.mjs", "dom.mjs", "results.mjs", "check-controls.mjs", "instruction-text.mjs", "run-views.mjs", "draft-controller.mjs", "action-controller.mjs", "observation-controller.mjs"]) {
+    for (const name of ["app.js", "authoring.mjs", "editor.mjs", "dom.mjs", "results.mjs", "failure-wording.mjs", "check-controls.mjs", "instruction-text.mjs", "run-views.mjs", "draft-controller.mjs", "action-controller.mjs", "observation-controller.mjs"]) {
       const asset = await get(base + name);
       assert.equal(asset.status, 200, name);
       assert.equal(asset.headers["content-type"].split(";")[0], "text/javascript", name);

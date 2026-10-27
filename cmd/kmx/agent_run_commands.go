@@ -14,8 +14,8 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 	var opt app.RunAgentOptions
 	var file fileCommandOptions
 	cmd := &cobra.Command{
-		Use: "run [FILE]", Short: "Preview an agent file or run an existing Orka Agent",
-		Long: "Run FILE checks saved examples as a local preview, with optional separate --prompt/--prompt-file input.\n" +
+		Use: "run [FILE [input]]", Short: "Preview an agent file or run an existing Orka Agent",
+		Long: "Run FILE previews saved examples; FILE \"input\" runs only that input. Answers go to stdout; route/model to stderr.\n" +
 			"File output is text/JSON; --case selects a partial preview. No native evidence or source edits.\n" +
 			"File previews on fake, local and Copilot models use embedded Agent Sessions and retain instructions, inputs, answers, judge payloads and reasoning in cleartext SQLite journals under the kmx state directory (KMX_HOME when set), in local-preview/journals. Retention keeps the newest 20 runs at each start; active runs are kept and concurrent starts can leave more. Stop previews before removing journal files there to clear retained content. Copilot content checks stay provider-owned and run before journaling. Replay makes zero model calls. This is not native execution evidence.\n" +
 			"--verbose prints content-free file execution diagnostics and timings on stderr.\n" +
@@ -33,20 +33,23 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 	cmd.Flags().StringVar(&opt.ResultPort, "result-port", "", "loopback result-forward port (omitted: choose automatically)")
 	registerFileCommandFlags(cmd, &file, true)
 	cmd.Args = func(cmd *cobra.Command, args []string) error {
-		if len(args) == 1 {
+		if len(args) == 1 || len(args) == 2 {
 			if err := validateFileCommand(cmd, state, file); err != nil {
-				return err
+				return fileUsageError(err)
+			}
+			if len(args) == 2 && (cmd.Flags().Changed("prompt") || cmd.Flags().Changed("prompt-file")) {
+				return fileUsageError(fmt.Errorf("positional input cannot be combined with --prompt or --prompt-file"))
 			}
 			if cmd.Flags().Changed("prompt") && cmd.Flags().Changed("prompt-file") {
-				return fmt.Errorf("only one of --prompt or --prompt-file is allowed")
+				return fileUsageError(fmt.Errorf("only one of --prompt or --prompt-file is allowed"))
 			}
 			return nil
 		}
 		if err := fileFlagsWithoutFile(cmd); err != nil {
 			return err
 		}
-		if cmd.Flags().Changed("output") || cmd.Flags().Changed("show-content") {
-			return fmt.Errorf("--output and --show-content require an explicit agent FILE")
+		if cmd.Flags().Changed("output") {
+			return fmt.Errorf("--output requires an explicit agent FILE")
 		}
 		if err := usageArgs(0, 0, "kmx run FILE or kmx run --agent <name> --prompt <text>")(cmd, args); err != nil {
 			return err
@@ -67,7 +70,11 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 	}
 	liveRun := appRun(state, func(a *app.App) error { return a.RunAgent(opt) })
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if len(args) == 1 {
+		if len(args) == 1 || len(args) == 2 {
+			if len(args) == 2 {
+				opt.Prompt = args[1]
+				file.PositionalInput = true
+			}
 			return runFileCommand(cmd, state, args[0], file, opt.Prompt, opt.PromptFile)
 		}
 		return liveRun(cmd, args)

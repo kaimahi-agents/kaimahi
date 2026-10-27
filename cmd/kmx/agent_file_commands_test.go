@@ -80,7 +80,7 @@ func TestFileCommandsAgainstRunnerInterface(t *testing.T) {
 			deps, loads := testDependencies(&out, &diag)
 			f := &cliPreviewFake{verdict: runtime.EvaluationPass}
 			deps.fileRunner = f
-			args := []string{op, cliPreviewFile(t), "--case", "greeting", "-o", "json"}
+			args := []string{op, cliPreviewFile(t), "--case", "greeting", "-o", "json", "--no-content"}
 			if op == "run" {
 				args = append(args, "--prompt", "ad-hoc")
 			}
@@ -125,7 +125,7 @@ func TestFileCommandsCopilotRoute(t *testing.T) {
 				deps.fileRunner = runner
 				args := []string{operation, path, "--provider", "copilot", "-o", "json"}
 				if endpoint != "" {
-					args = append(args, "--endpoint", endpoint)
+					args = append(args, "--provider-url", endpoint)
 				}
 				err = execute(args, deps)
 				if endpoint == "https://private.invalid" {
@@ -166,7 +166,7 @@ func TestFileCommandsCopilotFailures(t *testing.T) {
 				if err == nil {
 					t.Fatal("authentication failure succeeded")
 				}
-				if text := out.String() + diag.String() + err.Error(); !strings.Contains(text, "copilot_auth_required") || strings.Contains(text, "PRIVATE") {
+				if text := out.String() + diag.String() + err.Error(); !strings.Contains(text, "gh auth login") || strings.Contains(text, "PRIVATE") {
 					t.Fatalf("unsafe or unclassified error: %s", text)
 				}
 				if output == "json" {
@@ -189,11 +189,11 @@ func TestFileCommandExitCodes(t *testing.T) {
 		code    string
 	}{
 		{runtime.EvaluationPass, nil, 0, "checks_passed"},
-		{runtime.EvaluationFail, nil, 2, "assertion_failed"},
+		{runtime.EvaluationFail, nil, 1, "assertion_failed"},
 		{runtime.EvaluationUnknown, nil, 2, "judge_unknown"},
-		{runtime.EvaluationPass, agentpreview.ErrJournalFailed, 1, "journal_failed"},
+		{runtime.EvaluationPass, agentpreview.ErrJournalFailed, 2, "journal_failed"},
 		{runtime.EvaluationPass, context.Canceled, 130, "cancelled"},
-		{runtime.EvaluationPass, context.DeadlineExceeded, 1, "deadline_exceeded"},
+		{runtime.EvaluationPass, context.DeadlineExceeded, 2, "deadline_exceeded"},
 	} {
 		t.Run(tc.code, func(t *testing.T) {
 			var out, diag bytes.Buffer
@@ -222,9 +222,9 @@ func TestFileCommandGitHubSummaryPreservesExitAndReport(t *testing.T) {
 		code    string
 	}{
 		{"pass", runtime.EvaluationPass, nil, 0, "complete", "checks_passed"},
-		{"fail", runtime.EvaluationFail, nil, 2, "complete", "assertion_failed"},
+		{"fail", runtime.EvaluationFail, nil, 1, "complete", "assertion_failed"},
 		{"unknown", runtime.EvaluationUnknown, nil, 2, "complete", "judge_unknown"},
-		{"journal", runtime.EvaluationPass, agentpreview.ErrJournalFailed, 1, "error", "journal_failed"},
+		{"journal", runtime.EvaluationPass, agentpreview.ErrJournalFailed, 2, "error", "journal_failed"},
 		{"cancelled", runtime.EvaluationPass, context.Canceled, 130, "cancelled", "cancelled"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -332,9 +332,9 @@ func TestFileCommandGitHubSummaryReportsPreExecutionRefusal(t *testing.T) {
 	deps, _ := testDependencies(&out, &diag)
 	runner := &cliPreviewFake{verdict: runtime.EvaluationPass}
 	deps.fileRunner = runner
-	err = execute([]string{"test", file, "-o", "json", "--github-summary"}, deps)
+	err = execute([]string{"test", file, "--provider", "compatible", "-o", "json", "--github-summary"}, deps)
 	markdown, readErr := os.ReadFile(summary)
-	if err == nil || exitCode(err) != 1 || runner.calls != 0 || readErr != nil || !strings.Contains(string(markdown), "model_unavailable") || strings.Contains(string(markdown), file) {
+	if err == nil || exitCode(err) != 2 || runner.calls != 0 || readErr != nil || !strings.Contains(string(markdown), "model_unavailable") || strings.Contains(string(markdown), file) {
 		t.Fatalf("refusal report: err=%v calls=%d read=%v summary=%q", err, runner.calls, readErr, markdown)
 	}
 }
@@ -355,7 +355,7 @@ func TestFileCommandGitHubSummaryReportsRedactedRefusal(t *testing.T) {
 			deps.fileRunner = runner
 			deps.openGitHubSummary = func() (io.WriteCloser, error) { return writeCloseBuffer{Buffer: &summary}, nil }
 			err := execute([]string{"test", cliPreviewFile(t), "-o", "json", "--github-summary"}, deps)
-			if err == nil || exitCode(err) != 1 || runner.calls != 1 || !strings.Contains(out.String(), `"reasonCode":"`+tc.code+`"`) || !strings.Contains(summary.String(), "`unavailable`") || !strings.Contains(summary.String(), tc.code) || strings.Contains(out.String()+summary.String(), "PRIVATE") {
+			if err == nil || exitCode(err) != 2 || runner.calls != 1 || !strings.Contains(out.String(), `"reasonCode":"`+tc.code+`"`) || !strings.Contains(summary.String(), "`unavailable`") || !strings.Contains(summary.String(), tc.code) || strings.Contains(out.String()+summary.String(), "PRIVATE") {
 				t.Fatalf("redacted refusal: err=%v output=%s summary=%s", err, out.String(), summary.String())
 			}
 		})
@@ -508,7 +508,7 @@ func TestFilePreviewVerboseStderrOnly(t *testing.T) {
 				}
 				var out, diag bytes.Buffer
 				deps, loads := testDependencies(&out, &diag)
-				args := []string{op, path, "-o", "json"}
+				args := []string{op, path, "-o", "json", "--no-content"}
 				if verbose {
 					args = append(args, "--verbose")
 				}

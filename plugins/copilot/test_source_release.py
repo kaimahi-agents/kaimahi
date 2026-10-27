@@ -12,6 +12,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 DERIVED = ("skills/kmx/SKILL.md", "skills/kmx-agent-builder/SKILL.md",
            "com.github.copilot/extensions/agent-view/extension.mjs")
+VIEW = "com.github.copilot/extensions/agent-view/"
+WORDING = '{"contains":"Missing \\"{value}\\""}'
 
 
 class SourceReleaseTests(unittest.TestCase):
@@ -30,6 +32,10 @@ class SourceReleaseTests(unittest.TestCase):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 identity = "kmx-agent-builder" if directory == "copilot-wsl" else "kmx-agent-builder-path"
                 path.write_bytes(f"unchanged MCP kmx-agent-builder\r\nplugin:{identity}:agent-view\r\n".encode())
+
+        wsl = self.root / "plugins/copilot-wsl" / VIEW
+        (wsl / "failure-wording.json").write_text(WORDING)
+        self.run_check("--write")
 
     def run_check(self, *args):
         return subprocess.run([sys.executable, str(HERE / "source_release.py"), *args],
@@ -134,6 +140,17 @@ class SourceReleaseTests(unittest.TestCase):
                                 env={**os.environ, "SYNTHETIC": "true", "VERSION": "synthetic"},
                                 capture_output=True, text=True, check=False, timeout=10)
         self.assertEqual(result.returncode, 1, result.stderr)
+
+    def test_generated_failure_wording_module_is_checked_and_regenerated(self):
+        module = self.root / "plugins/copilot-wsl" / VIEW / "failure-wording.mjs"
+        self.assertIn("Generated from failure-wording.json", module.read_text())
+        self.assertEqual(self.run_check().returncode, 0)
+        module.write_text("stale")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("failure-wording.mjs", result.stderr)
+        self.assertEqual(self.run_check("--write").returncode, 0)
+        self.assertEqual(self.run_check().returncode, 0)
 
     def test_real_source_tree_is_synchronized(self):
         result = subprocess.run([sys.executable, str(HERE / "source_release.py")],

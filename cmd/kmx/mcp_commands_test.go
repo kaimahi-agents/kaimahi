@@ -161,6 +161,13 @@ func TestMCPCommandUnboundStartup(t *testing.T) {
 	if err != nil || created.IsError {
 		t.Fatalf("create Claude agent: %+v, %v", created, err)
 	}
+	// A canvas-created real-model file must work from the CLI without route flags.
+	var cliOut, cliDiag bytes.Buffer
+	cliDeps, cliLoads := testDependencies(&cliOut, &cliDiag)
+	cliDeps.fileRunner = runner
+	if err := execute([]string{"test", path}, cliDeps); err != nil || *cliLoads != 0 || runner.request.Route.Provider != "copilot" || runner.request.Route.Model != "claude-haiku-5.5" {
+		t.Fatalf("canvas-to-CLI route: %+v / %v / %s", runner.request.Route, err, cliOut.String())
+	}
 	for _, operation := range []string{"run", "test"} {
 		result, err := cs.CallTool(ctx, &sdk.CallToolParams{Name: operation, Arguments: map[string]any{"schemaVersion": 1, "path": path}})
 		want := modelaccess.Route{Provider: "copilot", Model: "claude-haiku-5.5", Endpoint: modelaccess.CopilotEndpoint, Auth: "copilot"}
@@ -304,7 +311,7 @@ func TestMCPCommandSharedOperationParity(t *testing.T) {
 		}
 		var out, cliDiag bytes.Buffer
 		cliDeps, _ := testDependencies(&out, &cliDiag)
-		if err := execute([]string{op, filepath.Join(root, "greeter.agent.md"), "--case", "greeting", "-o", "json"}, cliDeps); err != nil {
+		if err := execute([]string{op, filepath.Join(root, "greeter.agent.md"), "--case", "greeting", "-o", "json", "--no-content"}, cliDeps); err != nil {
 			t.Fatal(err)
 		}
 		b, _ := json.Marshal(result.StructuredContent)

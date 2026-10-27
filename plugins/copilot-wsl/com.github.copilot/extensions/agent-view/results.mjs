@@ -1,4 +1,5 @@
 // Result reading: cases, check facts, plain reasons, rows and per-model history.
+import { failureWording } from "./failure-wording.mjs";
 import { preRouteRefusal, same, uniqueIndex, operandKey, quoted } from "./authoring.mjs";
 
 export const checkKey = (a) => JSON.stringify([a.id, a.type]);
@@ -63,8 +64,7 @@ export function failureFacts(c, assertion) {
     if (got?.verdict !== "fail" || a.type === "llmJudge") continue;
     const value = fieldValue(a), excerpt = c.row?.answerExcerpt;
     const actual = a.type === "contains" ? provenActual(value, excerpt) : undefined;
-    const text = a.type === "contains" ? `Missing "${value}"` : a.type === "notContains" ? `Found "${value}"`
-      : a.type === "regex" ? `No match for ${value}` : `Not met: ${checkLabel(a)}`;
+    const text = failureWording(a.type, value) ?? `Not met: ${checkLabel(a)}`;
     return { assertion: a, text, actual, value };
   }
 }

@@ -38,7 +38,7 @@ func newAgentEvaluationCommand(state *commandState, verb string) *cobra.Command 
 	if verb == "test" {
 		fileHelp = "Canonical test FILE checks a markdown agent's saved examples as a local preview (not native evidence). --case ID selects a partial preview. File previews on fake, local and Copilot models use embedded Agent Sessions and retain instructions, inputs, answers, judge payloads and reasoning in cleartext SQLite journals under the kmx state directory (KMX_HOME when set), in local-preview/journals. Journal retention keeps the newest 20 runs at each start; active runs are kept and concurrent starts can leave more. Completed non-pass Test examples additionally retain bounded diagnostics under eval-failures (last 10 per resolved file subject across revisions); the result reports retained IDs or unavailable retention. Use test explain --file FILE to inspect or clear those diagnostics offline. Stop previews before clearing journals separately; deleting journals does not clear failure diagnostics. Copilot content checks stay provider-owned and run before journaling. Replay makes zero model calls. Neither retained store is native execution evidence. --verbose prints content-free file execution diagnostics and timings on stderr.\n"
 		outputHelp = "output: text|json (workspace JSON: Orka only; FILE supports both)"
-		showContentHelp = "show sanitized bounded content (workspace: stderr; FILE: answer excerpts in result; not evidence)"
+		showContentHelp = "show bounded workspace failure content on stderr (not supported with FILE; FILE content is shown by default)"
 	}
 	group := &cobra.Command{
 		Use: verb, Short: "Evaluate a native workspace or export, verify and compare saved evidence",
@@ -59,8 +59,11 @@ func newAgentEvaluationCommand(state *commandState, verb string) *cobra.Command 
 			"  kmx test --workspace ./workspace --to-context remote --to-namespace orka-system --inference provider:inference --out ../private/passing.json",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if verb == "test" && len(args) == 1 {
-				file.Output, file.ShowContent = output, native.ShowContent
-				return validateFileCommand(cmd, state, file)
+				file.Output = output
+				if cmd.Flags().Changed("show-content") {
+					return fileUsageError(fmt.Errorf("--show-content is not supported with FILE; content is shown by default, use --no-content to omit it"))
+				}
+				return fileUsageError(validateFileCommand(cmd, state, file))
 			}
 			if err := fileFlagsWithoutFile(cmd); err != nil {
 				return err

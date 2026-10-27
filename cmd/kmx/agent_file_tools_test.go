@@ -31,7 +31,7 @@ func TestFileToolBindingsExplicitAndInert(t *testing.T) {
 		diag.Reset()
 		deps.fileRunner = app.NewLocalFileRunner()
 		err = execute([]string{op, file}, deps)
-		if !strings.Contains(out.String(), "unavailable") || !strings.Contains(out.String(), "Not called") || *loads != 0 {
+		if !strings.Contains(out.String()+diag.String(), "unavailable") || !strings.Contains(out.String()+diag.String(), "Not called") || *loads != 0 {
 			t.Fatal("missing tool source not reported", err, out.String())
 		}
 	}

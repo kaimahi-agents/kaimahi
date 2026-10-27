@@ -284,7 +284,7 @@ GitHub Actions fails the step on a nonzero exit. Do not use `continue-on-error`
 if these tests are meant to gate the pull request. This file-mode check does not
 publish a package or create evidence for deployment. The explicit status capture
 lets the upload step run while the test step still records the original
-0/2/1/130 result. `--github-summary` adds a content-free table with revision,
+0/1/2/130 file-mode result (passed/failed/could-not-run/cancelled). `--github-summary` adds a content-free table with revision,
 model/judge, scope, timings, checks and tool settings/sources/counts; the JSON
 artifact is the durable report you chose to retain. Neither output creates
 automatic local history.
