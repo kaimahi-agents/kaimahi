@@ -154,6 +154,58 @@ new pair metadata; use this version or newer to read it. No records are migrated
 or removed automatically. Put journal/summary files outside the checked source parent when possible: creating
 entries there can conservatively stale source-version checks.
 
+## Test a folder
+
+Bare `kmx test` selects direct `*.agent.md` entries in the current folder and
+`.github/agents/`, sorted by path, without recursion or Git-root discovery.
+Each agent uses the same companion rule above. Tests files and agents in other
+subfolders are not selected. Missing optional folders are fine; unreadable or
+invalid folders are reported rather than silently treated as empty.
+Matching unsafe files are refused by the existing checked reader.
+
+```sh
+kmx test
+kmx test -o json --no-content --github-summary
+kmx test greeter.agent.md --tests selected-tests.md --case greeting
+```
+
+`--tests` and `--case` require an explicit agent FILE, even if the folder contains
+exactly one agent. Route/model, tool-server selection, `--no-content` and verbose
+options apply to each selected file. Native workspace evaluation stays at
+`kmx package test`; bare Test never falls back to it. Native Windows still
+requires an explicit file through its guarded fake/tool-free path.
+
+Each file gets its own checked pair, journal and five-minute execution budget.
+This is not one atomic folder snapshot. Assertion failures, completed inconclusive
+checks and invalid/missing/empty tests do not prevent the next file from being
+checked. Execution, route/auth, journal, source and other operational failures
+abort later execution; remaining selected files are explicitly `not_run`, not
+passing. An inconclusive judge is `unknown`, including an unavailable judge; no
+automatic retries occur.
+
+Text has per-file details and one final summary. Folder JSON is one
+`schemaVersion: 1`, `kind: kmx.agent-folder-test` document. Its ordered `files`
+rows include an ordinal, safe display directory/name, status and the existing
+safe per-file `result` when available. Root and repository agents with the same
+basename stay distinct. Unrun rows have no fabricated result or revisions.
+Final `summary` counts are `total`, `passed`, `failed`, `unknown`, `couldNotRun`
+and `notRun`, followed by `exitCode` and `reasonCode`.
+
+Exit 2 takes precedence over assertion-failure exit 1 if any file is unknown,
+could not run or was not run; an empty/invalid discovery also exits 2.
+Otherwise all pass is 0; interruption is 130. Output/diagnostic/summary I/O errors
+are exceptional exit 1 and stop later sends. Output streams one file at a time:
+a failed write can leave a partial document without its final counts.
+Do not interpret partial output as a completed folder result.
+
+The optional GitHub summary opens once before execution, including for an empty
+folder or discovery error. It contains ordinal-only per-file sections and final
+counts, never source paths or authored content. The whole summary is bounded to
+1 MiB; sections that do not fit are omitted with an exact omitted-section count
+and a pointer to the JSON report. Final counts still cover all selected files.
+The summary sink must finish successfully before JSON's final counts are written;
+neither output is an atomic two-sink publication.
+
 ## Existing kmx charters
 
 The [complete greeter sample](../internal/kmx/agentfile/testdata/greeter.agent.md)

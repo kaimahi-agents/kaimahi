@@ -295,7 +295,6 @@ func TestFileCommandGitHubSummaryRefusesBeforeExecution(t *testing.T) {
 		{"missing environment", []string{"test", "FILE", "-o", "json", "--github-summary"}, ""},
 		{"relative environment", []string{"test", "FILE", "-o", "json", "--github-summary"}, "summary.md"},
 		{"requires json", []string{"test", "FILE", "--github-summary"}, filepath.Join(t.TempDir(), "unused.md")},
-		{"requires file", []string{"test", "--github-summary", "-o", "json"}, filepath.Join(t.TempDir(), "unused.md")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			file := cliPreviewFile(t)
@@ -441,7 +440,6 @@ func TestFileCommandsRefuseMixedModesBeforeConfig(t *testing.T) {
 		{"test", "--case", "greeting"},
 		{"run", "--agent", "live", "--prompt", "x", "--case", "greeting"},
 		{"run", "--agent", "live", "--prompt", "x", "--verbose"},
-		{"test", "--verbose"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			path := cliPreviewFile(t)
@@ -631,7 +629,7 @@ func TestFileHelpIsCanonicalOnly(t *testing.T) {
 						t.Errorf("legacy help changed: missing %q", help)
 					}
 				}
-			} else if !strings.Contains(strings.ToLower(out.String()), verb+" file") || !strings.Contains(out.String(), "--case") {
+			} else if !strings.Contains(strings.ToLower(out.String()), map[string]string{"run": "run file", "test": "test [file]"}[verb]) || !strings.Contains(out.String(), "--case") {
 				t.Fatalf("canonical file preview missing from %s help: %s", verb, out.String())
 			}
 			if verb != "eval" {

@@ -185,6 +185,11 @@ numbered versions or new publication command are introduced.
 
 ### Agent-file local preview (unreleased integration)
 
+Bare `kmx test` tests direct agent files in the current folder and
+`.github/agents/`, not recursively, with one final text/JSON/CI summary.
+See [folder discovery, outcomes and output limits](agent-file.md#test-a-folder).
+It never falls back to native workspace evaluation (`kmx package test`).
+
 `kmx run FILE` and `kmx test FILE` select one canonical markdown agent file,
 without workspace discovery, cluster configuration, Docker or a daemon. The
 shared [tests-file rule](agent-file.md#tests-in-a-separate-file-reader-only) selects
@@ -378,12 +383,12 @@ included. Treat all answer/operand content as untrusted. MCP retains its separat
 bounded content opt-in. File commands no longer accept `--show-content` or
 `--endpoint`; workspace/deploy/explain content flags and MCP startup are unchanged.
 
-`kmx test FILE -o json --github-summary` writes the JSON report to stdout and
+`kmx test [FILE] -o json --github-summary` writes the JSON report to stdout and
 appends a bounded Markdown rendering of that same safe result to the file named by
 GitHub Actions' existing `$GITHUB_STEP_SUMMARY`. It omits file paths, prompts,
 answers, assertion operands, tool arguments/results, credentials, endpoints,
 provider diagnostics, retained diagnostic IDs and judge rationale. The flag is
-Test-file-only, requires JSON output, and creates no local history beyond an
+for file or folder Test, requires JSON output, and creates no local history beyond an
 explicit recording capture requested by the test. An unset, relative, linked or
 non-regular summary path is refused before model execution; a missing file at a
 valid absolute path is created with mode 0600.

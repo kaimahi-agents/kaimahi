@@ -19,14 +19,22 @@ import (
 func newAgentTestCommand(state *commandState) *cobra.Command {
 	var file fileCommandOptions
 	cmd := &cobra.Command{
-		Use: "test FILE", Short: "Test a markdown agent file's saved examples",
-		Long: "Test FILE checks every saved example; --case selects one example.\n" +
+		Use: "test [FILE]", Short: "Test agent files in this folder, or one FILE",
+		Long: "Test checks direct agent files here and in .github/agents (not recursive).\n" +
+			"With FILE, --case selects one test; --tests overrides its tests source.\n" +
 			"Exit: 0 pass, 1 assertion fail, 2 unknown/execution error, 130 interrupted.\n" +
-			"Use test explain --file FILE for retained diagnostics.\n" +
-			"Local preview is not package evidence. Content retention and privacy:\n" +
+			"Use test explain --file FILE for diagnostics. Retention and privacy:\n" +
 			previewCaveatsURL,
-		Example: "  kmx test greeter.agent.md\n  kmx test greeter.agent.md --case greeting\n  kmx test greeter.agent.md -o json --no-content",
+		Example: "  kmx test\n  kmx test greeter.agent.md --case greeting\n  kmx test -o json --no-content --github-summary",
 		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				for _, name := range []string{"tests", "case"} {
+					if cmd.Flags().Changed(name) {
+						return fileUsageError(fmt.Errorf("--%s requires an explicit agent FILE", name))
+					}
+				}
+				return fileUsageError(validateFileCommand(cmd, state, file))
+			}
 			if len(args) != 1 {
 				if err := fileFlagsWithoutFile(cmd); err != nil {
 					return fileUsageError(err)
@@ -41,6 +49,9 @@ func newAgentTestCommand(state *commandState) *cobra.Command {
 		},
 		PreRunE: func(*cobra.Command, []string) error { return nil },
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return runFolderTest(cmd, state, file)
+			}
 			return runFileCommand(cmd, state, args[0], file, "", "")
 		},
 	}

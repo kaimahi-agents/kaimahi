@@ -144,47 +144,65 @@ func TestFileCLIMCPSelectionAndReplay(t *testing.T) {
 }
 
 func TestFileCLIMCPCompanionCaptureAndReplay(t *testing.T) {
-	file, marker := cliMCPFixture(t, "serve", "Enabled", true)
-	raw, err := os.ReadFile(file)
-	if err != nil {
-		t.Fatal(err)
-	}
-	agent := []byte(strings.SplitN(string(raw), "## Examples", 2)[0])
-	if err := os.WriteFile(file, agent, 0600); err != nil {
-		t.Fatal(err)
-	}
-	tests := strings.TrimSuffix(file, ".agent.md") + ".agent.test.md"
-	if err := os.WriteFile(tests, []byte("---\nschemaVersion: 1\n---\n```yaml agent-test\nid: sample\ninput: hello\nmocks: {tools: [{name: ping, mode: recorded, calls: []}]}\nassertions: [{id: calls, type: toolCalled, tool: ping}]\n```\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	var out, diag bytes.Buffer
-	deps, _ := testDependencies(&out, &diag)
-	deps.fileRunner = productionDependencies().fileRunner
-	for _, source := range []string{"live", "recorded"} {
-		out.Reset()
-		if err := execute([]string{"test", file, "-o", "json"}, deps); err != nil {
-			t.Fatal(err, out.String(), diag.String())
-		}
-		var result app.FilePreviewResult
-		if err := json.Unmarshal(out.Bytes(), &result); err != nil || !result.FullPass || result.Examples[0].Tools[0].Source != source {
-			t.Fatalf("%s result: %+v %v", source, result, err)
-		}
-		if source == "live" {
-			if result.RecordingTarget == nil || result.RecordingTarget.Role != "tests" || result.SavedRevision == "" {
-				t.Fatalf("missing tests capture: %+v", result)
+	for _, folder := range []bool{false, true} {
+		t.Run(map[bool]string{false: "file", true: "folder"}[folder], func(t *testing.T) {
+			file, marker := cliMCPFixture(t, "serve", "Enabled", true)
+			raw, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
 			}
-			if err := os.Remove(marker); err != nil {
-				t.Fatal("server did not start", err)
+			agent := []byte(strings.SplitN(string(raw), "## Examples", 2)[0])
+			if err := os.WriteFile(file, agent, 0600); err != nil {
+				t.Fatal(err)
 			}
-		} else if _, err := os.Stat(marker); !os.IsNotExist(err) {
-			t.Fatal("replay launched server", err)
-		}
-		if got, err := os.ReadFile(file); err != nil || !bytes.Equal(got, agent) {
-			t.Fatal("companion capture changed agent", err)
-		}
+			tests := strings.TrimSuffix(file, ".agent.md") + ".agent.test.md"
+			if err := os.WriteFile(tests, []byte("---\nschemaVersion: 1\n---\n```yaml agent-test\nid: sample\ninput: hello\nmocks: {tools: [{name: ping, mode: recorded, calls: []}]}\nassertions: [{id: calls, type: toolCalled, tool: ping}]\n```\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			var out, diag bytes.Buffer
+			deps, _ := testDependencies(&out, &diag)
+			deps.fileRunner = productionDependencies().fileRunner
+			args := []string{"test", file, "-o", "json"}
+			if folder {
+				t.Chdir(filepath.Dir(file))
+				args = []string{"test", "-o", "json"}
+			}
+			for _, source := range []string{"live", "recorded"} {
+				out.Reset()
+				if err := execute(args, deps); err != nil {
+					t.Fatal(err, out.String(), diag.String())
+				}
+				var result app.FilePreviewResult
+				var decodeErr error
+				if folder {
+					r := readFolderReport(t, &out, nil, 0)
+					if len(r.Files) != 1 || r.Files[0].Result == nil {
+						t.Fatal("missing captured folder result")
+					}
+					result = *r.Files[0].Result
+				} else {
+					decodeErr = json.Unmarshal(out.Bytes(), &result)
+				}
+				if err := decodeErr; err != nil || !result.FullPass || result.Examples[0].Tools[0].Source != source {
+					t.Fatalf("%s result: %+v %v", source, result, err)
+				}
+				if source == "live" {
+					if result.RecordingTarget == nil || result.RecordingTarget.Role != "tests" || result.SavedRevision == "" {
+						t.Fatalf("missing tests capture: %+v", result)
+					}
+					if err := os.Remove(marker); err != nil {
+						t.Fatal("server did not start", err)
+					}
+				} else if _, err := os.Stat(marker); !os.IsNotExist(err) {
+					t.Fatal("replay launched server", err)
+				}
+				if got, err := os.ReadFile(file); err != nil || !bytes.Equal(got, agent) {
+					t.Fatal("companion capture changed agent", err)
+				}
+			}
+		})
 	}
 }
-
 func TestFileCLIMCPRunAndSummary(t *testing.T) {
 	for _, op := range []string{"run", "test"} {
 		t.Run(op, func(t *testing.T) {
