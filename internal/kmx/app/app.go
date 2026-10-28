@@ -2,6 +2,10 @@
 // context guards, runtime adapters and external tools.
 //
 // App coordinates consent, side effects and runtime-specific evidence.
+// Native Run/Chat freeze explicit Task enforcement input per invocation, require
+// the running controller's protocol support and verify exact admission/readback.
+// Shared Run/Chat/result and run-view presentation projects typed historical
+// enforcement admission, never raw policy, status prose or live provider proof.
 // Placement observations are distinct from evaluation proof; successful
 // placement alone must not be treated as proof of agent behavior. Retained
 // workspace and completed non-pass file-Test failures use the checked private
@@ -9,10 +13,6 @@
 // remain diagnostics only and file records never become evaluation evidence.
 // File previews bind omitted judge models on execution copies and expose valid
 // two-sample scores and sanitized transient reasons only with content disclosure.
-// Native Run/Chat freeze explicit Task enforcement input per invocation, require
-// the running controller's protocol support and verify exact admission/readback.
-// Shared Run/Chat/result and run-view presentation projects typed historical
-// enforcement admission, never raw policy, status prose or live provider proof.
 package app
 
 import (
