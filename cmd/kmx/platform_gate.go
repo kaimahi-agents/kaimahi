@@ -72,23 +72,28 @@ func windowsCommandAllowed(cmd *cobra.Command, args []string, state *commandStat
 		if len(args) == 2 {
 			args = args[:1]
 		}
-		return windowsFlagsAllowed(cmd, "case", "output", "prompt", "no-content", "verbose") && windowsPackageFreeFakeFile(args)
+		return windowsFlagsAllowed(cmd, "case", "tests", "output", "prompt", "no-content", "verbose") && windowsPackageFreeFakePair(cmd, args, state)
 	case "test":
-		return windowsFlagsAllowed(cmd, "case", "output", "no-content", "verbose") && windowsPackageFreeFakeFile(args)
+		return windowsFlagsAllowed(cmd, "case", "tests", "output", "no-content", "verbose") && windowsPackageFreeFakePair(cmd, args, state)
 	case "test explain", "eval explain", "package test explain":
 		file := cmd.Flag("file")
 		return len(args) <= 1 && file != nil && file.Changed && strings.TrimSpace(file.Value.String()) != "" &&
-			windowsFlagsAllowed(cmd, "clear", "file", "show-content")
+			windowsFlagsAllowed(cmd, "clear", "file", "tests", "show-content")
 	}
 	return false
 }
 
-func windowsPackageFreeFakeFile(args []string) bool {
+func windowsPackageFreeFakePair(cmd *cobra.Command, args []string, state *commandState) bool {
 	if len(args) != 1 {
 		return false
 	}
-	agent, err := agentfile.Load(args[0])
-	return err == nil && windowsPackageFreeFakeAgent(agent)
+	selected, _ := cmd.Flags().GetString("tests")
+	pair, err := agentfile.LoadPair(args[0], selected)
+	if err != nil || !windowsPackageFreeFakeAgent(pair.Agent) {
+		return false
+	}
+	state.windowsFilePair = pair
+	return true
 }
 
 func windowsPackageFreeFakeAgent(agent *agentfile.Agent) bool {

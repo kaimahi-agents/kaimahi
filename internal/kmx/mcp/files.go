@@ -442,12 +442,21 @@ func (f *Files) Edit(ctx context.Context, p, expected string, b []byte) (File, e
 }
 
 func (f *Files) editObserved(ctx context.Context, p, expected string, b []byte, observed *sourceIdentity) (File, error) {
+	return f.editObservedChecked(ctx, p, expected, b, observed, nil, nil)
+}
+
+// Private pair checks run before staging and under the target lock immediately
+// before replacement. Public Edit and legacy recording saves supply no hooks.
+func (f *Files) editObservedChecked(ctx context.Context, p, expected string, b []byte, observed *sourceIdentity, beforeStage, beforePublish func() error) (File, error) {
 	if err := cancelled(ctx); err != nil {
 		return File{}, err
 	}
 	requested := p
 	p, err := f.rootRelative(p)
 	if err != nil {
+		return File{}, err
+	}
+	if err := f.requireSingleSource(p); err != nil {
 		return File{}, err
 	}
 	if err := f.valid(p, b); err != nil {
@@ -474,6 +483,11 @@ func (f *Files) editObserved(ctx context.Context, p, expected string, b []byte, 
 	}
 	if f.validate(p, old) != nil {
 		return File{}, refusal("invalid_file")
+	}
+	if beforeStage != nil {
+		if err := beforeStage(); err != nil {
+			return File{}, err
+		}
 	}
 	name, err := stage(parent, b, info.Mode(), true)
 	if err != nil {
@@ -525,6 +539,14 @@ func (f *Files) editObserved(ctx context.Context, p, expected string, b []byte, 
 		}
 	}
 	if err := cancelled(ctx); err != nil {
+		return File{}, err
+	}
+	if beforePublish != nil {
+		if err := beforePublish(); err != nil {
+			return File{}, err
+		}
+	}
+	if err := f.requireSingleSource(p); err != nil {
 		return File{}, err
 	}
 	if err := parent.Rename(name, filepath.Base(p)); err != nil {

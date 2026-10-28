@@ -93,7 +93,13 @@ func shortCommandHelp(cmd *cobra.Command, _ []string) {
 				fileFlags.AddFlag(flag)
 			}
 		})
-		liveFlags.AddFlagSet(cmd.InheritedFlags())
+		cmd.InheritedFlags().VisitAll(func(flag *pflag.Flag) {
+			display := *flag
+			if display.Name == "context" {
+				display.Usage = "Kubernetes context (live only)"
+			}
+			liveFlags.AddFlag(&display)
+		})
 		writeHelpFlags(out, "Flags (file preview)", fileFlags)
 		writeHelpFlags(out, "Flags (shared input)", sharedFlags)
 		writeHelpFlags(out, "Flags (live Orka)", liveFlags)

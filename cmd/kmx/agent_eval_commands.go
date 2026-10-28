@@ -28,6 +28,9 @@ func newAgentTestCommand(state *commandState) *cobra.Command {
 		Example: "  kmx test greeter.agent.md\n  kmx test greeter.agent.md --case greeting\n  kmx test greeter.agent.md -o json --no-content",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 1 {
+				if err := fileFlagsWithoutFile(cmd); err != nil {
+					return fileUsageError(err)
+				}
 				return fileUsageError(fmt.Errorf("usage: kmx test FILE; workspace evaluation moved to kmx package test"))
 			}
 			switch args[0] {

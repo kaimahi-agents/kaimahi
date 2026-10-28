@@ -58,15 +58,23 @@ uses `acknowledgeCopilotTests: true` only after the user agrees to that warning;
 MCP Run/Test also requires this acknowledgment before capturing pending tool
 recordings into a Copilot file's tests (replay-only runs do not write);
 without acknowledgment it reports `confirmation_required` and does not write.
-Prompt-only edits retaining identical tests do not ask again. CLI and MCP preview
-and authoring still use inline tests; the companion reader below is not wired into
-those operations yet.
+Prompt-only edits retaining identical tests do not ask again. Existing MCP/canvas
+inline authoring keeps this rule; paired CLI recording writes only the tests file.
 
-## Tests in a separate file (reader only)
+<a id="tests-in-a-separate-file-reader-only"></a>
 
-The shared reader supports a separate tests file. CLI/MCP Run/Test and the canvas
-do not use it yet. The reader does not migrate inline tests, write files or run
-tests.
+## Tests in a separate file (CLI)
+
+`kmx run FILE` and `kmx test FILE` read the selected tests file with the shared
+reader. Run returns answers without checks; Test evaluates the checks. Add
+`--tests FILE` to select an override, or use `run FILE "input"` for only that
+input. No source migration is automatic. A missing or empty test source is not
+a passing Test.
+
+MCP/canvas pair capabilities and writers are a later slice. Existing MCP reads,
+Run/Test and Edit refuse an agent-only view when its default tests file exists;
+they do not ignore that file, report an old agent-only pass as current, or fall
+back to inline writes. Native Squad and single-source files remain supported.
 
 The tests file is `NAME.agent.test.md` beside `NAME.agent.md`. An agent directly
 inside `.github/agents/` instead pairs with `.github/agent-tests/NAME.agent.test.md`.
@@ -128,6 +136,21 @@ changes can conservatively invalidate this check without changing either file.
 Pure `ComposePair` values cannot claim a checked file version. These cooperative
 checks are not an atomic two-file transaction, a hostile-filesystem sandbox or
 write permission. The reader keeps separate tests out of the agent's prompt.
+
+CLI JSON keeps `file.revision` as the raw agent hash and adds `snapshotRevision`
+and selected `tests` metadata. Capturing a pending Recorded tool patches only its
+actual source after journal close: separate tests for paired storage, the agent
+for legacy inline storage. The result remains bound to the executed snapshot;
+`recordingTarget`, raw `savedRevision` and `savedSnapshotRevision` acknowledge the
+save separately. Cancellation, journal failure or source change saves nothing;
+a refused tests save never falls back to the agent. Comments, prose, line endings
+and unrelated numeric lexemes remain unchanged. CLI adds no source history.
+
+`kmx test explain --file FILE [--tests FILE]` compares retained failures with the
+current selection. Tests-only edits and a different identical-content override
+make the old result historical without changing the raw agent revision. Put
+journal/summary files outside the checked source parent when possible: creating
+entries there can conservatively stale source-version checks.
 
 ## Existing kmx charters
 

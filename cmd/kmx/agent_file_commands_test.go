@@ -34,6 +34,11 @@ func (f *cliPreviewFake) Run(ctx context.Context, r agentpreview.Request) (agent
 	f.deadline, _ = ctx.Deadline()
 	f.calls++
 	f.request = r
+	if r.ValidateSource != nil && f.cause == nil {
+		if err := r.ValidateSource(ctx); err != nil {
+			return agentpreview.Outcome{State: agentpreview.Failed}, agentpreview.ErrSourceChanged
+		}
+	}
 	if r.BeforeExecute != nil && f.cause == nil {
 		if err := r.BeforeExecute(); err != nil {
 			return agentpreview.Outcome{State: agentpreview.Failed}, errors.Join(agentpreview.ErrDiagnosticsFailed, err)
@@ -43,7 +48,7 @@ func (f *cliPreviewFake) Run(ctx context.Context, r agentpreview.Request) (agent
 		if f.cause != nil {
 			return agentpreview.Completion{State: agentpreview.NotRun}
 		}
-		return agentpreview.Completion{State: agentpreview.Complete, ID: id, FileRevision: r.Agent.Revision, Provider: r.Route.Provider, Model: r.Route.Model, Answer: "PRIVATE ANSWER"}
+		return agentpreview.Completion{State: agentpreview.Complete, ID: id, FileRevision: r.Agent.Revision, SnapshotRevision: r.SnapshotRevision, Provider: r.Route.Provider, Model: r.Route.Model, Answer: "PRIVATE ANSWER"}
 	}
 	o := agentpreview.Outcome{State: agentpreview.Complete, Journal: "private-handle"}
 	if r.Input != nil {

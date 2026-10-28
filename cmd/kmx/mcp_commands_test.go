@@ -333,6 +333,14 @@ func TestMCPCommandSharedOperationParity(t *testing.T) {
 		}
 		for index, result := range []any{cliResult, mcpResult} {
 			doc := result.(map[string]any)
+			if index == 0 {
+				if doc["snapshotRevision"] == nil || doc["tests"] == nil {
+					t.Fatal("CLI pair identity missing")
+				}
+				// Paired CLI is additive; legacy MCP still owns a single source.
+				delete(doc, "snapshotRevision")
+				delete(doc, "tests")
+			}
 			// Only CLI Run opts out of checks; MCP Run keeps its checked default.
 			if op == "run" {
 				want := "pass"

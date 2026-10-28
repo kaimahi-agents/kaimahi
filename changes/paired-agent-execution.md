@@ -1,0 +1,3 @@
+### Added
+
+- File Run/Test now read the shared companion tests file or `--tests FILE`, with pair-bound results and guarded recording writes to the actual selected source. Raw agent hashes and prompts stay unchanged; tests-only edits and selection changes make retained diagnostics historical. Existing inline tests remain supported. Legacy MCP/canvas operations refuse present default companions rather than silently ignoring them; their full paired capabilities remain separate work.

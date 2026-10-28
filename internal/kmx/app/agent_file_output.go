@@ -27,11 +27,18 @@ func WriteFilePreview(w io.Writer, r FilePreviewResult, format string) error {
 		scope = "partial"
 	}
 	fmt.Fprintf(&b, "kmx local preview of this charter (%s): %s\nrevision: %s\nmodel: %s/%s\n%s %s: %s\n", scope, r.File.Path, r.File.Revision, r.ModelRoute.Provider, r.ModelRoute.Model, r.State, r.Verdict, r.Reason)
+	if r.Tests != nil {
+		fmt.Fprintf(&b, "tests: %s (%s)\ntests revision: %s\nsnapshot revision: %s\n", r.Tests.Path, r.Tests.State, r.Tests.Revision, r.SnapshotRevision)
+	}
 	for _, notice := range r.Notices {
 		fmt.Fprintln(&b, notice)
 	}
 	if r.SavedRevision != "" {
-		fmt.Fprintf(&b, "saved revision: %s (results use the executed revision above)\n", r.SavedRevision)
+		if r.RecordingTarget != nil {
+			fmt.Fprintf(&b, "saved %s revision: %s; saved snapshot: %s (results use the executed snapshot above)\n", r.RecordingTarget.Role, r.SavedRevision, r.SavedSnapshotRevision)
+		} else {
+			fmt.Fprintf(&b, "saved revision: %s (results use the executed revision above)\n", r.SavedRevision)
+		}
 	}
 	for _, tool := range r.ToolSettings {
 		fmt.Fprintf(&b, "tool setting %s: %s\n", tool.Name, tool.State)

@@ -35,6 +35,29 @@ func prepareRecordingSave(ctx context.Context, opt FilePreviewOptions, revision 
 			if !pendingRecording(ex, tool.Name) || localtools.IsDisabled(settings, tool.Name) {
 				continue
 			}
+			if opt.pair != nil {
+				if opt.PreparePairRecordingSave == nil {
+					return nil, agentfile.ErrRecordingSave
+				}
+				save, err := opt.PreparePairRecordingSave(ctx, opt.pair)
+				if err != nil {
+					return nil, err
+				}
+				if save == nil {
+					return nil, agentfile.ErrRecordingSave
+				}
+				return func(ctx context.Context, recordings []agentfile.Recording) (string, error) {
+					ack, err := save(ctx, recordings)
+					if err != nil {
+						return "", err
+					}
+					if err := validatePairRecordingSave(opt.pair, ack); err != nil {
+						return "", err
+					}
+					*opt.pairSave = ack
+					return ack.Revision, nil
+				}, nil
+			}
 			if opt.PrepareRecordingSave == nil {
 				return nil, agentfile.ErrRecordingSave
 			}
@@ -63,7 +86,7 @@ func recordingReason(err error) string {
 	}
 }
 
-func saveFileRecordings(ctx context.Context, save RecordingSaver, outcome agentpreview.Outcome, selected []agentfile.Example, result *FilePreviewResult) error {
+func saveFileRecordings(ctx context.Context, save RecordingSaver, outcome agentpreview.Outcome, selected []agentfile.Example, result *FilePreviewResult, opt FilePreviewOptions) error {
 	expected := map[[2]string]bool{}
 	for i, row := range result.Examples {
 		for _, tool := range row.Tools {
@@ -95,11 +118,19 @@ func saveFileRecordings(ctx context.Context, save RecordingSaver, outcome agentp
 	if err != nil {
 		return err
 	}
-	if len(revision) != 71 || !strings.HasPrefix(revision, "sha256:") || revision == result.File.Revision || strings.ToLower(revision) != revision {
+	if len(revision) != 71 || !strings.HasPrefix(revision, "sha256:") || opt.pair == nil && revision == result.File.Revision || strings.ToLower(revision) != revision {
 		return agentfile.ErrRecordingSave
 	}
 	if _, err := hex.DecodeString(revision[7:]); err != nil {
 		return agentfile.ErrRecordingSave
+	}
+	if opt.pair != nil {
+		if opt.pairSave == nil || validatePairRecordingSave(opt.pair, *opt.pairSave) != nil {
+			return agentfile.ErrRecordingSave
+		}
+		target := opt.pairSave.Target
+		target.Path = pairPreviewPath(target.Path, opt.FullPath)
+		result.RecordingTarget, result.SavedSnapshotRevision = &target, opt.pairSave.SnapshotRevision
 	}
 	result.SavedRevision = revision
 	for i := range result.Examples {

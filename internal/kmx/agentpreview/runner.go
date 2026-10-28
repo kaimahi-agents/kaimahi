@@ -20,9 +20,15 @@ type Runner interface {
 }
 
 type Request struct {
-	Agent    *agentfile.Agent
-	Examples []agentfile.Example
-	Route    modelaccess.Route
+	// Source-only content is credential-checked, never sent or journaled.
+	SourceAgent      *agentfile.Agent
+	SourceText       []string
+	SnapshotRevision string
+	// ValidateSource is caller-owned pre-journal currentness; the runner performs no source IO.
+	ValidateSource func(context.Context) error
+	Agent          *agentfile.Agent
+	Examples       []agentfile.Example
+	Route          modelaccess.Route
 	// SkipAssertions executes answers only, ignoring JudgeRoute. Default false.
 	SkipAssertions bool
 	// Nil uses Route. Only the caller may choose an override.
@@ -75,21 +81,23 @@ var (
 	ErrJournalFailed     = errors.New("preview journal finalization failed")
 	ErrModelUnavailable  = errors.New("preview model unavailable")
 	ErrDiagnosticsFailed = errors.New("preview diagnostic output failed")
+	ErrSourceChanged     = errors.New("preview source changed")
 	// ErrModelReply marks a model reply the tool runner cannot use.
 	ErrModelReply = errors.New("preview model reply unusable")
 )
 
 // Completion contains private bounded execution data, never a JSON projection.
 type Completion struct {
-	State        State
-	ID           string
-	FileRevision string
-	Provider     string
-	Model        string
-	Answer       string
-	DurationMs   int64
-	ToolCalls    int
-	Tools        []ToolSummary
+	SnapshotRevision string
+	State            State
+	ID               string
+	FileRevision     string
+	Provider         string
+	Model            string
+	Answer           string
+	DurationMs       int64
+	ToolCalls        int
+	Tools            []ToolSummary
 }
 
 // ToolSummary is content-free; a zero count means the selected source was not exercised.

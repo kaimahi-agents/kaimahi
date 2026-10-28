@@ -31,6 +31,12 @@ func WriteFilePreviewGitHubSummary(w io.Writer, result FilePreviewResult) error 
 	fmt.Fprintln(&out, "|---|---|")
 	fmt.Fprintf(&out, "| State | `%s` |\n", result.State)
 	fmt.Fprintf(&out, "| Revision | `%s` |\n", summaryValue(result.File.Revision))
+	if result.SnapshotRevision != "" {
+		fmt.Fprintf(&out, "| Snapshot | `%s` |\n", result.SnapshotRevision)
+	}
+	if result.Tests != nil {
+		fmt.Fprintf(&out, "| Tests source | `%s` |\n| Tests revision | `%s` |\n", result.Tests.State, summaryValue(result.Tests.Revision))
+	}
 	fmt.Fprintf(&out, "| Model | `%s` |\n", summaryRoute(result.ModelRoute))
 	judge := "not used"
 	if result.JudgeRoute != nil {
@@ -129,8 +135,11 @@ func validFilePreviewSummary(result FilePreviewResult) bool {
 	if result.File.Revision != "" && (!strings.HasPrefix(result.File.Revision, "sha256:") || !verificationDigest(strings.TrimPrefix(result.File.Revision, "sha256:"))) {
 		return false
 	}
+	if !validPairPreviewMetadata(result) {
+		return false
+	}
 	savedRevision := result.SavedRevision != ""
-	if savedRevision && (result.State != "complete" || result.SavedRevision == result.File.Revision || !strings.HasPrefix(result.SavedRevision, "sha256:") || !verificationDigest(strings.TrimPrefix(result.SavedRevision, "sha256:"))) {
+	if savedRevision && (result.State != "complete" || result.SnapshotRevision == "" && result.SavedRevision == result.File.Revision || !strings.HasPrefix(result.SavedRevision, "sha256:") || !verificationDigest(strings.TrimPrefix(result.SavedRevision, "sha256:"))) {
 		return false
 	}
 	if !summaryRouteValid(result.ModelRoute, true) || result.State == "complete" && result.ModelRoute.Provider == "" || result.JudgeRoute != nil && !summaryRouteValid(*result.JudgeRoute, false) {
@@ -227,6 +236,7 @@ func validFilePreviewSummary(result FilePreviewResult) bool {
 
 func redactedFilePreviewSummary(result FilePreviewResult) bool {
 	return result.State == "refused" && (result.ReasonCode == "unsafe_tool_content" || result.ReasonCode == "credential_content") &&
+		result.SnapshotRevision == "" && result.Tests == nil && result.RecordingTarget == nil && result.SavedSnapshotRevision == "" && result.SavedRevision == "" &&
 		result.Runner == "" && result.File == (FilePreviewIdentity{Path: "[agent file]"}) && result.ModelRoute == (FilePreviewRoute{}) && result.JudgeRoute == nil && result.Diagnostic == nil &&
 		result.Selection.Scope == "" && len(result.Selection.CaseIDs) == 0 && result.Selection.TotalCases == 0 && len(result.Examples) == 0 && result.AdHoc == nil &&
 		len(result.ToolSettings) == 0 && result.Retention.Status == "not_requested" && len(result.Retention.Diagnostics) == 0

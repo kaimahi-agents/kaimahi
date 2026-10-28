@@ -186,7 +186,10 @@ numbered versions or new publication command are introduced.
 ### Agent-file local preview (unreleased integration)
 
 `kmx run FILE` and `kmx test FILE` select one canonical markdown agent file,
-without workspace discovery, cluster configuration, Docker or a daemon.
+without workspace discovery, cluster configuration, Docker or a daemon. The
+shared [tests-file rule](agent-file.md#tests-in-a-separate-file-reader-only) selects
+the companion by default; `--tests FILE` overrides it for one agent. Missing or
+empty tests do not pass Test, and bare `--tests`/`--case` require an agent FILE.
 Without input, Run prints each saved example's answer in authored order;
 `kmx run FILE "input"` previews only that input. Test checks the file's saved
 examples in authored order and accepts no ad-hoc input. Legacy Run flags
@@ -199,7 +202,12 @@ reader is started. Prompt-file/stdin intake errors are pre-operation CLI errors
 on stderr, with no result document. Rooted API callers can pass an already-parsed
 snapshot without reopening its filename; the CLI path is a thin load-and-delegate
 wrapper.
-Neither operation changes source or produces native evaluation/deploy evidence.
+Neither operation produces native evaluation/deploy evidence. A valid pending
+Recorded capture may patch its selected tests file after journal close (legacy
+inline storage patches the agent); no failed tests-file save falls back inline.
+JSON separates raw agent revision, executed combined revision, actual recording
+target and saved combined revision. Explain accepts the current `--tests FILE`
+selection with `--file FILE` and marks tests-only or selection changes historical.
 On native Windows, the supported slice is narrower still: the package-free
 offline `fake` route with no provider, endpoint, tool binding or prompt-file
 input. See [native Windows](windows.md#supported-native-commands). A native

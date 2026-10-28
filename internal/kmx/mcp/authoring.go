@@ -77,6 +77,9 @@ func AuthoringOperations(files *Files) map[string]Operation {
 			if json.Unmarshal(req.Params.Arguments, &input) != nil {
 				return nil, refusal("invalid_options")
 			}
+			if err := files.requireSingleSource(input.Path); err != nil {
+				return nil, err
+			}
 			if !input.AcknowledgeCopilotTests && files.copilotTestsChanged(ctx, name, input.Path, []byte(input.Content), input.ExampleEdits) {
 				return nil, refusal("confirmation_required")
 			}

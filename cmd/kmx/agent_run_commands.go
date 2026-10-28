@@ -44,6 +44,9 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 			return nil
 		}
 		if err := fileFlagsWithoutFile(cmd); err != nil {
+			if cmd.Flags().Changed("tests") || cmd.Flags().Changed("case") {
+				return fileUsageError(err)
+			}
 			return err
 		}
 		if cmd.Flags().Changed("output") {

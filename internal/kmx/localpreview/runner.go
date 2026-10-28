@@ -192,6 +192,13 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 				return agentpreview.Outcome{State: agentpreview.Failed}, agentpreview.ErrCredentialContent
 			}
 		}
+		if access != nil && (request.SourceAgent != nil || len(request.SourceText) > 0) {
+			// Check original/unselected sources using the same resolved provider
+			// and tool checkers, without placing them in model or journal data.
+			if err := checkToolContent(checkContent, request); err != nil {
+				return agentpreview.Outcome{State: agentpreview.Failed}, agentpreview.ErrCredentialContent
+			}
+		}
 		if setupErr != nil {
 			return abort(setupErr)
 		}
@@ -312,6 +319,14 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 	adHocPlan, planErr := makeToolPlan(declared, agentfile.Example{}, toolHost, checkContent, validate, request.ToolSettings)
 	if request.Input != nil && planErr != nil {
 		return abort(planErr)
+	}
+	if request.ValidateSource != nil {
+		if err := request.ValidateSource(ctx); err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return abort(err)
+			}
+			return abort(errors.Join(agentpreview.ErrSourceChanged, err))
+		}
 	}
 	if request.BeforeExecute != nil {
 		if err := request.BeforeExecute(); err != nil {
@@ -439,7 +454,7 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 				}
 			}
 		}
-		completion = agentpreview.Completion{State: agentpreview.Complete, ID: execution.SessionUID, FileRevision: agent.Revision, Provider: request.Route.Provider, Model: request.Route.Model, Answer: execution.Answer, DurationMs: elapsedMilliseconds(r.timeNow().Sub(started)), ToolCalls: execution.ToolCalls, Tools: plan.summaries(execution.ToolCallCounts)}
+		completion = agentpreview.Completion{State: agentpreview.Complete, ID: execution.SessionUID, FileRevision: agent.Revision, SnapshotRevision: request.SnapshotRevision, Provider: request.Route.Provider, Model: request.Route.Model, Answer: execution.Answer, DurationMs: elapsedMilliseconds(r.timeNow().Sub(started)), ToolCalls: execution.ToolCalls, Tools: plan.summaries(execution.ToolCallCounts)}
 		for i := range completion.Tools {
 			for _, exchange := range execution.ToolExchanges {
 				if exchange.Call.Tool == completion.Tools[i].Name {

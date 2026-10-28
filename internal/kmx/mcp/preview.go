@@ -209,6 +209,9 @@ func (f *Files) readSnapshot(ctx context.Context, p string, inspection bool) (*a
 	if !f.allowedPath(p) {
 		return nil, nil, refusal("unsafe_path")
 	}
+	if err := f.requireSingleSource(p); err != nil {
+		return nil, nil, err
+	}
 	parent, err := f.parent(p, false)
 	if err != nil {
 		return nil, nil, err

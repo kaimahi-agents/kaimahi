@@ -22,7 +22,7 @@ import (
 
 type fileCommandOptions struct {
 	CaseID, Provider, Endpoint, Output string
-	Model                              string
+	Model, TestsFile                   string
 	PositionalInput                    bool
 	ToolBindings                       string
 	GitHubSummary                      bool
@@ -47,6 +47,7 @@ func fileModelRoute(provider, endpoint string) modelaccess.Route {
 func registerFileCommandFlags(cmd *cobra.Command, f *fileCommandOptions, output bool) {
 	cmd.Flags().BoolVar(&f.Verbose, "verbose", false, "Content-free diagnostics and timings on stderr")
 	cmd.Flags().StringVar(&f.CaseID, "case", "", "One saved example ID (partial preview)")
+	cmd.Flags().StringVar(&f.TestsFile, "tests", "", "Tests file override (FILE)")
 	cmd.Flags().StringVar(&f.Provider, "provider", "", "copilot (default), fake, ollama, foundry-local, compatible")
 	cmd.Flags().StringVar(&f.Endpoint, "provider-url", "", "Required local model URL; fixed for Copilot")
 	cmd.Flags().StringVar(&f.Model, "model", "", "Model override for this invocation")
@@ -66,7 +67,7 @@ func validateFileCommand(cmd *cobra.Command, state *commandState, f fileCommandO
 	var invalid string
 	cmd.Flags().Visit(func(flag *pflag.Flag) {
 		switch flag.Name {
-		case "case", "output", "no-content", "model", "provider", "provider-url", "prompt", "prompt-file", "verbose", "tool-bindings", "github-summary":
+		case "case", "tests", "output", "no-content", "model", "provider", "provider-url", "prompt", "prompt-file", "verbose", "tool-bindings", "github-summary":
 		default:
 			invalid = flag.Name
 		}
@@ -74,7 +75,7 @@ func validateFileCommand(cmd *cobra.Command, state *commandState, f fileCommandO
 	if invalid != "" {
 		return fmt.Errorf("file preview refuses --%s", invalid)
 	}
-	for _, name := range []string{"case", "model", "provider", "provider-url", "prompt-file", "tool-bindings"} {
+	for _, name := range []string{"case", "tests", "model", "provider", "provider-url", "prompt-file", "tool-bindings"} {
 		if flag := cmd.Flag(name); flag != nil && flag.Changed && strings.TrimSpace(flag.Value.String()) == "" {
 			return fmt.Errorf("file preview requires nonempty --%s", name)
 		}
@@ -88,7 +89,7 @@ func validateFileCommand(cmd *cobra.Command, state *commandState, f fileCommandO
 	return nil
 }
 func fileFlagsWithoutFile(cmd *cobra.Command) error {
-	for _, name := range []string{"case", "model", "provider", "provider-url", "no-content", "verbose", "tool-bindings", "github-summary"} {
+	for _, name := range []string{"case", "tests", "model", "provider", "provider-url", "no-content", "verbose", "tool-bindings", "github-summary"} {
 		if flag := cmd.Flag(name); flag != nil && flag.Changed {
 			return fmt.Errorf("--%s requires an explicit agent FILE", name)
 		}
@@ -109,16 +110,36 @@ func runFileCommand(cmd *cobra.Command, state *commandState, file string, f file
 	if cmd.Name() == "test" {
 		opt.RetentionFile = file
 	}
-	var windowsAgent *agentfile.Agent
+	// Native Windows passes the exact pair admitted by the platform gate. Other
+	// platforms load once here; later checks validate, never replace, this input.
+	pair := state.windowsFilePair
+	var pairErr error
 	if state.deps.goos == "windows" {
-		// Freeze the exact snapshot admitted by the native Windows policy before
-		// any optional host input or execution setup. A source edit between Cobra
-		// hooks must not turn a fake, tool-free invocation into another route.
-		var err error
-		windowsAgent, err = agentfile.Load(file)
-		if err != nil || !windowsPackageFreeFakeAgent(windowsAgent) || f.Provider != "" || f.Endpoint != "" || f.ToolBindings != "" || f.GitHubSummary || promptFile != "" {
+		if pair == nil || !windowsPackageFreeFakeAgent(pair.Agent) || f.Provider != "" || f.Endpoint != "" || f.ToolBindings != "" || f.GitHubSummary || promptFile != "" {
 			return errWindowsOperationUnsupported
 		}
+	} else {
+		pair, pairErr = agentfile.LoadPair(file, f.TestsFile)
+	}
+	if pair != nil {
+		opt.SourceFile = pair.AgentPath
+		opt.ValidateSource = func(ctx context.Context) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			selected := ""
+			if pair.Tests.Selection.Explicit {
+				selected = pair.Tests.Selection.Path
+			}
+			current, err := agentfile.LoadPair(pair.AgentPath, selected)
+			if err != nil || !pair.SameSourceVersion(current) {
+				return agentfile.ErrRecordingChanged
+			}
+			return nil
+		}
+	}
+	if state.deps.goos == "windows" && opt.ValidateSource(cmd.Context()) != nil {
+		return errWindowsOperationUnsupported
 	}
 	if f.Verbose {
 		opt.Progress = func(message string) error {
@@ -171,21 +192,24 @@ func runFileCommand(cmd *cobra.Command, state *commandState, file string, f file
 	defer stop()
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
-	opt.PrepareRecordingSave = func(ctx context.Context, revision string) (app.RecordingSaver, error) {
-		save, err := kmxmcp.FileRecordingSaver(ctx, file, revision)
-		return app.RecordingSaver(save), err
-	}
+	opt.PreparePairRecordingSave = kmxmcp.FilePairRecordingSaver
 	a := &app.App{FileRunner: state.deps.fileRunner}
 	start := time.Now()
 	var result app.FilePreviewResult
 	var err error
-	if windowsAgent != nil {
-		if cmd.Name() == "test" {
-			opt = app.WithFilePreviewRetention(opt, file, windowsAgent.Revision)
+	if pairErr != nil {
+		// Reuse the shared refusal/redaction projection; never fall back to
+		// executing an agent-only file after a selected tests source failed.
+		result, err = a.PreviewAgentSnapshot(ctx, nil, opt)
+		var detail *agentfile.Error
+		if errors.As(pairErr, &detail) {
+			result.Diagnostic = &app.FilePreviewDiagnostic{Field: detail.Field, Line: detail.Location.Line, Column: detail.Location.Column, Repair: detail.Problem}
 		}
-		result, err = a.PreviewAgentSnapshot(ctx, windowsAgent, opt)
 	} else {
-		result, err = a.PreviewAgentFile(ctx, opt)
+		if cmd.Name() == "test" {
+			opt = app.WithPairFilePreviewRetention(opt, pair)
+		}
+		result, err = a.PreviewAgentPairSnapshot(ctx, pair, opt)
 	}
 	if f.Verbose {
 		if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] Total elapsed=%s\n",

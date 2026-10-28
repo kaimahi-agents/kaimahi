@@ -680,10 +680,18 @@ revision binds both source paths and revisions; `Agent.Revision` remains
 agent-only. `SameSourceVersion` also checks handle-derived file/directory identity
 and version metadata; even unrelated directory timestamp changes can invalidate
 it. These are cooperative checks, not immutable filesystem attestation.
-A pure composition cannot claim a checked file version or write permission. Keep external
-examples separate from `Pair.Agent.Examples` and prompt instructions. Existing
-`Load`, CLI/App/MCP execution, captures and writes stay single-source until their
-paired result/publication guards ship; do not silently wire in this loader.
+A pure composition cannot claim a checked file version or write permission. Keep
+external examples separate from `Pair.Agent.Examples` and prompt instructions.
+File CLI Run/Test use the paired App adapter and `--tests` selection; completion
+and results bind the combined revision without changing raw agent attribution.
+Capture patches only the selected source after journal close with held source
+handles/full-pair checks; exact target and saved combined revision acknowledge
+publication separately. Keep original/unselected/raw-test content in credential
+preflight, never model instructions. File failure records retain raw agent and
+optional pair metadata; Explain uses the current selector, not retained paths.
+MCP/canvas pair capabilities remain separate: legacy reads/preview/edits refuse
+present default tests files rather than reporting or writing an agent-only view.
+`Load`, single-source/native adapters and CLI no-source-history remain unchanged.
 See [separate tests](docs/agent-file.md#tests-in-a-separate-file-reader-only).
 
 `internal/kmx/agentfile` accepts Copilot YAML-frontmatter/free-form prompts,
