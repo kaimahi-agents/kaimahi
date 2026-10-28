@@ -107,7 +107,7 @@ func updateQuickstartSourceForm(m createWizardModel, msg tea.Msg) (createWizardM
 }
 
 func validateQuickstartSourceOptions(opt CreateOptions) error {
-	remedy := "quickstart authors a tool-free native Orka workspace; author source with kmx create, then review cases and use test → push → deploy"
+	remedy := "quickstart authors a tool-free native Orka workspace; author source with kmx package create, then review cases and use test → push → deploy"
 	switch {
 	case opt.Tools != "":
 		return fmt.Errorf("quickstart tool shortcuts are retired; suite ToolProvider support is a future requirement; %s", remedy)

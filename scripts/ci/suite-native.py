@@ -1393,7 +1393,7 @@ class Qualification:
 
 
     def author(self, name, directory, instructions, cases):
-        self.cli("create", name, "--workspace", directory, "--model", "qwen-3.5-2b", "--instructions", instructions)
+        self.cli("package", "create", name, "--workspace", directory, "--model", "qwen-3.5-2b", "--instructions", instructions)
         (directory / "eval/example.yaml").unlink()
         for filename, raw in cases.items():
             (directory / "eval" / filename).write_bytes(raw)

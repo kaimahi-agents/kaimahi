@@ -17,7 +17,7 @@ import (
 // quickstart deploys one known bundle and then asks THAT agent the question.
 // A name that could differ from the thing being deployed would let the
 // command answer about something it did not create. Authoring your own is
-// offline `kmx create`; asking any agent anything is `kmx chat`.
+// offline `kmx package create`; asking any agent anything is `kmx chat`.
 const QuickstartAgent = "hello-world-agent"
 
 // QuickstartOptions configure the shortest path to a first answer.

@@ -13,7 +13,7 @@ checkout support, historical records and test scaffolding.
 ## Direction and current implementation
 
 **Orka remains the first-class/default platform.** Kaimahi tooling helps
-agents get onto it. Default `kmx create <name>` authors one native workspace
+agents get onto it. Default `kmx package create <name>` authors one native workspace
 member offline, requiring an exact model and an instructions file; Orka is the
 default, while `--runtime kagent` selects the exact v0.10.3 Go profile.
 Create and push share workspace discovery; exact `--workspace` initializes
@@ -320,7 +320,7 @@ bin/kmx cluster down
 
 A bare `bin/kmx cluster up` installs the runtime without an Agent: kind, Ollama, the
 model and pinned Orka with its keyless `local` Provider. Author source with
-`bin/kmx create NAME --workspace DIR --model MODEL --instructions FILE`, then
+`bin/kmx package create NAME --workspace DIR --model MODEL --instructions FILE`, then
 full eval, evaluated push and digest Deploy with private evidence; or use guided
 `bin/kmx cluster quickstart --interactive`. `orka status` is table-only runtime state;
 `package status --to NAME` independently observes destination Agent placement and

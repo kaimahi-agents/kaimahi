@@ -830,7 +830,7 @@ func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 		"model", "model list", "model login", "model logout", "version",
 		"cluster", "cluster up", "cluster down", "cluster status", "cluster aks", "cluster aks up", "cluster aks down", "cluster context", "cluster context show", "cluster context use",
 		"cluster orka", "cluster orka install", "cluster orka status", "cluster orka show", "cluster orka list", "cluster quickstart", "cluster quickstart-wizard", "cluster console", "cluster targets", "cluster task", "cluster task result",
-		"package", "package ctx", "package deploy", "package push", "package status", "package run-profile", "package run-profile export", "package suite", "package suite push", "package build", "package validate", "package policy", "package pull", "package push-image",
+		"package", "package create", "package ctx", "package deploy", "package push", "package status", "package run-profile", "package run-profile export", "package suite", "package suite push", "package build", "package validate", "package policy", "package pull", "package push-image",
 		"package test", "package test cleanup", "package test diff", "package test explain", "package test export", "package test from-sessions", "package test verify",
 	}
 

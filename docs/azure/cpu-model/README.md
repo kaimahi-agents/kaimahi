@@ -315,7 +315,7 @@ Under Known limitations, begin every bullet with the literal prefix "Unresolved:
 Do not replace "Unresolved" with synonyms such as "not fixed".
 Never invent fixes, features or measurements. Stay under 40 words.
 EOF
-kmx create release-notes --workspace "$WORKSPACE" --model qwen-3.5-2b \
+kmx package create release-notes --workspace "$WORKSPACE" --model qwen-3.5-2b \
   --instructions "$STATE/instructions.md"
 ```
 

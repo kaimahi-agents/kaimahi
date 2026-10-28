@@ -71,7 +71,7 @@ func newAgentCreateCommand(state *commandState) *cobra.Command {
 			"Nothing is evaluated, published or deployed.\n" +
 			"Runtime profiles and experimental flow authoring:\n" +
 			"https://github.com/kaimahi-agents/kaimahi/blob/main/docs/suite-workspace.md",
-		Example: "  kmx create greeter\n  kmx create greeter --workspace . --model qwen --instructions prompt.md\n  kmx create team --workspace . --members members.json --flow flow.json",
+		Example: "  kmx package create greeter\n  kmx package create greeter --workspace . --model qwen --instructions prompt.md\n  kmx package create team --workspace . --members members.json --flow flow.json",
 	}
 	cmd.Flags().StringVar(&root, "workspace", "", "Workspace directory; skips initialization prompt")
 	_ = cmd.MarkFlagDirname("workspace")
@@ -96,7 +96,7 @@ func newAgentCreateCommand(state *commandState) *cobra.Command {
 			return err
 		}
 		if len(args) != 1 {
-			return fmt.Errorf("workspace creation requires a name: kmx create <name> --model <model> --instructions <file>")
+			return fmt.Errorf("workspace creation requires a name: kmx package create <name> --model <model> --instructions <file>")
 		}
 		name = args[0]
 		if cmd.Flags().Changed("members") || cmd.Flags().Changed("flow") {

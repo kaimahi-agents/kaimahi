@@ -134,7 +134,7 @@ with open("calls.jsonl", "a") as stream:
     stream.write(json.dumps([pathlib.Path(sys.argv[0]).name, *args]) + "\\n")
 if pathlib.Path(sys.argv[0]).name == "kubectl":
     print(os.environ.get("SURVIVING", ""), end="")
-elif args[0] == "create":
+elif args[:2] == ["package", "create"]:
     pathlib.Path("workspace/eval").mkdir()
 elif args[:2] == ["package", "test"]:
     pathlib.Path("evidence/passing.json").write_text(json.dumps({

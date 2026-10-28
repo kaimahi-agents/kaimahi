@@ -94,7 +94,7 @@ exists, so the phase installs the platform and names the step that is yours:
 printf %s "$ORKA_API_KEY" | kubectl --context <cluster> -n orka-system \
   create secret generic <name> --from-file=api-key=/dev/stdin
 # Configure a native openai Provider through the installed runtime's schema;
-# root create authors workspace source offline, not live Provider credentials.
+# package create authors workspace source offline, not live Provider credentials.
 ```
 
 The Secret command **names the cluster**. Provider configuration must use that

@@ -31,6 +31,6 @@ func newPackageCommand(state *commandState) *cobra.Command {
 	}
 	group.AddCommand(newSuitePushCommand(state, true), newReleaseDeployCommand(state),
 		newStatusCommand(state), newAgentEvaluationCommand(state, "test"),
-		newDestinationsCommand(state), newRunProfileCommand(state), suite)
+		newDestinationsCommand(state), newRunProfileCommand(state), newAgentCreateCommand(state), suite)
 	return group
 }

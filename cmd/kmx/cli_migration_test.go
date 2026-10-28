@@ -275,7 +275,7 @@ func TestCLIMigrationPushMalformedNearestMarkerStopsDiscovery(t *testing.T) {
 	}
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
-	if err := execute([]string{"create", "greeter", "--workspace", root, "--model", "test-model", "--instructions", instructions}, deps); err != nil {
+	if err := execute([]string{"package", "create", "greeter", "--workspace", root, "--model", "test-model", "--instructions", instructions}, deps); err != nil {
 		t.Fatal(err)
 	}
 	nearest := filepath.Join(root, "nested")

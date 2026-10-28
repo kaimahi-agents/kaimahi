@@ -27,7 +27,7 @@ func (a *App) reviewSuiteWorkspace(ctx context.Context, root string) (*suiteWork
 		return nil, err
 	}
 	if strings.TrimSpace(root) == "" {
-		return nil, fmt.Errorf("select an explicit authored workspace root; kmx create authors offline separately")
+		return nil, fmt.Errorf("select an explicit authored workspace root; kmx package create authors offline separately")
 	}
 	resolved, err := resolveSuiteWorkspace(root)
 	if err != nil {

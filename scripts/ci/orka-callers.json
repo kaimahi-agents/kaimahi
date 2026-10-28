@@ -46,6 +46,7 @@
     {"caller":"cmd/kmx/agent_file_commands.go","callee":"internal/kmx/modelaccess/route.go","object":"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess.Route.Auth"},
     {"caller":"cmd/kmx/agent_file_commands.go","callee":"internal/kmx/modelaccess/route.go","object":"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess.Route.Endpoint"},
     {"caller":"cmd/kmx/agent_file_commands.go","callee":"internal/kmx/modelaccess/route.go","object":"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess.Route.Provider"},
+    {"caller":"cmd/kmx/file_create_command.go","callee":"internal/kmx/agentfile/parse.go","object":"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile.Parse"},
     {"caller":"cmd/kmx/main.go","callee":"internal/kmx/app/agent_file.go","object":"github.com/kaimahi-agents/kaimahi/internal/kmx/app.FilePreviewError"},
     {"caller":"cmd/kmx/main.go","callee":"internal/kmx/app/agent_file.go","object":"github.com/kaimahi-agents/kaimahi/internal/kmx/app.FilePreviewError.ExitCode"},
     {"caller":"cmd/kmx/mcp_commands.go","callee":"internal/kmx/agentfile/parse.go","object":"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile.Parse"},
