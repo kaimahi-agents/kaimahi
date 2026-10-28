@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -139,6 +140,48 @@ func TestFileCLIMCPSelectionAndReplay(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestFileCLIMCPCompanionCaptureAndReplay(t *testing.T) {
+	file, marker := cliMCPFixture(t, "serve", "Enabled", true)
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent := []byte(strings.SplitN(string(raw), "## Examples", 2)[0])
+	if err := os.WriteFile(file, agent, 0600); err != nil {
+		t.Fatal(err)
+	}
+	tests := strings.TrimSuffix(file, ".agent.md") + ".agent.test.md"
+	if err := os.WriteFile(tests, []byte("---\nschemaVersion: 1\n---\n```yaml agent-test\nid: sample\ninput: hello\nmocks: {tools: [{name: ping, mode: recorded, calls: []}]}\nassertions: [{id: calls, type: toolCalled, tool: ping}]\n```\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out, diag bytes.Buffer
+	deps, _ := testDependencies(&out, &diag)
+	deps.fileRunner = productionDependencies().fileRunner
+	for _, source := range []string{"live", "recorded"} {
+		out.Reset()
+		if err := execute([]string{"test", file, "-o", "json"}, deps); err != nil {
+			t.Fatal(err, out.String(), diag.String())
+		}
+		var result app.FilePreviewResult
+		if err := json.Unmarshal(out.Bytes(), &result); err != nil || !result.FullPass || result.Examples[0].Tools[0].Source != source {
+			t.Fatalf("%s result: %+v %v", source, result, err)
+		}
+		if source == "live" {
+			if result.RecordingTarget == nil || result.RecordingTarget.Role != "tests" || result.SavedRevision == "" {
+				t.Fatalf("missing tests capture: %+v", result)
+			}
+			if err := os.Remove(marker); err != nil {
+				t.Fatal("server did not start", err)
+			}
+		} else if _, err := os.Stat(marker); !os.IsNotExist(err) {
+			t.Fatal("replay launched server", err)
+		}
+		if got, err := os.ReadFile(file); err != nil || !bytes.Equal(got, agent) {
+			t.Fatal("companion capture changed agent", err)
+		}
 	}
 }
 
