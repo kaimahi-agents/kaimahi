@@ -106,8 +106,10 @@ falls back to native workspace evaluation (`kmx package test`). `--tests` and
 journal and five-minute budget. Assertion failures, unknown (inconclusive or
 unavailable judge) and invalid/missing tests do not stop later files; operational
 failures (execution, route/auth, journal, source, invalid tool settings,
-unavailable tools/models, recording failures and unsafe/credential-bearing content)
-abort later execution and the remaining files are `not_run`. There are no automatic retries. One text, JSON
+unavailable tools/models, recording failures and runner `unsafe_tool_content` or
+`credential_content` refusals) abort later execution and the remaining files are
+`not_run`. Load-time parser refusals, including credential-shaped content reported
+as `invalid_file`, are file-attributable and may continue to later agents. There are no automatic retries. One text, JSON
 (`kind: kmx.agent-folder-test`, `schemaVersion: 1`) or GitHub summary reports
 `total`, `passed`, `failed`, `unknown`, `couldNotRun` and `notRun`. All pass exits
 0; exit 2 takes precedence over assertion-failure exit 1 if any file is unknown,
