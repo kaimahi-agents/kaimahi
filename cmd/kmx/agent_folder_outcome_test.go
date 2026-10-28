@@ -263,6 +263,69 @@ func TestFolderTestTextHasOneSummary(t *testing.T) {
 	}
 }
 
+func TestFolderTestUnrunNamesStayWithheld(t *testing.T) {
+	for _, format := range []string{"text", "json"} {
+		t.Run(format, func(t *testing.T) {
+			dir := folderDirectory(t)
+			folderAgent(t, dir, "a.agent.md")
+			const private = "arbitrary-private-value"
+			folderAgent(t, dir, "z-"+private+".agent.md")
+			var out, diag, markdown bytes.Buffer
+			deps, _ := testDependencies(&out, &diag)
+			fake := &cliPreviewFake{cause: agentpreview.ErrCredentialContent}
+			deps.fileRunner = fake
+			deps.openGitHubSummary = func() (io.WriteCloser, error) { return writeCloseBuffer{&markdown}, nil }
+			args := []string{"test", "-o", format}
+			if format == "json" {
+				args = append(args, "--github-summary")
+			}
+			err := execute(args, deps)
+			if exitCode(err) != 2 || fake.calls != 1 || strings.Contains(out.String()+diag.String()+markdown.String(), private) {
+				t.Fatalf("unexecuted filename bypassed redaction: calls%d error%v\n%s", fake.calls, err, out.String())
+			}
+			if format == "json" {
+				r := readFolderReport(t, &out, err, 2)
+				if r.Summary.NotRun != 1 || r.Files[1].Result != nil || r.Files[1].File != "[agent file]" {
+					t.Fatalf("unrun identity was asserted: %+v", r.Files[1])
+				}
+			}
+		})
+	}
+}
+
+func TestFolderTestRefusedNamesStayWithheld(t *testing.T) {
+	for _, format := range []string{"text", "json"} {
+		t.Run(format, func(t *testing.T) {
+			dir := folderDirectory(t)
+			const private = "arbitrary-private-value"
+			_, tests := folderAgent(t, dir, "b-"+private+".agent.md")
+			if err := os.Remove(tests); err != nil {
+				t.Fatal(err)
+			}
+			folderAgent(t, dir, "c.agent.md")
+			var out, diag, markdown bytes.Buffer
+			deps, _ := testDependencies(&out, &diag)
+			fake := &cliPreviewFake{cause: agentpreview.ErrCredentialContent}
+			deps.fileRunner = fake
+			deps.openGitHubSummary = func() (io.WriteCloser, error) { return writeCloseBuffer{&markdown}, nil }
+			args := []string{"test", "-o", format}
+			if format == "json" {
+				args = append(args, "--github-summary")
+			}
+			err := execute(args, deps)
+			if exitCode(err) != 2 || fake.calls != 1 || strings.Contains(out.String()+diag.String()+markdown.String(), private) {
+				t.Fatalf("early refusal bypassed redaction: calls%d error%v\n%s", fake.calls, err, out.String())
+			}
+			if format == "json" {
+				r := readFolderReport(t, &out, err, 2)
+				if r.Summary.CouldNotRun != 2 || r.Files[0].File != "[agent file]" || r.Files[0].Result.Tests.Path != "[tests file]" {
+					t.Fatalf("early refusal asserted unchecked names: %+v", r.Files[0])
+				}
+			}
+		})
+	}
+}
+
 func TestFolderTestInvalidToolSettingsAbort(t *testing.T) {
 	dir := folderDirectory(t)
 	file, _ := folderAgent(t, dir, "a.agent.md")

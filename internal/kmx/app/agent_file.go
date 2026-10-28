@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -247,7 +248,7 @@ func (a *App) PreviewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 
 func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent, opt FilePreviewOptions, parseErr error, started time.Time) (result FilePreviewResult, resultErr error) {
 	defer func() { result.DurationMs = previewDurationMilliseconds(a.timeNow().Sub(started)) }()
-	filePath := FilePreviewDisplayName(opt.File)
+	filePath := suiteDiagnosticIdentity(filepath.Base(opt.File), nil)
 	if opt.FullPath {
 		var safe bool
 		filePath, safe = suiteDiagnosticText(opt.File, len(opt.File), nil)

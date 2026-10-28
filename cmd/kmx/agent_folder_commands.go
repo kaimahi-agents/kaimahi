@@ -160,12 +160,24 @@ func runFolderTest(cmd *cobra.Command, state *commandState, f fileCommandOptions
 		if ctx.Err() != nil {
 			aborted, code, reason, cause = true, 130, "aborted", context.Canceled
 		}
-		row := folderFileResult{Index: index + 1, Directory: ".", File: app.FilePreviewDisplayName(file), Status: "not_run"}
+		// Unexecuted filenames have not passed the runner's credential checks.
+		row := folderFileResult{Index: index + 1, Directory: ".", File: "[agent file]", Status: "not_run"}
 		if filepath.Dir(file) != root {
 			row.Directory = ".github/agents"
 		}
 		if !aborted {
 			result, fileErr := previewFileCommand(cmd, state, file, f, "", "", nil)
+			// Intake refusals may precede resolved-credential checks too. Only
+			// completed results can name discovered sources in folder output.
+			if result.State != "complete" {
+				result.File.Path = "[agent file]"
+				if result.Tests != nil {
+					result.Tests.Path = "[tests file]"
+				}
+				if result.RecordingTarget != nil {
+					result.RecordingTarget.Path = "[recording source]"
+				}
+			}
 			var proceed bool
 			row.Status, proceed = folderFileOutcome(result)
 			aborted = !proceed

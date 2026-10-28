@@ -188,7 +188,11 @@ Text has per-file details and one final summary. Folder JSON is one
 `schemaVersion: 1`, `kind: kmx.agent-folder-test` document. Its ordered `files`
 rows include an ordinal, safe display directory/name, status and the existing
 safe per-file `result` when available. Root and repository agents with the same
-basename stay distinct. Unrun rows have no fabricated result or revisions.
+basename stay distinct for completed results. Unrun rows use `[agent file]`
+rather than an unchecked filename, and have no fabricated result or revisions.
+Non-complete results also withhold discovered agent/tests/recording path names:
+intake refusals may precede resolved-credential checks. Their known revisions
+and selection keys remain, not a claim that the test executed.
 Final `summary` counts are `total`, `passed`, `failed`, `unknown`, `couldNotRun`
 and `notRun`, followed by `exitCode` and `reasonCode`.
 

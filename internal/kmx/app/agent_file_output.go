@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"path/filepath"
 	"strings"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
@@ -20,11 +19,6 @@ func WriteFilePreview(w io.Writer, r FilePreviewResult, format string) error {
 		return &FilePreviewError{code: "invalid_options", exit: 1}
 	}
 	return writeFilePreviewText(w, r, true)
-}
-
-// FilePreviewDisplayName applies the same bounded identity projection as file results.
-func FilePreviewDisplayName(filename string) string {
-	return suiteDiagnosticIdentity(filepath.Base(filename), nil)
 }
 
 // WriteFilePreviewDetails shares file text details without a standalone report heading.
