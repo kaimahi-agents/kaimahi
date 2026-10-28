@@ -17,7 +17,13 @@ import (
 func launchFixture(t *testing.T, mode string) (string, map[string]any) {
 	t.Helper()
 	cfg := stdioFixture(t, mode)
-	file := filepath.Join(cfg.Dir, "agent.agent.md")
+	// Checked folder reads intentionally refuse symlink ancestors; macOS's
+	// temporary root may use /var as an alias for /private/var.
+	folder, err := filepath.EvalSymlinks(cfg.Dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(folder, "agent.agent.md")
 	doc := map[string]any{"version": 1, "mcpServers": map[string]any{"notes": map[string]any{"command": cfg.Command, "args": cfg.Args, "env": map[string]string{"STDIO_FROZEN": "FROZEN_ENV"}, "tools": map[string]string{"ping": "remote_ping"}}}, "liveToolServers": []string{"notes"}}
 	return file, doc
 }
