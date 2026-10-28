@@ -54,14 +54,9 @@ func (s *StdioHost) Close() error {
 	return err
 }
 
-// StartStdioHost starts only an already selected server. It performs no config,
-// credential, executable or server discovery and offers only explicit mappings.
-func StartStdioHost(ctx context.Context, cfg StdioConfig) (*StdioHost, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	cfg.Args, cfg.Env, cfg.Tools = slices.Clone(cfg.Args), maps.Clone(cfg.Env), maps.Clone(cfg.Tools)
-	cfg.CredentialEnv = slices.Clone(cfg.CredentialEnv)
+// validateStdioConfig is pure so a multi-server invocation can validate every
+// frozen launch before starting the first child.
+func validateStdioConfig(cfg StdioConfig) (func(...string) error, error) {
 	if !filepath.IsAbs(cfg.Command) || !filepath.IsAbs(cfg.Dir) || len(cfg.Command)+len(cfg.Dir) > 8192 || len(cfg.Args) > 128 || len(cfg.Env) > 64 || len(cfg.Tools) == 0 || len(cfg.Tools) > 32 {
 		return nil, ErrStdio
 	}
@@ -103,6 +98,21 @@ func StartStdioHost(ctx context.Context, cfg StdioConfig) (*StdioHost, error) {
 		if !ValidToolName(local) || remote == "" || len(remote) > 128 || strings.TrimSpace(remote) != remote || exact(local, remote) != nil {
 			return nil, ErrStdio
 		}
+	}
+	return exact, nil
+}
+
+// StartStdioHost starts only an already selected server. It performs no config,
+// credential, executable or server discovery and offers only explicit mappings.
+func StartStdioHost(ctx context.Context, cfg StdioConfig) (*StdioHost, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	cfg.Args, cfg.Env, cfg.Tools = slices.Clone(cfg.Args), maps.Clone(cfg.Env), maps.Clone(cfg.Tools)
+	cfg.CredentialEnv = slices.Clone(cfg.CredentialEnv)
+	exact, err := validateStdioConfig(cfg)
+	if err != nil {
+		return nil, err
 	}
 	process, err := startStdioProcess(ctx, cfg, exact)
 	if err != nil {

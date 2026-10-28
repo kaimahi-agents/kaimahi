@@ -366,7 +366,7 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
-          bin/kmx --context kind-kmx-orka-promote orka install --provider - >"$RUNNER_TEMP/kmx-orka-promote-install.out" 2>&1
+          bin/kmx --context kind-kmx-orka-promote cluster orka install --provider - >"$RUNNER_TEMP/kmx-orka-promote-install.out" 2>&1 || { cat "$RUNNER_TEMP/kmx-orka-promote-install.out"; exit 1; }
           grep -q 'Installer verified:' "$RUNNER_TEMP/kmx-orka-promote-install.out"
       - name: Native suite — qualify evaluation, exact transfer and CLI lift
         run: |

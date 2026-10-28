@@ -70,6 +70,13 @@ func readSettingsSnapshot(ctx context.Context, filename string, names []string, 
 	}
 	return SettingsSnapshot{Settings: settings, Revision: token}, nil
 }
+
+// Keep filesystem-foundation wiring in this audited owner. Launch selection
+// consumes the same bounded checked bytes without widening the import surface.
+func readLaunchBytes(ctx context.Context, filename string) ([]byte, error) {
+	return readSettingsBytes(ctx, filename, fileaccess.OpenDirectory)
+}
+
 func readSettingsBytes(ctx context.Context, filename string, openDirectory func(context.Context, string) (*fileaccess.Directory, error)) ([]byte, error) {
 	absolute, err := filepath.Abs(filename)
 	if err != nil {

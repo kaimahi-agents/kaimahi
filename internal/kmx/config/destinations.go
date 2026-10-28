@@ -62,6 +62,12 @@ func validDestinationNode(n *yaml.Node, depth int, key string) bool {
 				return false
 			}
 			seen[k.Value] = true
+			if depth == 0 && (k.Value == "mcpServers" || k.Value == "liveToolServers") {
+				if !validIgnoredMCPNode(n.Content[i+1], depth+1) {
+					return false
+				}
+				continue
+			}
 			if depth == 1 && key == "tools" {
 				v := n.Content[i+1]
 				if !localtools.ValidToolName(k.Value) || v.Kind != yaml.ScalarNode || v.Tag != "!!str" || localtools.ToolState(v.Value) != localtools.Enabled && localtools.ToolState(v.Value) != localtools.Disabled {
@@ -86,6 +92,42 @@ func validDestinationNode(n *yaml.Node, depth int, key string) bool {
 		return false
 	}
 }
+
+// Launch semantics belong to the tool consumer; ambiguity is rejected even
+// when this destination consumer discards the subtree before strict decoding.
+func validIgnoredMCPNode(n *yaml.Node, depth int) bool {
+	if n == nil || depth > 8 || n.Alias != nil || n.Anchor != "" {
+		return false
+	}
+	switch n.Kind {
+	case yaml.MappingNode:
+		if n.Tag != "!!map" || len(n.Content) > 2*maxDestinationsEntries || len(n.Content)%2 != 0 {
+			return false
+		}
+		seen := map[string]bool{}
+		for i := 0; i < len(n.Content); i += 2 {
+			key := n.Content[i]
+			if key.Kind != yaml.ScalarNode || key.Tag != "!!str" || key.Value == "<<" || seen[key.Value] {
+				return false
+			}
+			seen[key.Value] = true
+		}
+	case yaml.SequenceNode:
+		if n.Tag != "!!seq" || len(n.Content) > maxDestinationsEntries {
+			return false
+		}
+	case yaml.ScalarNode:
+	default:
+		return false
+	}
+	for _, child := range n.Content {
+		if !validIgnoredMCPNode(child, depth+1) {
+			return false
+		}
+	}
+	return true
+}
+
 func destinationText(s string) bool {
 	return s != "" && len(s) <= 1024 && utf8.ValidString(s) && strings.TrimSpace(s) == s && strings.IndexFunc(s, unicode.IsControl) < 0 && secretshapes.Match(s) == nil
 }

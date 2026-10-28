@@ -26,7 +26,7 @@ jobs:
       - name: Native model-access tests
         run: go test -race -count=1 ./internal/kmx/modelaccess/...
       - name: Owned stdio host tests (Windows stays inert)
-        run: go test -race -count=1 ./internal/kmx/localtools ./internal/kmx/localpreview -run '^TestStdio'
+        run: go test -race -count=1 ./internal/kmx/localtools ./internal/kmx/localpreview ./internal/kmx/config ./cmd/kmx -run '^TestStdio|^TestFileCLIMCP|^TestDestinations.*MCP'
       - name: Repeat Unix stdio shutdown regressions
         if: runner.os != 'Windows'
         run: |
