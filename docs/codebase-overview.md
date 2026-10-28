@@ -104,7 +104,7 @@ adds live creation and execution and therefore is not only environment setup.
 ### Workspace create, prove and publish; packaged-digest deploy
 
 ```text
-kmx create NAME
+kmx package create NAME
   -> editable one-member workspace
 
 workspace.Prepare

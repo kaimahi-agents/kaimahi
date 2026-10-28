@@ -26,7 +26,7 @@ func TestWorkspaceCreateAndPushAreOfflineAndPreserveDigest(t *testing.T) {
 	t.Setenv("CONTAINER_ENGINE", "not-an-engine")
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
-	if err := execute([]string{"create", "greeter", "--workspace", root, "--instructions", instructions, "--model", "qwen-3.5-2b"}, deps); err != nil {
+	if err := execute([]string{"package", "create", "greeter", "--workspace", root, "--instructions", instructions, "--model", "qwen-3.5-2b"}, deps); err != nil {
 		t.Fatal(err)
 	}
 	if *loads != 0 {
@@ -121,7 +121,7 @@ func TestCreateWithoutLiveAuthorsNonOrkaMember(t *testing.T) {
 			t.Setenv("PATH", t.TempDir())
 			var out, diagnostics bytes.Buffer
 			deps, loads := testDependencies(&out, &diagnostics)
-			if err := execute([]string{"create", "greeter", "--workspace", root, "--runtime", profile.ID, "--model", "fixture", "--instructions", input}, deps); err != nil {
+			if err := execute([]string{"package", "create", "greeter", "--workspace", root, "--runtime", profile.ID, "--model", "fixture", "--instructions", input}, deps); err != nil {
 				t.Fatal(err)
 			}
 			prepared, err := workspace.Prepare(t.Context(), root, filepath.Join(t.TempDir(), "cache"))
@@ -161,7 +161,7 @@ func TestWorkspaceRuntimeSelectorsRefuseBeforeConfigOrWrites(t *testing.T) {
 			root := t.TempDir()
 			var out, diagnostics bytes.Buffer
 			deps, loads := testDependencies(&out, &diagnostics)
-			err := execute(append([]string{"create", "greeter", "--workspace", root, "--model", "fixture", "--instructions", "missing-file"}, flags...), deps)
+			err := execute(append([]string{"package", "create", "greeter", "--workspace", root, "--model", "fixture", "--instructions", "missing-file"}, flags...), deps)
 			entries, readErr := os.ReadDir(root)
 			if err == nil || !strings.Contains(err.Error(), "runtime") || *loads != 0 || readErr != nil || len(entries) != 0 {
 				t.Fatalf("invalid runtime reached authoring: %v", err)
@@ -170,7 +170,7 @@ func TestWorkspaceRuntimeSelectorsRefuseBeforeConfigOrWrites(t *testing.T) {
 	}
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
-	if err := execute([]string{"create", "--live", "greeter", "--runtime", "kagent", "--runtime-version", "v0.10.3"}, deps); err == nil || !strings.Contains(err.Error(), "unknown flag: --live") || *loads != 0 {
+	if err := execute([]string{"package", "create", "--live", "greeter", "--runtime", "kagent", "--runtime-version", "v0.10.3"}, deps); err == nil || !strings.Contains(err.Error(), "unknown flag: --live") || *loads != 0 {
 		t.Fatalf("suite selector changed live create: %v", err)
 	}
 }
@@ -181,7 +181,7 @@ func TestWorkspaceCreateRefusesModeConflictsBeforeConfigOrWrites(t *testing.T) {
 			root := t.TempDir()
 			var out, diagnostics bytes.Buffer
 			deps, loads := testDependencies(&out, &diagnostics)
-			args := []string{"create", "greeter", "--workspace", root, "--model", "qwen-3.5-2b", "--instructions", "missing-file", "--" + flag}
+			args := []string{"package", "create", "greeter", "--workspace", root, "--model", "qwen-3.5-2b", "--instructions", "missing-file", "--" + flag}
 			if flag != "no-apply" && flag != "dry-run" && flag != "live" {
 				args = append(args, "unused")
 			}
@@ -225,7 +225,7 @@ func TestCreateDefaultModeRefusalsBeforeConfigOrWrites(t *testing.T) {
 			}
 			var out, diagnostics bytes.Buffer
 			deps, loads := testDependencies(&out, &diagnostics)
-			err := execute(append([]string{"create"}, tc.args...), deps)
+			err := execute(append([]string{"package", "create"}, tc.args...), deps)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("error = %v, want %q", err, tc.want)
 			}
@@ -239,8 +239,8 @@ func TestCreateDefaultModeRefusalsBeforeConfigOrWrites(t *testing.T) {
 
 func TestWorkspaceSelectorsRejectEmptyAndAmbiguousSource(t *testing.T) {
 	for _, args := range [][]string{
-		{"create", "greeter", "--workspace", ""},
-		{"create", "--workspace", "."},
+		{"package", "create", "greeter", "--workspace", ""},
+		{"package", "create", "--workspace", "."},
 		{"package", "push", "--workspace", "", "team:v1"},
 		{"package", "push", "directory", "team:v1", "--workspace", "."},
 	} {
@@ -358,7 +358,7 @@ func TestWorkspacePathsRefuseCredentialShapesWithoutDisclosure(t *testing.T) {
 			}
 			var out, diagnostics bytes.Buffer
 			deps, loads := testDependencies(&out, &diagnostics)
-			err := execute([]string{"create", "greeter", "--workspace", root, "--model", "test-model", "--instructions", input}, deps)
+			err := execute([]string{"package", "create", "greeter", "--workspace", root, "--model", "test-model", "--instructions", input}, deps)
 			if err == nil || strings.Contains(err.Error(), credential) || strings.Contains(out.String(), credential) || strings.Contains(diagnostics.String(), credential) {
 				t.Fatal("credential-shaped path was accepted or disclosed")
 			}
@@ -385,7 +385,7 @@ func TestWorkspaceProfileParseErrorsDoNotDiscloseContent(t *testing.T) {
 		t.Setenv("KMX_HOME", t.TempDir())
 		var out, diagnostics bytes.Buffer
 		deps, loads := testDependencies(&out, &diagnostics)
-		if err := execute([]string{"create", "greeter", "--workspace", root, "--model", "test-model", "--instructions", input}, deps); err != nil {
+		if err := execute([]string{"package", "create", "greeter", "--workspace", root, "--model", "test-model", "--instructions", input}, deps); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.WriteFile(filepath.Join(root, "build-profiles/default.json"), []byte(profile), 0600); err != nil {
@@ -412,9 +412,9 @@ func TestWorkspaceHelpAndCompletionHaveNoOperationalEffects(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, args := range [][]string{
-		{"create", "--help"}, {"package", "push", "--help"}, {"package", "suite", "push", "--help"},
-		{"__complete", "create", "--workspace", ""},
-		{"__complete", "create", "--l"},
+		{"package", "create", "--help"}, {"package", "push", "--help"}, {"package", "suite", "push", "--help"},
+		{"__complete", "package", "create", "--workspace", ""},
+		{"__complete", "package", "create", "--l"},
 		{"__complete", "push", "--workspace", ""},
 	} {
 		var out, diagnostics bytes.Buffer

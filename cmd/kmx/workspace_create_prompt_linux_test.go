@@ -69,8 +69,8 @@ func TestCreatePromptsOnlyForMissingTerminalInputs(t *testing.T) {
 		{name: "explicit blank instructions", flags: []string{"--instructions", ""}, want: "--model and --instructions"},
 		{name: "invalid name", agent: "BadName", want: "name"},
 		{name: "credential name", agent: "ghp_" + strings.Repeat("x", 36), want: "credential-shaped", redact: true},
-		{name: "help", command: []string{"create", "--help"}},
-		{name: "completion", command: []string{"__complete", "create", ""}},
+		{name: "help", command: []string{"package", "create", "--help"}},
+		{name: "completion", command: []string{"__complete", "package", "create", ""}},
 		{name: "hidden stderr", want: "--model and --instructions", hidden: true},
 		{name: "piped stdin", input: "ignored-model\nignored-file\n", want: "--model and --instructions", piped: true},
 	} {
@@ -104,9 +104,9 @@ func TestCreatePromptsOnlyForMissingTerminalInputs(t *testing.T) {
 				}
 				deps.stdin, pipe = reader, reader
 			}
-			args := []string{"create", "greeter"}
+			args := []string{"package", "create", "greeter"}
 			if tc.agent != "" {
-				args[1] = tc.agent
+				args[2] = tc.agent
 			}
 			if tc.command != nil {
 				args = tc.command

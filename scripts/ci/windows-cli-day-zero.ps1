@@ -202,7 +202,7 @@ try {
     $deferredHome = Join-Path $root "deferred state $nonAscii"
     $deferredWorkspace = Join-Path $root "deferred workspace $nonAscii"
     [Environment]::SetEnvironmentVariable('KMX_HOME', $deferredHome, 'Process')
-    $deferred = Invoke-Kmx -CommandArgs @('create', 'deferred-greeter', '--workspace', $deferredWorkspace) -ExpectedExitCodes @(1)
+    $deferred = Invoke-Kmx -CommandArgs @('package', 'create', 'deferred-greeter', '--workspace', $deferredWorkspace) -ExpectedExitCodes @(1)
     Assert-Contract ([string]::IsNullOrWhiteSpace($deferred.Stdout)) 'Deferred command wrote ordinary output before refusal.'
     Assert-Contract ($deferred.Stderr -match '(?i)(not available|unsupported|refus)') 'Deferred command did not report an operation refusal.'
     Assert-Contract (-not (Test-Path -LiteralPath $deferredHome) -and -not (Test-Path -LiteralPath $deferredWorkspace)) 'Deferred command created state before refusal.'

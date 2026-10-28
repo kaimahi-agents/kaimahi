@@ -48,7 +48,7 @@ func TestCompletionScriptsUseCobraProtocol(t *testing.T) {
 func TestWorkspaceRuntimeCompletionIncludesPinnedDefault(t *testing.T) {
 	var out, errOut bytes.Buffer
 	deps, loads := testDependencies(&out, &errOut)
-	if err := execute([]string{"__complete", "create", "--runtime-version", ""}, deps); err != nil {
+	if err := execute([]string{"__complete", "package", "create", "--runtime-version", ""}, deps); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"v0.10.3", ":4"} {

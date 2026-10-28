@@ -44,7 +44,7 @@ arguments instead of a deleted Make target or an invented BYO recovery route.
 
 | Previous route | Current route | Contract |
 |---|---|---|
-| `agent create [name]` / `create --live` | Removed | No live resource/bundle creation, previews or wizard. Root `create NAME` authors native workspace source offline. |
+| `agent create [name]` / `create --live` | Removed | No live resource/bundle creation, previews or wizard. Root `create NAME` authors an agent file offline; native workspace source is `package create NAME`. |
 | `agent chat <name> [message...]` | `chat <name> [message...]` | Interactive Orka session, not workspace execution. |
 | `agent run [<bundle-dir>]` | `run --agent NAME` | Bundle mode removed; live Orka Task/answer/result contracts retained, including suite-owned Agents. Not workspace-local execution or fresh suite evaluation; ownership fences are unchanged. |
 | `agent show <name>` / `agent list` | `orka show <name>` / `orka list` | Live Orka detail/inventory, not workspace inspection. Show still requires namespace. |
@@ -177,7 +177,7 @@ Eval/Deploy expose neither flag. Profiled execution, private/public native expor
 and evaluated publication remain unsupported; external portable test verify is
 an independent consistency check, not private proof authority.
 
-`create <name> --model <model> --instructions <file> [--workspace <directory>]`
+`package create <name> --model <model> --instructions <file> [--workspace <directory>]`
 authors one tool-free native-Orka member offline by default. Model and an
 instructions file are required; description is optional. Create and push share
 nearest-ancestor workspace discovery. An exact `--workspace` override initializes

@@ -29,10 +29,11 @@ changes in the package's Go doc comment.
   is file-only; its Explain requires `--file`. Native workspace evaluation and
   all six helpers are `package test`; package Explain retains the existing offline
   file reader for Eval compatibility. Hidden `eval`/`lift` remain callable with
-  one notice naming `package test`/`package deploy`. Native root Create stays
-  unchanged until the agent-file Create replacement lands; move that native
-  constructor to `package create` atomically then, never early. See the full
-  command map in the command-group upgrade fragment.
+  one notice naming `package test`/`package deploy`. Root `create NAME` writes
+  a GitHub agent file and paired example test in cwd (`--path` overrides),
+  without prompts, model selection or overwrites; `.github/agents` pairs with
+  sibling `.github/agent-tests`. Native workspace authoring is `package create`.
+  See the full command map in the command-group upgrade fragment.
 
 - `model list [-o table|json]` defaults to config-free bounded local discovery.
   Explicit `--provider copilot` lists available Chat/Responses routes without
@@ -152,7 +153,7 @@ changes in the package's Go doc comment.
   drift overrides2 pending;0 means complete ready/empty. Original UID continuity
   remains unverified. `orka status` retains the table-only runtime report; bare
   root status refuses with both usage hints. See [destination status](docs/destination-status.md).
-- Root `create <name>` authors one tool-free native suite member offline
+- `package create <name>` authors one tool-free native suite member offline
   by default: Orka unless `--runtime kagent` selects exact v0.10.3 Go/linux-amd64.
   `--runtime agentsessions` separately authors a built-in chat
   profile pinned to ca85f47a2ec17ca6e16029cfa69419cfe29442b3 (engine chat), with

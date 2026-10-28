@@ -27,7 +27,7 @@ var identifierRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
 func ValidateName(name string) error {
 	switch {
 	case name == "":
-		return fmt.Errorf("an agent needs a name: kmx create <name>")
+		return fmt.Errorf("an agent needs a name: kmx package create <name>")
 	case len(name) > 63:
 		return fmt.Errorf("agent name %q is %d characters; Kubernetes allows 63", name, len(name))
 	case !nameRE.MatchString(name):
