@@ -98,6 +98,23 @@ inference retries or fallback. Existing live `run --agent`, full-workspace Test,
 workspace Explain and hidden legacy Eval remain unchanged. See
 [agent-file preview](kmx.md#agent-file-local-preview-unreleased-integration).
 
+Bare `kmx test` (no FILE) tests direct `*.agent.md` files in the current folder
+and `.github/agents/`, sorted by path, with no recursion or Git-root discovery. It
+reuses the per-file checked pair runner and companion tests-file rule, and never
+falls back to native workspace evaluation (`kmx package test`). `--tests` and
+`--case` still require an explicit FILE. Each file gets its own checked pair,
+journal and five-minute budget. Assertion failures, unknown (inconclusive or
+unavailable judge) and invalid/missing tests do not stop later files; operational
+failures (execution, route/auth, journal, source) abort later execution and the
+remaining files are `not_run`. There are no automatic retries. One text, JSON
+(`kind: kmx.agent-folder-test`, `schemaVersion: 1`) or GitHub summary reports
+`total`, `passed`, `failed`, `unknown`, `couldNotRun` and `notRun`. All pass exits
+0; exit 2 takes precedence over assertion-failure exit 1 if any file is unknown,
+could not run or was not run, or discovery is empty/invalid; interruption exits
+130; output/summary I/O errors exit 1. Native Windows still requires an explicit
+file through the guarded path. See
+[folder test](agent-file.md#test-a-folder).
+
 ## Frozen source-file run profiles (unreleased)
 
 `run-profile export FILE` calls the canonical agent-file loader offline and emits

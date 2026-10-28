@@ -23,7 +23,7 @@ expands those visible product commands:
 kmx
 ├── create NAME                   (agent file and paired example test)
 ├── run [FILE [input]] | --agent <name>
-├── test FILE
+├── test [FILE]
 │   └── explain [failure-id] --file FILE
 ├── chat <name> [message...]
 ├── model
@@ -73,9 +73,13 @@ kmx
 ```
 
 `package test` is an operational workspace command with offline diff and independent
-read-only reference extraction/export helpers; explicit `test FILE` is a local
-preview whose completed non-pass diagnostics can be explained offline with
-`test explain --file FILE`. Explicit `run FILE` is the corresponding preview Run.
+read-only reference extraction/export helpers; `test FILE` is a local
+preview of one agent file whose completed non-pass diagnostics can be explained offline with
+`test explain --file FILE`. Bare `kmx test` tests direct `*.agent.md` agents in the
+current folder and `.github/agents/` (non-recursive) with one text/JSON/GitHub summary
+reporting failed, unknown and not-run counts; it never falls back to `package test`,
+and `--tests`/`--case` require an explicit FILE. Explicit `run FILE` is the
+corresponding preview Run.
 `kmx mcp --root DIR`, `kmx completion bash|zsh|fish` and `kmx help [TOPIC...]`
 remain operational but are omitted from root help. MCP and Completion are also
 omitted from root completion suggestions; explicit invocation still works.
@@ -86,7 +90,8 @@ checks complete source content through the shared bounded materializer.
 
 On native Windows, the same discovery rules apply. Visibility in help/completion
 is not an enabled capability list. Current `main` permits only version/help/
-completion, package-free fake `run FILE` / `test FILE`, and offline
+completion, package-free fake `run FILE` / `test FILE` (native Windows still
+requires an explicit file), and offline
 `test explain ... --file FILE` (plus the hidden legacy Explain spelling for
 compatibility). Every other route refuses before effects. See the
 [native Windows command boundary](windows.md#supported-native-commands).
@@ -142,7 +147,8 @@ Workspace --create/test--> AgentSuite artifact --push--> OCI location
 |---|---|---|
 | `create` | Agent file and paired test | Author two files without prompts, model selection or overwrites |
 | `package create` | Workspace | Author one offline member; no cluster or model call |
-| `test` | Workspace/prepared AgentSuite | Run full ordered native Orka/kagent cases, or pinned AgentSessions chat with explicit `--development-host FILE` and `--bindings FILE` (`AgentSessionsBinding`); stop later cases after the first non-pass |
+| `test [FILE]` | One agent file, or direct agent files in the current folder and `.github/agents/` | With FILE, test that file; bare, one summary over folder agents with failed, unknown and not-run counts, never falling back to `package test` |
+| `package test` | Workspace/prepared AgentSuite | Run full ordered native Orka/kagent cases, or pinned AgentSessions chat with explicit `--development-host FILE` and `--bindings FILE` (`AgentSessionsBinding`); stop later cases after the first non-pass |
 | `test export` | Latest completed exact-suite/member managed proof | Write new detached public evidence offline; captured tagged module/checksum or clean VCS provenance required, no evaluation or private-gate replacement |
 | `run-profile export FILE` | Canonical agent file | Content-bearing frozen JSON on stdout, with source/instruction/model/example hashes and target examples `not_run`; no configuration, execution, evidence, package or deployment authority |
 | `test verify` | Local single-manifest OCI layout + detached evidence + reviewed ExpectedEvaluation | State-free offline CI gate; digest input also requires explicit layout, text/JSON success exits0, coded refusal exits1; no private-gate authority |
@@ -162,7 +168,7 @@ selects or initializes one exact root. The current source profile has a
 one-member limit.
 
 Live create/previews/wizard are removed; their flags are unknown before config.
-Root test runs full native authored cases only: Orka uses `--inference`, kagent
+`package test` runs full native authored cases only: Orka uses `--inference`, kagent
 uses `--bindings`; pinned AgentSessions chat instead requires a private
 `--development-host FILE` plus an `AgentSessionsBinding` (`--bindings`), with no
 cluster selectors or fallback. All export only
