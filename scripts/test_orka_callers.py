@@ -13,7 +13,7 @@ MODULE = "github.com/kaimahi-agents/kaimahi"
 CANARY = "CALLER_GUARD_PRIVATE_CANARY"
 SAFE = "internal/kmx/app/unrelated.go"
 CORE = "internal/kmx/app/core.go"
-EDGE = {"caller": SAFE, "callee": CORE, "object": MODULE + "/internal/kmx/app.Orka"}
+APP = MODULE + "/internal/kmx/app"
 
 
 class CallerTests(unittest.TestCase):
@@ -46,10 +46,10 @@ class CallerTests(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
 
-    def manifest(self, edges, *, imports=None):
-        # Hand-reviewed approvals, independent of calling declarations.
+    def manifest(self, packages, *, imports=None):
+        # Reviewed package dependencies, independent of files and objects.
         self.put("scripts/ci/orka-callers.json", json.dumps({
-            "version": 2, "imports": imports or [], "edges": edges}))
+            "version": 3, "imports": imports or [], "packages": packages}))
 
     def invoke(self, *args, extra_env=None):
         result = subprocess.run([str(self.binary), *args], cwd=self.root,
@@ -61,91 +61,84 @@ class CallerTests(unittest.TestCase):
     def test_ordinary_imports_and_safe_helpers_do_not_need_approvals(self):
         self.assertEqual(self.invoke().returncode, 0)
         self.put(CORE, "package app\nfunc Orka() { Preview() }\n")
-        self.manifest([{"caller": CORE, "callee": SAFE, "object": MODULE + "/internal/kmx/app.Preview"}])
-        self.assertEqual(self.invoke().returncode, 0)
         self.put(SAFE, f'package app\nimport ("strings"; "{MODULE}/internal/kmx/unrelated")\nfunc Preview() {{ unrelated.Leaf(); _ = strings.TrimSpace("ok") }}\n')
         self.assertEqual(self.invoke().returncode, 0)
-        # Safe-to-safe extension of an existing outbound boundary is also free.
-        self.put(CORE, "package app\nfunc Orka() {}\n")
-        helper = "internal/kmx/app/safe_helper.go"
-        self.policy["safe_files"].append(helper)
-        self.put("scripts/ci/orka-routing.json", json.dumps(self.policy))
-        self.put(SAFE, "package app\nfunc Preview() { Helper() }\n")
-        self.put(helper, "package app\nfunc Helper() { Orka() }\n")
-        self.manifest([{"caller": helper, "callee": CORE,
-                        "object": MODULE + "/internal/kmx/app.Orka"}])
+        # Importing a mixed package's selected definition is still safe-to-safe.
+        self.put(SAFE, "package app\nfunc Preview() {}\n")
+        self.put("internal/kmx/unrelated/leaf.go",
+                 f'package unrelated\nimport "{MODULE}/internal/kmx/app"\nfunc Leaf() {{ app.Preview() }}\n')
+        result = self.invoke("--audit")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["packages"], [])
         self.assertEqual(self.invoke().returncode, 0)
 
     def test_new_owned_package_reference_fails_even_in_unimported_package(self):
         self.put("internal/kmx/unrelated/leaf.go", f'package unrelated\nimport alias "{MODULE}/internal/kmx/app"\nfunc Leaf() {{ alias.Orka() }}\n')
         result = self.invoke()
         self.assertEqual(result.returncode, 1)
-        self.assertIn("new reference", result.stderr)
+        self.assertIn("new package dependency", result.stderr)
+        self.assertIn(APP, result.stderr)
         self.assertIn("--audit", result.stderr)
+        self.manifest([APP])
+        self.assertEqual(self.invoke().returncode, 0)
 
-    def test_new_inbound_reference_fails(self):
+    def test_owned_root_package_can_be_reviewed_like_subpackages(self):
+        self.put("root.go", "package kaimahi\nfunc Root() {}\n")
+        self.put(SAFE, f'package app\nimport root "{MODULE}"\nfunc Preview() {{ root.Root() }}\n')
+        self.assertEqual(self.invoke().returncode, 1)
+        self.manifest([MODULE])
+        self.assertEqual(self.invoke().returncode, 0)
+
+    def test_inbound_callers_do_not_need_outbound_approvals(self):
         self.put(CORE, f'package app\nimport renamed "{MODULE}/internal/kmx/unrelated"\nfunc Orka() {{ renamed.Leaf() }}\n')
-        self.assertEqual(self.invoke().returncode, 1)
-
-    def test_safe_only_method_shadowing_can_rebind_an_outside_caller(self):
-        self.put(CORE, "package app\ntype Base struct{}\nfunc (Base) Ping() {}\nfunc Orka() { PreviewType{}.Ping() }\n")
-        self.put(SAFE, "package app\ntype PreviewType struct { Base }\n")
-        self.manifest([
-            {"caller": CORE, "callee": SAFE, "object": MODULE + "/internal/kmx/app.PreviewType"},
-            {"caller": SAFE, "callee": CORE, "object": MODULE + "/internal/kmx/app.Base"}])
         self.assertEqual(self.invoke().returncode, 0)
-        self.put(SAFE, "package app\ntype PreviewType struct { Base }\nfunc (PreviewType) Ping() {}\n")
-        self.assertEqual(self.invoke().returncode, 1)
 
-    def test_private_functions_bound_methods_and_fields_are_typed(self):
-        self.put(CORE, "package app\nfunc Orka() {}\nfunc privateProof() {}\ntype Core struct { Flag, Other int }\nfunc (Core) Ping() {}\n")
-        self.put(SAFE, "package app\nfunc Preview() { call := privateProof; call() }\n")
-        result = self.invoke()
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("app.privateProof", result.stderr)
-        core = {"caller": SAFE, "callee": CORE, "object": MODULE + "/internal/kmx/app.Core"}
-        method = {"caller": SAFE, "callee": CORE, "object": MODULE + "/internal/kmx/app.Core.Ping"}
-        self.manifest([core])
-        self.put(SAFE, "package app\nfunc Preview() { c := Core{}; call := c.Ping; call() }\n")
-        result = self.invoke()
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("app.Core.Ping", result.stderr)
+
+    def test_approved_package_allows_new_objects_files_and_calling_declarations(self):
+        self.put(CORE, "package app\nfunc Orka() {}\nfunc privateProof() {}\ntype Core struct { Flag int }\nfunc (Core) Ping() {}\n")
+        self.manifest([APP])
+        for body in ("call := privateProof; call()", "c := Core{}; call := c.Ping; call()", "_ = Core{}.Flag"):
+            with self.subTest(body=body):
+                self.put(SAFE, f"package app\nfunc Preview() {{ {body} }}\n")
+                self.assertEqual(self.invoke().returncode, 0)
+        helper = "internal/kmx/app/new_safe_file.go"
+        self.policy["safe_files"].append(helper)
+        self.put("scripts/ci/orka-routing.json", json.dumps(self.policy))
+        self.put(helper, "package app\nfunc NewHelper() { later := func() { Orka() }; later() }\n")
+        self.assertEqual(self.invoke().returncode, 0)
         audited = self.invoke("--audit")
         self.assertEqual(audited.returncode, 0, audited.stderr)
-        self.assertEqual(json.loads(audited.stdout)["edges"], [core, method])
-        self.manifest([core, method])
-        self.assertEqual(self.invoke().returncode, 0)
-        self.manifest([])
-        self.put(SAFE, "package app\nfunc Preview() { _ = Core{}.Flag }\n")
-        self.assertEqual(self.invoke().returncode, 1)
-        audited = self.invoke("--audit")
-        self.assertEqual(audited.returncode, 0, audited.stderr)
-        self.assertEqual({e["object"] for e in json.loads(audited.stdout)["edges"]},
-                         {MODULE + "/internal/kmx/app.Core", MODULE + "/internal/kmx/app.Core.Flag"})
+        self.assertEqual(json.loads(audited.stdout)["packages"], [APP])
 
     def test_linked_app_tests_are_checked_but_other_test_packages_are_not(self):
         self.put("internal/kmx/unrelated/leaf_test.go", f'package unrelated\nimport ("testing"; "{MODULE}/internal/kmx/app")\nfunc TestLeaf(t *testing.T) {{ app.Orka() }}\n')
         self.assertEqual(self.invoke().returncode, 0)
         self.put("internal/kmx/app/unrelated_test.go", 'package app\nimport "testing"\nfunc TestPreview(t *testing.T) { Orka() }\n')
         self.assertEqual(self.invoke().returncode, 1)
-
-    def test_approvals_survive_helper_extraction_closures_and_removal(self):
-        self.put(SAFE, "package app\nfunc Preview() { Orka() }\n")
-        self.manifest([EDGE])
+        self.manifest([APP])
         self.assertEqual(self.invoke().returncode, 0)
-        for source in ("func Preview() {}\nfunc NewHelper() { Orka() }",
-                       "func Preview() { later := func() { Orka() }; later() }",
-                       "func Preview() {}", "func Preview() { Orka() }"):
-            self.put(SAFE, "package app\n" + source + "\n")
-            self.assertEqual(self.invoke().returncode, 0)
+
+    def test_approvals_persist_after_removal_until_pruned(self):
+        source = "package app\nfunc Preview() { Orka() }\n"
+        self.put(SAFE, source)
+        self.manifest([APP])
+        self.assertEqual(self.invoke().returncode, 0)
+        self.put(SAFE, "package app\nfunc Preview() {}\n")
+        self.assertEqual(self.invoke().returncode, 0)
+        self.put(SAFE, source)
+        self.assertEqual(self.invoke().returncode, 0)
         self.manifest([])
         self.assertEqual(self.invoke().returncode, 1)
 
-    def test_new_object_in_an_approved_outside_file_still_fails(self):
-        self.put(CORE, "package app\nfunc Orka() {}\nfunc AnotherProof() {}\n")
-        self.put(SAFE, "package app\nfunc Preview() { Orka(); AnotherProof() }\n")
-        self.manifest([EDGE])
-        self.assertEqual(self.invoke().returncode, 1)
+    def test_new_package_still_fails_when_an_existing_package_is_approved(self):
+        self.manifest([APP])
+        self.put("internal/kmx/newruntime/orka.go", "package newruntime\nfunc Run() {}\n")
+        self.put(SAFE, f'package app\nimport "{MODULE}/internal/kmx/newruntime"\nfunc Preview() {{ Orka(); newruntime.Run() }}\n')
+        result = self.invoke()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(MODULE + "/internal/kmx/newruntime", result.stderr)
+        self.manifest([APP, MODULE + "/internal/kmx/newruntime"])
+        self.assertEqual(self.invoke().returncode, 0)
 
     def test_audit_is_read_only_not_automatic_acceptance(self):
         self.put(SAFE, "package app\nfunc Preview() { Orka() }\n")
@@ -153,7 +146,7 @@ class CallerTests(unittest.TestCase):
         before = path.read_bytes()
         result = self.invoke("--audit")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout), {"version": 2, "imports": [], "edges": [EDGE]})
+        self.assertEqual(json.loads(result.stdout), {"version": 3, "imports": [], "packages": [APP]})
         self.assertEqual(path.read_bytes(), before)
         self.assertEqual(self.invoke().returncode, 1)
 
@@ -181,8 +174,7 @@ class CallerTests(unittest.TestCase):
         self.put("internal/kmx/unrelated/leaf.go", f'package unrelated\nimport "{MODULE}/internal/kmx/app"\nfunc Leaf() {{ app.Orka() }}\n')
         result = self.invoke("--audit", extra_env={"GOFLAGS": "-trimpath"})
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn({"caller": "internal/kmx/unrelated/leaf.go", "callee": CORE,
-                       "object": MODULE + "/internal/kmx/app.Orka"}, json.loads(result.stdout)["edges"])
+        self.assertEqual(json.loads(result.stdout)["packages"], [APP])
 
     def test_missing_production_export_fails_closed(self):
         real_go = Path(subprocess.check_output(["go", "env", "GOROOT"], text=True).strip()) / "bin/go"
@@ -213,11 +205,12 @@ while data.strip():
 
     def test_missing_malformed_and_invalid_approvals_fail(self):
         path = self.root / "scripts/ci/orka-callers.json"
-        for content in (None, "not-json", '{}', '{"version": 1, "imports": [], "edges": []}',
-                        '{"version": 2}', '{"version": 2, "imports": [], "edges": [], "extra": 1}',
-                        json.dumps({"version": 2, "imports": [], "edges": [{**EDGE, "caller": "../x"}]}),
-                        json.dumps({"version": 2, "imports": [], "edges": [EDGE, EDGE]}),
-                        json.dumps({"version": 2, "imports": [{"file": SAFE, "path": "fmt"}], "edges": []})):
+        for content in (None, "not-json", '{}', '{"version": 2, "imports": [], "edges": []}',
+                        '{"version": 3}', '{"version": 3, "imports": [], "packages": [], "extra": 1}',
+                        json.dumps({"version": 3, "imports": [], "packages": ["../x"]}),
+                        json.dumps({"version": 3, "imports": [], "packages": [APP, APP]}),
+                        json.dumps({"version": 3, "imports": [], "packages": ["example.invalid/external"]}),
+                        json.dumps({"version": 3, "imports": [{"file": SAFE, "path": "fmt"}], "packages": []})):
             with self.subTest(content=content):
                 if content is None:
                     path.unlink(missing_ok=True)

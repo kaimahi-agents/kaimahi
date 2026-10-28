@@ -38,21 +38,15 @@ type policy struct {
 	} `json:"triggers"`
 }
 
-type edge struct {
-	Caller string `json:"caller"`
-	Callee string `json:"callee"`
-	Object string `json:"object"`
-}
-
 type sourceImport struct {
 	File string `json:"file"`
 	Path string `json:"path"`
 }
 
 type manifest struct {
-	Imports []sourceImport `json:"imports"`
-	Version int            `json:"version"`
-	Edges   []edge         `json:"edges"`
+	Imports  []sourceImport `json:"imports"`
+	Version  int            `json:"version"`
+	Packages []string       `json:"packages"`
 }
 
 type listedPackage struct {
@@ -186,7 +180,7 @@ func run(audit bool) error {
 	if err = readJSON("scripts/ci/orka-callers.json", &expected); err != nil {
 		return err
 	}
-	if expected.Version != 2 || expected.Edges == nil || expected.Imports == nil {
+	if expected.Version != 3 || expected.Packages == nil || expected.Imports == nil {
 		return fmt.Errorf("invalid manifest")
 	}
 	imports := map[sourceImport]bool{}
@@ -196,13 +190,12 @@ func run(audit bool) error {
 		}
 		imports[i] = true
 	}
-	edges := map[edge]bool{}
-	for _, e := range expected.Edges {
-		if !validPath(e.Caller) || !validPath(e.Callee) || !validPath(e.Object) ||
-			p.safe(e.Caller) == p.safe(e.Callee) || edges[e] {
-			return fmt.Errorf("invalid edge approval")
+	packages := map[string]bool{}
+	for _, name := range expected.Packages {
+		if !validPath(name) || !(name == module || strings.HasPrefix(name, module+"/")) || packages[name] {
+			return fmt.Errorf("invalid package approval")
 		}
-		edges[e] = true
+		packages[name] = true
 	}
 	// Approvals persist until explicitly pruned; deleting a reference is harmless.
 	for _, i := range actual.Imports {
@@ -210,9 +203,9 @@ func run(audit bool) error {
 			return boundaryDrift(fmt.Sprintf("new startup import: %s -> %s; inspect --audit and review initialization effects before updating scripts/ci/orka-callers.json", i.File, i.Path))
 		}
 	}
-	for _, e := range actual.Edges {
-		if !edges[e] {
-			return boundaryDrift(fmt.Sprintf("new reference: %s -> %s (%s); keep code within the safe set or inspect --audit and review the boundary before updating scripts/ci/orka-callers.json", e.Caller, e.Callee, e.Object))
+	for _, name := range actual.Packages {
+		if !packages[name] {
+			return boundaryDrift(fmt.Sprintf("new package dependency: selected code -> %s; keep code within the selected set or inspect --audit and review the package boundary before updating scripts/ci/orka-callers.json", name))
 		}
 	}
 	fmt.Println("Orka caller boundary verified")
@@ -290,12 +283,10 @@ func references(root string, routing policy) (manifest, error) {
 		}
 	}
 	fset := token.NewFileSet()
-	boundary := map[edge]bool{}
+	boundary := map[string]bool{}
 	imports := map[sourceImport]bool{}
 	checked := map[string]bool{}
 	importers := map[string]types.Importer{}
-	fields := map[*types.Var]string{}
-	fieldPackages := map[*types.Package]bool{}
 	for _, p := range packages {
 		if p.Module == nil || !p.Module.Main || checked[p.ImportPath] || strings.HasSuffix(p.ImportPath, ".test") {
 			continue
@@ -362,38 +353,11 @@ func references(root string, routing policy) (manifest, error) {
 		if importers[key] == nil {
 			importers[key] = importer.ForCompiler(fset, "gc", lookup)
 		}
-		info := &types.Info{Uses: map[*ast.Ident]types.Object{}, Defs: map[*ast.Ident]types.Object{}}
+		info := &types.Info{Uses: map[*ast.Ident]types.Object{}}
 		cfg := types.Config{Importer: importers[key], Sizes: types.SizesFor("gc", "amd64")}
 		_, err = cfg.Check(strings.Split(p.ImportPath, " ")[0], fset, files, info)
 		if err != nil {
 			return manifest{}, err
-		}
-		collectFields := func(obj types.Object) {
-			if obj == nil {
-				return
-			}
-			if named, ok := types.Unalias(obj.Type()).(*types.Named); ok {
-				if body, ok := named.Underlying().(*types.Struct); ok {
-					for i := 0; i < body.NumFields(); i++ {
-						fields[body.Field(i)] = named.Obj().Name()
-					}
-				}
-			}
-		}
-		for _, obj := range info.Defs {
-			if _, ok := obj.(*types.TypeName); ok {
-				collectFields(obj)
-			}
-		}
-		for _, obj := range info.Uses {
-			if obj.Pkg() != nil && strings.HasPrefix(obj.Pkg().Path(), module+"/") && !fieldPackages[obj.Pkg()] {
-				fieldPackages[obj.Pkg()] = true
-				for _, name := range obj.Pkg().Scope().Names() {
-					if value, ok := obj.Pkg().Scope().Lookup(name).(*types.TypeName); ok {
-						collectFields(value)
-					}
-				}
-			}
 		}
 		for ident, obj := range info.Uses {
 			if obj.Pkg() == nil || !(obj.Pkg().Path() == module || strings.HasPrefix(obj.Pkg().Path(), module+"/")) {
@@ -403,21 +367,24 @@ func references(root string, routing policy) (manifest, error) {
 			if err != nil || caller == "" {
 				return manifest{}, fmt.Errorf("unmapped caller")
 			}
+			if !routing.safe(caller) {
+				continue
+			}
 			callee, err := ownedPath(root, fset.PositionFor(obj.Pos(), false).Filename, root)
 			if err != nil || callee == "" || !sources[obj.Pkg().Path()][callee] {
 				return manifest{}, fmt.Errorf("unmapped definition")
 			}
-			if routing.safe(caller) != routing.safe(callee) {
-				boundary[edge{caller, callee, objectKey(obj, callee, fields)}] = true
+			if !routing.safe(callee) {
+				boundary[obj.Pkg().Path()] = true
 			}
 		}
 	}
-	result := manifest{Version: 2, Imports: []sourceImport{}, Edges: []edge{}}
+	result := manifest{Version: 3, Imports: []sourceImport{}, Packages: []string{}}
 	for i := range imports {
 		result.Imports = append(result.Imports, i)
 	}
-	for e := range boundary {
-		result.Edges = append(result.Edges, e)
+	for name := range boundary {
+		result.Packages = append(result.Packages, name)
 	}
 	sortManifest(&result)
 	return result, nil
@@ -451,29 +418,6 @@ func ownedPath(root, name, dir string) (string, error) {
 	return path, nil
 }
 
-func objectKey(obj types.Object, file string, fields map[*types.Var]string) string {
-	base := obj.Pkg().Path() + "."
-	if f, ok := obj.(*types.Func); ok {
-		if receiver := f.Type().(*types.Signature).Recv(); receiver != nil {
-			t := receiver.Type()
-			if pointer, ok := t.(*types.Pointer); ok {
-				t = pointer.Elem()
-			}
-			if named, ok := t.(*types.Named); ok {
-				return base + named.Obj().Name() + "." + obj.Name()
-			}
-			return base + file + "." + obj.Name()
-		}
-	}
-	if v, ok := obj.(*types.Var); ok && v.IsField() {
-		if owner := fields[v]; owner != "" {
-			return base + owner + "." + obj.Name()
-		}
-		return base + file + "." + obj.Name()
-	}
-	return base + obj.Name()
-}
-
 // These packages register handlers on the shared default HTTP mux at import
 // time, even when their named objects are used only inside an uncalled function.
 func startupImport(path string) bool {
@@ -487,14 +431,5 @@ func sortManifest(m *manifest) {
 		}
 		return m.Imports[i].Path < m.Imports[j].Path
 	})
-	sort.Slice(m.Edges, func(i, j int) bool {
-		a, b := m.Edges[i], m.Edges[j]
-		if a.Caller != b.Caller {
-			return a.Caller < b.Caller
-		}
-		if a.Callee != b.Callee {
-			return a.Callee < b.Callee
-		}
-		return a.Object < b.Object
-	})
+	sort.Strings(m.Packages)
 }

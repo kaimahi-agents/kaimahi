@@ -203,15 +203,15 @@ also run in the live-test binary, even when `-run` selects another test. Only
 literal `errors.New` and `regexp.MustCompile` setup with verified imports, and
 passive same-file pointer-to-nil type assertions, are permitted.
 
-The typed caller guard checks only references crossing between selected and
-unselected files, using reviewed file/object approvals in
-`scripts/ci/orka-callers.json`. Both directions matter: a selected-file method
-can shadow a promoted method and rebind an unchanged unselected caller.
-Go types resolve methods, function values, fields and same-package private
-references. Calls between selected files, ordinary imports, helper extraction
-and closures do not need manifest entries. Only `expvar` and `net/http/pprof`
-imports are pinned: they register handlers on the shared default HTTP mux at
-package initialization, even through otherwise unused named imports.
+The typed caller guard requires review only when selected code reaches a new
+unselected package, using package approvals in `scripts/ci/orka-callers.json`.
+Go types distinguish selected and unselected definitions, including in mixed
+packages such as `internal/kmx/app`. An approved package permits new objects,
+files, helpers and callers within that dependency without manifest edits;
+it does not detect same-package method rebinding. Unselected callers of
+selected code are not pinned. Calls between selected files and ordinary imports
+need no entries. Only `expvar` and `net/http/pprof` imports are pinned: both
+register handlers on the shared default HTTP mux at package initialization.
 
 The guard analyzes Linux/amd64 without race/custom tags, including linked App
 tests but not other packages' tests; it never executes the analyzed code.
@@ -220,7 +220,7 @@ modules and owned `//line` or `/*line` directives fail closed. The separate
 init check still covers all build tags. These are source-reference tripwires,
 not proofs of dynamic dispatch, arbitrary external effects or isolation.
 
-For an intentional new boundary reference, inspect
+For an intentional new package dependency, inspect
 `go run scripts/ci/orka-callers.go --audit` and review the affected code before
 updating the manifest. Hygiene never refreshes approvals automatically.
 Removing a reference needs no update; its approval persists for reintroduction
