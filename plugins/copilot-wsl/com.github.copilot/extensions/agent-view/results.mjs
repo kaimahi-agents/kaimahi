@@ -95,6 +95,7 @@ const PLAIN_REASONS = {
   runner_unavailable: "The agent could not start. No model was called.", execution_failed: "The agent could not finish this run.",
   invalid_completion: "The answer could not be confirmed for this run.", diagnostics_failed: "Run details could not be saved.",
   journal_failed: "The run could not be saved, so its result is unconfirmed.",
+  source_changed: "The agent or its tests changed during the run. Reload before testing again.",
   recording_mismatch: "Recording mismatch: tool arguments differ from the saved call. Update the saved call before retrying.",
   recording_source_changed: "The agent file changed. The recording was not saved.",
   recording_unrepresentable: "The recording does not fit this agent file. Nothing was saved.",

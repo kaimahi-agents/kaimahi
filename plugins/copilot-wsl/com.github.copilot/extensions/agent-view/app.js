@@ -30,6 +30,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   // Navigation neither saves nor drops these controller-owned drafts.
   const state = {
     base: payload, snap: readSnapshot(payload), candidate: undefined, compareOpen: false,
+    sourceUnavailable: false, sourceInvalidated: false,
     sectionDrafts: new Map(), testDrafts: new Map(), invalidEditors: new Set(),
     route: { name: "main" }, busy: false, pending: undefined, blocked: false, savedUntested: false, settingsIncomplete: false, message: "", runAlert: undefined, lastRun: undefined,
     newCount: 0, history: settingsGuard(resultHistory(payload)), editingChecks: new Set(),
@@ -76,7 +77,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       messageNode.textContent = state.message;
       for (const u of updates) u();
       for (const { node, guard } of controls) {
-        node.disabled = guard === "reload" ? state.busy : invalidEditors.size > 0 || (guard === "nav" ? false
+        node.disabled = guard === "reload" ? state.busy || state.sourceUnavailable : invalidEditors.size > 0 || (guard === "nav" ? false
           : state.busy || state.blocked || (["save", "settings"].includes(guard) && !!state.candidate) || (guard === "clean" && hasDrafts()));
       }
     };
@@ -685,7 +686,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     observe,
     observeFailure,
     observation,
-    idle: () => !state.busy && !state.blocked && invalidEditors.size === 0,
+    idle: () => !state.busy && (!state.blocked || state.sourceUnavailable) && invalidEditors.size === 0,
     dispose() { disposed = true; clearUndo(); actions.dispose(); state.observationGeneration++; for (const cleanup of cleanups.splice(0)) cleanup(); },
   };
 }

@@ -7,23 +7,35 @@ export function createObservationController(state, { path, options, drafts, clea
   const observation = () => ({ generation: state.observationGeneration, revision: state.base.file.revision });
   const matches = (view) => view && !view.error && view.file?.path === path;
 
-  // Only the fixed typed error invalidates; any other failure stays best effort.
+  // Only fixed typed errors invalidate; other failures stay best effort.
   const settingsError = (e) => e?.code === "invalid_tool_settings" || e?.error === "invalid_tool_settings";
+  const pairedError = (e) => e?.code === "paired_source_required" || e?.error === "paired_source_required";
   // Retained results stay visible as old, drafts are untouched, and a valid read recovers.
-  function invalidate(started) {
+  function invalidate(started, paired = false) {
     if (started.generation !== state.observationGeneration || started.revision !== state.base.file.revision
-      || state.busy || state.blocked || invalidEditors.size || state.base.settingsInvalid) return false;
+      || state.busy || state.blocked || invalidEditors.size || !paired && state.base.settingsInvalid) return false;
+    if (paired) {
+      state.sourceUnavailable = true; state.sourceInvalidated = true; state.blocked = true;
+      state.message = "Paired test files are not supported in this canvas. Your drafts are kept.";
+      state.candidate = undefined; state.confirm = undefined; state.run = undefined; state.lastAdHoc = undefined;
+      history.reset(); clearUndo(); state.lastRun = undefined; state.runAlert = undefined;
+    }
     const { latest } = state.base;
-    state.base = { ...state.base, settingsInvalid: true, latest: latest.status === "current" ? { ...latest, status: "stale", badge: "stale" } : latest };
+    state.base = { ...state.base, ...(!paired ? { settingsInvalid: true } : {}), latest: latest.status === "current" ? { ...latest, status: "stale", badge: "stale" } : latest };
     state.observationGeneration++;
     render(); return true;
   }
-  function observeFailure(error, started = observation()) { return settingsError(error) ? invalidate(started) : false; }
+  function observeFailure(error, started = observation()) { return pairedError(error) ? invalidate(started, true) : settingsError(error) ? invalidate(started) : false; }
   // Observation never writes or clears a lock.
   function observe(view, started = observation()) {
+    if (pairedError(view)) return invalidate(started, true);
     if (settingsError(view)) return invalidate(started);
     if (started.generation !== state.observationGeneration || started.revision !== state.base.file.revision
-      || !matches(view) || state.busy || state.blocked || invalidEditors.size) return false;
+      || !matches(view) || state.busy || state.blocked && !state.sourceUnavailable || invalidEditors.size) return false;
+    // A valid read unlocks actions, but only a new execution can replace invalidated results.
+    if (state.sourceInvalidated) view = { ...view, latest: { status: "stale", badge: "stale" } };
+    const recoveringSource = state.sourceUnavailable;
+    if (recoveringSource) { state.sourceUnavailable = false; state.blocked = false; state.message = ""; }
     const observed = view;
     const selected = effectiveModel(view.model, modelChoice.override, view.chatModel);
     const route = view.latest.result?.modelRoute, incomingModel = route?.slice(route.indexOf("/") + 1);
@@ -34,7 +46,7 @@ export function createObservationController(state, { path, options, drafts, clea
     if (adoptable) { history.focus(selected); if (!stopped) history.remember(observed); }
     const changedHistory = adoptable && !same(previousHistory, [history.pair(), history.attempt(incomingModel)]);
     view = modelChoice.view(view, view.latest.status !== "current" || preRouteRefusal(view.latest.result) || incomingModel === selected ? undefined : history.selected(view, selected));
-    const recovering = !!state.base.settingsInvalid;
+    const recovering = !!state.base.settingsInvalid || recoveringSource;
     if (!changedHistory && ((!recovering && same(view, state.base)) || (state.candidate && same(view, state.candidate)))) return false;
     clearUndo(); displayNames.clear(); state.runAlert = undefined;
     state.observationGeneration++;

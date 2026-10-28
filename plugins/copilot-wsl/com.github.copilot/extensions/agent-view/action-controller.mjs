@@ -40,7 +40,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
   }
 
   async function act(operation, values = {}, submitted = { sections: [], tests: [] }) {
-    if (state.busy || ((state.blocked || invalidEditors.size) && operation !== "reload")) return;
+    if (state.busy || state.sourceUnavailable || ((state.blocked || invalidEditors.size) && operation !== "reload")) return;
     const previousPrompt = submitted.sections.map(key => ({ key, text: state.snap.sections.find(s => s.key === key).text }));
     clearUndo(); state.confirm = undefined; state.lastAdHoc = undefined;
     if (["test", "save-and-test"].includes(operation)) state.history.started(effectiveModel(state.base.model, modelChoice.override, state.base.chatModel));
@@ -71,6 +71,10 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     stopWatching();
     if (disposed) return;
     state.busy = false; state.pending = undefined; state.message = "";
+    if (state.sourceInvalidated && matches(response?.view)) {
+      if (executing && !response.error && !response.stopped && response.view.latest.status === "current") state.sourceInvalidated = false;
+      else response = { ...response, view: { ...response.view, latest: { status: "stale", badge: "stale" } } };
+    }
     const latest = response?.view?.latest;
     if (operation === "run" && response?.capture?.adHoc) state.lastAdHoc = response.capture;
     if (response?.capture) { state.history.noteCapture(response.capture, response.capture.savedRevision && matches(response.view) ? response.view : undefined); state.lastCapture = response.capture; }

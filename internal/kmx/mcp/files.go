@@ -74,6 +74,8 @@ func (e *Error) Error() string {
 		return "settings_unavailable: folder settings cannot be safely read or written"
 	case "settings_write_unknown":
 		return "settings_write_unknown: settings publication is unconfirmed; read back before deciding what to do"
+	case "paired_source_required":
+		return "paired_source_required: use kmx run FILE or kmx test FILE for companion tests"
 	case "stale_revision":
 		return "stale_revision: source changed; review its current revision before editing"
 	case "busy":

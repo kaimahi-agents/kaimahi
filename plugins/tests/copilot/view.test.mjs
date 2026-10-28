@@ -499,6 +499,7 @@ test("plainReason translates every preview engine code and retains only validate
     runner_unavailable: "The agent could not start. No model was called.", execution_failed: "The agent could not finish this run.",
     invalid_completion: "The answer could not be confirmed for this run.", diagnostics_failed: "Run details could not be saved.",
     journal_failed: "The run could not be saved, so its result is unconfirmed.",
+    source_changed: "The agent or its tests changed during the run. Reload before testing again.",
     recording_mismatch: "Recording mismatch: tool arguments differ from the saved call. Update the saved call before retrying.",
     recording_source_changed: "The agent file changed. The recording was not saved.",
     recording_unrepresentable: "The recording does not fit this agent file. Nothing was saved.",
@@ -4246,6 +4247,77 @@ test("tool settings: an invalid_tool_settings poll after a pass makes the old pa
     assert.equal(c18Prompt(h.root).textContent, "My draft.");
     h.app.dispose();
   }
+});
+
+test("paired source: resource refusal reaches the idle poll, fences actions and recovers without reviving a cached pass", async t => {
+  const seed = await toolCanvas(); t.after(() => seed.app.dispose());
+  const raw = resource(MINIMAL, { file: seed.view.file, instructions: seed.source, model: "fake", examples: seed.examples,
+    tools: ["ping"], toolSettings: ENABLED("ping"), toolSettingsRevision: "absent", authoring: { source: seed.source, editable: true, recordingControls: true },
+    latest: passing(ENABLED("ping"))(seed.view.file.revision, seed.examples) });
+  let current = raw;
+  const session = stubSession(raw);
+  session.rpc.mcp.resources.read = async params => ({ contents: [{ uri: params.uri, mimeType: "application/json", text: JSON.stringify(current) }] });
+  const bridge = await startViewBridge({ session, path: MINIMAL }); t.after(() => bridge.close());
+  const doc = fakeDoc(), root = doc.createElement("main"), actions = [];
+  doc.getElementById = () => root; doc.visibilityState = "visible";
+  const before = { document: globalThis.document, fetch: globalThis.fetch, setInterval: globalThis.setInterval };
+  let poll, ready;
+  const started = new Promise(resolve => { ready = resolve; });
+  globalThis.document = doc;
+  globalThis.setInterval = fn => { poll = fn; ready(); return 1; };
+  globalThis.fetch = async (url, options) => {
+    if (url === "actions") {
+      const action = JSON.parse(options.body);
+      if (action.operation === "tools") return { json: async () => pingCatalog() };
+      actions.push(action); return { json: async () => ({ view: await readView(session, MINIMAL) }) };
+    }
+    const response = await get(bridge.url + url);
+    return { json: async () => JSON.parse(response.body) };
+  };
+  t.after(() => {
+    if (before.document === undefined) delete globalThis.document; else globalThis.document = before.document;
+    globalThis.fetch = before.fetch; globalThis.setInterval = before.setInterval;
+  });
+  await import(new URL("../../copilot-wsl/com.github.copilot/extensions/agent-view/app.js?paired-source-poll", import.meta.url));
+  await started;
+  assert.equal(typeof poll, "function");
+  assert.match(c18Text(root, "result-pill"), /2 of 2 passing/);
+  current = { schemaVersion: 1, kind: "kmx.agent-view-error", reasonCode: "paired_source_required", reason: "private source text" };
+  await poll();
+  assert.doesNotMatch(c18Text(root, "result-pill"), /passing/, "a refused read must invalidate the current pass");
+  await assert.rejects(readView(session, MINIMAL), e => e.code === "paired_source_required" && !/private/.test(e.message));
+  assert.match(root.textContent, /paired.*not supported/i);
+  click(btn(root, "Run")); await tick();
+  assert.deepEqual(actions, [], "even a directly dispatched Run is fenced");
+  openTest(root, "a");
+  assert.equal(byClass(root, "tool-mode")[0].disabled, true, "recording mode changes are unavailable");
+  click(byClass(root, "tool-mode")[0]);
+  click(byClass(root, "save-run")[0]); await tick();
+  assert.deepEqual(actions, [], "Test/Save and recording controls cannot dispatch");
+  goBack(root);
+  await openServer({ root });
+  assert.equal(byClass(root, "tool-state")[0].disabled, true, "tool settings are unavailable");
+  goBack(root);
+  // Recovery must keep polling while actions are unavailable, and cannot revive the cached pass.
+  current = raw; await poll(); await poll();
+  assert.equal(c18Text(root, "result-pill"), "Out of date");
+  assert.equal(byClass(root, "save-run")[0].disabled, false);
+  c18Prompt(root).textContent = "My prompt draft."; c18Prompt(root).listeners.input[0]();
+  openTest(root, "a"); edited(byClass(root, "example-input")[0], "My input draft.");
+  current = { schemaVersion: 1, kind: "kmx.agent-view-error", reasonCode: "paired_source_required" }; await poll();
+  assert.equal(byClass(root, "save-run")[0].disabled, true, "draft Save/Test is unavailable");
+  click(byClass(root, "save-run")[0]); await tick();
+  assert.deepEqual(actions, [], "the blocked draft cannot be saved");
+  current = raw; await poll();
+  assert.equal(byClass(root, "example-input")[0].value, "My input draft.");
+  goBack(root); assert.equal(c18Prompt(root).textContent, "My prompt draft.");
+  assert.doesNotMatch(root.textContent, /private source text/);
+  // A new explicit Test, not a read, can establish currentness again.
+  click(btn(root, "Reload and discard draft")); await tick(); await tick();
+  assert.equal(c18Text(root, "result-pill"), "Out of date", "Reload cannot revive a cached pass either");
+  click(byClass(root, "save-run")[0]); await tick(); await tick();
+  assert.equal(actions.at(-1).operation, "test");
+  assert.match(c18Text(root, "result-pill"), /2 of 2 passing/);
 });
 
 test("tool settings: a valid response started before invalidation cannot restore an old pass", async () => {

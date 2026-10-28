@@ -18,6 +18,9 @@ func (f *Files) requireSingleSource(p string) error {
 	if err != nil {
 		return err
 	}
+	if !f.allowedPath(target) {
+		return refusal("unsafe_path")
+	}
 	physical := target
 	if f.root != nil {
 		physical = filepath.Join(f.root.Name(), filepath.FromSlash(target))

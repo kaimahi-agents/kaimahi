@@ -33,6 +33,7 @@ export const MESSAGES = {
   tool_settings_changed: "Tool settings changed. Reload before comparing.",
   confirmation_required: COPILOT_TESTS_NOTICE,
   invalid_tool_settings: "The tool settings in kmx.yaml are invalid. Fix them before running this agent.",
+  paired_source_required: "Paired test files are not supported in this canvas.",
 };
 
 export class ViewError extends Error {
@@ -158,7 +159,7 @@ function parseView(json, path) {
   } catch {
     invalid();
   }
-  if (raw?.schemaVersion === 1 && raw.kind === "kmx.agent-view-error" && raw.reasonCode === "invalid_tool_settings") throw new ViewError("invalid_tool_settings");
+  if (raw?.schemaVersion === 1 && raw.kind === "kmx.agent-view-error" && ["invalid_tool_settings", "paired_source_required"].includes(raw.reasonCode)) throw new ViewError(raw.reasonCode);
   if (raw?.schemaVersion === 1 && raw.kind === "kmx.agent-view-error" && raw.reasonCode === "invalid_file") throw new ViewError("invalid-file");
   if (raw?.schemaVersion === 1 && raw.kind === "kmx.agent-view-error" && raw.reasonCode === "not_found") throw new ViewError("not-found");
   if (!isObj(raw) || raw.schemaVersion !== 1 || raw.kind !== KIND) invalid();
