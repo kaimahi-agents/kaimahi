@@ -81,7 +81,7 @@ if name == "kind" and args == ["get", "clusters"]:
 if name == "kmx" and args == ["cluster", "up", "--step", "cluster"]:
     sys.exit(int(os.environ.get("CREATE_EXIT", "0")))
 if name == "kmx" and "install" in args:
-    print("PRIVATE_INSTALL_CANARY")
+    print("INSTALL_DIAGNOSTIC", file=sys.stderr)
     if os.environ.get("VERIFIED", "1") == "1":
         print("Installer verified: pinned")
     sys.exit(int(os.environ.get("INSTALL_EXIT", "0")))
@@ -167,15 +167,18 @@ if name == "python3" and "nodes" in args:
                     expected.append(["delete", "cluster", "--name", "kmx-orka-promote"])
                 self.assertCountEqual([c["args"] for c in self.calls()], expected)
 
-    def test_destination_install_is_private_verified_and_provider_free(self):
+    def test_destination_install_is_verified_provider_free_and_reports_failure(self):
         name = "Native promotion — install pinned Orka without inference"
-        for env, success in (({}, True), ({"VERIFIED": "0"}, False), ({"INSTALL_EXIT": "1"}, False)):
+        for env, success in (({}, True), ({"VERIFIED": "0"}, False), ({"INSTALL_EXIT": "23"}, False)):
             with self.subTest(env=env):
                 self.record.unlink(missing_ok=True)
                 result = self.run_step(name, **env)
                 self.assertEqual(result.returncode == 0, success)
-                self.assertNotIn(b"PRIVATE_INSTALL_CANARY", result.stdout + result.stderr)
-                self.assertEqual(self.calls()[0]["args"], ["--context", "kind-kmx-orka-promote", "orka", "install", "--provider", "-"])
+                if "INSTALL_EXIT" in env:
+                    self.assertIn(b"INSTALL_DIAGNOSTIC", result.stdout + result.stderr)
+                else:
+                    self.assertNotIn(b"INSTALL_DIAGNOSTIC", result.stdout + result.stderr)
+                self.assertEqual(self.calls()[0]["args"], ["--context", "kind-kmx-orka-promote", "cluster", "orka", "install", "--provider", "-"])
         captures = list(self.root.glob("*orka*install*"))
         self.assertTrue(captures, "installer output must be captured privately")
         self.assertTrue(all(path.stat().st_mode & 0o077 == 0 for path in captures))
