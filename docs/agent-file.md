@@ -148,8 +148,10 @@ and unrelated numeric lexemes remain unchanged. CLI adds no source history.
 
 `kmx test explain --file FILE [--tests FILE]` compares retained failures with the
 current selection. Tests-only edits and a different identical-content override
-make the old result historical without changing the raw agent revision. Put
-journal/summary files outside the checked source parent when possible: creating
+make the old result historical without changing the raw agent revision. After a
+downgrade, older binaries may report the retained store unavailable on encountering
+new pair metadata; use this version or newer to read it. No records are migrated
+or removed automatically. Put journal/summary files outside the checked source parent when possible: creating
 entries there can conservatively stale source-version checks.
 
 ## Existing kmx charters

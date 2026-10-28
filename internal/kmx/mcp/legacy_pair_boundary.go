@@ -29,20 +29,17 @@ func (f *Files) requireSingleSource(p string) error {
 	if !ok {
 		return nil
 	}
+	// A legacy root at .github/agents has its default sibling outside the root.
+	// Probe only that derived name's presence; never read it or expand write access.
+	stat := os.Lstat
 	if f.root != nil {
 		relative, err := filepath.Rel(f.root.Name(), tests)
-		if err != nil || !filepath.IsLocal(relative) {
-			return refusal("paired_source_required")
+		if err == nil && filepath.IsLocal(relative) {
+			tests, stat = relative, f.root.Lstat
 		}
-		_, err = f.root.Lstat(relative)
-		if os.IsNotExist(err) {
-			return nil
-		}
-	} else {
-		_, err = os.Lstat(tests)
-		if os.IsNotExist(err) {
-			return nil
-		}
+	}
+	if _, err := stat(tests); os.IsNotExist(err) {
+		return nil
 	}
 	return refusal("paired_source_required")
 }

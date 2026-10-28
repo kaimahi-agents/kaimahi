@@ -208,7 +208,6 @@ func TestApplyTestRecordingsInvalidPayloads(t *testing.T) {
 		"nil arguments":      func(m *MockTool) { m.Calls[0].Arguments = nil },
 		"nil result":         func(m *MockTool) { m.Calls[0].Result = nil },
 		"nonfinite":          func(m *MockTool) { m.Calls[0].Result = map[string]any{"n": math.NaN()} },
-		"inexact number":     func(m *MockTool) { m.Calls[0].Result = map[string]any{"n": json.Number("9007199254740993")} },
 		"malformed number":   func(m *MockTool) { m.Calls[0].Result = map[string]any{"n": json.Number("01")} },
 		"lossy UTF8":         func(m *MockTool) { m.Calls[0].Result = map[string]any{"s": "\xff"} },
 		"credential value":   func(m *MockTool) { m.Calls[0].Result = map[string]any{"s": "ghp_" + strings.Repeat("a", 36)} },

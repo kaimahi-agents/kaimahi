@@ -344,6 +344,7 @@ func TestPairRecordingPublicationFinalChecks(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer tests.close()
+			want := map[string][]byte{agent.path: agent.source, tests.path: tests.source}
 			if !pair.SameSourceVersion(reloadSaverPair(t, pair)) {
 				t.Fatal("source changed before stage")
 			}
@@ -379,7 +380,8 @@ func TestPairRecordingPublicationFinalChecks(t *testing.T) {
 				}
 				switch {
 				case mutation == "default-file":
-					writeSource(t, tests.path, []byte(pairPendingTests))
+					want[tests.path] = []byte(pairPendingTests)
+					writeSource(t, tests.path, want[tests.path])
 				case mutation == "default-directory":
 					if err := os.Mkdir(filepath.Dir(tests.path), 0700); err != nil {
 						t.Fatal(err)
@@ -394,7 +396,8 @@ func TestPairRecordingPublicationFinalChecks(t *testing.T) {
 					if changed == string(source.source) {
 						t.Fatal("fixture did not change")
 					}
-					writeSource(t, source.path, []byte(changed))
+					want[source.path] = []byte(changed)
+					writeSource(t, source.path, want[source.path])
 					if err := os.Chtimes(source.path, source.identity.file.ModTime(), source.identity.file.ModTime()); err != nil {
 						t.Fatal(err)
 					}
@@ -402,11 +405,19 @@ func TestPairRecordingPublicationFinalChecks(t *testing.T) {
 					if err := os.Rename(source.path, source.path+".original"); err != nil {
 						t.Skip("open-file rename unavailable")
 					}
+					want[source.path+".original"] = source.source
 					writeSource(t, source.path, source.source)
 				case strings.HasSuffix(mutation, "-parent"):
 					if err := os.Rename(source.parentPath, source.parentPath+".original"); err != nil {
 						t.Skip("open-parent rename unavailable")
 					}
+					for path, data := range want {
+						if relative, err := filepath.Rel(source.parentPath, path); err == nil && filepath.IsLocal(relative) {
+							want[filepath.Join(source.parentPath+".original", relative)] = data
+							want[path] = nil
+						}
+					}
+					want[source.path] = source.source
 					writeSource(t, source.path, source.source)
 				}
 				return check()
@@ -416,7 +427,7 @@ func TestPairRecordingPublicationFinalChecks(t *testing.T) {
 				if err != nil || ack.Revision != revision(candidate) {
 					t.Fatalf("own staging refused: %+v %v", ack, err)
 				}
-				requireBytes(t, target.path, candidate)
+				want[target.path] = candidate
 			} else {
 				code := "stale_revision"
 				if mutation == "publication-failure" {
@@ -425,6 +436,15 @@ func TestPairRecordingPublicationFinalChecks(t *testing.T) {
 				requireCode(t, err, code)
 				if ack.Revision != "" {
 					t.Fatalf("fabricated publication acknowledgement: %+v", ack)
+				}
+			}
+			for path, source := range want {
+				if source == nil {
+					if _, err := os.Lstat(path); !os.IsNotExist(err) {
+						t.Fatalf("absent tests source changed: %v", err)
+					}
+				} else {
+					requireBytes(t, path, source)
 				}
 			}
 			// The held old parent also needs its staging file removed after a rename.

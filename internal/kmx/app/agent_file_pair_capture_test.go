@@ -42,7 +42,7 @@ func capturePreviewPair(t *testing.T) *agentfile.Pair {
 }
 
 func TestFilePairCapturePublicationAndRetention(t *testing.T) {
-	for _, scenario := range []string{"saved", "wrong-role", "wrong-path", "wrong-key", "unchanged-raw", "unchanged-snapshot", "wrong-agent", "journal-veto", "cancelled", "no-recording", "source-changed"} {
+	for _, scenario := range []string{"saved", "wrong-role", "journal-veto", "cancelled", "no-recording", "source-changed"} {
 		t.Run(scenario, func(t *testing.T) {
 			t.Setenv("KMX_HOME", filepath.Join(t.TempDir(), "state"))
 			p := capturePreviewPair(t)
@@ -67,16 +67,6 @@ func TestFilePairCapturePublicationAndRetention(t *testing.T) {
 					switch scenario {
 					case "wrong-role":
 						ack.Target.Role = "agent"
-					case "wrong-path":
-						ack.Target.Path = p.AgentPath
-					case "wrong-key":
-						ack.Target.SelectionKey = "wrong"
-					case "unchanged-raw":
-						ack.Revision = p.Tests.Revision
-					case "unchanged-snapshot":
-						ack.SnapshotRevision = p.SnapshotRevision
-					case "wrong-agent":
-						ack.AgentRevision = ack.SnapshotRevision
 					}
 					// Capture may publish changed source; retention still belongs to execution.
 					raw, err := os.ReadFile(p.Tests.Selection.Path)

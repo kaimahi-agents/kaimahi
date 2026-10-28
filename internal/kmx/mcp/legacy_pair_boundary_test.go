@@ -3,6 +3,7 @@ package mcp
 import (
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,6 +11,39 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+func TestLegacyMCPGithubAgentsRootProbesSiblingPresence(t *testing.T) {
+	base := physicalDir(t)
+	root := filepath.Join(base, ".github", "agents")
+	if err := os.MkdirAll(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(root, "g.agent.md")
+	source := []byte("# Greeter\nSay hello.\n")
+	writeSource(t, file, source)
+	files, err := OpenFiles(root, parseValidator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer files.Close()
+	if _, err := files.snapshot(t.Context(), "g.agent.md"); err != nil {
+		t.Fatalf("unpaired legacy read refused: %v", err)
+	}
+	if _, err := files.Edit(t.Context(), "g.agent.md", revision(source), source); err != nil {
+		t.Fatalf("unpaired legacy edit refused: %v", err)
+	}
+	// The sibling probe grants no source-content or authoring authority there.
+	tests := filepath.Join(base, ".github", "agent-tests", "g.agent.test.md")
+	writeSource(t, tests, []byte("not a tests document"))
+	_, err = files.snapshot(t.Context(), "g.agent.md")
+	requireCode(t, err, "paired_source_required")
+	_, err = files.Edit(t.Context(), "g.agent.md", revision(source), source)
+	requireCode(t, err, "paired_source_required")
+	_, err = files.Create(t.Context(), "../agent-tests/other.agent.md", source)
+	requireCode(t, err, "unsafe_path")
+	requireBytes(t, file, source)
+	requireBytes(t, tests, []byte("not a tests document"))
+}
 
 func TestLegacyMCPPairRefusalSurvivesToolBoundary(t *testing.T) {
 	files, root, source := canonicalFiles(t)
