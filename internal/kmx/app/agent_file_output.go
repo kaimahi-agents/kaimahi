@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 )
 
 // WriteFilePreview renders the shared local-preview projection, not evidence.
@@ -50,7 +53,7 @@ func WriteFilePreview(w io.Writer, r FilePreviewResult, format string) error {
 	}
 	if r.AdHoc != nil {
 		fmt.Fprintf(&b, "ad-hoc: %s\n", r.AdHoc.State)
-		writeFileTools(&b, *r.AdHoc)
+		writeFileTools(&b, *r.AdHoc, r.ToolSettings)
 		if r.AdHoc.AnswerExcerpt != "" {
 			fmt.Fprintf(&b, "  answer excerpt: %q\n", r.AdHoc.AnswerExcerpt)
 		}
@@ -63,7 +66,7 @@ func WriteFilePreview(w io.Writer, r FilePreviewResult, format string) error {
 			label = "ANSWERED"
 		}
 		fmt.Fprintf(&b, "%s %s (%dms)\n", label, ex.ID, ex.DurationMs)
-		writeFileTools(&b, ex.FilePreviewCompletion)
+		writeFileTools(&b, ex.FilePreviewCompletion, r.ToolSettings)
 		for _, as := range ex.Assertions {
 			reason := as.Reason
 			if as.Failure != "" {
@@ -111,7 +114,11 @@ func WriteFileRunAnswers(w io.Writer, r FilePreviewResult) error {
 	return nil
 }
 
-func writeFileTools(b *strings.Builder, c FilePreviewCompletion) {
+func fileToolUnavailable(tool agentpreview.ToolSummary, settings []localtools.ToolSetting) bool {
+	return tool.Source == "unavailable" && !localtools.IsDisabled(settings, tool.Name)
+}
+
+func writeFileTools(b *strings.Builder, c FilePreviewCompletion, settings []localtools.ToolSetting) {
 	for _, tool := range c.Tools {
 		usage := "Not called"
 		if tool.CallCount > 0 {
@@ -121,5 +128,8 @@ func writeFileTools(b *strings.Builder, c FilePreviewCompletion) {
 			usage += "; recorded just now"
 		}
 		fmt.Fprintf(b, "  tool %s: %s; mode=%s source=%s\n", tool.Name, usage, tool.Mode, tool.Source)
+		if fileToolUnavailable(tool, settings) {
+			fmt.Fprintln(b, "    No recording; tool unavailable.")
+		}
 	}
 }

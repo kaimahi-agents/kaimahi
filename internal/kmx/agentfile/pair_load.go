@@ -7,21 +7,25 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // pairObservation retains handle-derived identities. In particular, Windows
 // Lstat may lazily reopen its path for identity; retained f.Stat snapshots do not.
 // This is cooperative replacement detection, not a hostile-filesystem sandbox.
+// A changed parent timestamp may conservatively stale unrelated child operations;
+// it is a version signal, not an exhaustive directory event log.
 type pairObservation struct {
 	path, parent         string
 	fileInfo, parentInfo os.FileInfo
+	parentModTime        time.Time
 }
 
 func (o *pairObservation) same(other *pairObservation) bool {
 	if o == nil || other == nil {
 		return o == nil && other == nil
 	}
-	if o.path != other.path || o.parent != other.parent || !os.SameFile(o.parentInfo, other.parentInfo) {
+	if o.path != other.path || o.parent != other.parent || !os.SameFile(o.parentInfo, other.parentInfo) || !o.parentModTime.Equal(other.parentModTime) {
 		return false
 	}
 	if o.fileInfo == nil || other.fileInfo == nil {
@@ -41,7 +45,7 @@ func LoadPair(agentFile, testsOverride string) (*Pair, error) {
 	if strings.HasSuffix(filepath.Base(agentPath), ".agent.test.md") {
 		return nil, refuse(agentFile, 1, 1, "Tests", "select an agent file, not a tests file")
 	}
-	target, supported := CompanionPath(agentPath)
+	target, supported := DefaultTestsPath(agentPath)
 	explicit := testsOverride != ""
 	if explicit {
 		if !supported {
@@ -123,12 +127,11 @@ func pairAbsolute(filename, field string) (string, error) {
 func inspectPairPath(path, field string) (*pairObservation, error) {
 	fail := func(problem string) (*pairObservation, error) { return nil, refuse(path, 1, 1, field, problem) }
 	o := &pairObservation{path: path}
-	var pathErr error
 	for p := path; ; p = filepath.Dir(p) {
 		info, err := os.Lstat(p)
 		if err != nil {
 			if !errors.Is(err, fs.ErrNotExist) {
-				pathErr = err
+				return fail("select a readable regular file with directory ancestors")
 			}
 		} else {
 			if info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
@@ -141,16 +144,13 @@ func inspectPairPath(path, field string) (*pairObservation, error) {
 					return fail("select a file with directory ancestors")
 				}
 				if o.parent == "" {
-					o.parent, o.parentInfo = p, info
+					o.parent, o.parentInfo, o.parentModTime = p, info, info.ModTime()
 				}
 			}
 		}
 		if p == filepath.Dir(p) {
 			break
 		}
-	}
-	if pathErr != nil {
-		return fail("select a readable regular file with directory ancestors")
 	}
 	if o.parentInfo == nil {
 		return fail("select a file with an existing directory ancestor")
@@ -178,10 +178,10 @@ func readPairSource(path, field string, allowMissing bool) ([]byte, *pairObserva
 	}
 	defer parent.Close()
 	openedParent, err := parent.Stat()
-	if err != nil || !openedParent.IsDir() || !os.SameFile(o.parentInfo, openedParent) {
+	if err != nil || !openedParent.IsDir() || !os.SameFile(o.parentInfo, openedParent) || !o.parentModTime.Equal(openedParent.ModTime()) {
 		return fail("parent directory changed while opening; select a stable source")
 	}
-	o.parentInfo = openedParent
+	o.parentInfo, o.parentModTime = openedParent, openedParent.ModTime()
 	if o.fileInfo == nil {
 		return nil, o, nil
 	}
@@ -191,7 +191,7 @@ func readPairSource(path, field string, allowMissing bool) ([]byte, *pairObserva
 	}
 	defer f.Close()
 	opened, err := f.Stat()
-	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(o.fileInfo, opened) || opened.Size() != o.fileInfo.Size() || !opened.ModTime().Equal(o.fileInfo.ModTime()) {
+	if err != nil || !samePairFileVersion(o.fileInfo, opened) {
 		return fail("file changed while opening; select a stable regular file")
 	}
 	data, err := io.ReadAll(io.LimitReader(f, MaxFileBytes+1))
@@ -215,13 +215,7 @@ func (o *pairObservation) check(field string) error {
 	if err != nil {
 		return err
 	}
-	stable := current.parent == o.parent && os.SameFile(o.parentInfo, current.parentInfo)
-	if o.fileInfo == nil {
-		stable = stable && current.fileInfo == nil
-	} else {
-		stable = stable && current.fileInfo != nil && samePairFileVersion(o.fileInfo, current.fileInfo)
-	}
-	if !stable {
+	if !o.same(current) {
 		return refuse(o.path, 1, 1, field, "source or parent changed while reading; select a stable source")
 	}
 	return nil

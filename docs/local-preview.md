@@ -174,6 +174,28 @@ for the new source bytes. No execution retry follows a stale or failed save. The
 CLI binding below remains the fixed read. Copilot's runtime-owned binding is
 separate and requires no hand-edited file.
 
+### Recorded and unavailable tools in terminal tests
+
+Populated per-test Recorded tools replay their saved results without resolving a
+live host or tool credential. A different tool argument stops the run with a
+recording mismatch; it never falls back to a live call. An empty Recorded entry
+is pending capture, not a saved result. Without an explicit binding or app host,
+it stays unavailable and the source file is unchanged.
+
+Text Run/Test reports `No recording; tool unavailable.` beneath each Enabled
+unavailable tool, even if it was not requested. Disabled tools do not show this
+note. JSON keeps the exact `mode`, `source`, `callCount` and `toolSettings`; the
+Actions summary explains displayed unavailable rows without including arguments
+or results.
+
+Calls checks count Enabled requests, including requests to unavailable tools;
+they do not prove successful live execution. A Test can therefore pass a Calls
+check while reporting `source=unavailable`. Inspect the source as well as the
+verdict. Recorded tool replay is offline, but a hosted model or judge still needs
+network access. A fake-model test without judge assertions or live tool sources
+is fully offline. Selecting `fake` does not disable an Enabled live binding;
+`--tool-bindings` can still make a network request.
+
 ## Folder tool settings
 
 File Run/Test reads `kmx.yaml` beside the agent's physical file, never from a

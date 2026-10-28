@@ -241,8 +241,5 @@ func checkExamplesYAML(root *yaml.Node, location func(*yaml.Node) Location, fiel
 		}
 		return nil
 	}
-	if err := check(root, 0, 12); err != nil {
-		return err
-	}
-	return nil
+	return check(root, 0, 12)
 }

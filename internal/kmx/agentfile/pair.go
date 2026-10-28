@@ -19,12 +19,13 @@ type TestsSelection struct {
 type TestsSource struct {
 	State, Revision string
 	Selection       TestsSelection
-	Suite           *TestSuite
+	Suite           *Tests
 }
 
 // Pair keeps source roles separate: Agent is the original parsed agent, never
-// an executable merge of external cases. SnapshotRevision is value identity,
-// not write authority. Checked observations are available only through LoadPair.
+// an executable merge of external cases. SnapshotRevision is the combined revision,
+// not a metadata-sensitive source version or write authority. Checked observations
+// are available only through LoadPair.
 type Pair struct {
 	Agent                              *Agent
 	AgentPath                          string
@@ -33,9 +34,9 @@ type Pair struct {
 	agentObservation, testsObservation *pairObservation
 }
 
-// CompanionPath implements fixed pairing without discovery. Only the exact .github/agents
+// DefaultTestsPath implements fixed pairing without discovery. Only the exact .github/agents
 // parent uses sibling agent-tests; deeper folders follow the ordinary beside rule.
-func CompanionPath(agentPhysical string) (string, bool) {
+func DefaultTestsPath(agentPhysical string) (string, bool) {
 	leaf := filepath.Base(agentPhysical)
 	if !strings.HasSuffix(leaf, ".agent.md") || leaf == ".agent.md" {
 		return "", false
@@ -63,7 +64,7 @@ func ComposePair(agentPhysical string, agent *Agent, selection TestsSelection, t
 	if strings.HasSuffix(filepath.Base(agentPhysical), ".agent.test.md") {
 		return fail("select an agent file, not a tests file")
 	}
-	_, supported := CompanionPath(agentPhysical)
+	_, supported := DefaultTestsPath(agentPhysical)
 	if selection.Path != "" {
 		if !supported {
 			return fail("select a supported *.agent.md file for companion tests")
@@ -104,7 +105,7 @@ func ComposePair(agentPhysical string, agent *Agent, selection TestsSelection, t
 		source.State, source.Revision, source.Suite = "external", suite.Revision, suite
 	case inline:
 		source.State, source.Revision = "inline", agent.Revision
-		source.Suite = &TestSuite{Examples: agent.Examples, Revision: agent.Revision}
+		source.Suite = &Tests{Examples: agent.Examples, Revision: agent.Revision}
 	case selection.Path != "":
 		source.State = "absent"
 	}
@@ -113,9 +114,9 @@ func ComposePair(agentPhysical string, agent *Agent, selection TestsSelection, t
 	return p, nil
 }
 
-// SameSnapshot compares two checked loads, without reopening paths. Equal hashes
-// alone (including pure compositions) never establish observed currentness.
-func (p *Pair) SameSnapshot(other *Pair) bool {
+// SameSourceVersion compares two checked loads, without reopening paths. Equal
+// combined revisions (including pure compositions) never establish observed currentness.
+func (p *Pair) SameSourceVersion(other *Pair) bool {
 	return p != nil && other != nil && p.agentObservation != nil && other.agentObservation != nil && p.SnapshotRevision == other.SnapshotRevision &&
 		p.agentObservation.same(other.agentObservation) && p.testsObservation.same(other.testsObservation)
 }

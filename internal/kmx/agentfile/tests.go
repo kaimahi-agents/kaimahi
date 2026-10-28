@@ -11,10 +11,10 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// TestSuite contains ordered authored cases, not a safe log or execution authority.
+// Tests contains ordered authored cases, not a safe log or execution authority.
 // ParseTests retains exact Source bytes and their Revision. ComposePair's inline
 // suite instead has the agent Revision and no Source; the caller owns those bytes.
-type TestSuite struct {
+type Tests struct {
 	Examples []Example
 	Source   []byte
 	Revision string
@@ -22,7 +22,7 @@ type TestSuite struct {
 
 // ParseTests reads schemaVersion 1 Markdown with one yaml agent-test mapping per
 // fence. Prose and unrelated fences are source-only. It performs no filesystem IO.
-func ParseTests(filename string, data []byte) (*TestSuite, error) {
+func ParseTests(filename string, data []byte) (*Tests, error) {
 	text, err := checkedSourceText(filename, data)
 	if err != nil {
 		return nil, err
@@ -115,7 +115,7 @@ func ParseTests(filename string, data []byte) (*TestSuite, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &TestSuite{Examples: examples, Source: bytes.Clone(data), Revision: fmt.Sprintf("sha256:%x", sha256.Sum256(data))}, nil
+	return &Tests{Examples: examples, Source: bytes.Clone(data), Revision: fmt.Sprintf("sha256:%x", sha256.Sum256(data))}, nil
 }
 
 func decodeTestsDocument(filename string, lines []string, base int, field string) (*yaml.Node, error) {

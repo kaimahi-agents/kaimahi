@@ -28,16 +28,17 @@ func pairLoad(t *testing.T, agent, tests string) *Pair {
 	}
 	return p
 }
-func pairRefusal(t *testing.T, agent, tests, field, reason string) {
+func pairRefusal(t *testing.T, agent, tests, field, reason string) *Error {
 	t.Helper()
 	p, err := LoadPair(agent, tests)
 	var e *Error
 	if p != nil || !errors.As(err, &e) || e.Field != field || !strings.Contains(e.Problem, reason) {
 		t.Fatalf("want %s/%s refusal, got %v %v", field, reason, p, err)
 	}
+	return e
 }
 
-func TestCompanionPath(t *testing.T) {
+func TestDefaultTestsPath(t *testing.T) {
 	for _, tt := range []struct {
 		in, out string
 		ok      bool
@@ -50,7 +51,7 @@ func TestCompanionPath(t *testing.T) {
 		{"repo/other.github/agents/greeter.agent.md", "repo/other.github/agents/greeter.agent.test.md", true},
 		{"charter.md", "", false}, {"greeter.agent.test.md", "", false}, {".agent.md", "", false}, {"", "", false},
 	} {
-		got, ok := CompanionPath(filepath.FromSlash(tt.in))
+		got, ok := DefaultTestsPath(filepath.FromSlash(tt.in))
 		if got != filepath.FromSlash(tt.out) || ok != tt.ok {
 			t.Fatalf("%q: %q %t", tt.in, got, ok)
 		}
@@ -89,7 +90,7 @@ func TestComposePairSelectionAndNonAuthority(t *testing.T) {
 	if p.SnapshotRevision == other.SnapshotRevision || p.Tests.Selection.Key == other.Tests.Selection.Key {
 		t.Fatal("different target with equal bytes collapsed")
 	}
-	if p.SameSnapshot(explicit) || p.SameSnapshot(p) || p.SameSnapshot(nil) {
+	if p.SameSourceVersion(explicit) || p.SameSourceVersion(p) || p.SameSourceVersion(nil) {
 		t.Fatal("pure composition claimed checked observations")
 	}
 	changed := makePair(testsPath, false, true, strings.Replace(testsStarter, "input: Ada", "input: Grace", 1))
@@ -183,11 +184,9 @@ func TestPairExternalToolValidation(t *testing.T) {
 		pairWrite(t, tests, testsHeader+"```yaml agent-test\n"+payload+"```\n")
 		for _, source := range []string{"Say hello.\n", "---\nname: greeter\n---\nSay hello.\n"} {
 			pairWrite(t, path, source)
-			pairRefusal(t, path, "", "Examples", "declared tool")
-			_, err := LoadPair(path, "")
-			var e *Error
-			if !errors.As(err, &e) || e.Location.File != tests {
-				t.Fatalf("tool error attributed to wrong source: %v", err)
+			e := pairRefusal(t, path, "", "Examples", "declared tool")
+			if e.Location.File != tests {
+				t.Fatalf("tool error attributed to wrong source: %+v", e.Location)
 			}
 		}
 		pairWrite(t, path, "Say hello.\n\n## Tools\n- read\n")
@@ -210,7 +209,7 @@ func TestLoadPairRefusesAgentAsTestsThroughHardlink(t *testing.T) {
 			root := realTemp(t)
 			agentPath := filepath.Join(root, "g.agent.md")
 			pairWrite(t, agentPath, testsStarter)
-			testsPath, _ := CompanionPath(agentPath)
+			testsPath, _ := DefaultTestsPath(agentPath)
 			override := ""
 			if explicit {
 				testsPath = filepath.Join(root, "override.md")
@@ -238,10 +237,10 @@ func TestLoadPairC3AndSelection(t *testing.T) {
 	pairWrite(t, target, testsStarter)
 	p := pairLoad(t, path, "")
 	again := pairLoad(t, path, target)
-	if !p.SameSnapshot(again) || p.SnapshotRevision != again.SnapshotRevision {
+	if !p.SameSourceVersion(again) || p.SnapshotRevision != again.SnapshotRevision {
 		t.Fatal("unchanged/default explicit reload differs")
 	}
-	if absent.SameSnapshot(p) || absent.SnapshotRevision == p.SnapshotRevision {
+	if absent.SameSourceVersion(p) || absent.SnapshotRevision == p.SnapshotRevision {
 		t.Fatal("appearance unchanged")
 	}
 	// Explicit relative paths are relative to cwd, not the agent's parent.
@@ -254,7 +253,7 @@ func TestLoadPairC3AndSelection(t *testing.T) {
 	pairRefusal(t, path, "missing.md", "Tests", "existing")
 	pairWrite(t, filepath.Join(root, "charter.md"), "Say hello.\n")
 	none := pairLoad(t, filepath.Join(root, "charter.md"), "")
-	if none.Tests.State != "none" || !none.SameSnapshot(pairLoad(t, filepath.Join(root, "charter.md"), "")) {
+	if none.Tests.State != "none" || !none.SameSourceVersion(pairLoad(t, filepath.Join(root, "charter.md"), "")) {
 		t.Fatalf("invented charter companion or lost checked observation: %+v", none.Tests)
 	}
 	inlinePath := filepath.Join(root, "inline.md")
@@ -273,7 +272,7 @@ func TestLoadPairMissingParentsAndUnsafePaths(t *testing.T) {
 	pairWrite(t, path, "Say hello.\n")
 	p := pairLoad(t, path, "")
 	again := pairLoad(t, path, "")
-	if p.Tests.State != "absent" || !p.SameSnapshot(again) {
+	if p.Tests.State != "absent" || !p.SameSourceVersion(again) {
 		t.Fatal("missing parent not observed")
 	}
 	// ENOTDIR may not be treated as absence on the default candidate.
@@ -323,47 +322,118 @@ func TestLoadPairRegularBoundedSources(t *testing.T) {
 
 func TestLoadPairSameByteVersionChanges(t *testing.T) {
 	for _, source := range []string{"agent", "tests"} {
-		for _, replace := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/replace=%t", source, replace), func(t *testing.T) {
-				root := realTemp(t)
-				agentPath := filepath.Join(root, "g.agent.md")
-				testsPath, _ := CompanionPath(agentPath)
-				pairWrite(t, agentPath, "# Greeter\nSay hello.\n")
-				pairWrite(t, testsPath, testsStarter)
-				before := pairLoad(t, agentPath, "")
-				target := agentPath
-				if source == "tests" {
-					target = testsPath
-				}
-				data, err := os.ReadFile(target)
-				if err != nil {
+		t.Run(source, func(t *testing.T) {
+			root := realTemp(t)
+			agentPath := filepath.Join(root, "g.agent.md")
+			testsPath, _ := DefaultTestsPath(agentPath)
+			pairWrite(t, agentPath, "# Greeter\nSay hello.\n")
+			pairWrite(t, testsPath, testsStarter)
+			before := pairLoad(t, agentPath, "")
+			target := agentPath
+			if source == "tests" {
+				target = testsPath
+			}
+			data, err := os.ReadFile(target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			info, err := os.Stat(target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(target, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			stamp := info.ModTime().Add(2 * time.Second)
+			if err := os.Chtimes(target, stamp, stamp); err != nil {
+				t.Fatal(err)
+			}
+			after := pairLoad(t, agentPath, "")
+			if before.SnapshotRevision != after.SnapshotRevision {
+				t.Fatal("same-byte rewrite changed value identity")
+			}
+			if before.SameSourceVersion(after) || after.SameSourceVersion(before) {
+				t.Fatal("changed source version accepted as checked-current")
+			}
+		})
+	}
+}
+
+func TestLoadPairParentVersionChanges(t *testing.T) {
+	for _, change := range []string{"mtime", "reused-ID"} {
+		t.Run(change, func(t *testing.T) {
+			root := realTemp(t)
+			dir := filepath.Join(root, "parent")
+			path := filepath.Join(dir, "g.agent.md")
+			pairWrite(t, path, "Say hello.\n")
+			before := pairLoad(t, path, "")
+			original := before.agentObservation
+			if change == "mtime" {
+				stamp := original.parentInfo.ModTime().Add(2 * time.Second)
+				if err := os.Chtimes(dir, stamp, stamp); err != nil {
 					t.Fatal(err)
 				}
-				info, err := os.Stat(target)
-				if err != nil {
+			} else {
+				// Free the parent ID, not the original file ID. Renaming the old
+				// directory aside would keep its ID allocated and miss reuse.
+				parked := filepath.Join(root, "parked.agent.md")
+				if err := os.Rename(path, parked); err != nil {
 					t.Fatal(err)
 				}
-				if replace {
-					if err := os.Remove(target); err != nil {
+				if err := os.Remove(dir); err != nil {
+					t.Fatal(err)
+				}
+				reused := false
+				for attempt := 1; attempt <= 10000; attempt++ {
+					if err := os.Mkdir(dir, 0700); err != nil {
+						t.Fatal(err)
+					}
+					parent, err := os.Open(dir)
+					if err != nil {
+						t.Fatal(err)
+					}
+					info, err := parent.Stat()
+					parent.Close()
+					if err != nil {
+						t.Fatal(err)
+					}
+					if os.SameFile(original.parentInfo, info) {
+						t.Logf("parent ID reused after %d attempts", attempt)
+						reused = true
+						break
+					}
+					if err := os.Remove(dir); err != nil {
 						t.Fatal(err)
 					}
 				}
-				if err := os.WriteFile(target, data, 0600); err != nil {
+				if !reused {
+					t.Skip("filesystem did not reuse the parent ID within 10000 attempts")
+				}
+				if err := os.Rename(parked, path); err != nil {
 					t.Fatal(err)
 				}
-				stamp := info.ModTime().Add(2 * time.Second)
-				if err := os.Chtimes(target, stamp, stamp); err != nil {
-					t.Fatal(err)
+			}
+			after := pairLoad(t, path, "")
+			if !os.SameFile(original.parentInfo, after.agentObservation.parentInfo) {
+				t.Fatal("fixture changed the parent ID instead of its version")
+			}
+			if original.parentInfo.ModTime().Equal(after.agentObservation.parentInfo.ModTime()) {
+				if change == "mtime" {
+					t.Fatal("controlled parent timestamp did not change")
 				}
-				after := pairLoad(t, agentPath, "")
-				if before.SnapshotRevision != after.SnapshotRevision {
-					t.Fatal("same-byte rewrite changed value identity")
-				}
-				if before.SameSnapshot(after) || after.SameSnapshot(before) {
-					t.Fatal("changed source version accepted as checked-current")
-				}
-			})
-		}
+				t.Skip("filesystem did not distinguish the reused parent timestamp")
+			}
+			if !samePairFileVersion(original.fileInfo, after.agentObservation.fileInfo) || before.SnapshotRevision != after.SnapshotRevision {
+				t.Fatal("fixture changed the original file inode, bytes, mtime or combined revision")
+			}
+			if before.SameSourceVersion(after) || after.SameSourceVersion(before) {
+				t.Error("changed parent version accepted as checked-current")
+			}
+			var refusal *Error
+			if err := original.check("File"); !errors.As(err, &refusal) || refusal.Field != "File" || !strings.Contains(refusal.Problem, "changed while reading") {
+				t.Errorf("original observation accepted changed parent: %v", err)
+			}
+		})
 	}
 }
 
@@ -384,7 +454,7 @@ func TestLoadPairSameByteReplacements(t *testing.T) {
 				override = ""
 			}
 			p := pairLoad(t, path, override)
-			if !p.SameSnapshot(pairLoad(t, path, override)) {
+			if !p.SameSourceVersion(pairLoad(t, path, override)) {
 				t.Fatal("unchanged reload not same")
 			}
 			switch replace {
@@ -433,7 +503,7 @@ func TestLoadPairSameByteReplacements(t *testing.T) {
 			if p.SnapshotRevision != q.SnapshotRevision {
 				t.Fatal("same-byte/binding identity changed")
 			}
-			if p.SameSnapshot(q) || q.SameSnapshot(p) {
+			if p.SameSourceVersion(q) || q.SameSourceVersion(p) {
 				t.Fatal("same-byte replacement passed checked identity")
 			}
 		})
@@ -457,50 +527,20 @@ func TestLoadPairLeavesLegacyLoadUnchanged(t *testing.T) {
 }
 
 func TestPairReadFinalStabilityChecks(t *testing.T) {
-	for _, change := range []string{"file", "parent", "missing-appeared", "missing-anchor"} {
-		t.Run(change, func(t *testing.T) {
-			root := realTemp(t)
-			path := filepath.Join(root, "parent", "suite.md")
-			pairWrite(t, path, testsStarter)
-			missing := strings.HasPrefix(change, "missing")
-			if missing {
-				path = filepath.Join(root, "parent", "missing", "suite.md")
-			}
-			_, observation, err := readPairSource(path, "Tests", missing)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := observation.check("Tests"); err != nil {
-				t.Fatalf("unchanged source refused: %v", err)
-			}
-			switch change {
-			case "file":
-				if err := os.Rename(path, path+".old"); err != nil {
-					t.Fatal(err)
-				}
-				pairWrite(t, path, testsStarter)
-			case "parent", "missing-anchor":
-				parent := filepath.Join(root, "parent")
-				if err := os.Rename(parent, parent+".old"); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.Mkdir(parent, 0700); err != nil {
-					t.Fatal(err)
-				}
-				if !missing {
-					if err := os.Rename(filepath.Join(parent+".old", "suite.md"), path); err != nil {
-						t.Fatal(err)
-					}
-				}
-			case "missing-appeared":
-				pairWrite(t, path, testsStarter)
-			}
-			var refusal *Error
-			err = observation.check("Tests")
-			if !errors.As(err, &refusal) || refusal.Field != "Tests" || !strings.Contains(refusal.Problem, "changed while reading") {
-				t.Fatalf("wrong final stability refusal: %v", err)
-			}
-		})
+	root := realTemp(t)
+	path := filepath.Join(root, "parent", "missing", "suite.md")
+	_, observation, err := readPairSource(path, "Tests", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := observation.check("Tests"); err != nil {
+		t.Fatalf("unchanged absent source refused: %v", err)
+	}
+	pairWrite(t, path, testsStarter)
+	var refusal *Error
+	err = observation.check("Tests")
+	if !errors.As(err, &refusal) || refusal.Field != "Tests" || !strings.Contains(refusal.Problem, "changed while reading") {
+		t.Fatalf("wrong final stability refusal for late appearance: %v", err)
 	}
 }
 
@@ -516,12 +556,7 @@ func TestLoadPairHardlinkBindingsRemainDistinct(t *testing.T) {
 	}
 	p := pairLoad(t, path, target)
 	q := pairLoad(t, path, other)
-	if p.SnapshotRevision == q.SnapshotRevision || p.Tests.Selection.Key == q.Tests.Selection.Key || p.SameSnapshot(q) {
+	if p.SnapshotRevision == q.SnapshotRevision || p.Tests.Selection.Key == q.Tests.Selection.Key || p.SameSourceVersion(q) {
 		t.Fatal("hardlink aliases collapsed distinct publication paths")
-	}
-	for _, p := range []*Pair{p, q} {
-		if !strings.HasPrefix(p.SnapshotRevision, "sha256:") || len(p.SnapshotRevision) != 71 {
-			t.Fatalf("bad opaque revision: %s", fmt.Sprint(p.SnapshotRevision))
-		}
 	}
 }

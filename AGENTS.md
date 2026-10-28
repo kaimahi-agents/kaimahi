@@ -546,7 +546,10 @@ native evidence receipt. Subset is always partial, execution/journal failure is
 unknown, and only an explicit caller override changes the judge route. Keep
 live `run --agent`, native workspace Test/Explain and legacy Eval unchanged.
 The additive report includes monotonic total/per-test duration and content-free
-tool setting/source/count rows. Optional `test FILE -o json --github-summary`
+tool setting/source/count rows. Text output explains Enabled unavailable sources
+as missing recordings/tools; Disabled tools stay silent. The Actions summary adds
+one static explanation only for displayed unavailable rows. JSON, request-based
+Calls checks and exit semantics remain unchanged. Optional `test FILE -o json --github-summary`
 appends a bounded Markdown projection to the existing GitHub Actions summary
 file after writing the same JSON result; it never includes paths, prompts,
 answers, operands, tool arguments/results, credentials or provider diagnostics.
@@ -669,16 +672,18 @@ team runtime or native Squad canvas actions. See [native authoring](docs/agent-f
 ## Single-file charter boundary
 
 The additive companion-reader foundation lives in `internal/kmx/agentfile`:
-`ParseTests`, `CompanionPath`, `ComposePair` and checked `LoadPair`. It accepts
-schemaVersion 1 frontmatter and per-case `yaml agent-test` fences with existing
-assertions/mocks semantics and suite-wide limits. Pair identity includes both
-source bindings and revisions; `Agent.Revision` remains agent-only. Separate
-handle-derived file/parent observations fence checked-snapshot comparisons;
-a pure composition is not checked-current or write authority. Keep external
+`ParseTests`, `DefaultTestsPath`, `ComposePair` and checked `LoadPair`. Parsed
+`Tests` retain existing assertions/mocks semantics and whole-file limits for
+schemaVersion 1 frontmatter and per-case `yaml agent-test` fences. The combined
+revision binds both source paths and revisions; `Agent.Revision` remains
+agent-only. `SameSourceVersion` also checks handle-derived file/directory identity
+and version metadata; even unrelated directory timestamp changes can invalidate
+it. These are cooperative checks, not immutable filesystem attestation.
+A pure composition cannot claim a checked file version or write permission. Keep external
 examples separate from `Pair.Agent.Examples` and prompt instructions. Existing
 `Load`, CLI/App/MCP execution, captures and writes stay single-source until their
 paired result/publication guards ship; do not silently wire in this loader.
-See [companion reader](docs/agent-file.md#companion-reader-foundation-unreleased).
+See [separate tests](docs/agent-file.md#tests-in-a-separate-file-reader-only).
 
 `internal/kmx/agentfile` accepts Copilot YAML-frontmatter/free-form prompts,
 minimal Markdown agents and existing complete charters as described in
