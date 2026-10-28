@@ -180,7 +180,8 @@ This is not one atomic folder snapshot. Assertion failures, completed inconclusi
 checks and invalid/missing/empty tests do not prevent the next file from being
 checked. Execution, route/auth, journal, source and other operational failures
 abort later execution; remaining selected files are explicitly `not_run`, not
-passing. An inconclusive judge is `unknown`, including an unavailable judge; no
+passing. This also includes invalid tool settings, unavailable tools/models,
+recording mismatches or missing recordings, and unsafe/credential-bearing content. An inconclusive judge is `unknown`, including an unavailable judge; no
 automatic retries occur.
 
 Text has per-file details and one final summary. Folder JSON is one

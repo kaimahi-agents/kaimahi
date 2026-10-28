@@ -105,8 +105,9 @@ falls back to native workspace evaluation (`kmx package test`). `--tests` and
 `--case` still require an explicit FILE. Each file gets its own checked pair,
 journal and five-minute budget. Assertion failures, unknown (inconclusive or
 unavailable judge) and invalid/missing tests do not stop later files; operational
-failures (execution, route/auth, journal, source) abort later execution and the
-remaining files are `not_run`. There are no automatic retries. One text, JSON
+failures (execution, route/auth, journal, source, invalid tool settings,
+unavailable tools/models, recording failures and unsafe/credential-bearing content)
+abort later execution and the remaining files are `not_run`. There are no automatic retries. One text, JSON
 (`kind: kmx.agent-folder-test`, `schemaVersion: 1`) or GitHub summary reports
 `total`, `passed`, `failed`, `unknown`, `couldNotRun` and `notRun`. All pass exits
 0; exit 2 takes precedence over assertion-failure exit 1 if any file is unknown,

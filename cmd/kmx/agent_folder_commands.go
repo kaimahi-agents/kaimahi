@@ -40,7 +40,6 @@ func discoverAgentFiles(ctx context.Context, root string) ([]string, error) {
 		}
 	}
 	files := []string{}
-	seen := map[string]bool{}
 	for _, dir := range dirs {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
@@ -53,11 +52,7 @@ func discoverAgentFiles(ctx context.Context, root string) ([]string, error) {
 			if !strings.HasSuffix(entry.Name(), ".agent.md") {
 				continue
 			}
-			path := filepath.Clean(filepath.Join(dir, entry.Name()))
-			if !seen[path] {
-				seen[path] = true
-				files = append(files, path)
-			}
+			files = append(files, filepath.Join(dir, entry.Name()))
 		}
 	}
 	sort.Strings(files)

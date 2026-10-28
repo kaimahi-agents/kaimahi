@@ -262,3 +262,27 @@ func TestFolderTestTextHasOneSummary(t *testing.T) {
 		t.Fatal(out.String())
 	}
 }
+
+func TestFolderTestInvalidToolSettingsAbort(t *testing.T) {
+	dir := folderDirectory(t)
+	file, _ := folderAgent(t, dir, "a.agent.md")
+	folderAgent(t, dir, "b.agent.md")
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, bytes.Replace(raw, []byte("tools: []"), []byte("tools: [ping]"), 1), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "kmx.yaml"), []byte("tools: {ping: invalid-state}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out, diag bytes.Buffer
+	deps, _ := testDependencies(&out, &diag)
+	fake := &cliPreviewFake{verdict: runtime.EvaluationPass}
+	deps.fileRunner = fake
+	r := readFolderReport(t, &out, execute([]string{"test", "-o", "json"}, deps), 2)
+	if fake.calls != 0 || r.Summary.CouldNotRun != 1 || r.Summary.NotRun != 1 || r.Files[0].Result.ReasonCode != "invalid_tool_settings" || r.Files[1].Result != nil {
+		t.Fatalf("tool-settings refusal did not abort: calls%d counts%+v", fake.calls, r.Summary)
+	}
+}
