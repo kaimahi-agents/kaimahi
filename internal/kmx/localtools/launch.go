@@ -136,8 +136,9 @@ func (s *StdioInvocation) Resolve(ctx context.Context, names []string, settings 
 	// A server must not receive another selected server's credential in argv.
 	// Environments remain separate; check the frozen argument union before exec.
 	for _, plan := range plans {
+		argv := append([]string{plan.config.Command}, plan.config.Args...)
 		for _, check := range credentialChecks {
-			if check(plan.config.Args...) != nil {
+			if check(argv...) != nil {
 				return nil, ErrServerSelection
 			}
 		}

@@ -130,7 +130,7 @@ func TestStdioSelectionNoUnneededWork(t *testing.T) {
 }
 
 func TestStdioSelectionPreflightAndPartialCleanup(t *testing.T) {
-	for _, mode := range []string{"missing-env", "changed-settings", "overlap", "secret-arg", "cross-secret-arg", "partial-start"} {
+	for _, mode := range []string{"missing-env", "changed-settings", "overlap", "secret-arg", "cross-secret-arg", "cross-secret-command", "partial-start"} {
 		t.Run(mode, func(t *testing.T) {
 			file, doc := launchFixture(t, "structured")
 			servers := doc["mcpServers"].(map[string]any)
@@ -138,9 +138,9 @@ func TestStdioSelectionPreflightAndPartialCleanup(t *testing.T) {
 			if mode == "changed-settings" {
 				doc["tools"] = map[string]string{"ping": "Disabled"}
 			}
-			if mode == "overlap" || mode == "partial-start" || mode == "secret-arg" || mode == "cross-secret-arg" {
+			if mode == "overlap" || mode == "partial-start" || mode == "secret-arg" || mode == "cross-secret-arg" || mode == "cross-secret-command" {
 				tool := "ping"
-				if mode == "partial-start" || mode == "secret-arg" || mode == "cross-secret-arg" {
+				if mode == "partial-start" || mode == "secret-arg" || mode == "cross-secret-arg" || mode == "cross-secret-command" {
 					tool = "lookup"
 					settings = append(settings, ToolSetting{Name: tool, State: Enabled})
 				}
@@ -151,6 +151,14 @@ func TestStdioSelectionPreflightAndPartialCleanup(t *testing.T) {
 				}
 				if mode == "cross-secret-arg" {
 					delete(servers["second"].(map[string]any), "env")
+				}
+				if mode == "cross-secret-command" {
+					cfg := stdioFixture(t, "structured")
+					command := filepath.Join(filepath.Dir(file), "frozen-before-start")
+					if err := os.Link(cfg.Command, command); err != nil {
+						t.Fatal(err)
+					}
+					servers["second"] = map[string]any{"command": command, "args": cfg.Args, "tools": map[string]string{"lookup": "remote_ping"}}
 				}
 				doc["liveToolServers"] = []string{"notes", "second"}
 			}
