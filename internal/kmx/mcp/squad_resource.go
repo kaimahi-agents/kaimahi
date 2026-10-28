@@ -78,9 +78,9 @@ func AddSquadResource(server *sdk.Server, c *SquadCreator, routes ...*modelacces
 			Model            string             `json:"model,omitempty"`
 			Examples         string             `json:"examples,omitempty"`
 			Instructions     string             `json:"instructions,omitempty"`
-			Tests            []AgentViewExample `json:"tests,omitempty"`
+			Tests            []AgentViewExample `json:"tests"`
 			Brief            SquadBrief         `json:"brief"`
-		}{NativeMemberResult: nativeMemberResult(id, d)}
+		}{NativeMemberResult: nativeMemberResult(id, d), Tests: []AgentViewExample{}}
 		if d != nil {
 			brief, err := c.brief(ctx)
 			if err != nil {

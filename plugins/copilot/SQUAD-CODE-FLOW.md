@@ -1,7 +1,6 @@
 # How the Squad canvas works
 
-This guide describes the initial implementation on `feat/squad-canvas`. It uses
-the offline-mode demo to explain Squad before following the code. Runtime
+This guide explains the native Squad authoring canvas and its code flow. Runtime
 integration through upstream SquadBackend/HarnessAdapter is a later stage.
 
 ## 1. Start with three ideas
@@ -9,8 +8,7 @@ integration through upstream SquadBackend/HarnessAdapter is a later stage.
 **Squad defines the team. Canvas is the workbench. kmx connects them and tests
 individual members.**
 
-Imagine a project team with an architect, a storage specialist and a tester.
-Each person needs a job description. In this implementation, those job descriptions
+Each team member needs a job description. In this implementation, those descriptions
 are files called **charters**. A charter describes a member's identity, role,
 responsibilities and other instructions.
 
@@ -21,20 +19,20 @@ the configured preview runner.
 
 ### Vocabulary
 
-| Term | Plain-English meaning | In this demo |
-|---|---|---|
-| Squad | A team of named agent definitions, with native roster and casting metadata | Lead, Offline storage, Synchronization, Quality / testing |
-| Member | One role in the team | `offline-storage` |
-| Charter | The Markdown document describing that member | `.squad/agents/offline-storage/charter.md` |
-| Init | Set up native Squad files in the project | Create missing team state and templates |
-| Cast | Register a member with its ID and role and generate its native charter | `cast --name offline-storage --role "Offline storage"` |
-| Enrich | Add kmx-owned task instructions, model preference and examples to the native charter | Add the offline-storage prompt and two tests |
-| Shared brief | One saved statement of the whole team's goal | Preserve offline edits and synchronize safely |
-| Model | The engine producing a member's answer | `fake` for the deterministic demo; other routes need configuration |
-| Test / example | An input plus checks on the answer | Ask about conflicting edits; require `preserve both edits` |
-| Revision | A fingerprint of saved bytes used to identify exactly what was tested or edited | A `sha256:...` value |
-| MCP | Model Context Protocol: the typed interface used to call kmx tools and read resources | Create, Edit, Run, Test and team/member reads |
-| Harness | The execution machinery that runs model turns | Existing local preview machinery today; runtime adapters later |
+| Term | Plain-English meaning |
+|---|---|
+| Squad | A team of named agent definitions, with native roster and casting metadata |
+| Member | One role in the team |
+| Charter | The Markdown document at `.squad/agents/<member>/charter.md` describing that member |
+| Init | Set up native Squad files in the project |
+| Cast | Register a member with its ID and role and generate its native charter |
+| Enrich | Add kmx-owned task instructions, model preference and tests to the native charter |
+| Shared brief | One saved statement of the whole team's goal |
+| Model | The engine producing a member's answer through the configured route |
+| Test / example | An authored input plus checks on the answer |
+| Revision | A fingerprint of saved bytes identifying exactly what was tested or edited |
+| MCP | Model Context Protocol: the typed interface for tools and resources |
+| Harness | The execution machinery that runs model turns |
 
 The UI says **Tests**, while native storage still uses the **Examples** section.
 These are two labels for the same saved quick checks in this slice.
@@ -88,8 +86,8 @@ Squad executable or directly write the project files.
 
 There are two ways to supply a proposal:
 
-- **Use field-service app example** calls `exampleProposal()`, a predefined example.
-  This button does not generate a team with an LLM.
+- **Ask Copilot to propose** sends the user's goal to the current Copilot session.
+  The goal starts empty; proposal generation requires nonblank authored input.
 - **Copilot chat** can prepare a proposal and pass it as `input.proposal` when
   opening the canvas. The canvas validates it; it does not invent the proposal.
 
@@ -256,44 +254,32 @@ remain drafts rather than being replaced by the earlier save/test response.
 
 ## 4. Follow one test from beginning to end
 
-For the Offline storage member:
-
-```text
-Prompt:
-  Reply with exactly `Queue writes locally; synchronize on reconnect.`.
-
-Test input:
-  Two edits conflict when reconnecting.
-
-Check:
-  The answer must contain "preserve both edits".
-```
-
 1. You press Enter in the member's prompt editor.
 2. `app.js` requests `save-and-test`. `squad-app.js` wraps it as a member action.
 3. The adapter checks the current resource. If owned fields changed, it calls
    native Edit and confirms the returned revision by reading the member again.
 4. It calls native Test. The Go handler reads the member and brief and invokes
    the preview engine.
-5. The demo's `fake` model returns the literal text in its directive. That answer
-   lacks `preserve both edits`, so the contains check fails.
-6. The final result reaches the canvas, which shows the failing test.
-7. You add `preserve both edits` to the quoted response and press Enter again.
-   A new source revision is saved and tested. The check now passes.
+5. The configured model answers each selected input. The existing assertion
+   evaluator checks those answers against the authored expectations.
+6. The final result reaches the canvas, which shows each test's actual outcome.
+7. If a check fails, you can revise the instructions and press Enter again.
+   A new source revision is saved and tested against the same expectations.
 
-This proves the authoring/edit/test plumbing and deterministic assertion behavior.
-It does not prove that an LLM can implement offline mode or that the application
-itself was tested. The fake route intentionally reads the task-only directive;
-real model routes receive the combined shared and native instructions.
+These are checks of individual member responses. Real model routes receive the
+combined shared and native instructions; results do not establish team execution.
 
 ## 5. Why the shared brief has its own revision
 
 Suppose a result tested member revision **M1** with brief revision **B1**. Later,
-you change the brief to require preserving both conflicting edits.
+you change the shared brief.
 
 The member file can remain M1, but the brief is now B2. On the next member read,
 `projectMember()` compares the pair and marks the M1/B1 result stale. This prevents
 an old pass from appearing to validate the new shared context.
+The canvas polls the active member and applies these observations without dropping
+drafts. It also sends the displayed M/B pair to native Run/Test, which refuses a
+mismatch before execution and then previews those exact loaded snapshots.
 
 Saving the brief does not run tests automatically. A selected test passing also
 does not establish a full member pass. Full-member results remain distinct from

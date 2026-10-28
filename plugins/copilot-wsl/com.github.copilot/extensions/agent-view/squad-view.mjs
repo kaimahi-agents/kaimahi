@@ -8,7 +8,6 @@ const ASSETS = {
   "": ["squad.html", "text/html; charset=utf-8"],
   "squad-app.js": ["squad-app.js", "text/javascript; charset=utf-8"],
   "squad.css": ["squad.css", "text/css; charset=utf-8"],
-  "squad-examples.mjs": ["squad-examples.mjs", "text/javascript; charset=utf-8"],
   "app.js": ["app.js", "text/javascript; charset=utf-8"],
   "editor.mjs": ["editor.mjs", "text/javascript; charset=utf-8"],
   "authoring.mjs": ["authoring.mjs", "text/javascript; charset=utf-8"],
@@ -19,29 +18,35 @@ export async function startSquadBridge({ session, proposal, extensionId, instanc
   if (proposal !== undefined) validateProposal(proposal);
   const backend = createNativeSquadBackend(session, { extensionId, instanceId });
   await backend.team();
-  let submitted = false;
+  let submitted = false, creating = false;
   let proposalOffer;
   const act = async (input) => {
+      let ownsCreate = false;
       try {
         if (["accept-proposal", "dismiss-proposal"].includes(input?.operation)) {
-          if (Object.keys(input).some(k => !["operation", "offerId"].includes(k)) || !proposalOffer || input.offerId !== proposalOffer.id || submitted) throw new ViewError("invalid-action");
+          if (Object.keys(input).some(k => !["operation", "offerId"].includes(k)) || !proposalOffer || input.offerId !== proposalOffer.id || submitted || creating) throw new ViewError("invalid-action");
           const acceptedProposal = input.operation === "accept-proposal" ? proposalOffer.proposal : undefined;
           if (acceptedProposal) proposal = acceptedProposal;
           proposalOffer = undefined;
           return { acceptedProposal, proposalDismissed: !acceptedProposal };
         }
+        if (input?.operation === "create") {
+          if (submitted || creating) throw new ViewError("invalid-action");
+          creating = true; ownsCreate = true;
+        }
         const result = await backend.action(input);
-        if (input.operation === "create" && result.creation?.status !== "refused") submitted = true;
+        if (ownsCreate && result.creation?.status !== "refused") { submitted = true; proposalOffer = undefined; }
         return result;
       } catch (error) {
         const safe = error instanceof ViewError ? error : new ViewError("action-failed");
+        if (ownsCreate && safe.code === "outcome-unknown") { submitted = true; proposalOffer = undefined; }
         return { error: safe.code, message: safe.message };
-      }
+      } finally { if (ownsCreate) creating = false; }
   };
   act.dispose = () => backend.dispose();
   const bridge = await startCanvasBridge({ assets: ASSETS, read: async () => ({ ...await backend.snapshot(), ...(!submitted && proposal ? { proposal } : {}), ...(proposalOffer ? { proposalOffer } : {}) }), act });
   return { ...bridge, offerProposal(value) {
-    if (submitted) throw new ViewError("invalid-action");
+    if (submitted || creating) throw new ViewError("invalid-action");
     validateProposal(value);
     const encoded = JSON.stringify(value);
     proposalOffer = { id: createHash("sha256").update(encoded).digest("hex"), proposal: JSON.parse(encoded) };

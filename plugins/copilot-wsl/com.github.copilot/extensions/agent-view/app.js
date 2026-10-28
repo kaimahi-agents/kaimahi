@@ -108,6 +108,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
         node.disabled = guard === "stop" ? !testing() || !state.run?.cancellable || state.run.state !== "running" : guard === "reload" ? state.busy || state.sourceUnavailable : invalidEditors.size > 0 || (guard === "nav" ? false
           : state.busy || state.blocked || (["save", "settings"].includes(guard) && !!state.candidate) || (guard === "clean" && hasDrafts()));
       }
+      options.onView?.(state.base);
     };
     const declaredTools = JSON.stringify(state.base.tools ?? []);
     if (declaredTools !== toolsFor) { toolsFor = declaredTools; toolsLoaded = false; toolsError = ""; }

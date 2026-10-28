@@ -58,6 +58,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     const hostedAttempt = executing && effectiveModel(state.base.model, modelChoice.override, state.base.chatModel) !== "fake";
     if (executing) {
       action.showContent = true;
+      if (state.base.contextRevision !== undefined) action.expectedBriefRevision = state.base.contextRevision;
       if (modelChoice.override) action.model = modelChoice.override;
     }
     if (["test", "save-and-test"].includes(operation)) {

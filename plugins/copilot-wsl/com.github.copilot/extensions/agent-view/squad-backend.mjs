@@ -183,14 +183,19 @@ export function createNativeSquadBackend(session, { extensionId, instanceId } = 
       if (input.operation === "save-brief") {
         fields(input, ["operation", "expectedRevision", "text"]);
         require(input.expectedRevision === "none" || REVISION.test(input.expectedRevision));
-        await invoke("edit", { target: "squad-brief", expectedRevision: input.expectedRevision, text: text(input.text, 16384) }, "kmx.squad-brief");
-        return { team: await team() };
+        const content = text(input.text, 16384);
+        const result = await invoke("edit", { target: "squad-brief", expectedRevision: input.expectedRevision, text: content }, "kmx.squad-brief");
+        require(result.file?.path === ".squad/kmx-brief.md" && REVISION.test(result.file.revision), "outcome-unknown");
+        const brief = { text: content, revision: result.file.revision };
+        if (lastTeam) lastTeam = { ...lastTeam, brief };
+        try { return { saved: true, brief, team: await team() }; }
+        catch { return { saved: true, brief, refreshUnavailable: true, message: "Brief saved. Team refresh is unavailable; refresh to inspect current native state." }; }
       }
       fields(input, ["operation", "memberId", "action"]);
       require(input.operation === "member-action");
       require(typeof input.memberId === "string" && ID.test(input.memberId));
       const a = input.action;
-      fields(a, ["operation", "expectedRevision", "sections", "examples", "caseId", "showContent", "input", "model", "runId"]);
+      fields(a, ["operation", "expectedRevision", "expectedBriefRevision", "sections", "examples", "caseId", "showContent", "input", "model", "runId"]);
       require(["save-and-test", "save-examples", "save-prompt", "save-model", "test", "run", "reload", "suggest", "models"].includes(a.operation));
       require(a.runId === undefined || typeof a.runId === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(a.runId));
       if (a.operation === "models") return readModels(session);
@@ -202,6 +207,8 @@ export function createNativeSquadBackend(session, { extensionId, instanceId } = 
         return { message: "Asked Copilot to suggest tests in chat." };
       }
       require(a.expectedRevision === view.file.revision, "stale_revision");
+      const executing = ["save-and-test", "test", "run"].includes(a.operation);
+      if (executing) require(a.expectedBriefRevision === raw.brief.revision, "stale_revision");
       if (a.operation === "save-model") require(typeof a.model === "string" && a.sections === undefined && a.examples === undefined);
       require(a.showContent === undefined || typeof a.showContent === "boolean");
       let taskInstructions = raw.taskInstructions;
@@ -210,7 +217,7 @@ export function createNativeSquadBackend(session, { extensionId, instanceId } = 
         for (const section of a.sections) { fields(section, ["key", "text"]); require(section.key === "Task Instructions"); taskInstructions = text(section.text, 60000); }
       }
       const tests = a.examples ?? raw.tests;
-      require(Array.isArray(tests) && tests.length > 0);
+      require(Array.isArray(tests));
       require(a.caseId === undefined || tests.filter((t) => t.id === a.caseId).length === 1);
       if (["save-and-test", "save-examples", "save-prompt", "save-model"].includes(a.operation)) {
         const model = a.model === undefined ? raw.model : text(a.model, 256);
@@ -227,10 +234,12 @@ export function createNativeSquadBackend(session, { extensionId, instanceId } = 
         if (a.operation !== "save-and-test") return { view, saved };
       }
       const operation = a.operation === "run" ? "run" : "test";
+      if (operation === "test" && raw.tests.length === 0) return { error: "no-tests", view, saved };
+      require(a.expectedBriefRevision === raw.brief.revision, "stale_revision");
       if (operation === "test" && a.runId && lastTeam?.previewControl === "run-id-v1") {
         run = previews.start({ id: a.runId, memberId: input.memberId, revision: view.file.revision, contextRevision: raw.brief.revision, model: raw.model, examples: raw.tests, caseIds: a.caseId === undefined ? raw.tests.map(t => t.id) : [a.caseId], totalCases: raw.tests.length });
       }
-      const result = await invoke(operation, { target: "squad-member", memberId: input.memberId, ...(run ? { runId: run.nativeId } : {}), ...(a.caseId !== undefined ? { caseId: a.caseId } : {}), ...(operation === "run" ? { input: text(a.input, 16384) } : {}), showContent: a.showContent === true, showFailedContent: true }, "kmx.squad-member-operation", run);
+      const result = await invoke(operation, { target: "squad-member", memberId: input.memberId, expectedRevision: view.file.revision, expectedBriefRevision: a.expectedBriefRevision, ...(run ? { runId: run.nativeId } : {}), ...(a.caseId !== undefined ? { caseId: a.caseId } : {}), ...(operation === "run" ? { input: text(a.input, 16384) } : {}), showContent: a.showContent === true, showFailedContent: true }, "kmx.squad-member-operation", run);
       if (run) require(result.runId === run.nativeId, "outcome-unknown");
       if (run?.stopWanted && result.preview?.state === "cancelled" && result.preview.fullPass === false && result.memberId === input.memberId && result.file?.revision === view.file.revision && result.briefRevision === raw.brief.revision) {
         const fresh = await read(`kmx://squad-member/${input.memberId}`);

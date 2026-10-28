@@ -292,7 +292,7 @@ on the existing configured standalone Squad program.
 
 For the native Squad canvas, use the built-in `open_canvas` with provider
 `plugin:kmx-agent-builder-path:agent-view`, canvasId `kmx-squad-view`, instanceId
-`kmx-squad`, and input `{}` to reopen the team or start with an example.
+`kmx-squad`, and input `{}` to reopen the team or enter a goal for a new proposal.
 To open your proposed team, set input.proposal to an object with brief, lead and
 specialists. Each member has memberId, role, displayRole, taskInstructions, model
 and tests (id/input/assertions). The Lead is role `lead`, displayRole

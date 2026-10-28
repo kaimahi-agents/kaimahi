@@ -131,6 +131,8 @@ func WithSquadOperations(ops map[string]Operation, c *SquadCreator, a *app.App, 
 			properties["examples"] = nativeString(agentfile.MaxFileBytes)
 			required = append(required, "expectedRevision", "taskInstructions", "model", "examples")
 		} else {
+			properties["expectedRevision"] = &jsonschema.Schema{Type: "string", Pattern: "^sha256:[0-9a-f]{64}$"}
+			properties["expectedBriefRevision"] = &jsonschema.Schema{Type: "string", Pattern: "^(none|sha256:[0-9a-f]{64})$"}
 			properties["caseId"] = nativeString(agentfile.MaxInputBytes)
 			properties["showContent"] = &jsonschema.Schema{Type: "boolean"}
 			properties["showFailedContent"] = &jsonschema.Schema{Type: "boolean"}
@@ -143,10 +145,14 @@ func WithSquadOperations(ops map[string]Operation, c *SquadCreator, a *app.App, 
 		}
 		op := bound[name]
 		op.Description += " Native v2 target squad-member revalidates native casting state; read kmx://squad-member/{memberId} for current owned fields/revision. Not package/team evidence."
+		if name != "edit" {
+			op.Description += " Supply expectedRevision and expectedBriefRevision together to require the reviewed member/brief snapshots before preview; omitting both retains legacy reads."
+		}
 		op.V2 = &Operation{Schema: nativeSchema("squad-member", properties, required...), Handler: func(ctx context.Context, req *sdk.CallToolRequest) (*sdk.CallToolResult, error) {
 			var input struct {
 				ID         string  `json:"memberId"`
 				Expected   string  `json:"expectedRevision"`
+				Brief      string  `json:"expectedBriefRevision"`
 				Task       string  `json:"taskInstructions"`
 				Model      string  `json:"model"`
 				Examples   string  `json:"examples"`
@@ -177,6 +183,12 @@ func WithSquadOperations(ops map[string]Operation, c *SquadCreator, a *app.App, 
 				brief, err := c.brief(ctx)
 				if err != nil {
 					return nativeMemberFailure(err, input.ID), nil
+				}
+				if (input.Expected == "") != (input.Brief == "") {
+					return nativeMemberFailure(refusal("invalid_options"), input.ID), nil
+				}
+				if input.Expected != "" && (input.Expected != d.Revision || input.Brief != brief.Revision) {
+					return nativeMemberFailure(refusal("stale_revision"), input.ID), nil
 				}
 				result.BriefRevision = brief.Revision
 				result.RunID = input.RunID

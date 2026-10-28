@@ -1,1 +1,0 @@
-../../../../copilot-wsl/com.github.copilot/extensions/agent-view/squad-examples.mjs

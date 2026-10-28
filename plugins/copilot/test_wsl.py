@@ -11,7 +11,7 @@ ASSETS = {VIEW + name for name in (
     "draft-controller.mjs", "action-controller.mjs", "observation-controller.mjs", "host-relay.mjs", "tool-catalog.mjs", "tools-view.mjs", "test-tools.mjs",
     "dom.mjs", "results.mjs", "check-controls.mjs", "instruction-text.mjs",
     "run-views.mjs", "view-resource.mjs", "paired-actions.mjs", "suggestions.mjs", "failure-wording.mjs",
-    "squad-view.mjs", "squad-backend.mjs", "squad-preview.mjs", "squad-examples.mjs", "squad-app.js", "squad.html", "squad.css")}
+    "squad-view.mjs", "squad-backend.mjs", "squad-preview.mjs", "squad-app.js", "squad.html", "squad.css")}
 SKILLS = {"skills/kmx/SKILL.md", "skills/kmx-agent-builder/SKILL.md"}
 
 

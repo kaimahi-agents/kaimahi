@@ -139,7 +139,7 @@ for (const caseId of [undefined, "one"]) test(`pre-selection model refusal is re
         preview: { schemaVersion: 1, kind: "kmx.agent-file-preview", operation: "test", file: member.file, state: "refused", verdict: "unknown", fullPass: false, reasonCode: "model_unavailable", selection: { scope: "full", totalCases: 1, caseIds: [] }, examples: [] } } };
     } },
   } });
-  const input = { operation: "member-action", memberId: "lead", action: { operation: "test", expectedRevision: revision, ...(caseId ? { caseId } : {}) } };
+  const input = { operation: "member-action", memberId: "lead", action: { operation: "test", expectedRevision: revision, expectedBriefRevision: revision, ...(caseId ? { caseId } : {}) } };
   const response = await backend.action(input);
   assert.equal(response.view.latest.result.reasonCode, "model_unavailable");
   assert.equal(response.view.latest.result.fullPass, false);
@@ -161,4 +161,101 @@ test("proposal generation uses the current provider and instance without native 
   assert.match(sent[0].prompt, /plugin:custom:agent-view/);
   assert.match(sent[0].prompt, /reviewed-team/);
   assert.match(sent[0].prompt, /real-model/);
+});
+
+function memberHarness() {
+  const h = { current: structuredClone(raw), calls: [], unavailable: false };
+  h.backend = createNativeSquadBackend({ rpc: {
+    mcp: { resources: { read: async ({ uri }) => {
+      if (h.unavailable) throw new Error("read unavailable");
+      return { contents: [{ text: JSON.stringify(uri === "kmx://squad" ? { ...team, brief: h.current.brief } : h.current) }] };
+    } } },
+    tools: {
+      getCurrentMetadata: async () => ({ tools: ["create", "edit", "test", "run"].map(name => ({ name, mcpToolName: name, mcpServerName: "kmx-agent-builder" })) }),
+      execute: async input => { h.calls.push(input); return h.execute(input); },
+    },
+  } });
+  return h;
+}
+const nextRevision = "sha256:" + "b".repeat(64);
+const pinnedTest = { operation: "member-action", memberId: "lead", action: { operation: "test", expectedRevision: revision, expectedBriefRevision: revision } };
+const nativeReply = structuredContent => ({ resultType: "success", structuredContent });
+
+test("member or brief changes before Test refuse before native execution", async () => {
+  for (const change of [h => { h.current.file.revision = nextRevision; }, h => { h.current.brief.revision = nextRevision; }]) {
+    const h = memberHarness();
+    await h.backend.member("lead"); change(h);
+    await assert.rejects(h.backend.action(pinnedTest), { code: "stale_revision" });
+    assert.equal(h.calls.length, 0);
+    h.backend.dispose();
+  }
+  const h = memberHarness();
+  const unpinned = structuredClone(pinnedTest); delete unpinned.action.expectedBriefRevision;
+  await assert.rejects(h.backend.action(unpinned), { code: "stale_revision" });
+  assert.equal(h.calls.length, 0); h.backend.dispose();
+});
+
+test("native execution carries both reviewed revisions and a late stale refusal stays recoverable", async () => {
+  const h = memberHarness();
+  h.execute = async ({ arguments: args }) => {
+    assert.equal(args.expectedRevision, revision); assert.equal(args.expectedBriefRevision, revision);
+    return { resultType: "failure", structuredContent: { schemaVersion: 2, reasonCode: "stale_revision" } };
+  };
+  for (const operation of ["test", "run"]) {
+    await assert.rejects(h.backend.action({ ...pinnedTest, action: { ...pinnedTest.action, operation, ...(operation === "run" ? { input: "Hello" } : {}) } }), { code: "stale_revision" });
+  }
+  assert.equal(h.calls.length, 2);
+  assert.equal((await h.backend.team()).uncertain, false);
+  h.backend.dispose();
+});
+
+test("Save and Test pins the acknowledged new member revision and refuses a changed brief", async () => {
+  for (const briefChanged of [false, true]) {
+    const h = memberHarness();
+    h.execute = async ({ name, arguments: args }) => {
+      if (name === "edit") {
+        h.current.file.revision = nextRevision; h.current.taskInstructions = args.taskInstructions;
+        if (briefChanged) h.current.brief.revision = nextRevision;
+        return nativeReply({ schemaVersion: 2, kind: "kmx.squad-member-operation", memberId: "lead", file: h.current.file });
+      }
+      assert.equal(args.expectedRevision, nextRevision); assert.equal(args.expectedBriefRevision, revision);
+      return { resultType: "failure", structuredContent: { schemaVersion: 2, reasonCode: "stale_revision" } };
+    };
+    const response = await h.backend.action({ ...pinnedTest, action: { ...pinnedTest.action, operation: "save-and-test", sections: [{ key: "Task Instructions", text: "Revised prompt" }] } });
+    assert.equal(response.saved, true); assert.equal(response.error, "stale_revision");
+    assert.deepEqual(h.calls.map(c => c.name), briefChanged ? ["edit"] : ["edit", "test"]);
+    h.backend.dispose();
+  }
+});
+
+test("acknowledged brief Save survives readback failure without another write", async () => {
+  const h = memberHarness();
+  h.execute = async () => nativeReply({ schemaVersion: 2, kind: "kmx.squad-create", result: complete });
+  await h.backend.action({ operation: "create", proposal });
+  h.execute = async () => {
+    h.current.brief = { text: "Saved new brief", revision: nextRevision }; h.unavailable = true;
+    return nativeReply({ schemaVersion: 2, kind: "kmx.squad-brief", file: { path: ".squad/kmx-brief.md", revision: nextRevision } });
+  };
+  const response = await h.backend.action({ operation: "save-brief", expectedRevision: revision, text: "Saved new brief" });
+  assert.equal(response.saved, true); assert.equal(response.refreshUnavailable, true);
+  assert.deepEqual(response.brief, h.current.brief); assert.equal(response.team, undefined);
+  assert.deepEqual((await h.backend.snapshot()).team.brief, response.brief);
+  h.unavailable = false;
+  assert.deepEqual((await h.backend.snapshot()).team.brief, response.brief);
+  assert.deepEqual(h.calls.map(c => c.name), ["create", "edit"]); h.backend.dispose();
+});
+
+test("removing the final test saves an editable empty member and makes no preview call", async () => {
+  const h = memberHarness();
+  h.execute = async ({ name, arguments: args }) => {
+    assert.equal(name, "edit"); assert.match(args.examples, /examples: \[\]/);
+    h.current = { ...h.current, file: { ...h.current.file, revision: nextRevision }, tests: [], examples: args.examples };
+    return nativeReply({ schemaVersion: 2, kind: "kmx.squad-member-operation", memberId: "lead", file: h.current.file });
+  };
+  const response = await h.backend.action({ ...pinnedTest, action: { ...pinnedTest.action, operation: "save-and-test", examples: [] } });
+  assert.equal(response.saved, true); assert.equal(response.error, "no-tests");
+  assert.deepEqual(response.view.authoring.examples, []); assert.equal(response.view.authoring.editable, true);
+  const again = await h.backend.action({ ...pinnedTest, action: { ...pinnedTest.action, expectedRevision: nextRevision } });
+  assert.equal(again.error, "no-tests"); assert.equal(h.calls.length, 1);
+  h.backend.dispose();
 });

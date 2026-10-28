@@ -20,6 +20,7 @@
 // or persist kmx mapping. Preview shares App snapshots, not native dispatch.
 // Native partial effects remain explicit. The canvas uses these operations and a
 // separate fixed, revision-checked shared brief, never a generic file writer.
+// Paired native preview revisions fence the loaded member and brief before execution.
 // The original-server settings writer uses agent/config byte revisions and retained
 // physical parents; preview roles never advertise or dispatch this fifth tool.
 // Canonical Edit optionally retains bounded private source preimages. Retention

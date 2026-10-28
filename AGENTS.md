@@ -739,11 +739,19 @@ fallback. Valid mapping is not authenticated origin, restored draft or prior pas
 Edit replaces only Preferred/Task Instructions/Examples with source/parent CAS.
 Native preview is revision-bound and tool-free; fake consumes task-only directives,
 real routes retain native+task instructions excluding Examples. The initial Squad
-canvas uses a native adapter over the same operations. Its aggregate kmx://squad
+canvas uses a native adapter over the same operations. New teams start with an
+empty user-authored goal and reviewed Copilot proposals; ship no static Squad
+scenario presets or example actions. Its aggregate kmx://squad
 resource reconstructs the roster; a separate .squad/kmx-brief.md stores only shared
 context with revision-checked writes. Native previews include that saved context
 and report its revision separately from member source revision. Preserve partial
-Create/brief-publication outcomes and session-only results. Optional native Test
+Create/brief-publication outcomes and session-only results. The canvas supplies
+both expectedRevision and expectedBriefRevision to native Run/Test; validate the
+pair before preview and use those snapshots. Omitting both retains legacy reads.
+Background observation stales changed member/brief results without dropping drafts.
+Native empty-test members remain editable; Test requires a nonempty test set.
+Retire pending suggestions after creation effects and retain acknowledged brief
+saves even when readback fails. Optional native Test
 run IDs bind progress and connection-scoped cancellation through the existing
 Test tool's squad-preview-cancel target. Cancellation starts no inference and
 does not abort the Copilot session; final Test state remains authoritative.
