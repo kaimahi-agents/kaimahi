@@ -130,7 +130,7 @@ func TestStdioSelectionNoUnneededWork(t *testing.T) {
 }
 
 func TestStdioSelectionPreflightAndPartialCleanup(t *testing.T) {
-	for _, mode := range []string{"missing-env", "changed-settings", "overlap", "secret-arg", "partial-start"} {
+	for _, mode := range []string{"missing-env", "changed-settings", "overlap", "secret-arg", "cross-secret-arg", "partial-start"} {
 		t.Run(mode, func(t *testing.T) {
 			file, doc := launchFixture(t, "structured")
 			servers := doc["mcpServers"].(map[string]any)
@@ -138,21 +138,25 @@ func TestStdioSelectionPreflightAndPartialCleanup(t *testing.T) {
 			if mode == "changed-settings" {
 				doc["tools"] = map[string]string{"ping": "Disabled"}
 			}
-			if mode == "overlap" || mode == "partial-start" || mode == "secret-arg" {
+			if mode == "overlap" || mode == "partial-start" || mode == "secret-arg" || mode == "cross-secret-arg" {
 				tool := "ping"
-				if mode == "partial-start" || mode == "secret-arg" {
+				if mode == "partial-start" || mode == "secret-arg" || mode == "cross-secret-arg" {
 					tool = "lookup"
 					settings = append(settings, ToolSetting{Name: tool, State: Enabled})
 				}
 				servers["second"] = map[string]any{"command": "/missing-mcp-executable", "tools": map[string]string{tool: "remote_ping"}}
-				if mode == "secret-arg" {
+				if mode == "secret-arg" || mode == "cross-secret-arg" {
 					cfg := stdioFixture(t, "structured")
 					servers["second"] = map[string]any{"command": cfg.Command, "args": append(cfg.Args, "frozen-before-start"), "env": map[string]string{"STDIO_FROZEN": "FROZEN_ENV"}, "tools": map[string]string{"lookup": "remote_ping"}}
+				}
+				if mode == "cross-secret-arg" {
+					delete(servers["second"].(map[string]any), "env")
 				}
 				doc["liveToolServers"] = []string{"notes", "second"}
 			}
 			writeLaunchFixture(t, file, doc)
 			owner := NewStdioInvocation(t.Context(), file, ServerSelection{})
+			t.Cleanup(func() { _ = owner.Close() })
 			owner.lookup = func(key string) (string, bool) {
 				if mode == "missing-env" {
 					return "", false

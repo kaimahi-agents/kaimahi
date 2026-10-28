@@ -109,6 +109,7 @@ func (s *StdioInvocation) Resolve(ctx context.Context, names []string, settings 
 		return value, present
 	}
 	path, _ := lookup("PATH")
+	var credentialChecks []func(...string) error
 	for i := range plans {
 		cfg := &plans[i].config
 		if path != "" {
@@ -126,8 +127,19 @@ func (s *StdioInvocation) Resolve(ctx context.Context, names []string, settings 
 		if err != nil {
 			return nil, err
 		}
-		if _, err := validateStdioConfig(*cfg); err != nil {
+		check, err := validateStdioConfig(*cfg)
+		if err != nil {
 			return nil, ErrServerSelection
+		}
+		credentialChecks = append(credentialChecks, check)
+	}
+	// A server must not receive another selected server's credential in argv.
+	// Environments remain separate; check the frozen argument union before exec.
+	for _, plan := range plans {
+		for _, check := range credentialChecks {
+			if check(plan.config.Args...) != nil {
+				return nil, ErrServerSelection
+			}
 		}
 	}
 	var definitions []api.ToolDefinition

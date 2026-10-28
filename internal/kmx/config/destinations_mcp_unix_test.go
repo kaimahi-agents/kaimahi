@@ -13,7 +13,10 @@ func TestDestinationsIgnoreMCPOnlySemantics(t *testing.T) {
 		"mcpServers:\n  local:\n    command: 4\n    args: [true, null, \"\", \" x\"]\n    tools: {ping: [invalid]}\nliveToolServers: [unknown]\n",
 		"mcpServers: false\nliveToolServers: null\n",
 	} {
-		dir := t.TempDir()
+		dir, err := filepath.EvalSymlinks(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
 		if err := os.WriteFile(filepath.Join(dir, "kmx.yaml"), []byte("version: 1\nevalTarget: dev\ntargets:\n  dev: {context: test}\n"+suffix), 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -33,7 +36,10 @@ func TestDestinationsMCPStructureStillChecked(t *testing.T) {
 		"liveToolServer: []\n",
 		"targets: {dev: {context: test, unknown: ignored}}\n",
 	} {
-		dir := t.TempDir()
+		dir, err := filepath.EvalSymlinks(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
 		if err := os.WriteFile(filepath.Join(dir, "kmx.yaml"), []byte("version: 1\n"+suffix), 0600); err != nil {
 			t.Fatal(err)
 		}
