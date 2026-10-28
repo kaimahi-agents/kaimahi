@@ -12,7 +12,7 @@ import (
 )
 
 // StdioInvocation is a single Run's lazy CLI-owned selection. Construction is
-// inert; the resolver is called once by the existing per-test dispatcher.
+// inert; the existing runner calls the resolver once per Run, across its tests.
 // Neither its launch inputs nor environment values are journal data.
 type StdioInvocation struct {
 	ctx       context.Context
