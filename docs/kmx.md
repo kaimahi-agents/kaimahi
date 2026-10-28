@@ -132,6 +132,15 @@ rechecked before reuse. Set
 `KMX_TOOLCHAIN=off` to refuse missing tools instead. No container engine or Azure
 CLI is installed for you. AKS setup installs Orka directly.
 
+If cluster creation succeeds but DNS never becomes ready, inspect
+`kubectl --context <context> -n kube-system logs daemonset/kube-proxy`.
+A `too many open files` failure can mean the host's per-user **inotify instance**
+quota is exhausted even when ordinary file-descriptor limits are sufficient.
+Follow [kind's documented host prerequisites](https://kind.sigs.k8s.io/docs/user/known-issues/#pod-errors-due-to-too-many-open-files);
+kmx does not change host kernel limits. Correct the prerequisite and rerun
+`kmx cluster up --step cluster` against the same owned cluster rather than deleting
+it or repeatedly pulling models.
+
 Docker remains the default for compatibility. Podman is a first-class explicit
 choice:
 
@@ -951,7 +960,7 @@ See [digest deploy](suite-workspace.md#digest-lift) for gates and partial outcom
 |---|---|
 | `kmx package ctx [--workspace <directory>] [--check] [-o table\|json]` | list named workspace destinations (name, cluster context, namespace, declared runtime, inference/bindings reference, registry/repository), offline by default. No current/default pointer or switching. Optional checks cover local context names and anonymous registry reachability only, not runtime/inference/Secret readiness. [Named destinations](suite-workspace.md#named-destinations) |
 | `kmx cluster targets [-o table\|json] [--detect] [--sessions <host:port>]` | offline compiled support by default; explicit read-only probes report present/absent/unreadable separately from qualified versions. No runtime selection, installation or deployment. [Target view and support matrix](runtime-adapters.md#read-only-target-view) |
-| `kmx cluster orka install` | verify the pinned v0.2.0 release chart; apply its CRDs; install harness-v2 with fullname `orka-api` on the selected context; keep the chart-generated snapshot key private; optionally create a keyless Provider. Refuses old v0.1.3 installs rather than upgrading. [Orka](orka.md) |
+| `kmx cluster orka install` | verify the pinned v0.2.0 release chart, or explicit local `--chart FILE --chart-sha256 HEX`; apply its CRDs; install harness-v2 with fullname `orka-api` on the selected context; keep the chart-generated snapshot key private; optionally create a keyless Provider. Refuses foreign/partial installs rather than upgrading. [Orka](orka.md) |
 | `kmx cluster orka status` | Table-only Orka runtime report: running controller version, Deployments, CRDs and Providers; distinguish unreadable from absent and running version from pin. `-o table` only; `kmx package status` is separate destination inventory. |
 | `kmx create <name> [--path <directory>] [--description <text>]` | author one `NAME.agent.md` GitHub-frontmatter agent file (`name`, `description`, no model) with a generic greeting prompt, plus a paired `NAME.agent.test.md` (schemaVersion 1, one `greeting` case). Offline: no prompts, config or model calls; an existing file refuses with exit 2. [Create](#kmx-create) |
 | `kmx package create <name> [--model <model>] [--instructions <file>] [--workspace <directory>]` | default offline authoring of one tool-free native suite member; terminal prompts complete missing model/file inputs, scripts require both flags. Orka by default, or exact kagent v0.10.3 Go/linux-amd64 with `--runtime kagent`. `--runtime agentsessions` separately authors pinned chat offline only; ordinary push is supported; eval requires an explicit development host and `AgentSessionsBinding`; evaluated push consumes matching passing evidence offline; Deploy creates an immutable Agent at an AgentSessions destination, while `--harness-image --plan` keeps the offline render; destination status reads registration, and chat refuses. Private metadata only; authoring itself does not deploy/evaluate. Discover the nearest ancestor workspace, or select/initialize an exact root with `--workspace`. Optional `--description`; live-only flags and a second member refuse. No cluster configuration or image construction. [Workspace guide](suite-workspace.md) |
@@ -1527,6 +1536,57 @@ message creates a fresh Task; neither run nor chat executes workspace source or
 produces fresh suite evaluation evidence. Invocation retains the caller's
 effective authority and existing access checks; it does not authorize adoption,
 update, copying or retirement of the Agent or its companion resources.
+
+Native Run and Chat accept `--enforcement-file requirement.json`: one complete
+Orka requirement object with `format`, base64 `policy`, `requiredCapabilities`
+and `mode: "enforce"`. It is read once per invocation; the decoded opaque bytes
+go unchanged onto each new Task, never onto the Agent. The running controller
+must advertise `container-v1` on the authenticated result probe and strict
+server admission must preserve the requirement. Missing support or changed
+admission refuses before Task creation; provider refusal never falls back to
+unprotected execution. File previews and host Copilot/Foundry inference do not
+support this input. This execution option creates no reusable suite evidence.
+It does not change Orka's timeout, cancellation, container reuse or lifetime
+ownership; enforcement remains attached to the physical container.
+
+`kmx cluster console --enforcement-file requirement.json` freezes that same complete
+requirement before discovering environments. Every native chat Task opened
+from that console carries it unchanged, including after returning to the
+dashboard or choosing another Agent. It does not apply to workspace creation
+or suite evaluation. Changing the file does not change an open console's
+selection; restart the console to select a different requirement. Empty paths,
+malformed requirements, `--demo`, and host inference cannot bypass this
+selection. Without the flag, existing console chat behavior is unchanged.
+Interactive chat renders historical enforcement observations within its chat
+history, including without `--verbose`; it does not write progress over the
+terminal's pinned input and header. Run and result commands retain stderr
+diagnostics separately from answer output.
+
+`kmx cluster up` (or `--step orka`) and both fixed/guided `kmx cluster quickstart`
+accept the same explicit setup selection: `--orka-chart FILE
+--orka-chart-sha256 SHA256`, optionally `--enforcement=true|false`. The verified
+chart must bundle the provider installer for enrollment changes. Omission keeps
+the existing enrollment; a fresh installation remains disabled. Setup freezes
+the complete chart before effects and uses its precreated Task namespace for
+Provider/result access and native suite placement. The normal kind target and
+mutation guards remain; these flags do not turn quickstart into remote-cluster
+onboarding.
+
+Quickstart discovers the verified Orka API Service independently of the Task
+namespace. In a split installation, the API stays in the management namespace;
+the result ServiceAccount, temporary token and Task requests stay in the selected
+Task namespace. A missing or mismatched controller refuses result access.
+
+Quickstart also accepts `--enforcement-file FILE`. Its complete requirement is
+read once, applied only to the first-answer Task and any guided native chat
+Tasks, and never injected into suite evaluation or Agent configuration. The
+normal author/evaluate/publish/Deploy sequence remains required. Enrollment
+and requesting enforcement are independent: neither implies the other, and
+missing providers or proof still refuse execution. An existing-Agent selection
+does not silently ignore explicit setup options. Guided mode may finish at
+Agent readiness without submitting a Task; readiness alone proves no enforced
+answer. The historical `governed` JSON field keeps its original meaning and
+does not report container-enforcement admission.
 
 `kmx cluster task result TASK` reads an existing Task without resending. It reads phase
 once by default and opens a result session only for a readable terminal answer.

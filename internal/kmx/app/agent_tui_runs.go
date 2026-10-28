@@ -501,6 +501,9 @@ func (m agentTUIModel) runDetailLines() []string {
 	}
 	task := p.run.Tasks[min(p.taskSelection, len(p.run.Tasks)-1)]
 	rows := []string{"Task details · " + task.Name, "UID: " + task.ID, "Agent: " + task.Agent.Namespace + "/" + task.Agent.Name, "Status: " + task.Status, "Summary: " + task.Summary}
+	if task.Enforcement != nil {
+		rows = append(rows, "Enforcement: "+task.Enforcement.Summary())
+	}
 	if task.ParentTask != "" {
 		rows = append(rows, "Observed parent Task UID: "+task.ParentTask)
 	}

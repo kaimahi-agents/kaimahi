@@ -16,6 +16,7 @@ import (
 // AgentTUIOptions selects the two environments shown by kmx cluster console.
 type AgentTUIOptions struct {
 	LocalContext, RemoteContext, Namespace string
+	EnforcementFile                        string
 	Demo                                   bool
 }
 

@@ -120,6 +120,9 @@ func TestShortHelpFlagScopesAndCaveats(t *testing.T) {
 			if !ok || !liveOK || strings.Contains(fileFlags, "--context") || !strings.Contains(liveFlags, "--agent") || !strings.Contains(liveFlags, "--context") {
 				t.Fatal("file/shared/live flag scopes confused")
 			}
+			if !strings.Contains(liveFlags, "--enforcement-file") || strings.Contains(fileFlags, "--enforcement-file") || strings.Contains(sharedFlags, "--enforcement-file") {
+				t.Fatal("container enforcement must be advertised only for live Orka")
+			}
 			for _, flag := range []string{"--prompt ", "--prompt-file "} {
 				if !strings.Contains(sharedFlags, flag) || strings.Contains(fileFlags, flag) || strings.Contains(liveFlags, flag) {
 					t.Errorf("shared input flag misplaced: %s", flag)

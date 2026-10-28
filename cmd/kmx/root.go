@@ -223,7 +223,7 @@ func newRootCommand(state *commandState) *cobra.Command {
 	root.SetOut(state.deps.stdout)
 	root.SetErr(state.deps.stderr)
 	root.CompletionOptions.DisableDefaultCmd = true
-	root.PersistentFlags().String("context", "", "Kubernetes context for live/cluster operations")
+	root.PersistentFlags().String("context", "", "Kubernetes context (live/cluster only)")
 	root.PersistentFlags().StringVar(&state.containerEngineFlag, "container-engine", "", "kind engine: docker or podman")
 	root.PersistentPreRunE = validateContainerEngineFlag
 	_ = root.RegisterFlagCompletionFunc("context", completeContexts)

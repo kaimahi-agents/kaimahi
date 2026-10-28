@@ -2,6 +2,10 @@
 // context guards, runtime adapters and external tools.
 //
 // App coordinates consent, side effects and runtime-specific evidence.
+// Native Run/Chat freeze explicit Task enforcement input per invocation, require
+// the running controller's protocol support and verify exact admission/readback.
+// Shared Run/Chat/result and run-view presentation projects typed historical
+// enforcement admission, never raw policy, status prose or live provider proof.
 // Placement observations are distinct from evaluation proof; successful
 // placement alone must not be treated as proof of agent behavior. Retained
 // workspace and completed non-pass file-Test failures use the checked private
@@ -56,7 +60,11 @@ type App struct {
 	FileRunner      agentpreview.Runner
 	chatClusterName string
 	// kagentProfile is invocation-local; nil keeps the exact create profile.
-	kagentProfile *kagentProfile
+	kagentProfile       *kagentProfile
+	taskEnforcement     *orkaTaskEnforcement
+	taskEnforcementNote func(string)
+	orkaNativeCandidate *orkaInstallSpec
+	orkaSetup           *preparedOrkaSetup
 	// operationProgress reports real stage transitions to an owning deployment UI.
 	operationProgress func(name, status string, err error)
 	Cfg               *config.Config

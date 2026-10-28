@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/guard"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/runview"
+	runorka "github.com/kaimahi-agents/kaimahi/internal/kmx/runview/orka"
 )
 
 // All Orka API subprocesses have both Kubernetes and process deadlines. Raw
@@ -160,8 +162,9 @@ type orkaIdentity struct {
 }
 
 type orkaObject struct {
-	Kind     string `json:"kind"`
-	Metadata struct {
+	Enforcement *runview.Enforcement `json:"-"`
+	Kind        string               `json:"kind"`
+	Metadata    struct {
 		Name              string     `json:"name"`
 		Namespace         string     `json:"namespace"`
 		UID               string     `json:"uid"`
@@ -200,6 +203,11 @@ func (a *App) createOrkaObjectObserved(ctx context.Context, namespace string, do
 		return id, nil, fmt.Errorf("create %s/%s returned no valid identity; it may exist or be running. No retry", id.Kind, id.Name)
 	}
 	id.UID, id.Generation = object.Metadata.UID, object.Metadata.Generation
+	if spec, ok := doc["spec"].(map[string]any); ok {
+		if requirement, ok := spec["enforcement"].(*orkaTaskEnforcement); ok && !orkaTaskEnforcementMatches(raw, requirement) {
+			return id, raw, fmt.Errorf("create %s/%s changed or dropped enforcement; it may exist or be running. No retry or cleanup", id.Kind, id.Name)
+		}
+	}
 	return id, raw, nil
 }
 
@@ -217,6 +225,10 @@ func (a *App) readOrkaObject(ctx context.Context, namespace string, id orkaIdent
 	}
 	if object.Metadata.DeletionTimestamp != nil {
 		return nil, fmt.Errorf("%s/%s UID %s is terminating; refusing stale state", id.Kind, id.Name, id.UID)
+	}
+	object.Enforcement, err = runorka.ObserveEnforcement(raw)
+	if err != nil {
+		return nil, err
 	}
 	return &object, nil
 }

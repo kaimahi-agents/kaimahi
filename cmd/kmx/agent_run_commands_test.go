@@ -22,6 +22,9 @@ func TestRunAndResultCommandValidation(t *testing.T) {
 		{[]string{"run", "agents/sample", "--prompt", "hello", "--context", "kind-test"}, "usage"},
 		{[]string{"run", "--agent", "sample", "--prompt", "hello", "--to-context", "kind-test"}, "--to-context"},
 		{[]string{"run", "--agent", "sample", "--prompt", "hello", "--wait", "0s"}, "--wait"},
+		{[]string{"run", "agents/sample", "--enforcement-file", "requirement.json"}, "--enforcement-file"},
+		{[]string{"run", "--agent", "sample", "--prompt", "hello", "--enforcement-file", ""}, "--enforcement-file"},
+		{[]string{"chat", "sample", "--enforcement-file", ""}, "--enforcement-file"},
 		{[]string{"cluster", "task", "result", "sample", "--wait", "0s"}, "--wait"},
 		{[]string{"cluster", "task", "result"}, "usage"},
 	} {
@@ -36,6 +39,28 @@ func TestRunAndResultCommandValidation(t *testing.T) {
 				t.Fatalf("loaded config %d times before argument validation", *loads)
 			}
 		})
+	}
+}
+
+func TestFileRunRefusesEnforcementBeforePreview(t *testing.T) {
+	for _, withInput := range []bool{false, true} {
+		for _, policy := range []string{"requirement.json", "", "   "} {
+			t.Run(fmt.Sprintf("input_%t_policy_%q", withInput, policy), func(t *testing.T) {
+				var out, diag bytes.Buffer
+				deps, loads := testDependencies(&out, &diag)
+				runner := &cliPreviewFake{}
+				deps.fileRunner = runner
+				args := []string{"run", cliPreviewFile(t)}
+				if withInput {
+					args = append(args, "Ada")
+				}
+				args = append(args, "--enforcement-file", policy)
+				err := execute(args, deps)
+				if err == nil || exitCode(err) != 2 || runner.calls != 0 || *loads != 0 || out.Len() != 0 {
+					t.Fatalf("err=%v calls=%d loads=%d stdout=%q", err, runner.calls, *loads, &out)
+				}
+			})
+		}
 	}
 }
 

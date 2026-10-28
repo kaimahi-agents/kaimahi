@@ -32,6 +32,7 @@ type evalFixture struct {
 	resultDisconnect, resultHoldBody bool
 	resultHeldBodies                 atomic.Int32
 	resultAddress                    string
+	resultEnforcementProtocol        string
 	resultRequest                    func(*http.Request)
 }
 
@@ -54,6 +55,9 @@ func newEvalFixture(t *testing.T, cases map[string]string) *evalFixture {
 	f.seedAgent(t, f.digest)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if f.resultEnforcementProtocol != "" {
+			w.Header().Set("Orka-Task-Enforcement", f.resultEnforcementProtocol)
+		}
 		task := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/tasks/"), "/result")
 		raw, err := os.ReadFile(filepath.Join(dir, "task-"+task+".json"))
 		if err != nil {
@@ -112,7 +116,7 @@ func (f *evalFixture) taskCreates(t *testing.T) int {
 	t.Helper()
 	count := 0
 	for _, call := range orkaCalls(t, f.dir) {
-		if call.Document != nil && call.Document["kind"] == "Task" && slices.Contains(call.Args, "create") {
+		if call.Document != nil && call.Document["kind"] == "Task" && slices.Contains(call.Args, "create") && !slices.Contains(call.Args, "--dry-run=server") {
 			count++
 		}
 	}

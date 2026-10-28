@@ -87,7 +87,7 @@ func shortCommandHelp(cmd *cobra.Command, _ []string) {
 			switch flag.Name {
 			case "prompt", "prompt-file":
 				sharedFlags.AddFlag(flag)
-			case "agent", "namespace", "wait", "result-port":
+			case "agent", "namespace", "wait", "result-port", "enforcement-file":
 				liveFlags.AddFlag(flag)
 			default:
 				fileFlags.AddFlag(flag)

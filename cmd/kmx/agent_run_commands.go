@@ -27,11 +27,15 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 	cmd.Flags().StringVar(&opt.Namespace, "namespace", "", "Agent namespace (default: "+app.OrkaNamespace+")")
 	cmd.Flags().StringVar(&opt.Prompt, "prompt", "", "Input text (FILE or live Agent)")
 	cmd.Flags().StringVar(&opt.PromptFile, "prompt-file", "", "Input file, or - for stdin (FILE/live Agent)")
+	cmd.Flags().StringVar(&opt.EnforcementFile, "enforcement-file", "", "Task enforcement requirement JSON")
 	cmd.Flags().DurationVar(&opt.Wait, "wait", 5*time.Minute, "Wait for answer (10s to 9m)")
 	cmd.Flags().StringVar(&opt.ResultPort, "result-port", "", "Loopback forward port (chosen automatically)")
 	registerFileCommandFlags(cmd, &file, true)
 	cmd.Args = func(cmd *cobra.Command, args []string) error {
 		if len(args) == 1 || len(args) == 2 {
+			if cmd.Flags().Changed("enforcement-file") {
+				return fileUsageError(fmt.Errorf("--enforcement-file requires a live Orka Agent; file previews have no container enforcement"))
+			}
 			if err := validateFileCommand(cmd, state, file); err != nil {
 				return fileUsageError(err)
 			}
@@ -45,6 +49,9 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 		}
 		if err := fileFlagsWithoutFile(cmd); err != nil {
 			return err
+		}
+		if cmd.Flags().Changed("enforcement-file") && strings.TrimSpace(opt.EnforcementFile) == "" {
+			return fmt.Errorf("--enforcement-file must name a requirement JSON file")
 		}
 		if cmd.Flags().Changed("output") {
 			return fmt.Errorf("--output requires an explicit agent FILE")

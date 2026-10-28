@@ -63,8 +63,9 @@ type Reader struct{ source Source }
 func NewReader(source Source) Reader { return Reader{source: source} }
 
 type nativeTask struct {
-	Kind     string `json:"kind"`
-	Metadata struct {
+	Enforcement *runview.Enforcement `json:"-"`
+	Kind        string               `json:"kind"`
+	Metadata    struct {
 		Name              string                             `json:"name"`
 		Namespace         string                             `json:"namespace"`
 		UID               string                             `json:"uid"`
@@ -90,6 +91,11 @@ func decodeTask(raw []byte, ns string) (nativeTask, error) {
 	var task nativeTask
 	if err := json.Unmarshal(raw, &task); err != nil || task.Kind != "Task" || task.Metadata.Namespace != ns || task.Metadata.Name == "" || task.Metadata.UID == "" {
 		return task, errors.New("invalid Task identity")
+	}
+	var err error
+	task.Enforcement, err = ObserveEnforcement(raw)
+	if err != nil {
+		return task, err
 	}
 	return task, nil
 }
@@ -189,7 +195,7 @@ func (r Reader) Read(ctx context.Context, clusterUID, namespace, rootName, rootU
 	for len(queue) > 0 {
 		parent := queue[0]
 		queue = queue[1:]
-		task := runview.Task{ID: parent.Metadata.UID, Name: parent.Metadata.Name, Agent: agentOf(parent), ParentTask: parents[parent.Metadata.UID], Status: parent.Status.Phase, StartedAt: parent.Metadata.CreationTimestamp, FinishedAt: parent.Status.CompletionTime, Summary: "Task activity (content redacted)", RevisionMissing: missing("no Task-bound bundle revision", "Orka Task")}
+		task := runview.Task{ID: parent.Metadata.UID, Name: parent.Metadata.Name, Agent: agentOf(parent), ParentTask: parents[parent.Metadata.UID], Status: parent.Status.Phase, StartedAt: parent.Metadata.CreationTimestamp, FinishedAt: parent.Status.CompletionTime, Summary: "Task activity (content redacted)", RevisionMissing: missing("no Task-bound bundle revision", "Orka Task"), Enforcement: parent.Enforcement}
 		if task.Status == "" {
 			task.Status = "Unknown"
 		}

@@ -102,6 +102,9 @@ func (a *App) evaluateSuiteWorkspaceCandidate(ctx context.Context, p *PreparedSu
 	if err := worker.preflight(kubectl); err != nil {
 		return err
 	}
+	if err := worker.selectOrkaNativeCandidate(ctx, p.options.OrkaChart, p.options.OrkaChartSHA256, p.options.ToNamespace); err != nil {
+		return err
+	}
 	checkSource := func(checkCtx context.Context) error { return workspace.CheckCurrent(checkCtx, p.root, p.prepared) }
 	if err := checkSource(ctx); err != nil {
 		return err

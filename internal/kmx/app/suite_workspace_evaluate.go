@@ -21,6 +21,7 @@ import (
 // Runtime, model and assertions remain packaged; judge transport is explicit.
 type SuiteWorkspaceEvaluationOptions struct {
 	Workspace, ToContext, ToNamespace, Inference, Bindings, Out, ResultPort, DevelopmentHost string
+	OrkaChart, OrkaChartSHA256                                                               string
 	CaseTimeout                                                                              time.Duration
 	JudgeBaseURL, JudgeKeyEnv                                                                string
 	// ExpectedRuntime is a destination declaration, never a runtime override.
@@ -86,6 +87,9 @@ func (p *PreparedSuiteWorkspaceEvaluation) closeOutput() error {
 
 // PrepareSuiteWorkspaceEvaluation must run before loading cluster settings.
 func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEvaluationOptions) (*PreparedSuiteWorkspaceEvaluation, error) {
+	if err := validateOrkaNativeChartSelection(opt.OrkaChart, opt.OrkaChartSHA256); err != nil {
+		return nil, err
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -129,6 +133,9 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 	suite, err := workspace.Load(ctx, prepared)
 	if err != nil {
 		return nil, suiteEvaluationError(ctx, err, false)
+	}
+	if opt.OrkaChart != "" && (suite.Runtime.ID != "orka" || opt.DevelopmentHost != "") {
+		return nil, errors.New("local Orka chart selection requires native Orka workspace evaluation")
 	}
 	if opt.JSON && suite.Runtime.ID != "orka" {
 		return nil, errors.New("native eval JSON output supports only Orka")
@@ -227,11 +234,11 @@ func (a *App) preflightSuiteNativeResults(ctx context.Context, ns string) error 
 	if strings.TrimSpace(string(raw)) != "serviceaccount/"+orkaResultAccount {
 		return errSuiteNativeEvaluation
 	}
-	name, err := a.orkaAPIService(ctx, ns)
+	apiNamespace, name, err := a.orkaResultAPI(ctx, ns, "")
 	if err != nil {
 		return err
 	}
-	raw, err = a.orkaCapture(ctx, nil, "-n", ns, "get", "service", name, "-o", "json")
+	raw, err = a.orkaCapture(ctx, nil, "-n", apiNamespace, "get", "service", name, "-o", "json")
 	if err != nil {
 		return err
 	}
@@ -359,6 +366,9 @@ func (a *App) evaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 	kubectl := depKubectl
 	kubectl.fetchable = false
 	if err := worker.preflight(kubectl); err != nil {
+		return err
+	}
+	if err := worker.selectOrkaNativeCandidate(ctx, p.options.OrkaChart, p.options.OrkaChartSHA256, p.options.ToNamespace); err != nil {
 		return err
 	}
 	if err := workspace.CheckCurrent(ctx, p.root, p.prepared); err != nil {

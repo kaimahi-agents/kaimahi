@@ -13,11 +13,12 @@ import (
 
 // ChatOptions selects the Orka Agent a chat session is opened against.
 type ChatOptions struct {
-	Agent     string
-	Task      string
-	Verbose   bool
-	Runtime   string
-	Namespace string
+	Agent           string
+	Task            string
+	Verbose         bool
+	Runtime         string
+	Namespace       string
+	EnforcementFile string
 }
 
 // ChatWithOptions opens the interactive Orka session. Task, when set, is
@@ -31,10 +32,27 @@ type ChatOptions struct {
 // going to land. Prompting on the most-used command would buy nothing and
 // teach people to type past confirmations.
 func (a *App) ChatWithOptions(opt ChatOptions) error {
-	a.chatVerbose = opt.Verbose
+	worker := *a
+	return worker.chatWithOptions(opt)
+}
+
+func (a *App) chatWithOptions(opt ChatOptions) error {
 	if err := checkChatRuntime(opt.Runtime); err != nil {
 		return err
 	}
+	requirement, err := readOrkaTaskEnforcement(a.operationContext(), opt.EnforcementFile)
+	if err != nil {
+		return err
+	}
+	return a.chatWithPreparedEnforcement(opt, requirement)
+}
+
+func (a *App) chatWithPreparedEnforcement(opt ChatOptions, requirement *orkaTaskEnforcement) error {
+	if err := checkChatRuntime(opt.Runtime); err != nil {
+		return err
+	}
+	a.taskEnforcement = requirement
+	a.chatVerbose = opt.Verbose
 	agent := opt.Agent
 	// Orka chat is always a session: a Task is created, polled for its own
 	// result over a single connection, and never resubmitted. An initial
@@ -48,6 +66,15 @@ func (a *App) ChatWithOptions(opt ChatOptions) error {
 		return err
 	}
 	opt.Runtime = runtime
+	if a.taskEnforcement != nil {
+		_, host, err := a.hostInferenceStrategy()
+		if err != nil {
+			return err
+		}
+		if host {
+			return fmt.Errorf("--enforcement-file requires native Orka Task execution; host inference is not container-enforced")
+		}
+	}
 	return a.openRuntimeChat(opt, agent, namespace)
 }
 
@@ -129,6 +156,9 @@ func (b *orkaChatBackend) Send(ctx context.Context, message string, renderer *ch
 		return err
 	}
 	if host {
+		if b.app.taskEnforcement != nil {
+			return fmt.Errorf("host inference cannot consume a container-enforced Task requirement")
+		}
 		return b.sendHostTurn(ctx, message, renderer, inference)
 	}
 	var profile *orkaTaskProfile
@@ -165,7 +195,11 @@ func (b *orkaChatBackend) Send(ctx context.Context, message string, renderer *ch
 	if openedSession {
 		sessionTime = time.Since(sessionStarted)
 	}
-	answer, err := b.app.runQuickstartOrkaTaskProfile(ctx, b.agent, b.namespace, message, profile, func(phase string) {
+	worker := *b.app
+	worker.taskEnforcementNote = func(line string) {
+		renderer.assistantOperation(b.agent, "ENFORCEMENT", "", colorBlue, line)
+	}
+	answer, err := worker.runQuickstartOrkaTaskProfile(ctx, b.agent, b.namespace, message, profile, func(phase string) {
 		renderer.assistantOperation(b.agent, "WORKING", "", colorBlue, phase)
 	}, b.resultSession)
 	if profile != nil {
@@ -220,7 +254,7 @@ func (a *App) runQuickstartOrkaTaskProfile(parent context.Context, agent, namesp
 	unhook := context.AfterFunc(session.ctx, stop)
 	defer unhook()
 	phase("Checking result access")
-	if err := session.probeBeforeCreate(ctx, namespace, orkaObjectName(doc), "no Task created; earlier setup may remain"); err != nil {
+	if err := a.prepareOrkaTaskEnforcement(ctx, namespace, doc, session, "no Task created; earlier setup may remain"); err != nil {
 		return "", err
 	}
 	if profile != nil {

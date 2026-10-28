@@ -89,6 +89,31 @@ func selectOrkaController(deployments []orkaDeployment) (orkaDeployment, bool, e
 	}
 }
 
+func orkaControllerWatches(controller orkaDeployment, namespace string) error {
+	containers, claims := 0, 0
+	watched := ""
+	for _, container := range controller.Spec.Template.Spec.Containers {
+		if container.Name != "controller" {
+			continue
+		}
+		containers++
+		for _, arg := range container.Args {
+			key, value, joined := strings.Cut(arg, "=")
+			if !joined || !strings.HasPrefix(key, "--") {
+				return fmt.Errorf("management Orka controller requires joined --name=value arguments for namespace verification")
+			}
+			if key == "--watch-namespace" {
+				claims++
+				watched = value
+			}
+		}
+	}
+	if containers != 1 || claims != 1 || watched != namespace {
+		return fmt.Errorf("management Orka controller does not unambiguously watch Task namespace %s", namespace)
+	}
+	return nil
+}
+
 func (a *App) orkaControllerForLift(ctx context.Context) (string, error) {
 	deployments, err := a.orkaDeployments(ctx)
 	if err != nil {
