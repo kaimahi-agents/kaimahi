@@ -31,12 +31,8 @@ func (r historyRecord) validSourceKind() bool {
 	if len(h.Source) > maxFileBytes || !utf8.Valid(h.Source) || (h.TestsState != "external" && len(h.Source) != 0) || !filepath.IsAbs(h.AgentPath) || !agentPath(h.AgentPath) {
 		return false
 	}
-	if !h.Explicit {
-		target, _ := agentfile.DefaultTestsPath(h.AgentPath)
-		if h.TestsPath != target {
-			return false
-		}
-	}
+	// MCP may resolve a default alias to another physical target. Explicit is
+	// selection intent, not identity; validate the retained binding without IO.
 	agent, err := agentfile.Parse(h.AgentPath, r.Source)
 	if err != nil {
 		return false

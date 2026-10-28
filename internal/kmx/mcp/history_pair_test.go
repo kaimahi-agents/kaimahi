@@ -27,8 +27,17 @@ func seedPairHistory(t *testing.T, s *historyStore, agentPath, key string, sourc
 	if err != nil {
 		t.Fatal(err)
 	}
+	return seedHistoryPair(t, s, key, source, p, seq), p
+}
+
+func seedHistoryPair(t *testing.T, s *historyStore, key string, source []byte, p *agentfile.Pair, seq int) string {
+	t.Helper()
+	var tests []byte
+	if p.Tests.State == "external" {
+		tests = p.Tests.Suite.Source
+	}
 	id := fmt.Sprintf("%020d-%032x", seq, seq)
-	r := map[string]any{"schemaVersion": 2, "versionId": id, "fileKey": historyHash(key), "revision": a.Revision, "capturedAt": time.Now().UTC(), "source": source, "pair": map[string]any{"agentPath": agentPath, "testsPath": target, "explicit": false, "testsState": p.Tests.State, "testsRevision": p.Tests.Revision, "selectionKey": p.Tests.Selection.Key, "snapshotRevision": p.SnapshotRevision, "source": tests}}
+	r := map[string]any{"schemaVersion": 2, "versionId": id, "fileKey": historyHash(key), "revision": p.Agent.Revision, "capturedAt": time.Now().UTC(), "source": source, "pair": map[string]any{"agentPath": p.AgentPath, "testsPath": p.Tests.Selection.Path, "explicit": p.Tests.Selection.Explicit, "testsState": p.Tests.State, "testsRevision": p.Tests.Revision, "selectionKey": p.Tests.Selection.Key, "snapshotRevision": p.SnapshotRevision, "source": tests}}
 	b, err := json.Marshal(r)
 	if err != nil {
 		t.Fatal(err)
@@ -36,7 +45,7 @@ func seedPairHistory(t *testing.T, s *historyStore, agentPath, key string, sourc
 	if err := os.WriteFile(filepath.Join(s.root.Name(), id+".json"), b, 0600); err != nil {
 		t.Fatal(err)
 	}
-	return id, p
+	return id
 }
 
 func TestHistoryPairRecordReadsExactSourcesAndAbsence(t *testing.T) {

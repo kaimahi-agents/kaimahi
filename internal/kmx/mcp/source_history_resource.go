@@ -60,13 +60,13 @@ func sourceResourcePath(uri string) (string, string, error) {
 	}
 	encoded, query, _ := strings.Cut(strings.TrimPrefix(uri, prefix), "?")
 	p, err := url.PathUnescape(encoded)
-	if err != nil || p == "" || url.PathEscape(p) != encoded {
+	if err != nil || p == "" {
 		return "", "", refusal("unsafe_path")
 	}
 	tests := ""
 	if query != "" {
 		values, err := url.ParseQuery(query)
-		if err != nil || len(values) != 1 || len(values["tests"]) != 1 || values.Get("tests") == "" || values.Encode() != query {
+		if err != nil || len(values) != 1 || len(values["tests"]) != 1 || values.Get("tests") == "" {
 			return "", "", refusal("unsafe_path")
 		}
 		tests = values.Get("tests")

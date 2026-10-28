@@ -126,14 +126,11 @@ test("source history capability cannot upgrade legacy canvas actions", async () 
   await assert.rejects(readView(stubSession({ schemaVersion: 1, kind: "kmx.agent-view-error", reasonCode: "paired_source_required", sourceHistory: capability }), MINIMAL), e => e.code === "paired_source_required");
 });
 
-test("source history preserves incomplete legacy rows without granting restore", async () => {
-  const id = "00000000000000000001-" + "a".repeat(32);
-  const row = { versionId: id, revision: REV, capturedAt: "2026-10-28T12:00:00Z", sourceBytes: 100, uri: `kmx://agent-version/${encodeURIComponent(MINIMAL)}/${id}` };
-  const view = await readView(stubSession(resource(MINIMAL, { history: { status: "available", versions: [row] } })), MINIMAL);
-  assert.equal(view.history.versions[0].label, "Agent only—tests not retained");
-  assert.equal(view.history.versions[0].sourceKind, "agent_only");
+test("unused source history metadata cannot hide the current agent view", async () => {
+  const view = await readView(stubSession(resource(MINIMAL, { history: { status: "available", versions: [{ sourceKind: "pair", label: "untrusted optional metadata" }] } })), MINIMAL);
+  assert.equal(view.file.revision, REV);
+  assert.equal(view.history, undefined);
   assert.equal(view.authoring, undefined);
-  await assert.rejects(readView(stubSession(resource(MINIMAL, { history: { status: "available", versions: [{ ...row, sourceKind: "agent_only", label: "Both changed" }] } })), MINIMAL), e => e.code === "invalid-resource");
 });
 
 test("agent paths preserve ordinary names in any directory", () => {

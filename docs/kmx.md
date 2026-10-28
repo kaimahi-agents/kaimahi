@@ -846,8 +846,9 @@ V1 rows are labeled **Agent only—tests not retained**, not historical absence.
 Complete v2 records retain both exact sources or explicit absence, selected-source
 identity and combined snapshot, under the same physical-agent history subject.
 Selecting another suite never merges agents' histories. Pair rows distinguish
-Agent / Tests / Both changed against the next newer comparable pair; selector-only
-changes count as Tests changed. `kmx://agent-pair-version/{path}/{versionId}`
+Agent / Tests / Both changed against the next newer entry only when both entries
+are complete. A legacy entry breaks that comparison chain; selector-only changes
+count as Tests changed. `kmx://agent-pair-version/{path}/{versionId}`
 returns `kmx.agent-pair-version` v1 with the complete retained source data.
 Historical paths never authorize filesystem reads or redirects. The legacy
 agent-version route refuses pair records rather than returning half a pair; it

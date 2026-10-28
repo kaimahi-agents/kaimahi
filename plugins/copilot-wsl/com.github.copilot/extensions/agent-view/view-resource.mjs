@@ -160,28 +160,6 @@ function sourceHistory(raw) {
   return { schemaVersion: 1, read: true, execute: false, edit: false, capture: false, restore: false };
 }
 
-function sourceHistoryRows(raw, path, capability) {
-  if (raw === undefined) return;
-  if (!isObj(raw) || !["available", "unavailable"].includes(raw.status) || !Array.isArray(raw.versions) || raw.versions.length > 20 || raw.status === "unavailable" && raw.versions.length) invalid();
-  const digest = value => typeof value === "string" && /^sha256:[a-f0-9]{64}$/.test(value);
-  const versions = raw.versions.map(row => {
-    if (!isObj(row) || !/^[0-9]{20}-[a-f0-9]{32}$/.test(row.versionId) || !digest(row.revision) || typeof row.capturedAt !== "string" || !Number.isFinite(Date.parse(row.capturedAt)) || !Number.isInteger(row.sourceBytes) || row.sourceBytes < 1) invalid();
-    const kind = row.sourceKind ?? "agent_only", pair = kind === "pair";
-    if (!["agent_only", "pair"].includes(kind) || row.sourceBytes > (pair ? 512 : 256) * 1024 || pair && !capability) invalid();
-    const prefix = pair ? "kmx://agent-pair-version/" : "kmx://agent-version/";
-    if (typeof row.uri !== "string" || !row.uri.startsWith(prefix)) invalid();
-    const suffix = row.uri.slice(prefix.length), at = suffix.lastIndexOf("/");
-    try { if (at < 0 || decodeURIComponent(suffix.slice(0, at)) !== path || suffix.slice(at + 1) !== row.versionId) invalid(); } catch { invalid(); }
-    let label = row.label ?? "Agent only—tests not retained";
-    if (!pair && label !== "Agent only—tests not retained" || pair && !["Agent and tests snapshot", "Agent changed", "Tests changed", "Both changed", "No source change"].includes(label)) invalid();
-    if (pair && (!digest(row.snapshotRevision) || !["external", "inline", "absent", "none"].includes(row.testsState) || !(row.selectionKey === undefined || digest(row.selectionKey)) || !(row.testsRevision === undefined || digest(row.testsRevision)) || row.testsState === "external" && (!digest(row.selectionKey) || !digest(row.testsRevision)))) invalid();
-    if (!pair && ["snapshotRevision", "testsState", "testsRevision", "selectionKey"].some(k => row[k] !== undefined)) invalid();
-    return { versionId: row.versionId, revision: row.revision, capturedAt: row.capturedAt, sourceBytes: row.sourceBytes, uri: row.uri, sourceKind: kind, label,
-      ...(pair ? { snapshotRevision: row.snapshotRevision, testsState: row.testsState, ...(row.testsRevision ? { testsRevision: row.testsRevision } : {}), ...(row.selectionKey ? { selectionKey: row.selectionKey } : {}) } : {}) };
-  });
-  return { status: raw.status, versions };
-}
-
 function parseView(json, path) {
   let raw;
   try {
@@ -227,7 +205,7 @@ function parseView(json, path) {
   if (result?.toolSettings && !settingsMatch(result.toolSettings, tools)) invalid();
   const badge = latest.status !== "current" ? latest.status : result.fullPass && result.state === "complete" && result.selection.scope === "full" && result.verdict === "pass" ? "pass" : "not-passing";
   const authoring = authoringSnapshot(raw.authoring, raw.examples, file.revision);
-  const historyCapability = sourceHistory(raw.sourceHistory), history = sourceHistoryRows(raw.history, path, historyCapability);
+  const historyCapability = sourceHistory(raw.sourceHistory);
   return {
     file: { path, revision: file.revision },
     title: clean(raw.title, 200),
@@ -239,7 +217,6 @@ function parseView(json, path) {
     examples,
     ...(authoring ? { authoring } : {}),
     ...(historyCapability ? { sourceHistory: historyCapability } : {}),
-    ...(history ? { history } : {}),
     latest: { status: latest.status, badge, ...(result ? { result } : {}) },
   };
 }
