@@ -58,8 +58,76 @@ uses `acknowledgeCopilotTests: true` only after the user agrees to that warning;
 MCP Run/Test also requires this acknowledgment before capturing pending tool
 recordings into a Copilot file's tests (replay-only runs do not write);
 without acknowledgment it reports `confirmation_required` and does not write.
-Prompt-only edits retaining identical tests do not ask again. Separate test files
-are not supported here.
+Prompt-only edits retaining identical tests do not ask again. CLI and MCP preview
+and authoring still use inline tests; the companion reader below is not wired into
+those operations yet.
+
+## Tests in a separate file (reader only)
+
+The shared reader supports a separate tests file. CLI/MCP Run/Test and the canvas
+do not use it yet. The reader does not migrate inline tests, write files or run
+tests.
+
+The tests file is `NAME.agent.test.md` beside `NAME.agent.md`. An agent directly
+inside `.github/agents/` instead pairs with `.github/agent-tests/NAME.agent.test.md`.
+The resolver does not search for a Git root or other candidates. A caller may
+select one explicit tests file instead; it replaces, rather than combines with,
+the default selection. Native Squad `charter.md` files have no default tests file.
+
+The tests source starts with version frontmatter, followed by Markdown prose and
+one `yaml agent-test` fence per test, opening at column 1 (not inside a list or
+blockquote). For example:
+
+````markdown
+---
+schemaVersion: 1
+---
+
+# greeter tests
+
+```yaml agent-test
+id: greeting
+input: Ada
+assertions:
+  - id: greeting-text
+    type: contains
+    value: Ada
+```
+````
+
+Only `schemaVersion: 1` is supported in this frontmatter. Each fence contains one
+mapping using the existing `id`, inline `input`, `assertions` and optional
+`mocks.tools` fields. The [assertion semantics](#examples-and-assertions),
+[explicit tool modes](#per-test-recorded-tools), limits and credential checks are
+unchanged. Tool checks and mock names must match the agent's declared tools.
+IDs are unique across the tests file, and node/case limits apply across fences,
+not separately to each fence. A valid header without test fences means zero tests,
+distinct from a missing tests file; neither is a passing test result.
+Unknown/duplicate fields, YAML aliases/anchors, reserved fence-label lookalikes,
+unclosed fences and HTML comments outside code fences refuse. Other fenced prose
+is not a test. This is a source-format scanner, not a CommonMark/HTML renderer;
+HTML display and collapsing do not define which cases are selected. Original bytes
+and source locations are retained, not rewritten.
+
+`LoadPair` applies the existing CLI-style checked read boundary to both sources.
+A missing default file or parent records absence; an invalid existing path is an
+error. A missing explicit selection is an error, never a fallback. A structured
+inline Examples section (even `examples: []`) and a default tests file
+conflict; an explicit tests-file selection deliberately overrides inline tests
+without changing the original agent bytes.
+
+The combined revision binds both selected file paths, source state and exact
+byte revisions; the agent's own revision remains its raw agent-byte hash.
+Changing only the tests, their presence or their path changes the combined
+revision. Default and explicit selection of the same path have the same combined
+revision; another path with identical bytes does not.
+
+`SameSourceVersion` also checks whether either file or its parent directory
+changed, even when the combined revision is unchanged. Directory timestamp
+changes can conservatively invalidate this check without changing either file.
+Pure `ComposePair` values cannot claim a checked file version. These cooperative
+checks are not an atomic two-file transaction, a hostile-filesystem sandbox or
+write permission. The reader keeps separate tests out of the agent's prompt.
 
 ## Existing kmx charters
 

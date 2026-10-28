@@ -62,47 +62,20 @@ func parseExamples(file string, lines []string, firstLine int, allowUnpinnedJudg
 		}
 		return Location{file, base + n.Line, column}
 	}
+	return parseExamplesDocument(file, &root, location, allowUnpinnedJudge, 0)
+}
+
+// parseExamplesDocument validates the canonical tree without re-encoding YAML.
+// nodes counts any source header already checked against the shared budget.
+func parseExamplesDocument(file string, root *yaml.Node, location func(*yaml.Node) Location, allowUnpinnedJudge bool, nodes int) ([]Example, error) {
 	errAt := func(n *yaml.Node, problem string) *Error {
 		return &Error{location(n), "Examples", problem}
 	}
-	payloads := recordingPayloadRoots(&root)
-	nodes := 0
-	var check func(*yaml.Node, int, int) error
-	check = func(n *yaml.Node, depth, limit int) error {
-		if payloads[n] {
-			depth, limit = 0, 32
-		}
-		nodes++
-		if nodes > 32768 {
-			return errAt(n, "reduce YAML complexity (32768 nodes maximum)")
-		}
-		if depth > limit {
-			if limit == 32 {
-				return errAt(n, "reduce YAML complexity (32 recorded payload levels maximum)")
-			}
-			return errAt(n, "reduce YAML complexity (12 levels maximum outside recorded payloads)")
-		}
-		if n.Kind == yaml.AliasNode || n.Anchor != "" {
-			return errAt(n, "remove YAML anchors and aliases")
-		}
-		if n.Tag != "" && n.Tag != "!!str" && n.Tag != "!!int" && n.Tag != "!!map" && n.Tag != "!!seq" && n.Tag != "!!null" && n.Tag != "!!bool" && n.Tag != "!!float" {
-			return errAt(n, "use documented YAML types; quote timestamp-like strings and remove custom tags/merge keys")
-		}
-		if len(n.Value) > MaxInputBytes {
-			return errAt(n, "keep each YAML scalar within 16 KiB")
-		}
-		for _, child := range n.Content {
-			if err := check(child, depth+1, limit); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	if err := check(&root, 0, 12); err != nil {
+	if err := checkExamplesYAML(root, location, "Examples", &nodes); err != nil {
 		return nil, err
 	}
 	if root.Kind != yaml.DocumentNode || len(root.Content) != 1 {
-		return nil, refuse(file, base+1, 1, "Examples", "provide one examples mapping")
+		return nil, refuse(file, location(root).Line, 1, "Examples", "provide one examples mapping")
 	}
 	fields := func(n *yaml.Node, required int, allowed ...string) (map[string]*yaml.Node, error) {
 		if n.Kind != yaml.MappingNode {
@@ -231,4 +204,42 @@ func parseExamples(file string, lines []string, firstLine int, allowUnpinnedJudg
 		examples = append(examples, e)
 	}
 	return examples, nil
+}
+
+// checkExamplesYAML shares syntax and complexity limits across source adapters.
+func checkExamplesYAML(root *yaml.Node, location func(*yaml.Node) Location, field string, nodes *int) error {
+	errAt := func(n *yaml.Node, problem string) *Error { return &Error{location(n), field, problem} }
+	payloads := recordingPayloadRoots(root)
+	var check func(*yaml.Node, int, int) error
+	check = func(n *yaml.Node, depth, limit int) error {
+		if payloads[n] {
+			depth, limit = 0, 32
+		}
+		*nodes++
+		if *nodes > 32768 {
+			return errAt(n, "reduce YAML complexity (32768 nodes maximum)")
+		}
+		if depth > limit {
+			if limit == 32 {
+				return errAt(n, "reduce YAML complexity (32 recorded payload levels maximum)")
+			}
+			return errAt(n, "reduce YAML complexity (12 levels maximum outside recorded payloads)")
+		}
+		if n.Kind == yaml.AliasNode || n.Anchor != "" {
+			return errAt(n, "remove YAML anchors and aliases")
+		}
+		if n.Tag != "" && n.Tag != "!!str" && n.Tag != "!!int" && n.Tag != "!!map" && n.Tag != "!!seq" && n.Tag != "!!null" && n.Tag != "!!bool" && n.Tag != "!!float" {
+			return errAt(n, "use documented YAML types; quote timestamp-like strings and remove custom tags/merge keys")
+		}
+		if len(n.Value) > MaxInputBytes {
+			return errAt(n, "keep each YAML scalar within 16 KiB")
+		}
+		for _, child := range n.Content {
+			if err := check(child, depth+1, limit); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return check(root, 0, 12)
 }

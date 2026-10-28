@@ -1,4 +1,5 @@
-// Package agentfile parses and loads single-file agent charters.
+// Package agentfile parses and loads agent files. The explicit paired reader
+// retains companion tests separately; existing single-file consumers are unchanged.
 // Explicit Squad parsing returns a distinct charter type, not a runnable Agent.
 // Canonical judge models may be omitted; execution binds isolated copies to the
 // selected route, while native Squad parsing and offline export require pins.
