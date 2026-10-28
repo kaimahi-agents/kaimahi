@@ -95,8 +95,9 @@ func shortCommandHelp(cmd *cobra.Command, _ []string) {
 		})
 		liveFlags.AddFlagSet(cmd.InheritedFlags())
 		writeHelpFlags(out, "Flags (file preview)", fileFlags)
-		writeHelpFlags(out, "Flags (shared input)", sharedFlags)
-		writeHelpFlags(out, "Flags (live Orka)", liveFlags)
+		// Adjacent headings retain the short-help line budget as file flags grow.
+		fmt.Fprintf(out, "Flags (shared input):\n%s", sharedFlags.FlagUsagesWrapped(80))
+		fmt.Fprintf(out, "Flags (live Orka):\n%s", liveFlags.FlagUsagesWrapped(80))
 		return
 	}
 	flags := pflag.NewFlagSet("help", pflag.ContinueOnError)

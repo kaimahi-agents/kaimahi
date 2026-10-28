@@ -57,8 +57,22 @@ func LoadDestinations(root string) (*Destinations, error) {
 	if decoder.Decode(&extra) != io.EOF {
 		return nil, ErrDestinationsInvalid
 	}
+	// Keep KnownFields strict for operational keys after structurally checking
+	// and removing only the two tool-owned subtrees.
+	kept := make([]*yaml.Node, 0, len(node.Content[0].Content))
+	for i := 0; i < len(node.Content[0].Content); i += 2 {
+		key := node.Content[0].Content[i].Value
+		if key != "mcpServers" && key != "liveToolServers" {
+			kept = append(kept, node.Content[0].Content[i:i+2]...)
+		}
+	}
+	node.Content[0].Content = kept
+	operational, err := yaml.Marshal(&node)
+	if err != nil {
+		return nil, ErrDestinationsInvalid
+	}
 	var doc Destinations
-	decoder = yaml.NewDecoder(bytes.NewReader(raw))
+	decoder = yaml.NewDecoder(bytes.NewReader(operational))
 	decoder.KnownFields(true)
 	if decoder.Decode(&doc) != nil || doc.Version != 1 || len(doc.Targets) > maxDestinationsEntries || len(doc.Registries) > maxDestinationsEntries {
 		return nil, ErrDestinationsInvalid

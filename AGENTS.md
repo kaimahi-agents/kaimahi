@@ -530,8 +530,16 @@ The internal localtools stdio owner accepts only resolved host launch inputs and
 explicit mapped names, using checked bounded pipes, frozen explicit env and owned
 Unix process-group cleanup. Callers must check Close before accepting completion
 and use the outer invocation context, not a resolver context canceled by Run.
-The adapter adds no CLI flags/config selection and leaves the app host bridge
-unchanged. Native Windows tools remain deferred; process groups are not containment.
+Only file CLI Run/Test consumes frozen folder mcpServers/liveToolServers and
+repeatable --mcp-server selection; --no-mcp-servers clears both saved/explicit
+names, fixed --tool-bindings retains precedence. The default CLI wrapper owns
+lazy checked launch/config/env resolution and Close before App acceptance/save;
+no private CLI intent means the app/MCP factory remains unchanged. Disabled,
+unmapped and recorded-only cases never resolve launch env/executables. Explicit
+env values are named host refs, all protected as sensitive, with only PATH as
+ambient baseline. Destination readers structurally validate then discard these
+two subtrees, keeping other operational decoding strict. Native Windows tools
+remain deferred; process groups are not containment.
 
 Canonical `run FILE` / `test FILE` use the parser and `agentpreview.Runner`
 interface without cluster/workspace configuration. CLI/MCP fake/local and explicit

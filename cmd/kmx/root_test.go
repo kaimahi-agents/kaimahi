@@ -406,8 +406,8 @@ func TestGuardedWindowsSupportedCommandFlagsAreExhaustivelyAllowlisted(t *testin
 		allFlags   []string
 		allowFlags []string
 	}{
-		{[]string{"run"}, []string{file}, []string{"agent", "case", "container-engine", "context", "model", "namespace", "no-content", "output", "prompt", "prompt-file", "provider", "provider-url", "result-port", "tool-bindings", "verbose", "wait"}, []string{"case", "no-content", "output", "prompt", "verbose"}},
-		{[]string{"test"}, []string{file}, []string{"case", "container-engine", "context", "github-summary", "model", "no-content", "output", "provider", "provider-url", "tool-bindings", "verbose"}, []string{"case", "no-content", "output", "verbose"}},
+		{[]string{"run"}, []string{file}, []string{"agent", "case", "container-engine", "context", "mcp-server", "model", "namespace", "no-content", "no-mcp-servers", "output", "prompt", "prompt-file", "provider", "provider-url", "result-port", "tool-bindings", "verbose", "wait"}, []string{"case", "no-content", "output", "prompt", "verbose"}},
+		{[]string{"test"}, []string{file}, []string{"case", "container-engine", "context", "github-summary", "mcp-server", "model", "no-content", "no-mcp-servers", "output", "provider", "provider-url", "tool-bindings", "verbose"}, []string{"case", "no-content", "output", "verbose"}},
 		{[]string{"test", "explain"}, nil, []string{"clear", "container-engine", "context", "file", "show-content", "workspace"}, []string{"clear", "file", "show-content"}},
 		{[]string{"eval", "explain"}, nil, []string{"clear", "container-engine", "context", "file", "show-content", "workspace"}, []string{"clear", "file", "show-content"}},
 	}

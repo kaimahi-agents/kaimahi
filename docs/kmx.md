@@ -206,6 +206,10 @@ input. See [native Windows](windows.md#supported-native-commands). A native
 preview pass creates no suite evidence, publication or deployment authority.
 An optional canonical Tools declaration and explicit `--tool-bindings FILE` select
 one [host-owned read-only GitHub MCP operation](local-preview.md#host-tool-foundation).
+File Run/Test also supports named stdio servers from the agent folder's
+`kmx.yaml`: repeat `--mcp-server NAME` to replace saved selection, or use
+`--no-mcp-servers` to clear it for CI. The fixed binding takes precedence if
+also supplied. See [stdio config and offline CI](local-preview.md#selected-stdio-servers-in-file-runtest).
 The operator binds one repository and an explicit environment credential name;
 no endpoint/credential comes from the agent or model. Only a selected call reads
 up to 20 merged PRs through the fixed Streamable-HTTP endpoint. Missing authority,

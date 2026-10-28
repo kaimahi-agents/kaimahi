@@ -40,7 +40,7 @@ type dependencies struct {
 
 func productionDependencies() dependencies {
 	return dependencies{
-		fileRunner: app.NewLocalFileRunner(),
+		fileRunner: newFileMCPRunner(app.NewLocalFileRunner()),
 		stdin:      os.Stdin, stdout: os.Stdout, stderr: os.Stderr,
 		executable:        invocationExecutable(os.Args[0]),
 		goos:              runtime.GOOS,

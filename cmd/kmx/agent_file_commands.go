@@ -16,6 +16,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	kmxmcp "github.com/kaimahi-agents/kaimahi/internal/kmx/mcp"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
 )
@@ -25,6 +26,8 @@ type fileCommandOptions struct {
 	Model                              string
 	PositionalInput                    bool
 	ToolBindings                       string
+	MCPServers                         []string
+	NoMCPServers                       bool
 	GitHubSummary                      bool
 	NoContent                          bool
 	Verbose                            bool
@@ -51,7 +54,9 @@ func registerFileCommandFlags(cmd *cobra.Command, f *fileCommandOptions, output 
 	cmd.Flags().StringVar(&f.Endpoint, "provider-url", "", "Required local model URL; fixed for Copilot")
 	cmd.Flags().StringVar(&f.Model, "model", "", "Model override for this invocation")
 	cmd.Flags().BoolVar(&f.NoContent, "no-content", false, "Hide answers and failed assertion content")
-	cmd.Flags().StringVar(&f.ToolBindings, "tool-bindings", "", "Host-owned tool binding file (local/Copilot)")
+	cmd.Flags().StringVar(&f.ToolBindings, "tool-bindings", "", "Fixed host binding file (takes precedence)")
+	cmd.Flags().StringArrayVar(&f.MCPServers, "mcp-server", nil, "MCP server `NAME` (repeatable; replaces saved)")
+	cmd.Flags().BoolVar(&f.NoMCPServers, "no-mcp-servers", false, "Clear saved and explicit MCP servers")
 	if cmd.Name() == "test" {
 		cmd.Flags().BoolVar(&f.GitHubSummary, "github-summary", false, "JSON summary to $GITHUB_STEP_SUMMARY (-o json)")
 	}
@@ -66,7 +71,7 @@ func validateFileCommand(cmd *cobra.Command, state *commandState, f fileCommandO
 	var invalid string
 	cmd.Flags().Visit(func(flag *pflag.Flag) {
 		switch flag.Name {
-		case "case", "output", "no-content", "model", "provider", "provider-url", "prompt", "prompt-file", "verbose", "tool-bindings", "github-summary":
+		case "case", "output", "no-content", "model", "provider", "provider-url", "prompt", "prompt-file", "verbose", "tool-bindings", "mcp-server", "no-mcp-servers", "github-summary":
 		default:
 			invalid = flag.Name
 		}
@@ -79,6 +84,13 @@ func validateFileCommand(cmd *cobra.Command, state *commandState, f fileCommandO
 			return fmt.Errorf("file preview requires nonempty --%s", name)
 		}
 	}
+	if !f.NoMCPServers {
+		for _, name := range f.MCPServers {
+			if !localtools.ValidToolName(name) {
+				return fmt.Errorf("--mcp-server requires a nonempty configured server name")
+			}
+		}
+	}
 	if f.Output != "text" && f.Output != "json" {
 		return fmt.Errorf("file preview output must be text or json")
 	}
@@ -88,7 +100,7 @@ func validateFileCommand(cmd *cobra.Command, state *commandState, f fileCommandO
 	return nil
 }
 func fileFlagsWithoutFile(cmd *cobra.Command) error {
-	for _, name := range []string{"case", "model", "provider", "provider-url", "no-content", "verbose", "tool-bindings", "github-summary"} {
+	for _, name := range []string{"case", "model", "provider", "provider-url", "no-content", "verbose", "tool-bindings", "mcp-server", "no-mcp-servers", "github-summary"} {
 		if flag := cmd.Flag(name); flag != nil && flag.Changed {
 			return fmt.Errorf("--%s requires an explicit agent FILE", name)
 		}
@@ -116,7 +128,7 @@ func runFileCommand(cmd *cobra.Command, state *commandState, file string, f file
 		// hooks must not turn a fake, tool-free invocation into another route.
 		var err error
 		windowsAgent, err = agentfile.Load(file)
-		if err != nil || !windowsPackageFreeFakeAgent(windowsAgent) || f.Provider != "" || f.Endpoint != "" || f.ToolBindings != "" || f.GitHubSummary || promptFile != "" {
+		if err != nil || !windowsPackageFreeFakeAgent(windowsAgent) || f.Provider != "" || f.Endpoint != "" || f.ToolBindings != "" || len(f.MCPServers) > 0 || f.NoMCPServers || f.GitHubSummary || promptFile != "" {
 			return errWindowsOperationUnsupported
 		}
 	}
@@ -175,6 +187,8 @@ func runFileCommand(cmd *cobra.Command, state *commandState, file string, f file
 		save, err := kmxmcp.FileRecordingSaver(ctx, file, revision)
 		return app.RecordingSaver(save), err
 	}
+	selection := localtools.ServerSelection{Names: append([]string(nil), f.MCPServers...), Override: cmd.Flags().Changed("mcp-server"), Clear: f.NoMCPServers}
+	ctx = context.WithValue(ctx, fileMCPIntentKey{}, fileMCPIntent{file: file, selection: selection})
 	a := &app.App{FileRunner: state.deps.fileRunner}
 	start := time.Now()
 	var result app.FilePreviewResult
