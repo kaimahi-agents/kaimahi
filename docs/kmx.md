@@ -545,7 +545,7 @@ Startup/discovery does not initialize the project or run a model.
 |---|---|---|
 | `squad-members` | `create` | `lead`, `specialists` (0–7); each has `memberId`, native `role`, exact `displayRole`, `taskInstructions`, concrete `model`, fenced YAML `examples` |
 | `squad-member` | `edit` | `memberId`, `expectedRevision`, all owned `taskInstructions`, `model`, `examples` |
-| `squad-member` | `run` / `test` | `memberId`; optional `caseId`, `showContent`; Run additionally accepts `input` |
+| `squad-member` | `run` / `test` | `memberId`; optional `caseId`, `showContent`, `expectedRevision`, `expectedBriefRevision`; Run additionally accepts `input` |
 
 Chat proposes and adjusts the team before effects. Approved native Create runs
 conditional `init --no-workflows --no-vscode-default`, then fixed cast and
@@ -573,9 +573,26 @@ active ID/name/role, roster and charter under the configured release on every
 read and operation, including after restart. Failed validation shows
 **not set up by kmx** and disables native Edit/Run/Test. Valid state is not
 an authenticated origin claim, saved draft, prior pass or initial-enrichment
-receipt. There is no kmx-owned durable mapping. Native flow is chat-only; the
-existing canonical read-only canvas is unchanged. Member preview proves only the
-exact source revision, not a package digest, team dispatch or deployment.
+receipt. There is no kmx-owned durable mapping.
+
+Run/Test `expectedRevision` and `expectedBriefRevision` must be supplied together:
+supplying only one refuses, and omitting both preserves legacy caller behavior. The
+brief revision is `none` when `.squad/kmx-brief.md` is absent. Both are checked
+before previewing the member and brief snapshots.
+
+A native Squad authoring canvas also exists (see
+[SQUAD-CANVAS.md](../plugins/copilot/SQUAD-CANVAS.md)). It offers goal-based
+Copilot proposals, reviewed creation, a saved shared brief (`.squad/kmx-brief.md`,
+with its revision reported separately from the member source revision) and
+individual member edit/test, using these existing MCP operations. The canvas always
+supplies the revision pair, observes outside member/brief changes without
+discarding drafts, and an empty test list stays editable but cannot produce a
+passing Test. Its Stop cancels only its own in-flight preview, through MCP request
+cancellation (see [Stopping an in-flight preview](#stopping-an-in-flight-preview)).
+The existing canonical read-only agent canvas for canonical files is unchanged.
+Member preview proves only the exact source revision, paired with the brief
+revision. Results are individual local previews, not team dispatch, a package
+digest or deployment.
 
 #### Canonical v1 file paths and publication
 
