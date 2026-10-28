@@ -2,6 +2,9 @@
 // bindings, including the fixed read-only GitHub adapter. It reads frozen test
 // states from the agent folder's kmx.yaml: Disabled answers stay local, while
 // journaled settings distinguish live Enabled calls during zero-effect replay.
+// An internal stdio adapter owns a selected server's process group and SDK session
+// separately from its trusted Host. Its caller must check Close before accepting
+// completion; no folder-config or CLI selection is implied by that adapter.
 package localtools
 
 import (
