@@ -50,6 +50,21 @@ func TestRunProfileExportOffline(t *testing.T) {
 	}
 }
 
+func TestRunProfileExportEmptyExplicitSelector(t *testing.T) {
+	for _, value := range []string{"", " \t"} {
+		t.Run(fmt.Sprintf("%q", value), func(t *testing.T) {
+			path := cliPreviewFile(t)
+			var out, diag bytes.Buffer
+			deps, loads := testDependencies(&out, &diag)
+			deps.newCopilot = func() copilotAccess { t.Fatal("selector refusal accessed auth"); return nil }
+			err := execute([]string{"package", "run-profile", "export", path, "--tests", value}, deps)
+			if err == nil || !strings.Contains(err.Error(), "nonempty --tests") || out.Len() != 0 || diag.Len() != 0 || *loads != 0 {
+				t.Fatalf("empty selector silently selected tests or effects: %v stdout%d loads%d", err, out.Len(), *loads)
+			}
+		})
+	}
+}
+
 func TestRunProfileExportSelectedPairOffline(t *testing.T) {
 	for _, explicit := range []bool{false, true} {
 		path := cliPreviewFile(t)

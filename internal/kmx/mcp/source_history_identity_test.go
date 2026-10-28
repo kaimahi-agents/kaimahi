@@ -101,6 +101,34 @@ func TestSourceHistoryAcceptsStandardURIEncodings(t *testing.T) {
 	}
 }
 
+func TestSourceHistoryDotRelativeSelector(t *testing.T) {
+	base, root := historyPaths(t)
+	f := historyFiles(t, root, base)
+	if _, err := f.Create(t.Context(), "a.agent.md", []byte("Prompt\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "checks.md"), []byte(historyTests), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cs := historyClient(t, f)
+	var snapshot string
+	for _, selected := range []string{"checks.md", "./checks.md"} {
+		result, err := cs.ReadResource(t.Context(), &sdk.ReadResourceParams{URI: sourcesURI("a.agent.md", selected)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var d sourceDocument
+		if json.Unmarshal([]byte(result.Contents[0].Text), &d) != nil || d.Kind != "kmx.agent-sources" || d.Tests.Path != filepath.Join(root, "checks.md") || d.Tests.Source != historyTests {
+			t.Fatalf("ordinary dot selector refused: %s", result.Contents[0].Text)
+		}
+		if snapshot == "" {
+			snapshot = d.SnapshotRevision
+		} else if snapshot != d.SnapshotRevision {
+			t.Fatal("dot spelling changed physical identity")
+		}
+	}
+}
+
 func TestSourceHistoryHeldReadsRefuseReplacement(t *testing.T) {
 	for _, parent := range []bool{false, true} {
 		t.Run(map[bool]string{false: "file", true: "parent"}[parent], func(t *testing.T) {

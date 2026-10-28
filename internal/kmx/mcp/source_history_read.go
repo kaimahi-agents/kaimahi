@@ -50,6 +50,11 @@ func (f *Files) readHistorySource(p string, tests bool) (*historySource, error) 
 		parent.Close()
 		return nil, err
 	}
+	// Keep the checked parent traversal above, then retain its canonical spelling
+	// for physical-path rechecks (for example ./checks.md versus checks.md).
+	if tests && f.root != nil {
+		normalized = filepath.ToSlash(filepath.Clean(filepath.FromSlash(normalized)))
+	}
 	return &historySource{normalized, parent, file, info, parentInfo, b, tests}, nil
 }
 func (s *historySource) close() { s.file.Close(); s.parent.Close() }
@@ -127,7 +132,7 @@ func (f *Files) readSourcePair(ctx context.Context, p, override string) (*agentf
 		}
 		selection.Path = f.physicalSource(relative)
 		tests, err = f.readHistorySource(relative, true)
-		if err != nil && !(override == "" && sourceNotFound(err)) {
+		if err != nil && (override != "" || !sourceNotFound(err)) {
 			return nil, nil, err
 		}
 		if tests != nil {

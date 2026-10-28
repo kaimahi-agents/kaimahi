@@ -301,6 +301,32 @@ func TestExportSelectedRunProfileIdentity(t *testing.T) {
 	}
 }
 
+func TestExportSelectedRunProfileDiagnosticSources(t *testing.T) {
+	for _, tc := range []struct {
+		name, source, tests, field string
+		agentError                 bool
+	}{
+		{"empty", strings.Split(sample(t), "## Examples")[0], testsHeader, "Examples", false},
+		{"judge", strings.Split(sample(t), "## Examples")[0], testsHeader + "```yaml agent-test\nid: a\ninput: Ada\nassertions: [{id: a, type: llmJudge, rubric: Be nice, minScore: 50, judgeVersion: v1}]\n```\n", "Examples", false},
+		{"model", "# Agent\nPrompt\n", testsStarter, "Model.Preferred", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := exportSource(t, tc.source)
+			tests := filepath.Join(filepath.Dir(path), "checks.md")
+			pairWrite(t, tests, tc.tests)
+			data, err := ExportSelectedRunProfile(path, tests)
+			var refusal *Error
+			want := tests
+			if tc.agentError {
+				want = path
+			}
+			if data != nil || !errors.As(err, &refusal) || refusal.Field != tc.field || refusal.Location.File != want || refusal.Location.Line < 1 {
+				t.Fatalf("diagnostic points at wrong source: %v (want%s)", err, want)
+			}
+		})
+	}
+}
+
 func TestExportSelectedRunProfileRestrictions(t *testing.T) {
 	for _, tc := range []struct{ name, tests, want string }{
 		{"zero", testsHeader, "at least one example"},

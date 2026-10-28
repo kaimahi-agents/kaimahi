@@ -73,7 +73,11 @@ func ExportSelectedRunProfile(filename, testsOverride string) ([]byte, error) {
 	if pair.Tests.Suite != nil {
 		agent.Examples = pair.Tests.Suite.Examples
 	}
-	profile, err := runProfileFromAgent(filename, &agent)
+	examplesFile := filename
+	if pair.Tests.State == "external" {
+		examplesFile = pair.Tests.Selection.Path
+	}
+	profile, err := runProfileFromAgent(filename, examplesFile, &agent)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +93,7 @@ func ExportSelectedRunProfile(filename, testsOverride string) ([]byte, error) {
 	return append(data, '\n'), nil
 }
 
-func runProfileFromAgent(filename string, agent *Agent) (*runProfile, error) {
+func runProfileFromAgent(filename, examplesFile string, agent *Agent) (*runProfile, error) {
 	// Offline export preserves authored choices, not preview-time defaults.
 	if agent.Model == "" {
 		return nil, refuse(filename, 1, 1, "Model.Preferred", "add nonblank required fields in the canonical charter format")
@@ -97,10 +101,13 @@ func runProfileFromAgent(filename string, agent *Agent) (*runProfile, error) {
 	// A profile hands examples to a separate runtime; zero tests is no evidence.
 	if len(agent.Examples) == 0 {
 		loc := agent.Locations["Examples"]
+		if examplesFile != filename {
+			loc = Location{examplesFile, 1, 1}
+		}
 		if loc.Line == 0 {
 			loc = Location{filename, 1, 1}
 		}
-		return nil, refuse(filename, loc.Line, loc.Column, "Examples", "add at least one example before exporting a run profile")
+		return nil, refuse(loc.File, loc.Line, loc.Column, "Examples", "add at least one example before exporting a run profile")
 	}
 	for _, example := range agent.Examples {
 		unsupported := example.Mocks != nil
@@ -108,7 +115,7 @@ func runProfileFromAgent(filename string, agent *Agent) (*runProfile, error) {
 			unsupported = unsupported || assertion.Type == "toolCalled" || assertion.Type == "toolNotCalled"
 		}
 		if unsupported {
-			return nil, refuse(filename, example.Location.Line, example.Location.Column, "Examples", "run profiles cannot preserve tool fixtures or tool checks")
+			return nil, refuse(examplesFile, example.Location.Line, example.Location.Column, "Examples", "run profiles cannot preserve tool fixtures or tool checks")
 		}
 	}
 	profile := runProfile{
@@ -122,7 +129,7 @@ func runProfileFromAgent(filename string, agent *Agent) (*runProfile, error) {
 		// Export cannot choose an execution model; preserve strict refusal for
 		// unbound judge definitions rather than inventing an authored pin.
 		if runtime.ValidateEvaluationAssertions(example.Assertions) != nil {
-			return nil, refuse(filename, example.Location.Line, example.Location.Column, "Examples", "pin judgeModel before exporting a run profile")
+			return nil, refuse(examplesFile, example.Location.Line, example.Location.Column, "Examples", "pin judgeModel before exporting a run profile")
 		}
 		definition := runProfileExampleDefinition{example.ID, example.Input, example.Assertions}
 		preimage, err := json.Marshal(definition)

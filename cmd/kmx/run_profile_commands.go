@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -34,6 +35,9 @@ func newRunProfileCommand(state *commandState) *cobra.Command {
 			return []string{"md"}, cobra.ShellCompDirectiveFilterFileExt
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if cmd.Flags().Changed("tests") && strings.TrimSpace(testsOverride) == "" {
+				return errors.New("run-profile export requires nonempty --tests")
+			}
 			data, err := agentfile.ExportSelectedRunProfile(args[0], testsOverride)
 			if err != nil {
 				return err
