@@ -223,8 +223,10 @@ bounded kill/reap cleanup; any failed call or cancellation poisons the session.
 A poisoned operation and an uncertain kill/reap have distinct fixed errors; both
 withhold completion, including cleanup failures during startup. The invocation
 must use its outer context, not the runner's shorter-lived resolver context,
-and must check the owner's `Close` before accepting a result. Cleanup failure
-withholds success. Descendants that deliberately escape their group with
+and must check the owner's `Close` before accepting a result. Leader exit is
+observed without reaping before cleanup sends its own kill, so a previously
+killed server cannot pass merely because a descendant holds stdout open.
+Cleanup failure withholds success. Descendants that deliberately escape their group with
 `setsid` are outside this cleanup guarantee. Native Windows tool execution
 remains unavailable. Adapter tests use real owned subprocesses and a scripted
 fake model; they are not live-model qualification or a user-facing launcher.

@@ -131,6 +131,12 @@ func (p *stdioProcess) Read(dst []byte) (int, error) {
 			p.fail()
 			return 0, ErrStdio
 		}
+		if result, ok := value["result"].(map[string]any); ok {
+			if kind, present := result["resultType"]; present && kind != "" && kind != "complete" {
+				p.fail()
+				return 0, ErrStdio
+			}
+		}
 		p.pending = append(append([]byte(nil), raw...), '\n')
 	}
 	n := copy(dst, p.pending)
@@ -151,6 +157,12 @@ func (w stdioWriter) Close() error { return w.p.Close() }
 func (p *stdioProcess) Close() error {
 	p.once.Do(func() {
 		p.mu.Lock()
+		// Check before closing stdin or sending our own kill. A dead leader may
+		// have a descendant holding stdout open, so EOF alone is not exit proof.
+		exited, observeErr := stdioLeaderExited(p.cmd.Process.Pid)
+		if exited {
+			p.failed = true
+		}
 		p.closing = true
 		stop := p.stop
 		p.mu.Unlock()
@@ -182,7 +194,7 @@ func (p *stdioProcess) Close() error {
 		if (p.failed || p.ctx.Err() != nil) && p.closeErr == nil {
 			p.closeErr = ErrStdio
 		}
-		if killErr != nil && !errors.Is(killErr, syscall.ESRCH) {
+		if observeErr != nil || killErr != nil && !errors.Is(killErr, syscall.ESRCH) {
 			p.closeErr = ErrStdioCleanup
 		}
 		p.mu.Unlock()

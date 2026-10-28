@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -38,7 +39,7 @@ func stdioCall(ctx context.Context, host *StdioHost) (api.ToolResult, error) {
 
 func TestStdioHostMappingEnvironmentAndClose(t *testing.T) {
 	t.Setenv("STDIO_AMBIENT_CANARY", "must-not-inherit")
-	for _, mode := range []string{"structured", "text", "mixed", "stderr", "empty-env"} {
+	for _, mode := range []string{"structured", "text", "text-complete", "text-empty", "mixed", "stderr", "empty-env"} {
 		t.Run(mode, func(t *testing.T) {
 			cfg := stdioFixture(t, mode)
 			if mode != "empty-env" {
@@ -59,7 +60,7 @@ func TestStdioHostMappingEnvironmentAndClose(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if mode == "text" {
+			if strings.HasPrefix(mode, "text") {
 				if result.Output["text"] != "plain answer" {
 					t.Fatalf("text projection: %+v", result)
 				}
@@ -136,7 +137,7 @@ func TestStdioShortCredentialsStillChecked(t *testing.T) {
 }
 
 func TestStdioCallFailuresNeverSucceed(t *testing.T) {
-	for _, mode := range []string{"crash", "echo-result", "escaped-echo-result", "error", "needs-input", "binary", "oversized-result", "blocked"} {
+	for _, mode := range []string{"crash", "echo-result", "escaped-echo-result", "error", "needs-input", "unknown-result", "binary", "oversized-result", "blocked"} {
 		t.Run(mode, func(t *testing.T) {
 			cfg := stdioFixture(t, mode)
 			cfg.Env["STDIO_SECRET"] = "private-stdio-canary"
@@ -199,6 +200,76 @@ func TestStdioCancellationKillsDescendants(t *testing.T) {
 	}
 }
 
+func TestStdioResultTypesBeforeDecode(t *testing.T) {
+	for _, tc := range []struct {
+		field string
+		ok    bool
+	}{
+		{"", true},
+		{`,"resultType":""`, true},
+		{`,"resultType":"complete"`, true},
+		{`,"resultType":"future-state"`, false},
+		{`,"resultType":null`, false},
+	} {
+		raw := `{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"answer"}]` + tc.field + "}}\n"
+		p := &stdioProcess{scanner: bufio.NewScanner(strings.NewReader(raw)), check: func(...string) error { return nil }}
+		buf := make([]byte, len(raw))
+		n, err := p.Read(buf)
+		if tc.ok && (err != nil || string(buf[:n]) != raw) || !tc.ok && (!errors.Is(err, ErrStdio) || n != 0) {
+			t.Fatalf("result field %q: forwarded=%q err=%v", tc.field, buf[:n], err)
+		}
+	}
+}
+
+func TestStdioKilledLeaderCannotPassCleanup(t *testing.T) {
+	cfg := stdioFixture(t, "descendant")
+	heartbeat := filepath.Join(cfg.Dir, "heartbeat")
+	cfg.Args = append(cfg.Args, heartbeat)
+	host, err := StartStdioHost(t.Context(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = host.Close() })
+	waitHeartbeat := func(orphan bool) {
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			data, err := os.ReadFile(heartbeat)
+			if err == nil && (!orphan || strings.HasPrefix(string(data), "orphan:")) {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("descendant heartbeat missing (orphan=%v): %q %v", orphan, data, err)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	waitHeartbeat(false)
+	if err := syscall.Kill(host.process.cmd.Process.Pid, syscall.SIGKILL); err != nil {
+		t.Fatal(err)
+	}
+	// Reparenting independently proves leader exit, without Wait/reaping it.
+	// The descendant is still writing and holds the protocol stdout open.
+	waitHeartbeat(true)
+	if err := host.Close(); !errors.Is(err, ErrStdio) {
+		t.Fatalf("preexisting leader death accepted as owned cleanup: %v", err)
+	}
+	if host.process.cmd.ProcessState == nil {
+		t.Fatal("root process was not reaped")
+	}
+	if err := host.Close(); !errors.Is(err, ErrStdio) {
+		t.Fatalf("second Close forgot unexpected leader exit: %v", err)
+	}
+	first, err := os.ReadFile(heartbeat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	last, err := os.ReadFile(heartbeat)
+	if err != nil || string(first) != string(last) {
+		t.Fatal("descendant survived crash cleanup", err)
+	}
+}
+
 // A real subprocess fixture, never linked into the installed CLI.
 func TestStdioHelperProcess(t *testing.T) {
 	at := slices.Index(os.Args, "--")
@@ -207,8 +278,13 @@ func TestStdioHelperProcess(t *testing.T) {
 	}
 	mode := os.Args[at+1]
 	if mode == "heartbeat" {
+		parent := os.Getppid()
 		for {
-			_ = os.WriteFile(os.Args[at+2], []byte(time.Now().String()), 0600)
+			value := time.Now().String()
+			if os.Getppid() != parent {
+				value = "orphan:" + value
+			}
+			_ = os.WriteFile(os.Args[at+2], []byte(value), 0600)
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
@@ -290,6 +366,14 @@ func TestStdioHelperProcess(t *testing.T) {
 		case "text":
 			result.StructuredContent = nil
 			result.Content = []mcp.Content{&mcp.TextContent{Text: "plain answer"}}
+		case "text-complete", "text-empty":
+			kind := ""
+			if mode == "text-complete" {
+				kind = "complete"
+			}
+			if err := json.Unmarshal([]byte(fmt.Sprintf(`{"resultType":%q,"content":[{"type":"text","text":"plain answer"}]}`, kind)), result); err != nil {
+				os.Exit(9)
+			}
 		case "mixed":
 			result.Content = []mcp.Content{&mcp.TextContent{Text: "extra text"}}
 		case "echo-result", "escaped-echo-result":
@@ -302,6 +386,10 @@ func TestStdioHelperProcess(t *testing.T) {
 			result.IsError = true
 		case "needs-input":
 			result.RequestState = "pending"
+		case "unknown-result":
+			if err := json.Unmarshal([]byte(`{"resultType":"future-state","content":[{"type":"text","text":"not complete"}]}`), result); err != nil {
+				os.Exit(9)
+			}
 		case "binary":
 			result.Content = []mcp.Content{&mcp.ImageContent{Data: []byte("not text"), MIMEType: "image/png"}}
 		case "oversized-result":
