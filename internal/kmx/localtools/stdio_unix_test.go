@@ -155,7 +155,7 @@ func TestStdioCallFailuresNeverSucceed(t *testing.T) {
 				t.Fatalf("unsafe call accepted or leaked: %+v %v", result, err)
 			}
 			if err := host.Close(); !errors.Is(err, ErrStdio) || errors.Is(err, ErrStdioCleanup) {
-				t.Fatalf("failed call must poison the session without claiming failed cleanup: %v", err)
+				t.Fatalf("failed call must poison the session without claiming failed cleanup: %v (observe=%v kill=%v state=%v)", err, host.process.observeErr, host.process.killErr, host.process.cmd.ProcessState)
 			}
 			if data, err := os.ReadFile(countFile); err != nil || string(data) != "call\n" {
 				t.Fatalf("tool request retried or never sent: %q %v", data, err)

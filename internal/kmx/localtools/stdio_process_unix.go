@@ -32,6 +32,8 @@ type stdioProcess struct {
 	failed        bool
 	once          sync.Once
 	closeErr      error
+	observeErr    error
+	killErr       error
 	scanner       *bufio.Scanner
 	pending       []byte
 	check         func(...string) error
@@ -160,6 +162,7 @@ func (p *stdioProcess) Close() error {
 		// Check before closing stdin or sending our own kill. A dead leader may
 		// have a descendant holding stdout open, so EOF alone is not exit proof.
 		exited, observeErr := stdioLeaderExited(p.cmd.Process.Pid)
+		p.observeErr = observeErr
 		if exited {
 			p.failed = true
 		}
@@ -174,6 +177,7 @@ func (p *stdioProcess) Close() error {
 		// identity until its owned group has been signaled. Escaped setsid daemons
 		// are outside process-group cleanup; this is not OS containment.
 		killErr := syscall.Kill(-p.cmd.Process.Pid, syscall.SIGKILL)
+		p.killErr = killErr
 		_ = p.output.Close() // Unblock SDK reads even if a descendant held stdout.
 		waited := make(chan error, 1)
 		go func() { waited <- p.cmd.Wait() }()
