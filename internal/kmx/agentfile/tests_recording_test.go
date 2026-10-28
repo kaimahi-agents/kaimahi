@@ -118,7 +118,7 @@ func TestApplyTestRecordingsTaggedCommentFallback(t *testing.T) {
 		"name: read\n      mode: recorded\n      calls: !<tag:yaml.org,2002:seq> [ ]",
 	} {
 		source := testsHeader + recordingTestFence("tagged", entry)
-		want := strings.Replace(source, "calls:", readDefinitions+", \"parameters\": "+readParamsJSON+", calls:", 1)
+		var want string
 		if strings.Contains(entry, "!!str calls") {
 			want = strings.Replace(source, "!!str calls:", readDefinitions+", \"parameters\": "+readParamsJSON+", !!str calls:", 1)
 		} else {
