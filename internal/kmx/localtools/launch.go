@@ -9,7 +9,6 @@ import (
 
 	"github.com/agent-primitives/sessions/api"
 	"github.com/agent-primitives/sessions/controller"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
 )
 
 // StdioInvocation is a single Run's lazy CLI-owned selection. Construction is
@@ -28,9 +27,7 @@ type StdioInvocation struct {
 
 func NewStdioInvocation(ctx context.Context, filename string, selection ServerSelection) *StdioInvocation {
 	selection.Names = slices.Clone(selection.Names)
-	return &StdioInvocation{ctx: ctx, file: filename, selection: selection, lookup: os.LookupEnv, read: func(ctx context.Context, file string) ([]byte, error) {
-		return readSettingsBytes(ctx, file, fileaccess.OpenDirectory)
-	}}
+	return &StdioInvocation{ctx: ctx, file: filename, selection: selection, lookup: os.LookupEnv, read: readLaunchBytes}
 }
 
 // Resolve offers only Enabled names needing a source. The outer invocation

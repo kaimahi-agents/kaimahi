@@ -238,8 +238,12 @@ PATH. There is no shell. Only PATH is inherited; HOME, TMPDIR and other needs
 must be explicit named refs in `env`. Configuration and each used env reference
 are frozen before the first launch. Every explicit ref is conservatively
 protected as potentially sensitive at any length; a short value such as `1`
-can conflict with protocol metadata. Use non-secret command arguments for such
-settings rather than weakening credential checks. Missing refs, bad selections,
+can conflict with protocol metadata. Path-valued refs such as HOME are protected
+too: arguments and results containing that path are withheld (use executable
+names and folder-relative arguments where appropriate). Use non-secret command
+arguments for ordinary settings rather than weakening credential checks. The
+complete child environment is bounded to 64 entries including PATH: with an
+inherited PATH, at most 63 additional refs fit unless PATH itself is overridden. Missing refs, bad selections,
 startup/protocol/call failures or uncertain cleanup stop completion (exit 2);
 cancellation remains 130. Pending Recorded tools use the existing checked
 capture path only after owner cleanup; a cleanup failure cannot save a capture

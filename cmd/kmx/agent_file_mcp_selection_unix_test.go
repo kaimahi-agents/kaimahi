@@ -141,6 +141,42 @@ func TestFileCLIMCPSelectionAndReplay(t *testing.T) {
 	}
 }
 
+func TestFileCLIMCPRunAndSummary(t *testing.T) {
+	for _, op := range []string{"run", "test"} {
+		t.Run(op, func(t *testing.T) {
+			file, marker := cliMCPFixture(t, "serve", "Enabled", false)
+			var out, diag bytes.Buffer
+			deps, _ := testDependencies(&out, &diag)
+			deps.fileRunner = productionDependencies().fileRunner
+			args := []string{op, file}
+			summary := filepath.Join(filepath.Dir(file), "summary.md")
+			if op == "test" {
+				t.Setenv("GITHUB_STEP_SUMMARY", summary)
+				args = append(args, "-o", "json", "--github-summary")
+			}
+			if err := execute(args, deps); err != nil {
+				t.Fatal(err, out.String(), diag.String())
+			}
+			if _, err := os.Stat(marker); err != nil {
+				t.Fatal("live source not launched", err)
+			}
+			if op == "run" {
+				if out.String() != "done\n" {
+					t.Fatalf("Run stdout not answer-only: %q", out.String())
+				}
+			} else {
+				var result app.FilePreviewResult
+				if err := json.Unmarshal(out.Bytes(), &result); err != nil || !result.FullPass || result.Examples[0].Tools[0].Source != "live" {
+					t.Fatalf("JSON: %+v %v", result, err)
+				}
+				if raw, err := os.ReadFile(summary); err != nil || !bytes.Contains(raw, []byte("live")) {
+					t.Fatalf("summary: %s %v", raw, err)
+				}
+			}
+		})
+	}
+}
+
 type failedMCPClose struct{ *localtools.StdioInvocation }
 
 func (o *failedMCPClose) Close() error {
