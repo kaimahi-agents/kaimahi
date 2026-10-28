@@ -137,6 +137,16 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 			return &sdk.CallToolResult{IsError: err != nil && !completedNonpass, StructuredContent: result, Content: []sdk.Content{&sdk.TextContent{Text: previewSummary(result)}}}, nil
 		}}
 	}
+	for _, name := range []string{"run", "test"} {
+		op := ops[name]
+		op.V3 = pairPreviewOperation(files, application, selected, name, op)
+		ops[name] = op
+	}
+	if files != nil {
+		files.viewMu.Lock()
+		files.pairExecute = true
+		files.viewMu.Unlock()
+	}
 	return ops
 }
 

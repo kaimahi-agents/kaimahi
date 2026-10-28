@@ -25,6 +25,16 @@ func readOnlySourceHistory() sourceHistoryCapability {
 	return sourceHistoryCapability{SchemaVersion: 1, Read: true}
 }
 
+type pairOperationsCapability struct {
+	SchemaVersion     int  `json:"schemaVersion"`
+	ToolSchemaVersion int  `json:"toolSchemaVersion"`
+	Execute           bool `json:"execute"`
+	Create            bool `json:"create"`
+	Edit              bool `json:"edit"`
+	Capture           bool `json:"capture"`
+	Restore           bool `json:"restore"`
+}
+
 type sourceTests struct {
 	State        string `json:"state"`
 	Path         string `json:"path"`
@@ -33,16 +43,18 @@ type sourceTests struct {
 	Source       string `json:"source"`
 }
 type sourceDocument struct {
-	SchemaVersion    int                     `json:"schemaVersion"`
-	Kind             string                  `json:"kind"`
-	ReadOnly         bool                    `json:"readOnly"`
-	File             File                    `json:"file"`
-	Source           string                  `json:"source"`
-	Tests            sourceTests             `json:"tests"`
-	SnapshotRevision string                  `json:"snapshotRevision"`
-	SourceHistory    sourceHistoryCapability `json:"sourceHistory"`
-	History          *AgentHistory           `json:"history,omitempty"`
-	Version          *AgentVersion           `json:"version,omitempty"`
+	SchemaVersion    int                       `json:"schemaVersion"`
+	Kind             string                    `json:"kind"`
+	ReadOnly         bool                      `json:"readOnly"`
+	File             File                      `json:"file"`
+	Source           string                    `json:"source"`
+	Tests            sourceTests               `json:"tests"`
+	SnapshotRevision string                    `json:"snapshotRevision"`
+	SourceHistory    sourceHistoryCapability   `json:"sourceHistory"`
+	History          *AgentHistory             `json:"history,omitempty"`
+	Version          *AgentVersion             `json:"version,omitempty"`
+	SourceVersion    string                    `json:"sourceVersion,omitempty"`
+	PairOperations   *pairOperationsCapability `json:"pairOperations,omitempty"`
 }
 
 func pairDocument(pair *agentfile.Pair, source []byte) sourceDocument {
@@ -110,11 +122,13 @@ func AddSourceHistoryResource(server *sdk.Server, files *Files) {
 		if err != nil {
 			return nil, err
 		}
-		pair, source, err := files.readSourcePair(ctx, p, tests)
+		bound, err := files.bindPair(ctx, p, tests)
 		if err != nil {
 			return nil, err
 		}
-		d := pairDocument(pair, source)
+		defer bound.close()
+		pair := bound.pair
+		d := pairDocument(pair, bound.agent.source)
 		d.History = files.historyView(ctx, p)
 		if d.History != nil {
 			newer := pair
@@ -126,6 +140,15 @@ func AddSourceHistoryResource(server *sdk.Server, files *Files) {
 					newer = &agentfile.Pair{Agent: &agentfile.Agent{Revision: v.Revision}, Tests: agentfile.TestsSource{State: v.TestsState, Revision: v.TestsRevision, Selection: agentfile.TestsSelection{Key: v.SelectionKey}}}
 				}
 			}
+		}
+		if err := bound.check(ctx); err != nil {
+			return nil, err
+		}
+		if _, supported := agentfile.DefaultTestsPath(pair.AgentPath); supported {
+			d.SourceVersion = bound.sourceVersion()
+			files.viewMu.Lock()
+			d.PairOperations = &pairOperationsCapability{SchemaVersion: 1, ToolSchemaVersion: 3, Execute: files.pairExecute}
+			files.viewMu.Unlock()
 		}
 		return sourceResourceResult(ctx, req.Params.URI, d)
 	}))

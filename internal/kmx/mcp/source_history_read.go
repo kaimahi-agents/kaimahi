@@ -105,17 +105,31 @@ func (f *Files) readHistoryAgent(ctx context.Context, p string) (*agentfile.Agen
 }
 
 func (f *Files) readSourcePair(ctx context.Context, p, override string) (*agentfile.Pair, []byte, error) {
-	if err := cancelled(ctx); err != nil {
+	bound, err := f.bindPair(ctx, p, override)
+	if err != nil {
 		return nil, nil, err
+	}
+	defer bound.close()
+	return bound.pair, bound.agent.source, nil
+}
+
+func (f *Files) bindPair(ctx context.Context, p, override string) (result *pairBinding, err error) {
+	if err := cancelled(ctx); err != nil {
+		return nil, err
 	}
 	a, err := f.readHistorySource(p, false)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	defer a.close()
+	bound := &pairBinding{files: f, agent: a, requested: p, override: override}
+	defer func() {
+		if err != nil {
+			bound.close()
+		}
+	}()
 	agent, err := agentfile.Parse(a.path, a.source)
 	if err != nil {
-		return nil, nil, refusal("invalid_file")
+		return nil, refusal("invalid_file")
 	}
 	physical := f.physicalSource(a.path)
 	target, _ := agentfile.DefaultTestsPath(physical)
@@ -128,41 +142,31 @@ func (f *Files) readSourcePair(ctx context.Context, p, override string) (*agentf
 	if target != "" {
 		relative, err := f.rootRelativeSource(target, true)
 		if err != nil || f.root != nil && !filepath.IsLocal(filepath.FromSlash(relative)) {
-			return nil, nil, refusal("unsafe_path")
+			return nil, refusal("unsafe_path")
 		}
 		selection.Path = f.physicalSource(relative)
 		tests, err = f.readHistorySource(relative, true)
 		if err != nil && (override != "" || !sourceNotFound(err)) {
-			return nil, nil, err
+			return nil, err
 		}
 		if tests != nil {
-			defer tests.close()
+			bound.tests = tests
 			b = tests.source
 		}
 	}
 	pair, err := agentfile.ComposePair(physical, agent, selection, b, tests != nil)
 	if err != nil {
-		return nil, nil, refusal("invalid_file")
+		return nil, refusal("invalid_file")
 	}
-	if !a.unchanged(f) || tests != nil && !tests.unchanged(f) {
-		return nil, nil, refusal("stale_revision")
-	}
+	bound.pair = pair
 	if target != "" && tests == nil {
-		// Reprobe only the selected absent name. No fallback or external content read.
-		relative, err := f.rootRelativeSource(selection.Path, true)
+		bound.absent, err = f.holdAbsentSource(selection.Path)
 		if err != nil {
-			return nil, nil, refusal("stale_revision")
-		}
-		stat := os.Lstat
-		if f.root != nil {
-			stat = f.root.Lstat
-		}
-		if _, err = stat(relative); !os.IsNotExist(err) {
-			return nil, nil, refusal("stale_revision")
+			return nil, err
 		}
 	}
-	if err := cancelled(ctx); err != nil {
-		return nil, nil, err
+	if err = bound.check(ctx); err != nil {
+		return nil, err
 	}
-	return pair, a.source, nil
+	return bound, nil
 }

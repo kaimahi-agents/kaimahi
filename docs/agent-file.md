@@ -72,8 +72,12 @@ input. No source migration is automatic. A missing or empty test source is not
 a passing Test.
 
 MCP has separate read-only source/history resources and paired offline export.
-Paired MCP execution/writes and the canvas loop are still a later slice. The
-legacy agent-view resource, Run/Test and Edit refuse an agent-only view when its
+The existing Run/Test tools also accept version 3 with a checked `sourceVersion`
+from the source resource: Run answers without checks; Test evaluates selected
+checks. Pair writes, pending recording capture and the canvas loop remain deferred.
+A pending capture refuses before any model send with `recording_save_failed`;
+no save was attempted. Frozen recordings and other read-only previews remain usable.
+The legacy version-1 agent-view resource, Run/Test and Edit refuse an agent-only view when its
 default tests file exists; they do not ignore it, report an old agent-only pass
 as current, or fall back to inline writes. Native Squad and single-source files
 remain supported.

@@ -832,6 +832,39 @@ v1 capability claiming those actions. Native Squad tool v2 is unrelated. The
 legacy paired-source fence stays in place; this does not add canvas paired
 execution, editing or a restore picker.
 
+A separate `pairOperations` v1 capability advertises `toolSchemaVersion: 3` and
+`execute: true` for supported `*.agent.md` sources. Its `create`, `edit`, `capture`
+and `restore` values remain false. Native `charter.md` paths retain v1/native v2,
+not this paired branch. The current source resource adds an opaque `sourceVersion`.
+It binds the selected physical files, exact revisions and observed file/parent
+identities, not a verdict or permission to write. It is process-local, with 32
+metadata-only contexts: refresh after restart, eviction or `stale_revision`.
+Unrelated folder timestamps do not stale present sources across requests; absence
+retains its conservative nearest-parent version. Within an operation, checked
+source/parent/absence validation remains in force before model sends.
+
+Use the existing **Run** or **Test** tool with `schemaVersion: 3`, `path`, and
+`expectedSourceVersion` copied from that resource. Optional nonempty `tests`
+selects the same explicit suite; missing explicit suites refuse, never fall back.
+Run3 answers ad-hoc input or ordered selected test inputs without assertions or
+judging. Test3 evaluates checks; `caseId` remains partial. Model/content selectors
+retain their shared preview meaning. Test3's `expectedToolSettings` freezes the
+physical agent folder's effective settings; the unchanged original-only setter
+uses its settings revision, not this source token. Never mix v1/native-v2 operands.
+A result has `schemaVersion: 3`, kind `kmx.agent-pair-preview`, the executed
+`sourceVersion` and `preview`, the unchanged shared App result v1. The source
+snapshot stays separate from the raw agent revision. Paired results never populate
+the agent-only legacy latest cache or become deployment evidence.
+
+There is no v3 Create/Edit or paired recording saver yet. A pending Recorded
+capture returns `recording_save_failed` **before the runner sends anything**:
+no save was attempted and neither source changes. Already frozen recordings can
+replay read-only, including model comparisons against the same source selection.
+Source-history retention and paired restore still await the writer slice; no CLI
+history is enabled. Oversized mandatory source JSON still refuses whole without
+issuing a usable new view context; requests over the existing 2 MiB limit refuse
+before dispatch. No automatic split, retry, rollback or source migration is added.
+
 Agent admission, resolved aliases, single-link checks and existing MCP root
 confinement remain. Explicit tests may use any filename but must parse as a tests
 container before content is returned. Relative overrides use the server root,

@@ -1,7 +1,7 @@
 // Package mcp adapts local agent-file operations to stdio MCP.
 // Legacy file tools are agent-only, optionally root-bound; execution uses shared App snapshots.
-// Separate read-only source/history resources expose checked agent/tests pairs,
-// never paired write, execution, capture or restore authority.
+// Separate source/history resources expose checked agent/tests pairs and observed
+// contexts for v3 Run/Test, never paired write, capture or restore authority.
 // WSL resolves Windows drive-absolute inputs through existing /mnt drives before
 // ordinary absolute-path handling; responses retain the requested path identity.
 // Unbound non-fake previews default to Copilot's fixed endpoint and the authored
@@ -119,12 +119,14 @@ type File struct {
 // A nil root resolves agent paths against cwd; explicit roots retain legacy policy.
 // v1 uses canonical parsing; native cast operations bind their explicit profile.
 type Files struct {
-	root        *os.Root
-	validate    func(string, []byte) error
-	viewMu      sync.Mutex
-	latest      previewObservation
-	historyDir  func() (string, error)
-	historyGate chan struct{}
+	root         *os.Root
+	validate     func(string, []byte) error
+	viewMu       sync.Mutex
+	latest       previewObservation
+	pairContexts []pairContext
+	pairExecute  bool
+	historyDir   func() (string, error)
+	historyGate  chan struct{}
 	// exact is a private rootless capability for one CLI-selected physical file.
 	// OpenFiles and inbound MCP never set it.
 	exact string

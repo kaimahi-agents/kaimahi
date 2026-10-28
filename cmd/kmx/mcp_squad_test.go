@@ -71,9 +71,17 @@ func TestMCPSquadStartupConfigurationAndInertDiscovery(t *testing.T) {
 		versions := 2
 		if tool.Name == "set_tool_state" {
 			versions = 1
+		} else if tool.Name == "run" || tool.Name == "test" {
+			versions = 3
 		}
-		if len(schema["properties"].(map[string]any)["schemaVersion"].(map[string]any)["enum"].([]any)) != versions {
-			t.Fatal("native operation not advertised")
+		enum := schema["properties"].(map[string]any)["schemaVersion"].(map[string]any)["enum"].([]any)
+		if len(enum) != versions {
+			t.Fatal("native/paired operation not advertised")
+		}
+		for i, version := range enum {
+			if version != float64(i+1) {
+				t.Fatal("wrong version discriminator")
+			}
 		}
 
 	}
