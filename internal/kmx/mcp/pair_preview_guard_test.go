@@ -70,6 +70,28 @@ func TestPairPreviewRefusesStaleContextBeforeRunner(t *testing.T) {
 	}
 }
 
+func TestPairPreviewInlinePendingDoesNotRequestConsent(t *testing.T) {
+	base, root := historyPaths(t)
+	f := historyFiles(t, root, base)
+	canonical := string(pendingRecordingSource(t))
+	source := "---\nmodel: fake\ntools: [ping]\n---\nPrompt\n\n" + canonical[strings.Index(canonical, "## Examples"):]
+	if _, err := f.Create(t.Context(), "a.agent.md", []byte(source)); err != nil {
+		t.Fatal(err)
+	}
+	runner := &pairPreviewFixture{}
+	cs := connectFixture(t, Operations(f, &app.App{FileRunner: runner}, nil), func(s *sdk.Server) { AddAgentResource(s, f) })
+	version := pairContextRead(t, cs, "a.agent.md", "")
+	result, err := cs.CallTool(t.Context(), &sdk.CallToolParams{Name: "test", Arguments: map[string]any{"schemaVersion": 3, "path": "a.agent.md", "expectedSourceVersion": version}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := json.Marshal(result.StructuredContent)
+	var body struct{ Preview app.FilePreviewResult }
+	if json.Unmarshal(data, &body) != nil || body.Preview.ReasonCode != "recording_save_failed" || runner.calls != 0 {
+		t.Fatalf("unused consent gate: %s calls%d", data, runner.calls)
+	}
+}
+
 func TestPairPreviewPendingCaptureIsPreSendUnavailable(t *testing.T) {
 	base, root := historyPaths(t)
 	f := historyFiles(t, root, base)

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agent-primitives/sessions/api"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
@@ -94,6 +95,46 @@ func TestPairSourceValidationBeforeJournal(t *testing.T) {
 	out, err := NewRunner(RunnerOptions{JournalDir: func() (string, error) { t.Fatal("changed source reached journal"); return "", nil }}).Run(t.Context(), req)
 	if !called || !errors.Is(err, agentpreview.ErrSourceChanged) || errors.Is(err, agentpreview.ErrDiagnosticsFailed) || out.Journal != "" {
 		t.Fatalf("source error: %+v %v", out, err)
+	}
+}
+
+func TestPairSourceValidationAtEveryTurn(t *testing.T) {
+	for _, window := range []string{"journal", "between-turns", "model-send"} {
+		t.Run(window, func(t *testing.T) {
+			req := runnerRequest(t)
+			req.SnapshotRevision = "snapshot"
+			changed := false
+			req.ValidateSource = func(context.Context) error {
+				if changed {
+					return errors.New("private replaced source")
+				}
+				return nil
+			}
+			e := &runnerExecutor{}
+			e.execute = func(ctx context.Context, turn Turn) (Execution, error) {
+				changed = true
+				if window == "model-send" {
+					_, err := turn.Call(ctx, api.ModelRequest{})
+					return Execution{}, err
+				}
+				return Execution{Answer: "Hello, " + turn.Input, SessionUID: "first", Journaled: true}, nil
+			}
+			r := NewRunner(RunnerOptions{JournalDir: func() (string, error) {
+				if window == "journal" {
+					changed = true
+				}
+				return "/unused", nil
+			}}).(*runner)
+			r.open = func(string, string) (Executor, string, error) { return e, "private-run", nil }
+			out, err := r.Run(t.Context(), req)
+			want := 1
+			if window == "journal" {
+				want = 0
+			}
+			if !errors.Is(err, agentpreview.ErrSourceChanged) || out.State == agentpreview.Complete || len(e.turns) != want || out.Journal != "" {
+				t.Fatalf("source guard missed %s: %v turns%d state%s", window, err, len(e.turns), out.State)
+			}
+		})
 	}
 }
 

@@ -53,7 +53,7 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 		if name == "run" {
 			description = "Run this charter in a kmx local preview with optional ad-hoc input and saved examples, optionally one case (always partial). "
 		}
-		ops[name] = Operation{Schema: schema, Description: description + "Returns the shared revision, route, state and verdict; never deployment evidence. A successful first live call for a pending Recorded tool saves its result in this file.", Handler: func(ctx context.Context, req *sdk.CallToolRequest) (*sdk.CallToolResult, error) {
+		ops[name] = Operation{Schema: schema, Description: description + "Returns the shared revision, route, state and verdict; never deployment evidence. V1 only: A successful first live call for a pending Recorded tool saves its result in this file. Version 3 previews the selected pair at expectedSourceVersion: Run answers without checks; Test evaluates. Version 3 cannot capture; pending recordings refuse before sends.", Handler: func(ctx context.Context, req *sdk.CallToolRequest) (*sdk.CallToolResult, error) {
 			var input struct {
 				Path                    string                    `json:"path"`
 				Model                   string                    `json:"model"`
@@ -105,16 +105,7 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 					}
 				}
 			}
-			executionRoute := selected
-			if executionRoute == nil && files.root == nil && parsed != nil {
-				model := parsed.Model
-				if input.Model != "" {
-					model = input.Model
-				}
-				if model != "fake" {
-					executionRoute = &modelaccess.Route{Provider: "copilot", Model: model, Endpoint: modelaccess.CopilotEndpoint, Auth: "copilot"}
-				}
-			}
+			executionRoute := previewExecutionRoute(files, selected, parsed, input.Model)
 			ctx = withHostProgress(ctx, name, req)
 			options := app.FilePreviewOptions{File: input.Path, SourceFile: sourcePath, FullPath: files.root == nil, Operation: name, CaseID: input.CaseID, Input: input.Input, ShowContent: input.ShowContent, ShowFailedContent: input.ShowFailedContent, Model: input.Model, Route: executionRoute, CaseFinished: caseProgressNotifier(ctx)}
 			if retentionPath != "" && parsed != nil {
@@ -148,6 +139,20 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 		files.viewMu.Unlock()
 	}
 	return ops
+}
+
+func previewExecutionRoute(files *Files, selected *modelaccess.Route, parsed *agentfile.Agent, override string) *modelaccess.Route {
+	if selected != nil || files.root != nil || parsed == nil {
+		return selected
+	}
+	model := parsed.Model
+	if override != "" {
+		model = override
+	}
+	if model == "fake" {
+		return nil
+	}
+	return &modelaccess.Route{Provider: "copilot", Model: model, Endpoint: modelaccess.CopilotEndpoint, Auth: "copilot"}
 }
 
 // Summarize only the App's safe projection, never runner output or authored operands.

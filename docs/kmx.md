@@ -858,7 +858,8 @@ the agent-only legacy latest cache or become deployment evidence.
 
 There is no v3 Create/Edit or paired recording saver yet. A pending Recorded
 capture returns `recording_save_failed` **before the runner sends anything**:
-no save was attempted and neither source changes. Already frozen recordings can
+no save was attempted and neither source changes. V3 has no capture go-ahead
+operand or consent gate; approval cannot enable an unavailable saver. Already frozen recordings can
 replay read-only, including model comparisons against the same source selection.
 Source-history retention and paired restore still await the writer slice; no CLI
 history is enabled. Oversized mandatory source JSON still refuses whole without
