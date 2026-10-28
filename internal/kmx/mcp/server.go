@@ -167,7 +167,7 @@ func errorResult(err error) *sdk.CallToolResult {
 	var safe *Error
 	if errors.As(err, &safe) {
 		switch safe.Code {
-		case "paired_source_required", "confirmation_required", "invalid_root", "unsafe_path", "invalid_file", "already_exists", "stale_revision", "busy", "publication_failed", "cancelled", "invalid_options", "incompatible_version", "io_failed", "lock_unavailable", "not_found", "deadline_exceeded":
+		case "paired_source_required", "confirmation_required", "invalid_root", "unsafe_path", "invalid_file", "already_exists", "stale_revision", "busy", "publication_failed", "cancelled", "invalid_options", "incompatible_version", "io_failed", "lock_unavailable", "history_unavailable", "not_found", "deadline_exceeded":
 			code = safe.Code
 		}
 	}

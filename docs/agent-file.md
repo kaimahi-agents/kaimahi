@@ -71,10 +71,12 @@ reader. Run returns answers without checks; Test evaluates the checks. Add
 input. No source migration is automatic. A missing or empty test source is not
 a passing Test.
 
-MCP/canvas pair capabilities and writers are a later slice. Existing MCP reads,
-Run/Test and Edit refuse an agent-only view when its default tests file exists;
-they do not ignore that file, report an old agent-only pass as current, or fall
-back to inline writes. Native Squad and single-source files remain supported.
+MCP has separate read-only source/history resources and paired offline export.
+Paired MCP execution/writes and the canvas loop are still a later slice. The
+legacy agent-view resource, Run/Test and Edit refuse an agent-only view when its
+default tests file exists; they do not ignore it, report an old agent-only pass
+as current, or fall back to inline writes. Native Squad and single-source files
+remain supported.
 
 The tests file is `NAME.agent.test.md` beside `NAME.agent.md`. An agent directly
 inside `.github/agents/` instead pairs with `.github/agent-tests/NAME.agent.test.md`.
@@ -481,10 +483,12 @@ without inventing charter sections or rewriting the file.
 tested AgentSuite artifact handed off by digest (kmx pushes; the host pulls).
 This export does not implement that deployment path or define a host-side API.
 
-`kmx package run-profile export FILE` uses `agentfile.ExportRunProfile`, which calls
-`Load`/`Parse` once, without configuration, state, provider selection, credentials
-or execution. It accepts the same agent-file shapes as Parse, not the distinct native Squad
-profile. Existing tools/settings and safe parser refusals apply unchanged.
+`kmx package run-profile export FILE [--tests FILE]` uses the shared checked
+`LoadPair` reader without configuration, state, provider selection, credentials
+or execution. Default tests use the fixed companion rule; an explicit override
+uses the same C3 selection as file Run/Test. It accepts ordinary agent-file
+shapes, not the distinct native Squad profile. Both selected sources must be
+valid; there is no fallback to inline tests after a companion failure.
 Export still requires an explicit authored model; preview defaults and picker overrides are not export provenance.
 Zero-test authoring charters refuse export
 before any profile bytes are written. Packaging and deployment still require test
@@ -499,7 +503,15 @@ owned and can truncate a file before validation; it does not inherit kmx privacy
 or exclusive-create guarantees. Refusal writes no profile bytes; an output failure
 exits nonzero but may leave partial bytes at the caller's destination.
 
-The experimental v1 envelope has exactly these fields:
+Inline/single-source profiles retain the experimental v1 envelope below. External
+tests use v2 with the same fields plus `snapshotRevision` and `testsSource`
+(`state`, physical `path`, raw `revision`, `selectionKey`). The agent's raw hash
+stays `sourceRevision`. V2 includes local physical-path metadata and is deliberately
+machine/selection-bound: copying identical sources to another folder changes its
+snapshot/profile bytes, but not semantic example hashes. The profile is a
+normalized projection, not an editable raw-source bundle or a save acknowledgement.
+
+The v1 envelope has exactly these fields:
 
 | Field | Meaning |
 |---|---|
@@ -527,8 +539,9 @@ whitespace or trailing newline in the hash preimage. Neither `sha256` nor
 ```
 
 These hashes include assertion IDs and are **not** runtime evaluation-definition
-digests or AgentSuite JCS digests. Paths, source locations, timestamps, routes,
-credentials, local results and build state are omitted. Comments in the Examples YAML affect
+digests or AgentSuite JCS digests. Source locations, timestamps, routes,
+credentials, local results and build state are omitted; v1 also omits paths.
+V2's selected-source identity is separate from semantic hashes. Comments in the Examples YAML affect
 `sourceRevision` but never become example inputs/rubrics or instructions.
 Callers may separately hash the complete emitted artifact. An unsigned profile
 and recomputable hashes establish consistency, not authenticated parser/source

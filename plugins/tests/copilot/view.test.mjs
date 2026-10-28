@@ -116,6 +116,26 @@ function get(url, { headers = {}, method = "GET", host } = {}) {
   });
 }
 
+test("source history capability cannot upgrade legacy canvas actions", async () => {
+  const capability = { schemaVersion: 1, read: true, execute: false, edit: false, capture: false, restore: false };
+  const view = await readView(stubSession(resource(MINIMAL, { sourceHistory: capability })), MINIMAL);
+  assert.deepEqual(view.sourceHistory, capability);
+  for (const field of ["execute", "edit", "capture", "restore", "schemaVersion"]) {
+    await assert.rejects(readView(stubSession(resource(MINIMAL, { sourceHistory: { ...capability, [field]: field === "schemaVersion" ? 2 : true } })), MINIMAL), e => e.code === "invalid-resource", field);
+  }
+  await assert.rejects(readView(stubSession({ schemaVersion: 1, kind: "kmx.agent-view-error", reasonCode: "paired_source_required", sourceHistory: capability }), MINIMAL), e => e.code === "paired_source_required");
+});
+
+test("source history preserves incomplete legacy rows without granting restore", async () => {
+  const id = "00000000000000000001-" + "a".repeat(32);
+  const row = { versionId: id, revision: REV, capturedAt: "2026-10-28T12:00:00Z", sourceBytes: 100, uri: `kmx://agent-version/${encodeURIComponent(MINIMAL)}/${id}` };
+  const view = await readView(stubSession(resource(MINIMAL, { history: { status: "available", versions: [row] } })), MINIMAL);
+  assert.equal(view.history.versions[0].label, "Agent only—tests not retained");
+  assert.equal(view.history.versions[0].sourceKind, "agent_only");
+  assert.equal(view.authoring, undefined);
+  await assert.rejects(readView(stubSession(resource(MINIMAL, { history: { status: "available", versions: [{ ...row, sourceKind: "agent_only", label: "Both changed" }] } })), MINIMAL), e => e.code === "invalid-resource");
+});
+
 test("agent paths preserve ordinary names in any directory", () => {
   for (const path of [MINIMAL, SQUAD, "/repo one/agents/Release Notes.agent.md", "/repo Māori/.squad/agents/greeter/charter.md",
     "../other/greeter.agent.md", "/Bob's (agents) + notes/@release=2026/report.agent.md", "a/b.agent.md", "con.agent.md", "x%2e.agent.md", "x#draft.agent.md", "x".repeat(64) + ".agent.md"]) {

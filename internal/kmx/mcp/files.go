@@ -1,5 +1,7 @@
 // Package mcp adapts local agent-file operations to stdio MCP.
-// File access is agent-only, optionally root-bound; execution uses shared App snapshots.
+// Legacy file tools are agent-only, optionally root-bound; execution uses shared App snapshots.
+// Separate read-only source/history resources expose checked agent/tests pairs,
+// never paired write, execution, capture or restore authority.
 // WSL resolves Windows drive-absolute inputs through existing /mnt drives before
 // ordinary absolute-path handling; responses retain the requested path identity.
 // Unbound non-fake previews default to Copilot's fixed endpoint and the authored
@@ -175,12 +177,18 @@ func revision(b []byte) string { return fmt.Sprintf("sha256:%x", sha256.Sum256(b
 // root or absolute when unbound. Missing suffixes support Create; an existing
 // dangling link never becomes one. IO uses the retained root/parent descriptor.
 func (f *Files) rootRelative(p string) (string, error) {
+	return f.rootRelativeSource(p, false)
+}
+
+// Tests is a typed C3 selector, not another agent pathname. All root and alias
+// resolution checks remain identical; callers must ParseTests before disclosure.
+func (f *Files) rootRelativeSource(p string, tests bool) (string, error) {
 	p, err := hostAgentPath(p)
 	if err != nil {
 		return "", err
 	}
 	if f.root == nil {
-		if f.exact == "" && !agentPath(p) {
+		if f.exact == "" && !tests && !agentPath(p) {
 			return "", refusal("unsafe_path")
 		}
 		var err error
@@ -217,7 +225,7 @@ func (f *Files) rootRelative(p string) (string, error) {
 		resolved = filepath.Join(resolved, suffix)
 	}
 	if f.root == nil {
-		if f.exact != "" && resolved != f.exact || f.exact == "" && !agentPath(resolved) {
+		if f.exact != "" && (tests || resolved != f.exact) || f.exact == "" && !tests && !agentPath(resolved) {
 			return "", refusal("unsafe_path")
 		}
 		return resolved, nil

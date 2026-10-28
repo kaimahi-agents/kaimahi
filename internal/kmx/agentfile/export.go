@@ -10,13 +10,22 @@ import (
 )
 
 type runProfile struct {
-	SchemaVersion  int                    `json:"schemaVersion"`
-	Kind           string                 `json:"kind"`
-	SourceRevision string                 `json:"sourceRevision"`
-	AgentID        string                 `json:"agentId"`
-	Instructions   runProfileInstructions `json:"instructions"`
-	Model          runProfileModel        `json:"model"`
-	Examples       []runProfileExample    `json:"examples"`
+	SchemaVersion    int                    `json:"schemaVersion"`
+	Kind             string                 `json:"kind"`
+	SourceRevision   string                 `json:"sourceRevision"`
+	SnapshotRevision string                 `json:"snapshotRevision,omitempty"`
+	TestsSource      *runProfileTestsSource `json:"testsSource,omitempty"`
+	AgentID          string                 `json:"agentId"`
+	Instructions     runProfileInstructions `json:"instructions"`
+	Model            runProfileModel        `json:"model"`
+	Examples         []runProfileExample    `json:"examples"`
+}
+
+type runProfileTestsSource struct {
+	State        string `json:"state"`
+	Path         string `json:"path"`
+	Revision     string `json:"revision"`
+	SelectionKey string `json:"selectionKey"`
 }
 
 type runProfileInstructions struct {
@@ -43,16 +52,44 @@ type runProfileExample struct {
 	TargetStatus string `json:"targetStatus"`
 }
 
-// ExportRunProfile loads one canonical agent file and returns its deterministic,
-// content-bearing v1 JSON projection, including a final newline. It preserves
-// authored models and ordered examples, marked not_run on the target. It reads
-// no configuration and grants no evaluation, package or deployment authority.
-// Load's bounded-file and non-hostile-filesystem guarantees apply unchanged.
+// ExportRunProfile exports the default selected sources; see ExportSelectedRunProfile.
 func ExportRunProfile(filename string) ([]byte, error) {
-	agent, err := Load(filename)
+	return ExportSelectedRunProfile(filename, "")
+}
+
+// ExportSelectedRunProfile loads one checked pair and returns deterministic,
+// content-bearing JSON with a final newline. External tests use v2, binding the
+// physical selected path and snapshot; legacy inline profiles retain v1 bytes.
+// Authored models and ordered cases are preserved, marked not_run on the target.
+// It reads no configuration and grants no execution, package or write authority.
+// LoadPair's bounded-source and non-hostile-filesystem guarantees apply.
+func ExportSelectedRunProfile(filename, testsOverride string) ([]byte, error) {
+	pair, err := LoadPair(filename, testsOverride)
 	if err != nil {
 		return nil, err
 	}
+	// Only this encoding copy gets selected cases, never the source agent or a runner.
+	agent := *pair.Agent
+	if pair.Tests.Suite != nil {
+		agent.Examples = pair.Tests.Suite.Examples
+	}
+	profile, err := runProfileFromAgent(filename, &agent)
+	if err != nil {
+		return nil, err
+	}
+	if pair.Tests.State == "external" {
+		profile.SchemaVersion = 2
+		profile.SnapshotRevision = pair.SnapshotRevision
+		profile.TestsSource = &runProfileTestsSource{pair.Tests.State, pair.Tests.Selection.Path, pair.Tests.Revision, pair.Tests.Selection.Key}
+	}
+	data, err := json.MarshalIndent(profile, "", "  ")
+	if err != nil || len(data)+1 > 2*1024*1024 {
+		return nil, errors.New("cannot encode bounded run profile")
+	}
+	return append(data, '\n'), nil
+}
+
+func runProfileFromAgent(filename string, agent *Agent) (*runProfile, error) {
 	// Offline export preserves authored choices, not preview-time defaults.
 	if agent.Model == "" {
 		return nil, refuse(filename, 1, 1, "Model.Preferred", "add nonblank required fields in the canonical charter format")
@@ -94,11 +131,7 @@ func ExportRunProfile(filename string) ([]byte, error) {
 		}
 		profile.Examples = append(profile.Examples, runProfileExample{definition, runProfileHash(preimage), "not_run"})
 	}
-	data, err := json.MarshalIndent(profile, "", "  ")
-	if err != nil || len(data)+1 > 2*1024*1024 {
-		return nil, errors.New("cannot encode bounded run profile")
-	}
-	return append(data, '\n'), nil
+	return &profile, nil
 }
 
 func runProfileHash(data []byte) string {

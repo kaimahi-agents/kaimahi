@@ -450,13 +450,16 @@ command neither implements that deployment path nor defines a host-side API.
 
 ```bash
 kmx package run-profile export ./release-writer.agent.md
+kmx package run-profile export ./release-writer.agent.md --tests ./checks.md
 ```
 
 Export one canonical agent file offline as deterministic JSON on stdout. It
 contains authored instructions, the exact model, ordered examples/assertions,
 source/instruction/model/example SHA-256 hashes and `targetStatus: not_run` for
-every example. No configuration, credential, provider, model, runtime or registry
-is accessed. Unsupported declarations still refuse through the canonical parser;
+every example. External companions/overrides produce v2 with physical selected
+path, per-source revisions and a machine/selection-bound snapshot; inline profiles
+retain v1. Keep that local-path metadata private too. No configuration, credential,
+provider, model, runtime or registry is accessed. Unsupported declarations still refuse through the canonical parser;
 there is no model override. This source-file projection is not a tested package,
 evaluation receipt, AgentSuite runtime profile or deployment authorization.
 
@@ -812,7 +815,51 @@ Unsafe filesystem objects and oversized state still refuse history access. A
 history error does not prevent reading the current authored view. History-free
 library embeddings omit this optional field.
 
-To restore, without a new tool or alternate filesystem writer:
+#### Read-only paired source history
+
+`kmx://agent-sources/{path}{?tests}` returns `kmx.agent-sources` v1: exact
+`source` agent bytes, a `tests` descriptor (`state`, physical `path`, raw
+`revision`, `selectionKey`, external `source`), raw agent `file.revision`,
+`snapshotRevision` and optional source-only `history`. Encode the entire agent
+path as one URI component; the optional `tests` query selects an explicit C3 tests
+file. Inline tests remain in agent source; absence is explicit, never an empty
+executed test. Reads do not create history or run anything.
+
+This resource is content-bearing and read-only. `sourceHistory` v1 advertises
+`read: true`, with `execute`, `edit`, `capture` and `restore` all false. The
+legacy agent-view carries this separate capability too; the plugin rejects a
+v1 capability claiming those actions. Native Squad tool v2 is unrelated. The
+legacy paired-source fence stays in place; this does not add canvas paired
+execution, editing or a restore picker.
+
+Agent admission, resolved aliases, single-link checks and existing MCP root
+confinement remain. Explicit tests may use any filename but must parse as a tests
+container before content is returned. Relative overrides use the server root,
+or cwd when unbound; rootless absolute overrides use the existing rootless read
+authority. An explicit `.github/agents` root cannot read its sibling tests folder:
+select an unbound server for that pair. An outside-root tests selection refuses
+`unsafe_path`, never broadens the root. Fixed failures are
+`kmx.source-history-error` v1 with `reasonCode`; mandatory source/version JSON
+over 2 MiB refuses `invalid_file`, never truncates one side.
+
+V1 rows are labeled **Agent only—tests not retained**, not historical absence.
+Complete v2 records retain both exact sources or explicit absence, selected-source
+identity and combined snapshot, under the same physical-agent history subject.
+Selecting another suite never merges agents' histories. Pair rows distinguish
+Agent / Tests / Both changed against the next newer comparable pair; selector-only
+changes count as Tests changed. `kmx://agent-pair-version/{path}/{versionId}`
+returns `kmx.agent-pair-version` v1 with the complete retained source data.
+Historical paths never authorize filesystem reads or redirects. The legacy
+agent-version route refuses pair records rather than returning half a pair; it
+can still read v1 history after a companion is added.
+
+Pair records are read-compatible here; new pair preimages are retained only
+when paired MCP writers arrive. Current legacy Edit still records v1, and CLI
+capture still creates no source-history store. Existing limits remain 20 versions
+per agent, 200 records / 32 MiB per root and 1,576,960 encoded bytes per record.
+No migration, verdict retention, atomic two-file save or paired restore is implied.
+
+For **single-source** restore, without a new tool or alternate filesystem writer:
 
 1. Read the current agent view and keep its current `file.revision`.
 2. Read the selected entry's `uri`, a read-only

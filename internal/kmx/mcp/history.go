@@ -30,20 +30,27 @@ type historyLimits struct {
 
 // AgentVersion lists source snapshots, not previous execution results.
 type AgentVersion struct {
-	VersionID   string    `json:"versionId"`
-	Revision    string    `json:"revision"`
-	CapturedAt  time.Time `json:"capturedAt"`
-	SourceBytes int       `json:"sourceBytes"`
-	URI         string    `json:"uri"`
+	VersionID        string    `json:"versionId"`
+	Revision         string    `json:"revision"`
+	CapturedAt       time.Time `json:"capturedAt"`
+	SourceBytes      int       `json:"sourceBytes"`
+	URI              string    `json:"uri"`
+	SourceKind       string    `json:"sourceKind"`
+	Label            string    `json:"label"`
+	SnapshotRevision string    `json:"snapshotRevision,omitempty"`
+	TestsState       string    `json:"testsState,omitempty"`
+	TestsRevision    string    `json:"testsRevision,omitempty"`
+	SelectionKey     string    `json:"selectionKey,omitempty"`
 }
 
 type historyRecord struct {
-	SchemaVersion int       `json:"schemaVersion"`
-	VersionID     string    `json:"versionId"`
-	FileKey       string    `json:"fileKey"`
-	Revision      string    `json:"revision"`
-	CapturedAt    time.Time `json:"capturedAt"`
-	Source        []byte    `json:"source"`
+	SchemaVersion int          `json:"schemaVersion"`
+	VersionID     string       `json:"versionId"`
+	FileKey       string       `json:"fileKey"`
+	Revision      string       `json:"revision"`
+	CapturedAt    time.Time    `json:"capturedAt"`
+	Source        []byte       `json:"source"`
+	Pair          *historyPair `json:"pair,omitempty"`
 }
 
 type historyEntry struct {
@@ -184,7 +191,7 @@ func (s *historyStore) readRecord(e *historyEntry) (bool, error) {
 	decoder.DisallowUnknownFields()
 	e.record = historyRecord{}
 	var r historyRecord
-	if decoder.Decode(&r) != nil || decoder.Decode(new(any)) != io.EOF || r.SchemaVersion != 1 || r.VersionID+".json" != e.name || !historyKey.MatchString(r.FileKey) || r.CapturedAt.IsZero() || len(r.Source) == 0 || len(r.Source) > maxFileBytes || !utf8.Valid(r.Source) || r.Revision != revision(r.Source) {
+	if decoder.Decode(&r) != nil || decoder.Decode(new(any)) != io.EOF || !r.validSourceKind() || r.VersionID+".json" != e.name || !historyKey.MatchString(r.FileKey) || r.CapturedAt.IsZero() || len(r.Source) == 0 || len(r.Source) > maxFileBytes || !utf8.Valid(r.Source) || r.Revision != revision(r.Source) {
 		return false, nil
 	}
 	e.record = r
@@ -240,7 +247,10 @@ func (s *historyStore) retain(ctx context.Context, p string, source []byte) erro
 		total += e.info.Size()
 		if e.record.FileKey == key {
 			perFile++
-			newest = e.record.Revision
+			newest = ""
+			if e.record.SchemaVersion == 1 {
+				newest = e.record.Revision
+			}
 		}
 	}
 	if newest == rev {
@@ -313,7 +323,7 @@ func (s *historyStore) list(p string) ([]AgentVersion, error) {
 	for i := len(entries) - 1; i >= 0; i-- {
 		r := entries[i].record
 		if entries[i].name != ".pending" && r.FileKey == historyHash(p) {
-			rows = append(rows, AgentVersion{VersionID: r.VersionID, Revision: r.Revision, CapturedAt: r.CapturedAt, SourceBytes: len(r.Source)})
+			rows = append(rows, sourceVersion(r))
 		}
 	}
 	if !s.unchanged() {
