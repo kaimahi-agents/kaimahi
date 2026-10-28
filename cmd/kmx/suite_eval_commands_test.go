@@ -227,7 +227,7 @@ func suiteKagentCLIArgs(t *testing.T, extension string) ([]string, string, strin
 	}
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
-	if err := execute([]string{"create", "greeter", "--workspace", root, "--runtime", "kagent", "--model", "fixture-suite", "--instructions", input}, deps); err != nil || *loads != 0 {
+	if err := execute([]string{"package", "create", "greeter", "--workspace", root, "--runtime", "kagent", "--model", "fixture-suite", "--instructions", input}, deps); err != nil || *loads != 0 {
 		t.Fatalf("offline kagent authoring: %v loads=%d", err, *loads)
 	}
 	if err := os.WriteFile(filepath.Join(root, "eval/second"+extension), []byte("id: second\ninput: private\nassertions: [{id: text, type: contains, value: answer}]\n"), 0600); err != nil {

@@ -79,7 +79,7 @@ def qualify(binary, work):
     root = work / "suite-evaluation"
     instructions = work / "suite-instructions.md"
     instructions.write_text("Return the deterministic suite fixture answer. No tools.\n")
-    cli(binary, ["create", "suite-eval-proof", "--workspace", str(root), "--runtime", "kagent",
+    cli(binary, ["package", "create", "suite-eval-proof", "--workspace", str(root), "--runtime", "kagent",
                  "--model", "fixture-suite", "--instructions", str(instructions)])
     example = root / "eval/example.yaml"
     example.unlink()

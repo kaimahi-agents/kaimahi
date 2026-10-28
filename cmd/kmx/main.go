@@ -4,6 +4,8 @@
 // show Run answers and failed-check content unless --no-content is selected,
 // and map completed failures to exit 1 and execution refusals to exit 2.
 // File Run executes answers without assertions or judges; Test evaluates checks.
+// Create writes a GitHub agent file and paired example test without prompts or
+// overwrites; package create retains native workspace authoring.
 // The guarded Windows tree additionally classifies
 // deferred operations before their argument or operational hooks can run.
 package main

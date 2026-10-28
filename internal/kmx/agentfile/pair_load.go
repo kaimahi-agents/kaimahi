@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 // pairObservation retains handle-derived identities. In particular, Windows
@@ -18,14 +17,13 @@ import (
 type pairObservation struct {
 	path, parent         string
 	fileInfo, parentInfo os.FileInfo
-	parentModTime        time.Time
 }
 
 func (o *pairObservation) same(other *pairObservation) bool {
 	if o == nil || other == nil {
 		return o == nil && other == nil
 	}
-	if o.path != other.path || o.parent != other.parent || !os.SameFile(o.parentInfo, other.parentInfo) || !o.parentModTime.Equal(other.parentModTime) {
+	if o.path != other.path || o.parent != other.parent || !os.SameFile(o.parentInfo, other.parentInfo) || !o.parentInfo.ModTime().Equal(other.parentInfo.ModTime()) {
 		return false
 	}
 	if o.fileInfo == nil || other.fileInfo == nil {
@@ -144,7 +142,7 @@ func inspectPairPath(path, field string) (*pairObservation, error) {
 					return fail("select a file with directory ancestors")
 				}
 				if o.parent == "" {
-					o.parent, o.parentInfo, o.parentModTime = p, info, info.ModTime()
+					o.parent, o.parentInfo = p, info
 				}
 			}
 		}
@@ -178,10 +176,10 @@ func readPairSource(path, field string, allowMissing bool) ([]byte, *pairObserva
 	}
 	defer parent.Close()
 	openedParent, err := parent.Stat()
-	if err != nil || !openedParent.IsDir() || !os.SameFile(o.parentInfo, openedParent) || !o.parentModTime.Equal(openedParent.ModTime()) {
+	if err != nil || !openedParent.IsDir() || !os.SameFile(o.parentInfo, openedParent) || !o.parentInfo.ModTime().Equal(openedParent.ModTime()) {
 		return fail("parent directory changed while opening; select a stable source")
 	}
-	o.parentInfo, o.parentModTime = openedParent, openedParent.ModTime()
+	o.parentInfo = openedParent
 	if o.fileInfo == nil {
 		return nil, o, nil
 	}

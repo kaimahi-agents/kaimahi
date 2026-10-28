@@ -39,9 +39,11 @@ Put Go's binary directory on PATH. Inspect the effective context with
 See [release upgrades](releases.md#upgrading-kmx) when moving from an older version,
 and [command alignment](command-semantics.md) for compatibility and retirement details.
 The root `create/chat/run/push` commands below are available in v0.8.1.
-`kmx package test` and `kmx package deploy` are unreleased; v0.8.1 uses `eval` and `lift` with
-the same arguments. Use a main checkout build for the `test`/`deploy` examples
-below, or `eval`/`lift` with v0.8.1. See
+`kmx package create`, `kmx package test` and `kmx package deploy` are unreleased;
+v0.8.1 uses `create`, `eval` and `lift` with the same arguments. Use a main
+checkout build for the `package create`/`test`/`deploy` examples below, or the
+v0.8.1 spellings with that release. Current main's root `create` writes agent
+files instead of workspace source. See
 [Test compatibility](kmx.md#test-compatibility-unreleased) and
 [Deploy compatibility](kmx.md#deploy-compatibility-unreleased). When upgrading,
 see the [migration guidance](../CHANGELOG.md#upgrading) for removed commands and
@@ -73,7 +75,7 @@ the local setup path below can prepare a test environment.
 From that workspace root, provide an exact model name and an instructions file:
 
 ```bash
-kmx create my-agent --workspace . \
+kmx package create my-agent --workspace . \
   --model qwen2.5:3b --instructions ./instructions.md
 kmx package deploy --to prod
 ```

@@ -1,6 +1,6 @@
 # `kmx` — agent tooling with Orka as the default
 
-[Orka](orka.md) remains the default runtime. Root `create` authors one tool-free
+[Orka](orka.md) remains the default runtime. `package create` authors one tool-free
 native workspace member offline; `--runtime kagent` selects exact v0.10.3
 Go/linux-amd64. Both profiles support full-workspace evaluation, evaluated
 publication and digest Deploy with runtime-specific evidence. Kagent Deploy creates
@@ -887,7 +887,7 @@ Current main groups infrastructure under `kmx cluster` and native workspace and
 artifact operations under `kmx package`. Use `kmx cluster context show/use`,
 `kmx cluster up/down` and the hidden compatibility route `kmx cluster aks up/down`.
 Live Orka inspection is `kmx cluster orka show/list`; workspace publication is
-`kmx package push`. Root `create`, `chat` and `run` remain separate operations.
+`kmx package push`. `package create`, `chat` and `run` remain separate operations.
 Moved root routes are removed, not aliases; only the explicitly documented
 legacy `eval` and `lift` routes remain callable with deprecation notices.
 Legacy `bundle`, context-switching `ctx` and `agent` routes remain removed.
@@ -953,7 +953,8 @@ See [digest deploy](suite-workspace.md#digest-lift) for gates and partial outcom
 | `kmx cluster targets [-o table\|json] [--detect] [--sessions <host:port>]` | offline compiled support by default; explicit read-only probes report present/absent/unreadable separately from qualified versions. No runtime selection, installation or deployment. [Target view and support matrix](runtime-adapters.md#read-only-target-view) |
 | `kmx cluster orka install` | verify the pinned v0.2.0 release chart; apply its CRDs; install harness-v2 with fullname `orka-api` on the selected context; keep the chart-generated snapshot key private; optionally create a keyless Provider. Refuses old v0.1.3 installs rather than upgrading. [Orka](orka.md) |
 | `kmx cluster orka status` | Table-only Orka runtime report: running controller version, Deployments, CRDs and Providers; distinguish unreadable from absent and running version from pin. `-o table` only; `kmx package status` is separate destination inventory. |
-| `kmx create <name> [--model <model>] [--instructions <file>] [--workspace <directory>]` | default offline authoring of one tool-free native suite member; terminal prompts complete missing model/file inputs, scripts require both flags. Orka by default, or exact kagent v0.10.3 Go/linux-amd64 with `--runtime kagent`. `--runtime agentsessions` separately authors pinned chat offline only; ordinary push is supported; eval requires an explicit development host and `AgentSessionsBinding`; evaluated push consumes matching passing evidence offline; Deploy creates an immutable Agent at an AgentSessions destination, while `--harness-image --plan` keeps the offline render; destination status reads registration, and chat refuses. Private metadata only; authoring itself does not deploy/evaluate. Discover the nearest ancestor workspace, or select/initialize an exact root with `--workspace`. Optional `--description`; live-only flags and a second member refuse. No cluster configuration or image construction. [Workspace guide](suite-workspace.md) |
+| `kmx create <name> [--path <directory>] [--description <text>]` | author one `NAME.agent.md` GitHub-frontmatter agent file (`name`, `description`, no model) with a generic greeting prompt, plus a paired `NAME.agent.test.md` (schemaVersion 1, one `greeting` case). Offline: no prompts, config or model calls; an existing file refuses with exit 2. [Create](#kmx-create) |
+| `kmx package create <name> [--model <model>] [--instructions <file>] [--workspace <directory>]` | default offline authoring of one tool-free native suite member; terminal prompts complete missing model/file inputs, scripts require both flags. Orka by default, or exact kagent v0.10.3 Go/linux-amd64 with `--runtime kagent`. `--runtime agentsessions` separately authors pinned chat offline only; ordinary push is supported; eval requires an explicit development host and `AgentSessionsBinding`; evaluated push consumes matching passing evidence offline; Deploy creates an immutable Agent at an AgentSessions destination, while `--harness-image --plan` keeps the offline render; destination status reads registration, and chat refuses. Private metadata only; authoring itself does not deploy/evaluate. Discover the nearest ancestor workspace, or select/initialize an exact root with `--workspace`. Optional `--description`; live-only flags and a second member refuse. No cluster configuration or image construction. [Workspace guide](suite-workspace.md) |
 | `kmx package push [--workspace <directory>] [reference]` | discover the nearest ancestor `workspace.yaml`, or select an exact root without fallback with `--workspace`; prepare its validated one-member native suite and authored cases (packaged as public AgentSuite evaluations under `evals/<member>/`), then copy its exact OCI graph to a registry or `--to-layout` target. Require latest completed managed exact-S proof unless --evaluation explicitly overrides or --unevaluated explicitly opts out. Preserve explicit tags; bare registry push derives `s-<full-S-hex>` from saved publishRepository. Local layouts require a reference. Print selected proof, absolute workspace and OCI manifest digest on stderr. Legacy required member images are empty. V3 uses explicit --runtime-profile and optional --platform with --unevaluated only, retaining all public declarations and compositions. Does not evaluate or deploy. Existing registry policy applies. [Workspace guide](suite-workspace.md) |
 | `kmx package test [--workspace <directory>] --to-context <ctx> (--inference provider:NAME\|--bindings FILE) [--out <private.json>] [--show-content] [-o text\|json]` | evaluate every ordered native Orka case through one fresh Task per declared run (default one); optional KMX `runs`/`minPasses` requires the threshold with no unknown run, each run receiving its own deadline and repeat preflight showing the total execution budget; packaged kagent requires `--bindings FILE`, unsecure auth and fresh blocking A2A Tasks (no `--inference` or `--result-port`), without retry; non-pass summaries show assertion IDs/types and judge scores/threshold; --show-content opts into sanitized bounded excerpts, expected values and rationale on stderr; `llmJudge` requires explicit `--judge-base-url` and optional credential-variable `--judge-key-env`, with two independent samples inside each run's deadline, using `max_completion_tokens` (1024) without a temperature override; the receipt binds this request style (old judge receipts require fresh evaluation), with no default content output or endpoint recovery echo; the diagnostics-only policy clarification preserves existing evidence identities; defaults: namespace `orka-system`, case timeout 5m (max 9m), automatically selected free IPv4 loopback result port (explicit `--result-port` is honored without fallback). Both require a preinstalled runtime and model-binding prerequisites; Orka also requires result access. Output defaults to text for all runtimes; Orka-only `-o json` emits one payload-free outcome document on success or execution abort, with diagnostics on stderr. Abort counts distinguish executed Tasks from planned runs and assertion passes; fully executed threshold misses remain ordinary run-pass summaries. Offline unsupported/budget/output checks precede configuration; one guard covers owned pair placement and execution. Only full passing metadata is exported once, privately outside workspace/cache. Hermetic tests and pinned runtime CLI qualification cover the bounded scenarios. [Workspace evaluation](suite-workspace.md#evaluate-the-whole-workspace) |
 | `kmx package test --to <name> [--out <private.json>]` / `kmx package deploy <ref>@<digest> --to <name> --evidence FILE [--promote] [--plan]` | resolve workspace `kmx.yaml` selectors once; invocation flags override saved fields. Runtime expectation is checked against packaged runtime. Eval may omit `--to` only when `evalTarget` is saved; Deploy has no default destination. Explicit-reference evidence/gates/remote guards remain unchanged. [Named destinations](suite-workspace.md#named-destinations) |
@@ -1469,7 +1470,24 @@ and agents, no guard/download/forward/mutation. Static completion works offline.
 
 ## `kmx create`
 
-`kmx create NAME [--model MODEL] [--instructions FILE] [--workspace DIR]`
+`kmx create NAME [--path DIR] [--description TEXT]` writes `NAME.agent.md` with
+GitHub-agent frontmatter (`name`, `description`; no `model`) and a two-line
+generic greeting prompt, plus the paired `NAME.agent.test.md`: `schemaVersion: 1`
+and one `yaml agent-test` fence with case `greeting` (input `Ada`, assertion
+`greeting-text`, type `contains`, value `Ada`). `--path` selects the output
+directory; `--description` sets the description. Under `.github/agents` the test
+is written to the sibling `agent-tests` directory. It reads no config, prompts
+for nothing and calls no model; an existing target refuses with exit 2 and is
+never overwritten. Companion loading is not yet supported; `kmx test` on a
+new agent reports `no_tests` (exit 2).
+For a fake-model preview, use `kmx run NAME.agent.md "hi" --model fake`.
+Without that override, Run uses the default Copilot model and requires an
+existing sign-in (`gh auth login`).
+Native workspace authoring is [`kmx package create`](#kmx-package-create).
+
+## `kmx package create`
+
+`kmx package create NAME [--model MODEL] [--instructions FILE] [--workspace DIR]`
 authors one tool-free native member offline. Orka is default; explicit
 `--runtime kagent` selects exact v0.10.3 Go/linux-amd64. Description is optional.
 Create and push share nearest-ancestor `workspace.yaml` discovery; explicit
@@ -1487,7 +1505,7 @@ bootstraps runtime/model, builds images, deploys or evaluates. `--live` and its
 live-only/preview flags are unknown before config loads. See [workspace source
 and cases](suite-workspace.md).
 
-Experimental `kmx create NAME --workspace DIR --members FILE --flow FILE` imports
+Experimental `kmx package create NAME --workspace DIR --members FILE --flow FILE` imports
 strict JSON members and a public `kmx.flow.v1alpha1` document as one offline suite.
 All three flags are required; single-member/runtime selectors refuse, including
 explicit defaults. It does not evaluate, run, publish or deploy the flow. See
@@ -1548,7 +1566,7 @@ apply refuses), not receipt diff.
 ### Editing an agent
 
 The hidden editor retirement stub is removed with the entire `agent` group.
-`kmx create` authors workspace source; live source editing is not a KMX shortcut. A live Orka Agent
+`kmx package create` authors workspace source; live source editing is not a KMX shortcut. A live Orka Agent
 is edited as the Kubernetes resource it is:
 
 ```bash

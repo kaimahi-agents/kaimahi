@@ -1790,7 +1790,7 @@ jobs:
           # Checkout-independent native workspace authoring and reviewed digest lift.
           mkdir -m 700 workspace evidence
           printf '%s\n' 'Answer briefly.' > instructions.txt
-          kmx create orka-hello --workspace workspace --model qwen2.5:3b --instructions instructions.txt
+          kmx package create orka-hello --workspace workspace --model qwen2.5:3b --instructions instructions.txt
           printf '%s\n' 'id: example' 'input: "Reply with exactly this text: Orka says hello."' \
             'assertions:' '  - id: exact-answer' '    type: regex' "    pattern: '(?s)^Orka says hello[.]\n*$'" > workspace/eval/example.yaml
           kmx package test --workspace workspace --to-context kind-kmx-clone-free --to-namespace orka-system \

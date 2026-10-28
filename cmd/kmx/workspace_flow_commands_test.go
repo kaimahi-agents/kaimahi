@@ -25,7 +25,7 @@ func flowCommandInputs(t *testing.T) []string {
 			t.Fatal(err)
 		}
 	}
-	return []string{"create", "team", "--workspace", root, "--members", filepath.Join(in, "members.json"), "--flow", filepath.Join(in, "flow.json")}
+	return []string{"package", "create", "team", "--workspace", root, "--members", filepath.Join(in, "members.json"), "--flow", filepath.Join(in, "flow.json")}
 }
 
 func TestFlowCreateCommandOffline(t *testing.T) {
@@ -41,7 +41,7 @@ func TestFlowCreateCommandOffline(t *testing.T) {
 	if *loads != 0 || diagnostics.Len() != 0 || !strings.Contains(out.String(), "offline") || !strings.Contains(out.String(), "not deployed") {
 		t.Fatalf("unexpected effects/output: loads%d, %q, %q", *loads, &out, &diagnostics)
 	}
-	p, err := workspace.PrepareFlow(context.Background(), args[3], filepath.Join(t.TempDir(), "cache"))
+	p, err := workspace.PrepareFlow(context.Background(), args[4], filepath.Join(t.TempDir(), "cache"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestFlowCreateCommandOffline(t *testing.T) {
 	if inv.Flow.ID != "release" || len(inv.Members) != 2 {
 		t.Fatal("CLI did not author full flow")
 	}
-	for _, operation := range [][]string{{"eval", "--workspace", args[3]}, {"package", "push", "--workspace", args[3], "--unevaluated", "team:v1"}, {"lift", "--workspace", args[3], "--to", "missing"}} {
+	for _, operation := range [][]string{{"eval", "--workspace", args[4]}, {"package", "push", "--workspace", args[4], "--unevaluated", "team:v1"}, {"lift", "--workspace", args[4], "--to", "missing"}} {
 		out.Reset()
 		diagnostics.Reset()
 		if err := execute(operation, deps); err == nil {
@@ -76,7 +76,7 @@ func TestFlowCreateCommandConflictsBeforeWrites(t *testing.T) {
 			if *loads != 0 || out.Len() != 0 {
 				t.Fatal("invalid flow mode had operational effects")
 			}
-			if _, err := os.Stat(args[3]); !os.IsNotExist(err) {
+			if _, err := os.Stat(args[4]); !os.IsNotExist(err) {
 				t.Fatal("invalid flow create wrote root")
 			}
 		})
@@ -103,7 +103,7 @@ func TestFlowCreateCommandRequiresBothFilesAndExactWorkspace(t *testing.T) {
 			if *loads != 0 || out.Len() != 0 {
 				t.Fatal("incomplete create had effects")
 			}
-			if _, err := os.Stat(original[3]); !os.IsNotExist(err) {
+			if _, err := os.Stat(original[4]); !os.IsNotExist(err) {
 				t.Fatal("incomplete create wrote root")
 			}
 		})

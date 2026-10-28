@@ -88,7 +88,7 @@ not run for an existing Agent. The first Task uses the Agent's deployed Provider
 	flags.StringVar(&wizard.Create.Tools, "tools", "", "retired quickstart tool shortcut; use tool-free native chat until suite ToolProvider support")
 	flags.StringVar(&wizard.Create.Skills, "skills", "", "unsupported guided skill shortcut; use the authored suite lifecycle")
 	flags.StringVar(&wizard.Create.ResultServiceAccount, "result-service-account", "", "unsupported guided result override; configure native result access separately")
-	flags.StringVar(&wizard.Create.Out, "out", "", "unsupported guided manifest output; use kmx create --workspace DIR")
+	flags.StringVar(&wizard.Create.Out, "out", "", "unsupported guided manifest output; use kmx package create --workspace DIR")
 	flags.BoolVar(&wizard.Verbose, "verbose", false, "show chat WORKING and TIMING details (--interactive only)")
 	flags.StringVar(&wizard.Inference, "inference", "auto", "legacy discovery hint; the guided setup always requires an explicit source/model selection (--interactive only)")
 	_ = cmd.RegisterFlagCompletionFunc("output", staticCompletion([]string{"text", "json"}))

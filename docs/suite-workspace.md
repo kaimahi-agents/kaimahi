@@ -252,7 +252,7 @@ qualify a larger suite. Multi-member runtime support is a separate change.
 
 ## Experimental flow authoring (offline only)
 
-`kmx create NAME --workspace DIR --members members.json --flow flow.json`
+`kmx package create NAME --workspace DIR --members members.json --flow flow.json`
 authors a complete tool-free Orka suite using the explicitly selected
 `kmx.flow.v1alpha1` contract. It does not run a pipeline, evaluate members,
 publish, deploy, enforce approvals or qualify a runtime. The default
@@ -695,7 +695,7 @@ states; unknown effects or checkpoint failures remain blocked. See recovery abov
 
 ## Create
 
-Root `kmx create <name>` authors offline by default. Create and `package push`
+Root `kmx package create <name>` authors offline by default. Create and `package push`
 share discovery: walk upward from the current directory to the nearest
 `workspace.yaml`, including across Git repository boundaries. `--workspace DIR`
 selects that exact root without fallback; if no marker exists there, create
@@ -714,14 +714,14 @@ mkdir my-agents && cd my-agents
 git init
 printf '%s\n' 'Answer briefly and in plain text.' > instructions.md
 
-kmx create greeter --workspace . \
+kmx package create greeter --workspace . \
   --model qwen-3.5-2b --instructions ./instructions.md
 ```
 
 To author the offline kagent profile instead:
 
 ```sh
-kmx create greeter --workspace . --runtime kagent --model fixture-model --instructions ./instructions.md
+kmx package create greeter --workspace . --runtime kagent --model fixture-model --instructions ./instructions.md
 ```
 
 Omit `--workspace` to use the same discovery/terminal-initialization rules.
@@ -735,7 +735,7 @@ the packaged runtime, not a live target.
 To author the offline AgentSessions chat profile in a separate workspace:
 
 ```sh
-kmx create greeter --workspace ./sessions-workspace --runtime agentsessions \
+kmx package create greeter --workspace ./sessions-workspace --runtime agentsessions \
   --model fixture-model --instructions ./instructions.md
 kmx package push --workspace ./sessions-workspace --to-layout ./sessions-layout --unevaluated greeter:v1
 ```
@@ -773,14 +773,14 @@ overwritten or migrated. For terminal creation using discovery instead of an
 exact root, omit `--workspace` and answer the model/instructions-file prompts:
 
 ```sh
-kmx create greeter
+kmx package create greeter
 ```
 
 Alternatively, scripts provide both source inputs and select an exact root when
 initializing a workspace:
 
 ```sh
-kmx create greeter --workspace ./greeter --model qwen-3.5-2b --instructions ./instructions.md
+kmx package create greeter --workspace ./greeter --model qwen-3.5-2b --instructions ./instructions.md
 ```
 
 A name is required; live create/previews/wizard are removed. Quickstart composes

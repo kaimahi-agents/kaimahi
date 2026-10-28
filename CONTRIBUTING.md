@@ -34,7 +34,11 @@ subject to [the naming constraints](docs/NAMING.md); claiming a package-manager,
 organization or domain namespace requires maintainer approval for that exact
 artifact.
 
-Root `kmx create NAME` authors one tool-free native workspace member offline,
+Root `kmx create NAME` authors only `NAME.agent.md` and a paired `NAME.agent.test.md`:
+no prompts, config or model calls, and no overwrite (exit 2). Native workspace
+authoring is `kmx package create`.
+
+`kmx package create NAME` authors one tool-free native workspace member offline,
 Orka by default, exact v0.10.3 Go/linux-amd64 kagent or pinned AgentSessions
 chat explicitly. AgentSessions prepare/load/ordinary push and explicit private
 literal-loopback `test --development-host FILE` remain independent of deleted
@@ -55,7 +59,7 @@ AgentSessions shares the same judge and repeat policy. Exact model and
 file-valued instructions are required: terminal create prompts for omitted inputs,
 while nonterminal use requires both flags. Core authoring stays strict;
 create/push share workspace discovery.
-No runtime/model bootstrap belongs in workspace create. Root test registers
+No runtime/model bootstrap belongs in `package create`. Root test registers
 completed exact-suite passing metadata in private managed state; --out is optional.
 Package Push requires that proof by default, or explicit --evaluation FILE without
 fallback; --unevaluated retains ordinary publication. Explicit REPO:TAG is preserved,

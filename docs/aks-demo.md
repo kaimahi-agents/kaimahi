@@ -170,7 +170,7 @@ The demo workspace and explicit receipt stay under mode-0700 `DEMO_ROOT`.
 
 ## 2. Create or reuse source offline
 
-`kmx create` is intentionally non-idempotent. This block reuses existing source
+`kmx package create` is intentionally non-idempotent. This block reuses existing source
 only when its member ID, runtime, protocol, and exact model match.
 
 ```bash
@@ -197,7 +197,7 @@ ensure_demo_workspace() {
     printf '%s\n' 'Answer accurately, briefly, and in plain text.' \
       > "$DEMO_ROOT/instructions.md" || return
   fi
-  "$KMX" create "$AGENT" \
+  "$KMX" package create "$AGENT" \
     --workspace "$WORKSPACE" \
     --model "$MODEL_ID" \
     --instructions "$DEMO_ROOT/instructions.md"

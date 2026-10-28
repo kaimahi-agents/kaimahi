@@ -24,7 +24,7 @@ COMPOSED = """Start in the workspace root with a prepared runtime and inference,
 and kmx.yaml containing publishRepository, context/namespace/inference selectors
 and the destination's evaluationTarget. Create supplies none of these.
 ```bash
-kmx create NAME --workspace . --model MODEL --instructions FILE
+kmx package create NAME --workspace . --model MODEL --instructions FILE
 kmx package deploy --to NAME
 ```
 Deploy freezes inputs and runs missing evaluation, publication and placement stages.
@@ -33,7 +33,7 @@ It discloses source-only promotion, not destination evaluation.
 """
 JOURNEY = RELEASE_NOTE + """| Stage | Current checkout |
 |---|---|
-| **Create** | `kmx create NAME --workspace DIR` authors source. |
+| **Create** | `kmx package create NAME --workspace DIR` authors source. |
 | **Test** | `kmx package test --workspace DIR` evaluates ordered cases with optional `runs`/`minPasses` (default once), stops after a case misses its threshold or any unknown/error, and writes evidence only when the full policy passes. |
 | **Publish** | `kmx package push --workspace DIR --evaluation RECEIPT REF` copies the suite. Plain `kmx package push REF` requires passing evidence; `--unevaluated` explicitly opts out. Neither form deploys. |
 | **Deploy** | `kmx package deploy REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME --promote` for candidate evidence or kagent `--bindings FILE` deploys without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets; legacy bundle lift is separate. Orka candidate evidence requires `--promote`, even in the same environment. |
@@ -55,7 +55,7 @@ kmx cluster quickstart
 ## Workspace And Live Paths
 | Path | What it means |
 |---|---|
-| Workspace | Default `kmx create`, `package test`, and `package push` operate on editable source. Digest-based `package deploy` does not consume workspace source; it uses the packaged artifact and separate private evidence with explicit target and inference inputs. Run/chat still target live Agents. |
+| Workspace | Default `kmx package create`, `package test`, and `package push` operate on editable source. Digest-based `package deploy` does not consume workspace source; it uses the packaged artifact and separate private evidence with explicit target and inference inputs. Run/chat still target live Agents. |
 | Local environment | `kmx cluster up` prepares kind, model and runtime without creating an Agent. The experimental Go `AgentEnvironment` interface is setup-only and is not wired to this command yet. |
 | Live Agent | `kmx run --agent NAME --prompt TEXT` performs one Task; `kmx chat NAME` opens an Orka session. Both target live Agents, including suite-owned Agents; neither is workspace-local execution or suite evaluation. |
 | Legacy bundle | Removed outright: `agent.yaml` readers/writers, commands and receipts, `create --live`. Old receipts are unreadable; no conversion, migration or on-disk/resource deletion. Public AgentSuite implementation bundles are a different format. |
@@ -104,7 +104,7 @@ for label, literal in [
 
 CASES += [
     ("missing composed path", GOOD.replace(COMPOSED, ""), "two-command workspace path"),
-    ("composed commands reversed", GOOD.replace("kmx create NAME --workspace . --model MODEL --instructions FILE\nkmx package deploy --to NAME", "kmx package deploy --to NAME\nkmx create NAME --workspace . --model MODEL --instructions FILE"), "two-command workspace path"),
+    ("composed commands reversed", GOOD.replace("kmx package create NAME --workspace . --model MODEL --instructions FILE\nkmx package deploy --to NAME", "kmx package deploy --to NAME\nkmx package create NAME --workspace . --model MODEL --instructions FILE"), "two-command workspace path"),
     ("composed path after manual stages", GOOD.replace(COMPOSED, "").replace("## Getting Started", COMPOSED + "## Getting Started"), "two-command workspace path"),
     ("missing runtime prerequisite", GOOD.replace("prepared runtime and inference", "inference"), "prepared runtime"),
     ("missing inference prerequisite", GOOD.replace("prepared runtime and inference", "prepared runtime"), "inference prerequisite"),
@@ -117,7 +117,7 @@ CASES += [
     ("missing source-only disclosure", GOOD.replace("source-only promotion, not destination evaluation", "destination evaluation"), "source-only promotion"),
     ("missing candidate promotion", GOOD.replace("Orka candidate evidence requires `--promote`, even in the same environment.", ""), "candidate evidence promotion"),
     ("candidate command omits promotion", GOOD.replace("--inference provider:NAME --promote", "--inference provider:NAME"), "Deploy row must preserve runtime-specific bindings"),
-    ("command in purpose column only", GOOD.replace("| **Create** | `kmx create", "| Author | **Create** with `kmx create"), "Create row is missing"),
+    ("command in purpose column only", GOOD.replace("| **Create** | `kmx package create", "| Author | **Create** with `kmx package create"), "Create row is missing"),
     ("suite rows out of order", GOOD.replace("| **Create** |", "| **TEMP** |").replace("| **Test** |", "| **Create** |").replace("| **TEMP** |", "| **Test** |"), "Create row is missing"),
     ("missing test", GOOD.replace("`kmx package test --workspace DIR`", "`kmx run`"), "Test row is missing"),
     ("legacy eval in Test row", GOOD.replace("`kmx package test --workspace DIR`", "`kmx eval --workspace DIR`"), "Test row is missing"),
@@ -141,7 +141,7 @@ CASES += [
     ("outdated table label", GOOD.replace("| Stage | Current checkout |", "| Stage | Current development build |"), "exact two-column header"),
     ("malformed table separator", GOOD.replace("|---|---|", "|---|"), "separator is missing or malformed"),
     ("extra suite row", GOOD.replace("| **Deploy** |", "| **Inspect** | Future status. |\n| **Deploy** |"), "exactly four rows"),
-    ("extra table column", GOOD.replace("| **Create** | `kmx create NAME --workspace DIR` authors source. |", "| **Create** | `kmx create NAME --workspace DIR` authors source. | extra |"), "exactly two columns"),
+    ("extra table column", GOOD.replace("| **Create** | `kmx package create NAME --workspace DIR` authors source. |", "| **Create** | `kmx package create NAME --workspace DIR` authors source. | extra |"), "exactly two columns"),
     ("removed legacy guide", GOOD.replace("docs/suite-workspace.md", "docs/agent-lift.md"), "removed agent-lift guide"),
     ("Orka suite support broadened", GOOD.replace("packaged workspace path supports evaluation, evaluated publication and root digest Deploy with exact evaluated reuse", "owns every suite operation"), "Orka default is missing"),
     ("wrong kagent version", GOOD.replace("v0.10.3 Go", "v1.0 Python"), "kagent version boundary is missing"),
@@ -161,7 +161,7 @@ CASES += [
     ("wrong installer", GOOD.replace("kaimahi/main/install.sh", "other/main/install.sh"), "release installer is missing"),
     ("install routes out of order", GOOD.replace("brew install kaimahi-agents/tap/kmx\n# or\ncurl", "curl").replace("install.sh | sh\n# or\ngo install", "install.sh | sh\n# or\nbrew install kaimahi-agents/tap/kmx\n# or\ngo install"), "release installer is missing"),
     ("first answer out of order", GOOD.replace("kmx version\nkmx cluster quickstart", "kmx cluster quickstart\nkmx version"), "kmx cluster quickstart is missing"),
-    ("missing workspace path", GOOD.replace("| Workspace | Default `kmx create`, `package test`, and `package push` operate on editable source. Digest-based `package deploy` does not consume workspace source; it uses the packaged artifact and separate private evidence with explicit target and inference inputs. Run/chat still target live Agents. |\n", ""), "workspace/live paths must contain the exact four rows"),
+    ("missing workspace path", GOOD.replace("| Workspace | Default `kmx package create`, `package test`, and `package push` operate on editable source. Digest-based `package deploy` does not consume workspace source; it uses the packaged artifact and separate private evidence with explicit target and inference inputs. Run/chat still target live Agents. |\n", ""), "workspace/live paths must contain the exact four rows"),
     ("duplicate workspace path", GOOD.replace("| Local environment |", "| Workspace | Duplicate. |\n| Local environment |"), "workspace/live paths must contain the exact four rows"),
     ("workspace runs directly", GOOD.replace("does not consume workspace source", "runs workspace source directly"), "Workspace path boundary is missing"),
     ("environment interface wired", GOOD.replace("is setup-only and is not wired", "is fully wired"), "Local environment path boundary is missing"),

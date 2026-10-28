@@ -21,7 +21,7 @@ expands those visible product commands:
 
 ```text
 kmx
-├── create <name>                 (native workspace authoring, unchanged)
+├── create NAME                   (agent file and paired example test)
 ├── run [FILE [input]] | --agent <name>
 ├── test FILE
 │   └── explain [failure-id] --file FILE
@@ -31,6 +31,7 @@ kmx
 │   ├── login [--gh]
 │   └── logout
 ├── package
+│   ├── create <name>              (native workspace authoring)
 │   ├── test
 │   │   ├── cleanup [run-id]
 │   │   ├── diff <before.json> <after.json>
@@ -139,7 +140,8 @@ Workspace --create/test--> AgentSuite artifact --push--> OCI location
 
 | Command | Primary object | Current effect |
 |---|---|---|
-| `create` | Workspace | Author one offline member; no cluster or model call |
+| `create` | Agent file and paired test | Author two files without prompts, model selection or overwrites |
+| `package create` | Workspace | Author one offline member; no cluster or model call |
 | `test` | Workspace/prepared AgentSuite | Run full ordered native Orka/kagent cases, or pinned AgentSessions chat with explicit `--development-host FILE` and `--bindings FILE` (`AgentSessionsBinding`); stop later cases after the first non-pass |
 | `test export` | Latest completed exact-suite/member managed proof | Write new detached public evidence offline; captured tagged module/checksum or clean VCS provenance required, no evaluation or private-gate replacement |
 | `run-profile export FILE` | Canonical agent file | Content-bearing frozen JSON on stdout, with source/instruction/model/example hashes and target examples `not_run`; no configuration, execution, evidence, package or deployment authority |
@@ -152,7 +154,7 @@ Workspace --create/test--> AgentSuite artifact --push--> OCI location
 
 ## Workspace versus live
 
-Default `create` requires one name and exact model/file-valued instructions.
+`package create` requires one name and exact model/file-valued instructions.
 With visible stdin/stderr terminals, missing inputs prompt; nonterminal use
 requires `--model` and `--instructions`, and explicitly blank flags refuse.
 No model or instructions defaults are inferred. It discovers the nearest `workspace.yaml`; `--workspace DIR`

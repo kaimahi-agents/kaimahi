@@ -29,7 +29,7 @@ for both targets and the destination's `evaluationTarget`. Create supplies none 
 these. Provide an exact model name and an instructions file:
 
 ```bash
-kmx create NAME --workspace . --model MODEL --instructions FILE
+kmx package create NAME --workspace . --model MODEL --instructions FILE
 kmx package deploy --to NAME
 ```
 
@@ -52,7 +52,7 @@ it does not prove every promotion, creation or partial-outcome path.
 
 | Stage | Current checkout |
 |---|---|
-| **Create** | `kmx create NAME --workspace DIR --model MODEL --instructions FILE` authors one tool-free workspace member offline: Orka by default, exact Go kagent with `--runtime kagent`, or pinned chat with `--runtime agentsessions`. No Kubernetes, image build or model call. |
+| **Create** | `kmx package create NAME --workspace DIR --model MODEL --instructions FILE` authors one tool-free workspace member offline: Orka by default, exact Go kagent with `--runtime kagent`, or pinned chat with `--runtime agentsessions`. No Kubernetes, image build or model call. |
 | **Test** | Orka uses `kmx package test --workspace DIR --to-context CTX --inference provider:NAME --out RECEIPT`; kagent uses `--bindings FILE` instead of `--inference`. Native AgentSessions instead requires `--development-host FILE`, a private literal-loopback host JSON, plus `--bindings FILE`, an `AgentSessionsBinding` whose model must equal the packaged model, with no cluster selectors. Each evaluates ordered cases with optional `runs`/`minPasses` (default once), stops after a case misses its threshold or any unknown/error, and writes private evidence only when the full policy passes. |
 | **Publish** | `kmx package push --workspace DIR --evaluation RECEIPT REF` checks that evidence against the exact OCI manifest and publishes that graph. Plain `kmx package push REF` requires passing evidence; `--unevaluated` explicitly opts out. Neither form deploys. |
 | **Deploy** | `kmx package deploy REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME --promote` for candidate evidence or kagent `--bindings FILE` deploys the matching packaged runtime without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets. Orka candidate evidence requires `--promote`, even in the same environment. Inspect placement with `kmx package status --to NAME`; retirement remains unavailable. AgentSessions `--to NAME` creates an immutable Agent with the package/member and operator default model binding; exact acknowledged specs are GET-only no-ops. Registered is not live availability or target evaluation. Its separate offline render takes no destination selectors: `kmx package deploy REF@sha256:DIGEST --harness-image IMAGE@sha256:DIGEST --bindings FILE --evidence RECEIPT --plan` renders a substrate ActorTemplate and harness registration offline and applies nothing. |
@@ -108,7 +108,7 @@ context selection.
 
 | Path | What it means |
 |---|---|
-| Workspace | Default `kmx create`, `package test`, and `package push` operate on editable source; `kmx package deploy --to NAME` composes missing evaluation, publication and placement from that workspace. Digest-based `package deploy` does not consume workspace source; it uses the packaged artifact and separate private evidence with explicit target and inference inputs. Run/chat still target live Agents. |
+| Workspace | Default `kmx package create`, `package test`, and `package push` operate on editable source; `kmx package deploy --to NAME` composes missing evaluation, publication and placement from that workspace. Digest-based `package deploy` does not consume workspace source; it uses the packaged artifact and separate private evidence with explicit target and inference inputs. Run/chat still target live Agents. |
 | Local environment | `kmx cluster up` prepares kind, model and runtime without creating an Agent. The experimental Go `AgentEnvironment` interface is setup-only and is not wired to this command yet. |
 | Live Agent | `kmx run --agent NAME --prompt TEXT` performs one Task; `kmx chat NAME` opens an Orka session. Both target live Agents, including suite-owned Agents; neither is workspace-local execution or suite evaluation. |
 | Legacy bundle | Removed outright: user `agent.yaml` readers/writers, commands and receipts, `create --live` including previews/wizard, run's bundle mode and `--bundles` flags. Old receipts are unreadable; no conversion, migration or on-disk/resource deletion. Public AgentSuite implementation bundles are a different format and remain supported. |
