@@ -32,11 +32,12 @@ type stdioProcess struct {
 	failed        bool
 	once          sync.Once
 	closeErr      error
-	observeErr    error
-	killErr       error
-	scanner       *bufio.Scanner
-	pending       []byte
-	check         func(...string) error
+	// Kernel-only teardown evidence stays private behind fixed public errors.
+	observeErr error
+	killErr    error
+	scanner    *bufio.Scanner
+	pending    []byte
+	check      func(...string) error
 }
 
 func startStdioProcess(ctx context.Context, cfg StdioConfig, check func(...string) error) (*stdioProcess, error) {
@@ -161,8 +162,8 @@ func (p *stdioProcess) Close() error {
 		p.mu.Lock()
 		// Check before closing stdin or sending our own kill. A dead leader may
 		// have a descendant holding stdout open, so EOF alone is not exit proof.
-		exited, observeErr := stdioLeaderExited(p.cmd.Process.Pid)
-		p.observeErr = observeErr
+		exited, err := stdioLeaderExited(p.cmd.Process.Pid)
+		p.observeErr = err
 		if exited {
 			p.failed = true
 		}
@@ -176,8 +177,7 @@ func (p *stdioProcess) Close() error {
 		// Kill before reaping: an exited leader remains waitable, pinning its
 		// identity until its owned group has been signaled. Escaped setsid daemons
 		// are outside process-group cleanup; this is not OS containment.
-		killErr := syscall.Kill(-p.cmd.Process.Pid, syscall.SIGKILL)
-		p.killErr = killErr
+		p.killErr = syscall.Kill(-p.cmd.Process.Pid, syscall.SIGKILL)
 		_ = p.output.Close() // Unblock SDK reads even if a descendant held stdout.
 		waited := make(chan error, 1)
 		go func() { waited <- p.cmd.Wait() }()
@@ -198,7 +198,7 @@ func (p *stdioProcess) Close() error {
 		if (p.failed || p.ctx.Err() != nil) && p.closeErr == nil {
 			p.closeErr = ErrStdio
 		}
-		if observeErr != nil || killErr != nil && !errors.Is(killErr, syscall.ESRCH) {
+		if p.observeErr != nil || p.killErr != nil && !errors.Is(p.killErr, syscall.ESRCH) {
 			p.closeErr = ErrStdioCleanup
 		}
 		p.mu.Unlock()

@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"syscall"
@@ -154,7 +155,15 @@ func TestStdioCallFailuresNeverSucceed(t *testing.T) {
 			if result, err := stdioCall(ctx, host); err == nil || strings.Contains(err.Error(), "private-stdio-canary") {
 				t.Fatalf("unsafe call accepted or leaked: %+v %v", result, err)
 			}
-			if err := host.Close(); !errors.Is(err, ErrStdio) || errors.Is(err, ErrStdioCleanup) {
+			err = host.Close()
+			// Darwin can deny SIGKILL to a zombie-only group. Do not ignore that
+			// real kernel error: uncertain cleanup must still veto success.
+			deadGroupDenied := runtime.GOOS == "darwin" && mode == "crash" && host.process.observeErr == nil && errors.Is(host.process.killErr, syscall.EPERM) && host.process.cmd.ProcessState != nil && host.process.cmd.ProcessState.ExitCode() == 7
+			if deadGroupDenied {
+				if !errors.Is(err, ErrStdioCleanup) {
+					t.Fatalf("kernel kill failure must remain cleanup failure: %v", err)
+				}
+			} else if !errors.Is(err, ErrStdio) || errors.Is(err, ErrStdioCleanup) {
 				t.Fatalf("failed call must poison the session without claiming failed cleanup: %v (observe=%v kill=%v state=%v)", err, host.process.observeErr, host.process.killErr, host.process.cmd.ProcessState)
 			}
 			if data, err := os.ReadFile(countFile); err != nil || string(data) != "call\n" {
