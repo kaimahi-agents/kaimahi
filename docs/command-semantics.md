@@ -120,10 +120,16 @@ file through the guarded path. See
 
 ## Frozen source-file run profiles (unreleased)
 
-`run-profile export FILE` calls the canonical agent-file loader offline and emits
-one content-bearing JSON document on stdout. It preserves instructions, authored
-model/judge identities and ordered examples with hashes; every target status is
-`not_run`. It neither executes nor loads operational configuration. This is not
+`run-profile export FILE [--tests FILE]` uses the checked paired loader offline
+(not the single-agent loader) and emits one content-bearing JSON document on
+stdout. The default companion rule or explicit tests override uses the same
+selection as file Run/Test. Both selected sources must be valid; there is no
+fallback to inline tests after a companion failure. It preserves instructions,
+authored model/judge identities and ordered examples with hashes; every target
+status is `not_run`. External tests produce a v2 profile with physical
+selection/snapshot identity (`snapshotRevision`, `testsSource`) that is
+machine/selection-bound; inline profiles retain v1. It neither executes nor
+loads configuration, credentials or a provider. This is not
 `test export` evidence, an AgentSuite runtime profile, a package or a Deploy
 operation. No route/model override or file writer is provided. See the
 [run-profile contract](agent-file.md#frozen-run-profile-export-unreleased).
