@@ -95,6 +95,13 @@ func TestStdioStartupAndProtocolFailures(t *testing.T) {
 				_ = host.Close()
 				t.Fatal("invalid startup accepted")
 			}
+			if mode == "silent" {
+				if !errors.Is(err, context.DeadlineExceeded) {
+					t.Fatalf("silent startup must retain deadline: %v", err)
+				}
+			} else if !errors.Is(err, ErrStdio) || errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("invalid protocol must fail before timeout: %v", err)
+			}
 			if strings.Contains(err.Error(), "private-stdio-canary") || strings.Contains(err.Error(), cfg.Command) {
 				t.Fatal("startup error disclosed private data")
 			}
