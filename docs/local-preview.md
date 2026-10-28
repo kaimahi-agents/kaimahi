@@ -72,14 +72,21 @@ assertions or setting up a judge. Explicit positional input runs that input; sav
 inputs explicitly selected alongside it keep their own fixtures. Completed Run
 rows are **ANSWERED**, not passing tests; JSON keeps an unknown verdict and
 `fullPass: false`. No judge is selected or authenticated for CLI Run. Test and the
-existing single-source MCP Run/Test behavior continue to evaluate checks. File
+existing single-source MCP Run/Test behavior continue to evaluate checks. MCP
+Run/Test also accept schema version 3 with a checked `sourceVersion` from the
+source resource, running the selected agent/tests pairs: Run answers without
+checks, and Test evaluates the selected checks. This path performs no pair writes,
+capture, restore or canvas activation. A pending recording capture refuses before
+any model send with `recording_save_failed` (nothing is saved); frozen recordings
+remain replayable. Legacy and native versions remain separate. File
 CLI selects a [separate tests file](agent-file.md#tests-in-a-separate-file-reader-only)
 by the shared default rule or `--tests FILE`; its examples never enter the agent's
 prompt. Original/unselected agent content and raw tests prose still undergo the
 same credential preflight. Executed combined revision and saved target/revision
 are separate acknowledgements; tests-only edits stale retained results. Legacy
 MCP/canvas capabilities refuse a present default tests file until their paired
-reader/writer slice lands rather than silently reporting an agent-only result.
+reader/writer slice lands rather than silently reporting an agent-only result;
+canvas and pair writes remain deferred.
 
 Selected examples and optional ad-hoc input share one invocation-owned journal;
 each gets a fresh Session, as does each of the two samples when judging is requested. The adapter aborts later sends on execution or deadline
