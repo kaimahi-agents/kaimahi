@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { renderSquadView } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/squad-app.js";
 import { projectMember } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/squad-backend.mjs";
+import { editorValue } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/editor.mjs";
 import { createSquadViewController, startSquadBridge } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/squad-view.mjs";
 
 function fakeDoc() {
@@ -141,7 +142,7 @@ test("reopening the same canvas offers a generated proposal without replacing th
   } finally { await controller.close(context); }
 });
 
-test("typing into an active native preview requests stop and preserves the newer prompt", async t => {
+for (const replacement of ["Keep this newer draft", member.taskInstructions]) for (const completion of ["stopped", "complete", "read-failed"]) test(`in-flight prompt edits survive ${completion}, including the old baseline (${replacement === member.taskInstructions ? "A-B-A" : "new draft"})`, async t => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const doc = fakeDoc(), root = doc.createElement("main"), calls = [];
   let release, runId;
@@ -162,14 +163,15 @@ test("typing into an active native preview requests stop and preserves the newer
   await Promise.resolve();
   t.mock.timers.tick(200); await new Promise(resolve => setImmediate(resolve));
   assert.equal(prompt.attrs.contenteditable, "plaintext-only");
-  prompt.textContent = "Keep this newer draft";
+  prompt.textContent = replacement;
   for (const fn of prompt.listeners.input) fn();
   assert.ok(calls.some(c => c.action?.operation === "stop"));
   assert.equal(calls.find(c => c.action?.operation === "save-and-test").action.expectedBriefRevision, revision);
-  release({ stopped: true, saved: true, run: { id: runId, revision: nextRevision, contextRevision: revision, model: "fake", caseIds: ["ready"], totalCases: 1, cases: [], state: "stopped" }, view: projectMember({ ...member, taskInstructions: "First saved instructions", file: { ...member.file, revision: nextRevision } }) });
+  const saved = { ...member, taskInstructions: "First saved instructions", file: { ...member.file, revision: nextRevision } };
+  release({ saved: true, view: projectMember(saved), ...(completion === "stopped" ? { stopped: true, run: { id: runId, revision: nextRevision, contextRevision: revision, model: "fake", caseIds: ["ready"], totalCases: 1, cases: [], state: "stopped" } } : completion === "read-failed" ? { error: "native_source_unavailable" } : {}) });
   await new Promise(resolve => setImmediate(resolve));
   prompt = all(root).find(n => n.attrs["aria-label"] === "Prompt");
-  assert.match(prompt.textContent, /Keep this newer draft/);
+  assert.equal(editorValue(prompt), replacement);
   assert.equal(calls.filter(c => ["save-and-test", "test"].includes(c.action?.operation)).length, 1);
   app.dispose();
 });
@@ -203,6 +205,16 @@ test("partial Create renders acknowledged member outcomes even when refresh fail
   assert.match(root.textContent, /lead: registered_unenriched/);
   assert.match(root.textContent, /Refresh unavailable/);
   assert.equal(all(root).find(n => n.tag === "button" && n.textContent === "Create squad").disabled, true);
+  app.dispose();
+});
+
+test("a retained creation with null member outcomes still shows the native roster", () => {
+  const doc = fakeDoc(), root = doc.createElement("main");
+  const outcome = { effectsUnknown: false, setup: "reused", changedPaths: [], members: null };
+  const app = renderSquadView(doc, root, { team, creation: { status: "refused", result: outcome }, outcome });
+  assert.match(root.textContent, /Team members/);
+  assert.ok(all(root).some(n => n.tag === "button" && n.textContent === "Open member →"));
+  assert.doesNotMatch(root.textContent, /Creation: enriched/);
   app.dispose();
 });
 
@@ -259,6 +271,67 @@ test("background brief observation stales a passing member and preserves prompt 
   app.dispose();
 });
 
+for (const failure of ["member", "aggregate", "fallback", "transport"]) test(`native ${failure} read failures preserve drafts and history without a current pass`, async () => {
+  const doc = fakeDoc(), root = doc.createElement("main"), calls = [];
+  let unavailable = false;
+  const app = renderSquadView(doc, root, { team }, async input => {
+    calls.push(input);
+    if (input.operation === "member") return unavailable ? { error: "native_source_unavailable", message: "PRIVATE SOURCE" } : { view: projectMember(member, passedObservation) };
+    return { view: projectMember(member, passedObservation) };
+  });
+  await click(root, "Open member →"); assert.match(root.textContent, /passing/i);
+  let prompt = all(root).find(n => n.attrs["aria-label"] === "Prompt");
+  prompt.textContent = "Keep this draft"; for (const fn of prompt.listeners.input) fn();
+  const started = app.observation();
+  if (failure === "member") { unavailable = true; await app.observe({ team }, started); }
+  else if (failure === "aggregate") await app.observe({ error: "native_source_unavailable", message: "PRIVATE SOURCE" }, started);
+  else if (failure === "fallback") await app.observe({ team, refreshUnavailable: true }, started);
+  else app.observeFailure(new Error("PRIVATE SOURCE"), started);
+  assert.match(root.textContent, /Native member or shared brief unavailable/);
+  assert.doesNotMatch(root.textContent, /PRIVATE SOURCE/);
+  prompt = all(root).find(n => n.attrs["aria-label"] === "Prompt");
+  assert.equal(prompt.textContent, "Keep this draft");
+  assert.equal(all(root).find(n => n.attrs["aria-label"] === "Save and run all tests").disabled, true);
+  assert.equal(all(root).find(n => n.className === "model-picker").disabled, true);
+  unavailable = false;
+  await app.observe({ team });
+  assert.equal(all(root).find(n => n.attrs["aria-label"] === "Prompt").textContent, "Keep this draft");
+  assert.match(root.textContent, /Out of date/);
+  assert.ok(calls.every(c => c.operation === "member"), "recovery is read-only");
+  assert.match(root.textContent, /Passed/);
+  app.dispose();
+});
+
+test("a late native read failure cannot invalidate a newer successful test", async () => {
+  const doc = fakeDoc(), root = doc.createElement("main");
+  const app = renderSquadView(doc, root, { team }, async () => ({ view: projectMember(member, passedObservation) }));
+  await click(root, "Open member →");
+  const earlier = app.observation();
+  const prompt = all(root).find(n => n.attrs["aria-label"] === "Prompt");
+  for (const fn of prompt.listeners.keydown) fn({ key: "Enter", preventDefault() {} });
+  await new Promise(resolve => setImmediate(resolve));
+  app.observeFailure(new Error("old read failed"), earlier);
+  assert.match(root.textContent, /passing/i);
+  assert.doesNotMatch(root.textContent, /Out of date|shared brief unavailable/);
+  app.dispose();
+});
+
+test("only an explicit new test replaces a recovered native member's old pass", async () => {
+  const doc = fakeDoc(), root = doc.createElement("main"), calls = [];
+  const app = renderSquadView(doc, root, { team }, async input => { calls.push(input); return { view: projectMember(member, passedObservation) }; });
+  await click(root, "Open member →");
+  app.observeFailure(new Error("read failed"));
+  await app.observe({ team });
+  assert.match(root.textContent, /Out of date/);
+  const prompt = all(root).find(n => n.attrs["aria-label"] === "Prompt");
+  for (const fn of prompt.listeners.keydown) fn({ key: "Enter", preventDefault() {} });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.doesNotMatch(root.textContent, /Out of date|shared brief unavailable/);
+  assert.match(root.textContent, /passing/i);
+  assert.equal(calls.filter(c => c.operation === "member-action").length, 1);
+  app.dispose();
+});
+
 test("outside source edits turn an open pass stale and surface a draft conflict", async () => {
   const doc = fakeDoc(), root = doc.createElement("main"); let current = member;
   const app = renderSquadView(doc, root, { team }, async () => ({ view: projectMember(current, passedObservation) }));
@@ -286,6 +359,7 @@ test("invalid native state moves the active view back to the team without droppi
   assert.ok(!all(root).some(n => n.attrs["aria-label"] === "Prompt"));
   await app.observe({ team }); await click(root, "Open member →");
   assert.match(all(root).find(n => n.attrs["aria-label"] === "Prompt").textContent, /Keep my work/);
+  assert.match(root.textContent, /Out of date/);
   app.dispose();
 });
 

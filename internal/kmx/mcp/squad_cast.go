@@ -126,9 +126,6 @@ func (c *SquadCreator) Create(ctx context.Context, plan SquadPlan) (result Squad
 		if err := validateSquadBrief(squadBriefPath, []byte(*plan.Brief)); err != nil {
 			return result, err
 		}
-		if _, err := c.root.Lstat(squadBriefPath); !os.IsNotExist(err) {
-			return result, refusal("already_exists")
-		}
 	}
 	members := append([]SquadMember{plan.Lead}, slices.Clone(plan.Specialists)...)
 	if len(members) > 8 {
@@ -175,6 +172,13 @@ func (c *SquadCreator) Create(ctx context.Context, plan SquadPlan) (result Squad
 	}
 	if err := check(); err != nil {
 		return result, err
+	}
+	if plan.Brief != nil {
+		if _, err := c.root.Lstat(squadBriefPath); err == nil {
+			return result, refusal("already_exists")
+		} else if !os.IsNotExist(err) {
+			return result, refusal("io_failed")
+		}
 	}
 	before, err := c.snapshot()
 	if err != nil {

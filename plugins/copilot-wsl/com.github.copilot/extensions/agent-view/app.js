@@ -53,7 +53,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   const { hasDrafts, toolNames, toolState, noteTools, noteSetting, sectionText, entries, localExamples, draftName, noteDraft, addTest } = drafts;
   const { observation, matches, observe, observeFailure, checkNow, useTheirs, keepMine } = createObservationController(state,
     { path: payload.file.path, options: { ...options, onSuggestions: receiveSuggestions }, drafts, clearUndo: () => actions.clearUndo(), render, refresh: () => refresh() });
-  actions = createActionController(state, { execute, fetchProgress: options.fetchProgress, drafts, matches, checkNow, render, refresh: () => refresh(), focusName: () => activeTestName?.focus() });
+  actions = createActionController(state, { execute, fetchProgress: options.fetchProgress, drafts, matches, checkNow, observeFailure, render, refresh: () => refresh(), focusName: () => activeTestName?.focus() });
   const { act, submitAll, submitOne, testing, clearUndo } = actions;
   const { selectedModel, runFresh, currentRun, runSummary, runRow, resultSummary, total, footText, hostedNotice, refusedAlert, runAlertNode, sourceActions, explanation } = createRunViews(state, { act, actions, doc, entries, hasDrafts, history, invalidEditors, localExamples, modelChoice, render, sectionDrafts, sectionText, submitAll, submitOne, testDrafts, testing });
 
@@ -108,7 +108,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
         node.disabled = guard === "stop" ? !testing() || !state.run?.cancellable || state.run.state !== "running" : guard === "reload" ? state.busy || state.sourceUnavailable : invalidEditors.size > 0 || (guard === "nav" ? false
           : state.busy || state.blocked || (["save", "settings"].includes(guard) && !!state.candidate) || (guard === "clean" && hasDrafts()));
       }
-      options.onView?.(state.base);
+      options.onView?.(state.base, !!state.snap && !state.busy && !state.blocked && !state.candidate && invalidEditors.size === 0);
     };
     const declaredTools = JSON.stringify(state.base.tools ?? []);
     if (declaredTools !== toolsFor) { toolsFor = declaredTools; toolsLoaded = false; toolsError = ""; }
@@ -166,7 +166,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
         if (options.interruptOnEdit && testing()) void actions.stop();
         try {
           const value = editorValue(node); invalidEditors.delete(section.key);
-          if (value === section.text) sectionDrafts.delete(section.key); else sectionDrafts.set(section.key, value);
+          if (value === section.text && !testing()) sectionDrafts.delete(section.key); else sectionDrafts.set(section.key, value);
         } catch {
           invalidEditors.add(section.key);
           state.message = "Unsupported editor formatting. Your draft is kept; reload before saving.";

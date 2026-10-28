@@ -60,7 +60,7 @@ export function projectMember(raw, observation) {
   require(typeof raw.taskInstructions === "string" && typeof raw.model === "string" && typeof raw.examples === "string" && Array.isArray(raw.tests), "invalid-resource");
   serializeExamples(raw.tests);
   require(raw.brief && typeof raw.brief.text === "string" && (raw.brief.revision === "none" || REVISION.test(raw.brief.revision)), "invalid-resource");
-  const current = observation?.file?.revision === raw.file.revision && observation.briefRevision === raw.brief.revision;
+  const current = !observation?.invalidated && observation?.file?.revision === raw.file.revision && observation.briefRevision === raw.brief.revision;
   const latest = { status: observation ? current ? "current" : "stale" : "none", badge: "none" };
   if (current) {
     latest.result = cleanResult(observation.preview, "current", raw.file.revision);
@@ -78,14 +78,20 @@ export function projectMember(raw, observation) {
 export function createNativeSquadBackend(session, { extensionId, instanceId } = {}) {
   let busy = false, uncertain = false, createBlocked = false, creation, lastTeam;
   const observations = new Map();
+  function invalidate(id, baseline = observations) {
+    for (const [memberId, result] of baseline) if ((id === undefined || memberId === id) && observations.get(memberId) === result) observations.set(memberId, { ...result, invalidated: true });
+  }
   const previews = createSquadPreview(session, (memberId, runId) => invoke("test", { target: "squad-preview-cancel", memberId, runId }, "kmx.squad-preview-cancel"));
-  async function read(uri) {
-    let result;
-    try { result = await session.rpc.mcp.resources.read({ serverName: SERVER_NAME, uri }); }
-    catch { throw new ViewError("unavailable"); }
-    require(result?.contents?.length === 1 && typeof result.contents[0].text === "string", "invalid-resource");
-    require(Buffer.byteLength(result.contents[0].text) <= 2 << 20, "too-large");
-    try { return JSON.parse(result.contents[0].text); } catch { throw new ViewError("invalid-resource"); }
+  async function read(uri, baseline = new Map(observations)) {
+    try {
+      const result = await session.rpc.mcp.resources.read({ serverName: SERVER_NAME, uri });
+      require(result?.contents?.length === 1 && typeof result.contents[0].text === "string", "invalid-resource");
+      require(Buffer.byteLength(result.contents[0].text) <= 2 << 20, "too-large");
+      return JSON.parse(result.contents[0].text);
+    } catch {
+      invalidate(uri === "kmx://squad" ? undefined : uri.slice("kmx://squad-member/".length), baseline);
+      throw new ViewError("native_source_unavailable");
+    }
   }
   async function invoke(operation, args, kind, run) {
     let metadata = await session.rpc.tools.getCurrentMetadata();
@@ -101,6 +107,7 @@ export function createNativeSquadBackend(session, { extensionId, instanceId } = 
     catch { if (args.target !== "squad-preview-cancel") uncertain = true; throw new ViewError("outcome-unknown"); }
     if (["denied", "rejected"].includes(result?.resultType)) throw new ViewError("permission_required");
     const data = result?.structuredContent;
+    if (data?.schemaVersion === 2 && data.kind === undefined && data.reasonCode === "invalid_squad_brief") { invalidate(); throw new ViewError("invalid_squad_brief"); }
     if (data?.schemaVersion === 2 && data.kind === undefined && ["invalid_options", "incompatible_version", "stale_revision", "busy", "already_exists", "squad_not_setup", "invalid_squad_member", "invalid_squad_brief"].includes(data.reasonCode)) {
       const code = data.reasonCode === "stale_revision" ? "stale_revision" : data.reasonCode === "busy" ? "busy" : "invalid-action";
       throw new ViewError(code, `Native ${operation} refused (${data.reasonCode}). Review the saved state and your draft.`);
@@ -113,15 +120,24 @@ export function createNativeSquadBackend(session, { extensionId, instanceId } = 
     return data;
   }
   async function team() {
-    const data = await read("kmx://squad");
-    require(data?.schemaVersion === 2 && data.kind === "kmx.squad-view" && Array.isArray(data.members) && data.members.length <= 128 && typeof data.root === "string" && ["ready", "uninitialized"].includes(data.state), "invalid-resource");
+    const baseline = new Map(observations);
+    const data = await read("kmx://squad", baseline);
+    if (!(data?.schemaVersion === 2 && data.kind === "kmx.squad-view" && Array.isArray(data.members) && data.members.length <= 128 && typeof data.root === "string" && ["ready", "uninitialized"].includes(data.state))) {
+      invalidate(undefined, baseline); throw new ViewError("native_source_unavailable");
+    }
+    const readyMembers = new Set(data.members.filter(member => member?.state === "ready").map(member => member.memberId));
+    for (const id of baseline.keys()) if (!readyMembers.has(id)) invalidate(id, baseline);
     lastTeam = data;
     return { ...data, uncertain, createBlocked, busy };
   }
-  async function member(id) {
+  async function memberSnapshot(id) {
     require(typeof id === "string" && ID.test(id));
-    return projectMember(await read(`kmx://squad-member/${id}`), observations.get(id));
+    const baseline = new Map(observations);
+    const raw = await read(`kmx://squad-member/${id}`, baseline);
+    try { return { raw, view: projectMember(raw, observations.get(id)) }; }
+    catch { invalidate(id, baseline); throw new ViewError("native_source_unavailable"); }
   }
+  async function member(id) { return (await memberSnapshot(id)).view; }
   async function snapshot() {
     const outcome = creation ? { creation, outcome: creation.result } : {};
     try { return { team: await team(), ...outcome }; }
@@ -199,11 +215,10 @@ export function createNativeSquadBackend(session, { extensionId, instanceId } = 
       require(["save-and-test", "save-examples", "save-prompt", "save-model", "test", "run", "reload", "suggest", "models"].includes(a.operation));
       require(a.runId === undefined || typeof a.runId === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(a.runId));
       if (a.operation === "models") return readModels(session);
-      let raw = await read(`kmx://squad-member/${text(input.memberId, 63)}`);
-      let view = projectMember(raw, observations.get(input.memberId));
+      let { raw, view } = await memberSnapshot(input.memberId);
       if (a.operation === "reload") return { view };
       if (a.operation === "suggest") {
-        await session.send(`Suggest tests for native Squad member ${JSON.stringify(input.memberId)} at ${view.file.revision}. Show proposals in chat; do not save, run or create anything.`);
+        await session.send({ prompt: `Suggest tests for native Squad member ${JSON.stringify(input.memberId)} at ${view.file.revision}. Show proposals in chat; do not save, run or create anything.` });
         return { message: "Asked Copilot to suggest tests in chat." };
       }
       require(a.expectedRevision === view.file.revision, "stale_revision");

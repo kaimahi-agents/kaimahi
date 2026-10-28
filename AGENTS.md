@@ -743,12 +743,17 @@ canvas uses a native adapter over the same operations. New teams start with an
 empty user-authored goal and reviewed Copilot proposals; ship no static Squad
 scenario presets or example actions. Its aggregate kmx://squad
 resource reconstructs the roster; a separate .squad/kmx-brief.md stores only shared
-context with revision-checked writes. Native previews include that saved context
+context with revision-checked writes. Aggregate reads share one checked inventory
+and registry per request, never across requests; charters retain individual checked
+reads. Brief-conflict preflight is inside the creator gate, before native effects.
+Native previews include that saved context
 and report its revision separately from member source revision. Preserve partial
 Create/brief-publication outcomes and session-only results. The canvas supplies
 both expectedRevision and expectedBriefRevision to native Run/Test; validate the
 pair before preview and use those snapshots. Omitting both retains legacy reads.
 Background observation stales changed member/brief results without dropping drafts.
+Failed native reads invalidate current-pass status in both the adapter and editor;
+valid reads restore editing, while only a fresh preview restores current results.
 Native empty-test members remain editable; Test requires a nonempty test set.
 Retire pending suggestions after creation effects and retain acknowledged brief
 saves even when readback fails. Optional native Test
@@ -756,6 +761,7 @@ run IDs bind progress and connection-scoped cancellation through the existing
 Test tool's squad-preview-cancel target. Cancellation starts no inference and
 does not abort the Copilot session; final Test state remains authoritative.
 The native canvas keeps newer prompt drafts when typing stops an active preview.
+This includes edits back to the original baseline while a newer save is in flight.
 Generated proposals are offered for explicit review before replacing a draft.
 The experimental
 upstream SquadBackend/HarnessAdapter runtime contract is separate follow-up work,

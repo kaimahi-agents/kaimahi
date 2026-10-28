@@ -40,7 +40,13 @@ or sandbox calls requiring fencing/approval; never replay an uncertain Create.
 
 Package a development plugin with a current kmx binary and a qualified standalone
 Squad 1.1.0 launcher using `package.py` as described in [README.md](README.md).
-Install that generated directory, open its configured demo project in the Copilot
+Before installing, append `"--provider", "copilot"` to the `kmx-agent-builder`
+server's `args` in the generated `mcp.json`, alongside the existing root and Squad
+launcher arguments. This is trusted MCP startup configuration, not a `package.py`
+flag. Use an existing supported GitHub sign-in as described in [README.md](README.md#agent-paths-and-real-tools).
+The provider selection makes `kmx://models` available for proposal generation and
+the model picker; the root-bound package default does not register that resource.
+Install the configured directory, open its selected project in the Copilot
 app, and invoke `/squad-view`. The canvas can also be opened through the built-in
 opener with `canvasId: kmx-squad-view`, provider
 `plugin:kmx-agent-builder:agent-view`, stable instance ID `kmx-squad`, and input `{}`.
@@ -53,13 +59,16 @@ creation effects. The canvas validates and submits only on Create squad.
 
 ## Browser rehearsal with real MCP
 
+This checkout helper opens an already-created team. Create the team in the Copilot
+app first; the helper refuses a fresh project without writing native state.
+Proposal generation and Suggest tests require the real Copilot chat session.
+
 ```sh
-node plugins/tests/copilot/squad-demo.mjs /absolute/kmx /absolute/demo-root /absolute/squad
+node plugins/tests/copilot/squad-demo.mjs /absolute/kmx /absolute/saved-team /absolute/squad copilot
 ```
 
-Add `copilot` as the final argument for real hosted-model previews. The installed
-recording bundle must likewise have explicit `--provider copilot` in its native
-MCP startup arguments and an existing GitHub sign-in. The helper forwards real
+The final `copilot` argument selects hosted-model previews; omitting it retains
+the helper's tool-free fake-route setup. The helper forwards real
 native progress notifications and connection-scoped cancellation; it never
 implements model execution itself.
 
@@ -67,7 +76,7 @@ This checkout helper forwards JSON-RPC to the real engine and displays its URL.
 It supplies neither a fake MCP server nor a second preview runner. Browser
 rehearsal is supplementary to the issue's required real Copilot-app screenshot.
 
-### Five-minute demo
+### Five-minute Copilot-app demo
 
 If the team already exists in the configured project, start at step 4 with the
 saved team. Create does not replace an existing roster or reset the demo.
@@ -88,6 +97,8 @@ or click Stop tests. The old invocation is cancelled without aborting chat;
 completed rows remain partial and the new draft survives. Enter after it stops
 explicitly starts the next save/test. A test awaiting approval in Copilot chat
 shows that state; it is not yet cancellable through the native active-run control.
+Typing back to the previous prompt while a newer version is running also remains
+an unsaved draft until the acknowledged source can be compared.
 
 The generated response returns to the same canvas as a reviewable offer. Use suggested team
 accepts it; Keep my draft preserves current work. Suggest changes follows the same
@@ -108,6 +119,11 @@ execution checks both before preview, including after a tool approval delay. Old
 native callers may omit both; supplying only one refuses. Background reads refresh
 the active member, mark changed results out of date and preserve unsaved drafts.
 Confirmed brief saves remain acknowledged if the subsequent team read fails.
+An invalid or unreadable shared brief refuses native operations. The brief must
+be nonempty UTF-8 text, at most 16 KiB, without NUL bytes; repair or remove
+`.squad/kmx-brief.md` manually and refresh. Failed native reads preserve drafts and
+historical results while removing current-pass status. Valid reads restore editing;
+an explicit new preview establishes a current result.
 The native **Save model** action changes the charter's Preferred value; it is not
 the canonical canvas's memory-only model override. Cached member controls follow
 the same accepted snapshot as the editor. Existing members with no tests can open

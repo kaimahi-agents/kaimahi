@@ -4,9 +4,10 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { EventEmitter } from "node:events";
 import { startSquadBridge } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/squad-view.mjs";
+import { ViewError } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/view.mjs";
 
 const [binary, root, squad, provider] = process.argv.slice(2);
-if (!binary || !root || !squad) throw new Error("Usage: node plugins/tests/copilot/squad-demo.mjs /absolute/kmx /absolute/demo-root /absolute/squad");
+if (!binary || !root || !squad) throw new Error("Usage: node plugins/tests/copilot/squad-demo.mjs /absolute/kmx /absolute/saved-team /absolute/squad [copilot]");
 if (provider !== undefined && provider !== "copilot") throw new Error("The optional provider must be copilot.");
 const child = spawn(binary, ["mcp", "--root", root, "--squad-program", squad, "--squad-release", "1.1.0", ...(provider ? ["--provider", provider] : [])], { stdio: ["pipe", "pipe", "inherit"] });
 let next = 0;
@@ -47,9 +48,18 @@ const session = {
       },
     },
   },
-  send: async () => { throw new Error("Suggestions require the Copilot app session."); },
+  send: async () => { throw new ViewError("unavailable", "Suggestions require the Copilot app session."); },
 };
-const bridge = await startSquadBridge({ session });
+let bridge;
+try {
+  const result = await rpc("resources/read", { uri: "kmx://squad" });
+  const text = result?.contents?.[0]?.text;
+  if (typeof text !== "string" || Buffer.byteLength(text) > 2 << 20) throw new Error("Native Squad inventory is unavailable.");
+  const team = JSON.parse(text);
+  if (team.schemaVersion !== 2 || team.kind !== "kmx.squad-view" || !Array.isArray(team.members)) throw new Error("Native Squad inventory is unavailable.");
+  if (!team.members.length) throw new Error("Browser rehearsal requires a saved Squad. Review and create the team in the Copilot app first.");
+  bridge = await startSquadBridge({ session });
+} catch (error) { lines.close(); child.kill(); throw error; }
 console.log(`Squad canvas rehearsal (real native MCP, ${provider || "deterministic fake"} previews):\n${bridge.url}`);
 const close = async () => { await bridge.close(); lines.close(); child.kill(); process.exit(); };
 process.on("SIGINT", close); process.on("SIGTERM", close);

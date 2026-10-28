@@ -1,10 +1,11 @@
 import { sourceIdentity, effectiveModel, validateDraft as validate, testsNeedAcknowledgement, pendingCapture, hasFrontmatter } from "./authoring.mjs";
 import { isRefused, plainReason, quoted, clone } from "./editor.mjs";
+import { nativeSourceError } from "./observation-controller.mjs";
 const CONFLICTS = ["revision_mismatch", "revision-mismatch"];
 const UNKNOWN = ["outcome-unknown", "uncertain-outcome", "uncertain_outcome"];
 
 let runSequence = 0;
-export function createActionController(state, { execute, fetchProgress, drafts, matches, checkNow, render, refresh, focusName }) {
+export function createActionController(state, { execute, fetchProgress, drafts, matches, checkNow, observeFailure, render, refresh, focusName }) {
   const { sectionDrafts, testDrafts, invalidEditors, displayNames, modelChoice } = state;
   const { hasDrafts, rawExamples, entries, localExamples, draftName, checkProblem, adopt } = drafts;
   function clearUndo() { state.promptUndo = undefined; clearTimeout(state.undoTimer); }
@@ -83,6 +84,12 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     }
     // A native preview may be interrupted by newer prompt edits while awaiting its reply.
     submitted = { ...submitted, sections: submitted.sections.filter(key => sectionDrafts.get(key) === submittedPrompt.get(key)) };
+    if (state.base.authoring?.profile === "squad-member" && nativeSourceError(response)) {
+      if (response.saved && matches(response.view)) adopt(response.view, submitted);
+      observeFailure(response);
+      if (response.saved) { state.message = "Changes were saved. " + state.message; render(); }
+      return;
+    }
     const latest = response?.view?.latest;
     if (operation === "run" && response?.capture?.adHoc) state.lastAdHoc = response.capture;
     if (response?.capture) { state.history.noteCapture(response.capture, response.capture.savedRevision && matches(response.view) ? response.view : undefined); state.lastCapture = response.capture; }

@@ -175,7 +175,7 @@ function renderTeam(content) {
   const heading = el(doc, "div", "title-line"); heading.append(el(doc, "h2", "", "Team members"), button("Refresh team", refreshTeam)); content.append(heading);
   for (const m of team.members) {
     const row = el(doc, "div", "squad-card squad-member-row"), info = el(doc, "div");
-    const creation = outcome?.members.find((r) => r.id === m.memberId);
+    const creation = outcome?.members?.find((r) => r.id === m.memberId);
     info.append(el(doc, "strong", "", m.profile?.role || m.memberId), el(doc, "p", "meta", m.state === "ready" ? "Native state validated · individual tests available" : "Not set up by kmx"));
     if (creation) info.append(el(doc, "p", "meta", `Creation: ${creation.state}`));
     const open = button("Open member →", () => openMember(m.memberId)); open.disabled = m.state !== "ready" || team.uncertain;
@@ -202,11 +202,11 @@ async function openMember(memberId) {
   const context = el(doc, "details", "squad-inherited"), briefText = el(doc, "pre", "", response.view.brief.text);
   context.append(el(doc, "summary", "meta", "Shared brief and model"), briefText);
   let model = response.view.model;
-  let handle, modelSaving = false;
+  let handle, modelSaving = false, canEdit = false;
   const modelMessage = el(doc, "p", "meta"); modelMessage.setAttribute("role", "status");
-  const picker = runtimeModelControl(doc, () => ({ authored: currentView.model, selected: model, disabled: modelSaving || !handle?.idle() }), () => action({ operation: "models" }), value => { model = value || currentView.model; picker.update(); });
+  const picker = runtimeModelControl(doc, () => ({ authored: currentView.model, selected: model, disabled: modelSaving || !canEdit }), () => action({ operation: "models" }), value => { model = value || currentView.model; picker.update(); });
   context.append(el(doc, "span", "lbl", "Preferred model"), picker.node, button("Save model", async () => {
-    if (modelSaving || handle?.dirty() || !handle?.idle()) { modelMessage.textContent = "Save your prompt/test edits before changing the model."; return; }
+    if (modelSaving || handle?.dirty() || !canEdit) { modelMessage.textContent = "Review the saved state and save your prompt/test edits before changing the model."; return; }
     modelSaving = true; generation++; picker.update();
     try {
       const result = await action({ operation: "member-action", memberId, action: { operation: "save-model", expectedRevision: currentView.file.revision, model } });
@@ -222,10 +222,11 @@ async function openMember(memberId) {
     if (!["progress", "models", "suggest"].includes(input.operation)) generation++;
     return action({ operation: "member-action", memberId, action: input });
   };
-  const fetchView = async () => (await action({ operation: "member", memberId })).view;
+  const fetchView = async () => { const result = await action({ operation: "member", memberId }); return result.error ? result : result.view; };
   handle = renderView(doc, mount, response.view, execute, {
     fetchView,
-    onView(view) {
+    onView(view, editable) {
+      canEdit = editable;
       if (model === currentView.model) model = view.model;
       currentView = view;
       briefText.textContent = view.brief.text; nativeText.textContent = view.nativeInstructions;
@@ -239,9 +240,19 @@ async function openMember(memberId) {
   memberScreens.set(memberId, activeMember);
 }
 
-const observation = () => ({ generation, member: activeMember, source: activeMember?.handle.observation() });
+const readNotice = "Native state could not be verified. Your drafts and previous results are kept; inspect the saved files and refresh.";
+const observation = () => ({ generation, member: activeMember, source: activeMember?.handle.observation(), sources: [...memberScreens.values()].map(entry => [entry, entry.handle.observation()]) });
+function observeFailure(_error, started = observation()) {
+  if (disposed || working || generation !== started.generation) return;
+  for (const [entry, source] of started.sources) if (memberScreens.get(entry.memberId) === entry) entry.handle.observeFailure({ error: "native_source_unavailable" }, source);
+  notice = readNotice;
+  if (!activeMember) overview();
+}
 async function observe(next, started = observation()) {
   if (disposed || working || generation !== started.generation) return;
+  if (next.error || next.refreshUnavailable) { observeFailure(next, started); return; }
+  const recovered = notice === readNotice;
+  if (recovered) notice = "Native state refreshed. Test again to update previous results.";
   if (next.team) team = next.team;
   if (next.creation) { creation = next.creation; outcome = next.outcome; }
   if (creation?.status === "complete") proposal = undefined;
@@ -249,17 +260,20 @@ async function observe(next, started = observation()) {
   const entry = started.member;
   if (entry && activeMember === entry) {
     if (team.members.find(m => m.memberId === entry.memberId)?.state !== "ready") {
+      entry.handle.observeFailure({ error: "native_source_unavailable" }, started.source);
       notice = "This member is not set up by kmx. Refresh after its native state is restored; your draft is kept."; overview(); return;
     }
-    const response = await action({ operation: "member", memberId: entry.memberId });
+    let response;
+    try { response = await action({ operation: "member", memberId: entry.memberId }); }
+    catch (error) { observeFailure(error, started); return; }
     if (disposed || working || generation !== started.generation || activeMember !== entry) return;
-    if (response.error) entry.handle.observeFailure(response, started.source);
+    if (response.error && response.error !== "busy") entry.handle.observeFailure({ error: "native_source_unavailable" }, started.source);
     else entry.handle.observe(response.view, started.source);
-  } else if (JSON.stringify(team) !== renderedTeam && !(root.contains(doc.activeElement) && ["INPUT", "TEXTAREA"].includes(doc.activeElement.tagName))) overview();
+  } else if ((recovered || JSON.stringify(team) !== renderedTeam) && !(root.contains(doc.activeElement) && ["INPUT", "TEXTAREA"].includes(doc.activeElement.tagName))) overview();
 }
 
 overview();
-return { observation, observe, observeOffer(offer) { if (offer && offer.id !== proposalOffer?.id && !working && !team.createBlocked && !team.members.length) { proposalOffer = offer; overview(); } }, dispose() { disposed = true; generation++; for (const entry of memberScreens.values()) entry.handle.dispose(); memberScreens.clear(); } };
+return { observation, observe, observeFailure, observeOffer(offer) { if (offer && offer.id !== proposalOffer?.id && !working && !team.createBlocked && !team.members.length) { proposalOffer = offer; overview(); } }, dispose() { disposed = true; generation++; for (const entry of memberScreens.values()) entry.handle.dispose(); memberScreens.clear(); } };
 }
 
 async function main() {
@@ -274,7 +288,7 @@ async function main() {
       reading = true;
       const started = app.observation();
       try { const next = await (await fetch("view.json", { cache: "no-store" })).json(); await app.observe(next, started); }
-      catch { /* The current draft stays visible until a successful read. */ }
+      catch (error) { app.observeFailure(error, started); }
       finally { reading = false; }
     }, 2000);
   } catch (error) { root.replaceChildren(el(document, "p", "error", error.message)); }

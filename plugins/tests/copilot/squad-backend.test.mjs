@@ -164,11 +164,12 @@ test("proposal generation uses the current provider and instance without native 
 });
 
 function memberHarness() {
-  const h = { current: structuredClone(raw), calls: [], unavailable: false };
-  h.backend = createNativeSquadBackend({ rpc: {
+  const h = { current: structuredClone(raw), calls: [], sent: [], unavailable: false };
+  h.backend = createNativeSquadBackend({ send: async message => { assert.equal(typeof message, "object"); h.sent.push(message); }, rpc: {
     mcp: { resources: { read: async ({ uri }) => {
+      if (h.read) return h.read(uri);
       if (h.unavailable) throw new Error("read unavailable");
-      return { contents: [{ text: JSON.stringify(uri === "kmx://squad" ? { ...team, brief: h.current.brief } : h.current) }] };
+      return { contents: [{ text: JSON.stringify(uri === "kmx://squad" ? { ...team, state: "ready", members: [h.current], brief: h.current.brief } : h.current) }] };
     } } },
     tools: {
       getCurrentMetadata: async () => ({ tools: ["create", "edit", "test", "run"].map(name => ({ name, mcpToolName: name, mcpServerName: "kmx-agent-builder" })) }),
@@ -258,4 +259,70 @@ test("removing the final test saves an editable empty member and makes no previe
   const again = await h.backend.action({ ...pinnedTest, action: { ...pinnedTest.action, expectedRevision: nextRevision } });
   assert.equal(again.error, "no-tests"); assert.equal(h.calls.length, 1);
   h.backend.dispose();
+});
+
+test("member test suggestions use the SDK message object without native writes", async () => {
+  const h = memberHarness();
+  await h.backend.action({ operation: "member-action", memberId: "lead", action: { operation: "suggest" } });
+  assert.equal(h.sent.length, 1);
+  assert.match(h.sent[0].prompt, /native Squad member "lead"/);
+  assert.ok(h.sent[0].prompt.includes(revision));
+  assert.equal(h.calls.length, 0); h.backend.dispose();
+});
+
+function passingReply(current) {
+  return nativeReply({ schemaVersion: 2, kind: "kmx.squad-member-operation", memberId: current.memberId, file: current.file, briefRevision: current.brief.revision,
+    preview: { schemaVersion: 1, kind: "kmx.agent-file-preview", operation: "test", file: current.file, state: "complete", verdict: "pass", fullPass: true,
+      modelRoute: { provider: "fake", model: "fake" }, selection: { scope: "full", totalCases: 1, caseIds: ["one"] },
+      examples: [{ id: "one", state: "complete", verdict: "pass", assertions: [{ id: "check", type: "contains", verdict: "pass" }] }] },
+  });
+}
+
+for (const failedRead of ["member", "team"]) test(`failed ${failedRead} reads cannot revive cached passes on read recovery`, async () => {
+  const h = memberHarness(); h.execute = async () => passingReply(h.current);
+  assert.equal((await h.backend.action(pinnedTest)).view.latest.status, "current");
+  h.unavailable = true;
+  await assert.rejects(failedRead === "member" ? h.backend.member("lead") : h.backend.team(), { code: "native_source_unavailable" });
+  h.unavailable = false;
+  assert.equal((await h.backend.member("lead")).latest.status, "stale");
+  assert.equal(h.calls.length, 1, "recovering reads never run tests");
+  assert.equal((await h.backend.action(pinnedTest)).view.latest.status, "current");
+  assert.equal(h.calls.length, 2); h.backend.dispose();
+});
+
+test("invalid brief refusals are actionable, recoverable and invalidate old passes", async () => {
+  const h = memberHarness(); h.execute = async () => passingReply(h.current);
+  await h.backend.action(pinnedTest);
+  h.execute = async () => ({ resultType: "failure", structuredContent: { schemaVersion: 2, reasonCode: "invalid_squad_brief", reason: "PRIVATE SOURCE" } });
+  await assert.rejects(h.backend.action(pinnedTest), error => error.code === "invalid_squad_brief" && /16 KiB/.test(error.message) && !/PRIVATE/.test(error.message));
+  assert.equal((await h.backend.team()).uncertain, false);
+  assert.equal((await h.backend.member("lead")).latest.status, "stale");
+  h.backend.dispose();
+});
+
+test("an unqualified roster member cannot regain a cached pass after restoration", async () => {
+  const h = memberHarness(); h.execute = async () => passingReply(h.current);
+  await h.backend.action(pinnedTest);
+  h.current.state = "not_setup";
+  await h.backend.team();
+  h.current.state = "ready";
+  assert.equal((await h.backend.member("lead")).latest.status, "stale");
+  assert.equal(h.calls.length, 1); h.backend.dispose();
+});
+
+test("an older failed roster read cannot invalidate a newer preview in the backend cache", async () => {
+  const h = memberHarness(); h.execute = async () => passingReply(h.current);
+  await h.backend.action(pinnedTest);
+  let reject;
+  h.read = async uri => {
+    assert.equal(uri, "kmx://squad");
+    return new Promise((_, fail) => { reject = fail; });
+  };
+  const older = h.backend.team();
+  const refused = assert.rejects(older, { code: "native_source_unavailable" });
+  h.read = undefined;
+  await h.backend.action(pinnedTest);
+  reject(new Error("old read failed")); await refused;
+  assert.equal((await h.backend.member("lead")).latest.status, "current");
+  assert.equal(h.calls.length, 2); h.backend.dispose();
 });

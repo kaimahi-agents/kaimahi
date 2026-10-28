@@ -22,13 +22,11 @@ func AddSquadResource(server *sdk.Server, c *SquadCreator, routes ...*modelacces
 		data := map[string]any{"schemaVersion": 2, "kind": "kmx.squad-view", "root": c.root.Name(), "state": "uninitialized", "members": []NativeMemberResult{}, "brief": SquadBrief{Revision: "none"}, "access": []string{"Tool-free member previews"}}
 		data["previewControl"], data["previewProvider"] = "run-id-v1", provider
 		if !c.setupMissing() {
-			if err := c.checkRoot(); err != nil {
-				return nil, err
-			}
-			registry, err := c.registry()
+			inventory, err := c.memberInventory(ctx)
 			if err != nil {
 				return nil, err
 			}
+			registry := inventory.registry
 			if len(registry) > 128 {
 				return nil, refusal("invalid_squad_members")
 			}
@@ -39,7 +37,7 @@ func AddSquadResource(server *sdk.Server, c *SquadCreator, routes ...*modelacces
 			sort.Strings(ids)
 			members := []NativeMemberResult{}
 			for _, id := range ids {
-				d, _ := c.Member(ctx, id)
+				d, _, _ := c.readMemberFromInventory(ctx, id, inventory)
 				m := nativeMemberResult(id, d)
 				m.MemberID = id
 				members = append(members, m)
