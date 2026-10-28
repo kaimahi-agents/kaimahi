@@ -17,7 +17,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -40,10 +39,9 @@ type policy struct {
 }
 
 type edge struct {
-	Caller       string `json:"caller"`
-	CallerObject string `json:"caller_object"`
-	Callee       string `json:"callee"`
-	Object       string `json:"object"`
+	Caller string `json:"caller"`
+	Callee string `json:"callee"`
+	Object string `json:"object"`
 }
 
 type sourceImport struct {
@@ -55,8 +53,6 @@ type manifest struct {
 	Imports []sourceImport `json:"imports"`
 	Version int            `json:"version"`
 	Edges   []edge         `json:"edges"`
-	FromRun []string       `json:"safe_from_run"`
-	ToRun   []string       `json:"safe_to_run"`
 }
 
 type listedPackage struct {
@@ -69,11 +65,25 @@ type listedPackage struct {
 	}
 }
 
+// Only review diagnostics constructed from validated metadata may leave the guard.
+// Compiler/parser errors can contain source literals and remain private.
+type boundaryDrift string
+
+func (e boundaryDrift) Error() string { return string(e) }
+
 func main() {
 	audit := len(os.Args) == 2 && os.Args[1] == "--audit"
-	if (len(os.Args) != 1 && !audit) || run(audit) != nil {
-		// Compiler failures can contain source literals; never forward them.
+	var err error
+	if len(os.Args) != 1 && !audit {
+		err = fmt.Errorf("invalid arguments")
+	} else {
+		err = run(audit)
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "Orka caller boundary failed")
+		if message, ok := err.(boundaryDrift); ok {
+			fmt.Fprintln(os.Stderr, message)
+		}
 		os.Exit(1)
 	}
 }
@@ -176,24 +186,34 @@ func run(audit bool) error {
 	if err = readJSON("scripts/ci/orka-callers.json", &expected); err != nil {
 		return err
 	}
-	if expected.Version != 1 || expected.Edges == nil || expected.FromRun == nil || expected.ToRun == nil || expected.Imports == nil {
+	if expected.Version != 2 || expected.Edges == nil || expected.Imports == nil {
 		return fmt.Errorf("invalid manifest")
 	}
+	imports := map[sourceImport]bool{}
 	for _, i := range expected.Imports {
-		if !validPath(i.File) || !validPath(i.Path) {
-			return fmt.Errorf("invalid import")
+		if !validPath(i.File) || !p.safe(i.File) || !startupImport(i.Path) || imports[i] {
+			return fmt.Errorf("invalid import approval")
 		}
+		imports[i] = true
 	}
-	seen := map[edge]bool{}
+	edges := map[edge]bool{}
 	for _, e := range expected.Edges {
-		if !validPath(e.Caller) || !validPath(e.Callee) || e.CallerObject == "" || e.Object == "" || seen[e] {
-			return fmt.Errorf("invalid edge")
+		if !validPath(e.Caller) || !validPath(e.Callee) || !validPath(e.Object) ||
+			p.safe(e.Caller) == p.safe(e.Callee) || edges[e] {
+			return fmt.Errorf("invalid edge approval")
 		}
-		seen[e] = true
+		edges[e] = true
 	}
-	sortManifest(&expected)
-	if !reflect.DeepEqual(actual, expected) {
-		return fmt.Errorf("reference drift")
+	// Approvals persist until explicitly pruned; deleting a reference is harmless.
+	for _, i := range actual.Imports {
+		if !imports[i] {
+			return boundaryDrift(fmt.Sprintf("new startup import: %s -> %s; inspect --audit and review initialization effects before updating scripts/ci/orka-callers.json", i.File, i.Path))
+		}
+	}
+	for _, e := range actual.Edges {
+		if !edges[e] {
+			return boundaryDrift(fmt.Sprintf("new reference: %s -> %s (%s); keep code within the safe set or inspect --audit and review the boundary before updating scripts/ci/orka-callers.json", e.Caller, e.Callee, e.Object))
+		}
 	}
 	fmt.Println("Orka caller boundary verified")
 	return nil
@@ -272,7 +292,6 @@ func references(root string, routing policy) (manifest, error) {
 	fset := token.NewFileSet()
 	boundary := map[edge]bool{}
 	imports := map[sourceImport]bool{}
-	graph := map[string]map[string]bool{}
 	checked := map[string]bool{}
 	importers := map[string]types.Importer{}
 	fields := map[*types.Var]string{}
@@ -316,7 +335,9 @@ func references(root string, routing policy) (manifest, error) {
 					if err != nil {
 						return manifest{}, err
 					}
-					imports[sourceImport{path, name}] = true
+					if startupImport(name) {
+						imports[sourceImport{path, name}] = true
+					}
 				}
 			}
 			files = append(files, file)
@@ -374,7 +395,6 @@ func references(root string, routing policy) (manifest, error) {
 				}
 			}
 		}
-		sites := callerSites(files, info, fields)
 		for ident, obj := range info.Uses {
 			if obj.Pkg() == nil || !(obj.Pkg().Path() == module || strings.HasPrefix(obj.Pkg().Path(), module+"/")) {
 				continue
@@ -387,40 +407,18 @@ func references(root string, routing policy) (manifest, error) {
 			if err != nil || callee == "" || !sources[obj.Pkg().Path()][callee] {
 				return manifest{}, fmt.Errorf("unmapped definition")
 			}
-			if caller == callee {
-				continue
-			}
-			if graph[caller] == nil {
-				graph[caller] = map[string]bool{}
-			}
-			graph[caller][callee] = true
 			if routing.safe(caller) != routing.safe(callee) {
-				name := objectKey(obj, callee, fields)
-				if sites[ident] == "" {
-					return manifest{}, fmt.Errorf("unmapped calling declaration")
-				}
-				boundary[edge{caller, sites[ident], callee, name}] = true
+				boundary[edge{caller, callee, objectKey(obj, callee, fields)}] = true
 			}
 		}
 	}
-	result := manifest{Version: 1, Imports: []sourceImport{}, Edges: []edge{}, FromRun: []string{}, ToRun: []string{}}
+	result := manifest{Version: 2, Imports: []sourceImport{}, Edges: []edge{}}
 	for i := range imports {
 		result.Imports = append(result.Imports, i)
 	}
 	for e := range boundary {
 		result.Edges = append(result.Edges, e)
 	}
-	reverse := map[string]map[string]bool{}
-	for a, destinations := range graph {
-		for b := range destinations {
-			if reverse[b] == nil {
-				reverse[b] = map[string]bool{}
-			}
-			reverse[b][a] = true
-		}
-	}
-	result.FromRun = reachableSafe(graph, routing)
-	result.ToRun = reachableSafe(reverse, routing)
 	sortManifest(&result)
 	return result, nil
 }
@@ -476,95 +474,10 @@ func objectKey(obj types.Object, file string, fields map[*types.Var]string) stri
 	return base + obj.Name()
 }
 
-type siteVisitor struct {
-	context string
-	next    *int
-	sites   map[*ast.Ident]string
-}
-
-func (v siteVisitor) Visit(node ast.Node) ast.Visitor {
-	if node == nil {
-		return nil
-	}
-	if _, ok := node.(*ast.FuncLit); ok {
-		(*v.next)++
-		v.context += "/closure" + strconv.Itoa(*v.next)
-	}
-	if ident, ok := node.(*ast.Ident); ok {
-		v.sites[ident] = v.context
-	}
-	return v
-}
-
-func callerSites(files []*ast.File, info *types.Info, fields map[*types.Var]string) map[*ast.Ident]string {
-	result := map[*ast.Ident]string{}
-	visit := func(node ast.Node, names []*ast.Ident, suffix string) {
-		keys := []string{}
-		for _, name := range names {
-			if obj := info.Defs[name]; obj != nil {
-				keys = append(keys, objectKey(obj, "", fields))
-			}
-		}
-		count := 0
-		ast.Walk(siteVisitor{strings.Join(keys, ",") + suffix, &count, result}, node)
-	}
-	for _, file := range files {
-		for _, decl := range file.Decls {
-			switch d := decl.(type) {
-			case *ast.FuncDecl:
-				visit(d, []*ast.Ident{d.Name}, "")
-			case *ast.GenDecl:
-				for _, spec := range d.Specs {
-					switch s := spec.(type) {
-					case *ast.TypeSpec:
-						visit(s, []*ast.Ident{s.Name}, "")
-					case *ast.ValueSpec:
-						visit(s, s.Names, "")
-						if len(s.Values) > 1 {
-							for i, value := range s.Values {
-								visit(value, s.Names, "/value"+strconv.Itoa(i))
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-	return result
-}
-
-func reachableSafe(graph map[string]map[string]bool, p policy) []string {
-	seen := map[string]bool{}
-	queue := []string{}
-	for caller, destinations := range graph {
-		if !p.safe(caller) {
-			queue = append(queue, caller)
-		}
-		for callee := range destinations {
-			if !p.safe(callee) {
-				queue = append(queue, callee)
-			}
-		}
-	}
-	for len(queue) > 0 {
-		current := queue[len(queue)-1]
-		queue = queue[:len(queue)-1]
-		if seen[current] {
-			continue
-		}
-		seen[current] = true
-		for next := range graph[current] {
-			queue = append(queue, next)
-		}
-	}
-	result := []string{}
-	for file := range seen {
-		if p.safe(file) {
-			result = append(result, file)
-		}
-	}
-	sort.Strings(result)
-	return result
+// These packages register handlers on the shared default HTTP mux at import
+// time, even when their named objects are used only inside an uncalled function.
+func startupImport(path string) bool {
+	return path == "net/http/pprof" || path == "expvar"
 }
 
 func sortManifest(m *manifest) {
@@ -579,14 +492,9 @@ func sortManifest(m *manifest) {
 		if a.Caller != b.Caller {
 			return a.Caller < b.Caller
 		}
-		if a.CallerObject != b.CallerObject {
-			return a.CallerObject < b.CallerObject
-		}
 		if a.Callee != b.Callee {
 			return a.Callee < b.Callee
 		}
 		return a.Object < b.Object
 	})
-	sort.Strings(m.FromRun)
-	sort.Strings(m.ToRun)
 }

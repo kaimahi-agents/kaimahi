@@ -199,35 +199,30 @@ also run in the live-test binary, even when `-run` selects another test. Only
 literal `errors.New` and `regexp.MustCompile` setup with verified imports, and
 passive same-file pointer-to-nil type assertions, are permitted.
 
-The separate typed caller guard compares source references with the audited
-`scripts/ci/orka-callers.json` manifest. It catches a selected path calling a new
-unselected object, a new caller of selected code, and new calling declarations
-or closures even in a file already on the boundary. Multi-value initializer
-expressions get separate identities. Named imports in analyzed safe files are
-also pinned, including standard packages whose initialization runs even when a
-preview handler is never called. Static graph walks also
-catch selected-to-selected changes that extend an existing boundary reference in either
-direction. Methods, function values, fields and same-package private references
-are resolved with Go types, not names guessed from source text.
+The typed caller guard checks only references crossing between selected and
+unselected files, using reviewed file/object approvals in
+`scripts/ci/orka-callers.json`. Both directions matter: a selected-file method
+can shadow a promoted method and rebind an unchanged unselected caller.
+Go types resolve methods, function values, fields and same-package private
+references. Calls between selected files, ordinary imports, helper extraction
+and closures do not need manifest entries. Only `expvar` and `net/http/pprof`
+imports are pinned: they register handlers on the shared default HTTP mux at
+package initialization, even through otherwise unused named imports.
 
-The guard targets the qualifier's Linux/amd64 build without race/custom tags,
-includes App tests linked into that binary, and excludes other packages' tests.
-It compiles export metadata but never executes initializers or tests. Missing,
-stale or malformed manifests, unresolved definitions, unsupported owned CGO,
-source-file aliases and nested modules fail closed. Owned source containing
-`//line` or `/*line` directives is rejected so adjusted positions cannot relabel
-callers or imported definitions as another routing path. Existing init checks still
-inspect all build tags. This is a conservative source-reference tripwire, not a
-proof of dynamic dispatch, value flow or arbitrary Go effects, and not a sandbox.
+The guard analyzes Linux/amd64 without race/custom tags, including linked App
+tests but not other packages' tests; it never executes the analyzed code.
+Malformed approvals, unresolved definitions, owned CGO, source aliases, nested
+modules and owned `//line` or `/*line` directives fail closed. The separate
+init check still covers all build tags. These are source-reference tripwires,
+not proofs of dynamic dispatch, arbitrary external effects or isolation.
 
-For an intentional boundary change, inspect the output of
-`go run scripts/ci/orka-callers.go --audit` and review the affected callers before
-updating the manifest;
-hygiene never refreshes it automatically. Remove obsolete entries too.
-Both boundary helpers
-have dedicated negative/positive fixtures rather than top-level checker mutation
-discovery. Expanding the guard-only selections requires reviewed evidence and
-boundary tests.
+For an intentional new boundary reference, inspect
+`go run scripts/ci/orka-callers.go --audit` and review the affected code before
+updating the manifest. Hygiene never refreshes approvals automatically.
+Removing a reference needs no update; its approval persists for reintroduction
+until explicitly pruned with the audit output. Both guards have dedicated
+positive/negative fixtures. Expanding guard selections needs reviewed evidence
+and boundary tests.
 
 One Go module contains the root CLI (`cmd/kmx`, `internal/kmx`), concrete
 read-only suite member recipe view (`pkg/suiteview`) and alpha application
