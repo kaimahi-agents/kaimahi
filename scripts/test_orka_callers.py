@@ -2,10 +2,10 @@
 """Real Go modules exercise reviewed references across the selected boundary."""
 import json
 import os
-from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CHECKER = ROOT / "scripts/ci/orka-callers.go"
@@ -53,7 +53,7 @@ class CallerTests(unittest.TestCase):
 
     def invoke(self, *args, extra_env=None):
         result = subprocess.run([str(self.binary), *args], cwd=self.root,
-                                capture_output=True, text=True, timeout=120,
+                                capture_output=True, text=True, timeout=120, check=False,
                                 env={**os.environ, "GOWORK": "off", **(extra_env or {})})
         self.assertNotIn(CANARY, result.stdout + result.stderr)
         return result
@@ -214,7 +214,11 @@ while data.strip():
         self.put(CORE, f'package app\nimport "os"\nfunc init() {{ os.WriteFile({json.dumps(str(marker))}, []byte("{CANARY}"), 0600) }}\nfunc Orka() {{}}\n')
         self.assertEqual(self.invoke().returncode, 0)
         self.assertFalse(marker.exists())
-        self.put(SAFE, f'package app\nfunc Preview() {{ missing("{CANARY}") }}\n')
+        self.put(SAFE, f'package app\nfunc Preview() {{ var value int = "{CANARY}"; _ = value }}\n')
+        compiler = subprocess.run(["go", "list", "-deps", "-export", "./..."], cwd=self.root,
+                                  capture_output=True, text=True, timeout=120, check=False)
+        self.assertNotEqual(compiler.returncode, 0)
+        self.assertIn(CANARY, compiler.stderr)
         self.assertEqual(self.invoke().returncode, 1)
         self.assertFalse(marker.exists())
 
