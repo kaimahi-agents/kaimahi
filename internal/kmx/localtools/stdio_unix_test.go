@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -42,6 +43,7 @@ func TestStdioHostMappingEnvironmentAndClose(t *testing.T) {
 			cfg := stdioFixture(t, mode)
 			if mode != "empty-env" {
 				cfg.Env["STDIO_FROZEN"] = "frozen-before-start"
+				cfg.Env["DEBUG"] = "1"
 			}
 			host, err := StartStdioHost(t.Context(), cfg)
 			if err != nil {
@@ -85,6 +87,7 @@ func TestStdioStartupAndProtocolFailures(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			cfg := stdioFixture(t, mode)
 			cfg.Env["STDIO_SECRET"] = "private-stdio-canary"
+			cfg.CredentialEnv = []string{"STDIO_SECRET"}
 			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 			defer cancel()
 			host, err := StartStdioHost(ctx, cfg)
@@ -114,11 +117,23 @@ func TestStdioRejectsCredentialArguments(t *testing.T) {
 	}
 }
 
+func TestStdioShortCredentialsStillChecked(t *testing.T) {
+	cfg := stdioFixture(t, "structured")
+	cfg.Env["STDIO_SECRET"] = "1"
+	cfg.CredentialEnv = []string{"STDIO_SECRET"}
+	owner, err := StartStdioHost(t.Context(), cfg)
+	if err == nil {
+		_ = owner.Close()
+		t.Fatal("short credential echo in protocol was accepted")
+	}
+}
+
 func TestStdioCallFailuresNeverSucceed(t *testing.T) {
 	for _, mode := range []string{"crash", "echo-result", "escaped-echo-result", "error", "needs-input", "binary", "oversized-result", "blocked"} {
 		t.Run(mode, func(t *testing.T) {
 			cfg := stdioFixture(t, mode)
 			cfg.Env["STDIO_SECRET"] = "private-stdio-canary"
+			cfg.CredentialEnv = []string{"STDIO_SECRET"}
 			countFile := filepath.Join(cfg.Dir, "requests")
 			cfg.Args = append(cfg.Args, countFile)
 			host, err := StartStdioHost(t.Context(), cfg)
@@ -131,8 +146,8 @@ func TestStdioCallFailuresNeverSucceed(t *testing.T) {
 			if result, err := stdioCall(ctx, host); err == nil || strings.Contains(err.Error(), "private-stdio-canary") {
 				t.Fatalf("unsafe call accepted or leaked: %+v %v", result, err)
 			}
-			if err := host.Close(); err == nil {
-				t.Fatal("failed/cancelled call did not poison the owned session")
+			if err := host.Close(); !errors.Is(err, ErrStdio) || errors.Is(err, ErrStdioCleanup) {
+				t.Fatalf("failed call must poison the session without claiming failed cleanup: %v", err)
 			}
 			if data, err := os.ReadFile(countFile); err != nil || string(data) != "call\n" {
 				t.Fatalf("tool request retried or never sent: %q %v", data, err)

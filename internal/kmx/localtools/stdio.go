@@ -29,7 +29,11 @@ type StdioConfig struct {
 	Args    []string
 	Dir     string
 	Env     map[string]string
-	Tools   map[string]string // local declared name -> exact remote name
+	// CredentialEnv identifies sensitive values within Env. The trusted caller
+	// must include every credential, including short values; non-secret settings
+	// such as DEBUG=1 must not be mistaken for protocol echoes.
+	CredentialEnv []string
+	Tools         map[string]string // local declared name -> exact remote name
 }
 
 // StdioHost owns one invocation's process and SDK session. The caller must check
@@ -44,8 +48,8 @@ func (s *StdioHost) Host() *Host { return s.host }
 
 func (s *StdioHost) Close() error {
 	err := s.process.Close()
-	if s.session != nil && s.session.Close() != nil {
-		err = ErrStdioCleanup
+	if s.session != nil && s.session.Close() != nil && err == nil {
+		err = ErrStdio
 	}
 	return err
 }
@@ -57,6 +61,7 @@ func StartStdioHost(ctx context.Context, cfg StdioConfig) (*StdioHost, error) {
 		return nil, err
 	}
 	cfg.Args, cfg.Env, cfg.Tools = slices.Clone(cfg.Args), maps.Clone(cfg.Env), maps.Clone(cfg.Tools)
+	cfg.CredentialEnv = slices.Clone(cfg.CredentialEnv)
 	if !filepath.IsAbs(cfg.Command) || !filepath.IsAbs(cfg.Dir) || len(cfg.Command)+len(cfg.Dir) > 8192 || len(cfg.Args) > 128 || len(cfg.Env) > 64 || len(cfg.Tools) == 0 || len(cfg.Tools) > 32 {
 		return nil, ErrStdio
 	}
@@ -67,9 +72,15 @@ func StartStdioHost(ctx context.Context, cfg StdioConfig) (*StdioHost, error) {
 		if !envID.MatchString(name) || strings.ContainsRune(value, 0) || bytes > 64<<10 {
 			return nil, ErrStdio
 		}
-		if name != "PATH" && value != "" {
-			secrets = append(secrets, value)
+	}
+	seen := map[string]bool{}
+	for _, name := range cfg.CredentialEnv {
+		value, present := cfg.Env[name]
+		if !present || value == "" || seen[name] || len(cfg.CredentialEnv) > 64 {
+			return nil, ErrStdio
 		}
+		seen[name] = true
+		secrets = append(secrets, value)
 	}
 	exact := func(values ...string) error {
 		for _, value := range values {
@@ -99,11 +110,15 @@ func StartStdioHost(ctx context.Context, cfg StdioConfig) (*StdioHost, error) {
 	}
 	s := &StdioHost{process: process}
 	fail := func() (*StdioHost, error) {
-		_ = s.Close() // Startup already failed; never expose cleanup/peer content.
+		cleanup := s.Close()
+		cause := ErrStdio
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			cause = err
 		}
-		return nil, ErrStdio
+		if errors.Is(cleanup, ErrStdioCleanup) {
+			cause = errors.Join(cause, ErrStdioCleanup)
+		}
+		return nil, cause
 	}
 	startup, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()

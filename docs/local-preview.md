@@ -210,12 +210,18 @@ credential sign-in. Only mapped tools become trusted definitions. Text results
 project as `text`; structured object results take precedence over accompanying
 text. Binary/resource results and input-required responses cannot complete a
 call. Protocol frames are bounded and checked before SDK decoding; child stderr
-and SDK logs are discarded. Exact configured env-value echoes (except PATH) and
-known credential shapes in model/journal-bound data are rejected. This is not a
-general secret detector or a sandbox.
+and SDK logs are discarded. The trusted caller identifies credential env keys
+separately from ordinary settings such as `DEBUG=1`; every identified credential
+value is checked exactly, at any length, including decoded protocol metadata.
+Known credential shapes are also rejected in model/journal-bound data. This is
+not a general secret detector or a sandbox. Server-initiated requests and
+notifications are unsupported; they stop the session rather than invoking a
+callback.
 
 Linux, macOS and WSL processes get invocation-owned process groups, pipes and
-bounded kill/reap cleanup; cancellation poisons the session. The invocation
+bounded kill/reap cleanup; any failed call or cancellation poisons the session.
+A poisoned operation and an uncertain kill/reap have distinct fixed errors; both
+withhold completion, including cleanup failures during startup. The invocation
 must use its outer context, not the runner's shorter-lived resolver context,
 and must check the owner's `Close` before accepting a result. Cleanup failure
 withholds success. Descendants that deliberately escape their group with

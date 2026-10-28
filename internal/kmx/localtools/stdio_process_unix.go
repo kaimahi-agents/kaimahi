@@ -170,13 +170,19 @@ func (p *stdioProcess) Close() error {
 			var exit *exec.ExitError
 			expectedKill := errors.As(err, &exit) && exit.Sys().(syscall.WaitStatus).Signal() == syscall.SIGKILL
 			if err != nil && !expectedKill {
-				p.closeErr = ErrStdioCleanup
+				p.closeErr = ErrStdio
+				if exit == nil {
+					p.closeErr = ErrStdioCleanup
+				}
 			}
 		case <-time.After(time.Second):
 			p.closeErr = ErrStdioCleanup
 		}
 		p.mu.Lock()
-		if p.failed || p.ctx.Err() != nil || killErr != nil && !errors.Is(killErr, syscall.ESRCH) {
+		if (p.failed || p.ctx.Err() != nil) && p.closeErr == nil {
+			p.closeErr = ErrStdio
+		}
+		if killErr != nil && !errors.Is(killErr, syscall.ESRCH) {
 			p.closeErr = ErrStdioCleanup
 		}
 		p.mu.Unlock()
