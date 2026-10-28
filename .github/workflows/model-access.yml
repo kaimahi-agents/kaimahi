@@ -25,6 +25,13 @@ jobs:
           go-version-file: go.mod
       - name: Native model-access tests
         run: go test -race -count=1 ./internal/kmx/modelaccess/...
+      - name: Owned stdio host tests (Windows stays inert)
+        run: go test -race -count=1 ./internal/kmx/localtools ./internal/kmx/localpreview -run '^TestStdio'
+      - name: Repeat Unix stdio shutdown regressions
+        if: runner.os != 'Windows'
+        run: |
+          go test -race -count=20 ./internal/kmx/localtools -run '^TestStdioKilledLeaderCannotPassCleanup$|^TestStdioHostMappingEnvironmentAndClose$'
+          go test -race -count=20 ./internal/kmx/localtools -run '^TestStdioCallFailuresNeverSucceed$/^crash$'
       - name: Native macOS release-configuration tests
         if: runner.os == 'macOS'
         env:

@@ -526,6 +526,12 @@ into definitions and missing names; malformed/ambiguous replies still refuse.
 Bound tools support fake/local and Copilot Chat/Responses. Copilot rechecks catalog tool support before inference.
 Judging remains tool-free. Responses continuation stays private to the selected
 transport, never the journal. No silent tool dropping.
+The internal localtools stdio owner accepts only resolved host launch inputs and
+explicit mapped names, using checked bounded pipes, frozen explicit env and owned
+Unix process-group cleanup. Callers must check Close before accepting completion
+and use the outer invocation context, not a resolver context canceled by Run.
+The adapter adds no CLI flags/config selection and leaves the app host bridge
+unchanged. Native Windows tools remain deferred; process groups are not containment.
 
 Canonical `run FILE` / `test FILE` use the parser and `agentpreview.Runner`
 interface without cluster/workspace configuration. CLI/MCP fake/local and explicit
