@@ -22,9 +22,9 @@ expands those visible product commands:
 ```text
 kmx
 ├── create NAME                   (agent file and paired example test)
-├── run [FILE [input]] | --agent <name>
-├── test FILE
-│   └── explain [failure-id] --file FILE
+├── run [FILE [input]] [--tests FILE] | --agent <name>
+├── test FILE [--tests FILE]
+│   └── explain [failure-id] --file FILE [--tests FILE]
 ├── chat <name> [message...]
 ├── model
 │   ├── list [--provider local|copilot] [-o table|json]
@@ -76,6 +76,9 @@ kmx
 read-only reference extraction/export helpers; explicit `test FILE` is a local
 preview whose completed non-pass diagnostics can be explained offline with
 `test explain --file FILE`. Explicit `run FILE` is the corresponding preview Run.
+File Run/Test read the agent's default companion tests unless `--tests FILE`
+selects another tests file; the agent bytes and prompt are unchanged, and file-scoped
+Explain uses the current `--tests FILE` selection. `--tests` requires an agent FILE.
 `kmx mcp --root DIR`, `kmx completion bash|zsh|fish` and `kmx help [TOPIC...]`
 remain operational but are omitted from root help. MCP and Completion are also
 omitted from root completion suggestions; explicit invocation still works.
@@ -86,9 +89,9 @@ checks complete source content through the shared bounded materializer.
 
 On native Windows, the same discovery rules apply. Visibility in help/completion
 is not an enabled capability list. Current `main` permits only version/help/
-completion, package-free fake `run FILE` / `test FILE`, and offline
-`test explain ... --file FILE` (plus the hidden legacy Explain spelling for
-compatibility). Every other route refuses before effects. See the
+completion, package-free fake `run FILE` / `test FILE` (including the `--tests FILE`
+selector), and offline `test explain ... --file FILE` (with optional `--tests FILE`;
+plus the hidden legacy Explain spelling for compatibility). Every other route refuses before effects. See the
 [native Windows command boundary](windows.md#supported-native-commands).
 
 Unreleased `model list` defaults to local discovery; explicit Copilot listing
