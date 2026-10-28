@@ -98,10 +98,26 @@ class CallerTests(unittest.TestCase):
         self.assertEqual(self.invoke().returncode, 1)
 
     def test_private_functions_bound_methods_and_fields_are_typed(self):
-        for body in ("call := Orka; call()", "c := Core{}; call := c.Ping; call()", "_ = Core{}.Flag"):
-            with self.subTest(body=body):
-                self.put(SAFE, f"package app\nfunc Preview() {{ {body} }}\n")
-                self.assertEqual(self.invoke().returncode, 1)
+        self.put(CORE, "package app\nfunc Orka() {}\nfunc privateProof() {}\ntype Core struct { Flag, Other int }\nfunc (Core) Ping() {}\n")
+        self.put(SAFE, "package app\nfunc Preview() { call := privateProof; call() }\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("app.privateProof", result.stderr)
+        core = {"caller": SAFE, "callee": CORE, "object": MODULE + "/internal/kmx/app.Core"}
+        method = {"caller": SAFE, "callee": CORE, "object": MODULE + "/internal/kmx/app.Core.Ping"}
+        self.manifest([core])
+        self.put(SAFE, "package app\nfunc Preview() { c := Core{}; call := c.Ping; call() }\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("app.Core.Ping", result.stderr)
+        audited = self.invoke("--audit")
+        self.assertEqual(audited.returncode, 0, audited.stderr)
+        self.assertEqual(json.loads(audited.stdout)["edges"], [core, method])
+        self.manifest([core, method])
+        self.assertEqual(self.invoke().returncode, 0)
+        self.manifest([])
+        self.put(SAFE, "package app\nfunc Preview() { _ = Core{}.Flag }\n")
+        self.assertEqual(self.invoke().returncode, 1)
         audited = self.invoke("--audit")
         self.assertEqual(audited.returncode, 0, audited.stderr)
         self.assertEqual({e["object"] for e in json.loads(audited.stdout)["edges"]},
