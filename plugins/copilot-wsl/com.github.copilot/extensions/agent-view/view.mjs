@@ -1,7 +1,7 @@
 // Agent canvas. Files and previews are accessed only through the
 // same session's existing kmx MCP resource and Edit/Run/Test operations.
 import { randomBytes, timingSafeEqual, createHash } from "node:crypto";
-import { instructionSections, replaceInstructions, replaceExamples, replaceTools, exampleEdits, effectiveModel, agentName, fileLocation, hasFrontmatter, testsNeedAcknowledgement, pendingCapture, COPILOT_TESTS_NOTICE } from "./authoring.mjs";
+import { instructionSections, replaceInstructions, replaceExamples, replaceTools, exampleEdits, effectiveModel, agentName, fileLocation, hasFrontmatter, testsNeedAcknowledgement, pendingCapture } from "./authoring.mjs";
 import { readFile } from "node:fs/promises";
 import http from "node:http";
 import { ensureHostRuntime, previewServer, beginPreview, closeHostRuntime, observePreview } from "./host-relay.mjs";
