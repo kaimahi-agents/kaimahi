@@ -403,7 +403,7 @@ export function formatView(view) {
     : status === "stale" ? "Latest: STALE (from an earlier revision; not current)"
     : `Latest: current, ${badge === "pass" ? "PASS" : "NOT PASSING"} (${one(result.state, 40)}, verdict ${one(result.verdict, 40)}) · runtime model: ${result.modelRoute === "/" ? "not selected" : one(result.modelRoute, 340)}`;
   const out = [
-    `Agent view: ${one(view.file.path, 120)} (${one(view.file.revision, 19)})`,
+    `Agent view: ${one(view.file.path, 120)} (${view.file.revision})`,
     `Title: ${one(view.title, 120)}`,
     `Authored model: ${one(view.model.replace(/\n/g, "; "), 160) || "(not set)"}`,
     // Keep the bounded status ahead of authored details that may be truncated.

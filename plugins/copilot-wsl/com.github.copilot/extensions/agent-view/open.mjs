@@ -25,6 +25,19 @@ const refused = (error) => ({
   message: error instanceof ViewError ? error.message : "The kmx agent view could not be opened. Use /agent-view PATH for a text view.",
 });
 
+// Text is bounded display only. Exact edit authority comes only from the
+// resource's hash-verified full source snapshot and full revision.
+function textView(path, view, extra = {}) {
+  const authoring = view.authoring
+    ? { source: view.authoring.source, editable: view.authoring.editable,
+        ...(!view.authoring.editable ? { reasonCode: "source_not_editable" } : {}) }
+    : { editable: false, reasonCode: "complete_source_unavailable" };
+  return {
+    opened: false, mode: "text", ...extra, path, text: formatView(view),
+    file: { path: view.file.path, revision: view.file.revision }, authoring,
+  };
+}
+
 // Both entry points validate the same agent resource. In particular, built-in
 // open_canvas reaches the provider directly rather than the native UI tool.
 export async function readOpenView(session, input) {
@@ -45,7 +58,7 @@ export function createOpenHandler({ getSession, extensionId }) {
       const advertised = session.capabilities?.ui?.canvases === true;
       if (typeof session.rpc?.canvas?.open !== "function") {
         if (advertised) throw new ViewError("unavailable");
-        return { opened: false, mode: "text", path, text: formatView(view) };
+        return textView(path, view);
       }
       // Try even when not advertised: a resumed app session can omit the
       // capability although its canvases work. Text only if opening fails.
@@ -53,7 +66,7 @@ export function createOpenHandler({ getSession, extensionId }) {
         await session.rpc.canvas.open({ extensionId, canvasId: CANVAS_ID, instanceId: viewInstanceId(path), input: { path } });
       } catch (error) {
         if (advertised) throw error;
-        return { opened: false, mode: "text", canvasFailed: true, path, text: formatView(view) };
+        return textView(path, view, { canvasFailed: true });
       }
       // The host response contains the bridge's private URL; do not expose it
       // in this tool's model-facing result.

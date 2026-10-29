@@ -299,6 +299,7 @@ test("formatView is compact, plain and visibly truncated", async () => {
   const withResult = resource(MINIMAL, { latest: { status: "current", result: result() } });
   const text = formatView(await readView(stubSession(withResult), MINIMAL));
   assert.match(text, /greeter\.agent\.md/);
+  assert.match(text, new RegExp(REV));
   assert.match(text, /Greeter/);
   assert.match(text, /hello/);
   assert.match(text, /Latest: current, PASS/);

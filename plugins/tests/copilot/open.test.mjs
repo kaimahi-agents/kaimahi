@@ -1,12 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { registerHooks } from "node:module";
 import { createOpenHandler, createOpenCommand, readOpenView, viewInstanceId, OPEN_TOOL_NAME, OPEN_TOOL_PARAMETERS } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/open.mjs";
 
 const PATH = "greeter.agent.md";
 const PROVIDER = "plugin:kmx-agent-builder:agent-view";
-function setup({ renderer = true, readError, badResource = false, resourceError, openError, path = PATH } = {}) {
+const SOURCE = "# Greeter\n\nReply hello.\n";
+const REVISION = "sha256:" + createHash("sha256").update(SOURCE).digest("hex");
+function setup({ renderer = true, readError, badResource = false, resourceError, openError, path = PATH, authoring = true, editable = true } = {}) {
   const calls = [];
   const session = {
     log: async (message, options) => { assert.equal(typeof message, "string", "SDK log takes a string"); calls.push(["log", message, options]); },
@@ -15,7 +18,7 @@ function setup({ renderer = true, readError, badResource = false, resourceError,
     mcp: { resources: { read: async (input) => {
       calls.push(["read", input]); if (readError) throw readError;
       if (resourceError) return { contents: [{ text: JSON.stringify(resourceError) }] };
-      return { contents: [{ text: JSON.stringify({ schemaVersion: 1, kind: "kmx.agent-view", file: { path: badResource ? "other.agent.md" : path, revision: "sha256:" + "a".repeat(64) }, title: "Greeter", instructions: "Reply hello.", model: "fake", examples: [], latest: { status: "none" } }) }] };
+      return { contents: [{ text: JSON.stringify({ schemaVersion: 1, kind: "kmx.agent-view", file: { path: badResource ? "other.agent.md" : path, revision: REVISION }, title: "Greeter", instructions: "Reply hello.", model: "fake", examples: [], ...(authoring ? { authoring: { source: SOURCE, editable } } : {}), latest: { status: "none" } }) }] };
     } } },
     canvas: { open: async (input) => {
       calls.push(["open", input]); if (openError) throw openError;
@@ -70,6 +73,8 @@ test("one authoritative read precedes one stable canvas open and response omits 
     ["open", { extensionId: PROVIDER, canvasId: "kmx-agent-view", instanceId: "kmx-agent-greeter", input: { path: PATH } }],
   ]);
   assert.doesNotMatch(JSON.stringify(result), /private-bridge-token|127\.0\.0\.1|private-provider/);
+  assert.equal(result.file, undefined, "canvas success must not duplicate source authority");
+  assert.equal(result.authoring, undefined, "canvas success must not return source");
   assert.equal((await f.run({ path: PATH })).opened, true);
   assert.deepEqual(f.calls[1][1], f.calls[3][1]);
 });
@@ -113,18 +118,57 @@ test("an unadvertised renderer is still tried; text only when the canvas can't o
     if (renderer === undefined) delete failing.session.capabilities.ui;
     const result = await failing.run({ path: PATH });
     assert.equal(result.mode, "text"); assert.equal(result.canvasFailed, true); assert.match(result.text, /Title: Greeter/);
+    assert.deepEqual(result.file, { path: PATH, revision: REVISION });
+    assert.deepEqual(result.authoring, { source: SOURCE, editable: true });
+    assert.match(result.text, new RegExp(REVISION));
     assert.match(result.text, /Latest: none/); assert.deepEqual(failing.calls.map(c => c[0]), ["read", "open"]);
     const missing = setup({ renderer }); delete missing.session.rpc.canvas;
     if (renderer === undefined) delete missing.session.capabilities.ui;
-    assert.equal((await missing.run({ path: PATH })).mode, "text");
+    const text = await missing.run({ path: PATH });
+    assert.equal(text.mode, "text");
+    assert.deepEqual(text.file, { path: PATH, revision: REVISION });
+    assert.deepEqual(text.authoring, { source: SOURCE, editable: true });
     assert.deepEqual(missing.calls.map(c => c[0]), ["read"]);
   }
+});
+test("text fallback never manufactures edit authority from bounded display text", async () => {
+  for (const [options, want] of [
+    [{ authoring: false }, { editable: false, reasonCode: "complete_source_unavailable" }],
+    [{ editable: false }, { source: SOURCE, editable: false, reasonCode: "source_not_editable" }],
+  ]) {
+    const f = setup({ renderer: false, ...options }); delete f.session.rpc.canvas;
+    const result = await f.run({ path: PATH });
+    assert.equal(result.mode, "text");
+    assert.deepEqual(result.file, { path: PATH, revision: REVISION });
+    assert.deepEqual(result.authoring, want);
+    assert.match(result.text, new RegExp(REVISION));
+  }
+});
+test("text fallback keeps exact complete source separate from visibly truncated text", async () => {
+  const source = "# Large\n\n" + "x".repeat(12000) + "\n";
+  const revision = "sha256:" + createHash("sha256").update(source).digest("hex");
+  const f = setup({ renderer: false }); delete f.session.rpc.canvas;
+  f.session.rpc.mcp.resources.read = async (input) => {
+    f.calls.push(["read", input]);
+    return { contents: [{ text: JSON.stringify({
+      schemaVersion: 1, kind: "kmx.agent-view", file: { path: PATH, revision },
+      title: "Large", instructions: source, model: "fake", examples: [],
+      authoring: { source, editable: true }, latest: { status: "none" },
+    }) }] };
+  };
+  const result = await f.run({ path: PATH });
+  assert.equal(result.authoring.source, source);
+  assert.deepEqual(result.file, { path: PATH, revision });
+  assert.ok(result.text.length <= 6000);
+  assert.match(result.text, /\[truncated\]/);
+  assert.notEqual(result.text, source);
 });
 test("advertised renderer failure is a safe refusal, never a retry or text substitute", async () => {
   const f = setup({ openError: Object.assign(new Error("http://secret/token"), { code: -32603 }) });
   const result = await f.run({ path: PATH });
   assert.equal(result.opened, false); assert.equal(result.reasonCode, "canvas-unavailable");
   assert.equal(result.text, undefined);
+  assert.equal(result.authoring, undefined);
   assert.doesNotMatch(JSON.stringify(result), /secret|token|-32603/);
   assert.deepEqual(f.calls.map(c => c[0]), ["read", "open"]);
 });
@@ -267,16 +311,39 @@ test(`actual ${variant} extension opens its own provider and registers the kmx s
 
 for (const variant of ["copilot-wsl", "copilot"]) test(`${variant} skill help distinguishes a missing extension from a text fallback`, async () => {
   const opener = await readFile(new URL(`../../${variant}/skills/kmx/SKILL.md`, import.meta.url), "utf8");
-  assert.ok(opener.includes("Select the kmx skill entry in your host's slash menu and give it open FULL_PATH, or ask: Open the kmx canvas for FULL_PATH."));
+  const entry = variant === "copilot" ? "kmx-agent-builder-path" : "kmx-agent-builder";
+  assert.ok(opener.includes(`Use /${entry}:kmx open FULL_PATH, or ask: Open the kmx agent for FULL_PATH.`));
   assert.doesNotMatch(opener, /`\/kmx(?: help| open|`)/);
   assert.match(opener, /If `open_kmx_canvas` is offered/);
+  assert.match(opener, /successful text view/);
+  assert.match(opener, /authoring\.source/);
+  assert.match(opener, /Never edit from the\s+bounded `text` field/);
   const absent = opener.split("## No opener available")[1];
-  assert.ok(absent?.includes("Canvas not opened: no canvas opener is available in this session. Use a Copilot host with the kmx canvas extension loaded."));
+  assert.ok(absent?.includes("Agent not opened: this session has no kmx canvas or text opener. Use a Copilot host with the kmx extension loaded."));
   assert.doesNotMatch(absent, /\/agent-view/);
   const builder = await readFile(new URL(`../../${variant}/skills/kmx-agent-builder/SKILL.md`, import.meta.url), "utf8");
   assert.match(builder, /description: .*running an input.*saved tests/);
-  assert.ok(builder.includes("Added 1 test to <file>."));
-  assert.ok(builder.includes("Added <count> tests to <file>."));
+  assert.match(builder, /Created <basename> and opened it in the text view/);
+  assert.match(builder, /Saved tests \(not run\)/);
+  assert.match(builder, /Added 1 test to <file> \(not run\)/);
+  assert.match(builder, /Added <count> tests to <file> \(not run\)/);
+  assert.match(builder, /After an ordinary\s+full-content Edit/);
+  assert.match(builder, /Edit with `exampleEdits`/);
+  assert.match(builder, /obtain a checked complete authoring\s+snapshot/);
+  assert.match(builder, /withhold further edits/);
+  assert.match(builder, /returned file path and revision/);
+  assert.match(builder, /returned provider\/model/);
+  assert.match(builder, /identity mismatch is \*\*Not current\*\*/);
+  assert.match(builder, /result includes `savedRevision`/);
+  assert.match(builder, /held source and revision as stale/);
+  assert.match(builder, /Before any later Run, Test or Edit, read a\s+checked agent resource for the same path/);
+  assert.match(builder, /never pair the old source with\s+the saved revision/);
+  assert.match(builder, /MCP preflight refusal/);
+  assert.match(builder, /exactly\s+`schemaVersion`, `reasonCode` and `reason`, with no `kind`/);
+  assert.match(builder, /never\s+report a pass/);
+  assert.match(builder, /require `kind: kmx\.agent-file-preview`/);
+  assert.ok(builder.indexOf("MCP preflight refusal") < builder.indexOf("Require the returned file path and revision"));
+  for (const marker of ["structuredContent", "Full pass", "Partial pass", "Inconclusive", "Refused", "Cancelled", "Did not finish", "showContent: true", "never rerun"]) assert.ok(builder.includes(marker), marker);
 });
 
 for (const variant of ["copilot-wsl", "copilot"]) test(`${variant} builder waits for a saved revision without using execution as discovery`, async () => {

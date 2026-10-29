@@ -623,7 +623,23 @@ projects validated Copilot IDs/default for the picker, without startup auth or
 inference. Model selection is memory-only, never source/history. Fence model
 changes as well as revisions; never attribute another model's result as current. No folder confirmation is needed
 for charter content. After successful Create, open its returned file.path in the
-existing canvas. Give one plain notice before the first hosted-model send;
+existing canvas or revision-bound text fallback. Text mode is a successful
+presentation, not a failed canvas: return the full file revision and exact source
+only from the checked resource's complete authoring snapshot, and never edit from
+formatted or truncated text. Without the extension, same-chat Create/Edit/Run/Test
+may continue from returned source/revision, but a fresh chat gains no read tool or
+shell fallback. Shared skills read Run/Test structuredContent, preserve full versus
+subset and fail/unknown/refused/cancelled/error distinctions, and never infer pass
+from tool success. Handle the exact three-field MCP preflight refusal before
+preview attribution; every other Run/Test result requires the preview kind.
+Returned path/revision and any explicit requested route/model
+must match the held invocation before attribution; mismatch is not current, never
+pass. Conversation-local model choice is path-scoped, never source or
+history; answer content requires an explicit request and is never recovered by a
+second send. Retain submitted source with an Edit result only after its SHA-256
+matches the returned revision; sparse exampleEdits require a fresh checked
+authoring snapshot because the server, not the submitted baseline, creates the
+saved bytes. Give one plain notice before the first hosted-model send;
 ordinary agent-file creation stays confirmation-free, without path-character
 restrictions. Before writing new or changed inline tests in a frontmatter-based
 Copilot file, canvas/MCP shows "Tests added here become part of this agent's
@@ -641,7 +657,10 @@ same sources; do not maintain a second canvas/skill implementation. The macOS/PA
 plugin in `plugins/copilot` links to those shared sources except for generated
 provider-identity copies of both skills and `extension.mjs`. Regenerate these
 with `python3 plugins/copilot/source_release.py --write` in every PR that changes
-their canonical inputs; CI checks parity without writing. Its source plugin name
+their canonical inputs; CI checks parity without writing. Conservative Python
+identity-shape checks run before regeneration, while the mocked-SDK Node import
+of both real extensions is the semantic provider-registration authority; release
+publication requires both. Its source plugin name
 is `kmx-agent-builder-path`; WSL/native bundles keep `kmx-agent-builder`, and the
 MCP server key remains unchanged. Its MCP command is `/usr/local/bin/kmx mcp`,
 matching the installer destination without relying on a Dock-launched app's PATH.
@@ -650,6 +669,7 @@ without a bundled engine, root/model configuration or installation helper.
 Node tests stay outside both installable trees under `plugins/tests/copilot`.
 Legacy bundle tooling retains its separate `native-mcp.json` template.
 See [MCP](docs/kmx.md#local-stdio-mcp).
+See [Copilot CLI text mode](docs/copilot-cli-text-mode.md).
 
 ## Internal native Squad authoring boundary
 

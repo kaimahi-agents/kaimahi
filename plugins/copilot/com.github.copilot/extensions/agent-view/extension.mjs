@@ -36,7 +36,7 @@ session = await joinSession({
   canvases: [canvas],
   tools: [{
     name: OPEN_TOOL_NAME,
-    description: "Open an existing kmx agent canvas, or show its text view when no renderer is available. Does not edit, run or test.",
+    description: "Open an existing kmx agent canvas, or return its revision-bound text view when no renderer is available. Complete source is returned only from the checked resource snapshot. Does not edit, run or test.",
     parameters: OPEN_TOOL_PARAMETERS,
     handler: createOpenHandler({ getSession: () => session, extensionId: "plugin:kmx-agent-builder-path:agent-view" }),
   }],

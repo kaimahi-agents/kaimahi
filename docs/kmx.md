@@ -153,9 +153,10 @@ examples; file Run/Test/Explain link to the single
 [preview caveats page](local-preview.md#cli-storage-privacy-and-evidence-caveats)
 for local content retention, privacy and the limits of preview results.
 
-Create still authors native workspace source; Chat still targets a live Orka
-Agent, and Package Build still consumes an AgentSuite directory. Short help does
-not imply paired-file creation, folder Test or agent-file package compilation.
+Root Create authors an agent file with a paired example test, and bare Test checks
+direct agent files in the current folder and `.github/agents/`. Package Create
+owns native workspace authoring; Chat still targets a live Orka Agent, and
+Package Build still consumes an AgentSuite directory.
 
 ### Test compatibility (unreleased)
 
@@ -705,16 +706,29 @@ editability. A restart has no current result;
 a revision change marks the old observation stale and withholds its details.
 Reads perform no inference, mutation or journal retrieval.
 
-The [Windows/WSL plugin](../plugins/copilot-wsl/README.md) and
-[macOS/PATH plugin](../plugins/copilot/README.md) share a
-native authoring canvas and read-only `/agent-view PATH` text fallback over this
-resource. Canvas Edit/Test/Run use existing same-session MCP tools; only explicit
+On current main, the [Windows/WSL plugin](../plugins/copilot-wsl/README.md) and
+[macOS/PATH plugin](../plugins/copilot/README.md) share a native authoring canvas
+and an unreleased revision-bound chat text fallback over this resource. Native
+`/kmx-canvas open` and `/agent-view PATH` display bounded read-only text only;
+the model-facing `open_kmx_canvas` tool returns the full revision and exact
+source only when the resource supplied a complete authoring snapshot. Its
+bounded display is never an Edit baseline. The v0.9.0-rc.4 marketplace pair does
+not expose that structured text result. Canvas and chat Edit/Test/Run use existing same-session MCP tools; only explicit
 **Suggest tests** starts chat with the exact saved source, path and revision,
 asking Copilot for one revision-checked Edit without running tests or requiring a
 resource-reader tool. Its status acknowledges the request, not a completed addition. Saves require the original revision; changed result
 revisions are labelled stale rather than silently rebasing the draft.
 Inspection can show a minimal titled agent as well as a canonical Squad charter;
 this display-only support does not change Run/Test parser acceptance.
+
+Shared skills consume Run/Test `structuredContent`, keep full and subset results
+distinct and report one row per returned test; tool-call success alone is never a
+pass. A conversation-local runtime model choice is scoped to the exact path and
+never changes authored source. Answer content is requested only when the user
+asks and is never recovered with an automatic rerun. Without the extension,
+same-chat work can continue from source/revision returned by Create/Edit, while a
+fresh chat gains no file read or shell fallback. See
+[Copilot CLI text mode](copilot-cli-text-mode.md).
 
 The canvas check chooser offers Contains, Not contains, Regex and Judge. Judge
 edits the existing `llmJudge` fields: a multiline rubric, integer minimum score
@@ -1609,8 +1623,8 @@ and one `yaml agent-test` fence with case `greeting` (input `Ada`, assertion
 directory; `--description` sets the description. Under `.github/agents` the test
 is written to the sibling `agent-tests` directory. It reads no config, prompts
 for nothing and calls no model; an existing target refuses with exit 2 and is
-never overwritten. Companion loading is not yet supported; `kmx test` on a
-new agent reports `no_tests` (exit 2).
+never overwritten. File Test selects the generated companion by default;
+`--tests FILE` selects an explicit alternative for one agent.
 For a fake-model preview, use `kmx run NAME.agent.md "hi" --model fake`.
 Without that override, Run uses the default Copilot model and requires an
 existing sign-in (`gh auth login`).
