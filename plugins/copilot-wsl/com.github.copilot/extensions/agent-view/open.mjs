@@ -1,17 +1,19 @@
 // Read-only native UI tool; independent of skill text and slash registration.
 import { createHash } from "node:crypto";
 import { CANVAS_ID, ViewError, normalizePath, readView, formatView } from "./view.mjs";
+import { MAX_RESOURCE_BYTES, normalizeTests } from "./view-resource.mjs";
 
 export const OPEN_TOOL_NAME = "open_kmx_canvas";
 export const OPEN_TOOL_PARAMETERS = {
   type: "object",
-  properties: { path: { type: "string", description: "Existing .agent.md or .squad/agents/<member>/charter.md path, including an absolute WSL path." } },
+  properties: { path: { type: "string", description: "Existing .agent.md or .squad/agents/<member>/charter.md path, including an absolute WSL path." }, tests: { type: "string", description: "Optional selected companion tests path for an .agent.md file." } },
   required: ["path"],
   additionalProperties: false,
 };
 // Preserve legacy IDs; full paths need distinct portable IDs across repos.
-export function viewInstanceId(rawPath) {
+export function viewInstanceId(rawPath, tests) {
   const path = normalizePath(rawPath);
+  if (tests !== undefined) return "kmx-agent-" + createHash("sha256").update(JSON.stringify([path, normalizeTests(tests)])).digest("hex").slice(0, 24);
   const flat = /^([a-z][a-z0-9-]{0,62})\.agent\.md$/.exec(path);
   if (flat) return "kmx-agent-" + flat[1];
   const squad = /^\.squad\/agents\/([a-z][a-z0-9-]{0,62})\/charter\.md$/.exec(path);
@@ -32,29 +34,38 @@ function textView(path, view, extra = {}) {
     ? { source: view.authoring.source, editable: view.authoring.editable,
         ...(!view.authoring.editable ? { reasonCode: "source_not_editable" } : {}) }
     : { editable: false, reasonCode: "complete_source_unavailable" };
-  return {
+  const result = {
     opened: false, mode: "text", ...extra, path, text: formatView(view),
     file: { path: view.file.path, revision: view.file.revision }, authoring,
   };
+  if (view.selectedSources) {
+    const { source, ...selectedSources } = view.selectedSources;
+    if (!result.authoring.source) result.authoring.source = source;
+    result.selectedSources = selectedSources;
+    if (Buffer.byteLength(JSON.stringify(result)) > MAX_RESOURCE_BYTES) result.text = "Selected sources available; detailed display omitted for size.";
+    if (Buffer.byteLength(JSON.stringify(result)) > MAX_RESOURCE_BYTES) throw new ViewError("too-large");
+  }
+  return result;
 }
 
 // Both entry points validate the same agent resource. In particular, built-in
 // open_canvas reaches the provider directly rather than the native UI tool.
 export async function readOpenView(session, input) {
   if (!input || typeof input !== "object" || Array.isArray(input)
-      || Object.keys(input).length !== 1 || !Object.hasOwn(input, "path")) {
+      || Object.keys(input).some(k => !["path", "tests"].includes(k)) || !Object.hasOwn(input, "path")) {
     throw new ViewError("invalid-path");
   }
   const path = normalizePath(input.path);
   if (!session) throw new ViewError("unavailable");
-  return { path, view: await readView(session, path) };
+  const tests = normalizeTests(input.tests);
+  return { path, tests, view: await readView(session, path, tests) };
 }
 
 export function createOpenHandler({ getSession, extensionId }) {
   return async (input) => {
     try {
       const session = getSession();
-      const { path, view } = await readOpenView(session, input);
+      const { path, tests, view } = await readOpenView(session, input);
       const advertised = session.capabilities?.ui?.canvases === true;
       if (typeof session.rpc?.canvas?.open !== "function") {
         if (advertised) throw new ViewError("unavailable");
@@ -63,7 +74,7 @@ export function createOpenHandler({ getSession, extensionId }) {
       // Try even when not advertised: a resumed app session can omit the
       // capability although its canvases work. Text only if opening fails.
       try {
-        await session.rpc.canvas.open({ extensionId, canvasId: CANVAS_ID, instanceId: viewInstanceId(path), input: { path } });
+        await session.rpc.canvas.open({ extensionId, canvasId: CANVAS_ID, instanceId: viewInstanceId(path, tests), input: { path, ...(tests !== undefined ? { tests } : {}) } });
       } catch (error) {
         if (advertised) throw error;
         return textView(path, view, { canvasFailed: true });

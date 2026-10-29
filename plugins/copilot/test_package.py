@@ -100,7 +100,7 @@ class PackageTests(unittest.TestCase):
         names = {"extension.mjs", "view.mjs", "open.mjs", "index.html", "app.js", "style.css", "authoring.mjs", "editor.mjs",
                  "draft-controller.mjs", "action-controller.mjs", "observation-controller.mjs", "host-relay.mjs", "tool-catalog.mjs", "tools-view.mjs", "test-tools.mjs",
                  "dom.mjs", "results.mjs", "check-controls.mjs", "instruction-text.mjs",
-                 "run-views.mjs", "view-resource.mjs", "failure-wording.mjs"}
+                 "run-views.mjs", "view-resource.mjs", "paired-actions.mjs", "failure-wording.mjs"}
         self.assertEqual({p.name for p in (self.out / native).iterdir()}, names)
         for name in names:
             self.assertEqual((self.out / native / name).read_bytes(),
@@ -377,7 +377,7 @@ class ProcessTests(unittest.TestCase):
                     result = reply["result"]
                     payload = result["structuredContent"]
                     text = result["content"][0]["text"]
-                    if payload.get("kind") == "kmx.agent-file-preview":
+                    if payload.get("kind") in {"kmx.agent-file-preview", "kmx.agent-pair-preview", "kmx.agent-pair-save"}:
                         self.assertIsInstance(text, str)
                         self.assertTrue(text.strip())
                     elif set(payload) == {"schemaVersion", "reasonCode", "reason"}:
@@ -387,18 +387,20 @@ class ProcessTests(unittest.TestCase):
                     return result, payload
 
                 skill = (cache / "skills/kmx-agent-builder/SKILL.md").read_text()
-                self.assertIn("````markdown\n", skill, "orientation needs a runnable canonical charter")
-                source = skill.split("````markdown\n", 1)[1].split("\n````", 1)[0] + "\n"
+                blocks = skill.split("````markdown\n")[1:]
+                self.assertEqual(len(blocks), 2, "orientation needs agent and companion sources")
+                source, tests_source = (block.split("\n````", 1)[0] + "\n" for block in blocks)
                 wrong = source.replace("Hello, ", "Goodbye, ", 1)
                 self.assertNotEqual(source, wrong)
-                path = ".squad/agents/greeter/charter.md"
-                result, created = call("create", path=path, content=wrong)
+                path = "greeter.agent.md"
+                result, created = call("create", schemaVersion=3, path=path, content=wrong, testsContent=tests_source)
                 self.assertFalse(result.get("isError", False))
                 revision = created["file"]["revision"]
                 self.assertEqual(revision, "sha256:" + hashlib.sha256(wrong.encode()).hexdigest())
                 self.assertEqual((root / path).read_bytes(), wrong.encode())
 
-                result, failed = call("run", path=path, input="Grace")
+                result, envelope = call("test", schemaVersion=3, path=path, expectedSourceVersion=created["sourceVersion"])
+                failed = envelope["preview"]
                 self.assertFalse(result.get("isError", False))
                 self.assertIn("verdict=fail", result["content"][0]["text"])
                 self.assertNotIn("Hello, Ada", result["content"][0]["text"])
@@ -408,15 +410,17 @@ class ProcessTests(unittest.TestCase):
                 self.assertEqual(failed["examples"][0]["assertions"][0]["id"], "greeting-text")
                 self.assertNotIn("answerExcerpt", json.dumps(failed))
 
-                result, fixed = call("edit", path=path, content=source, expectedRevision=revision)
+                result, fixed = call("edit", schemaVersion=3, path=path, content=source, expectedSourceVersion=created["sourceVersion"])
                 self.assertFalse(result.get("isError", False))
                 new_revision = fixed["file"]["revision"]
                 self.assertNotEqual(new_revision, revision)
-                result, partial = call("test", path=path, caseId="greeting")
+                result, envelope = call("test", schemaVersion=3, path=path, expectedSourceVersion=fixed["sourceVersion"], caseId="greeting")
+                partial = envelope["preview"]
                 self.assertFalse(result.get("isError", False))
                 self.assertEqual((partial["verdict"], partial["fullPass"], partial["selection"]["scope"]),
                                  ("pass", False, "subset"))
-                result, passed = call("test", path=path)
+                result, envelope = call("test", schemaVersion=3, path=path, expectedSourceVersion=fixed["sourceVersion"])
+                passed = envelope["preview"]
                 self.assertFalse(result.get("isError", False))
                 self.assertEqual((passed["state"], passed["verdict"], passed["fullPass"]),
                                  ("complete", "pass", True))
@@ -424,7 +428,7 @@ class ProcessTests(unittest.TestCase):
                 self.assertEqual(passed["modelRoute"], {"provider": "fake", "model": "fake"})
                 self.assertNotIn("runner", passed)
                 journals = list((home / "local-preview" / "journals").glob("*.db"))
-                # Run, subset Test and full Test each own one journal. The
+                # Failing, subset and full Test each own one journal. The
                 # packaged fake route must retain content without leaking handles.
                 self.assertEqual(len(journals), 3)
                 self.assertTrue(all(path.stat().st_size > 0 for path in journals))
@@ -432,16 +436,17 @@ class ProcessTests(unittest.TestCase):
                     self.assertNotIn(journal.name, json.dumps(passed))
                 self.assertEqual(passed["retention"], {"status": "not_requested"})
 
-                # Mutation refusal must not change the bound charter or escape into the cache/cwd.
+                # Refusals must not change either source or escape into the cache/cwd.
                 for name, args, reason in [
-                    ("edit", dict(path=path, content=wrong, expectedRevision=revision), "stale_revision"),
-                    ("create", dict(path=path, content=source), "already_exists"),
-                    ("create", dict(path="../escape.agent.md", content=source), "unsafe_path"),
+                    ("edit", dict(schemaVersion=3, path=path, content=wrong, expectedSourceVersion=created["sourceVersion"]), "stale_revision"),
+                    ("create", dict(schemaVersion=3, path=path, content=source, testsContent=tests_source), "already_exists"),
+                    ("create", dict(schemaVersion=3, path="../escape.agent.md", content=source, testsContent=tests_source), "unsafe_path"),
                 ]:
                     result, refused = call(name, **args)
                     self.assertTrue(result["isError"])
                     self.assertEqual(refused["reasonCode"], reason)
                 self.assertEqual((root / path).read_bytes(), source.encode())
+                self.assertEqual((root / "greeter.agent.test.md").read_bytes(), tests_source.encode())
                 self.assertFalse((base / "escape.agent.md").exists())
                 self.assertFalse((cache / ".squad").exists())
                 self.assertFalse((root / ".squad/team.md").exists())

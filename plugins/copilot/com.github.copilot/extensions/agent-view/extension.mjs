@@ -17,7 +17,7 @@ const canvas = createCanvas({
   description: "Author an agent's instructions and examples, then test it in the canvas.",
   inputSchema: {
     type: "object",
-    properties: { path: { type: "string", description: ".agent.md or .squad/agents/<member>/charter.md path, including an absolute WSL path" } },
+    properties: { path: { type: "string", description: ".agent.md or .squad/agents/<member>/charter.md path, including an absolute WSL path" }, tests: { type: "string", description: "Optional selected companion tests path for an .agent.md file." } },
     required: ["path"],
     additionalProperties: false,
   },

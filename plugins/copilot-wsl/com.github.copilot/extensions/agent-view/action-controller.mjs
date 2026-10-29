@@ -1,4 +1,4 @@
-import { effectiveModel, validateDraft as validate, testsNeedAcknowledgement, pendingCapture, hasFrontmatter } from "./authoring.mjs";
+import { sourceIdentity, effectiveModel, validateDraft as validate, testsNeedAcknowledgement, pendingCapture, hasFrontmatter } from "./authoring.mjs";
 import { isRefused, plainReason, quoted, clone } from "./editor.mjs";
 const CONFLICTS = ["revision_mismatch", "revision-mismatch"];
 const UNKNOWN = ["outcome-unknown", "uncertain-outcome", "uncertain_outcome"];
@@ -9,7 +9,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
   const { hasDrafts, rawExamples, entries, localExamples, draftName, checkProblem, adopt } = drafts;
   function clearUndo() { state.promptUndo = undefined; clearTimeout(state.undoTimer); }
   function offerUndo(sections) {
-    state.promptUndo = { sections, revision: state.base.file.revision };
+    state.promptUndo = { sections, revision: sourceIdentity(state.base) };
     state.undoTimer = setTimeout(() => { clearUndo(); refresh(); }, 10000);
     state.undoTimer.unref?.();
   }
@@ -49,6 +49,10 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     const action = { operation, ...values };
     if (values.examples && state.base.authoring?.recordingControls) action.exampleOrigins = values.examples.map(raw => entries().find(e=>e.raw?.id===raw.id)?.origin?.id ?? (rawExamples().some(e=>e.id===raw.id) ? raw.id : null));
     if (!["reload", "suggest"].includes(operation)) action.expectedRevision = state.base.file.revision;
+    if (state.base.selectedSources && !["reload", "suggest"].includes(operation)) {
+      action.expectedSourceVersion = state.base.selectedSources.sourceVersion;
+      if (state.base.toolSettingsRevision !== undefined) action.expectedSettingsRevision = state.base.toolSettingsRevision;
+    }
     const executing = ["save-and-test", "test", "run"].includes(operation);
     const hostedAttempt = executing && effectiveModel(state.base.model, modelChoice.override, state.base.chatModel) !== "fake";
     if (executing) {
@@ -100,7 +104,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     } else if (response?.error) {
       const unknown = UNKNOWN.includes(response.error) || CONFLICTS.includes(response.error);
       // Unsaved failures must still match our revision.
-      const fresh = matches(response.view) && (response.saved === true || response.view.file.revision === state.base.file.revision);
+      const fresh = matches(response.view) && (response.saved === true || sourceIdentity(response.view) === sourceIdentity(state.base));
       if (response.settingsIncomplete && (response.saved === true || unknown)) {
         state.blocked = true; state.savedUntested = response.saved === true; state.settingsIncomplete = true;
         state.message = `${response.saved ? "Some changes were saved. " : ""}${unknown ? "The tool settings outcome is unconfirmed. " : ""}Tests did not run. Your draft is still here; reload to inspect the saved agent and settings.`;
@@ -129,7 +133,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
     } else {
       state.blocked = true; state.message = "Outcome not confirmed. Do not resubmit. Reload deliberately to inspect the saved file.";
     }
-    if (previousPrompt.length && response?.saved === true && matches(response.view) && state.base.file.revision === response.view.file.revision && !state.blocked && !state.candidate) offerUndo(previousPrompt);
+    if (previousPrompt.length && response?.saved === true && matches(response.view) && sourceIdentity(state.base) === sourceIdentity(response.view) && !state.blocked && !state.candidate) offerUndo(previousPrompt);
     render();
   }
 
@@ -137,6 +141,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
   // and only a fresh go-ahead (never a stale one) adds the acknowledgement.
   // The same go-ahead covers a first live capture, which writes recorded calls into the tests.
   function acknowledged(values, again, ack, ids) {
+    if (state.base.selectedSources && state.base.selectedSources.testsState !== "inline") return true;
     const source = state.base.authoring.source, saved = rawExamples(), intended = values.examples ?? saved;
     const settings = drafts.toolNames().map(name => ({ name, state: drafts.toolState(name) }));
     if (!testsNeedAcknowledgement(source, saved, intended) && !(state.base.authoring.recordingControls && hasFrontmatter(source) && pendingCapture(intended, settings, ids))) return true;
@@ -148,7 +153,7 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
   function runInput(input, ack = false) {
     if (!state.snap || state.busy || state.blocked || state.candidate || invalidEditors.size) return;
     const saved = rawExamples(), settings = drafts.toolNames().map(name => ({ name, state: drafts.toolState(name) })), values = { input };
-    if (state.base.authoring?.recordingControls && hasFrontmatter(state.base.authoring.source) && pendingCapture(saved, settings, saved.map(e => e.id))) {
+    if ((!state.base.selectedSources || state.base.selectedSources.testsState === "inline") && state.base.authoring?.recordingControls && hasFrontmatter(state.base.authoring.source) && pendingCapture(saved, settings, saved.map(e => e.id))) {
       if (ack !== true) { state.confirm = { go: () => runInput(input, true) }; render(); return; }
       values.acknowledgeCopilotTests = true;
     }

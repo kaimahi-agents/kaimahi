@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -56,6 +57,7 @@ type sourceDocument struct {
 	Version          *AgentVersion             `json:"version,omitempty"`
 	SourceVersion    string                    `json:"sourceVersion,omitempty"`
 	PairOperations   *pairOperationsCapability `json:"pairOperations,omitempty"`
+	Canvas           *AgentView                `json:"canvas,omitempty"`
 }
 
 func pairDocument(pair *agentfile.Pair, source []byte) sourceDocument {
@@ -69,6 +71,28 @@ func sourcesDocument(pair pairSources, source []byte) sourceDocument {
 	}
 	return d
 }
+
+// sourceCanvas derives editor data from the same held sources. It neither
+// executes nor reads the legacy latest cache; paired results are invocation-only.
+func sourceCanvas(ctx context.Context, requested string, b *pairBinding) *AgentView {
+	a := b.sources.Agent
+	settings, err := localtools.ReadSettingsSnapshot(ctx, b.sources.AgentPath, a.Tools)
+	if err != nil {
+		return nil
+	}
+	v := &AgentView{SchemaVersion: 1, Kind: "kmx.agent-view", File: File{Path: requested, Revision: a.Revision}, Title: a.Title, Instructions: a.Instructions, Model: a.Model, Tools: a.Tools, Frontmatter: a.Frontmatter, CopilotToolsOmitted: a.CopilotToolsOmitted, ToolSettings: settings.Settings, ToolSettingsRevision: settings.Revision, Latest: AgentViewLatest{Status: "none"}, SourceHistory: readOnlySourceHistory()}
+	v.Authoring = &AgentViewAuthoring{Source: string(b.agent.source), Editable: true, RecordingControls: true, RecordingDetails: agentfile.RecordingDetails(b.agent.source)}
+	examples := a.Examples
+	if b.sources.Tests.State == "external" {
+		examples = b.sources.Tests.Suite.Examples
+		v.Authoring.RecordingDetails = agentfile.TestsRecordingDetails(b.tests.source)
+	}
+	for _, e := range examples {
+		v.Examples = append(v.Examples, AgentViewExample{ID: e.ID, Input: e.Input, Assertions: e.Assertions, Mocks: e.Mocks})
+	}
+	return v
+}
+
 func sourceResourcePath(uri string) (string, string, error) {
 	const prefix = "kmx://agent-sources/"
 	if !strings.HasPrefix(uri, prefix) {
@@ -94,6 +118,11 @@ func pairVersionURI(p, id string) string {
 }
 func sourceResourceResult(ctx context.Context, uri string, d sourceDocument) (*sdk.ReadResourceResult, error) {
 	b, err := json.Marshal(d)
+	if err == nil && len(b) > 2<<20 && d.Canvas != nil {
+		// Optional normalized editing data never hides either exact source.
+		d.Canvas = nil
+		b, err = json.Marshal(d)
+	}
 	if err != nil || len(b) > 2<<20 {
 		return nil, refusal("invalid_file")
 	}
@@ -149,6 +178,7 @@ func AddSourceHistoryResource(server *sdk.Server, files *Files) {
 				}
 			}
 		}
+		d.Canvas = sourceCanvas(ctx, p, bound)
 		if err := bound.check(ctx); err != nil {
 			return nil, err
 		}

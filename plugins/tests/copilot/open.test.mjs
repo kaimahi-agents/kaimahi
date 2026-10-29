@@ -40,7 +40,7 @@ test("instance IDs are stable portable identifiers, not paths, and distinguish l
 
 test("same-named agents in different repos have stable distinct canvas IDs", async () => {
   const paths = ["/repo one/greeter.agent.md", "/repo two/greeter.agent.md", "/repo Māori/.squad/agents/greeter/charter.md", "nested/Release Notes.agent.md"];
-  const ids = paths.map(viewInstanceId);
+  const ids = paths.map(path => viewInstanceId(path));
   assert.equal(new Set(ids).size, paths.length);
   for (const [i, path] of paths.entries()) {
     assert.equal(viewInstanceId(path), ids[i]);
@@ -59,10 +59,10 @@ test("shared preflight validates the bound resource without opening a canvas", a
   assert.deepEqual(f.calls.map(c => c[0]), ["read"]);
 });
 
-test("native UI tool accepts only path, never a root or additional argument", () => {
+test("native UI tool accepts path and optional selected tests, never a root or additional argument", () => {
   assert.equal(OPEN_TOOL_NAME, "open_kmx_canvas");
   assert.deepEqual(OPEN_TOOL_PARAMETERS.required, ["path"]);
-  assert.deepEqual(Object.keys(OPEN_TOOL_PARAMETERS.properties), ["path"]);
+  assert.deepEqual(Object.keys(OPEN_TOOL_PARAMETERS.properties), ["path", "tests"]);
   assert.equal(OPEN_TOOL_PARAMETERS.additionalProperties, false);
 });
 test("one authoritative read precedes one stable canvas open and response omits token", async () => {
@@ -353,6 +353,17 @@ for (const variant of ["copilot-wsl", "copilot"]) test(`${variant} builder waits
   assert.ok(skill.includes("For an add-tests request that cannot be saved, include this conditional next step: If your kmx canvas offers Suggest tests, use it to send the saved source and revision to chat."));
   assert.ok(skill.includes("describe missing saved source and revision, not host implementation terms"));
   assert.ok(skill.includes("If no agent-resource reader is available, follow the no-save recovery above."));
+});
+
+for (const variant of ["copilot-wsl", "copilot"]) test(`${variant} defaults new tests to paired Create and keeps checked contexts distinct from raw hashes`,async()=>{
+  const builder=await readFile(new URL(`../../${variant}/skills/kmx-agent-builder/SKILL.md`,import.meta.url),"utf8");
+  const create=builder.split("## Create, then open")[1].split("## Paired saved sources")[0];
+  assert.match(create,/`create` with `schemaVersion: 3`/);assert.match(create,/`testsContent`/);
+  assert.doesNotMatch(create,/Optional final `## Examples`/);
+  assert.match(builder,/## Paired saved sources/);assert.match(builder,/`expectedSourceVersion`/);assert.match(builder,/kmx\.agent-pair-preview/);assert.match(builder,/`savedSourceVersion`/);
+  assert.match(builder,/`yaml agent-test`/);assert.doesNotMatch(builder,/MCP operations stay single-source/);
+  const opener=await readFile(new URL(`../../${variant}/skills/kmx/SKILL.md`,import.meta.url),"utf8");
+  assert.match(opener,/selectedSources/);assert.match(opener,/sourceVersion/);
 });
 
 test("/kmx-canvas open resolves a relative path in the session folder and says what happened", async () => {

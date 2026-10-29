@@ -6,7 +6,7 @@ v0.9.0-rc.4 marketplace pair, whose fallback returns bounded display text only.
 
 This contract makes Create, Edit, Run and Test useful through Copilot chat when
 the host cannot render the kmx canvas. Text mode is a normal presentation of the
-existing MCP operations and `kmx://agent/{path}` resource. It is not another
+existing MCP operations and checked agent/source resources. It is not another
 runner, file reader, editor or persistence layer.
 
 ## Scope
@@ -30,7 +30,8 @@ separate work for a generic read operation is intentionally not introduced here.
 
 ## Source authority
 
-`kmx://agent/{path}` remains the only reopen authority. Its checked resource
+Legacy `kmx://agent/{path}` remains the single-source reopen authority. Paired
+files use `kmx://agent-sources/{path}{?tests}` instead. Its checked resource
 provides the exact file path and SHA-256 revision. Its optional `authoring`
 snapshot contains the complete source bytes and an `editable` decision. The
 extension verifies that the source hashes to the revision before exposing it.
@@ -57,6 +58,16 @@ The `open_kmx_canvas` text result is additive:
   }
 }
 ```
+
+For a paired snapshot, `authoring.source` still holds exact agent bytes and
+`file.revision` remains their raw hash. Additional `selectedSources` contains exact
+`testsSource`, tests state/revision/path, selection key, combined `snapshotRevision`,
+opaque `sourceVersion`, issuing `server`, capabilities and optional `selector`.
+The opener accepts optional `tests` for explicit selection; omit it for the shared
+default rule. Use that same owner and selector with v3 `expectedSourceVersion`;
+never use a raw hash as the token or transfer it across servers. Text fallback
+starts no host relay. If normalized editing data is omitted for size, the complete
+sources remain inspection-only. Sources are never truncated to enable editing.
 
 This structured result belongs to the model-facing `open_kmx_canvas` tool.
 Native `/kmx-canvas open` logs only the bounded text projection and does not
@@ -124,7 +135,13 @@ First distinguish the exact MCP preflight envelope: `schemaVersion`,
 `cancelled` as **Cancelled**, `deadline_exceeded` or `operation_failed` as
 **Did not finish**, and every other safe preflight code as **Refused**. Do not
 invent preview identity, state or verdict, and never report a pass. Any other
-result must have `kind: kmx.agent-file-preview` before the preview checks below.
+legacy result must have `kind: kmx.agent-file-preview` before the preview checks below.
+For v3 require `kmx.agent-pair-preview`, match the executed `sourceVersion` and
+`preview` source tuple, then apply those same checks to the unwrapped `preview`.
+A complete capture identifies the saved pair with `savedSourceVersion` and
+`savedSnapshotRevision`; its `savedRevision` is the recording target, not necessarily
+the agent. Partial/uncertain role effects never authorize another operation or
+restore metadata withheld by the App. Refresh both sources at the same selection.
 
 The returned file path and revision must match the held invocation target and
 revision. An explicitly requested model or trusted route must also match the
@@ -132,7 +149,7 @@ returned provider/model; when none was supplied, the attributable returned route
 is the effective choice. A mismatch is **Not current**, never pass, and cannot
 change the remembered model.
 
-An attributable result with `savedRevision` still describes execution against
+For legacy single-source capture, an attributable result with `savedRevision` still describes execution against
 its returned `file.revision`; recording capture changed the saved file afterward.
 Before a later Run, Test or Edit, chat reads a checked snapshot for the same path,
 requires its revision to equal `savedRevision`, and uses the refreshed revision

@@ -12,13 +12,14 @@ import (
 )
 
 type pairEditInput struct {
-	Path                    string  `json:"path"`
-	Tests                   string  `json:"tests"`
-	ExpectedSourceVersion   string  `json:"expectedSourceVersion"`
-	Content                 *string `json:"content"`
-	TestsContent            *string `json:"testsContent"`
-	RestoreVersionID        string  `json:"restoreVersionId"`
-	AcknowledgeCopilotTests bool    `json:"acknowledgeCopilotTests"`
+	Path                    string                  `json:"path"`
+	Tests                   string                  `json:"tests"`
+	ExpectedSourceVersion   string                  `json:"expectedSourceVersion"`
+	Content                 *string                 `json:"content"`
+	TestsContent            *string                 `json:"testsContent"`
+	RestoreVersionID        string                  `json:"restoreVersionId"`
+	AcknowledgeCopilotTests bool                    `json:"acknowledgeCopilotTests"`
+	ExampleEdits            []agentfile.ExampleEdit `json:"exampleEdits"`
 }
 
 func (f *Files) createPairBinding(ctx context.Context, p string, agentBytes, testsBytes []byte) (*pairBinding, error) {
@@ -117,6 +118,7 @@ func pairAuthoringOperation(files *Files, name string) *Operation {
 		required = []string{"path", "expectedSourceVersion"}
 		properties["expectedSourceVersion"] = &jsonschema.Schema{Type: "string", MinLength: new(1), MaxLength: new(128)}
 		properties["tests"] = &jsonschema.Schema{Type: "string", MinLength: new(1)}
+		properties["exampleEdits"] = exampleEditsSchema()
 		properties["restoreVersionId"] = &jsonschema.Schema{Type: "string", MinLength: new(1), MaxLength: new(128)}
 	}
 	return &Operation{Schema: &jsonschema.Schema{Type: "object", Required: required, Properties: properties, AdditionalProperties: &jsonschema.Schema{Not: &jsonschema.Schema{}}}, Handler: func(ctx context.Context, req *sdk.CallToolRequest) (*sdk.CallToolResult, error) {
@@ -150,13 +152,13 @@ func pairAuthoringOperation(files *Files, name string) *Operation {
 			}
 			selection = bound.sources.Tests.Selection
 			if input.RestoreVersionID != "" {
-				if input.Content != nil || input.TestsContent != nil {
+				if input.Content != nil || input.TestsContent != nil || input.ExampleEdits != nil {
 					bound.close()
 					return nil, refusal("invalid_options")
 				}
 				agentBytes, testsBytes, selection, err = bound.restored(ctx, input.RestoreVersionID)
 			} else {
-				if input.Content == nil && input.TestsContent == nil {
+				if input.Content == nil && input.TestsContent == nil && len(input.ExampleEdits) == 0 || input.TestsContent != nil && input.ExampleEdits != nil {
 					bound.close()
 					return nil, refusal("invalid_options")
 				}
@@ -165,6 +167,16 @@ func pairAuthoringOperation(files *Files, name string) *Operation {
 				}
 				if input.TestsContent != nil {
 					testsBytes = []byte(*input.TestsContent)
+				}
+				if len(input.ExampleEdits) > 0 {
+					if bound.sources.Tests.State == "inline" {
+						agentBytes, err = agentfile.ApplyExampleEdits(agentBytes, input.ExampleEdits)
+					} else {
+						testsBytes, err = agentfile.ApplyTestsEdits(testsBytes, input.ExampleEdits)
+					}
+					if err != nil {
+						err = refusal("invalid_file")
+					}
 				}
 			}
 			if err != nil {

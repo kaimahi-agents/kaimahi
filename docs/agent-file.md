@@ -78,7 +78,10 @@ checks. Version-3 Create/Edit write the selected pair with per-source
 acknowledgements, source-only history and current-binding restore. Pending tool
 capture saves only after journal close; external capture leaves agent bytes exact.
 Partial/uncertain saves require refresh, never automatic retry or Test. The canvas
-paired loop remains deferred. Frozen recordings replay without another capture.
+keeps separate prompt/tests drafts, saves them before Enter/Test, and shows checked
+source history without treating it as saved verdicts. New chat Create writes both
+sources; existing inline tests stay in place. Frozen recordings replay without
+another capture. Explicit suite selection is also available to the canvas opener.
 The legacy version-1 agent-view resource, Run/Test and Edit refuse an agent-only view when its
 default tests file exists; they do not ignore it, report an old agent-only pass
 as current, or fall back to inline writes. Native Squad and single-source files

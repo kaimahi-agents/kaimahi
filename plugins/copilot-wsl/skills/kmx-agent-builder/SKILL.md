@@ -7,8 +7,9 @@ description: Use when creating or opening a kmx agent, editing its prompt, runni
 
 Use the MCP server `kmx-agent-builder` advertised by this plugin for `create`,
 `edit`, `run` and `test`, not shell or host file-write tools. Follow its discovered
-schemas. Use that same server throughout: the canvas and text opener read its
-resources and results. An unrelated demo server's name does not identify this
+schemas. Keep each checked source context on the server that issued it. A paired opener's
+`selectedSources.server` identifies its owner; use that advertised server for the
+held context, never transfer its token to another server or invent a child name. An unrelated demo server's name does not identify this
 plugin's kmx route.
 Use the actual folder from the request or session, not the plugin's installation
 folder. Send the full agent path in that folder. When kmx runs in WSL, translate a
@@ -17,8 +18,9 @@ agent filename. Agent files can live in any directory; do not ask for a folder
 confirmation.
 Older explicitly rooted installations also support their root-relative paths.
 
-kmx reads and writes agent files only: `*.agent.md` and Squad charters at
-`.squad/agents/<member>/charter.md`. Leave unrelated files and credentials alone.
+kmx reads and writes `*.agent.md`, their checked selected companion tests through
+v3, and Squad charters at `.squad/agents/<member>/charter.md`. Leave unrelated files
+and credentials alone.
 An existing GitHub Copilot agent file (YAML frontmatter, then a free-form prompt)
 opens as it is. Edit only what the user asks: never rewrite its prompt or frontmatter,
 never add headings, and keep every frontmatter setting kmx does not map as written.
@@ -37,7 +39,11 @@ Do not put credentials in agent files, logs or command arguments.
      and preserve its PR number and title. Use only requirements from the request.
    - Optional `## Model` with `- **Preferred:** <model>`, only when the user names a model;
      otherwise omit it and let the runtime default apply, without asking for a model.
-   - Optional final `## Examples`: a few concrete tests of the requested job, in canonical YAML.
+   - Tests stay out of agent `content`. Put them in separate `testsContent`: Markdown
+     with `---`, `schemaVersion: 1`, `---` frontmatter, then one `yaml agent-test`
+     fence per test mapping (`id`, `input`, `assertions`, optional `mocks.tools`).
+     An empty tests container is valid when no tests are requested. Let Create
+     select the fixed C3 tests filename; do not derive another path or write files separately.
    Expand the prompt only for requirements the user actually supplies. Keep
    injection, approval, publishing and other policy rules out of generated agents
    unless the user requested them. Those are not default agent responsibilities.
@@ -45,16 +51,22 @@ Do not put credentials in agent files, logs or command arguments.
    ID comes from the file name.
    Do not add YAML frontmatter to a new file unless the user asks for a Copilot-format
    agent. If they do, put the user's settings in the frontmatter and the prompt below it;
-   tests then become part of the prompt in Copilot, so follow the go-ahead rule below
-   before Create includes any.
+   tests still go in separate `testsContent`, not below that prompt. This external
+   path has no inline-prompt warning or go-ahead.
    For tests, use small realistic inputs and `contains` checks on stable strings
    the prompt requires, such as a supplied PR number or a verbatim title. Test the
    work, not invented approval conversations or exact paraphrases. Keep every
    tested string justified by the prompt/input; do not guess a model's wording.
-   Call them **tests** in chat; `## Examples` and `examples:` are file-format keys.
-2. Call `create` with `schemaVersion: 1`, the full `path` and the proposed `content`.
-3. After successful Create, retain the exact submitted source and
-   `structuredContent.file.path`/`revision` for this conversation, then open that
+   Call them **tests** in chat; fences are file-format syntax, not prompt sections.
+2. Call `create` with `schemaVersion: 3`, the full `path`, agent `content` and
+   `testsContent`. Do not supply a tests selector to Create. Require
+   `kind: kmx.agent-pair-save`, `state: complete`, both source acknowledgements and
+   `sourceVersion` before reporting Created. For partial, uncertain or not-saved
+   publication, report each role's acknowledged effect, keep drafts and do not
+   retry, roll back, run Test or fall back to writing inline tests.
+3. After successful Create (complete paired acknowledgement), retain the exact submitted sources, checked
+   `sourceVersion`/`snapshotRevision` and `structuredContent.file.path`/`revision`
+   for this conversation, then open that
    file using the `kmx` skill's opener:
    Copilot's built-in `open_canvas` when offered, otherwise `open_kmx_canvas`.
    Use provider `plugin:kmx-agent-builder:agent-view` and canvas `kmx-agent-view`.
@@ -93,8 +105,48 @@ take precedence. Report a provider error as an error, not as a passing result.
 Before the first hosted-model run, say once: "Testing sends the agent prompt and
 test inputs to the selected hosted model." This is a notice, not a confirmation.
 
+## Paired saved sources
+
+Use this branch when a checked source/opener advertises v3 `pairOperations` or
+`selectedSources.operations`; `sourceHistory.read` alone grants no write or execution
+capability. Obtain exact agent and selected tests bytes (or observed absence), raw
+agent revision, `snapshotRevision`, `sourceVersion` and current selector from
+`kmx://agent-sources/{path}` or a complete paired text opener. Encode the whole agent
+path as one URI component; the optional `tests` query is the caller's current selection.
+Never invent a read tool or use formatted text, history paths or a file hash as a context.
+
+Call Edit/Run/Test with `schemaVersion: 3`, held `expectedSourceVersion`, exact agent
+path and the same optional `tests` selector. With an opener, preserve
+`selectedSources.selector` when present; otherwise omit `tests`. The token belongs
+to `selectedSources.server` (or the server that supplied the checked resource).
+Never compute it or substitute `file.revision`/`snapshotRevision`. Keep raw agent,
+tests and combined snapshot revisions distinct. Honor execute/edit/capture/restore
+capabilities independently; invalid pairs can be repairable but cannot run.
+
+For prompt-only edits send `content`; for test changes prefer sparse `exampleEdits`
+to preserve fixtures, numbers, prose and line endings. Both may be sent together.
+Do not combine sparse edits with `testsContent` or `restoreVersionId`. External and
+new absent-default tests never go into the agent prompt and need no inline warning.
+Existing inline tests stay inline and retain the go-ahead rule below. Only a complete
+save supplies a new usable context; partial or uncertain role effects are not an
+acknowledged pair, and never trigger Test or an automatic retry.
+
+For v3 execution require `kind: kmx.agent-pair-preview`. Verify its `sourceVersion`
+and `preview` raw-agent revision, selected tests state/revision/key and snapshot
+against the held invocation before applying the common outcome checks below to
+`preview`. Do not accept an unrelated latest resource as this invocation. Capture
+keeps the executed tuple unchanged: `savedRevision` is the recording target's raw
+hash, not necessarily the agent hash. A complete capture receipt plus
+`savedSourceVersion`/`savedSnapshotRevision` identifies the saved pair. Before a
+later operation read the same selected sources and match those saved identities;
+never reuse the old bytes with the new context. Missing or privacy-withheld identity
+cannot be repaired from outer metadata. History is source-only; restore through
+v3 Edit `restoreVersionId` with the current context/selector, never a retained path.
+
 ## Edit and test
 
+The single-source instructions here preserve existing inline files; paired sources
+use the branch above. Apply the outcome labels to the unwrapped paired `preview`.
 Use Edit only with the saved path, exact saved source and matching current
 `expectedRevision`. Exact source may come from this chat's successful Create/Edit,
 a supplied saved snapshot, or an available agent-resource reader including a text
@@ -129,7 +181,7 @@ If the invocation supplied an explicit model or trusted route, require the
 returned provider/model to match that request too; otherwise use the attributable
 returned route as the effective choice. Any identity mismatch is **Not current**,
 never a pass, and cannot update the remembered model.
-If an otherwise attributable result includes `savedRevision`, the invocation ran
+For legacy single-source capture only: if an otherwise attributable result includes `savedRevision`, the invocation ran
 the held `file.revision`, but recording capture changed the saved file. Treat the
 held source and revision as stale. Before any later Run, Test or Edit, read a
 checked agent resource for the same path, require its revision to equal
@@ -156,16 +208,16 @@ Test retention metadata contains only opaque diagnostic IDs, not failure content
 it is not proof that no cleartext preview journal exists.
 Explain is not an MCP tool; file diagnostics are inspected offline through the
 CLI with the exact file path. `kmx test FILE` selects its default companion or
-an explicit `--tests FILE`; this plugin's MCP operations stay single-source and
-refuse a present default companion. `kmx package test` is native workspace
+an explicit `--tests FILE`; v3 MCP uses that same selection mechanism. Legacy v1
+operations still refuse a present default companion instead of ignoring it. `kmx package test` is native workspace
 evaluation, not this preview.
 Keep using this plugin's MCP Run/Test calls for chat requests.
 
 ## Tests in Copilot-format files
 
 In a file with YAML frontmatter, everything below the header is the prompt, so tests
-written into it become instructions in Copilot. Before any Create or Edit that adds
-or changes tests in such a file, show the user exactly: `Tests added here become part
+written into it become instructions in Copilot. Before an explicit legacy Create
+or Edit adds or changes inline tests in that file, show the user exactly: `Tests added here become part
 of this agent's prompt in Copilot.` Ask them to go ahead or cancel. Call the tool
 with `acknowledgeCopilotTests: true` only after they go ahead; on cancel, make no
 call. Prompt-only or tools-only edits that leave the tests unchanged need no
@@ -179,8 +231,10 @@ because a frontmatter model or tool is one kmx does not map.
 
 ## Add tests from chat
 
-When asked to add or suggest tests with a saved agent snapshot, use its exact
-complete source and `expectedRevision`; no resource read is needed. Add job-relevant
+For a paired snapshot, use the paired branch above: one v3 Edit with the supplied
+checked context and sparse test intents, preserving the selected source. For an
+existing inline snapshot, use its exact complete source and `expectedRevision`;
+no resource read is needed. Add job-relevant
 tests with one Edit at that revision, after the go-ahead above when the file has
 frontmatter. Otherwise use an available agent-resource reader to obtain both the
 saved source and current revision. If no agent-resource reader is available,
@@ -230,14 +284,21 @@ Reply with exactly `Hello, ` followed by the input name.
 ## Model
 - **Preferred:** fake
 
-## Examples
-```yaml
-examples:
-  - id: greeting
-    input: Ada
-    assertions:
-      - id: greeting-text
-        type: contains
-        value: Hello, Ada
+````
+
+Separate `testsContent` (not agent instructions):
+
+````markdown
+---
+schemaVersion: 1
+---
+
+```yaml agent-test
+id: greeting
+input: Ada
+assertions:
+  - id: greeting-text
+    type: contains
+    value: Hello, Ada
 ```
 ````

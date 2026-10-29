@@ -715,8 +715,13 @@ source only when the resource supplied a complete authoring snapshot. Its
 bounded display is never an Edit baseline. The v0.9.0-rc.4 marketplace pair does
 not expose that structured text result. Canvas and chat Edit/Test/Run use existing same-session MCP tools; only explicit
 **Suggest tests** starts chat with the exact saved source, path and revision,
-asking Copilot for one revision-checked Edit without running tests or requiring a
-resource-reader tool. Its status acknowledges the request, not a completed addition. Saves require the original revision; changed result
+asking Copilot for one checked Edit without running tests or requiring a
+resource-reader tool. New chat Create uses v3 to write prompt and companion tests
+separately. Paired canvases preserve separate drafts; Enter saves the selected
+sources before Test. Source details show Agent/Tests identities and source-only
+history, with Agent/Tests/Both change labels and restore without automatic Test.
+External tests and capture do not trigger the inline-prompt warning. Existing
+inline Copilot tests keep that warning and are not migrated. Its status acknowledges the request, not a completed addition. Saves require the original revision; changed result
 revisions are labelled stale rather than silently rebasing the draft.
 Inspection can show a minimal titled agent as well as a canonical Squad charter;
 this display-only support does not change Run/Test parser acceptance.
@@ -843,15 +848,19 @@ This resource is content-bearing and read-only. `sourceHistory` v1 advertises
 `read: true`, with `execute`, `edit`, `capture` and `restore` all false. The
 legacy agent-view carries this separate capability too; the plugin rejects a
 v1 capability claiming those actions. Native Squad tool v2 is unrelated. The
-legacy paired-source fence stays in place; this does not add canvas paired
-execution, editing or a restore picker.
+legacy paired-source fence stays in place. The paired canvas uses the separate
+v3 capability below, not an upgrade of this read-only capability.
 
 A separate `pairOperations` v1 capability advertises `toolSchemaVersion: 3` and
 `execute`, `create`, `edit`, `capture` and `restore` for supported `*.agent.md`
 sources. Independently parsed but cross-invalid sources have `validation:
 "invalid_pair"`: Edit can repair them, but execute/capture are false. Malformed
 source roles still refuse without disclosure. Native `charter.md` paths retain v1/native v2,
-not this paired branch. The current source resource adds an opaque `sourceVersion`.
+not this paired branch. An optional `canvas` projection supplies normalized
+examples/settings from the same held sources. Omit it as a whole when oversized;
+the two exact source roles remain complete and inspection-only. Existing inline
+files retain their legacy view; zero-inline-case views advertise separate v3
+discovery. The current source resource adds an opaque `sourceVersion`.
 It binds the selected physical files, exact revisions and observed file/parent
 identities, not a verdict or permission to write. It is process-local, with 32
 metadata-only contexts: refresh after restart, eviction or `stale_revision`.
@@ -869,14 +878,22 @@ physical agent folder's effective settings; the unchanged original-only setter
 uses its settings revision, not this source token. Never mix v1/native-v2 operands.
 A result has `schemaVersion: 3`, kind `kmx.agent-pair-preview`, the executed
 `sourceVersion` and `preview`, the unchanged shared App result v1. The source
-snapshot stays separate from the raw agent revision. Paired results never populate
+snapshot stays separate from the raw agent revision. Rendered editable paired
+canvases establish the existing host relay before their first baseline, even when
+initially tool-free. This starts no tool/model/journal sends; the child exposes
+Run/Test/Edit, never Create or settings. Reads and paired operations stay on that
+context owner. A competing startup leaves inspection only until deliberate reload;
+a failed/ambiguous startup requires a new session, not a silent fallback. Text
+fallback does not start the relay. Paired results never populate
 the agent-only legacy latest cache or become deployment evidence.
 
 The existing **Create** tool accepts version 3 with both `content` (agent) and
 `testsContent`, creating only the fixed C3 names when both are absent. It accepts
 no `tests` selector. **Edit** requires `expectedSourceVersion` and optional existing
 `tests`; supply raw `content`, `testsContent`, or exclusive `restoreVersionId`.
-Omitted content is unchanged. Edit can create the absent default suite, never a
+Sparse `exampleEdits` reuse the existing field patcher for external fences or
+existing inline tests; they may accompany `content`, but not `testsContent` or
+restore. Omitted content is unchanged. Edit can create the absent default suite, never a
 missing explicit suite. Complete proposed pairs validate before directories or
 files are created. Existing inline Copilot tests require `acknowledgeCopilotTests`
 after the existing prompt-content notice; external-tests-only changes add no notice.

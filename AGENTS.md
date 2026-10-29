@@ -669,6 +669,19 @@ without a bundled engine, root/model configuration or installation helper.
 Node tests stay outside both installable trees under `plugins/tests/copilot`.
 Legacy bundle tooling retains its separate `native-mcp.json` template.
 See [MCP](docs/kmx.md#local-stdio-mcp).
+Default new chat Create uses MCP v3 with separate prompt/tests sources. The
+paired canvas consumes the checked source resource plus optional normalized
+projection, keeps raw agent hashes separate from snapshot/context identities,
+and attributes direct v3 preview envelopes, never the legacy latest cache.
+Sparse companion edits reuse the existing Go field patcher/emitter. Complete
+per-source ACKs alone advance drafts; partial/uncertain effects preserve them and
+never trigger Test. Source history is not verdict history. Editable rendered
+pairs establish the existing relay before the baseline, including tool-free
+starts; its SDK filter exposes Run/Test/Edit only. Keep source reads and actions
+on their context owner, with opening leases and deliberate reconciliation after
+server changes. Text fallback preserves both sources/context without starting a
+relay. Legacy inline/native flows remain separate and existing inline consent
+is unchanged.
 See [Copilot CLI text mode](docs/copilot-cli-text-mode.md).
 
 ## Internal native Squad authoring boundary

@@ -1406,11 +1406,11 @@ test("frontend and provider sources avoid unsafe sinks and mutation surfaces", a
   assert.match(strip(app), /method: "POST"/);
   assert.match(strip(app), /fetch\("actions"/);
   const operations = strip(view).match(/const allowed = \{([\s\S]*?)\n  \};/)[1];
-  assert.deepEqual([...operations.matchAll(/(?:"([a-z-]+)"|\b([a-z]+))\s*:\s*\[/g)].map((m) => m[1] ?? m[2]).sort(), ["models", "progress", "reload", "run", "save-and-test", "save-examples", "save-prompt", "stop", "suggest", "test", "tools"]);
+  assert.deepEqual([...operations.matchAll(/(?:"([a-z-]+)"|\b([a-z]+))\s*:\s*\[/g)].map((m) => m[1] ?? m[2]).sort(), ["models", "progress", "reload", "restore", "run", "save-and-test", "save-examples", "save-prompt", "stop", "suggest", "test", "tools"]);
   assert.doesNotMatch(strip(app), /createElement\(\s*["']button["']/);
   assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)[^>]*>|\son[a-z]+\s*=|style\s*=|<form|<button|<input|<textarea|http-equiv/i);
   assert.doesNotMatch(css, /@import|url\(/i);
-  for (const src of [strip(ext), strip(view), strip(viewResource)]) {
+  for (const src of [strip(ext), strip(view), strip(viewResource), strip(await readFile(here("paired-actions.mjs"), "utf8"))]) {
     assert.doesNotMatch(src, /child_process|node:net|node:dgram|\bfetch\s*\(|writeFile|appendFile|unlink|rename|mkdir|\bexec\b|spawn|sendAndWait|\.sh\b|Access-Control-Allow|innerHTML/);
     assert.doesNotMatch(src, /listen\([^)]*0\.0\.0\.0|"::"/);
   }
@@ -4467,6 +4467,52 @@ const addDraftTest = (h) => {
   click(btn(h.root, "Add test"));
   edited(byClass(h.root, "test-title-input")[0], "Greets Ada"); edited(byClass(h.root, "example-input")[0], "Ada"); edited(byClass(h.root, "check-value")[0], "Hello");
 };
+
+async function selectedCanvas({ examples = [], respond, latest } = {}) {
+  const source = "---\nmodel: fake\ntools: [ping]\n---\nPrompt\n";
+  const view = await viewFor(source, [], { status: "none" }, "fake", { tools: ["ping"], toolSettings: [{name:"ping",state:"Enabled"}] });
+  view.examples = examples.map(e=>({id:e.id,input:e.input,assertions:e.assertions.map(a=>({id:a.id,type:a.type,fields:[["value",a.value??""]]}))}));
+  view.authoring = {...view.authoring,examples,recordingControls:true};
+  view.selectedSources={sourceVersion:"held-source",snapshotRevision:"snapshot",server:SERVER_NAME,testsState:"external",testsPath:"/work/greeter.agent.test.md",testsRevision:REV,operations:{edit:true,execute:true,capture:true,restore:true},history:{status:"available",versions:[{versionId:"retained-version",sourceKind:"pair",label:"Tests changed"}]}};
+  if(latest)view.latest=latest;
+  const doc=fakeDoc(),root=doc.createElement("main"),calls=[];
+  const app=renderView(doc,root,view,async action=>{calls.push(action);return respond?respond(action,view):{error:"refused",message:"Draft kept."};},{fetchTools:async()=>({servers:[]})});
+  return {doc,root,calls,app,view};
+}
+
+test("paired external test drafts skip the inline prompt warning and carry the held source context", async t=>{
+  const h=await selectedCanvas();t.after(()=>h.app.dispose());
+  addDraftTest(h);click(byClass(h.root,"save-run")[0]);await tick();
+  assert.equal(byClass(h.root,"copilot-tests").length,0);
+  assert.equal(h.calls.length,1);assert.equal(h.calls[0].operation,"save-and-test");assert.equal(h.calls[0].expectedSourceVersion,"held-source");
+  assert.equal(h.calls[0].acknowledgeCopilotTests,undefined);
+});
+
+test("paired pending external capture does not warn that tests enter the agent prompt",async t=>{
+  const h=await selectedCanvas({examples:CAPTURE_TEST});t.after(()=>h.app.dispose());
+  click(byClass(h.root,"first-run")[0]);await tick();
+  assert.equal(byClass(h.root,"copilot-tests").length,0);assert.equal(h.calls.length,1);assert.equal(h.calls[0].operation,"test");
+});
+
+test("paired source details distinguish agent and tests and source history is not verdict history",async t=>{
+  const h=await selectedCanvas();t.after(()=>h.app.dispose());
+  assert.match(byClass(h.root,"source-info")[0].textContent,/Tests source/);
+  assert.match(byClass(h.root,"source-info")[0].textContent,/greeter.agent.test.md/);
+  assert.match(byClass(h.root,"source-info")[0].textContent,/Source history/);
+  assert.match(byClass(h.root,"source-info")[0].textContent,/Tests changed/);
+  click(btn(h.root,"Restore sources"));await tick();
+  assert.equal(h.calls.length,1);assert.equal(h.calls[0].operation,"restore");assert.equal(h.calls[0].restoreVersionId,"retained-version");
+  assert.equal(h.calls[0].expectedSourceVersion,"held-source");
+});
+
+test("paired observation of the same selected sources retains only the controller-owned result",async t=>{
+  const result=savedFixture().latest.result;result.selection={scope:"full",caseIds:["one"],totalCases:1};result.examples=[{id:"one",state:"complete",verdict:"pass",assertions:[{id:"a",type:"contains",verdict:"pass"}]}];result.modelRoute="fake/fake";
+  const h=await selectedCanvas({examples:CAPTURE_TEST,latest:{status:"current",badge:"pass",result}});t.after(()=>h.app.dispose());
+  h.app.observe({...h.view,latest:{status:"none",badge:"none"}});
+  assert.match(byClass(h.root,"result-pill")[0].textContent,/passing/);
+  h.app.observe({...h.view,selectedSources:{...h.view.selectedSources,sourceVersion:"changed-tests"},latest:{status:"none",badge:"none"}});
+  assert.doesNotMatch(byClass(h.root,"result-pill")[0].textContent,/passing/);
+});
 
 test("Copilot file shows one editable Prompt and the whole header as inert, read-only preserved settings", async t => {
   const h = await copilotCanvas(); t.after(() => h.app.dispose());

@@ -35,6 +35,19 @@ func RecordingDetails(source []byte) []RecordingDetail {
 	if yaml.Unmarshal([]byte(strings.Join(lines[open+1:end], "\n")), &root) != nil {
 		return nil
 	}
+	return recordingDetails(&root)
+}
+
+// TestsRecordingDetails shares the exact-node display for companion fixtures.
+func TestsRecordingDetails(source []byte) []RecordingDetail {
+	_, root, err := parseTests("details.agent.test.md", source)
+	if err != nil {
+		return nil
+	}
+	return recordingDetails(root)
+}
+
+func recordingDetails(root *yaml.Node) []RecordingDetail {
 	field := func(n *yaml.Node, key string) *yaml.Node {
 		for i := 0; n != nil && i < len(n.Content); i += 2 {
 			if n.Content[i].Value == key {
