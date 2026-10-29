@@ -754,6 +754,9 @@ pair before preview and use those snapshots. Omitting both retains legacy reads.
 Background observation stales changed member/brief results without dropping drafts.
 Failed native reads invalidate current-pass status in both the adapter and editor;
 valid reads restore editing, while only a fresh preview restores current results.
+Unconfirmed pure Run/Test replies allow explicit reload and a fresh preview, never
+automatic replay. Create/Edit uncertainty stays fenced, including an attempted
+edit followed by an unconfirmed preview.
 Native empty-test members remain editable; Test requires a nonempty test set.
 Retire pending suggestions after creation effects and retain acknowledged brief
 saves even when readback fails. Optional native Test

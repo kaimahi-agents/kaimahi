@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { renderSquadView } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/squad-app.js";
-import { projectMember } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/squad-backend.mjs";
+import { projectMember, createNativeSquadBackend } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/squad-backend.mjs";
 import { editorValue } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/editor.mjs";
 import { createSquadViewController, startSquadBridge } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/squad-view.mjs";
 
@@ -482,4 +482,34 @@ test("an empty member opens with Add test and never claims a pass", async () => 
   await click(root, "Add test");
   assert.match(root.textContent, /The agent gets/);
   app.dispose();
+});
+
+test("the native canvas can explicitly reload after a failed Test and run a fresh preview", async () => {
+  const doc = fakeDoc(), root = doc.createElement("main"); let calls = 0;
+  const backend = createNativeSquadBackend({ rpc: {
+    mcp: { resources: { read: async ({ uri }) => ({ contents: [{ text: JSON.stringify(uri === "kmx://squad" ? { schemaVersion: 2, kind: "kmx.squad-view", ...team } : member) }] }) } },
+    tools: {
+      getCurrentMetadata: async () => ({ tools: [{ name: "test", mcpToolName: "test", mcpServerName: "kmx-agent-builder" }] }),
+      execute: async () => {
+        calls++; if (calls === 1) throw new Error("lost preview reply");
+        return { resultType: "success", structuredContent: { schemaVersion: 2, kind: "kmx.squad-member-operation", memberId: "lead", ...passedObservation } };
+      },
+    },
+  } });
+  const app = renderSquadView(doc, root, { team }, async input => {
+    try { return await backend.action(input); } catch (error) { return { error: error.code, message: error.message }; }
+  });
+  await click(root, "Open member →");
+  let prompt = all(root).find(n => n.attrs["aria-label"] === "Prompt");
+  for (const fn of prompt.listeners.keydown) fn({ key: "Enter", preventDefault() {} });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(root.textContent, /Preview outcome could not be confirmed/);
+  assert.equal(calls, 1);
+  await click(root, "Reload and discard draft");
+  assert.equal(calls, 1, "reload must not send another preview");
+  prompt = all(root).find(n => n.attrs["aria-label"] === "Prompt");
+  for (const fn of prompt.listeners.keydown) fn({ key: "Enter", preventDefault() {} });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls, 2); assert.match(root.textContent, /passing/i);
+  app.dispose(); backend.dispose();
 });

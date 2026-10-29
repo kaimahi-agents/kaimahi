@@ -94,6 +94,7 @@ export function createNativeSquadBackend(session, { extensionId, instanceId } = 
     }
   }
   async function invoke(operation, args, kind, run) {
+    const mutating = operation === "create" || operation === "edit";
     let metadata = await session.rpc.tools.getCurrentMetadata();
     // A native canvas can open before the first chat turn initializes tools.
     if (metadata.tools === null && typeof session.rpc.tools.initializeAndValidate === "function") {
@@ -104,7 +105,7 @@ export function createNativeSquadBackend(session, { extensionId, instanceId } = 
     require(tools?.length === 1, "unavailable");
     let result;
     try { result = await session.rpc.tools.execute({ name: tools[0].name, arguments: { schemaVersion: 2, ...args }, ...(run ? { toolCallId: run.toolCallId } : {}) }); }
-    catch { if (args.target !== "squad-preview-cancel") uncertain = true; throw new ViewError("outcome-unknown"); }
+    catch { if (mutating) uncertain = true; throw new ViewError("outcome-unknown"); }
     if (["denied", "rejected"].includes(result?.resultType)) throw new ViewError("permission_required");
     const data = result?.structuredContent;
     if (data?.schemaVersion === 2 && data.kind === undefined && data.reasonCode === "invalid_squad_brief") { invalidate(); throw new ViewError("invalid_squad_brief"); }
@@ -114,7 +115,7 @@ export function createNativeSquadBackend(session, { extensionId, instanceId } = 
     }
     if (data?.schemaVersion !== 2 || data.kind !== kind) {
       if (data?.reasonCode === "stale_revision") throw new ViewError("stale_revision");
-      if (args.target !== "squad-preview-cancel") uncertain = true;
+      if (mutating) uncertain = true;
       throw new ViewError("outcome-unknown");
     }
     return data;
@@ -159,7 +160,7 @@ export function createNativeSquadBackend(session, { extensionId, instanceId } = 
     if (input.operation === "reload") return snapshot();
     if (input.operation === "member") { fields(input, ["operation", "memberId"]); return { view: await member(input.memberId) }; }
     busy = true;
-    let saved = false, savedView, run;
+    let saved = false, writeAttempted = false, previewAttempted = false, savedView, run;
     try {
       if (input.operation === "propose") {
         fields(input, ["operation", "goal", "draft"]);
@@ -175,6 +176,7 @@ export function createNativeSquadBackend(session, { extensionId, instanceId } = 
         fields(input, ["operation", "proposal"]);
         if (createBlocked) throw new ViewError("invalid-action", "This creation already changed the project. Inspect its outcome; do not submit it again.");
         const proposal = validateProposal(input.proposal);
+        writeAttempted = true;
         const outcome = await invoke("create", { target: "squad-members", ...proposal }, "kmx.squad-create");
         const result = outcome.result;
         const requested = [proposal.lead, ...proposal.specialists];
@@ -200,6 +202,7 @@ export function createNativeSquadBackend(session, { extensionId, instanceId } = 
         fields(input, ["operation", "expectedRevision", "text"]);
         require(input.expectedRevision === "none" || REVISION.test(input.expectedRevision));
         const content = text(input.text, 16384);
+        writeAttempted = true;
         const result = await invoke("edit", { target: "squad-brief", expectedRevision: input.expectedRevision, text: content }, "kmx.squad-brief");
         require(result.file?.path === ".squad/kmx-brief.md" && REVISION.test(result.file.revision), "outcome-unknown");
         const brief = { text: content, revision: result.file.revision };
@@ -238,6 +241,7 @@ export function createNativeSquadBackend(session, { extensionId, instanceId } = 
         const model = a.model === undefined ? raw.model : text(a.model, 256);
         const examples = a.examples === undefined ? raw.examples : serializeExamples(tests);
         if (taskInstructions !== raw.taskInstructions || model !== raw.model || a.examples !== undefined) {
+          writeAttempted = true;
           const result = await invoke("edit", { target: "squad-member", memberId: input.memberId, expectedRevision: view.file.revision, taskInstructions, model, examples }, "kmx.squad-member-operation");
           require(result.memberId === input.memberId && result.file?.path === raw.file.path && REVISION.test(result.file.revision), "outcome-unknown");
           saved = true;
@@ -254,6 +258,7 @@ export function createNativeSquadBackend(session, { extensionId, instanceId } = 
       if (operation === "test" && a.runId && lastTeam?.previewControl === "run-id-v1") {
         run = previews.start({ id: a.runId, memberId: input.memberId, revision: view.file.revision, contextRevision: raw.brief.revision, model: raw.model, examples: raw.tests, caseIds: a.caseId === undefined ? raw.tests.map(t => t.id) : [a.caseId], totalCases: raw.tests.length });
       }
+      previewAttempted = true;
       const result = await invoke(operation, { target: "squad-member", memberId: input.memberId, expectedRevision: view.file.revision, expectedBriefRevision: a.expectedBriefRevision, ...(run ? { runId: run.nativeId } : {}), ...(a.caseId !== undefined ? { caseId: a.caseId } : {}), ...(operation === "run" ? { input: text(a.input, 16384) } : {}), showContent: a.showContent === true, showFailedContent: true }, "kmx.squad-member-operation", run);
       if (run) require(result.runId === run.nativeId, "outcome-unknown");
       if (run?.stopWanted && result.preview?.state === "cancelled" && result.preview.fullPass === false && result.memberId === input.memberId && result.file?.revision === view.file.revision && result.briefRevision === raw.brief.revision) {
@@ -271,7 +276,15 @@ export function createNativeSquadBackend(session, { extensionId, instanceId } = 
       previews.finish(run);
       return { view: await member(input.memberId), saved };
     } catch (error) {
-      if (error?.code === "outcome-unknown") uncertain = true;
+      if (previewAttempted && ["outcome-unknown", "invalid-resource", "revision_mismatch"].includes(error?.code)) {
+        invalidate(input.memberId);
+        if (writeAttempted) uncertain = true;
+        if (error.code === "invalid-resource") error = new ViewError("outcome-unknown");
+      }
+      if (error?.code === "outcome-unknown") {
+        if (writeAttempted) uncertain = true;
+        else if (previewAttempted) error = new ViewError("outcome-unknown", "Preview outcome could not be confirmed. Reload the member before starting a new preview; the previous request may still finish.");
+      }
       if (saved && error instanceof ViewError) return { error: error.code, message: error.message, saved: true, ...(!uncertain && savedView ? { view: savedView } : {}) };
       throw error;
     } finally { if (run?.pending) previews.finish(run); busy = false; }

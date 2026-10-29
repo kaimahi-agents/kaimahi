@@ -270,9 +270,9 @@ test("member test suggestions use the SDK message object without native writes",
   assert.equal(h.calls.length, 0); h.backend.dispose();
 });
 
-function passingReply(current) {
+function passingReply(current, operation = "test") {
   return nativeReply({ schemaVersion: 2, kind: "kmx.squad-member-operation", memberId: current.memberId, file: current.file, briefRevision: current.brief.revision,
-    preview: { schemaVersion: 1, kind: "kmx.agent-file-preview", operation: "test", file: current.file, state: "complete", verdict: "pass", fullPass: true,
+    preview: { schemaVersion: 1, kind: "kmx.agent-file-preview", operation, file: current.file, state: "complete", verdict: "pass", fullPass: true,
       modelRoute: { provider: "fake", model: "fake" }, selection: { scope: "full", totalCases: 1, caseIds: ["one"] },
       examples: [{ id: "one", state: "complete", verdict: "pass", assertions: [{ id: "check", type: "contains", verdict: "pass" }] }] },
   });
@@ -325,4 +325,68 @@ test("an older failed roster read cannot invalidate a newer preview in the backe
   reject(new Error("old read failed")); await refused;
   assert.equal((await h.backend.member("lead")).latest.status, "current");
   assert.equal(h.calls.length, 2); h.backend.dispose();
+});
+
+for (const operation of ["test", "run"]) for (const failure of ["transport", "envelope", "selection", "preview", "subject"]) test(`read-only ${operation} recovers from ${failure} without replaying or restoring an old pass`, async () => {
+  const h = memberHarness();
+  const input = { ...pinnedTest, action: { ...pinnedTest.action, operation, ...(operation === "run" ? { input: "Hello" } : {}) } };
+  h.execute = async () => passingReply(h.current, operation);
+  await h.backend.action(input);
+  h.execute = async () => {
+    if (failure === "transport") throw new Error("PRIVATE TRANSPORT DATA");
+    const reply = passingReply(h.current, operation), data = reply.structuredContent;
+    if (failure === "envelope") data.kind = "wrong-kind";
+    if (failure === "selection") data.preview.selection.caseIds = ["unexpected"];
+    if (failure === "preview") data.preview.fullPass = "true";
+    if (failure === "subject") data.memberId = "other";
+    return reply;
+  };
+  await assert.rejects(h.backend.action(input), error => error.code === (failure === "subject" ? "revision_mismatch" : "outcome-unknown") && !/PRIVATE/.test(error.message));
+  assert.equal((await h.backend.action({ operation: "reload" })).team.uncertain, false);
+  const reload = await h.backend.action({ operation: "member-action", memberId: "lead", action: { operation: "reload" } });
+  assert.equal(reload.view.latest.status, "stale");
+  assert.equal(h.calls.length, 2, "reads do not retry an uncertain preview");
+  h.execute = async () => passingReply(h.current, operation);
+  assert.equal((await h.backend.action(input)).view.latest.status, "current");
+  assert.equal(h.calls.length, 3); h.backend.dispose();
+});
+
+for (const operation of ["create", "save-brief", "save-model"]) for (const failure of ["transport", "envelope"]) test(`uncertain ${operation} remains locked after ${failure}`, async () => {
+  const h = memberHarness();
+  h.execute = async () => { if (failure === "transport") throw new Error("lost reply"); return nativeReply({ schemaVersion: 2, kind: "wrong-kind" }); };
+  const input = operation === "create" ? { operation, proposal }
+    : operation === "save-brief" ? { operation, expectedRevision: revision, text: "Updated brief" }
+      : { operation: "member-action", memberId: "lead", action: { operation, expectedRevision: revision, model: "new-model" } };
+  await assert.rejects(h.backend.action(input), { code: "outcome-unknown" });
+  assert.equal((await h.backend.action({ operation: "reload" })).team.uncertain, true);
+  await assert.rejects(h.backend.action(pinnedTest), { code: "outcome-unknown" });
+  assert.equal(h.calls.length, 1); h.backend.dispose();
+});
+
+for (const failure of ["transport", "selection", "subject"]) test(`an edit before an uncertain preview retains write protection (${failure})`, async () => {
+  const h = memberHarness();
+  h.execute = async ({ name, arguments: args }) => {
+    if (name === "edit") {
+      h.current.file.revision = nextRevision; h.current.taskInstructions = args.taskInstructions;
+      return nativeReply({ schemaVersion: 2, kind: "kmx.squad-member-operation", memberId: "lead", file: h.current.file });
+    }
+    if (failure === "transport") throw new Error("lost preview reply");
+    const reply = passingReply(h.current);
+    if (failure === "selection") reply.structuredContent.preview.selection.caseIds = ["unexpected"];
+    else reply.structuredContent.memberId = "other";
+    return reply;
+  };
+  const response = await h.backend.action({ ...pinnedTest, action: { ...pinnedTest.action, operation: "save-and-test", sections: [{ key: "Task Instructions", text: "Updated instructions" }] } });
+  assert.equal(response.error, failure === "subject" ? "revision_mismatch" : "outcome-unknown"); assert.equal(response.saved, true); assert.equal(response.view, undefined);
+  assert.equal((await h.backend.action({ operation: "reload" })).team.uncertain, true);
+  await assert.rejects(h.backend.action(pinnedTest), { code: "outcome-unknown" });
+  assert.deepEqual(h.calls.map(call => call.name), ["edit", "test"]); h.backend.dispose();
+});
+
+test("Save and Test without an actual edit retains read-only recovery", async () => {
+  const h = memberHarness(); h.execute = async () => { throw new Error("lost preview reply"); };
+  await assert.rejects(h.backend.action({ ...pinnedTest, action: { ...pinnedTest.action, operation: "save-and-test", sections: [{ key: "Task Instructions", text: raw.taskInstructions }] } }), { code: "outcome-unknown" });
+  assert.equal((await h.backend.action({ operation: "reload" })).team.uncertain, false);
+  assert.deepEqual(h.calls.map(call => call.name), ["test"]);
+  h.backend.dispose();
 });

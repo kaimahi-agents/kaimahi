@@ -124,6 +124,10 @@ be nonempty UTF-8 text, at most 16 KiB, without NUL bytes; repair or remove
 `.squad/kmx-brief.md` manually and refresh. Failed native reads preserve drafts and
 historical results while removing current-pass status. Valid reads restore editing;
 an explicit new preview establishes a current result.
+If a pure Run/Test reply is lost or malformed, reload the member explicitly before
+starting a new preview. The previous request may still finish; no retry is automatic.
+Unconfirmed Create/Edit effects retain write protection, including a save followed
+by an unconfirmed preview.
 The native **Save model** action changes the charter's Preferred value; it is not
 the canonical canvas's memory-only model override. Cached member controls follow
 the same accepted snapshot as the editor. Existing members with no tests can open
