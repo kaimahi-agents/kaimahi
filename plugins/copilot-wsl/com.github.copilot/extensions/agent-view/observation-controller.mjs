@@ -28,6 +28,9 @@ export function createObservationController(state, { path, options, drafts, clea
   function observeFailure(error, started = observation()) { return pairedError(error) ? invalidate(started, true) : settingsError(error) ? invalidate(started) : false; }
   // Observation never writes or clears a lock.
   function observe(view, started = observation()) {
+    // Transport is not saved source: never retain it in a baseline or history.
+    const suggestedTests = view?.suggestedTests;
+    if (suggestedTests !== undefined) { const { suggestedTests: _, ...saved } = view; view = saved; }
     if (pairedError(view)) return invalidate(started, true);
     if (settingsError(view)) return invalidate(started);
     if (started.generation !== state.observationGeneration || started.revision !== sourceIdentity(state.base)
@@ -36,6 +39,7 @@ export function createObservationController(state, { path, options, drafts, clea
     if (state.sourceInvalidated) view = { ...view, latest: { status: "stale", badge: "stale" } };
     const recoveringSource = state.sourceUnavailable;
     if (recoveringSource) { state.sourceUnavailable = false; state.blocked = false; state.message = ""; }
+    const suggestionsChanged = options.onSuggestions?.(suggestedTests, view) === true;
     const observed = view;
     const selected = effectiveModel(view.model, modelChoice.override, view.chatModel);
     const route = view.latest.result?.modelRoute, incomingModel = route?.slice(route.indexOf("/") + 1);
@@ -48,7 +52,10 @@ export function createObservationController(state, { path, options, drafts, clea
     const retained = view.selectedSources && sameBaseline ? history.selected(view, selected) : undefined;
     view = modelChoice.view(view, retained ?? (view.latest.status !== "current" || preRouteRefusal(view.latest.result) || incomingModel === selected ? undefined : history.selected(view, selected)));
     const recovering = !!state.base.settingsInvalid || recoveringSource;
-    if (!changedHistory && ((!recovering && same(view, state.base)) || (state.candidate && same(view, state.candidate)))) return false;
+    if (!changedHistory && ((!recovering && same(view, state.base)) || (state.candidate && same(view, state.candidate)))) {
+      if (suggestionsChanged) render();
+      return suggestionsChanged;
+    }
     clearUndo(); displayNames.clear(); state.runAlert = undefined;
     state.observationGeneration++;
     state.lastRun = undefined;

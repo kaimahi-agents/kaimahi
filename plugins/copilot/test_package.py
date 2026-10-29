@@ -100,7 +100,7 @@ class PackageTests(unittest.TestCase):
         names = {"extension.mjs", "view.mjs", "open.mjs", "index.html", "app.js", "style.css", "authoring.mjs", "editor.mjs",
                  "draft-controller.mjs", "action-controller.mjs", "observation-controller.mjs", "host-relay.mjs", "tool-catalog.mjs", "tools-view.mjs", "test-tools.mjs",
                  "dom.mjs", "results.mjs", "check-controls.mjs", "instruction-text.mjs",
-                 "run-views.mjs", "view-resource.mjs", "paired-actions.mjs", "failure-wording.mjs"}
+                 "run-views.mjs", "view-resource.mjs", "paired-actions.mjs", "suggestions.mjs", "failure-wording.mjs"}
         self.assertEqual({p.name for p in (self.out / native).iterdir()}, names)
         for name in names:
             self.assertEqual((self.out / native / name).read_bytes(),

@@ -299,13 +299,16 @@ full pass. The sticky Tests header filters All / Not passing without reordering.
 Dark/light tokens and the same layout support a 600px panel.
 
 Test and ad-hoc Run use existing same-session MCP tools directly, not chat.
-**Suggest tests** gives Copilot the saved source, path and revision for one
-existing revision-checked Edit; it needs no MCP resource-reader tool. It keeps
-the prompt, authored model and existing tests and does not run them. The request status acknowledges the chat
-request, not a completed save. Saved additions appear through the normal canvas
-refresh; unsaved local drafts retain the existing outside-change reconciliation.
-Chat reports what was actually saved. An explicit request for proposals only
-leaves them in chat and says they are not saved. The host still enforces permissions. The private
+**Suggest tests** gives Copilot the saved sources and a request bound to this
+canvas. Copilot returns new examples through the non-writing `suggest_kmx_tests`
+extension tool. When you return to the visible idle canvas, suggestions appear
+as unsaved drafts: keep, edit or cancel them in the existing test editor, then
+save with the existing Save and run action. Suggestions alone never change the
+agent or tests file or run tests. Chat reports queued drafts, not a save.
+The page acknowledges each imported batch; repeated polling does not restore a
+draft you dropped. If saved sources change before delivery, suggest again rather
+than using proposals for the old version. Delivery failures never fall back to
+Edit or Test. The host still enforces permissions. The private
 asset bridge accepts only declared interactions for its fixed path, with token,
 Host, exact Origin and size checks; it is not a generic executor.
 The visible idle panel observes the same resource for outside changes. With a

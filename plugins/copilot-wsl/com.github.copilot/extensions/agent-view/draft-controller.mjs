@@ -1,4 +1,4 @@
-import { readSnapshot, effectiveModel } from "./authoring.mjs";
+import { readSnapshot, effectiveModel, validateExamples, validateDraft } from "./authoring.mjs";
 import { uniqueIndex, isRefused, clone, same, friendlyName, checkIssue } from "./editor.mjs";
 
 import { defaultToolMode, setToolMode } from "./test-tools.mjs";
@@ -101,5 +101,20 @@ export function createDraftController(state, { clearUndo, navigate, render, refr
     navigate({ name: "detail", key }); state.focusTestName = true; render();
   }
 
-  return { hasDrafts, toolNames, toolState, noteTools, noteSetting, rawExamples, sectionText, entries, localExamples, draftName, checkProblem, noteDraft, pruneDrafts, adopt, addTest };
+  function importSuggestions(examples) {
+    validateExamples(examples, true);
+    const intended = [...localExamples(), ...clone(examples)];
+    if (intended.length > 128) throw new Error("Keep at most 128 tests. Edit or delete an existing test first.");
+    // Validate the entire batch before touching any existing draft.
+    for (const raw of examples) {
+      const problem = validateDraft({ origin: null, fixedId: true, raw }, intended);
+      if (problem) throw new Error(typeof problem === "string" ? problem : "Finish the suggested test's checks before adding it.");
+    }
+    clearUndo();
+    for (const raw of examples) {
+      testDrafts.set(`new:${++state.newCount}`, { origin: null, fixedId: true, name: friendlyName(raw.id), raw: clone(raw) });
+    }
+  }
+
+  return { hasDrafts, toolNames, toolState, noteTools, noteSetting, rawExamples, sectionText, entries, localExamples, draftName, checkProblem, noteDraft, pruneDrafts, adopt, addTest, importSuggestions };
 }

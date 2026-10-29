@@ -22,7 +22,7 @@ NATIVE_FILES = tuple(f"{NATIVE_DIRECTORY}/{name}" for name in
                      ("extension.mjs", "view.mjs", "open.mjs", "index.html", "app.js", "style.css", "authoring.mjs", "editor.mjs",
                       "draft-controller.mjs", "action-controller.mjs", "observation-controller.mjs", "host-relay.mjs", "tool-catalog.mjs", "tools-view.mjs", "test-tools.mjs",
                       "dom.mjs", "results.mjs", "check-controls.mjs", "instruction-text.mjs",
-                      "run-views.mjs", "view-resource.mjs", "paired-actions.mjs", "failure-wording.mjs"))
+                      "run-views.mjs", "view-resource.mjs", "paired-actions.mjs", "suggestions.mjs", "failure-wording.mjs"))
 SKILL_FILES = ("skills/kmx-agent-builder/SKILL.md", "skills/kmx/SKILL.md")
 SAMPLE_FILES = ("samples/release-writer.agent.md",)
 
