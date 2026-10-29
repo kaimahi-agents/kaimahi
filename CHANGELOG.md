@@ -459,7 +459,7 @@ claimed here; a Mac walk does not qualify Windows/WSL.
 
 - Copilot file Run/Test and MCP previews now use embedded Agent Sessions with private cleartext journals and two-sample judging. Credentials stay out of retained content; authentication failures stop later sends, and offline replay makes no model calls or deployment evidence.
 
-- Agent creation uses a short, consistently named prompt with job-focused tests and readable tool titles. Suggest tests asks Copilot to save additions through Edit without running them.
+- Agent creation uses a short, consistently named prompt with job-focused tests and readable tool titles. Suggest tests asks Copilot for unsaved drafts in the existing test editor; only the user's Save and run writes the reviewed tests and runs them.
 
 - Release publication checks binaries, inner-loop contracts and native plugin installs without waiting for Orka or kagent. Cluster runtime checks run nightly and on demand before runtime-related tags; a release tag alone does not certify those runtimes.
 
@@ -506,6 +506,8 @@ claimed here; a Mac walk does not qualify Windows/WSL.
   the error names `gh auth login` and `--provider ollama --provider-url URL`.
 
 ### Fixed
+
+- Suggest tests now queues unsaved examples in the canvas's existing test editor. Review, edit or cancel them before using Save and run; suggestions alone do not change the agent or tests file or run tests.
 
 - When chat lacks a saved agent snapshot or an agent-resource reader, report that no edit was saved instead of inventing a revision or running the agent solely to discover one. For add-tests requests, give conditional guidance to use Suggest tests if the canvas offers it. Revision checks and existing test-write consent are unchanged.
 
@@ -578,7 +580,7 @@ claimed here; a Mac walk does not qualify Windows/WSL.
 
 - An uncertain saved preview shows `Saved · test result unconfirmed` and keeps drafts and the reload requirement. Retention guidance distinguishes rc.2's unjournaled Copilot bundles from the cleartext journals used by newer releases.
 
-- The canvas shows verified preview failure reasons and Judge scores, thresholds and explanations under the existing content controls. Judges can follow the run model, and Suggest tests supplies the saved source and revision for one Edit.
+- The canvas shows verified preview failure reasons and Judge scores, thresholds and explanations under the existing content controls. Judges can follow the run model, and Suggest tests binds unsaved proposals to the originating canvas and its saved sources for review before Save and run.
 
 - Correct file-preview CLI guidance, publication proof requirements and canvas model-selection order. The kagent qualification docs now describe its two text cases without judge requests.
 
