@@ -74,9 +74,11 @@ a passing Test.
 MCP has separate read-only source/history resources and paired offline export.
 The existing Run/Test tools also accept version 3 with a checked `sourceVersion`
 from the source resource: Run answers without checks; Test evaluates selected
-checks. Pair writes, pending recording capture and the canvas loop remain deferred.
-A pending capture refuses before any model send with `recording_save_failed`;
-no save was attempted. Frozen recordings and other read-only previews remain usable.
+checks. Version-3 Create/Edit write the selected pair with per-source
+acknowledgements, source-only history and current-binding restore. Pending tool
+capture saves only after journal close; external capture leaves agent bytes exact.
+Partial/uncertain saves require refresh, never automatic retry or Test. The canvas
+paired loop remains deferred. Frozen recordings replay without another capture.
 The legacy version-1 agent-view resource, Run/Test and Edit refuse an agent-only view when its
 default tests file exists; they do not ignore it, report an old agent-only pass
 as current, or fall back to inline writes. Native Squad and single-source files

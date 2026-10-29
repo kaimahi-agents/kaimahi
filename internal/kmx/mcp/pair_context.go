@@ -15,6 +15,8 @@ import (
 type pairBinding struct {
 	files               *Files
 	pair                *agentfile.Pair
+	sources             pairSources
+	agentAbsent         *absentSource
 	agent, tests        *historySource
 	absent              *absentSource
 	requested, override string
@@ -30,26 +32,29 @@ func (b *pairBinding) close() {
 	if b.absent != nil {
 		b.absent.parent.Close()
 	}
+	if b.agentAbsent != nil {
+		b.agentAbsent.parent.Close()
+	}
 }
 func (b *pairBinding) check(ctx context.Context) error {
 	if err := cancelled(ctx); err != nil {
 		return err
 	}
 	actual, err := b.files.rootRelativeSource(b.requested, false)
-	if err != nil || b.files.physicalSource(actual) != b.pair.AgentPath {
+	if err != nil || b.files.physicalSource(actual) != b.sources.AgentPath {
 		return refusal("stale_revision")
 	}
-	target, _ := agentfile.DefaultTestsPath(b.pair.AgentPath)
+	target, _ := agentfile.DefaultTestsPath(b.sources.AgentPath)
 	if b.override != "" {
 		target = b.override
 	}
 	if target != "" {
 		selected, err := b.files.rootRelativeSource(target, true)
-		if err != nil || b.files.physicalSource(selected) != b.pair.Tests.Selection.Path {
+		if err != nil || b.files.physicalSource(selected) != b.sources.Tests.Selection.Path {
 			return refusal("stale_revision")
 		}
 	}
-	if !b.agent.unchanged(b.files) || b.tests != nil && !b.tests.unchanged(b.files) || b.absent != nil && !b.absent.unchanged(b.files) {
+	if b.agent != nil && !b.agent.unchanged(b.files) || b.agentAbsent != nil && !b.agentAbsent.unchanged(b.files) || b.tests != nil && !b.tests.unchanged(b.files) || b.absent != nil && !b.absent.unchanged(b.files) {
 		return refusal("stale_revision")
 	}
 	return nil
@@ -127,7 +132,7 @@ func sourceStampFor(s *historySource) sourceStamp {
 	return sourceStamp{s.path, filepath.Clean(s.parent.Name()), s.info, s.parentInfo}
 }
 func (b *pairBinding) stamp() pairContext {
-	c := pairContext{snapshot: b.pair.SnapshotRevision, agent: sourceStampFor(b.agent)}
+	c := pairContext{snapshot: b.sources.SnapshotRevision, agent: sourceStampFor(b.agent)}
 	if b.tests != nil {
 		c.tests = sourceStampFor(b.tests)
 	} else if b.absent != nil {

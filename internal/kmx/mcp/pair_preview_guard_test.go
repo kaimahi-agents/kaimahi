@@ -70,7 +70,7 @@ func TestPairPreviewRefusesStaleContextBeforeRunner(t *testing.T) {
 	}
 }
 
-func TestPairPreviewInlinePendingDoesNotRequestConsent(t *testing.T) {
+func TestPairPreviewInlinePendingRetainsCopilotConsent(t *testing.T) {
 	base, root := historyPaths(t)
 	f := historyFiles(t, root, base)
 	canonical := string(pendingRecordingSource(t))
@@ -85,14 +85,13 @@ func TestPairPreviewInlinePendingDoesNotRequestConsent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, _ := json.Marshal(result.StructuredContent)
-	var body struct{ Preview app.FilePreviewResult }
-	if json.Unmarshal(data, &body) != nil || body.Preview.ReasonCode != "recording_save_failed" || runner.calls != 0 {
-		t.Fatalf("unused consent gate: %s calls%d", data, runner.calls)
+	requireHistoryToolReason(t, result, "confirmation_required")
+	if runner.calls != 0 {
+		t.Fatal("inline capture reached runner without consent")
 	}
 }
 
-func TestPairPreviewPendingCaptureIsPreSendUnavailable(t *testing.T) {
+func TestPairPreviewIncompleteToolOutcomeNeverSaves(t *testing.T) {
 	base, root := historyPaths(t)
 	f := historyFiles(t, root, base)
 	agent := []byte(strings.Split(string(pendingRecordingSource(t)), "## Examples")[0])
@@ -113,7 +112,7 @@ func TestPairPreviewPendingCaptureIsPreSendUnavailable(t *testing.T) {
 	}
 	data, _ := json.Marshal(result.StructuredContent)
 	var envelope struct{ Preview app.FilePreviewResult }
-	if json.Unmarshal(data, &envelope) != nil || !result.IsError || runner.calls != 0 || envelope.Preview.ReasonCode != "recording_save_failed" || envelope.Preview.SavedSnapshotRevision != "" {
+	if json.Unmarshal(data, &envelope) != nil || !result.IsError || runner.calls != 1 || envelope.Preview.ReasonCode != "invalid_completion" || envelope.Preview.SavedSnapshotRevision != "" {
 		t.Fatalf("pending capture not honestly refused: %s calls%d", data, runner.calls)
 	}
 	for path, want := range map[string][]byte{filepath.Join(root, "a.agent.md"): agent, target: tests} {
@@ -127,7 +126,7 @@ func TestPairPreviewPendingCaptureIsPreSendUnavailable(t *testing.T) {
 		t.Fatal(err)
 	}
 	var d sourceDocument
-	if json.Unmarshal([]byte(resource.Contents[0].Text), &d) != nil || d.PairOperations == nil || !d.PairOperations.Execute || d.PairOperations.Capture || d.PairOperations.Edit || d.PairOperations.Create || d.PairOperations.Restore || len(d.History.Versions) != 0 {
+	if json.Unmarshal([]byte(resource.Contents[0].Text), &d) != nil || d.PairOperations == nil || !d.PairOperations.Execute || !d.PairOperations.Capture || !d.PairOperations.Edit || !d.PairOperations.Create || !d.PairOperations.Restore || len(d.History.Versions) != 0 {
 		t.Fatalf("falsely advertised writers: %s", resource.Contents[0].Text)
 	}
 }

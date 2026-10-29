@@ -113,7 +113,10 @@ func (f *Files) readSourcePair(ctx context.Context, p, override string) (*agentf
 	return bound.pair, bound.agent.source, nil
 }
 
-func (f *Files) bindPair(ctx context.Context, p, override string) (result *pairBinding, err error) {
+func (f *Files) bindPair(ctx context.Context, p, override string) (*pairBinding, error) {
+	return f.bindPairMode(ctx, p, override, false)
+}
+func (f *Files) bindPairMode(ctx context.Context, p, override string, authoring bool) (result *pairBinding, err error) {
 	if err := cancelled(ctx); err != nil {
 		return nil, err
 	}
@@ -154,11 +157,19 @@ func (f *Files) bindPair(ctx context.Context, p, override string) (result *pairB
 			b = tests.source
 		}
 	}
-	pair, err := agentfile.ComposePair(physical, agent, selection, b, tests != nil)
-	if err != nil {
-		return nil, refusal("invalid_file")
+	pair, composeErr := agentfile.ComposePair(physical, agent, selection, b, tests != nil)
+	if composeErr != nil {
+		if !authoring || tests == nil {
+			return nil, refusal("invalid_file")
+		}
+		bound.sources, err = authoringSources(physical, agent, selection, b)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		bound.pair = pair
+		bound.sources = sourcesFor(pair)
 	}
-	bound.pair = pair
 	if target != "" && tests == nil {
 		bound.absent, err = f.holdAbsentSource(selection.Path)
 		if err != nil {

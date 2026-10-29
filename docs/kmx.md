@@ -833,8 +833,10 @@ legacy paired-source fence stays in place; this does not add canvas paired
 execution, editing or a restore picker.
 
 A separate `pairOperations` v1 capability advertises `toolSchemaVersion: 3` and
-`execute: true` for supported `*.agent.md` sources. Its `create`, `edit`, `capture`
-and `restore` values remain false. Native `charter.md` paths retain v1/native v2,
+`execute`, `create`, `edit`, `capture` and `restore` for supported `*.agent.md`
+sources. Independently parsed but cross-invalid sources have `validation:
+"invalid_pair"`: Edit can repair them, but execute/capture are false. Malformed
+source roles still refuse without disclosure. Native `charter.md` paths retain v1/native v2,
 not this paired branch. The current source resource adds an opaque `sourceVersion`.
 It binds the selected physical files, exact revisions and observed file/parent
 identities, not a verdict or permission to write. It is process-local, with 32
@@ -856,13 +858,42 @@ A result has `schemaVersion: 3`, kind `kmx.agent-pair-preview`, the executed
 snapshot stays separate from the raw agent revision. Paired results never populate
 the agent-only legacy latest cache or become deployment evidence.
 
-There is no v3 Create/Edit or paired recording saver yet. A pending Recorded
-capture returns `recording_save_failed` **before the runner sends anything**:
-no save was attempted and neither source changes. V3 has no capture go-ahead
-operand or consent gate; approval cannot enable an unavailable saver. Already frozen recordings can
-replay read-only, including model comparisons against the same source selection.
-Source-history retention and paired restore still await the writer slice; no CLI
-history is enabled. Oversized mandatory source JSON still refuses whole without
+The existing **Create** tool accepts version 3 with both `content` (agent) and
+`testsContent`, creating only the fixed C3 names when both are absent. It accepts
+no `tests` selector. **Edit** requires `expectedSourceVersion` and optional existing
+`tests`; supply raw `content`, `testsContent`, or exclusive `restoreVersionId`.
+Omitted content is unchanged. Edit can create the absent default suite, never a
+missing explicit suite. Complete proposed pairs validate before directories or
+files are created. Existing inline Copilot tests require `acknowledgeCopilotTests`
+after the existing prompt-content notice; external-tests-only changes add no notice.
+
+Saves return `kmx.agent-pair-save` version 3. `agent` and `tests` independently
+report `unchanged`, `saved`, `not_saved` or `uncertain`. Overall `state` is
+`complete`, `not_saved`, `partial` or `uncertain`. Only complete acknowledgement
+returns `snapshotRevision` and a fresh `sourceVersion`. Agent then tests are
+published sequentially, **not atomically**. Preserve drafts and refresh both
+sources after partial/uncertain results; never run Test or retry automatically.
+Created parent directories may remain after a failed attempt. Held-file locks and
+final checks protect cooperating writers, not hostile name swaps between checks
+and rename/removal. Mode bits/umask are preserved; ownership/ACLs are not copied.
+
+Pending tool recordings save only after successful journal close through the same
+checked writer. External capture patches only tests, preserving agent bytes,
+prose, CRLF and untouched fixtures. Inline Copilot capture retains the existing
+go-ahead operand/notice; frozen replay is read-only. The preview envelope keeps
+its executed `sourceVersion` and App result separate from optional path-free
+`capture` per-source status and `savedSourceVersion`. Partial capture receipts
+never populate App's successful saved fields. Refresh/use the acknowledged saved
+context for a comparison with frozen recordings; `recordedReplayOnly` never
+recaptures. No capture result restores metadata withheld by credential redaction.
+
+Restore reads complete v2 history from the current physical agent subject and
+requires the same current selected source identity. Retained paths cannot select
+or open destinations. Restoring retained absence removes only the currently
+selected tests leaf under the same cooperative revision/identity checks; there is
+no generic delete operand. Cross-invalid repair preimages are not written into
+history: the save may succeed with explicit history-unavailable status. No CLI
+source-history store is enabled. Oversized mandatory source JSON still refuses whole without
 issuing a usable new view context; requests over the existing 2 MiB limit refuse
 before dispatch. No automatic split, retry, rollback or source migration is added.
 
@@ -888,11 +919,12 @@ Historical paths never authorize filesystem reads or redirects. The legacy
 agent-version route refuses pair records rather than returning half a pair; it
 can still read v1 history after a companion is added.
 
-Pair records are read-compatible here; new pair preimages are retained only
-when paired MCP writers arrive. Current legacy Edit still records v1, and CLI
-capture still creates no source-history store. Existing limits remain 20 versions
+Version-3 Edit, capture and restore retain one complete valid pair preimage per
+mutating operation, including tests-only changes and absence. Create has no prior
+pair. Best-effort retention failure is explicit and does not veto an otherwise
+valid save. Legacy Edit still records v1, and CLI capture creates no source-history store. Existing limits remain 20 versions
 per agent, 200 records / 32 MiB per root and 1,576,960 encoded bytes per record.
-No migration, verdict retention, atomic two-file save or paired restore is implied.
+History stores source only, never verdicts or evidence; there is no migration or atomic two-file save.
 
 For **single-source** restore, without a new tool or alternate filesystem writer:
 

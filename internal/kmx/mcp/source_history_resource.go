@@ -46,6 +46,7 @@ type sourceDocument struct {
 	SchemaVersion    int                       `json:"schemaVersion"`
 	Kind             string                    `json:"kind"`
 	ReadOnly         bool                      `json:"readOnly"`
+	Validation       string                    `json:"validation,omitempty"`
 	File             File                      `json:"file"`
 	Source           string                    `json:"source"`
 	Tests            sourceTests               `json:"tests"`
@@ -58,6 +59,9 @@ type sourceDocument struct {
 }
 
 func pairDocument(pair *agentfile.Pair, source []byte) sourceDocument {
+	return sourcesDocument(sourcesFor(pair), source)
+}
+func sourcesDocument(pair pairSources, source []byte) sourceDocument {
 	d := sourceDocument{SchemaVersion: 1, Kind: "kmx.agent-sources", ReadOnly: true, File: File{Path: pair.AgentPath, Revision: pair.Agent.Revision}, Source: string(source), SnapshotRevision: pair.SnapshotRevision, SourceHistory: readOnlySourceHistory()}
 	d.Tests = sourceTests{State: pair.Tests.State, Path: pair.Tests.Selection.Path, Revision: pair.Tests.Revision, SelectionKey: pair.Tests.Selection.Key}
 	if pair.Tests.State == "external" {
@@ -122,13 +126,17 @@ func AddSourceHistoryResource(server *sdk.Server, files *Files) {
 		if err != nil {
 			return nil, err
 		}
-		bound, err := files.bindPair(ctx, p, tests)
+		bound, err := files.bindPairMode(ctx, p, tests, true)
 		if err != nil {
 			return nil, err
 		}
 		defer bound.close()
 		pair := bound.pair
-		d := pairDocument(pair, bound.agent.source)
+		d := sourcesDocument(bound.sources, bound.agent.source)
+		d.Validation = "valid"
+		if pair == nil {
+			d.Validation = "invalid_pair"
+		}
 		d.History = files.historyView(ctx, p)
 		if d.History != nil {
 			newer := pair
@@ -144,10 +152,10 @@ func AddSourceHistoryResource(server *sdk.Server, files *Files) {
 		if err := bound.check(ctx); err != nil {
 			return nil, err
 		}
-		if _, supported := agentfile.DefaultTestsPath(pair.AgentPath); supported {
+		if _, supported := agentfile.DefaultTestsPath(bound.sources.AgentPath); supported {
 			d.SourceVersion = bound.sourceVersion()
 			files.viewMu.Lock()
-			d.PairOperations = &pairOperationsCapability{SchemaVersion: 1, ToolSchemaVersion: 3, Execute: files.pairExecute}
+			d.PairOperations = &pairOperationsCapability{SchemaVersion: 1, ToolSchemaVersion: 3, Execute: files.pairExecute && pair != nil, Create: files.pairWrites, Edit: files.pairWrites, Capture: files.pairWrites && pair != nil, Restore: files.pairWrites}
 			files.viewMu.Unlock()
 		}
 		return sourceResourceResult(ctx, req.Params.URI, d)

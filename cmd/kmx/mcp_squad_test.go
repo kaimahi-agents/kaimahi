@@ -68,11 +68,9 @@ func TestMCPSquadStartupConfigurationAndInertDiscovery(t *testing.T) {
 		if schema["oneOf"] != nil || schema["anyOf"] != nil || schema["allOf"] != nil {
 			t.Fatal("top-level schema union can break model tool loading")
 		}
-		versions := 2
+		versions := 3
 		if tool.Name == "set_tool_state" {
 			versions = 1
-		} else if tool.Name == "run" || tool.Name == "test" {
-			versions = 3
 		}
 		enum := schema["properties"].(map[string]any)["schemaVersion"].(map[string]any)["enum"].([]any)
 		if len(enum) != versions {

@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"path/filepath"
 	"unicode/utf8"
 
@@ -18,6 +19,20 @@ type historyPair struct {
 	SelectionKey     string `json:"selectionKey"`
 	SnapshotRevision string `json:"snapshotRevision"`
 	Source           []byte `json:"source"`
+}
+
+func (s *historyStore) retainPair(ctx context.Context, p string, pair *agentfile.Pair, source []byte) error {
+	if pair == nil {
+		return refusal("history_unavailable")
+	}
+	h := &historyPair{AgentPath: pair.AgentPath, TestsPath: pair.Tests.Selection.Path, Explicit: pair.Tests.Selection.Explicit, TestsState: pair.Tests.State, TestsRevision: pair.Tests.Revision, SelectionKey: pair.Tests.Selection.Key, SnapshotRevision: pair.SnapshotRevision}
+	if pair.Tests.State == "external" {
+		if pair.Tests.Suite == nil {
+			return refusal("history_unavailable")
+		}
+		h.Source = pair.Tests.Suite.Source
+	}
+	return s.retainRecord(ctx, p, historyRecord{SchemaVersion: 2, Source: source, Pair: h})
 }
 
 func (r historyRecord) validSourceKind() bool {

@@ -223,14 +223,22 @@ func (s *historyStore) sync() error {
 }
 
 func (s *historyStore) retain(ctx context.Context, p string, source []byte) error {
-	if !agentPath(p) || len(source) == 0 || len(source) > maxFileBytes || !utf8.Valid(source) {
+	return s.retainRecord(ctx, p, historyRecord{SchemaVersion: 1, Source: source})
+}
+
+func (s *historyStore) retainRecord(ctx context.Context, p string, r historyRecord) error {
+	if !agentPath(p) || len(r.Source) == 0 || len(r.Source) > maxFileBytes || !utf8.Valid(r.Source) || !r.validSourceKind() {
 		return refusal("history_unavailable")
 	}
 	entries, err := s.load()
 	if err != nil {
 		return err
 	}
-	key, rev := historyHash(p), revision(source)
+	key := historyHash(p)
+	identity := revision(r.Source)
+	if r.Pair != nil {
+		identity = r.Pair.SnapshotRevision
+	}
 	var sequence uint64
 	count, perFile, total := 0, 0, int64(0)
 	newest := ""
@@ -248,17 +256,21 @@ func (s *historyStore) retain(ctx context.Context, p string, source []byte) erro
 		if e.record.FileKey == key {
 			perFile++
 			newest = ""
-			if e.record.SchemaVersion == 1 {
+			if e.record.SchemaVersion == r.SchemaVersion {
 				newest = e.record.Revision
+				if e.record.Pair != nil {
+					newest = e.record.Pair.SnapshotRevision
+				}
 			}
 		}
 	}
-	if newest == rev {
+	if newest == identity {
 		return nil
 	}
 	var random [16]byte
 	_, _ = rand.Read(random[:]) // crypto/rand.Read fills the buffer or terminates.
-	r := historyRecord{SchemaVersion: 1, VersionID: fmt.Sprintf("%020d-%x", sequence+1, random), FileKey: key, Revision: rev, CapturedAt: time.Now().UTC(), Source: source}
+	r.VersionID, r.FileKey = fmt.Sprintf("%020d-%x", sequence+1, random), key
+	r.Revision, r.CapturedAt = revision(r.Source), time.Now().UTC()
 	b, err := json.Marshal(r)
 	if err != nil || len(b) > maxHistoryRecordBytes || int64(len(b)) > s.limits.bytes {
 		return refusal("history_unavailable")
