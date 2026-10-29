@@ -24,7 +24,33 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## v0.9.0 — 2026-10-27
 
+The rc.5 preparation includes the paired prompt/tests canvas loop, revision-safe
+Copilot text mode and the macOS executable fix. The catalog still selects rc.4
+until the published rc.5 pair passes its Mac walk. No rc.5 desktop acceptance is
+claimed here; a Mac walk does not qualify Windows/WSL.
+
 ### Added
+
+- `kmx create NAME` writes `NAME.agent.md` and one example in `NAME.agent.test.md` in the current folder without prompts or model calls. Use `--path DIR` for another folder and `--description TEXT` for frontmatter text. Existing targets are never overwritten (exit 2). An explicit `.github/agents` destination puts tests in sibling `.github/agent-tests`.
+
+- Add an internal read-only companion test reader with fixed sibling/repository pairing, explicit selection and a combined revision. Checked source-version comparisons also detect changes to the files or their parent directories. The format uses `schemaVersion: 1` frontmatter and one `yaml agent-test` fence per test with existing check and tool-fixture semantics. The CLI, version-3 MCP and paired canvas consume this reader; existing inline tests remain supported.
+
+- Internal stdio MCP host adapter with explicit tool mappings, frozen environment inputs and owned Unix process-group cleanup. File CLI server selection is exposed through `--mcp-server`; Copilot app host tools remain separate.
+
+- File Run/Test can use selected stdio MCP servers from folder `kmx.yaml`, with repeatable `--mcp-server` and a `--no-mcp-servers` override for recorded-only CI. Launch environment and mappings are frozen, Disabled/replayed tools do not launch, and cleanup is checked before completion/capture. App-host tools and native Windows policy are unchanged.
+
+- File Run/Test now read the shared companion tests file or `--tests FILE`, with pair-bound results and guarded recording writes to the actual selected source. Raw agent hashes and prompts stay unchanged; tests-only edits and selection changes make retained diagnostics historical. Existing inline tests remain supported. Legacy single-source MCP operations refuse present default companions rather than silently ignoring them; version-3 MCP and the paired canvas support the selected pair. Older binaries may refuse retained failure stores containing new pair metadata after a downgrade; use a matching or newer binary.
+
+- Bare `kmx test` tests direct agent files in the current folder and `.github/agents/`, using their companion tests, with one text/JSON/GitHub summary. Assertion failures continue; operational failures abort and report remaining files as unrun. Unknown or incomplete sets exit 2, failures exit 1, all-pass exits 0. `--tests` and `--case` still require an explicit agent file. Native workspace evaluation remains `kmx package test`; guarded native Windows still requires an explicit file.
+
+- Read-only MCP selected-source/history resources preserve exact agent/tests bytes and label legacy history as agent-only. Paired execution, edits, capture and restore use the separate version-3 operations.
+- Offline `kmx package run-profile export FILE [--tests FILE]` exports external tests as a versioned v2 profile with physical selected-source identity. Inline profiles retain v1; stdout is private content, not test or deployment evidence.
+
+- MCP Run/Test accept a separate version-3 selected-pair context from the read-only source resource. Run answers without checks; Test evaluates them, with exact source and selection identity. Legacy/native versions stay separate.
+- Refresh process-local source contexts after source changes, eviction or restart. Recording capture and history restore use the checked version-3 writers; frozen recordings remain replayable.
+
+- Version-3 MCP Create/Edit, post-journal recording capture and history restore use checked selected-source contexts. Pair preimages retain both sources or exact tests absence; CLI capture still creates no source-history store.
+- Saves acknowledge agent/tests effects separately. Partial or uncertain results require refresh rather than automatic retry or Test; two-file publication is not atomic. Cross-invalid typed sources remain editable for repair but cannot execute.
 
 - `kmx mcp --root DIRECTORY` serves Create/Edit/Run/Test and `set_tool_state` over stdio.
   It confines canonical charter access to an explicit root, creates without
@@ -57,7 +83,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   execution command, model access, Squad registration or native suite-loader
   change is enabled; see [the format](docs/agent-file.md).
 
-- Experimental offline multi-agent flow authoring with `kmx create NAME
+- Experimental offline multi-agent flow authoring with `kmx package create NAME
   --workspace DIR --members FILE --flow FILE`, deterministic preparation and
   explicit native/public layout/archive inventory readers. Strict JSON imports
   preserve the critical flow contract and one artifact identity; default readers,
@@ -77,7 +103,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   `snapshot.storageLocation` refuses `\`, empty path segments and segments of
   only `.` and spaces; an empty `workerSelector.matchLabels` has the same digest
   as an omitted selector.
-- Plan-only AgentSessions deploy: `kmx deploy REF@DIGEST --harness-image IMAGE@sha256:…
+- Plan-only AgentSessions deploy: `kmx package deploy REF@DIGEST --harness-image IMAGE@sha256:…
   --bindings FILE --evidence FILE --plan` renders a substrate ActorTemplate and
   HarnessRegistration offline from full-passing AgentSessions evidence, for
   agent-substrate/substrate main at `f4f7b806255ffdc824391b857dbbf329a2556402`.
@@ -86,7 +112,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   `scripts/validate-agentsessions-render.sh` checks the golden renders against
   that commit. The template name hash covers the renderer version, the full
   image reference (a mirrored image is another template) and the binding
-  digest. Composed `kmx deploy --to NAME` refuses `--harness-image` and
+  digest. Composed `kmx package deploy --to NAME` refuses `--harness-image` and
   AgentSessions workspaces before evaluation or publication.
 - Eval and composed workspace Lift show non-pass case/run, assertion IDs/types,
   both judge scores against the threshold and safe unknown-outcome classes.
@@ -94,7 +120,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   and answer excerpts on stderr; outcome JSON remains payload-free. Diagnostics
   remain separate from evidence. Non-pass runs are retained privately under
   KMX_HOME: last 10 per workspace across revisions, 64 KiB answers/128 KiB records,
-  owner-only and deterministically bounded. Offline `kmx test explain` lists or
+  owner-only and deterministically bounded. Offline `kmx package test explain` lists or
   shows retained diagnostics with opt-in content; --clear removes one ID or all
   only with explicit --workspace, without touching passing proof or upstream data.
   Failure JSON adds diagnostic/provenance IDs, completion/attribution flags and
@@ -222,7 +248,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   FILE` for the read-only GitHub MCP provider described below. Tool-free execution
   is unchanged; Copilot routes also support bound tools.
 
-- `kmx run-profile export FILE` provides a temporary demo bridge, not the deploy contract. It writes a deterministic frozen canonical agent-file profile to stdout, with instructions, exact authored model/judge identities, ordered examples/assertions and SHA-256 hashes. Every target example is `not_run`; export is offline and is not evaluation evidence, a package or deployment authority. Output includes authored content and has no managed output-file privacy guarantee.
+- `kmx package run-profile export FILE` provides a temporary demo bridge, not the deploy contract. It writes a deterministic frozen canonical agent-file profile to stdout, with instructions, exact authored model/judge identities, ordered examples/assertions and SHA-256 hashes. Every target example is `not_run`; export is offline and is not evaluation evidence, a package or deployment authority. Output includes authored content and has no managed output-file privacy guarantee.
 
 - Edit instructions and examples directly in the Copilot agent canvas, then save and test through the existing rooted MCP tools. The text fallback stays read-only.
 - Show bounded failed-example and passing answers in the canvas. Other MCP clients retain their existing disclosure defaults.
@@ -314,26 +340,60 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Changed
 
-- Canonical `kmx test` replaces `kmx eval`, including all six helpers:
+- Copilot chat now treats the extension's revision-bound text view as a normal
+  alternative to the canvas. It can safely continue editing only from a complete
+  exact source snapshot, reports structured Run/Test rows and remembered runtime
+  model choices, and never reruns to recover answer content. Same-chat workflows
+  remain available without the extension; fresh-chat reopening still requires it.
+
+- The rc.4 preparation stamped source plugin manifests to 0.9.0-rc.4; rc.5 supersedes that source stamp.
+
+- The rc.4 release pinned both `kmx-plugins` entries to its published commit. The catalog stays on rc.4 until the published rc.5 pair passes its Mac walk; preparing rc.5 does not advance it.
+
+- Root help leads with Create, Run, Test, Chat and Model, followed by Package,
+  Cluster and Version. MCP, Completion and Help remain callable but are omitted
+  from the root help list; MCP and Completion are also omitted from suggestions.
+- Inner-loop help is concise with examples and compact flags. File Run/Test
+  storage, privacy and evidence caveats are collected in `docs/local-preview.md`;
+  Run distinguishes file-preview, shared-input and live-Orka flags. Test help
+  retains the runtime's pass/fail/inconclusive exit-code distinction. Global flag parsing,
+  supported operations and retained legacy Eval/Lift help remain unchanged.
+- Canonical flag-parsing errors point to the resolved command's help, without
+  repeating argument values; native Windows hints explicitly use PowerShell
+  quoting and its call operator. Legacy refusals and exit codes stay unchanged.
+
+- Source plugin manifests report version 0.9.0-rc.5 for the paired release.
+
+- `kmx run FILE` now executes saved inputs without evaluating their checks or setting up a judge. Completed answers are not passing tests; use `kmx test FILE` to evaluate checks. Tool fixtures, journal finalization and completion checks still apply. Legacy single-source MCP preview behavior is unchanged; selected-pair MCP Run also answers without checks.
+
+- File Run/Test explains when an Enabled tool has no recording or live source. GitHub Actions summaries clarify that Calls counts requests, not successful live execution. JSON fields, recording replay, verdicts and exit codes are unchanged.
+
+- Limit the Orka caller hygiene manifest to seven reviewed package dependencies. New helpers, files and operations within approved packages no longer need manifest edits. Keep initialization checks and review new package dependencies and imports that register shared HTTP handlers.
+
+- Exports without `--tests` now read the default companion automatically. An invalid companion or a conflict with inline examples refuses an export that previously ignored it; fix or remove the companion, or select a valid tests file with `--tests`.
+
+- The agent canvas and chat creation use separate prompt and tests sources by default. Save/Enter/Test, recording capture, model comparison and source-only history restore keep the selected pair checked. Partial or uncertain source saves keep drafts and never start Test automatically. Existing inline and native Squad flows remain supported without migration.
+
+- Canonical `kmx package test` replaces `kmx eval`, including all six helpers:
   `cleanup`, `diff`, `explain`, `export`, `verify` and `from-sessions`. Test is unreleased;
   v0.8.1 uses `eval`. The hidden legacy root and helpers remain callable for at
   least one released version, adding exactly one stderr line per invocation:
-  `kmx eval is deprecated; use kmx test (same arguments).`
+  `kmx eval is deprecated; use kmx package test (same arguments).`
   Arguments, flags, stdout, existing stderr labels, exit codes and state are
   unchanged apart from the notice. Authored `eval/`, packaged `evals/`,
   `evalTarget`/`evaluationTarget`, schemas, APIs and machine JSON remain unchanged.
   Docs/site lead with Run / Test / Publish: existing live Orka Run, workspace
-  Test, registry `push` for Publish, and Deploy to real targets. No local Run,
+  Test, registry `package push` for Publish, and Deploy to real targets. No local Run,
   numbered local versions, plugin or new Publish command is introduced.
   Old guide fragments remain valid; removal requires a later announced breaking
   release. See [Test compatibility](docs/kmx.md#test-compatibility-unreleased).
 
-- Canonical `kmx deploy` replaces packaged-suite `kmx lift`, with the same
+- Canonical `kmx package deploy` replaces packaged-suite `kmx lift`, with the same
   arguments, flags, runtime/evidence/consent guards and exit contracts. Deploy is
   unreleased; v0.8.1 uses `lift`. Deprecated `kmx lift` stays hidden but callable
   for at least one released version, preserving stdout and stderr stage labels
   and adding exactly one stderr line per legacy invocation:
-  `kmx lift is deprecated; use kmx deploy (same arguments).`
+  `kmx lift is deprecated; use kmx package deploy (same arguments).`
   Canonical human help/output says Deploy; machine JSON keys/values (including
   `targets` operation `"lift"`), public Go/API/internal `Lift` names, evidence,
   storage and annotations are unchanged. Old guide fragments remain valid.
@@ -447,6 +507,14 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Fixed
 
+- When chat lacks a saved agent snapshot or an agent-resource reader, report that no edit was saved instead of inventing a revision or running the agent solely to discover one. For add-tests requests, give conditional guidance to use Suggest tests if the canvas offers it. Revision checks and existing test-write consent are unchanged.
+
+- Start the macOS Copilot plugin's MCP server at `/usr/local/bin/kmx`, matching the documented installer destination without relying on a Dock-launched app's PATH. Install the matching rc.5 binary and plugin once available, then restart Copilot with a fresh session. Remove any old manual kmx MCP definition that would collide; do not add a custom-server workaround.
+
+- Use `kmx cluster orka install` for the provider-free destination in Orka runtime qualification, and print installer diagnostics when that install fails.
+
+- Cancel superseded pull request CI runs without cancelling main, scheduled or manually dispatched runs.
+
 - A private Orka ownership checkpoint could leave visible `4.json` after a
   post-link persistence failure, incorrectly authorizing a later update. Fresh
   create and internal update now require a final `committed.json` marker after
@@ -545,12 +613,19 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Breaking
 
+- Kubernetes setup/inspection and native package commands move under `kmx cluster`
+  and `kmx package`. The moved old roots are removed, not working aliases.
+  Root `test FILE` remains the file route; bare `kmx test` now tests the current
+  folder. Native authoring moves to `package create`; root Create authors agent files.
+
+- Native workspace authoring moves from `kmx create` to `kmx package create`. The new root command does not accept workspace, model, instructions, runtime or experimental flow flags.
+
 - Older preparation-cache entries refuse without a current packing-policy marker.
   Move aside only the named entry and retry; keep managed passing state and
   standalone receipts. Rebuilding a different artifact requires fresh evaluation,
   never edited or relabeled proof. See the
   [cache upgrade](docs/suite-workspace.md#portable-directory-modes-and-preparation-cache-upgrade).
-- AgentSessions `kmx test --development-host FILE` requires `--bindings FILE`
+- AgentSessions `kmx package test --development-host FILE` requires `--bindings FILE`
   and records the binding digest in its evidence, including judged and repeated
   proof. AgentSessions passing receipts move to v2
   (`kmx.agentsessions-suite.passing/v2`); v1 receipts and managed v1 proof are
@@ -590,13 +665,66 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Upgrading
 
-- For unreleased main builds, change maintained `kmx eval` invocations and all
-  six helper routes to `kmx test`. v0.8.1 still uses `eval`. The hidden alias
+Use this full command map (paths are relative to `kmx`; operands/flags retain
+their existing meaning):
+
+| Old path | New path |
+|---|---|
+| `local` | `cluster` (help) |
+| `local up`, `local down` | `cluster up`, `cluster down` |
+| `context`, `context show`, `context use NAME` | `cluster context`, `cluster context show`, `cluster context use NAME` |
+| `quickstart`, `console`, `targets` | `cluster quickstart`, `cluster console`, `cluster targets` |
+| `task`, `task result TASK` | `cluster task`, `cluster task result TASK` |
+| `orka`, `orka install`, `orka status`, `orka show NAME`, `orka list` | `cluster orka`, `cluster orka install`, `cluster orka status`, `cluster orka show NAME`, `cluster orka list` |
+| `orka status` (runtime report) | Also available as `cluster status`, using the same table-only report |
+| `aks`, `aks up`, `aks down` (hidden) | `cluster aks`, `cluster aks up`, `cluster aks down` (hidden) |
+| `quickstart-wizard` (hidden retirement refusal) | `cluster quickstart-wizard` (same refusal, pointer to `cluster quickstart --interactive`) |
+| `push [REF]` | `package push [REF]` (workspace publication, same exact-suite evidence gate) |
+| `deploy [REF@DIGEST]` | `package deploy [REF@DIGEST]` (composed and explicit-reference modes) |
+| `status --to NAME` (destination inventory) | `package status --to NAME`, not runtime `cluster status` |
+| Native/workspace `test` | `package test` |
+| `test cleanup`, `test diff`, `test export` | `package test cleanup`, `package test diff`, `package test export` |
+| `test verify`, `test from-sessions` | `package test verify`, `package test from-sessions` |
+| Workspace `test explain` | `package test explain` |
+| File `test FILE`, `test explain --file FILE` | Unchanged; root Explain requires `--file`. Package Explain also retains the existing offline file reader. |
+| `suite` | `package` (artifact operations); `package suite` groups directory transfer |
+| `suite validate`, `suite build`, `suite push-image` | `package validate`, `package build`, `package push-image` |
+| `suite pull`, `suite policy` | `package pull`, `package policy` |
+| `suite push DIRECTORY REF` | `package suite push DIRECTORY REF` (extracted-directory transfer; not evidence-gated workspace Push) |
+| `ctx [--check]` | `package ctx [--check]` (named destinations, not Kubernetes context selection) |
+| `run-profile`, `run-profile export FILE` | `package run-profile`, `package run-profile export FILE` |
+| Native `create NAME` | `package create NAME`; root `create NAME` now authors an agent file and companion tests |
+| `run FILE [input]`, `run --agent NAME`, `chat NAME` | Unchanged; Chat still targets a live Orka Agent |
+| `model`, `model list`, `model login`, `model logout`, `version` | Unchanged |
+| `mcp`, `completion bash/zsh/fish`, `help [TOPIC...]` | Unchanged invocation; nested help topics use their new paths |
+| Hidden `eval` and `eval cleanup/diff/explain/export/verify/from-sessions` | Still work, with one notice: `kmx eval is deprecated; use kmx package test (same arguments).` |
+| Hidden `lift` | Still works with its legacy stage/output contract and one notice: `kmx lift is deprecated; use kmx package deploy (same arguments).` |
+| Bare root | Help only, as before |
+
+Bare helper names such as `kmx test cleanup` no longer select workspace operations.
+For an agent file literally named `cleanup`, `diff`, `export`, `verify` or
+`from-sessions`, use an explicit path such as `kmx test ./cleanup`.
+
+Build still consumes a directory and plans/builds the existing image operation;
+it does not compile an agent file into a package. No stored data, evidence,
+machine JSON fields, public Go APIs or cluster resources are migrated or deleted.
+The fixed Quickstart source description and suite digest stay unchanged.
+Installer `--quickstart` recognizes the cluster group's usage in inert help to
+select the downloaded binary's spelling; it never retries a failed setup operation.
+Stable v0.8.1 examples retain root Quickstart/Orka, and historical v0.4.1 wizard
+instructions retain their original root path.
+
+- Use `kmx test FILE` rather than `kmx run FILE` as a check gate in CI. A completed Run now exits successfully even when its authored checks would fail.
+
+- Change workspace scripts to `kmx package create NAME --workspace DIR --model MODEL --instructions FILE`; all native flags and terminal prompts keep their behavior. The root command prints the next file Run and Test commands. File Test now reads the created companion.
+
+- For rc.5, change maintained `kmx eval` invocations and all
+  six helper routes to `kmx package test`. v0.8.1 still uses `eval`. The hidden alias
   remains callable for at least one released version with one deprecation notice
   on stderr; stdout, arguments, exit codes and state do not change. Do not rename
   case directories, receipts or configuration fields. No data migration is needed.
 
-- Remove `kmx suite diff` from scripts. `kmx test diff` compares passing evaluation receipts, not packages, and is not a replacement.
+- Remove `kmx suite diff` from scripts. `kmx package test diff` compares passing evaluation receipts, not packages, and is not a replacement.
 
 - Before installing the renamed PATH source plugin, uninstall an existing direct PATH installation under its old `kmx-agent-builder` name. This does not update the kmx binary or add a marketplace install.
 
@@ -611,7 +739,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 For v0.9.0-rc.4 on Windows, [install kmx at `/usr/local/bin/kmx` in WSL](plugins/copilot-wsl/README.md#install), then register the `kmx-plugins` marketplace and install `kmx-agent-builder@kmx-plugins` in Windows. On macOS, [install the Darwin binary and the `kmx-agent-builder-path` plugin](plugins/copilot/README.md#install-on-macos) with the commands in that guide.
 
-Checked for this release: the marketplace install was walked in the Copilot app on Windows (register the catalog, install the plugin, open an agent canvas). The other changes since rc.3 are covered by CI, not by an app walk.
+Historical rc.4 evidence: the marketplace install was walked in the Copilot app on Windows (register the catalog, install the plugin, open an agent canvas). That does not establish an rc.5 Windows/WSL or Mac app pass. rc.5 still requires a person to walk the published pair on a Mac, including the rc.4 upgrade, before catalog repinning or a note to users.
 
 Known gaps in this preview:
 - The Copilot CLI marks direct plugin installs (`copilot plugin install kaimahi-agents/kaimahi:plugins/copilot-wsl`) as deprecated; they follow main and still work, but the marketplace install is the supported pair.

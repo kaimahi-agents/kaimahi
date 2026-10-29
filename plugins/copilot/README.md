@@ -26,9 +26,12 @@ version named by the marketplace catalog.
 The source plugin starts `/usr/local/bin/kmx mcp`, matching the installer's
 `--bin-dir`; it does not depend on Copilot's PATH, which normally omits
 `/usr/local/bin` when the Mac app is launched from the Dock. rc.4's pinned plugin
-still starts `kmx` from PATH; see the [temporary MCP setup](../../docs/copilot-app.md#macos-rc4-server-not-available)
-until a newer paired release contains this fix. Restart Copilot after installing
-or updating the plugin and start a fresh session.
+still starts `kmx` from PATH. The rc.5 source plugin fixes that lookup; the
+catalog remains on rc.4 until the new published pair has been walked on a Mac.
+See the [paired upgrade guidance](../../docs/copilot-app.md#macos-rc4-server-not-available);
+remove any conflicting old manual kmx server definition, rather than adding a
+custom-server workaround. Restart Copilot after installing or updating the
+plugin and start a fresh session.
 No root, model or bundled binary is configured inside the plugin. The MCP schema has no
 per-OS command selector, so Windows keeps its separate WSL manifest. The PATH
 source plugin is named `kmx-agent-builder-path`; WSL and legacy native bundles
