@@ -721,8 +721,10 @@ separately. Paired canvases preserve separate drafts; Enter saves the selected
 sources before Test. Source details show Agent/Tests identities and source-only
 history, with Agent/Tests/Both change labels and restore without automatic Test.
 External tests and capture do not trigger the inline-prompt warning. Existing
-inline Copilot tests keep that warning and are not migrated. Its status acknowledges the request, not a completed addition. Saves require the original revision; changed result
-revisions are labelled stale rather than silently rebasing the draft.
+inline Copilot tests keep that warning and are not migrated. The **Suggest tests**
+status acknowledges the request, not a completed addition. Saves require the
+original revision; changed result revisions are labelled stale rather than
+silently rebasing the draft.
 Inspection can show a minimal titled agent as well as a canonical Squad charter;
 this display-only support does not change Run/Test parser acceptance.
 
