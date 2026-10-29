@@ -122,8 +122,7 @@ export async function selectedAction(initial, input, { invoke, read, block, snap
     return { ...selectedRow, saved, ...(capture ? { capture } : {}), ...(models.length > 1 ? { comparison: { results: results.map(r => r.view) } } : {}) };
   } catch (e) {
     let err = safeError(e);
-    const settingsRefused = phase === "settings" && ["permission_required", "stale_revision", "stale_settings_revision", "invalid_tool_settings", "settings-failed"].includes(err.code);
-    if (phase && err.code !== "outcome-unknown" && !err.confirmedRefusal && !settingsRefused) err = new ViewError("outcome-unknown");
+    if (phase && err.code !== "outcome-unknown" && !err.confirmedRefusal) err = new ViewError("outcome-unknown");
     if (err.code === "outcome-unknown") block();
     return { error: err.code, message: err.message, saved, ...(err.approvalTimeout ? { approvalTimeout: true } : {}), ...(settingsIncomplete ? { settingsIncomplete: true } : {}), ...(saved && err.code !== "outcome-unknown" ? { view } : {}) };
   }

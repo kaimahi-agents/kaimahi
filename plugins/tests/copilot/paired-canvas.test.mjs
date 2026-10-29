@@ -213,6 +213,20 @@ for(const resultType of ["success","failure"])for(const reasonCode of ["stale_re
   assert.equal(first.error,reasonCode);assert.equal(again.error,reasonCode);assert.equal(f.calls.length,2);assert.doesNotMatch(first.message,/private-preflight-canary/);
 });
 
+for(const fault of ["post-set typed resource error","setter refusal","SDK settings denial"])test(`paired settings distinguish receipt from ${fault}`,async()=>{
+  const d=fixture(),agent=source.replace("model: fake\n","model: fake\ntools: [ping]\n");d.source=agent;d.file.revision=hash(agent);d.tests={state:"absent",path:d.tests.path,selectionKey:d.tests.selectionKey,source:"",revision:""};
+  Object.assign(d.canvas,{file:{path,revision:hash(agent)},tools:["ping"],toolSettings:[{name:"ping",state:"Enabled"}],toolSettingsRevision:"absent",examples:[],authoring:{source:agent,editable:true,recordingControls:true}});
+  const f=sessionFor(d),read=f.session.rpc.mcp.resources.read;let fail=false;
+  f.session.rpc.mcp.resources.read=async params=>{if(fail){fail=false;return {contents:[{text:JSON.stringify({schemaVersion:1,kind:"kmx.agent-view-error",reasonCode:"invalid_tool_settings"})}]}}return read(params)};
+  f.session.rpc.tools.execute=async call=>{f.calls.push(call);assert.equal(call.name,"set_tool_state");
+    if(fault==="SDK settings denial")return {resultType:"denied",textResultForLlm:"private-settings-canary"};
+    if(fault==="setter refusal")return {resultType:"failure",structuredContent:{schemaVersion:1,operation:"set_tool_state",state:"refused",changed:false,mayHaveWritten:false,reasonCode:"invalid_tool_settings"}};
+    fail=true;return {resultType:"success",structuredContent:{schemaVersion:1,operation:"set_tool_state",state:"complete",changed:false,mayHaveWritten:false,file:{path,revision:hash(agent)},toolSettingsRevision:"absent",toolSettings:[{name:"ping",state:"Enabled"}]}};
+  };
+  const act=createActionHandler({session:f.session,path}),input={operation:"save-and-test",expectedSettingsRevision:"absent",expectedRevision:hash(agent),expectedSourceVersion:d.sourceVersion,toolSettings:[{name:"ping",state:"Enabled"}]},first=await act(input),again=await act(input);
+  assert.equal(first.error,fault==="post-set typed resource error"?"outcome-unknown":fault==="setter refusal"?"invalid_tool_settings":"permission_required");assert.equal(again.error,first.error);assert.equal(f.calls.length,fault==="post-set typed resource error"?1:2);assert.doesNotMatch(first.message,/private-settings-canary/);
+});
+
 test("source history and model picker cannot revive a result after a tests-only context change", () => {
   const result = { operation: "test", state: "complete", verdict: "pass", fullPass: true, modelRoute: "fake/fake", selection: { scope: "full", caseIds: ["greeting"], totalCases: 1 }, examples: [{ id: "greeting", state: "complete", verdict: "pass", assertions: [] }] };
   const old = { file: { path, revision: hash(source) }, model: "fake", examples, authoring: { examples }, selectedSources: { sourceVersion: "old", server }, latest: { status: "current", badge: "pass", result } };

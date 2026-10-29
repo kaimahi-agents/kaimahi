@@ -131,7 +131,7 @@ export function createActionHandler({ session, path, tests, prepare, inspection 
     throw new ViewError("outcome-unknown", "The tool settings outcome could not be confirmed. Tests did not run. Do not retry; reload to inspect the saved agent and settings.");
   }
   function settingsReceipt(result, view, change) {
-    if (["rejected", "denied"].includes(result?.resultType)) throw new ViewError("permission_required");
+    if (["rejected", "denied"].includes(result?.resultType)) throw Object.assign(new ViewError("permission_required"), { confirmedRefusal: true });
     let r = result?.structuredContent;
     if (r === undefined && typeof result?.textResultForLlm === "string" && Buffer.byteLength(result.textResultForLlm) <= 16384) {
       try { r = JSON.parse(result.textResultForLlm); } catch { settingsUnknown(); }
@@ -140,7 +140,7 @@ export function createActionHandler({ session, path, tests, prepare, inspection 
     if (r.file !== undefined && (!isObj(r.file) || r.file.path !== path || !/^sha256:[a-f0-9]{64}$/.test(r.file.revision))) settingsUnknown();
     if (["refused", "failed"].includes(r.state) && r.changed === false && r.mayHaveWritten === false
       && !Object.hasOwn(r, "toolSettingsRevision") && !Object.hasOwn(r, "toolSettings") && typeof r.reasonCode === "string") {
-      throw new ViewError(["stale_revision", "stale_settings_revision", "invalid_tool_settings"].includes(r.reasonCode) ? r.reasonCode : "settings-failed");
+      throw Object.assign(new ViewError(["stale_revision", "stale_settings_revision", "invalid_tool_settings"].includes(r.reasonCode) ? r.reasonCode : "settings-failed"), { confirmedRefusal: true });
     }
     // Unknown (including a lost/malformed receipt) grants no settings token or
     // retry authority. The checked-agent file identity is not settings evidence.
