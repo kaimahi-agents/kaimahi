@@ -150,6 +150,87 @@ func TestPairCaptureCredentialRedactionWithholdsOuterContext(t *testing.T) {
 	}
 }
 
+func TestCopilotCaptureConsentAtAppPreparation(t *testing.T) {
+	for _, version := range []int{1, 3} {
+		for _, kind := range []string{"pending", "disabled", "invalid-settings", "ack", "replay"} {
+			t.Run(string(rune('0'+version))+"/"+kind, func(t *testing.T) {
+				base, root := historyPaths(t)
+				f := historyFiles(t, root, base)
+				canonical := string(pendingRecordingSource(t))
+				source := "---\nmodel: fake\ntools: [ping]\n---\nCall the tool `ping`. Reply with exactly `Hello Ada`.\n\n" + canonical[strings.Index(canonical, "## Examples"):]
+				file, err := f.Create(t.Context(), "a.agent.md", []byte(source))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if kind == "disabled" || kind == "invalid-settings" {
+					state := "Disabled"
+					if kind == "invalid-settings" {
+						state = "not-a-state"
+					}
+					if err := os.WriteFile(filepath.Join(root, "kmx.yaml"), []byte("tools:\n  ping: "+state+"\n"), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				live := 0
+				runner := pairedCaptureRunner(t, &live)
+				cs := connectFixture(t, Operations(f, &app.App{FileRunner: runner}, nil), func(s *sdk.Server) { AddAgentResource(s, f) })
+				args := map[string]any{"schemaVersion": version, "path": "a.agent.md"}
+				if version == 3 {
+					args["expectedSourceVersion"] = pairContextRead(t, cs, "a.agent.md", "")
+				} else {
+					args["expectedRevision"] = file.Revision
+				}
+				if kind == "ack" {
+					args["acknowledgeCopilotTests"] = true
+				}
+				if kind == "replay" {
+					args["recordedReplayOnly"] = true
+				}
+				result, err := cs.CallTool(t.Context(), &sdk.CallToolParams{Name: "test", Arguments: args})
+				if err != nil {
+					t.Fatal(err)
+				}
+				data, _ := json.Marshal(result.StructuredContent)
+				if kind == "pending" {
+					requireHistoryToolReason(t, result, "confirmation_required")
+					if live != 0 {
+						t.Fatal("capture without consent")
+					}
+				} else {
+					if strings.Contains(string(data), "confirmation_required") {
+						t.Fatal("consent required without active capture", string(data))
+					}
+					if kind == "ack" {
+						var preview app.FilePreviewResult
+						if version == 3 {
+							var envelope pairPreviewResult
+							json.Unmarshal(data, &envelope)
+							preview = envelope.Preview
+						} else {
+							json.Unmarshal(data, &preview)
+						}
+						if preview.SavedRevision == "" || live != 1 {
+							t.Fatalf("acknowledged inline capture unavailable: %s live%d", data, live)
+						}
+					} else {
+						if live != 0 {
+							t.Fatal("disabled/invalid/replay called live tool")
+						}
+					}
+				}
+				if kind != "ack" {
+					if got, _ := os.ReadFile(filepath.Join(root, "a.agent.md")); string(got) != source {
+						t.Fatal("unapproved capture changed source")
+					}
+				}
+				if _, err := os.Lstat(filepath.Join(root, "a.agent.test.md")); !os.IsNotExist(err) {
+					t.Fatal("inline capture created companion")
+				}
+			})
+		}
+	}
+}
+
 func TestPairCaptureAfterCloseHistoryAndReplay(t *testing.T) {
 	base, root := historyPaths(t)
 	f := historyFiles(t, root, base)

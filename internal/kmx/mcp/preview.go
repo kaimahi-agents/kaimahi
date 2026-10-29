@@ -92,9 +92,7 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 			if input.ExpectedRevision != "" && (parsed == nil || parsed.Revision != input.ExpectedRevision) {
 				return nil, refusal("stale_revision")
 			}
-			if err := copilotCaptureConsent(ctx, parsed, sourcePath, input.CaseID, input.RecordedReplayOnly, input.AcknowledgeCopilotTests); err != nil {
-				return nil, err
-			}
+			confirmationRequired := false
 			executionRoute := previewExecutionRoute(files, selected, parsed, input.Model)
 			ctx = withHostProgress(ctx, name, req)
 			options := app.FilePreviewOptions{File: input.Path, SourceFile: sourcePath, FullPath: files.root == nil, Operation: name, CaseID: input.CaseID, Input: input.Input, ShowContent: input.ShowContent, ShowFailedContent: input.ShowFailedContent, Model: input.Model, Route: executionRoute, CaseFinished: caseProgressNotifier(ctx)}
@@ -103,10 +101,17 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 			}
 			options.RecordedReplayOnly, options.ExpectedToolSettings = input.RecordedReplayOnly, input.ExpectedToolSettings
 			options.PrepareRecordingSave = func(ctx context.Context, revision string) (app.RecordingSaver, error) {
+				if err := copilotCaptureConsent(parsed, input.RecordedReplayOnly, input.AcknowledgeCopilotTests); err != nil {
+					confirmationRequired = true
+					return nil, err
+				}
 				save, err := files.RecordingSaver(ctx, path, revision)
 				return app.RecordingSaver(save), err
 			}
 			result, err := application.PreviewAgentSnapshot(ctx, parsed, options)
+			if confirmationRequired {
+				return nil, refusal("confirmation_required")
+			}
 			if detail != nil && result.ReasonCode == "invalid_file" {
 				result.Diagnostic = &app.FilePreviewDiagnostic{Field: detail.Field, Line: detail.Location.Line, Column: detail.Location.Column, Repair: detail.Problem}
 			}

@@ -5,7 +5,6 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 )
 
 // Unlike the authoring ACK this projection contains no physical/display paths.
@@ -71,23 +70,11 @@ func (b *pairBinding) prepareCapture(receipt **pairSaveResult) func(context.Cont
 	}
 }
 
-func copilotCaptureConsent(ctx context.Context, agent *agentfile.Agent, physical, caseID string, replay, ack bool) error {
-	if agent == nil || !agent.HasFrontmatter || replay || ack {
-		return nil
-	}
-	settings, err := localtools.ReadSettingsSnapshot(ctx, physical, agent.Tools)
-	if err != nil {
-		return nil
-	}
-	for _, example := range agent.Examples {
-		if caseID != "" && caseID != example.ID || example.Mocks == nil {
-			continue
-		}
-		for _, tool := range example.Mocks.Tools {
-			if tool.Mode == "recorded" && len(tool.Calls) == 0 && !localtools.IsDisabled(settings.Settings, tool.Name) {
-				return refusal("confirmation_required")
-			}
-		}
+// App invokes preparation only for a selected pending, enabled recording.
+// Gate that actual preparation, not a separate settings read that can disagree.
+func copilotCaptureConsent(agent *agentfile.Agent, replay, ack bool) error {
+	if agent != nil && agent.HasFrontmatter && !replay && !ack {
+		return refusal("confirmation_required")
 	}
 	return nil
 }

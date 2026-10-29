@@ -66,20 +66,27 @@ func pairPreviewOperation(files *Files, application *app.App, selected *modelacc
 			return nil, err
 		}
 		pair := bound.pair
-		if pair.Tests.State == "inline" {
-			if err := copilotCaptureConsent(ctx, pair.Agent, pair.AgentPath, input.CaseID, input.RecordedReplayOnly, input.AcknowledgeCopilotTests); err != nil {
-				return nil, err
-			}
-		}
+		confirmationRequired := false
 		var receipt *pairSaveResult
 		executionRoute := previewExecutionRoute(files, selected, pair.Agent, input.Model)
 		ctx = withHostProgress(ctx, name, req)
 		opt := app.FilePreviewOptions{File: input.Path, SourceFile: pair.AgentPath, FullPath: files.root == nil, Operation: name, CaseID: input.CaseID, Input: input.Input, ShowContent: input.ShowContent, ShowFailedContent: input.ShowFailedContent, Model: input.Model, Route: executionRoute, SkipAssertions: name == "run", RecordedReplayOnly: input.RecordedReplayOnly, ExpectedToolSettings: input.ExpectedToolSettings, ValidateSource: bound.check, CaseFinished: caseProgressNotifier(ctx)}
-		opt.PreparePairRecordingSave = bound.prepareCapture(&receipt)
+		opt.PreparePairRecordingSave = func(ctx context.Context, p *agentfile.Pair) (app.PairRecordingSaver, error) {
+			if p.Tests.State == "inline" {
+				if err := copilotCaptureConsent(p.Agent, input.RecordedReplayOnly, input.AcknowledgeCopilotTests); err != nil {
+					confirmationRequired = true
+					return nil, err
+				}
+			}
+			return bound.prepareCapture(&receipt)(ctx, p)
+		}
 		if name == "test" {
 			opt = app.WithPairFilePreviewRetention(opt, pair)
 		}
 		result, err := application.PreviewAgentPairSnapshot(ctx, pair, opt)
+		if confirmationRequired {
+			return nil, refusal("confirmation_required")
+		}
 		var previewErr *app.FilePreviewError
 		completedNonpass := errors.As(err, &previewErr) && previewErr.ExitCode() == 2 && result.State == "complete"
 		payload := pairPreviewResult{SchemaVersion: 3, Kind: "kmx.agent-pair-preview", SourceVersion: input.ExpectedSourceVersion, Preview: result}
