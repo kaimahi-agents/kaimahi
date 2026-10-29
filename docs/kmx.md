@@ -713,16 +713,21 @@ and an unreleased revision-bound chat text fallback over this resource. Native
 the model-facing `open_kmx_canvas` tool returns the full revision and exact
 source only when the resource supplied a complete authoring snapshot. Its
 bounded display is never an Edit baseline. The v0.9.0-rc.4 marketplace pair does
-not expose that structured text result. Canvas and chat Edit/Test/Run use existing same-session MCP tools; only explicit
+not expose that structured text result. Canvas and chat Edit/Test/Run use existing same-session MCP tools; explicit
 **Suggest tests** starts chat with the exact saved source, path and revision,
-asking Copilot for one checked Edit without running tests or requiring a
-resource-reader tool. New chat Create uses v3 to write prompt and companion tests
+without running tests or requiring a resource-reader tool. Copilot's suggested
+examples are delivered back to the originating canvas, bound to that canvas and
+its saved sources, and queued as unsaved drafts in the existing test editor. The
+user can keep, edit or cancel them before using the existing Save and run action;
+suggestions alone do not write the agent or tests file or run tests, and no new
+MCP operation or review screen is added. New chat Create uses v3 to write prompt and companion tests
 separately. Paired canvases preserve separate drafts; Enter saves the selected
 sources before Test. Source details show Agent/Tests identities and source-only
 history, with Agent/Tests/Both change labels and restore without automatic Test.
 External tests and capture do not trigger the inline-prompt warning. Existing
 inline Copilot tests keep that warning and are not migrated. The **Suggest tests**
-status acknowledges the request, not a completed addition. Saves require the
+status acknowledges the request, not a completed addition; nothing is saved until
+the user chooses Save and run. Saves require the
 original revision; changed result revisions are labelled stale rather than
 silently rebasing the draft.
 Inspection can show a minimal titled agent as well as a canonical Squad charter;

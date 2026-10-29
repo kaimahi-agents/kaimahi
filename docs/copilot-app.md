@@ -136,7 +136,7 @@ runs tests.
 | Open through chat | `Open the kmx agent for release-notes.agent.md` | The model selects the installed opener skill. This uses a model turn. |
 | Run one input | `Use kmx to run release-notes.agent.md with input Add dark mode` | Run sends that input and returns the preview result. |
 | Run saved tests | `Use kmx to test release-notes.agent.md and show its test results` | Test checks the saved cases and reports their actual verdicts. |
-| Add tests from saved source | Ask chat, or select **Suggest tests** in the saved canvas | Chat uses complete source and revision for one checked Edit, lists the saved tests as not run, and does not automatically Test. |
+| Add tests from saved source | Ask chat, or select **Suggest tests** in the saved canvas | Asking chat uses complete source and revision for one checked Edit, lists the saved tests as not run, and does not automatically Test. **Suggest tests** instead queues the suggested examples as unsaved drafts in the canvas's existing test editor; nothing is saved or run until Save and run. |
 | Native read-only text | `/agent-view FULL_PATH` | The native command displays the bounded file projection as text, not a canvas or edit baseline. |
 
 Use your own filename. For Windows+WSL, a full `/mnt/c/.../name.agent.md` path
@@ -185,7 +185,8 @@ bounded display and never an Edit baseline. Native `/kmx-canvas open` displays
 that bounded projection only. The rc.4 pair also exposes bounded text only, so a
 fresh chat cannot begin a revision-checked Edit from its fallback. If the full
 snapshot is unavailable, the current-main text view is read-only. **Suggest
-tests** supplies a snapshot by design. Do not treat a suggestion, trigger or
+tests** supplies a snapshot by design, and its results return to the canvas as
+drafts rather than saved edits. Do not treat a suggestion, trigger or
 failed/uncertain Edit as a saved test, and do not run newly saved tests unless
 the user asked.
 
@@ -250,10 +251,12 @@ Ask Copilot to add and save tests for the agent. For example:
 > internal issue number BUG-123 in the input and check that it is absent from
 > the answer. Save the tests; do not run them yet.
 
-You can also use **Suggest tests** or add and edit tests in the canvas. A
-suggestion request is not a completed save: wait for the saved tests to appear.
-Open a test to see **The agent gets** and **Passes if**. Use explicit checks for
-requirements you can measure; an answer that looks good is not itself a check.
+You can also use **Suggest tests** or add and edit tests in the canvas. **Suggest
+tests** queues unsaved examples in the canvas's existing test editor. Review, edit
+or cancel them before pressing Save and run; suggestions alone do not change the
+agent or tests file or run any tests. Open a test to see **The agent gets** and
+**Passes if**. Use explicit checks for requirements you can measure; an answer
+that looks good is not itself a check.
 
 Press **Enter** in the main view to save pending edits and run every test.
 **Shift+Enter** adds a line break. In a test's detail view, the save/run control
