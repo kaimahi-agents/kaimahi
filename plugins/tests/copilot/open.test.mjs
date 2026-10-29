@@ -207,6 +207,9 @@ test(`actual ${variant} extension opens its own provider and registers the kmx s
     assert.equal((await registration.tools[0].handler({ path: PATH })).opened, true);
     assert.deepEqual(f.calls.map(c => c[0]), ["read", "open"]);
     assert.equal(f.calls[1][1].extensionId, provider);
+    f.calls.length = 0;
+    await registration.commands.find(c => c.name === "squad-view").handler();
+    assert.deepEqual(f.calls, [["open", { extensionId: provider, canvasId: "kmx-squad-view", instanceId: "kmx-squad", input: {} }]]);
     const canvas = registration.canvases[0];
     const ctx = { instanceId: "direct-provider-proof", input: { path: PATH } };
     f.calls.length = 0;

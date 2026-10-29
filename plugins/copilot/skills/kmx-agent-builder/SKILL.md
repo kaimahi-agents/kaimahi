@@ -290,8 +290,8 @@ setup rather than claiming registration or enrichment succeeded. A reopened
 Use its current revision for native edits. Native setup availability still depends
 on the existing configured standalone Squad program.
 
-For the native Squad canvas, use the built-in `open_canvas` with provider
-`plugin:kmx-agent-builder-path:agent-view`, canvasId `kmx-squad-view`, instanceId
+For the native Squad canvas, use the built-in `open_canvas` with the same provider
+as the agent canvas above, canvasId `kmx-squad-view`, instanceId
 `kmx-squad`, and input `{}` to reopen the team or enter a goal for a new proposal.
 Proposal generation requires `kmx://models`: the operator must configure
 `--provider copilot` in the native MCP startup arguments and have an existing
