@@ -60,15 +60,13 @@ the skills can load while `kmx-agent-builder` fails to start. Restart Copilot an
 start a fresh session after installation first; an existing session may not pick
 up newly installed servers.
 
-Without a new release, use the app's **Settings → MCP Servers → Add Server →
-Add Custom server** to add a **Local** (stdio) server named `kmx-agent-builder`,
-with **Command** `/usr/local/bin/kmx` and **Arguments** `mcp`. Keep only one active
-server with that name; do not remove the plugin's skills or canvas. Start a fresh
-session to pick up the configuration. These controls are shown in Microsoft's
-[Copilot app MCP guide](https://github.com/microsoft/mcp-for-beginners/blob/main/12-tooling/01-copilot-app/README.md).
-This is a temporary local server definition, not a plugin or binary upgrade.
-Remove that manual definition when a paired release supplies the absolute-path
-plugin so it does not collide with the plugin's server.
+The rc.5 source plugin fixes this with an absolute executable path. Until the
+rc.5 release is published and its catalog pin advances, the install commands
+above still select rc.4; they do not install the fix. Upgrade the binary and
+plugin together when the new pair is available. If you added a manual kmx MCP
+definition while trying rc.4, remove that specific definition before using the
+fixed plugin so only one kmx server is active. Do not edit plugin caches or add
+a custom server to make the new release work.
 
 ### Existing direct installs and upgrades
 

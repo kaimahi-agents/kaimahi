@@ -189,7 +189,8 @@ numbered versions or new publication command are introduced.
 Bare `kmx test` tests direct agent files in the current folder and
 `.github/agents/`, not recursively, with one final text/JSON/CI summary.
 See [folder discovery, outcomes and output limits](agent-file.md#test-a-folder).
-It never falls back to native workspace evaluation (`kmx package test`).
+Failures exit 1; unknown or incomplete sets exit 2. It never falls back to native
+workspace evaluation (`kmx package test`).
 
 `kmx run FILE` and `kmx test FILE` select one canonical markdown agent file,
 without workspace discovery, cluster configuration, Docker or a daemon. The
@@ -356,8 +357,13 @@ a saved example to run. Without positional input, Run prints each saved example 
 legacy `--prompt`/`--prompt-file` still run their ad-hoc input plus saved examples.
 CLI Run does not evaluate checks or select/authenticate a judge. Completed example rows say ANSWERED and retain an unknown verdict with
 `fullPass: false`, never a test pass. Per-example tool modes, journal finalization
-and completion attribution still apply. Test and existing MCP preview behavior
-continue to evaluate checks.
+and completion attribution still apply. Use `kmx test FILE` to evaluate checks;
+a completed Run is not a passing test. Legacy single-source MCP preview behavior
+is unchanged, and legacy single-source MCP operations refuse a present default
+companion tests file rather than silently ignoring it. MCP Run/Test also accept a
+separate version-3 selected-pair context from the read-only source resource: Run
+answers without evaluating checks, while Test evaluates them, with exact source and
+selection identity. See [paired source history](#read-only-paired-source-history).
 `test FILE` reports PASS/FAIL, test ID and duration, failed checks with the same
 wording as the canvas, then the first answer lines. `--no-content` suppresses
 answers, failure operands and judge content in both text and JSON. Known unsafe
@@ -1643,8 +1649,8 @@ and agents, no guard/download/forward/mutation. Static completion works offline.
 GitHub-agent frontmatter (`name`, `description`; no `model`) and a two-line
 generic greeting prompt, plus the paired `NAME.agent.test.md`: `schemaVersion: 1`
 and one `yaml agent-test` fence with case `greeting` (input `Ada`, assertion
-`greeting-text`, type `contains`, value `Ada`). `--path` selects the output
-directory; `--description` sets the description. Under `.github/agents` the test
+`greeting-text`, type `contains`, value `Ada`). Files go in the current folder
+unless `--path` selects the output directory; `--description` sets the description. Under `.github/agents` the test
 is written to the sibling `agent-tests` directory. It reads no config, prompts
 for nothing and calls no model; an existing target refuses with exit 2 and is
 never overwritten. File Test selects the generated companion by default;
