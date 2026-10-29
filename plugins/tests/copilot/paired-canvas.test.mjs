@@ -232,6 +232,10 @@ test("paired Run uses only its closed-schema operands and does not require Test 
   const result=await createActionHandler({session:f.session,path})({operation:"run",...expected,input:"Ad hoc"});
   assert.equal(Object.hasOwn(f.calls[0].arguments,"expectedToolSettings"),false);assert.equal(Object.hasOwn(f.calls[0].arguments,"recordedReplayOnly"),false);assert.equal(result.error,undefined);assert.equal(result.view.latest.result.operation,"run");
 });
+test("paired Run rejects a foreign execution settings snapshot even if fresh settings changed back",async()=>{
+  const d=withTools(),f=sessionFor(d);f.session.rpc.tools.execute=async call=>{f.calls.push(call);return {resultType:"success",structuredContent:preview(d,{operation:"run",verdict:"unknown",fullPass:false,recordedReplayOnly:undefined,toolSettings:[{name:"ping",state:"Disabled"}]})}};
+  const result=await createActionHandler({session:f.session,path})({operation:"run",expectedRevision:d.file.revision,expectedSourceVersion:d.sourceVersion,expectedSettingsRevision:"absent",input:"Ad hoc"});assert.equal(result.error,"outcome-unknown");assert.equal(result.view,undefined);assert.equal(f.calls.length,1);
+});
 test("paired Suggest tests names the owning server beside its process-local context",async()=>{
   const f=sessionFor(),sent=[];f.session.send=async value=>sent.push(value);
   assert.equal((await createActionHandler({session:f.session,path})({operation:"suggest"})).error,undefined);

@@ -76,6 +76,11 @@ test("paired real MCP final-test deletion saves then returns no_tests without lo
   const run=await f.act("run",{input:"another input"});assert.equal(run.error,undefined,JSON.stringify(run));assert.equal(run.view.latest.result.state,"complete");assert.equal(f.tools.length,0);
 });
 
+test("paired real MCP pre-route model_unavailable remains confirmed with no provider or host sends",options,async t=>{
+  const f=await pairedFixture(t,binary,{comparing:true});const result=await f.act("test",{model:"fake"});
+  assert.equal(result.error,undefined,JSON.stringify(result));assert.equal(result.view.latest.result.state,"refused");assert.equal(result.view.latest.result.reasonCode,"model_unavailable");assert.equal(result.view.latest.result.modelRoute,"/");assert.equal(f.sends,0);assert.equal(f.tools.length,0);assert.equal((await f.act("reload")).error,undefined);
+});
+
 test("paired real MCP comparison stops after capture model failure without partner or host calls",options,async t=>{
   const f=await pairedFixture(t,binary,{comparing:true,failModel:true});const result=await f.act("test",{model:"unit",comparisonModels:["unit","unit-other"]});
   assert.equal(result.error,undefined,JSON.stringify(result));assert.equal(result.view.latest.result.state,"error");assert.equal(result.comparison,undefined);assert.equal(f.previews.filter(row=>row.name==="test").length,1);assert.equal(f.tools.length,0);assert.ok(f.sends>0);

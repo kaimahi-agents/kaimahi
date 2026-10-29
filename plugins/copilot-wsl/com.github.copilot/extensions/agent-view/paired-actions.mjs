@@ -97,7 +97,7 @@ export async function selectedAction(initial, input, { invoke, read, block, snap
       if (envelope.sourceVersion !== sources.sourceVersion || raw?.snapshotRevision !== sources.snapshotRevision || raw?.file?.revision !== view.file.revision || !paths(raw.file.path, sources.agentPath) && raw.file.path !== view.file.path
         || raw.tests?.state !== sources.testsState || raw.tests.revision !== sources.testsRevision || raw.tests.selectionKey !== sources.selectionKey || !paths(raw.tests.path, sources.testsPath)) unknown();
       const result = { ...cleanResult(raw, "current", view.file.revision), sourceVersion: envelope.sourceVersion, snapshotRevision: raw.snapshotRevision, ...(envelope.savedSourceVersion ? { savedSourceVersion: envelope.savedSourceVersion } : {}) };
-      if (!preRouteRefusal(result) && (result.modelRoute.slice(result.modelRoute.indexOf("/") + 1) !== chosen || operation === "test" && (!same(result.toolSettings ?? [], settings) || replay && result.recordedReplayOnly !== true))) unknown();
+      if (!preRouteRefusal(result) && (!same(result.toolSettings ?? [], settings) || result.modelRoute.slice(result.modelRoute.indexOf("/") + 1) !== chosen || operation === "test" && replay && result.recordedReplayOnly !== true)) unknown();
       if (!observed({ ...view, latest: { status: "current", result } }, operation, ids, input.caseId, result.state === "complete", chosen)) unknown();
       const receipt = envelope.capture, flags = result.examples.flatMap(e => e.tools ?? []).filter(t => t.recordingSaved);
       if (receipt && (receipt.state !== "complete" || !["unchanged", "saved"].includes(receipt.agent?.status) || !["unchanged", "saved"].includes(receipt.tests?.status))) {
