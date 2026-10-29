@@ -101,7 +101,13 @@ func (b *pairBinding) restored(ctx context.Context, id string) ([]byte, []byte, 
 	if r.Pair == nil || r.Pair.AgentPath != b.sources.AgentPath || r.Pair.TestsPath != b.sources.Tests.Selection.Path || r.Pair.SelectionKey != b.sources.Tests.Selection.Key {
 		return nil, nil, agentfile.TestsSelection{}, refusal("incompatible_version")
 	}
-	return r.Source, r.Pair.Source, agentfile.TestsSelection{Path: b.sources.Tests.Selection.Path, Explicit: r.Pair.Explicit}, nil
+	selection := b.sources.Tests.Selection
+	// Retained absence removes the current selected leaf, even when the caller
+	// explicitly named that default. Present suites keep today's selector intent.
+	if r.Pair.TestsState != "external" {
+		selection.Explicit = false
+	}
+	return r.Source, r.Pair.Source, selection, nil
 }
 
 func pairAuthoringOperation(files *Files, name string) *Operation {

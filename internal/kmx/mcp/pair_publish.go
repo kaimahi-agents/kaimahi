@@ -178,6 +178,7 @@ func (b *pairBinding) publish(ctx context.Context, desired *agentfile.Pair, agen
 	view := pairDocument(desired, agentBytes)
 	view.SourceVersion = strings.Repeat("x", 128)
 	view.Validation = "valid"
+	view.History = &AgentHistory{Status: "unavailable", Versions: []AgentVersion{}}
 	view.PairOperations = &pairOperationsCapability{SchemaVersion: 1, ToolSchemaVersion: 3, Execute: true, Create: true, Edit: true, Capture: true, Restore: true}
 	if _, err := sourceResourceResult(ctx, "", view); err != nil {
 		return fail(err)
@@ -312,11 +313,19 @@ func (b *pairBinding) publish(ctx context.Context, desired *agentfile.Pair, agen
 	}
 	for _, h := range []*historySource{b.agent, b.tests} {
 		if h != nil {
-			h.parentInfo, _ = h.parent.Stat(".")
+			info, err := h.parent.Stat(".")
+			if err != nil {
+				return fail(refusal("io_failed"))
+			}
+			h.parentInfo = info
 		}
 	}
 	if b.absent != nil {
-		b.absent.info, _ = b.absent.parent.Stat(".")
+		info, err := b.absent.parent.Stat(".")
+		if err != nil {
+			return fail(refusal("io_failed"))
+		}
+		b.absent.info = info
 	}
 	result.State = "complete"
 	result.File = File{Path: b.agent.path, Revision: desired.Agent.Revision}

@@ -155,10 +155,16 @@ func AddSourceHistoryResource(server *sdk.Server, files *Files) {
 		if _, supported := agentfile.DefaultTestsPath(bound.sources.AgentPath); supported {
 			d.SourceVersion = bound.sourceVersion()
 			files.viewMu.Lock()
-			d.PairOperations = &pairOperationsCapability{SchemaVersion: 1, ToolSchemaVersion: 3, Execute: files.pairExecute && pair != nil, Create: files.pairWrites, Edit: files.pairWrites, Capture: files.pairWrites && pair != nil, Restore: files.pairWrites}
+			d.PairOperations = &pairOperationsCapability{SchemaVersion: 1, ToolSchemaVersion: 3, Execute: files.pairExecute && pair != nil, Create: files.pairWrites, Edit: files.pairWrites, Capture: files.pairWrites && pair != nil, Restore: files.pairWrites && files.historyDir != nil}
 			files.viewMu.Unlock()
 		}
-		return sourceResourceResult(ctx, req.Params.URI, d)
+		result, err := sourceResourceResult(ctx, req.Params.URI, d)
+		if err != nil && d.History != nil {
+			// Optional history metadata must not hide a complete current view.
+			d.History = &AgentHistory{Status: "unavailable", Versions: []AgentVersion{}}
+			return sourceResourceResult(ctx, req.Params.URI, d)
+		}
+		return result, err
 	}))
 	if files.historyDir == nil {
 		return

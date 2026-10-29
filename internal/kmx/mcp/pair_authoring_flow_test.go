@@ -3,7 +3,9 @@
 package mcp
 
 import (
+	"bytes"
 	"encoding/json"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"os"
 	"path/filepath"
 	"strings"
@@ -109,6 +111,151 @@ func TestPairAuthoringRootlessRepositoryCreate(t *testing.T) {
 	}
 	if _, err := os.Lstat(filepath.Join(filepath.Dir(agent), "a.agent.test.md")); !os.IsNotExist(err) {
 		t.Fatal("created wrong default")
+	}
+}
+
+func TestPairAuthoringRestorePreservesCurrentSelectorIntent(t *testing.T) {
+	base, root := historyPaths(t)
+	f := historyFiles(t, root, base)
+	cs := historyClient(t, f)
+	inline := pendingRecordingSource(t)
+	without := strings.Split(string(inline), "## Examples")[0]
+	if _, err := f.Create(t.Context(), "a.agent.md", inline); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "a.agent.test.md"), []byte(pairPendingTests), 0600); err != nil {
+		t.Fatal(err)
+	}
+	version := pairContextRead(t, cs, "a.agent.md", "a.agent.test.md")
+	pairSaveCall(t, cs, "edit", map[string]any{"path": "a.agent.md", "tests": "a.agent.test.md", "expectedSourceVersion": version, "content": without, "acknowledgeCopilotTests": true})
+	view, err := cs.ReadResource(t.Context(), &sdk.ReadResourceParams{URI: sourcesURI("a.agent.md", "")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var d sourceDocument
+	if json.Unmarshal([]byte(view.Contents[0].Text), &d) != nil || d.Validation != "valid" || len(d.History.Versions) != 1 {
+		t.Fatal("wrong setup")
+	}
+	result, err := cs.CallTool(t.Context(), &sdk.CallToolParams{Name: "edit", Arguments: map[string]any{"schemaVersion": 3, "path": "a.agent.md", "expectedSourceVersion": d.SourceVersion, "restoreVersionId": d.History.Versions[0].VersionID, "acknowledgeCopilotTests": true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.IsError {
+		t.Fatal("historical explicit intent overrode current default selection", result.StructuredContent)
+	}
+	if got, _ := os.ReadFile(filepath.Join(root, "a.agent.md")); string(got) != without {
+		t.Fatal("invalid current-default candidate was published")
+	}
+	// The same old bytes are valid when the caller really selects explicitly.
+	pairSaveCall(t, cs, "edit", map[string]any{"path": "a.agent.md", "tests": "a.agent.test.md", "expectedSourceVersion": pairContextRead(t, cs, "a.agent.md", "a.agent.test.md"), "restoreVersionId": d.History.Versions[0].VersionID, "acknowledgeCopilotTests": true})
+	if got, _ := os.ReadFile(filepath.Join(root, "a.agent.md")); string(got) != string(inline) {
+		t.Fatal("explicit restore lost original bytes")
+	}
+}
+
+func TestPairAuthoringRestoreCapabilityNeedsStore(t *testing.T) {
+	base, root := historyPaths(t)
+	f := historyFiles(t, root, base)
+	f.historyDir = nil
+	cs := historyClient(t, f)
+	if _, err := f.Create(t.Context(), "a.agent.md", []byte("Prompt\n")); err != nil {
+		t.Fatal(err)
+	}
+	result, err := cs.ReadResource(t.Context(), &sdk.ReadResourceParams{URI: sourcesURI("a.agent.md", "")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var d sourceDocument
+	if json.Unmarshal([]byte(result.Contents[0].Text), &d) != nil || d.PairOperations.Restore || !d.PairOperations.Edit {
+		t.Fatal("restore advertised without a store")
+	}
+}
+
+func TestPairAuthoringOptionalHistoryCannotHideNearLimitSources(t *testing.T) {
+	base, root := historyPaths(t)
+	f := historyFiles(t, root, base)
+	cs := historyClient(t, f)
+	if _, e := f.Create(t.Context(), "a.agent.md", []byte("Before\n")); e != nil {
+		t.Fatal(e)
+	}
+	version := pairContextRead(t, cs, "a.agent.md", "")
+	physical := filepath.Join(root, "a.agent.md")
+	testsPath := filepath.Join(root, "a.agent.test.md")
+	makeSources := func(n int) (string, string, int) {
+		source := strings.Repeat("<", n)
+		tests := "---\nschemaVersion: 1\n---\n" + strings.Repeat("<", n) + "\n"
+		a, e := agentfile.Parse(physical, []byte(source))
+		if e != nil {
+			t.Fatal(e)
+		}
+		p, e := agentfile.ComposePair(physical, a, agentfile.TestsSelection{Path: testsPath}, []byte(tests), true)
+		if e != nil {
+			t.Fatal(e)
+		}
+		view := pairDocument(p, []byte(source))
+		view.SourceVersion = strings.Repeat("x", 128)
+		view.Validation = "valid"
+		view.PairOperations = &pairOperationsCapability{SchemaVersion: 1, ToolSchemaVersion: 3, Execute: true, Create: true, Edit: true, Capture: true, Restore: true}
+		b, e := json.Marshal(view)
+		if e != nil {
+			t.Fatal(e)
+		}
+		return source, tests, len(b)
+	}
+	low, high := 1, 200000
+	for low < high {
+		mid := (low + high + 1) / 2
+		_, _, size := makeSources(mid)
+		if size <= (2<<20)-256 {
+			low = mid
+		} else {
+			high = mid - 1
+		}
+	}
+	source, tests, preflight := makeSources(low)
+	args := map[string]any{"schemaVersion": 3, "path": "a.agent.md", "content": source, "testsContent": tests, "expectedSourceVersion": version}
+	var input bytes.Buffer
+	enc := json.NewEncoder(&input)
+	enc.SetEscapeHTML(false)
+	if e := enc.Encode(args); e != nil {
+		t.Fatal(e)
+	}
+	result, e := cs.CallTool(t.Context(), &sdk.CallToolParams{Name: "edit", Arguments: args})
+	if e != nil {
+		t.Fatal(e)
+	}
+	raw, _ := json.Marshal(result.StructuredContent)
+	var ack pairSaveResult
+	json.Unmarshal(raw, &ack)
+	view, e := cs.ReadResource(t.Context(), &sdk.ReadResourceParams{URI: sourcesURI("a.agent.md", "")})
+	if e != nil {
+		t.Fatal(e)
+	}
+	var body map[string]any
+	json.Unmarshal([]byte(view.Contents[0].Text), &body)
+	a, _ := os.ReadFile(physical)
+	b, _ := os.ReadFile(testsPath)
+	bound, e := f.bindPair(t.Context(), "a.agent.md", "")
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer bound.close()
+	actual := sourcesDocument(bound.sources, bound.agent.source)
+	actual.Validation = "valid"
+	actual.SourceVersion = bound.sourceVersion()
+	actual.PairOperations = &pairOperationsCapability{SchemaVersion: 1, ToolSchemaVersion: 3, Execute: true, Create: true, Edit: true, Capture: true, Restore: true}
+	actual.History = f.historyView(t.Context(), "a.agent.md")
+	for i := range actual.History.Versions {
+		actual.History.Versions[i].Label = pairChangeLabel(actual.History.Versions[i], bound.pair)
+	}
+	expanded, e := json.Marshal(actual)
+	if e != nil {
+		t.Fatal(e)
+	}
+	t.Logf("actualCompleteView=%d historyRows=%d", len(expanded), len(actual.History.Versions))
+	t.Logf("inboundUnescaped=%d sourceBytes=%d/%d preflightView=%d limit=%d ACK=%s afterKind=%v afterReason=%v exactEffects=%v/%v", input.Len(), len(source), len(tests), preflight, 2<<20, raw, body["kind"], body["reasonCode"], string(a) == source, string(b) == tests)
+	if ack.State == "complete" && body["kind"] != "kmx.agent-sources" {
+		t.Fatal("complete edit published a pair that the mandatory resource cannot return")
 	}
 }
 
