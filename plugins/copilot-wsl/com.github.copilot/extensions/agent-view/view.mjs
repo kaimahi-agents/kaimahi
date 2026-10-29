@@ -528,7 +528,9 @@ export async function startViewBridge({ session, path, tests, initialView }) {
       if (req.method !== "GET") return refuse(405, "Method not allowed", { Allow: "GET, POST" });
       if (name === "view.json") {
         try {
-          const view = await read(), suggestedTests = mailbox.pending(view);
+          // A read begun before Suggest cannot invalidate its newer request.
+          const requestId = mailbox.requestId, view = await read();
+          const suggestedTests = requestId === mailbox.requestId ? mailbox.pending(view) : undefined;
           return reply(200, "application/json; charset=utf-8", JSON.stringify({ ...view, ...(suggestedTests ? { suggestedTests } : {}) }));
         } catch (e) {
           const err = safeError(e);
