@@ -29,7 +29,7 @@ async function connect(binary, args, options) {
   return { request, close: () => child.stdin.end() };
 }
 
-export async function pairedFixture(t, binary, { toolFree = false, comparing = false, tests } = {}) {
+export async function pairedFixture(t, binary, { toolFree = false, comparing = false, tests, agentPath = "a.agent.md", instructions = "Call the tool `ping`. Reply with exactly `done`.", failModel = false } = {}) {
   const root = await realpath(await mkdtemp(path.join(tmpdir(), "kmx-paired-canvas-"))), state = path.join(root, "state");
   await mkdir(state, { mode: 0o700 });
   const env = { ...process.env, KMX_HOME: state }, tools = [], previews = [], configured = new Map();
@@ -38,17 +38,18 @@ export async function pairedFixture(t, binary, { toolFree = false, comparing = f
     modelServer = createServer(async (req, res) => {
       const chunks = []; for await (const chunk of req) chunks.push(chunk);
       const body = JSON.parse(Buffer.concat(chunks)); sends++;
+      if (failModel) { res.writeHead(500, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: { message: "Scripted model failure" } })); return; }
       const first = body.messages.length === 2;
       res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify({ model: body.model, choices: [{ finish_reason: first ? "tool_calls" : "stop", message: first ? { role: "assistant", tool_calls: [{ id: "call_" + sends, type: "function", function: { name: "ping", arguments: "{}" } }] } : { role: "assistant", content: "done" } }] }));
     });
     await new Promise(resolve => modelServer.listen(0, "127.0.0.1", resolve));
   }
-  const source = `---\nmodel: ${comparing ? "unit" : "fake"}\n${toolFree ? "" : "tools: [ping]\n"}---\nCall the tool \`ping\`. Reply with exactly \`done\`.\n`;
+  const source = `---\nmodel: ${comparing ? "unit" : "fake"}\n${toolFree ? "" : "tools: [ping]\n"}---\n${instructions}\n`;
   const suite = "---\r\nschemaVersion: 1\r\n---\r\n\r\n# Keep this prose.\r\n\r\n```yaml agent-test\r\nid: read\r\ninput: read\r\n" + (toolFree ? "" : "mocks:\r\n  tools: [{name: ping, mode: recorded, calls: []}]\r\n") + "assertions: [{id: complete, type: contains, value: done}]\r\n```\r\n";
   const args = ["mcp", ...(comparing ? ["--provider", "compatible", "--endpoint", `http://127.0.0.1:${modelServer.address().port}`] : [])];
   const original = await connect(binary, args, { cwd: root, env }), servers = new Map([["kmx-agent-builder", original]]);
-  const create = await original.request("tools/call", { name: "create", arguments: { schemaVersion: 3, path: "a.agent.md", content: source, testsContent: suite } });
+  const create = await original.request("tools/call", { name: "create", arguments: { schemaVersion: 3, path: agentPath, content: source, testsContent: suite } });
   assert.equal(create.isError, undefined, "paired Create must be successful");
   const session = { rpc: { mcp: {
     resources: { read: ({ serverName, uri }) => servers.get(serverName).request("resources/read", { uri }) },
@@ -69,8 +70,8 @@ export async function pairedFixture(t, binary, { toolFree = false, comparing = f
   const controller = createViewController({ getSession: () => session });
   t.after(async () => { await controller.closeAll(); for (const server of servers.values()) server.close(); if (modelServer) await new Promise(resolve => modelServer.close(resolve)); await new Promise(resolve => setTimeout(resolve, 150)); await rm(root, { recursive: true, force: true }); });
   if (tests) await writeFile(path.join(root, tests), suite + "\r\nSelected override.\r\n", { mode: 0o600 });
-  const initial = await readView(session, "a.agent.md", tests);
-  const opened = await controller.open({ instanceId: "paired-fixture", input: { path: "a.agent.md", ...(tests !== undefined ? { tests } : {}) } }, initial);
+  const initial = await readView(session, agentPath, tests);
+  const opened = await controller.open({ instanceId: "paired-fixture", input: { path: agentPath, ...(tests !== undefined ? { tests } : {}) } }, initial);
   const read = async () => (await fetch(opened.url + "view.json")).json();
   const act = async (operation, values = {}) => {
     const view = await read();

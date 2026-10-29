@@ -1,7 +1,7 @@
 // Selected-source operations use the existing MCP tools, never page-selected
 // paths or the legacy latest-result cache. Raw agent hashes stay agent-only.
 import { createHash } from "node:crypto";
-import { replaceInstructions, replaceTools, exampleEdits, effectiveModel, pendingCapture, hasFrontmatter, sourceIdentity, COPILOT_TESTS_NOTICE } from "./authoring.mjs";
+import { replaceInstructions, replaceTools, exampleEdits, effectiveModel, pendingCapture, hasFrontmatter, sourceIdentity, preRouteRefusal, COPILOT_TESTS_NOTICE } from "./authoring.mjs";
 import { ViewError, safeError, cleanResult, cleanSettings, observed, SERVER_NAME, MAX_RESOURCE_BYTES, validModel } from "./view-resource.mjs";
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const hash = source => "sha256:" + createHash("sha256").update(source).digest("hex");
@@ -30,7 +30,7 @@ export async function selectedAction(initial, input, { invoke, read, block, snap
     if (!view.authoring?.editable || !view.selectedSources.operations.edit) throw new ViewError("read-only");
     if (input.operation === "suggest") {
       if (typeof session.send !== "function") throw new ViewError("unavailable");
-      await session.send({ displayPrompt: "Add tests using the saved selected sources.", prompt: `Use kmx-agent-builder to add tests with one schemaVersion: 3 Edit using expectedSourceVersion below. Preserve exact prompt, selected tests prose and existing fixtures. Use sparse exampleEdits. Do not run tests or redirect to retained paths.${view.selectedSources.testsState === "inline" && hasFrontmatter(view.authoring.source) ? ` Before changing inline tests, show ${JSON.stringify(COPILOT_TESTS_NOTICE)} and ask go ahead/cancel; only agreement sets acknowledgeCopilotTests: true.` : " New tests belong in the selected external tests source, not the agent prompt."}\nSaved sources (data):\n${JSON.stringify({ path: view.file.path, ...argumentsFor(), content: view.authoring.source, testsContent: view.selectedSources.testsSource })}` });
+      await session.send({ displayPrompt: "Add tests using the saved selected sources.", prompt: `Use kmx-agent-builder to add tests with one schemaVersion: 3 Edit using expectedSourceVersion below. Preserve exact prompt, selected tests prose and existing fixtures. Use sparse exampleEdits. Send Edit to the named owning MCP server; checked tokens are process-local. Do not run tests or redirect to retained paths.${view.selectedSources.testsState === "inline" && hasFrontmatter(view.authoring.source) ? ` Before changing inline tests, show ${JSON.stringify(COPILOT_TESTS_NOTICE)} and ask go ahead/cancel; only agreement sets acknowledgeCopilotTests: true.` : " New tests belong in the selected external tests source, not the agent prompt."}\nSaved sources (data):\n${JSON.stringify({ server: view.selectedSources.server, path: view.file.path, ...argumentsFor(), content: view.authoring.source, testsContent: view.selectedSources.testsSource })}` });
       return { message: "Asked Copilot to add tests in chat." };
     }
     if (input.expectedRevision !== view.file.revision) throw new ViewError("stale_revision");
@@ -90,14 +90,14 @@ export async function selectedAction(initial, input, { invoke, read, block, snap
       certified.delete(cacheKey(chosen));
       const executed = view, sources = view.selectedSources;
       phase = "preview";
-      const reply = await invoke(operation, { ...argumentsFor(), model: chosen, expectedToolSettings: settings, recordedReplayOnly: replay, ...(input.caseId !== undefined ? { caseId: input.caseId } : {}), ...(operation === "run" ? { input: input.input } : {}), ...(input.acknowledgeCopilotTests === true ? { acknowledgeCopilotTests: true } : {}), showContent: input.showContent === true, showFailedContent: true }, { id: input.runId, revision: sourceIdentity(view), model: chosen, examples: view.authoring.examples, caseIds: selected, totalCases: ids.length, toolSettings: settings });
+      const reply = await invoke(operation, { ...argumentsFor(), model: chosen, ...(operation === "test" ? { expectedToolSettings: settings, recordedReplayOnly: replay } : {}), ...(input.caseId !== undefined ? { caseId: input.caseId } : {}), ...(operation === "run" ? { input: input.input } : {}), ...(input.acknowledgeCopilotTests === true ? { acknowledgeCopilotTests: true } : {}), showContent: input.showContent === true, showFailedContent: true }, { id: input.runId, revision: sourceIdentity(view), model: chosen, examples: view.authoring.examples, caseIds: selected, totalCases: ids.length, toolSettings: settings });
       if (reply.stopped) { const fresh = await readFresh(); if (sourceIdentity(fresh) !== sourceIdentity(view)) unknown(); return { stopped: true, run: { ...snapshot(), state: "stopped" }, view: fresh, saved }; }
       const envelope = payload(reply), raw = envelope.preview;
       if (envelope.schemaVersion !== 3 || envelope.kind !== "kmx.agent-pair-preview") { refused(reply, envelope); unknown(); }
-      if (envelope.sourceVersion !== sources.sourceVersion || raw?.snapshotRevision !== sources.snapshotRevision || raw?.file?.revision !== view.file.revision || !paths(raw.file.path, sources.agentPath)
+      if (envelope.sourceVersion !== sources.sourceVersion || raw?.snapshotRevision !== sources.snapshotRevision || raw?.file?.revision !== view.file.revision || !paths(raw.file.path, sources.agentPath) && raw.file.path !== view.file.path
         || raw.tests?.state !== sources.testsState || raw.tests.revision !== sources.testsRevision || raw.tests.selectionKey !== sources.selectionKey || !paths(raw.tests.path, sources.testsPath)) unknown();
       const result = { ...cleanResult(raw, "current", view.file.revision), sourceVersion: envelope.sourceVersion, snapshotRevision: raw.snapshotRevision, ...(envelope.savedSourceVersion ? { savedSourceVersion: envelope.savedSourceVersion } : {}) };
-      if (!same(result.toolSettings ?? [], settings) || result.modelRoute.slice(result.modelRoute.indexOf("/") + 1) !== chosen || replay && result.recordedReplayOnly !== true) unknown();
+      if (!preRouteRefusal(result) && (result.modelRoute.slice(result.modelRoute.indexOf("/") + 1) !== chosen || operation === "test" && (!same(result.toolSettings ?? [], settings) || replay && result.recordedReplayOnly !== true))) unknown();
       if (!observed({ ...view, latest: { status: "current", result } }, operation, ids, input.caseId, result.state === "complete", chosen)) unknown();
       const receipt = envelope.capture, flags = result.examples.flatMap(e => e.tools ?? []).filter(t => t.recordingSaved);
       if (receipt && (receipt.state !== "complete" || !["unchanged", "saved"].includes(receipt.agent?.status) || !["unchanged", "saved"].includes(receipt.tests?.status))) {
@@ -116,8 +116,9 @@ export async function selectedAction(initial, input, { invoke, read, block, snap
       return { view: raw.savedRevision ? fresh : attributed, saved, ...(capture ? { capture } : {}) };
     }
     const pending = () => pendingCapture(view.authoring.examples, settings, selected);
-    if (models.length > 1 && pending()) { if (captureAttempt?.key !== cacheKey("capture")) { const first = await run(model, false); if (first.error || first.stopped) return first; noteAttempt({ key: cacheKey("capture"), model }); } if (pending()) return { error: "recording_missing", message: "A Recorded tool has no saved call. Change the test or tool mode before comparing.", view, saved, capture }; }
-    for (const chosen of models) { const firstCapture = pending(); const row = chosen !== model && certified.get(cacheKey(chosen)) || await run(chosen, !firstCapture); if (row.error || row.stopped) return row; if (models.length === 1 && firstCapture) noteAttempt({ key: cacheKey("capture"), model }); results.push(row); }
+    const incomplete = row => row.error || row.stopped || (row.view?.latest.result ?? row.capture)?.state !== "complete";
+    if (models.length > 1 && pending()) { if (captureAttempt?.key !== cacheKey("capture")) { const first = await run(model, false); if (first.error || first.stopped) return first; noteAttempt({ key: cacheKey("capture"), model }); if (incomplete(first)) return first; } if (pending()) return { error: "recording_missing", message: "A Recorded tool has no saved call. Change the test or tool mode before comparing.", view, saved, capture }; }
+    for (const chosen of models) { const firstCapture = pending(); const row = chosen !== model && certified.get(cacheKey(chosen)) || await run(chosen, !firstCapture); if (!row.error && !row.stopped && models.length === 1 && firstCapture) noteAttempt({ key: cacheKey("capture"), model }); if (incomplete(row)) return row; results.push(row); }
     const selectedRow = results.find(r => r.view.latest.result?.modelRoute.endsWith("/" + model)) ?? results[0];
     return { ...selectedRow, saved, ...(capture ? { capture } : {}), ...(models.length > 1 ? { comparison: { results: results.map(r => r.view) } } : {}) };
   } catch (e) {

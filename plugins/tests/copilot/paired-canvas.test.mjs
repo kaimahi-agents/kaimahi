@@ -227,6 +227,35 @@ for(const fault of ["post-set typed resource error","setter refusal","SDK settin
   assert.equal(first.error,fault==="post-set typed resource error"?"outcome-unknown":fault==="setter refusal"?"invalid_tool_settings":"permission_required");assert.equal(again.error,first.error);assert.equal(f.calls.length,fault==="post-set typed resource error"?1:2);assert.doesNotMatch(first.message,/private-settings-canary/);
 });
 
+test("paired Run uses only its closed-schema operands and does not require Test replay provenance",async()=>{
+  const f=sessionFor();f.session.rpc.tools.execute=async call=>{f.calls.push(call);return {resultType:"success",structuredContent:preview(f.document,{operation:"run",verdict:"unknown",fullPass:false,recordedReplayOnly:undefined,adHoc:{state:"complete",verdict:"unknown",input:"Ad hoc",answer:"Ada"}})}};
+  const result=await createActionHandler({session:f.session,path})({operation:"run",...expected,input:"Ad hoc"});
+  assert.equal(Object.hasOwn(f.calls[0].arguments,"expectedToolSettings"),false);assert.equal(Object.hasOwn(f.calls[0].arguments,"recordedReplayOnly"),false);assert.equal(result.error,undefined);assert.equal(result.view.latest.result.operation,"run");
+});
+test("paired Suggest tests names the owning server beside its process-local context",async()=>{
+  const f=sessionFor(),sent=[];f.session.send=async value=>sent.push(value);
+  assert.equal((await createActionHandler({session:f.session,path})({operation:"suggest"})).error,undefined);
+  assert.match(sent[0].prompt,new RegExp(`"server":"${server}"`));assert.match(sent[0].prompt,/owning MCP server/);assert.equal(f.calls.length,0);
+});
+test("paired Test accepts its held nested request path alongside the physical source tuple",async()=>{
+  const f=sessionFor();f.document.canvas.file.path="team/a.agent.md";f.document.file.path="/work/team/a.agent.md";
+  f.session.rpc.tools.execute=async call=>{f.calls.push(call);return {resultType:"success",structuredContent:preview(f.document,{file:{path:"team/a.agent.md",revision:f.document.file.revision}})}};
+  const result=await createActionHandler({session:f.session,path:"team/a.agent.md"})({operation:"test",...expected});assert.equal(result.error,undefined);assert.equal(result.view.file.path,"team/a.agent.md");
+});
+for(const reasonCode of ["no_tests","model_unavailable"])test(`paired ${reasonCode} is an attributed pre-route refusal without invented execution provenance`,async()=>{
+  const f=sessionFor();f.session.rpc.tools.execute=async call=>{f.calls.push(call);return {resultType:"failure",structuredContent:preview(f.document,{state:"refused",verdict:"unknown",fullPass:false,reasonCode,modelRoute:{provider:"",model:""},recordedReplayOnly:undefined,examples:[]})}};
+  const act=createActionHandler({session:f.session,path}),first=await act({operation:"test",...expected}),again=await act({operation:"test",...expected});assert.equal(first.error,undefined);assert.equal(first.view.latest.result.reasonCode,reasonCode);assert.equal(again.error,undefined);assert.equal(f.calls.length,2);
+});
+for(const state of ["error","cancelled"])for(const capturing of [false,true])test(`paired comparison stops after an attributed ${state} with capture=${capturing}`,async()=>{
+  const d=capturing?withTools():fixture();if(capturing)d.canvas.examples=[{...examples[0],mocks:{tools:[{name:"ping",mode:"recorded",calls:[]}]}}];
+  const f=sessionFor(d);f.session.rpc.tools.execute=async call=>{f.calls.push(call);return {resultType:"failure",structuredContent:preview(f.document,{state,verdict:"unknown",fullPass:false,reasonCode:"deadline_exceeded",modelRoute:{provider:"fake",model:call.arguments.model},toolSettings:d.canvas.toolSettings,recordedReplayOnly:!capturing,examples:[{id:"greeting",state,verdict:"unknown",assertions:[]}]})}};
+  const result=await createActionHandler({session:f.session,path})({operation:"test",expectedRevision:d.file.revision,expectedSourceVersion:d.sourceVersion,...(capturing?{expectedSettingsRevision:"absent"}:{}),model:"fake",comparisonModels:["fake","other"]});assert.equal(f.calls.length,1);assert.equal(result.error,undefined);assert.equal(result.view.latest.result.state,state);assert.equal(result.comparison,undefined);
+});
+test("paired comparison still compares completed assertion failures",async()=>{
+  const f=sessionFor();f.session.rpc.tools.execute=async call=>{f.calls.push(call);return {resultType:"success",structuredContent:preview(f.document,{verdict:"fail",fullPass:false,modelRoute:{provider:"fake",model:call.arguments.model},examples:[{id:"greeting",state:"complete",verdict:"fail",assertions:[]}]})}};
+  const result=await createActionHandler({session:f.session,path})({operation:"test",...expected,model:"fake",comparisonModels:["fake","other"]});assert.equal(f.calls.length,2);assert.equal(result.error,undefined);assert.equal(result.comparison.results.length,2);
+});
+
 test("source history and model picker cannot revive a result after a tests-only context change", () => {
   const result = { operation: "test", state: "complete", verdict: "pass", fullPass: true, modelRoute: "fake/fake", selection: { scope: "full", caseIds: ["greeting"], totalCases: 1 }, examples: [{ id: "greeting", state: "complete", verdict: "pass", assertions: [] }] };
   const old = { file: { path, revision: hash(source) }, model: "fake", examples, authoring: { examples }, selectedSources: { sourceVersion: "old", server }, latest: { status: "current", badge: "pass", result } };
