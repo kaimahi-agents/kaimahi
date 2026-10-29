@@ -174,6 +174,14 @@ func (b *pairBinding) publish(ctx context.Context, desired *agentfile.Pair, agen
 			m.ack.Status = "not_saved"
 		}
 	}
+	// A small inbound encoding must not bypass the complete source-view budget.
+	view := pairDocument(desired, agentBytes)
+	view.SourceVersion = strings.Repeat("x", 128)
+	view.Validation = "valid"
+	view.PairOperations = &pairOperationsCapability{SchemaVersion: 1, ToolSchemaVersion: 3, Execute: true, Create: true, Edit: true, Capture: true, Restore: true}
+	if _, err := sourceResourceResult(ctx, "", view); err != nil {
+		return fail(err)
+	}
 	var locked []*historySource
 	for _, h := range []*historySource{b.agent, b.tests} {
 		if h != nil {
@@ -253,13 +261,17 @@ func (b *pairBinding) publish(ctx context.Context, desired *agentfile.Pair, agen
 		}
 		name := filepath.Base(path)
 		var err error
+		var published os.FileInfo
 		switch {
 		case !m.present:
 			err = m.parent.Remove(name)
 		case h == nil:
-			err = renameExclusive(m.parent, m.stage, name)
+			err = renameExclusiveObserved(m.parent, m.stage, name, &published)
 		default:
-			err = m.parent.Rename(m.stage, name)
+			published, err = m.parent.Lstat(m.stage)
+			if err == nil {
+				err = m.parent.Rename(m.stage, name)
+			}
 		}
 		if err != nil {
 			if !os.IsExist(err) {
@@ -281,7 +293,7 @@ func (b *pairBinding) publish(ctx context.Context, desired *agentfile.Pair, agen
 			*m.absent = &absentSource{path, path, name, m.parent, info}
 		} else {
 			file, body, observed, e := readTarget(m.parent, name)
-			if e != nil || !bytes.Equal(body, m.source) {
+			if e != nil || published == nil || !os.SameFile(observed, published) || !bytes.Equal(body, m.source) {
 				if file != nil {
 					file.Close()
 				}

@@ -113,7 +113,7 @@ func TestPairAuthoringRootlessRepositoryCreate(t *testing.T) {
 }
 
 func TestPairAuthoringSourceAndEnvelopeBudgets(t *testing.T) {
-	for _, kind := range []string{"exact-source-limit", "source-over-limit", "escaped-envelope-limit"} {
+	for _, kind := range []string{"exact-source-limit", "source-over-limit", "escaped-envelope-limit", "escaped-view-limit"} {
 		t.Run(kind, func(t *testing.T) {
 			base, root := historyPaths(t)
 			f := historyFiles(t, root, base)
@@ -126,6 +126,10 @@ func TestPairAuthoringSourceAndEnvelopeBudgets(t *testing.T) {
 			if kind == "escaped-envelope-limit" {
 				agent = strings.Repeat("\x01", 230000)
 				tests = "---\nschemaVersion: 1\n---\n" + strings.Repeat("\x01", 230000) + "\n"
+			}
+			if kind == "escaped-view-limit" {
+				agent = strings.Repeat("<", 230000)
+				tests = "---\nschemaVersion: 1\n---\n" + strings.Repeat("<", 230000) + "\n"
 			}
 			result, err := cs.CallTool(t.Context(), &sdk.CallToolParams{Name: "create", Arguments: map[string]any{"schemaVersion": 3, "path": "a.agent.md", "content": agent, "testsContent": tests}})
 			if err != nil {

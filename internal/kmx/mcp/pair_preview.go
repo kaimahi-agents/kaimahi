@@ -32,7 +32,7 @@ type pairPreviewInput struct {
 type pairPreviewResult struct {
 	SchemaVersion      int                   `json:"schemaVersion"`
 	Kind               string                `json:"kind"`
-	SourceVersion      string                `json:"sourceVersion"`
+	SourceVersion      string                `json:"sourceVersion,omitempty"`
 	SavedSourceVersion string                `json:"savedSourceVersion,omitempty"`
 	Capture            *pairCaptureResult    `json:"capture,omitempty"`
 	Preview            app.FilePreviewResult `json:"preview"`
@@ -83,6 +83,9 @@ func pairPreviewOperation(files *Files, application *app.App, selected *modelacc
 		var previewErr *app.FilePreviewError
 		completedNonpass := errors.As(err, &previewErr) && previewErr.ExitCode() == 2 && result.State == "complete"
 		payload := pairPreviewResult{SchemaVersion: 3, Kind: "kmx.agent-pair-preview", SourceVersion: input.ExpectedSourceVersion, Preview: result}
+		if result.Tests == nil && result.SnapshotRevision == "" {
+			payload.SourceVersion = ""
+		}
 		if receipt != nil && result.Tests != nil && result.SnapshotRevision != "" {
 			payload.Capture = &pairCaptureResult{receipt.State, receipt.ReasonCode, receipt.Agent, receipt.Tests, receipt.History}
 			if receipt.State == "complete" {

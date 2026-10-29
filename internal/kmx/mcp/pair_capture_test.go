@@ -120,6 +120,36 @@ func TestPairCaptureVetoAndUnavailableHistory(t *testing.T) {
 	}
 }
 
+func TestPairCaptureCredentialRedactionWithholdsOuterContext(t *testing.T) {
+	base, root := historyPaths(t)
+	f := historyFiles(t, root, base)
+	if _, err := f.Create(t.Context(), "a.agent.md", []byte("---\nmodel: fake\ntools: []\n---\nPrompt\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "a.agent.test.md"), []byte(historyTests), 0600); err != nil {
+		t.Fatal(err)
+	}
+	runner := captureRunnerFunc(func(context.Context, agentpreview.Request) (agentpreview.Outcome, error) {
+		return agentpreview.Outcome{}, agentpreview.ErrCredentialContent
+	})
+	cs := connectFixture(t, Operations(f, &app.App{FileRunner: runner}, nil), func(s *sdk.Server) { AddAgentResource(s, f) })
+	version := pairContextRead(t, cs, "a.agent.md", "")
+	result, err := cs.CallTool(t.Context(), &sdk.CallToolParams{Name: "test", Arguments: map[string]any{"schemaVersion": 3, "path": "a.agent.md", "expectedSourceVersion": version}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(result.StructuredContent)
+	var body pairPreviewResult
+	json.Unmarshal(raw, &body)
+	t.Logf("ACK=%s", raw)
+	if body.Preview.ReasonCode != "credential_content" {
+		t.Fatal("did not exercise redaction")
+	}
+	if body.SourceVersion != "" {
+		t.Error("executed sourceVersion survives App credential redaction")
+	}
+}
+
 func TestPairCaptureAfterCloseHistoryAndReplay(t *testing.T) {
 	base, root := historyPaths(t)
 	f := historyFiles(t, root, base)
