@@ -66,7 +66,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       .catch(() => {}).finally(() => acknowledging.delete(id));
   }
   function receiveSuggestions(batch, view) {
-    if (!batch || typeof batch.id !== "string" || disposed) return false;
+    if (!batch || typeof batch.id !== "string" || disposed || state.confirm) return false;
     if (importedBatches.has(batch.id)) { acknowledgeSuggestions(batch.id); return false; }
     if (state.busy || state.blocked || invalidEditors.size) return false;
     if (batch.stale === true) {
@@ -75,7 +75,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       if (!state.snap || !view.authoring?.editable || state.candidate || sourceIdentity(view) !== sourceIdentity(state.base)
         || batch.sourceIdentity !== sourceIdentity(state.base)) return false;
       try { drafts.importSuggestions(batch.examples); }
-      catch (error) { state.message = error.message; return true; }
+      catch (error) { state.message = error.message; refresh(); return false; }
       state.message = "Suggested tests are unsaved. Review, edit or cancel them before saving.";
     }
     importedBatches.add(batch.id);

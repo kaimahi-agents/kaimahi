@@ -4530,12 +4530,26 @@ test("suggestions preserve manual drafts and reject colliding batches atomically
   addDraftTest(h);
   h.app.observe(suggestionView(h.view,[SUGGESTED[0]]));await tick();
   assert.equal(byClass(h.root,"test-title-input")[0].value,"Greets Ada","manual editor retained");
-  const calls=h.calls.length;
+  const calls=h.calls.length, editor=byClass(h.root,"test-title-input")[0];
+  editor.focus();
   h.app.observe(suggestionView(h.view,[SUGGESTED[1],SUGGESTED[0]],"collision"));await tick();
+  assert.equal(byClass(h.root,"test-title-input")[0],editor,"collision notice must not replace the active editor");
+  h.app.observe(suggestionView(h.view,[SUGGESTED[1],SUGGESTED[0]],"collision"));await tick();
+  assert.equal(byClass(h.root,"test-title-input")[0],editor,"repeated collision polls preserve focus and selection");
   assert.equal(h.calls.length,calls,"unimported batch is not acknowledged");
   assert.match(h.root.textContent,/already|name|collision/i);
   click(byClass(h.root,"back")[0]);
   assert.equal(byClass(h.root,"test-item").length,2,"no partial second batch");
+});
+
+test("suggestions wait while inline save consent is open so Go ahead saves only the reviewed drafts",async t=>{
+  const h=await copilotCanvas();t.after(()=>h.app.dispose());
+  addDraftTest(h);click(byClass(h.root,"save-run")[0]);
+  assert.equal(byClass(h.root,"copilot-tests").length,1);
+  h.app.observe({...h.view,suggestedTests:{id:"during-consent",sourceIdentity:h.view.file.revision,examples:[SUGGESTED[0]]}});await tick();
+  assert.equal(h.calls.length,0,"pending review imports and ACKs nothing");
+  click(btn(byClass(h.root,"copilot-tests")[0],"Go ahead"));await tick();
+  assert.deepEqual(h.calls[0].examples.map(e=>e.id),["greets-Ada"],"consent cannot expand its save set");
 });
 
 test("stale suggestion marker tells the user to suggest again without importing examples",async t=>{
