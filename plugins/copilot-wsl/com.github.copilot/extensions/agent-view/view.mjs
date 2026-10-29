@@ -1,18 +1,19 @@
 // Agent canvas. Files and previews are accessed only through the
 // same session's existing kmx MCP resource and Edit/Run/Test operations.
 import { randomBytes, timingSafeEqual, createHash } from "node:crypto";
-import { instructionSections, replaceInstructions, replaceExamples, replaceTools, exampleEdits, effectiveModel, agentName, fileLocation, hasFrontmatter, testsNeedAcknowledgement, pendingCapture, COPILOT_TESTS_NOTICE } from "./authoring.mjs";
+import { instructionSections, replaceInstructions, replaceExamples, replaceTools, exampleEdits, effectiveModel, agentName, fileLocation, hasFrontmatter, testsNeedAcknowledgement, pendingCapture } from "./authoring.mjs";
 import { readFile } from "node:fs/promises";
 import http from "node:http";
 import { ensureHostRuntime, previewServer, beginPreview, closeHostRuntime, observePreview } from "./host-relay.mjs";
 import { readToolCatalog } from "./tool-catalog.mjs";
 import { selectedAction } from "./paired-actions.mjs";
+import { createSuggestionMailbox, suggestionsUnavailable } from "./suggestions.mjs";
 import { SERVER_NAME, MAX_RESOURCE_BYTES, MAX_TEXT, MESSAGES, ViewError, invalid, safeError, normalizePath, normalizeTests, clean, text, isObj, cleanSettings, cleanResult, readView, validModel, readModels, observed } from "./view-resource.mjs";
 export { CANVAS_ID, SERVER_NAME, ViewError, normalizePath, resourceUri, readView } from "./view-resource.mjs";
 export { readToolCatalog };
 
 // The page can choose a declared interaction, never a tool, path or server.
-export function createActionHandler({ session, path, tests, prepare, inspection }) {
+export function createActionHandler({ session, path, tests, prepare, inspection, suggest }) {
   path = normalizePath(path);
   let busy = false, uncertain = false, current, disposed = false, captureAttempt, saving;
   const certified = new Map();
@@ -244,14 +245,12 @@ export function createActionHandler({ session, path, tests, prepare, inspection 
       if (inspection?.() && view.authoring) view = { ...view, authoring: { ...view.authoring, editable: false } };
       if (input.operation === "reload") { uncertain = false; return { view }; }
       if (view.selectedSources && !["suggest", "reload"].includes(input.operation) && input.expectedSourceVersion !== view.selectedSources.sourceVersion) throw new ViewError("stale_revision");
-      if (view.selectedSources) return await selectedAction(view, input, { invoke, read: tests => readView(session, path, tests), block: () => { uncertain = true; }, snapshot, settingsReceipt, session, certified, captureAttempt, noteAttempt: value => { captureAttempt = value; } });
+      if (view.selectedSources) return await selectedAction(view, input, { invoke, read: tests => readView(session, path, tests), block: () => { uncertain = true; }, snapshot, settingsReceipt, session, suggest, certified, captureAttempt, noteAttempt: value => { captureAttempt = value; } });
       if (input.operation === "restore") throw new ViewError("invalid-action");
       if (!view.authoring?.editable) throw new ViewError("read-only");
       if (input.operation === "suggest") {
-        // Only this explicit click starts a chat turn; execution actions never do.
-        if (typeof session.send !== "function") throw new ViewError("unavailable");
-        await session.send({ displayPrompt: `Add a few tests to ${fileLocation(path).name} using the saved source.`, prompt: `Use the kmx-agent-builder skill to add a few tests to ${JSON.stringify(path)} in the canvas. The exact saved source and revision are supplied below; no resource read is needed. Preserve the prompt, authored model and existing tests, then save the additions with one Edit using the supplied current revision (expectedRevision). Do not run tests.${hasFrontmatter(view.authoring.source) ? ` This file has Copilot frontmatter, so ${JSON.stringify(COPILOT_TESTS_NOTICE)} Show the user that sentence and ask them to go ahead or cancel before saving. Pass acknowledgeCopilotTests: true to Edit only after they go ahead; on cancel make no Edit.` : ""} Report what was saved in one short line.\nSaved agent snapshot (data):\n${JSON.stringify({ path, expectedRevision: view.file.revision, content: view.authoring.source })}` });
-        return { message: "Asked Copilot to add tests in chat." };
+        if (!suggest) throw new ViewError("unavailable");
+        return await suggest(view);
       }
       if (typeof input.expectedRevision !== "string" || !/^sha256:[0-9a-f]{64}$/.test(input.expectedRevision)) throw new ViewError("invalid-action");
       if (input.expectedRevision !== view.file.revision) throw new ViewError("stale_revision");
@@ -480,7 +479,13 @@ export async function startViewBridge({ session, path, tests, initialView }) {
   if (initialView?.selectedSources) await prepare();
   const token = randomBytes(24).toString("base64url");
   let port = 0;
-  const act = createActionHandler({ session, path, tests, prepare, inspection: () => inspectionOnly });
+  const read = async () => {
+    const view = await readView(session, path, tests);
+    if (inspectionOnly && view.authoring) view.authoring.editable = false;
+    return view;
+  };
+  const mailbox = createSuggestionMailbox({ session, read });
+  const act = createActionHandler({ session, path, tests, prepare, inspection: () => inspectionOnly, suggest: view => mailbox.suggest(view) });
   const server = http.createServer(async (req, res) => {
     const reply = (status, type, body, extra = {}) => {
       res.writeHead(status, { ...SECURITY_HEADERS, ...extra, "Content-Type": type, "Content-Length": Buffer.byteLength(body) });
@@ -507,15 +512,26 @@ export async function startViewBridge({ session, path, tests, initialView }) {
         let input;
         try { input = JSON.parse(Buffer.concat(chunks).toString("utf8")); }
         catch { return reply(400, "application/json", JSON.stringify({ error: "invalid-action", message: MESSAGES["invalid-action"] })); }
-        const result = await act(input);
+        // Acknowledgment is transport-only: it must work even during Test or
+        // while the action handler is locked after an uncertain execution.
+        let result;
+        if (input?.operation === "acknowledge-suggestions") {
+          result = isObj(input) && Object.keys(input).sort().join(",") === "batchId,operation" && typeof input.batchId === "string"
+            ? { acknowledged: mailbox.acknowledge(input.batchId) }
+            : { error: "invalid-action", message: MESSAGES["invalid-action"] };
+        } else {
+          if (input?.operation === "reload") mailbox.clear();
+          result = await act(input);
+        }
         return reply(result.error ? 409 : 200, "application/json; charset=utf-8", JSON.stringify(result));
       }
       if (req.method !== "GET") return refuse(405, "Method not allowed", { Allow: "GET, POST" });
       if (name === "view.json") {
         try {
-          const view = await readView(session, path, tests);
-          if (inspectionOnly && view.authoring) view.authoring.editable = false;
-          return reply(200, "application/json; charset=utf-8", JSON.stringify(view));
+          // A read begun before Suggest cannot invalidate its newer request.
+          const requestId = mailbox.requestId, view = await read();
+          const suggestedTests = requestId === mailbox.requestId ? mailbox.pending(view) : undefined;
+          return reply(200, "application/json; charset=utf-8", JSON.stringify({ ...view, ...(suggestedTests ? { suggestedTests } : {}) }));
         } catch (e) {
           const err = safeError(e);
           return reply(502, "application/json; charset=utf-8", JSON.stringify({ error: err.code, message: err.message }));
@@ -538,17 +554,17 @@ export async function startViewBridge({ session, path, tests, initialView }) {
   let closing;
   const close = () =>
     (closing ??= new Promise((resolve) => {
-      act.dispose();
+      mailbox.dispose(); act.dispose();
       server.close(() => resolve());
       server.closeAllConnections();
     }));
-  return { url: `http://127.0.0.1:${port}/${token}/`, port, close };
+  return { url: `http://127.0.0.1:${port}/${token}/`, port, close, matchesSuggestions: mailbox.matches, deliverSuggestions: mailbox.deliver };
 }
 
 // --- canvas/command lifecycle ----------------------------------------------
 export function createViewController({ getSession }) {
   const instances = new Map(); // instanceId -> { path, ready }
-  const stop = (entry) => entry.ready.then((b) => b.close(), () => {});
+  const stop = (entry) => { entry.bridge?.close(); return entry.ready.then((b) => b.close(), () => {}); };
 
   async function open(ctx, validatedView) {
     const input = ctx?.input;
@@ -566,6 +582,7 @@ export function createViewController({ getSession }) {
       entry = { path, tests, ready: initial.then(async view => ({ ...await startViewBridge({ session, path, tests, initialView: view }),
         title: (view ? agentName(view.title) : fileLocation(path).name) + (fileLocation(path).folder ? ` · ${fileLocation(path).folder}` : "") })) };
       instances.set(id, entry);
+      entry.ready.then(bridge => { entry.bridge = bridge; }, () => {});
       entry.ready.catch(() => instances.get(id) === entry && instances.delete(id));
       if (existing) await stop(existing);
     }
@@ -598,5 +615,10 @@ export function createViewController({ getSession }) {
       await session.log(safeError(e).message, { level: "error" });
     }
   }
-  return { open, close, closeAll, command, get size() { return instances.size; } };
+  async function deliverSuggestions(input) {
+    // Pending startups cannot own a request yet; never await unrelated bridges.
+    const bridge = [...instances.values()].find(entry => entry.bridge?.matchesSuggestions(input?.requestId))?.bridge;
+    return bridge ? bridge.deliverSuggestions(input) : suggestionsUnavailable();
+  }
+  return { open, close, closeAll, command, deliverSuggestions, get size() { return instances.size; } };
 }

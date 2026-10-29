@@ -4480,6 +4480,85 @@ async function selectedCanvas({ examples = [], respond, latest } = {}) {
   return {doc,root,calls,app,view};
 }
 
+const SUGGESTED = [{id:"suggested-one",input:"Ada",assertions:[{id:"text",type:"contains",value:"Ada"}]}, {id:"suggested-two",input:"Lin",assertions:[{id:"text",type:"contains",value:"Lin"}]}];
+const suggestionView = (view, examples = SUGGESTED, id = "batch-one") => ({...view,suggestedTests:{id,sourceIdentity:JSON.stringify([SERVER_NAME,"held-source"]),examples}});
+
+test("suggestions are unsaved drafts; dropping one and editing another saves only the reviewed value",async t=>{
+  const h=await selectedCanvas({respond:async action=>action.operation==="acknowledge-suggestions"?{acknowledged:true}:{error:"refused",message:"Draft kept."}});t.after(()=>h.app.dispose());
+  const saved=JSON.stringify(h.view);
+  h.app.observe(suggestionView(h.view));await tick();
+  assert.equal(byClass(h.root,"test-item").length,2,"proposals visible in existing test list");
+  assert.equal(JSON.stringify(h.view),saved,"saved baseline is untouched");
+  assert.deepEqual(h.calls.map(a=>a.operation),["acknowledge-suggestions"],"import has no save or Test");
+  click(byClass(h.root,"test-row")[0]);click(byClass(h.root,"cancel-test")[0]);
+  h.app.observe(suggestionView(h.view));await tick();
+  assert.equal(byClass(h.root,"test-item").length,1,"ack retry does not resurrect dropped draft");
+  click(byClass(h.root,"test-row")[0]);
+  const input=byClass(h.root,"example-input")[0];input.value="Edited input";input.listeners.input[0]();
+  click(byClass(h.root,"save-run")[0]);await tick();
+  const save=h.calls.find(a=>a.operation==="save-and-test");
+  assert.deepEqual(save.examples.map(e=>({id:e.id,input:e.input})),[{id:"suggested-two",input:"Edited input"}]);
+  assert.equal(save.acknowledgeCopilotTests,undefined,"external proposals keep existing no-warning save path");
+});
+
+test("suggestion ACK failure retries without a duplicate import and metadata never changes the saved observation",async t=>{
+  let acknowledgments=0;
+  const h=await selectedCanvas({respond:async()=>{if(++acknowledgments===1)throw Error("lost ACK");return {acknowledged:true}}});t.after(()=>h.app.dispose());
+  const before=h.app.observation();
+  h.app.observe(suggestionView(h.view,[SUGGESTED[0]]));await new Promise(resolve=>setImmediate(resolve));
+  h.app.observe(suggestionView(h.view,[SUGGESTED[0]]));await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(byClass(h.root,"test-item").length,1);
+  assert.equal(acknowledgments,2);
+  assert.equal(byClass(h.root,"conflict-notice").length,0);
+  assert.equal(h.app.observation().revision,before.revision);
+  assert.equal(h.app.observe(h.view),false,"transport does not leak into stored base equality");
+});
+
+test("an overtaken suggestion poll is deferred without ACK, then the same unchanged-source batch imports",async t=>{
+  const h=await selectedCanvas();t.after(()=>h.app.dispose());
+  const old=h.app.observation();
+  click(btn(h.root,"Reload and discard draft"));await tick();
+  h.calls.length=0;
+  h.app.observe(suggestionView(h.view),old);await tick();
+  assert.equal(byClass(h.root,"test-item").length,0);assert.equal(h.calls.length,0);
+  h.app.observe(suggestionView(h.view));await tick();
+  assert.equal(byClass(h.root,"test-item").length,2);assert.equal(h.calls[0].operation,"acknowledge-suggestions");
+});
+
+test("suggestions preserve manual drafts and reject colliding batches atomically",async t=>{
+  const h=await selectedCanvas();t.after(()=>h.app.dispose());
+  addDraftTest(h);
+  h.app.observe(suggestionView(h.view,[SUGGESTED[0]]));await tick();
+  assert.equal(byClass(h.root,"test-title-input")[0].value,"Greets Ada","manual editor retained");
+  const calls=h.calls.length, editor=byClass(h.root,"test-title-input")[0];
+  editor.focus();
+  h.app.observe(suggestionView(h.view,[SUGGESTED[1],SUGGESTED[0]],"collision"));await tick();
+  assert.equal(byClass(h.root,"test-title-input")[0],editor,"collision notice must not replace the active editor");
+  h.app.observe(suggestionView(h.view,[SUGGESTED[1],SUGGESTED[0]],"collision"));await tick();
+  assert.equal(byClass(h.root,"test-title-input")[0],editor,"repeated collision polls preserve focus and selection");
+  assert.equal(h.calls.length,calls,"unimported batch is not acknowledged");
+  assert.match(h.root.textContent,/already|name|collision/i);
+  click(byClass(h.root,"back")[0]);
+  assert.equal(byClass(h.root,"test-item").length,2,"no partial second batch");
+});
+
+test("suggestions wait while inline save consent is open so Go ahead saves only the reviewed drafts",async t=>{
+  const h=await copilotCanvas();t.after(()=>h.app.dispose());
+  addDraftTest(h);click(byClass(h.root,"save-run")[0]);
+  assert.equal(byClass(h.root,"copilot-tests").length,1);
+  h.app.observe({...h.view,suggestedTests:{id:"during-consent",sourceIdentity:h.view.file.revision,examples:[SUGGESTED[0]]}});await tick();
+  assert.equal(h.calls.length,0,"pending review imports and ACKs nothing");
+  click(btn(byClass(h.root,"copilot-tests")[0],"Go ahead"));await tick();
+  assert.deepEqual(h.calls[0].examples.map(e=>e.id),["greets-Ada"],"consent cannot expand its save set");
+});
+
+test("stale suggestion marker tells the user to suggest again without importing examples",async t=>{
+  const h=await selectedCanvas();t.after(()=>h.app.dispose());
+  h.app.observe({...h.view,suggestedTests:{id:"expired",stale:true}});await tick();
+  assert.match(h.root.textContent,/changed.*suggest|suggest.*again/i);
+  assert.equal(byClass(h.root,"test-item").length,0);assert.equal(h.calls[0].batchId,"expired");
+});
+
 test("paired external test drafts skip the inline prompt warning and carry the held source context", async t=>{
   const h=await selectedCanvas();t.after(()=>h.app.dispose());
   addDraftTest(h);click(byClass(h.root,"save-run")[0]);await tick();

@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 import { createActionHandler, readView } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/view.mjs";
 import { createOpenHandler, viewInstanceId } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/open.mjs";
+import { createSuggestionMailbox } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/suggestions.mjs";
 import { resultHistory } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/results.mjs";
 import { runtimeModelSelection } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs";
 
@@ -236,10 +237,14 @@ test("paired Run rejects a foreign execution settings snapshot even if fresh set
   const d=withTools(),f=sessionFor(d);f.session.rpc.tools.execute=async call=>{f.calls.push(call);return {resultType:"success",structuredContent:preview(d,{operation:"run",verdict:"unknown",fullPass:false,recordedReplayOnly:undefined,toolSettings:[{name:"ping",state:"Disabled"}]})}};
   const result=await createActionHandler({session:f.session,path})({operation:"run",expectedRevision:d.file.revision,expectedSourceVersion:d.sourceVersion,expectedSettingsRevision:"absent",input:"Ad hoc"});assert.equal(result.error,"outcome-unknown");assert.equal(result.view,undefined);assert.equal(f.calls.length,1);
 });
-test("paired Suggest tests names the owning server beside its process-local context",async()=>{
+test("paired Suggest delegates saved selected sources to the live mailbox without Edit or Test",async()=>{
   const f=sessionFor(),sent=[];f.session.send=async value=>sent.push(value);
-  assert.equal((await createActionHandler({session:f.session,path})({operation:"suggest"})).error,undefined);
-  assert.match(sent[0].prompt,new RegExp(`"server":"${server}"`));assert.match(sent[0].prompt,/owning MCP server/);assert.equal(f.calls.length,0);
+  const mailbox=createSuggestionMailbox({session:f.session,read:()=>readView(f.session,path)});
+  assert.equal((await createActionHandler({session:f.session,path,suggest:view=>mailbox.suggest(view)})({operation:"suggest"})).error,undefined);
+  const snapshot=JSON.parse(sent[0].prompt.split("Saved sources (data):\n")[1]);
+  assert.equal(snapshot.server,server);assert.equal(snapshot.content,source);assert.equal(snapshot.testsContent,suite);assert.equal(snapshot.sourceVersion,"context-original");
+  assert.match(sent[0].prompt,/suggest_kmx_tests/);assert.match(sent[0].prompt,/Do not call Edit or Test/);assert.equal(f.calls.length,0);
+  assert.equal((await createActionHandler({session:f.session,path})({operation:"suggest"})).error,"unavailable");
 });
 test("paired Test accepts its held nested request path alongside the physical source tuple",async()=>{
   const f=sessionFor();f.document.canvas.file.path="team/a.agent.md";f.document.file.path="/work/team/a.agent.md";

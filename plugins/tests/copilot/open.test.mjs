@@ -198,7 +198,9 @@ test(`actual ${variant} extension opens its own provider and registers the kmx s
   try {
     await import(`../../${variant}/com.github.copilot/extensions/agent-view/extension.mjs`);
     assert.deepEqual(f.calls, [], "joining must not read an agent or open a canvas");
-    assert.deepEqual(registration.tools.map(t => t.name), ["open_kmx_canvas"]);
+    assert.deepEqual(registration.tools.map(t => t.name), ["open_kmx_canvas", "suggest_kmx_tests"]);
+    assert.equal((await registration.tools[1].handler({requestId:"no-live-request",examples:[]})).queued,false);
+    assert.deepEqual(f.calls,[],"failed draft delivery never reads, opens, saves or tests");
     assert.deepEqual(registration.commands.map(c => c.name), ["agent-view", "kmx-canvas"]);
     assert.equal(registration.canvases[0].id, "kmx-agent-view");
     assert.equal((await registration.tools[0].handler({ path: PATH })).opened, true);

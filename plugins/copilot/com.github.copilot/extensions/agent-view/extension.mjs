@@ -3,6 +3,7 @@
 import { CanvasError, createCanvas, joinSession } from "@github/copilot-sdk/extension";
 import { CANVAS_ID, ViewError, createViewController } from "./view.mjs";
 import { OPEN_TOOL_NAME, OPEN_TOOL_PARAMETERS, createOpenHandler, createOpenCommand, readOpenView } from "./open.mjs";
+import { SUGGEST_TOOL_NAME, SUGGEST_TOOL_PARAMETERS } from "./suggestions.mjs";
 
 let session;
 const controller = createViewController({ getSession: () => session });
@@ -39,6 +40,11 @@ session = await joinSession({
     description: "Open an existing kmx agent canvas, or return its revision-bound text view when no renderer is available. Complete source is returned only from the checked resource snapshot. Does not edit, run or test.",
     parameters: OPEN_TOOL_PARAMETERS,
     handler: createOpenHandler({ getSession: () => session, extensionId: "plugin:kmx-agent-builder-path:agent-view" }),
+  }, {
+    name: SUGGEST_TOOL_NAME,
+    description: "Deliver new tests as unsaved drafts to the exact live canvas that requested them. Never edits files or runs tests; only reports whether drafts were queued.",
+    parameters: SUGGEST_TOOL_PARAMETERS,
+    handler: input => controller.deliverSuggestions(input),
   }],
   commands: [
     {

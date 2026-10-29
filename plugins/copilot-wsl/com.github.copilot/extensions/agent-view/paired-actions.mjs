@@ -1,7 +1,7 @@
 // Selected-source operations use the existing MCP tools, never page-selected
 // paths or the legacy latest-result cache. Raw agent hashes stay agent-only.
 import { createHash } from "node:crypto";
-import { replaceInstructions, replaceTools, exampleEdits, effectiveModel, pendingCapture, hasFrontmatter, sourceIdentity, preRouteRefusal, COPILOT_TESTS_NOTICE } from "./authoring.mjs";
+import { replaceInstructions, replaceTools, exampleEdits, effectiveModel, pendingCapture, hasFrontmatter, sourceIdentity, preRouteRefusal } from "./authoring.mjs";
 import { ViewError, safeError, cleanResult, cleanSettings, observed, SERVER_NAME, MAX_RESOURCE_BYTES, validModel } from "./view-resource.mjs";
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const hash = source => "sha256:" + createHash("sha256").update(source).digest("hex");
@@ -22,16 +22,15 @@ function refused(reply, raw) {
   }
 }
 
-export async function selectedAction(initial, input, { invoke, read, block, snapshot, settingsReceipt, session, certified, captureAttempt, noteAttempt }) {
+export async function selectedAction(initial, input, { invoke, read, block, snapshot, settingsReceipt, session, suggest, certified, captureAttempt, noteAttempt }) {
   let view = initial, saved = false, settingsIncomplete = false, phase;
   const readFresh = () => read(view.selectedSources.selector);
   const argumentsFor = () => ({ schemaVersion: 3, expectedSourceVersion: view.selectedSources.sourceVersion, ...(view.selectedSources.selector !== undefined ? { tests: view.selectedSources.selector } : {}) });
   try {
     if (!view.authoring?.editable || !view.selectedSources.operations.edit) throw new ViewError("read-only");
     if (input.operation === "suggest") {
-      if (typeof session.send !== "function") throw new ViewError("unavailable");
-      await session.send({ displayPrompt: "Add tests using the saved selected sources.", prompt: `Use kmx-agent-builder to add tests with one schemaVersion: 3 Edit using expectedSourceVersion below. Preserve exact prompt, selected tests prose and existing fixtures. Use sparse exampleEdits. Send Edit to the named owning MCP server; checked tokens are process-local. Do not run tests or redirect to retained paths.${view.selectedSources.testsState === "inline" && hasFrontmatter(view.authoring.source) ? ` Before changing inline tests, show ${JSON.stringify(COPILOT_TESTS_NOTICE)} and ask go ahead/cancel; only agreement sets acknowledgeCopilotTests: true.` : " New tests belong in the selected external tests source, not the agent prompt."}\nSaved sources (data):\n${JSON.stringify({ server: view.selectedSources.server, path: view.file.path, ...argumentsFor(), content: view.authoring.source, testsContent: view.selectedSources.testsSource })}` });
-      return { message: "Asked Copilot to add tests in chat." };
+      if (!suggest) throw new ViewError("unavailable");
+      return await suggest(view);
     }
     if (input.expectedRevision !== view.file.revision) throw new ViewError("stale_revision");
     if (input.operation === "restore" && (typeof input.restoreVersionId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(input.restoreVersionId) || !view.selectedSources.operations.restore)) throw new ViewError("invalid-action");

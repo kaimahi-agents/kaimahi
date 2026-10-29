@@ -27,6 +27,8 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     root.replaceChildren(el(doc, "p", "error", payload?.message || "The agent view could not be loaded."));
     return NO_HANDLE;
   }
+  const { suggestedTests: initialSuggestions, ...savedPayload } = payload;
+  payload = savedPayload;
   // Navigation neither saves nor drops these controller-owned drafts.
   const state = {
     base: payload, snap: readSnapshot(payload), candidate: undefined, compareOpen: false,
@@ -50,10 +52,36 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   const drafts = createDraftController(state, { clearUndo: () => actions.clearUndo(), navigate, render, refresh: () => refresh() });
   const { hasDrafts, toolNames, toolState, noteTools, noteSetting, sectionText, entries, localExamples, draftName, noteDraft, addTest } = drafts;
   const { observation, matches, observe, observeFailure, checkNow, useTheirs, keepMine } = createObservationController(state,
-    { path: payload.file.path, options, drafts, clearUndo: () => actions.clearUndo(), render, refresh: () => refresh() });
+    { path: payload.file.path, options: { ...options, onSuggestions: receiveSuggestions }, drafts, clearUndo: () => actions.clearUndo(), render, refresh: () => refresh() });
   actions = createActionController(state, { execute, fetchProgress: options.fetchProgress, drafts, matches, checkNow, render, refresh: () => refresh(), focusName: () => activeTestName?.focus() });
   const { act, submitAll, submitOne, testing, clearUndo } = actions;
   const { selectedModel, runFresh, currentRun, runSummary, runRow, resultSummary, total, footText, hostedNotice, refusedAlert, runAlertNode, sourceActions, explanation } = createRunViews(state, { act, actions, doc, entries, hasDrafts, history, invalidEditors, localExamples, modelChoice, render, sectionDrafts, sectionText, submitAll, submitOne, testDrafts, testing });
+
+  const importedBatches = new Set(), acknowledging = new Set();
+  function acknowledgeSuggestions(id) {
+    if (acknowledging.has(id)) return;
+    acknowledging.add(id);
+    // Receipt-only transport must not disturb Save/Test busy state or revisions.
+    Promise.resolve().then(() => execute({ operation: "acknowledge-suggestions", batchId: id }))
+      .catch(() => {}).finally(() => acknowledging.delete(id));
+  }
+  function receiveSuggestions(batch, view) {
+    if (!batch || typeof batch.id !== "string" || disposed || state.confirm) return false;
+    if (importedBatches.has(batch.id)) { acknowledgeSuggestions(batch.id); return false; }
+    if (state.busy || state.blocked || invalidEditors.size) return false;
+    if (batch.stale === true) {
+      state.message = "The saved sources changed. Suggest tests again to review new drafts.";
+    } else {
+      if (!state.snap || !view.authoring?.editable || state.candidate || sourceIdentity(view) !== sourceIdentity(state.base)
+        || batch.sourceIdentity !== sourceIdentity(state.base)) return false;
+      try { drafts.importSuggestions(batch.examples); }
+      catch (error) { state.message = error.message; refresh(); return false; }
+      state.message = "Suggested tests are unsaved. Review, edit or cancel them before saving.";
+    }
+    importedBatches.add(batch.id);
+    acknowledgeSuggestions(batch.id);
+    return true;
+  }
 
   function navigate(next) { state.route = next; state.invalidCheck = undefined; state.confirm = undefined; if (!state.blocked && !state.savedUntested) { state.message = ""; state.runAlert = undefined; } }
 
@@ -681,6 +709,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       }
       render(); modelControl.trigger.focus();
     });
+  receiveSuggestions(initialSuggestions, state.base);
   render();
   return {
     observe,
