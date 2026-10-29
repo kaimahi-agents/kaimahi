@@ -338,10 +338,12 @@ packaged `evals/` files or configuration fields.
 
 Kubernetes setup/inspection and native package commands also move under
 `kmx cluster` and `kmx package`; the old roots are removed, not aliases.
-`local up/down`, `context`, `quickstart`, `console`, `targets`, `task` and
-`orka ...` move under `cluster`. `push`, `status --to NAME`, `suite ...`,
-`run-profile` and native `create NAME` move under `package`, and
-`suite push DIRECTORY REF` becomes `package suite push DIRECTORY REF`. Root
+`local up/down` become `cluster up/down`; `context`, `quickstart`, `console`,
+`targets`, `task` and `orka ...` move under `cluster`. `push`, `status --to NAME`,
+`run-profile` and native `create NAME` move under `package`.
+`suite validate/build/push-image/pull/policy` become
+`package validate/build/push-image/pull/policy`; only directory transfer keeps the
+nested route, `suite push DIRECTORY REF` → `package suite push DIRECTORY REF`. Root
 `kmx create NAME` now writes an agent file plus companion tests file and rejects
 workspace, model, instructions, runtime and flow flags; scripts that author
 native workspaces should use `kmx package create NAME --workspace DIR --model MODEL
@@ -698,8 +700,6 @@ The source release is commit **S**. Publish the binary release and finish its
 qualification before advancing the catalog; the catalog PR merges later at
 commit **C** and points backward to S. Do not try to pin C to itself. An RC
 catalog is a prerelease pair, not a stable release or an automatic tap update.
-For v0.9.0, rc.5 release notes are prepared, but the catalog and install pins
-remain on rc.4; no rc.5 app acceptance is claimed.
 
 From fresh main, fetch the actual tag and resolve its commit (including annotated
 tags), substituting the real version including its RC suffix:
