@@ -9,18 +9,21 @@ const paths = (actual, expected) => actual === expected || actual === expected.s
 const roleStatus = status => ["unchanged", "saved", "not_saved", "uncertain"].includes(status) ? status : "unconfirmed";
 const unknown = () => { throw new ViewError("outcome-unknown"); };
 function payload(reply) {
+  refused(reply);
   if (reply?.structuredContent) return reply.structuredContent;
   if (typeof reply?.textResultForLlm === "string" && Buffer.byteLength(reply.textResultForLlm) <= MAX_RESOURCE_BYTES) { try { return JSON.parse(reply.textResultForLlm); } catch {} }
   unknown();
 }
 function refused(reply, raw) {
-  if (reply?.resultType === "success") return;
-  if (["denied", "rejected"].includes(reply?.resultType)) throw new ViewError("permission_required");
-  if (raw?.reasonCode) throw new ViewError(["stale_revision", "confirmation_required", "invalid_tool_settings"].includes(raw.reasonCode) ? raw.reasonCode : "action-failed");
+  const decline = code => { const error = new ViewError(code); error.confirmedRefusal = true; throw error; };
+  if (["denied", "rejected"].includes(reply?.resultType)) decline("permission_required");
+  if (raw?.schemaVersion === 3 && typeof raw.reasonCode === "string" && typeof raw.reason === "string" && Object.keys(raw).sort().join(",") === "reason,reasonCode,schemaVersion") {
+    decline(["stale_revision", "confirmation_required", "invalid_tool_settings"].includes(raw.reasonCode) ? raw.reasonCode : raw.reasonCode === "invalid_file" ? "invalid-file" : "action-failed");
+  }
 }
 
 export async function selectedAction(initial, input, { invoke, read, block, snapshot, settingsReceipt, session, certified, captureAttempt, noteAttempt }) {
-  let view = initial, saved = false, settingsIncomplete = false;
+  let view = initial, saved = false, settingsIncomplete = false, phase;
   const readFresh = () => read(view.selectedSources.selector);
   const argumentsFor = () => ({ schemaVersion: 3, expectedSourceVersion: view.selectedSources.sourceVersion, ...(view.selectedSources.selector !== undefined ? { tests: view.selectedSources.selector } : {}) });
   try {
@@ -57,6 +60,7 @@ export async function selectedAction(initial, input, { invoke, read, block, snap
     const saving = ["save-prompt", "save-examples", "save-and-test", "restore"].includes(input.operation);
     if (saving && (content !== view.authoring.source || patches.length || input.restoreVersionId)) {
       const args = { ...argumentsFor(), ...(input.restoreVersionId ? { restoreVersionId: input.restoreVersionId } : { ...(content !== view.authoring.source ? { content } : {}), ...(patches.length ? { exampleEdits: patches } : {}) }), ...(input.acknowledgeCopilotTests === true ? { acknowledgeCopilotTests: true } : {}) };
+      phase = "save";
       const reply = await invoke("edit", args, input.runId ? { id: input.runId } : undefined), ack = payload(reply);
       if (ack.schemaVersion !== 3 || ack.kind !== "kmx.agent-pair-save") { refused(reply, ack); unknown(); }
       if (!["unchanged", "saved", "not_saved", "uncertain"].includes(ack.agent?.status) || !["unchanged", "saved", "not_saved", "uncertain"].includes(ack.tests?.status)) unknown();
@@ -66,14 +70,15 @@ export async function selectedAction(initial, input, { invoke, read, block, snap
       const fresh = await readFresh();
       if (fresh.selectedSources?.sourceVersion !== ack.sourceVersion || fresh.selectedSources.snapshotRevision !== ack.snapshotRevision || fresh.file.revision !== ack.file?.revision || !paths(ack.file?.path ?? "", view.selectedSources.agentPath) && ack.file?.path !== view.file.path) unknown();
       if (content !== view.authoring.source && view.selectedSources.testsState !== "inline" && fresh.file.revision !== hash(content)) unknown();
-      view = fresh; saved = true;
+      view = fresh; saved = true; phase = undefined;
     }
     if (changes.length && originalToken !== undefined && view.toolSettingsRevision !== originalToken) throw new ViewError("stale_settings_revision");
     for (const change of changes) {
+      phase = "settings";
       const reply = await invoke("set_tool_state", { expectedRevision: view.file.revision, expectedSettingsRevision: view.toolSettingsRevision, ...change });
       const ack = settingsReceipt(reply, view, change), fresh = await readFresh();
       if (fresh.file.revision !== view.file.revision || fresh.selectedSources.snapshotRevision !== view.selectedSources.snapshotRevision || fresh.toolSettingsRevision !== ack.token || !same(fresh.toolSettings, ack.states)) unknown();
-      view = fresh; saved ||= ack.changed;
+      view = fresh; saved ||= ack.changed; phase = undefined;
     }
     settingsIncomplete = false;
     if (["save-prompt", "save-examples", "restore"].includes(input.operation)) return { view, saved };
@@ -84,6 +89,7 @@ export async function selectedAction(initial, input, { invoke, read, block, snap
     async function run(chosen, replay) {
       certified.delete(cacheKey(chosen));
       const executed = view, sources = view.selectedSources;
+      phase = "preview";
       const reply = await invoke(operation, { ...argumentsFor(), model: chosen, expectedToolSettings: settings, recordedReplayOnly: replay, ...(input.caseId !== undefined ? { caseId: input.caseId } : {}), ...(operation === "run" ? { input: input.input } : {}), ...(input.acknowledgeCopilotTests === true ? { acknowledgeCopilotTests: true } : {}), showContent: input.showContent === true, showFailedContent: true }, { id: input.runId, revision: sourceIdentity(view), model: chosen, examples: view.authoring.examples, caseIds: selected, totalCases: ids.length, toolSettings: settings });
       if (reply.stopped) { const fresh = await readFresh(); if (sourceIdentity(fresh) !== sourceIdentity(view)) unknown(); return { stopped: true, run: { ...snapshot(), state: "stopped" }, view: fresh, saved }; }
       const envelope = payload(reply), raw = envelope.preview;
@@ -104,7 +110,7 @@ export async function selectedAction(initial, input, { invoke, read, block, snap
         saved = true; capture = { ...result, savedRevision: raw.savedRevision, savedSourceVersion: envelope.savedSourceVersion, savedSourceIdentity: sourceIdentity(fresh), executedRevision: raw.file.revision, model: chosen };
       } else if (flags.length || envelope.savedSourceVersion || receipt || sourceIdentity(fresh) !== sourceIdentity(executed)) unknown();
       if (!same(fresh.toolSettings, settings)) throw new ViewError("tool_settings_changed");
-      view = fresh;
+      view = fresh; phase = undefined;
       const attributed = { ...fresh, latest: { status: "current", badge: result.fullPass && result.state === "complete" && result.verdict === "pass" && result.selection.scope === "full" ? "pass" : "not-passing", result } };
       if (replay && result.state === "complete") { certified.set(cacheKey(chosen), { view: attributed, saved: false }); while (certified.size > 2) certified.delete(certified.keys().next().value); }
       return { view: raw.savedRevision ? fresh : attributed, saved, ...(capture ? { capture } : {}) };
@@ -115,7 +121,10 @@ export async function selectedAction(initial, input, { invoke, read, block, snap
     const selectedRow = results.find(r => r.view.latest.result?.modelRoute.endsWith("/" + model)) ?? results[0];
     return { ...selectedRow, saved, ...(capture ? { capture } : {}), ...(models.length > 1 ? { comparison: { results: results.map(r => r.view) } } : {}) };
   } catch (e) {
-    const err = safeError(e); if (err.code === "outcome-unknown") block();
-    return { error: err.code, message: err.message, saved, ...(settingsIncomplete ? { settingsIncomplete: true } : {}), ...(saved && err.code !== "outcome-unknown" ? { view } : {}) };
+    let err = safeError(e);
+    const settingsRefused = phase === "settings" && ["permission_required", "stale_revision", "stale_settings_revision", "invalid_tool_settings", "settings-failed"].includes(err.code);
+    if (phase && err.code !== "outcome-unknown" && !err.confirmedRefusal && !settingsRefused) err = new ViewError("outcome-unknown");
+    if (err.code === "outcome-unknown") block();
+    return { error: err.code, message: err.message, saved, ...(err.approvalTimeout ? { approvalTimeout: true } : {}), ...(settingsIncomplete ? { settingsIncomplete: true } : {}), ...(saved && err.code !== "outcome-unknown" ? { view } : {}) };
   }
 }

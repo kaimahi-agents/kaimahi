@@ -4497,6 +4497,7 @@ test("paired pending external capture does not warn that tests enter the agent p
 test("paired source details distinguish agent and tests and source history is not verdict history",async t=>{
   const h=await selectedCanvas();t.after(()=>h.app.dispose());
   assert.match(byClass(h.root,"source-info")[0].textContent,/Tests source/);
+  assert.equal(byClass(h.root,"path-label").filter(n=>n.textContent==="Tests file path").length,1);
   assert.match(byClass(h.root,"source-info")[0].textContent,/greeter.agent.test.md/);
   assert.match(byClass(h.root,"source-info")[0].textContent,/Source history/);
   assert.match(byClass(h.root,"source-info")[0].textContent,/Tests changed/);

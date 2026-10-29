@@ -185,6 +185,34 @@ test("an uncalled pending recording is not captured again automatically when com
   assert.equal(compared.error,"recording_missing");assert.equal(f.calls.length,1);
 });
 
+for (const state of ["denied","rejected"]) for (const operation of ["save-examples","restore","run","test"]) test(`paired ${operation} ${state} is a confirmed refusal, not an uncertainty lock`,async()=>{
+  const f=sessionFor();f.session.rpc.tools.execute=async call=>{f.calls.push(call);return {resultType:state,textResultForLlm:"private-denial-canary"}};
+  const input={operation,...expected,...(operation==="save-examples"?{examples:[{...examples[0],input:"Grace"}],exampleOrigins:["greeting"]}:{}),...(operation==="restore"?{restoreVersionId:"retained-version"}:{}),...(operation==="run"?{input:"Ada"}:{})};
+  const act=createActionHandler({session:f.session,path});const first=await act(input),again=await act(input);
+  assert.equal(first.error,"permission_required");assert.equal(again.error,"permission_required");assert.equal(f.calls.length,2,"a declined permission must not require reload");assert.doesNotMatch(first.message,/private-denial-canary/);
+});
+
+for (const fault of ["missing fullPass","null example","post-Test read","post-Save read"]) test(`unconfirmed paired ${fault} locks until deliberate reload`,async()=>{
+  const f=sessionFor(),read=f.session.rpc.mcp.resources.read;let failRead=false;
+  f.session.rpc.mcp.resources.read=async params=>{if(failRead){failRead=false;throw Error("private-read-canary")}return read(params)};
+  f.session.rpc.tools.execute=async call=>{
+    f.calls.push(call);
+    if(fault==="post-Save read"){failRead=true;return {resultType:"success",structuredContent:completeSave(f.document)}}
+    const result=preview(f.document);if(fault==="missing fullPass")delete result.preview.fullPass;if(fault==="null example")result.preview.examples=[null];if(fault==="post-Test read")failRead=true;
+    return {resultType:"success",structuredContent:result};
+  };
+  const input={operation:fault==="post-Save read"?"save-examples":"test",...expected,...(fault==="post-Save read"?{examples:[{...examples[0],input:"Grace"}],exampleOrigins:["greeting"]}:{})};
+  const act=createActionHandler({session:f.session,path}),first=await act(input),again=await act(input);
+  assert.equal(f.calls.length,1,"the unconfirmed operation must not be sent twice");assert.equal(first.error,"outcome-unknown");assert.equal(again.error,"outcome-unknown");assert.equal(first.view,undefined);assert.doesNotMatch(first.message,/private-read-canary/);
+  assert.equal((await act({operation:"reload"})).error,undefined);
+});
+
+for(const resultType of ["success","failure"])for(const reasonCode of ["stale_revision","confirmation_required"])test(`paired ${reasonCode} preflight under ${resultType} remains a confirmed refusal`,async()=>{
+  const f=sessionFor();f.session.rpc.tools.execute=async call=>{f.calls.push(call);return {resultType,structuredContent:{schemaVersion:3,reasonCode,reason:"private-preflight-canary"}}};
+  const act=createActionHandler({session:f.session,path}),first=await act({operation:"test",...expected}),again=await act({operation:"test",...expected});
+  assert.equal(first.error,reasonCode);assert.equal(again.error,reasonCode);assert.equal(f.calls.length,2);assert.doesNotMatch(first.message,/private-preflight-canary/);
+});
+
 test("source history and model picker cannot revive a result after a tests-only context change", () => {
   const result = { operation: "test", state: "complete", verdict: "pass", fullPass: true, modelRoute: "fake/fake", selection: { scope: "full", caseIds: ["greeting"], totalCases: 1 }, examples: [{ id: "greeting", state: "complete", verdict: "pass", assertions: [] }] };
   const old = { file: { path, revision: hash(source) }, model: "fake", examples, authoring: { examples }, selectedSources: { sourceVersion: "old", server }, latest: { status: "current", badge: "pass", result } };
