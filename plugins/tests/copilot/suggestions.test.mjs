@@ -75,7 +75,8 @@ for (const [reason, mutate] of [
   ["invalid-examples", x => ({ ...x, examples: [{ ...example, unexpected: "PRIVATE_MODEL_MARKER" }] })],
   ["invalid-examples", x => ({ ...x, examples: [{ ...example, input: " " }] })],
   ["examples-too-large", x => ({ ...x, examples: [{ ...example, input: "PRIVATE_MODEL_MARKER" + "x".repeat(256 * 1024) }] })],
-  ["mock-payload-forbidden", x => ({ ...x, examples: [{ ...example, mocks: { tools: [{ name: "ping", mode: "recorded", calls: [{ output: "PRIVATE_MODEL_MARKER" }] }] } }] })],
+  ["invalid-mocks", x => ({ ...x, examples: [{ ...example, mocks: { tools: [{ name: "ping", mode: "recorded", calls: [{ output: "PRIVATE_MODEL_MARKER" }] }] } }] })],
+  ["invalid-mocks", x => ({ ...x, examples: [{ ...example, mocks: { tools: [{ mode: "live", name: "ping" }] } }] })],
 ]) test(`malformed delivery diagnoses ${reason} without consuming a valid request`, async () => {
   const f = mailboxFixture(), id = await f.request();
   unavailable(await f.mailbox.deliver(mutate(delivery(id))), "suggestions-" + reason);
@@ -114,7 +115,7 @@ for (const change of [
   assert.equal((await f.mailbox.deliver(delivery(id))).queued, true);
   change(view);
   assert.deepEqual(f.mailbox.pending(view), { id, stale: true });
-  assert.equal((await f.mailbox.deliver(delivery(id))).queued, false);
+  unavailable(await f.mailbox.deliver(delivery(id)), "suggestions-source-changed");
   const g = mailboxFixture(pristine), old = await g.request(); change(g.view);
   unavailable(await g.mailbox.deliver(delivery(old)), "suggestions-source-changed"); assert.equal(g.mailbox.pending(g.view), undefined);
 });
@@ -162,6 +163,21 @@ test("source read errors disclose only the read stage, not private messages or c
   await mailbox.suggest(view);
   unavailable(await mailbox.deliver(delivery(mailbox.requestId)), "suggestions-source-unavailable");
   assert.equal(mailbox.pending(view), undefined);
+});
+
+test("rejected late source reads preserve inactive and queued diagnostic precedence", async () => {
+  for (const action of ["queued", "stale", "replace", "clear", "dispose"]) {
+    const view = savedView(), readers = [];
+    const mailbox = createSuggestionMailbox({ session: { send: async () => {} }, read: () => new Promise((resolve, reject) => readers.push({ resolve, reject })) });
+    await mailbox.suggest(view); const id = mailbox.requestId;
+    const first = mailbox.deliver(delivery(id)), late = mailbox.deliver(delivery(id));
+    readers[0].resolve(view); assert.equal((await first).queued, true);
+    if (action === "replace") await mailbox.suggest(view);
+    else if (action === "stale") { view.file.revision = hash("changed"); mailbox.pending(view); }
+    else if (action !== "queued") mailbox[action]();
+    readers[1].reject(Error("PRIVATE_MODEL_MARKER"));
+    unavailable(await late, action === "queued" ? "suggestions-already-queued" : action === "stale" ? "suggestions-source-changed" : "suggestions-inactive-request");
+  }
 });
 
 test("serialization errors disclose only invalid examples", async () => {

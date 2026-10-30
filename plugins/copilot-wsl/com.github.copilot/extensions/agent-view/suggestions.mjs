@@ -21,7 +21,7 @@ const deliveryFailures = {
   "suggestions-examples-too-large": "The suggested examples exceed the delivery size limit. Copilot must return fewer or shorter examples.",
   "suggestions-empty-examples": "The suggestion delivery contains no examples. Copilot must return at least one example.",
   "suggestions-invalid-examples": "The suggested examples do not match the supported format. Copilot must supply test IDs, inputs and typed checks with their required fields.",
-  "suggestions-mock-payload-forbidden": "The suggested examples contain mock fixture payloads that cannot be proposed. Use Live or pending Recorded modes, not invented recordings.",
+  "suggestions-invalid-mocks": "The editor rejected the suggested tool modes or fixture format. Add these tests manually in the canvas.",
   "suggestions-source-unavailable": "The saved sources could not be read. Check the original canvas is available before using Suggest tests again.",
   "suggestions-source-changed": "The saved sources, selection, owner or editability changed. Review the current sources and use Suggest tests again in the original canvas.",
   "suggestions-examples-conflict": "The suggested examples conflict with saved examples or exceed the 128-test limit. Use new test IDs and fewer tests.",
@@ -60,7 +60,7 @@ export function createSuggestionMailbox({ session, read }) {
   async function deliver(input) {
     if (!isObj(input) || Object.keys(input).sort().join(",") !== "examples,requestId") return suggestionsUnavailable("suggestions-invalid-delivery");
     if (!matches(input.requestId)) return suggestionsUnavailable("suggestions-inactive-request");
-    if (current.batch) return suggestionsUnavailable("suggestions-already-queued");
+    if (current.batch) return suggestionsUnavailable(current.stale ? "suggestions-source-changed" : "suggestions-already-queued");
     const request = current;
     let examples, view, failure = "suggestions-invalid-examples";
     try {
@@ -70,13 +70,13 @@ export function createSuggestionMailbox({ session, read }) {
       if (Array.isArray(examples) && !examples.length) return suggestionsUnavailable("suggestions-empty-examples");
       validateExamples(examples, true);
       // Classify failures by the held stage, never by thrown or model content.
-      failure = "suggestions-mock-payload-forbidden";
+      failure = "suggestions-invalid-mocks";
       // Reuse sparse-edit validation to exclude invented recorded call payloads.
       exampleEdits([], examples);
       failure = "suggestions-source-unavailable";
       view = await read();
       if (current !== request || disposed) return suggestionsUnavailable("suggestions-inactive-request");
-      if (request.batch) return suggestionsUnavailable("suggestions-already-queued");
+      if (request.batch) return suggestionsUnavailable(request.stale ? "suggestions-source-changed" : "suggestions-already-queued");
       failure = "suggestions-source-changed";
       request.stale ||= !fresh(request, view);
       if (request.stale) return suggestionsUnavailable(failure);
@@ -85,7 +85,11 @@ export function createSuggestionMailbox({ session, read }) {
       validateExamples(intended, true);
       failure = "suggestions-draft-incompatible";
       if (examples.some(raw => validateDraft({ raw, origin: null, fixedId: true }, intended))) return suggestionsUnavailable(failure);
-    } catch { return suggestionsUnavailable(failure); }
+    } catch {
+      if (current !== request || disposed) return suggestionsUnavailable("suggestions-inactive-request");
+      if (request.batch) return suggestionsUnavailable(request.stale ? "suggestions-source-changed" : "suggestions-already-queued");
+      return suggestionsUnavailable(failure);
+    }
     request.batch = { id: request.id, sourceIdentity: request.sourceIdentity, examples };
     return { queued: true, batchId: request.id, message: "Queued unsaved tests for review in the original canvas. Nothing was saved or run." };
   }
