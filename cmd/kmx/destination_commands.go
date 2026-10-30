@@ -16,6 +16,8 @@ import (
 
 	"oras.land/oras-go/v2/registry"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
+
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/spf13/cobra"
@@ -165,6 +167,7 @@ func checkDestinationRegistry(ctx context.Context, reference string, plainHTTP b
 	if err != nil {
 		return "unknown"
 	}
+	version.SetUserAgent(req)
 	// Do not use ambient proxies, redirect handling, credential stores or helpers.
 	transport := &http.Transport{Proxy: nil, DisableKeepAlives: true, MaxResponseHeaderBytes: destinationCheckBytes}
 	defer transport.CloseIdleConnections()

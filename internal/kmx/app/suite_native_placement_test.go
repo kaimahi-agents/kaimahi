@@ -197,6 +197,53 @@ func TestSuiteNativePlacementCreatesReusesAndReevaluates(t *testing.T) {
 	}
 }
 
+func TestSuiteNativeCreatePreflightRetainsServerDefaults(t *testing.T) {
+	for _, stage := range []string{"default", "authored mutation"} {
+		t.Run(stage, func(t *testing.T) {
+			a, _, p, _ := nativePlacementFixture(t)
+			desired, err := cloneOrkaDoc(p.bundle.Provider)
+			if err != nil {
+				t.Fatal(err)
+			}
+			desired["spec"].(map[string]any)["azure"] = map[string]any{"deployment": "model"}
+			capture := a.captureCommand
+			a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
+				if slices.Contains(cmd.Args, "create") && slices.Contains(cmd.Args, "--dry-run=server") {
+					raw, readErr := io.ReadAll(cmd.Stdin)
+					if readErr != nil {
+						return readErr
+					}
+					var doc map[string]any
+					if json.Unmarshal(raw, &doc) != nil || doc["kind"] != "Provider" {
+						return fmt.Errorf("invalid Provider preflight fixture")
+					}
+					spec := doc["spec"].(map[string]any)
+					spec["azure"].(map[string]any)["apiVersion"] = "2024-10-21"
+					if stage == "authored mutation" {
+						spec["defaultModel"] = "other"
+					}
+					return json.NewEncoder(cmd.Stdout).Encode(doc)
+				}
+				return capture(ctx, cmd)
+			}
+			check, err := a.inspectOrkaPlacement(t.Context(), OrkaNamespace, desired, orkaPlacementIdentity{suite: suiteNativeOwner(p.Subject)})
+			if stage == "authored mutation" {
+				if err == nil {
+					t.Fatal("server mutation of an authored field was accepted")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			azure := check.candidate["spec"].(map[string]any)["azure"].(map[string]any)
+			if azure["deployment"] != "model" || azure["apiVersion"] != "2024-10-21" {
+				t.Fatalf("admitted Azure spec = %#v", azure)
+			}
+		})
+	}
+}
+
 func TestSuiteNativeAgentPreflightPreventsProviderWrite(t *testing.T) {
 	for _, boundary := range []string{"ownership", "admission", "schema"} {
 		t.Run(boundary, func(t *testing.T) {

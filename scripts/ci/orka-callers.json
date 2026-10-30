@@ -8,6 +8,7 @@
     "github.com/kaimahi-agents/kaimahi/internal/kmx/localtools",
     "github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess/copilot",
     "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime",
-    "github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
+    "github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes",
+    "github.com/kaimahi-agents/kaimahi/internal/kmx/version"
   ]
 }

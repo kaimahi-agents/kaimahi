@@ -18,6 +18,7 @@ import (
 
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
+	kmxversion "github.com/kaimahi-agents/kaimahi/internal/kmx/version"
 )
 
 const (
@@ -247,6 +248,7 @@ func (c *evaluationJudgeClient) sample(ctx context.Context, payload []byte, mode
 		return 0, "", "", "judge response unavailable", "judge-unavailable"
 	}
 	req.Header.Set("Content-Type", "application/json")
+	kmxversion.SetUserAgent(req)
 	if c.key != "" {
 		req.Header.Set("Authorization", "Bearer "+c.key)
 	}

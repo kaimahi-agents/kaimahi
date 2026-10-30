@@ -29,6 +29,7 @@ JUDGE_POLICY_DIGEST = "2866b5c14b0efa8dd13964a40030ffd79877bba4dc00405c112100011
 
 MARKERS = ("kaimahi.dev/suite", "kaimahi.dev/suite-digest", "kaimahi.dev/suite-member", "kaimahi.dev/suite-renderer",
            "kaimahi.dev/suite-binding-digest", "kaimahi.dev/suite-rendered-digest")
+CREATED_BY_VERSION = "kaimahi.dev/created-by-version"
 
 
 def canonical(value):
@@ -106,16 +107,29 @@ def verify_candidate(receipt, frames, cases, specs):
     require(any(f["verb"] == "create" and f["resource"] == "token" for f in frames), "candidate-token")
     markers = dict(zip(MARKERS, [subject[k] for k in ("Suite", "SuiteDigest", "Member", "Renderer", "BindingDigest", "RenderedDigest")]))
     markers["kaimahi.dev/suite-evaluation-run"] = run
+    diagnostic_present, diagnostic_version = None, None
     observations = {}
     require(len(rows) == len(cases), "candidate-case-count")
     for created, (kind, name) in zip(creates, wanted):
         observed = created.get("response", {})
         meta = observed.get("metadata", {})
+        annotations = meta.get("annotations", {})
+        current_present = CREATED_BY_VERSION in annotations
+        current_version = annotations.get(CREATED_BY_VERSION)
+        require(not current_present or isinstance(current_version, str) and 0 < len(current_version) <= 128 and
+                re.fullmatch(r"[A-Za-z0-9!#$%&'*+\-.^_`|~]+", current_version), "candidate-created-version")
+        if diagnostic_present is None:
+            diagnostic_present = current_present
+            diagnostic_version = current_version
+        expected_annotations = set(markers) | ({CREATED_BY_VERSION} if diagnostic_present else set())
+        require(current_present == diagnostic_present and current_version == diagnostic_version and
+                {k: annotations.get(k) for k in markers} == markers and
+                set(annotations) == expected_annotations, "candidate-created-markers")
         owned = pair[kind] if kind != "Task" else {"UID": rows[wanted.index((kind, name)) - 2]["taskUID"], "Generation": 1}
         require(observed.get("apiVersion") == "core.orka.ai/v1alpha1" and observed.get("kind") == kind and
                 meta.get("name") == name and meta.get("namespace") == "orka-system" and meta.get("uid") == owned["UID"] and
                 meta.get("generation") == owned["Generation"] == 1 and not meta.get("terminating") and
-                meta.get("annotations") == markers, "candidate-created-identity")
+                current_version == diagnostic_version, "candidate-created-identity")
         seen = [f["response"] for f in frames if f["verb"] == "get" and f.get("response", {}).get("kind") == kind and
                 f["response"].get("metadata", {}).get("name") == name]
         require(bool(seen), "candidate-independent-get")
@@ -123,7 +137,11 @@ def verify_candidate(receipt, frames, cases, specs):
             cm = current["metadata"]
             # Cleanup may observe a same-UID finalized object at generation+1;
             # that observation is not Ready/evaluation authority.
-            require(cm["uid"] == owned["UID"] and cm["namespace"] == "orka-system" and cm["annotations"] == markers and
+            current_annotations = cm["annotations"]
+            require(cm["uid"] == owned["UID"] and cm["namespace"] == "orka-system" and
+                    {k: current_annotations.get(k) for k in markers} == markers and
+                    set(current_annotations) == expected_annotations and
+                    current_annotations.get(CREATED_BY_VERSION) == diagnostic_version and
                     (cm["generation"] == 1 or cm["terminating"] and cm["generation"] == 2) and
                     current["specDigest"] == observed["specDigest"], "candidate-get-drift")
         if kind != "Task":
@@ -140,7 +158,8 @@ def verify_candidate(receipt, frames, cases, specs):
             require(any(s.get("phase") == "Succeeded" and s.get("resultAvailable") and not s["metadata"]["terminating"] for s in seen), "candidate-task-terminal")
         attempts = [f for f in frames if f.get("admission") and (f["resource"], f["name"]) == (kind, name)]
         require(all(f["verb"] == "create" and f["stdinDigest"] == created["stdinDigest"] for f in attempts) and
-                len(attempts) <= (2 if kind == "Task" else 3), "candidate-no-resend")
+                len(attempts) == (3 if kind == "Task" else 4) and
+                sum(f["persistent"] for f in attempts) == 1, "candidate-no-resend")
         observations[(kind, name)] = observed
     require(all(not f.get("admission") or f["resource"] == "token" or (f["resource"], f["name"]) in wanted for f in frames), "candidate-admissions")
     deletes = [(i, f) for i, f in enumerate(frames) if f["verb"] == "delete"]
@@ -414,14 +433,15 @@ def verify_promote_effects(frames, member):
     writes = [f for f in records if f["persistent"]]
     require(len(writes) == 4 and re.fullmatch(r"kmx-release-[0-9a-f]{40}", writes[0]["name"]), "promote-record-count")
     name = writes[0]["name"]
-    expected = [("create", kind, member, True, False) for kind in ("Provider", "Agent")]
+    expected = [("create", kind, member, True, False) for kind in ("Provider", "Agent") for _ in range(2)]
     expected += [("create", "ConfigMap", name, False, True), ("create", "Provider", member, True, True),
                  ("patch", "ConfigMap", name, False, True), ("create", "Agent", member, True, True),
                  ("patch", "ConfigMap", name, False, True), ("patch", "ConfigMap", name, False, True)]
     require([(f["verb"], f["resource"], f["name"], bool(f["admission"]), f["persistent"]) for f in effects] == expected, "promote-effects")
     native = [f for f in effects if not f.get("releaseRecord")]
-    require(native[0]["stdinDigest"] == native[2]["stdinDigest"] and
-            native[1]["stdinDigest"] == native[3]["stdinDigest"], "promote-admitted-input")
+    creates = {f["resource"]: f for f in native if f["persistent"]}
+    require(all(f["stdinDigest"] == creates[f["resource"]]["stdinDigest"] for f in native if not f["persistent"]),
+            "promote-admitted-input")
     preflight = records[:4]
     require([(f["verb"], f.get("permission"), f["name"]) for f in preflight] ==
             [("get", None, name), ("auth", "get", name), ("auth", "create", ""), ("auth", "patch", name)], "promote-record-preflight")
@@ -456,7 +476,7 @@ def verify_promote_completion_order(frames):
     persistent = [f for f in effects if f["persistent"] and f["stage"] == "intent"]
     require(len(persistent) == 6, "promote-completion-order")
     first = effects.index(persistent[0])
-    require(sum(f["stage"] == "complete" and f.get("admission") and not f["persistent"] for f in effects[:first]) == 2,
+    require(sum(f["stage"] == "complete" and f.get("admission") and not f["persistent"] for f in effects[:first]) == 4,
             "promote-completion-order")
 
 
@@ -929,7 +949,9 @@ class Qualification:
         row = {"taskName": name, "taskUID": doc["metadata"]["uid"]}
         task = inspect_task(doc, row, member, case["input"])
         require([(f["resource"], f["name"]) for f in frames if f["persistent"]] == [("Task", name)], "run-native-writes")
-        require(sum(bool(f.get("taskAttempt")) for f in frames) == 1, "run-task-attempts")
+        attempts = [f for f in frames if f.get("taskAttempt")]
+        require(len(attempts) == 2 and sum(f["persistent"] for f in attempts) == 1 and
+                attempts[0]["stdinDigest"] == attempts[1]["stdinDigest"], "run-task-attempts")
         require(all(not f.get("admission") or f["resource"] in {"token", "Task"} for f in frames), "run-admissions")
         require(any(f["verb"] == "get" and f["resource"] == "tasks.core.orka.ai" and f["name"] == name for f in frames), "run-task-read")
         verify_fresh_answer(output, case)

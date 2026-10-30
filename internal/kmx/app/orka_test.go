@@ -676,9 +676,9 @@ func TestOrkaInstallWiresAKeylessProviderAtTheModelServer(t *testing.T) {
 	}
 	applied := f.applied(t)
 	for _, want := range []string{
-		"kind: Provider", "name: local", "type: openai",
-		"baseURL: http://ollama.ollama.svc.cluster.local:11434/v1",
-		"defaultModel: qwen2.5:3b",
+		`"kind":"Provider"`, `"name":"local"`, `"type":"openai"`,
+		`"baseURL":"http://ollama.ollama.svc.cluster.local:11434/v1"`,
+		`"defaultModel":"qwen2.5:3b"`,
 	} {
 		if !strings.Contains(applied, want) {
 			t.Errorf("the Provider does not carry %q:\n%s", want, applied)

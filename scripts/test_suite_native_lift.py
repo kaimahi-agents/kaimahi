@@ -69,8 +69,9 @@ def record_sequence():
     for verb in ("get", "create", "patch"):
         add(["auth", "can-i", verb, "configmaps" + ("/" + RECORD if verb != "create" else "")])
     for kind in ("Provider", "Agent"):
-        add(["create", "--dry-run=server", "-f", "-"], json.dumps({"apiVersion": "core.orka.ai/v1alpha1", "kind": kind,
-            "metadata": {"name": "member", "namespace": "orka-system"}}).encode())
+        for _ in range(2):
+            add(["create", "--dry-run=server", "-f", "-"], json.dumps({"apiVersion": "core.orka.ai/v1alpha1", "kind": kind,
+                "metadata": {"name": "member", "namespace": "orka-system"}}).encode())
     data = record_state()
     add(["create", "-f", "-", "--validate=strict", "-o", "json"], json.dumps(record_doc(data)).encode(), record_doc(data, 1))
     for i in range(3):
@@ -129,7 +130,7 @@ class ReleaseRecordAudit(unittest.TestCase):
         frames = A.completed(raw)
         Q.verify_promote_effects(frames, "member")
         Q.verify_promote_completion_order(raw)
-        self.assertEqual(sum(f["admission"] for f in frames), 4)
+        self.assertEqual(sum(f["admission"] for f in frames), 6)
         self.assertEqual(sum(f["persistent"] for f in frames), 6)
         self.assertNotIn("release.json", json.dumps(frames))
         for removed in range(4):

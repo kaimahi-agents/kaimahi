@@ -16,6 +16,7 @@ import (
 	"unicode"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/portforward"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
 )
 
 // Only this payload-free startup failure may cross suite diagnostic boundaries.
@@ -335,6 +336,7 @@ func (s *orkaResultSession) getTaskResource(ctx context.Context, namespace, name
 	}
 	req.Header.Set("Authorization", "Bearer "+s.token)
 	req.Header.Set("Accept", "application/json")
+	version.SetUserAgent(req)
 	response, err := s.client.Do(req)
 	if err != nil {
 		class := s.failureClass(err)

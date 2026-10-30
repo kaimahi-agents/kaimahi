@@ -30,6 +30,9 @@ func TestToolModelGenericSchemaAndFollowup(t *testing.T) {
 		t.Run(fmt.Sprint(len(args), args[:2]), func(t *testing.T) {
 			sends := 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if !strings.HasPrefix(r.UserAgent(), "kmx/") {
+					t.Errorf("User-Agent = %q", r.UserAgent())
+				}
 				sends++
 				var body struct {
 					Tools    []struct{ Function toolWireFunction }
