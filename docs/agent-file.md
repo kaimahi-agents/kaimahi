@@ -320,7 +320,11 @@ this file; the parser neither checks availability nor chooses/falls back to a
 model. Prose cannot grant tools or hooks. Tool names declare a requirement,
 not authority: execution needs an explicit host binding and a qualified provider.
 The CLI supports one [host-bound read-only GitHub MCP operation](local-preview.md#host-tool-foundation)
-with an explicit local binding and environment credential reference. Missing
+with an explicit local binding and environment credential reference. In addition, file Run/Test
+can select named stdio MCP servers from the agent folder's `kmx.yaml` with repeatable
+`--mcp-server NAME` (replaces the saved selection) or `--no-mcp-servers` (clears it); a fixed
+`--tool-bindings` takes precedence. Disabled tools and populated recordings do not start a
+server. See [selected stdio servers](local-preview.md#selected-stdio-servers-in-file-runtest). Missing
 bindings leave a declared tool available as a stub answering "not available in this test".
 Malformed supplied bindings, missing credentials for an actual live binding, unsupported routes and invalid provider results still refuse.
 Bound tools also work on Copilot Chat Completions and Responses routes; judges
