@@ -6,19 +6,18 @@ You want to improve an agent's prompt without losing track of what it should do.
 > check that each answer has a heading, mentions the change and avoids internal
 > issue numbers. Change the prompt, rerun the same tests, then try another model.
 
-kmx keeps the prompt and tests in one Markdown file. Copilot can edit and test it
-through chat or the app canvas. Current main also supports a revision-bound chat
-text view when no canvas renderer is available. This path needs no Kubernetes
+kmx keeps the prompt in `.agent.md` and tests in a companion `.agent.test.md` file;
+existing inline tests remain supported. Copilot can edit and test the pair through
+chat or the app canvas. rc.6 also supports a revision-bound chat text view when no
+canvas renderer is available. This path needs no Kubernetes
 cluster, Docker or local model download.
 
-**Experimental.** The app walkthrough describes v0.9.0-rc.4. The install below
-pairs that prerelease binary with plugin source pinned to its release commit.
-Updating the plugin alone does not update kmx. Features merged after rc.4 need
-a newer tested pair; a feature on main is not necessarily in your installed release.
-In particular, rc.4 can display bounded, read-only fallback text, but its
-`open_kmx_canvas` result does not return a structured full revision, source or
-editability and cannot seed a revision-checked Edit in a fresh chat. The
-revision-bound text workflow below is unreleased until a later paired release.
+**Experimental.** The install below pairs the v0.9.0-rc.6 binary with plugin
+source pinned to its release commit. Updating the plugin alone does not update
+kmx; a feature added on main later is not necessarily in your installed release.
+rc.6 includes the paired-file canvas and revision-bound text workflow below.
+Older rc.4 can display bounded, read-only fallback text, but cannot seed a
+revision-checked Edit in a fresh chat.
 
 ## Install
 
@@ -30,7 +29,7 @@ Copilot plugin, so this path remains explicitly WSL-hosted.
 1. In WSL, install kmx:
 
    ```sh
-   curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.4/install.sh | sudo sh -s -- --version=v0.9.0-rc.4 --bin-dir=/usr/local/bin
+   curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.6/install.sh | sudo sh -s -- --version=v0.9.0-rc.6 --bin-dir=/usr/local/bin
    ```
 
 2. In a Windows terminal, register the marketplace and install the WSL variant:
@@ -50,8 +49,8 @@ Choose only one variant per host profile; their MCP server and skill names are s
 On macOS, use the [macOS install instructions](../plugins/copilot/README.md#install-on-macos)
 instead. They install a macOS binary and the plain Copilot plugin, not WSL.
 The source plugin now starts `/usr/local/bin/kmx mcp` directly, matching that
-installer destination rather than depending on the app's PATH. The pinned rc.4
-plugin still uses `kmx` from PATH; that fix needs a newer paired release.
+installer destination rather than depending on the app's PATH. The rc.6 catalog
+includes this fix; upgrade the binary and plugin together.
 
 ### macOS rc.4: server not available
 
@@ -60,10 +59,9 @@ the skills can load while `kmx-agent-builder` fails to start. Restart Copilot an
 start a fresh session after installation first; an existing session may not pick
 up newly installed servers.
 
-The newer source plugin fixes this executable lookup with an absolute path.
-The install commands above still select the rc.4 catalog pair; they do not install
-that fix. A separate catalog repin follows publication of the next pair. Upgrade
-the binary first, then refresh the catalog and plugin together. If you added a manual kmx MCP
+The rc.6 plugin fixes this executable lookup with an absolute path. The install
+commands above select the published rc.6 pair. Upgrade the binary first, then
+refresh the catalog and plugin using the upgrade commands below. If you added a manual kmx MCP
 definition while trying rc.4, remove that specific definition before using the
 fixed plugin so only one kmx server is active. Do not edit plugin caches or add
 a custom server to make the new release work.
@@ -129,7 +127,7 @@ runs tests.
 
 | Intent | What to type or select | What happens |
 |---|---|---|
-| Create and open | `Create a kmx agent called Release notes that writes a short release note from a supplied pull request title, and open it.` | The builder creates the file, then opens a canvas or, on current main, a revision-bound text view when the extension is available. It does not automatically run tests. |
+| Create and open | `Create a kmx agent called Release notes that writes a short release note from a supplied pull request title, and open it.` | The builder creates the file, then opens a canvas or, in rc.6, a revision-bound text view when the extension is available. It does not automatically run tests. |
 | Open without a model turn | `/kmx-canvas open release-notes.agent.md` | The native command opens or focuses the existing file. `/kmx-canvas` or `/kmx-canvas help` shows usage. |
 | Open through chat | `Open the kmx agent for release-notes.agent.md` | The model selects the installed opener skill. This uses a model turn. |
 | Run one input | `Use kmx to run release-notes.agent.md with input Add dark mode` | Run sends that input and returns the preview result. |
@@ -176,13 +174,17 @@ passes text to the model rather than exercising native command dispatch. In a
 headless environment, the CLI can acknowledge a canvas and offer a browser URL
 without displaying a native window; that is not proof of app rendering.
 
-Chat Edit and add-tests requests need complete source plus its current revision.
-On current main, the model-facing `open_kmx_canvas` text result returns both only
-from the checked `kmx://agent/{path}` authoring snapshot. Its formatted `text` is
-bounded display and never an Edit baseline. Native `/kmx-canvas open` displays
+Chat Edit and add-tests requests need complete source plus its checked context.
+In rc.6, the model-facing `open_kmx_canvas` text result returns a complete
+snapshot only when the resource supplies one. Legacy snapshots come from
+`kmx://agent/{path}`. For paired files, the opener can read
+`kmx://agent-sources/{path}` after the initial resource indicates paired data.
+Paired Edit uses the checked `selectedSources` context and its `sourceVersion` as
+`expectedSourceVersion` for schema version 3, not the agent's file revision as the
+edit token. Its formatted `text` is bounded display and never an Edit baseline. Native `/kmx-canvas open` displays
 that bounded projection only. The rc.4 pair also exposes bounded text only, so a
 fresh chat cannot begin a revision-checked Edit from its fallback. If the full
-snapshot is unavailable, the current-main text view is read-only. **Suggest
+snapshot is unavailable, the rc.6 text view is read-only. **Suggest
 tests** supplies a snapshot by design, and its results return to the canvas as
 drafts rather than saved edits. Do not treat a suggestion, trigger or
 failed/uncertain Edit as a saved test, and do not run newly saved tests unless
@@ -202,9 +204,10 @@ such as `C:\work` through their WSL mounts (`/mnt/c/work`); WSL paths also work.
 Files can live in different repositories; installation does not bind kmx to one folder.
 
 The canvas shows **Prompt**, **Tools** and **Tests**. The saved `.agent.md` file
-holds the prompt, tool names and tests; you can keep it in version control with
-the code it describes. If your host cannot render the canvas, current main's
-unreleased `open_kmx_canvas` text result returns the full revision and complete
+holds the prompt and tool names; new tests live in its `.agent.test.md` companion.
+Agents directly inside `.github/agents/` use sibling `.github/agent-tests/`.
+Keep both in version control with the code they describe. If your host cannot
+render the canvas, rc.6's `open_kmx_canvas` text result returns the full revision and complete
 source when safe so chat can continue with revision-checked edits. The rc.4
 fallback is bounded display only. Without the extension, only the same chat that
 already holds source/revision can continue safely.
@@ -223,7 +226,7 @@ missing content is never recovered with an automatic rerun.
 
 ## Choose tools for tests
 
-With a matching rc.4 plugin and binary, **Add tools** opens this app's
+With a matching rc.6 plugin and binary, **Add tools** opens this app's
 MCP servers. Tick tools to add them to the agent. A ticked tool's **Enabled** or
 **Disabled** word flips a draft; Disabled tools stay declared but do not run in tests.
 Enter saves edits, then tests. Esc discards Tools edits without discarding prompt
@@ -234,7 +237,7 @@ physical target and also affect other agents in that folder. These are separate
 saves, not one transaction. If a save is partial or unconfirmed, tests do not run:
 keep the draft and deliberately reload to inspect what was saved. Do not retry
 an uncertain write. This switch uses `set_tool_state`, included in the pinned
-v0.9.0-rc.4 binary above.
+v0.9.0-rc.6 binary above.
 
 ![Tools section showing one selected tool from the GitHub MCP server, with earlier test results marked out of date](images/copilot-tools.png)
 
@@ -294,7 +297,7 @@ Recorded details let you inspect the saved call and result.
 
 *Recorded is selected but unsaved, and the previous result shows one live call.*
 
-Saved tool output is cleartext in the agent file. Review it before committing
+Saved tool output is cleartext in the test source (the companion for a pair). Review it before committing
 or sharing. A recorded pass does not prove the live server works today. See
 [per-test recorded tools](agent-file.md#per-test-recorded-tools) for matching
 rules and **Calls** / **Doesn't call** checks.
@@ -338,10 +341,9 @@ These comparison pictures are from a build before rc.3.
 
 ## Run the same tests in CI
 
-Commit the agent file, then run `kmx test FILE` in a GitHub Actions step after
-checkout. This CLI section follows current main, not the rc.4 app walkthrough
-above. Use a build containing the grouped commands and current file-mode exit
-codes; older binaries can have different exit meanings. After installing that
+Commit the agent and companion test files, then run `kmx test FILE` in a GitHub
+Actions step after checkout. The rc.6 binary includes these grouped commands and
+file-mode exit codes; older binaries can have different exit meanings. After installing that
 binary, these steps test `greeter.agent.md` using its authored `fake` model:
 
 ```yaml

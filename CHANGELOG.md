@@ -24,10 +24,10 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## v0.9.0 — 2026-10-27
 
-The rc.6 candidate retains the paired prompt/tests canvas loop, revision-safe
-Copilot text mode and the macOS executable-path fix, and adds Suggest tests
-refusal reasons. It does not claim to fix the unexplained Mac suggestion failure.
-The catalog still selects rc.4 pending publication and a separate catalog repin.
+The published rc.6 pair retains the paired prompt/tests canvas loop,
+revision-safe Copilot text mode and the macOS executable-path fix, and adds Suggest
+tests refusal reasons. It does not claim to fix the unexplained Mac suggestion
+failure. The catalog pins both plugin variants to that published release.
 
 ### Added
 
@@ -352,7 +352,7 @@ The catalog still selects rc.4 pending publication and a separate catalog repin.
 
 - The rc.4 preparation stamped source plugin manifests to 0.9.0-rc.4; rc.6 supersedes that source stamp.
 
-- The rc.4 release pinned both `kmx-plugins` entries to its published commit. The catalog stays on rc.4 pending rc.6 publication and a separate catalog repin; preparing rc.6 does not advance it.
+- The rc.4 release pinned both `kmx-plugins` entries to its published commit. The catalog now pins both variants to the published rc.6 commit and version; install its matching binary before updating the plugin.
 
 - Root help leads with Create, Run, Test, Chat and Model, followed by Package,
   Cluster and Version. MCP, Completion and Help remain callable but are omitted
@@ -741,7 +741,7 @@ instructions retain their original root path.
   saved example. Legacy `--prompt` and `--prompt-file` retain their ad-hoc-plus-examples
   behavior.
 
-For v0.9.0-rc.4 on Windows, [install kmx at `/usr/local/bin/kmx` in WSL](plugins/copilot-wsl/README.md#install), then register the `kmx-plugins` marketplace and install `kmx-agent-builder@kmx-plugins` in Windows. On macOS, [install the Darwin binary and the `kmx-agent-builder-path` plugin](plugins/copilot/README.md#install-on-macos) with the commands in that guide.
+For v0.9.0-rc.6 on Windows, [install kmx at `/usr/local/bin/kmx` in WSL](plugins/copilot-wsl/README.md#install), then register the `kmx-plugins` marketplace and install `kmx-agent-builder@kmx-plugins` in Windows. On macOS, [install the Darwin binary and the `kmx-agent-builder-path` plugin](plugins/copilot/README.md#install-on-macos) with the commands in that guide.
 
 Historical rc.4 evidence: the marketplace install was walked in the Copilot app on Windows (register the catalog, install the plugin, open an agent canvas). The rc.4-to-rc.5 Mac upgrade was walked except Suggest tests, which returned `suggestions-unavailable`. Its cause remains unexplained; rc.6 adds refusal reasons, not a claimed fix. Suggest tests worked on Windows with the plugin code included in rc.6; that is not a full Windows/WSL upgrade qualification.
 

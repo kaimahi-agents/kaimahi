@@ -1,8 +1,8 @@
 # Copilot CLI text mode
 
-**Status:** Unreleased current-main integration contract for
-[#750](https://github.com/kaimahi-agents/kaimahi/issues/750). It is not in the
-v0.9.0-rc.4 marketplace pair, whose fallback returns bounded display text only.
+**Status:** Included in the v0.9.0-rc.6 paired release for
+[#750](https://github.com/kaimahi-agents/kaimahi/issues/750). Older rc.4 fallback
+returns bounded display text only.
 
 This contract makes Create, Edit, Run and Test useful through Copilot chat when
 the host cannot render the kmx canvas. Text mode is a normal presentation of the
