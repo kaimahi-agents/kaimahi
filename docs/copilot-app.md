@@ -127,7 +127,7 @@ runs tests.
 
 | Intent | What to type or select | What happens |
 |---|---|---|
-| Create and open | `Create a kmx agent called Release notes that writes a short release note from a supplied pull request title, and open it.` | The builder creates the file, then opens a canvas or, on current main, a revision-bound text view when the extension is available. It does not automatically run tests. |
+| Create and open | `Create a kmx agent called Release notes that writes a short release note from a supplied pull request title, and open it.` | The builder creates the file, then opens a canvas or, in rc.5, a revision-bound text view when the extension is available. It does not automatically run tests. |
 | Open without a model turn | `/kmx-canvas open release-notes.agent.md` | The native command opens or focuses the existing file. `/kmx-canvas` or `/kmx-canvas help` shows usage. |
 | Open through chat | `Open the kmx agent for release-notes.agent.md` | The model selects the installed opener skill. This uses a model turn. |
 | Run one input | `Use kmx to run release-notes.agent.md with input Add dark mode` | Run sends that input and returns the preview result. |
@@ -175,12 +175,12 @@ headless environment, the CLI can acknowledge a canvas and offer a browser URL
 without displaying a native window; that is not proof of app rendering.
 
 Chat Edit and add-tests requests need complete source plus its current revision.
-On current main, the model-facing `open_kmx_canvas` text result returns both only
+In rc.5, the model-facing `open_kmx_canvas` text result returns both only
 from the checked `kmx://agent/{path}` authoring snapshot. Its formatted `text` is
 bounded display and never an Edit baseline. Native `/kmx-canvas open` displays
 that bounded projection only. The rc.4 pair also exposes bounded text only, so a
 fresh chat cannot begin a revision-checked Edit from its fallback. If the full
-snapshot is unavailable, the current-main text view is read-only. **Suggest
+snapshot is unavailable, the rc.5 text view is read-only. **Suggest
 tests** supplies a snapshot by design, and its results return to the canvas as
 drafts rather than saved edits. Do not treat a suggestion, trigger or
 failed/uncertain Edit as a saved test, and do not run newly saved tests unless

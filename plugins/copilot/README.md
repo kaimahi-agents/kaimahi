@@ -214,7 +214,7 @@ or cross-compilation do not qualify Squad on Windows/macOS.
 
 ## Agent authoring canvas
 
-Ask Copilot to make an agent. On current main, the builder skill creates it
+Ask Copilot to make an agent. In rc.5, the builder skill creates it
 through kmx and then opens the successful Create result's exact path in a canvas
 or text view. To open an
 existing agent **without a model turn**, select the native **kmx-canvas** command:
@@ -245,7 +245,7 @@ controls and their checks remain unchanged. No folder confirmation is required.
 
 When the extension is loaded but the host cannot open a canvas, native
 `/kmx-canvas open` displays a successful, read-only bounded text fallback; it
-does not return Edit authority to chat. On current main, the separate
+does not return Edit authority to chat. In rc.5, the separate
 model-facing `open_kmx_canvas` tool returns the full file revision and, only from
 a checked complete snapshot, exact source and editability. Its bounded `text` is
 display-only and never an Edit baseline. `/agent-view FULL_PATH` also displays

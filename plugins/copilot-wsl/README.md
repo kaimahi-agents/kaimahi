@@ -49,7 +49,7 @@ To open an existing file without a model turn, use
 `/kmx-canvas open /mnt/c/work/release-notes.agent.md`. Keep path spaces literal,
 without surrounding quotes. `/kmx-canvas` or `/kmx-canvas help` shows usage;
 `/agent-view FULL_PATH` shows bounded read-only text. Native `/kmx-canvas open`
-also displays only that bounded fallback. On current main, the separate chat
+also displays only that bounded fallback. In rc.5, the separate chat
 tool's text mode returns exact source/revision when the checked resource is
 editable, so a fresh extension-backed chat can continue with revision-checked
 Edit. Native open was checked in the Copilot app with a main build before rc.4
@@ -95,7 +95,7 @@ prompts and inputs to the selected model. On hosts that forward native tool
 progress, test rows update as cases finish. The final full Test result remains
 authoritative. Local model comparison is lost when the canvas is closed and
 reopened. An unconfirmed execution requires reload rather than silently retrying.
-On current main, if the host has no canvas renderer, text mode is a normal
+In rc.5, if the host has no canvas renderer, text mode is a normal
 success path. Chat
 reports structured Test rows and keeps a chosen runtime model for that exact file
 within the conversation. It lists newly saved tests as not run, requests answer
