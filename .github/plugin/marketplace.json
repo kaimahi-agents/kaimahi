@@ -7,23 +7,23 @@
   "plugins": [
     {
       "name": "kmx-agent-builder",
-      "description": "Windows Copilot through WSL. Requires kmx v0.9.0-rc.4 at /usr/local/bin/kmx in the default WSL distribution.",
-      "version": "0.9.0-rc.4",
+      "description": "Windows Copilot through WSL. Requires kmx v0.9.0-rc.5 at /usr/local/bin/kmx in the default WSL distribution.",
+      "version": "0.9.0-rc.5",
       "source": {
         "source": "github",
         "repo": "kaimahi-agents/kaimahi",
-        "sha": "3005f0aff5fd19cb08daaf21c785ad247ec0a635",
+        "sha": "78050cbcf8c412aaf096245bdeff0a31bfa89d53",
         "path": "plugins/copilot-wsl"
       }
     },
     {
       "name": "kmx-agent-builder-path",
-      "description": "macOS Copilot, or Linux with kmx on PATH. Requires kmx v0.9.0-rc.4 on the Copilot process PATH. Not the Windows/WSL variant.",
-      "version": "0.9.0-rc.4",
+      "description": "macOS Copilot, or Linux. Requires kmx v0.9.0-rc.5 at /usr/local/bin/kmx. Not the Windows/WSL variant.",
+      "version": "0.9.0-rc.5",
       "source": {
         "source": "github",
         "repo": "kaimahi-agents/kaimahi",
-        "sha": "3005f0aff5fd19cb08daaf21c785ad247ec0a635",
+        "sha": "78050cbcf8c412aaf096245bdeff0a31bfa89d53",
         "path": "plugins/copilot"
       }
     }

@@ -24,10 +24,9 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## v0.9.0 — 2026-10-27
 
-The rc.5 preparation includes the paired prompt/tests canvas loop, revision-safe
-Copilot text mode and the macOS executable fix. The catalog still selects rc.4
-until the published rc.5 pair passes its Mac walk. No rc.5 desktop acceptance is
-claimed here; a Mac walk does not qualify Windows/WSL.
+The published rc.5 pair includes the paired prompt/tests canvas loop,
+revision-safe Copilot text mode and the macOS executable fix. The catalog pins
+both plugin variants to that release. A Mac walk does not qualify Windows/WSL.
 
 ### Added
 
@@ -348,7 +347,7 @@ claimed here; a Mac walk does not qualify Windows/WSL.
 
 - The rc.4 preparation stamped source plugin manifests to 0.9.0-rc.4; rc.5 supersedes that source stamp.
 
-- The rc.4 release pinned both `kmx-plugins` entries to its published commit. The catalog stays on rc.4 until the published rc.5 pair passes its Mac walk; preparing rc.5 does not advance it.
+- The rc.4 release pinned both `kmx-plugins` entries to its published commit. The catalog now pins both variants to the published rc.5 commit and version; install its matching binary before updating the plugin.
 
 - Root help leads with Create, Run, Test, Chat and Model, followed by Package,
   Cluster and Version. MCP, Completion and Help remain callable but are omitted
@@ -511,7 +510,7 @@ claimed here; a Mac walk does not qualify Windows/WSL.
 
 - When chat lacks a saved agent snapshot or an agent-resource reader, report that no edit was saved instead of inventing a revision or running the agent solely to discover one. For add-tests requests, give conditional guidance to use Suggest tests if the canvas offers it. Revision checks and existing test-write consent are unchanged.
 
-- Start the macOS Copilot plugin's MCP server at `/usr/local/bin/kmx`, matching the documented installer destination without relying on a Dock-launched app's PATH. Install the matching rc.5 binary and plugin once available, then restart Copilot with a fresh session. Remove any old manual kmx MCP definition that would collide; do not add a custom-server workaround.
+- Start the macOS Copilot plugin's MCP server at `/usr/local/bin/kmx`, matching the documented installer destination without relying on a Dock-launched app's PATH. Install the matching rc.5 binary and plugin, then restart Copilot with a fresh session. Remove any old manual kmx MCP definition that would collide; do not add a custom-server workaround.
 
 - Use `kmx cluster orka install` for the provider-free destination in Orka runtime qualification, and print installer diagnostics when that install fails.
 
@@ -739,9 +738,9 @@ instructions retain their original root path.
   saved example. Legacy `--prompt` and `--prompt-file` retain their ad-hoc-plus-examples
   behavior.
 
-For v0.9.0-rc.4 on Windows, [install kmx at `/usr/local/bin/kmx` in WSL](plugins/copilot-wsl/README.md#install), then register the `kmx-plugins` marketplace and install `kmx-agent-builder@kmx-plugins` in Windows. On macOS, [install the Darwin binary and the `kmx-agent-builder-path` plugin](plugins/copilot/README.md#install-on-macos) with the commands in that guide.
+For v0.9.0-rc.5 on Windows, [install kmx at `/usr/local/bin/kmx` in WSL](plugins/copilot-wsl/README.md#install), then register the `kmx-plugins` marketplace and install `kmx-agent-builder@kmx-plugins` in Windows. On macOS, [install the Darwin binary and the `kmx-agent-builder-path` plugin](plugins/copilot/README.md#install-on-macos) with the commands in that guide.
 
-Historical rc.4 evidence: the marketplace install was walked in the Copilot app on Windows (register the catalog, install the plugin, open an agent canvas). That does not establish an rc.5 Windows/WSL or Mac app pass. rc.5 still requires a person to walk the published pair on a Mac, including the rc.4 upgrade, before catalog repinning or a note to users.
+Historical rc.4 evidence: the marketplace install was walked in the Copilot app on Windows (register the catalog, install the plugin, open an agent canvas). That does not establish an rc.5 Windows/WSL app pass; Mac walkthrough evidence does not qualify Windows/WSL either.
 
 Known gaps in this preview:
 - The Copilot CLI marks direct plugin installs (`copilot plugin install kaimahi-agents/kaimahi:plugins/copilot-wsl`) as deprecated; they follow main and still work, but the marketplace install is the supported pair.
