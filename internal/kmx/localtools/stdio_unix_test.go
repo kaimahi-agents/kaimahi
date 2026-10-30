@@ -241,12 +241,26 @@ func TestStdioKilledLeaderCannotPassCleanup(t *testing.T) {
 	t.Cleanup(func() { _ = host.Close() })
 	waitHeartbeat := func(orphan bool) {
 		deadline := time.Now().Add(2 * time.Second)
+		orphanSeen := false
 		for {
 			data, err := os.ReadFile(heartbeat)
 			if err == nil && (!orphan || strings.HasPrefix(string(data), "orphan:")) {
-				return
+				if !orphan {
+					return
+				}
+				orphanSeen = true
+				exited, err := stdioLeaderExited(host.process.cmd.Process.Pid)
+				if err != nil {
+					t.Fatalf("observe leader exit without reaping: %v", err)
+				}
+				if exited {
+					return
+				}
 			}
 			if time.Now().After(deadline) {
+				if orphanSeen {
+					t.Fatal("leader exit not observable after descendant reparenting")
+				}
 				t.Fatalf("descendant heartbeat missing (orphan=%v): %q %v", orphan, data, err)
 			}
 			time.Sleep(10 * time.Millisecond)
@@ -256,8 +270,8 @@ func TestStdioKilledLeaderCannotPassCleanup(t *testing.T) {
 	if err := syscall.Kill(host.process.cmd.Process.Pid, syscall.SIGKILL); err != nil {
 		t.Fatal(err)
 	}
-	// Reparenting independently proves leader exit, without Wait/reaping it.
-	// The descendant is still writing and holds the protocol stdout open.
+	// Reparenting can precede kernel-observable exit of a multithreaded leader.
+	// Wait for non-reaping exit proof too; the descendant still holds stdout open.
 	waitHeartbeat(true)
 	if err := host.Close(); !errors.Is(err, ErrStdio) {
 		t.Fatalf("preexisting leader death accepted as owned cleanup: %v", err)
