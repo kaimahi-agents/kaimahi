@@ -60,10 +60,10 @@ the skills can load while `kmx-agent-builder` fails to start. Restart Copilot an
 start a fresh session after installation first; an existing session may not pick
 up newly installed servers.
 
-The newer source plugin fixes this executable lookup with an absolute path.
-The install commands above still select the rc.4 catalog pair; they do not install
-that fix. A separate catalog repin follows publication of the next pair. Upgrade
-the binary first, then refresh the catalog and plugin together. If you added a manual kmx MCP
+The rc.5 source plugin fixes this with an absolute executable path. Until the
+rc.5 release is published and its catalog pin advances, the install commands
+above still select rc.4; they do not install the fix. Upgrade the binary and
+plugin together when the new pair is available. If you added a manual kmx MCP
 definition while trying rc.4, remove that specific definition before using the
 fixed plugin so only one kmx server is active. Do not edit plugin caches or add
 a custom server to make the new release work.
