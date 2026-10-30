@@ -24,9 +24,10 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## v0.9.0 — 2026-10-27
 
-The published rc.5 pair includes the paired prompt/tests canvas loop,
-revision-safe Copilot text mode and the macOS executable fix. The catalog pins
-both plugin variants to that release. A Mac walk does not qualify Windows/WSL.
+The published rc.6 pair retains the paired prompt/tests canvas loop,
+revision-safe Copilot text mode and the macOS executable-path fix, and adds Suggest
+tests refusal reasons. It does not claim to fix the unexplained Mac suggestion
+failure. The catalog pins both plugin variants to that published release.
 
 ### Added
 
@@ -339,15 +340,19 @@ both plugin variants to that release. A Mac walk does not qualify Windows/WSL.
 
 ### Changed
 
+- Suggest tests now reports why a delivery was refused.
+
+- Stamp both Copilot source plugin manifests to 0.9.0-rc.6 for the paired prerelease. The marketplace catalog and external kmx installation remain unchanged.
+
 - Copilot chat now treats the extension's revision-bound text view as a normal
   alternative to the canvas. It can safely continue editing only from a complete
   exact source snapshot, reports structured Run/Test rows and remembered runtime
   model choices, and never reruns to recover answer content. Same-chat workflows
   remain available without the extension; fresh-chat reopening still requires it.
 
-- The rc.4 preparation stamped source plugin manifests to 0.9.0-rc.4; rc.5 supersedes that source stamp.
+- The rc.4 preparation stamped source plugin manifests to 0.9.0-rc.4; rc.6 supersedes that source stamp.
 
-- The rc.4 release pinned both `kmx-plugins` entries to its published commit. The catalog now pins both variants to the published rc.5 commit and version; install its matching binary before updating the plugin.
+- The rc.4 release pinned both `kmx-plugins` entries to its published commit. The catalog now pins both variants to the published rc.6 commit and version; install its matching binary before updating the plugin.
 
 - Root help leads with Create, Run, Test, Chat and Model, followed by Package,
   Cluster and Version. MCP, Completion and Help remain callable but are omitted
@@ -360,8 +365,6 @@ both plugin variants to that release. A Mac walk does not qualify Windows/WSL.
 - Canonical flag-parsing errors point to the resolved command's help, without
   repeating argument values; native Windows hints explicitly use PowerShell
   quoting and its call operator. Legacy refusals and exit codes stay unchanged.
-
-- Source plugin manifests report version 0.9.0-rc.5 for the paired release.
 
 - `kmx run FILE` now executes saved inputs without evaluating their checks or setting up a judge. Completed answers are not passing tests; use `kmx test FILE` to evaluate checks. Tool fixtures, journal finalization and completion checks still apply. Legacy single-source MCP preview behavior is unchanged; selected-pair MCP Run also answers without checks.
 
@@ -510,7 +513,7 @@ both plugin variants to that release. A Mac walk does not qualify Windows/WSL.
 
 - When chat lacks a saved agent snapshot or an agent-resource reader, report that no edit was saved instead of inventing a revision or running the agent solely to discover one. For add-tests requests, give conditional guidance to use Suggest tests if the canvas offers it. Revision checks and existing test-write consent are unchanged.
 
-- Start the macOS Copilot plugin's MCP server at `/usr/local/bin/kmx`, matching the documented installer destination without relying on a Dock-launched app's PATH. Install the matching rc.5 binary and plugin, then restart Copilot with a fresh session. Remove any old manual kmx MCP definition that would collide; do not add a custom-server workaround.
+- Start the macOS Copilot plugin's MCP server at `/usr/local/bin/kmx`, matching the documented installer destination without relying on a Dock-launched app's PATH. Install the matching release binary and plugin, then restart Copilot with a fresh session. Remove any old manual kmx MCP definition that would collide; do not add a custom-server workaround.
 
 - Use `kmx cluster orka install` for the provider-free destination in Orka runtime qualification, and print installer diagnostics when that install fails.
 
@@ -738,9 +741,9 @@ instructions retain their original root path.
   saved example. Legacy `--prompt` and `--prompt-file` retain their ad-hoc-plus-examples
   behavior.
 
-For v0.9.0-rc.5 on Windows, [install kmx at `/usr/local/bin/kmx` in WSL](plugins/copilot-wsl/README.md#install), then register the `kmx-plugins` marketplace and install `kmx-agent-builder@kmx-plugins` in Windows. On macOS, [install the Darwin binary and the `kmx-agent-builder-path` plugin](plugins/copilot/README.md#install-on-macos) with the commands in that guide.
+For v0.9.0-rc.6 on Windows, [install kmx at `/usr/local/bin/kmx` in WSL](plugins/copilot-wsl/README.md#install), then register the `kmx-plugins` marketplace and install `kmx-agent-builder@kmx-plugins` in Windows. On macOS, [install the Darwin binary and the `kmx-agent-builder-path` plugin](plugins/copilot/README.md#install-on-macos) with the commands in that guide.
 
-Historical rc.4 evidence: the marketplace install was walked in the Copilot app on Windows (register the catalog, install the plugin, open an agent canvas). That does not establish an rc.5 Windows/WSL app pass; Mac walkthrough evidence does not qualify Windows/WSL either.
+Historical rc.4 evidence: the marketplace install was walked in the Copilot app on Windows (register the catalog, install the plugin, open an agent canvas). The rc.4-to-rc.5 Mac upgrade was walked except Suggest tests, which returned `suggestions-unavailable`. Its cause remains unexplained; rc.6 adds refusal reasons, not a claimed fix. Suggest tests worked on Windows with the plugin code included in rc.6; that is not a full Windows/WSL upgrade qualification.
 
 Known gaps in this preview:
 - The Copilot CLI marks direct plugin installs (`copilot plugin install kaimahi-agents/kaimahi:plugins/copilot-wsl`) as deprecated; they follow main and still work, but the marketplace install is the supported pair.

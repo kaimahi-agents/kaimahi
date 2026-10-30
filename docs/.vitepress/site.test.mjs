@@ -189,12 +189,12 @@ test('agent-file CI reports retain failure status and content-free summaries', a
     'content-free table',
     'Neither output creates automatic local history'
   ]) assert.ok(app.includes(marker), `CI report contract: ${marker}`)
-  assert.match(app, /rc\.5 binary includes these grouped commands and file-mode exit codes/)
+  assert.match(app, /rc\.6 binary includes these grouped commands and file-mode exit codes/)
   assert.match(app, /rc\.4 can display bounded, read-only fallback text/)
   assert.match(app, /cannot seed a revision-checked Edit in a fresh chat/)
-  assert.match(app, /rc\.5(?:'|&#39;)s open_kmx_canvas text result returns the full revision/)
+  assert.match(app, /rc\.6(?:'|&#39;)s open_kmx_canvas text result returns the full revision/)
   assert.match(app, /new tests live in its \.agent\.test\.md companion/)
-  assert.match(app, /v0\.9\.0-rc\.5\/install\.sh \| sudo sh -s -- --version=v0\.9\.0-rc\.5/)
+  assert.match(app, /v0\.9\.0-rc\.6\/install\.sh \| sudo sh -s -- --version=v0\.9\.0-rc\.6/)
   assert.match(app, /1\s*A completed assertion failed/)
   assert.match(app, /2\s*Could not run or decide/)
   assert.doesNotMatch(app, /release candidates do not contain it/i)

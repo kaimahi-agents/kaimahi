@@ -23,7 +23,7 @@ class PlainPluginTests(unittest.TestCase):
         self.assertFalse((HERE / "bin").exists())
         self.assertEqual(json.loads((HERE / "plugin.json").read_text())["name"], "kmx-agent-builder-path")
         readme = (HERE / "README.md").read_text()
-        self.assertIn("v0.9.0-rc.5 pair includes the paired-file canvas", readme)
+        self.assertIn("v0.9.0-rc.6 pair includes the paired-file canvas", readme)
         self.assertIn("Older rc.4 fallback text is bounded and read-only", readme)
         self.assertIn("Native read-only text is", readme)
         self.assertNotIn("unreleased current-main behavior", readme)

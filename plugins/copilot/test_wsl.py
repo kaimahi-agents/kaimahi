@@ -65,7 +65,7 @@ class WSLPluginTests(unittest.TestCase):
         self.assertIn("/usr/local/bin/kmx", text)
         self.assertIn("copilot plugin marketplace add kaimahi-agents/kaimahi", text)
         self.assertIn("copilot plugin install kmx-agent-builder@kmx-plugins", text)
-        self.assertIn("v0.9.0-rc.5 pair includes the paired-file canvas", text)
+        self.assertIn("v0.9.0-rc.6 pair includes the paired-file canvas", text)
         self.assertIn("Older rc.4 fallback text is bounded and read-only", text)
         self.assertIn("Native read-only text is", text)
         self.assertNotIn("unreleased current-main behavior", text)

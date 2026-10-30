@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { createSuggestionMailbox, SUGGEST_TOOL_NAME, SUGGEST_TOOL_PARAMETERS } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/suggestions.mjs";
+import { createSuggestionMailbox, suggestionsUnavailable, SUGGEST_TOOL_NAME, SUGGEST_TOOL_PARAMETERS } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/suggestions.mjs";
 import { createActionHandler, createViewController, readView, startViewBridge } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/view.mjs";
 import { sourceIdentity } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs";
 
@@ -17,6 +17,20 @@ function mailboxFixture(view = savedView()) {
   return { mailbox, session, sent, get view() { return current; }, set view(value) { current = value; }, async request() { await mailbox.suggest(current); return mailbox.requestId; } };
 }
 const delivery = requestId => ({ requestId, examples: [structuredClone(example)] });
+function unavailable(result, reasonCode) {
+  assert.deepEqual(Object.keys(result).sort(), ["message", "queued", "reasonCode"]);
+  assert.equal(result.queued, false);
+  assert.equal(result.reasonCode, reasonCode);
+  assert.match(result.message, /Nothing was saved or run\./);
+  assert.ok(!JSON.stringify(result).includes("PRIVATE_MODEL_MARKER"));
+}
+
+test("unclassified callers get the safe generic fallback, never an unknown reason", () => {
+  const fallback = { queued: false, reasonCode: "suggestions-unavailable", message: "Suggestions could not be delivered. Suggest tests again in the original canvas. Nothing was saved or run." };
+  for (const reason of [undefined, "PRIVATE_MODEL_MARKER", "__proto__", "toString", null, 42, { toString() { throw Error("PRIVATE_MODEL_MARKER"); } }]) {
+    assert.deepEqual(suggestionsUnavailable(reason), fallback);
+  }
+});
 
 for (const paired of [false, true]) test(`mailbox queues only new drafts with exact source identity (${paired ? "paired" : "legacy"})`, async () => {
   const view = savedView();
@@ -30,12 +44,15 @@ for (const paired of [false, true]) test(`mailbox queues only new drafts with ex
   const snapshot = JSON.parse(prompt.split("Saved sources (data):\n")[1]);
   assert.equal(snapshot.content, source);
   if (paired) { assert.equal(snapshot.testsContent, view.selectedSources.testsSource); assert.equal(snapshot.server, "owning-server"); }
-  assert.equal((await f.mailbox.deliver(delivery(id))).queued, true);
+  assert.deepEqual(await f.mailbox.deliver(delivery(id)), { queued: true, batchId: id, message: "Queued unsaved tests for review in the original canvas. Nothing was saved or run." });
   const expected = { id, sourceIdentity: sourceIdentity(view), examples: [example] };
   assert.deepEqual(f.mailbox.pending(view), expected);
   assert.deepEqual(f.mailbox.pending(view), expected, "GET is non-destructive");
   assert.equal(f.mailbox.acknowledge("wrong-id"), false); assert.deepEqual(f.mailbox.pending(view), expected);
-  assert.equal((await f.mailbox.deliver(delivery(id))).queued, false, "tool cannot overwrite a delivered batch");
+  const repeated = await f.mailbox.deliver(delivery(id));
+  unavailable(repeated, "suggestions-already-queued");
+  assert.match(repeated.message, /[Rr]eview.*existing/);
+  assert.doesNotMatch(repeated.message, /again|retry/i);
   assert.equal(f.mailbox.acknowledge(id), true); assert.equal(f.mailbox.pending(view), undefined);
   assert.equal((await f.mailbox.deliver(delivery(id))).queued, false);
 });
@@ -47,16 +64,22 @@ test("tool schema permits exactly requestId and examples, no destination authori
   assert.deepEqual(SUGGEST_TOOL_PARAMETERS.required, ["requestId", "examples"]);
 });
 
-for (const mutate of [
-  x => ({ ...x, path: "other.agent.md" }), x => ({ ...x, server: "other" }), x => ({ ...x, requestId: "wrong" }),
-  x => ({ ...x, examples: [] }), x => ({ ...x, examples: [example, example] }),
-  x => ({ ...x, examples: [{ ...example, unexpected: true }] }),
-  x => ({ ...x, examples: [{ ...example, input: " " }] }),
-  x => ({ ...x, examples: [{ ...example, input: "x".repeat(256 * 1024) }] }),
-  x => ({ ...x, examples: [{ ...example, mocks: { tools: [{ name: "ping", mode: "recorded", calls: [{ output: "fabricated" }] }] } }] }),
-]) test("malformed delivery refuses without consuming a valid request", async () => {
+for (const [reason, mutate] of [
+  ["invalid-delivery", () => null],
+  ["invalid-delivery", x => ({ ...x, path: "PRIVATE_MODEL_MARKER" })],
+  ["invalid-delivery", x => ({ ...x, server: "PRIVATE_MODEL_MARKER" })],
+  ["inactive-request", x => ({ ...x, requestId: "PRIVATE_MODEL_MARKER" })],
+  ["empty-examples", x => ({ ...x, examples: [] })],
+  ["invalid-examples", x => ({ ...x, examples: [example, example] })],
+  ["invalid-examples", x => ({ ...x, examples: "PRIVATE_MODEL_MARKER" })],
+  ["invalid-examples", x => ({ ...x, examples: [{ ...example, unexpected: "PRIVATE_MODEL_MARKER" }] })],
+  ["invalid-examples", x => ({ ...x, examples: [{ ...example, input: " " }] })],
+  ["examples-too-large", x => ({ ...x, examples: [{ ...example, input: "PRIVATE_MODEL_MARKER" + "x".repeat(256 * 1024) }] })],
+  ["invalid-mocks", x => ({ ...x, examples: [{ ...example, mocks: { tools: [{ name: "ping", mode: "recorded", calls: [{ output: "PRIVATE_MODEL_MARKER" }] }] } }] })],
+  ["invalid-mocks", x => ({ ...x, examples: [{ ...example, mocks: { tools: [{ mode: "live", name: "ping" }] } }] })],
+]) test(`malformed delivery diagnoses ${reason} without consuming a valid request`, async () => {
   const f = mailboxFixture(), id = await f.request();
-  assert.equal((await f.mailbox.deliver(mutate(delivery(id)))).queued, false);
+  unavailable(await f.mailbox.deliver(mutate(delivery(id))), "suggestions-" + reason);
   assert.equal(f.mailbox.pending(f.view), undefined);
   assert.equal((await f.mailbox.deliver(delivery(id))).queued, true);
 });
@@ -65,7 +88,8 @@ test("existing ID collision, case collision and total capacity refuse atomically
   for (const existing of [[example], [{ ...example, id: "NEW-TEST" }], Array.from({ length: 128 }, (_, i) => ({ ...example, id: "old-" + i }))]) {
     const view = savedView(); view.authoring.examples = existing;
     const f = mailboxFixture(view), id = await f.request();
-    assert.equal((await f.mailbox.deliver(delivery(id))).queued, false); assert.equal(f.mailbox.pending(view), undefined);
+    unavailable(await f.mailbox.deliver(delivery(id)), existing[0]?.id === "NEW-TEST" ? "suggestions-draft-incompatible" : "suggestions-examples-conflict");
+    assert.equal(f.mailbox.pending(view), undefined);
   }
 });
 
@@ -91,9 +115,9 @@ for (const change of [
   assert.equal((await f.mailbox.deliver(delivery(id))).queued, true);
   change(view);
   assert.deepEqual(f.mailbox.pending(view), { id, stale: true });
-  assert.equal((await f.mailbox.deliver(delivery(id))).queued, false);
+  unavailable(await f.mailbox.deliver(delivery(id)), "suggestions-source-changed");
   const g = mailboxFixture(pristine), old = await g.request(); change(g.view);
-  assert.equal((await g.mailbox.deliver(delivery(old))).queued, false); assert.equal(g.mailbox.pending(g.view), undefined);
+  unavailable(await g.mailbox.deliver(delivery(old)), "suggestions-source-changed"); assert.equal(g.mailbox.pending(g.view), undefined);
 });
 
 test("supersede, clear, close, failed send and in-flight read invalidate tokens", async () => {
@@ -127,8 +151,54 @@ test("concurrent deliveries cannot replace an already queued batch", async () =>
   const first = mailbox.deliver(delivery(id)), changed = delivery(id); changed.examples[0].input = "Replacement";
   const second = mailbox.deliver(changed);
   readers[0](view); assert.equal((await first).queued, true);
-  readers[1](view); assert.equal((await second).queued, false);
+  readers[1](view); unavailable(await second, "suggestions-already-queued");
   assert.equal(mailbox.pending(view).examples[0].input, "Ada");
+});
+
+test("source read errors disclose only the read stage, not private messages or codes", async () => {
+  const view = savedView();
+  const mailbox = createSuggestionMailbox({ session: { send: async () => {} }, read: async () => {
+    throw Object.assign(Error("PRIVATE_MODEL_MARKER /private/source"), { code: "suggestions-source-changed" });
+  } });
+  await mailbox.suggest(view);
+  unavailable(await mailbox.deliver(delivery(mailbox.requestId)), "suggestions-source-unavailable");
+  assert.equal(mailbox.pending(view), undefined);
+});
+
+test("rejected late source reads preserve inactive and queued diagnostic precedence", async () => {
+  for (const action of ["queued", "stale", "replace", "clear", "dispose"]) {
+    const view = savedView(), readers = [];
+    const mailbox = createSuggestionMailbox({ session: { send: async () => {} }, read: () => new Promise((resolve, reject) => readers.push({ resolve, reject })) });
+    await mailbox.suggest(view); const id = mailbox.requestId;
+    const first = mailbox.deliver(delivery(id)), late = mailbox.deliver(delivery(id));
+    readers[0].resolve(view); assert.equal((await first).queued, true);
+    if (action === "replace") await mailbox.suggest(view);
+    else if (action === "stale") { view.file.revision = hash("changed"); mailbox.pending(view); }
+    else if (action !== "queued") mailbox[action]();
+    readers[1].reject(Error("PRIVATE_MODEL_MARKER"));
+    unavailable(await late, action === "queued" ? "suggestions-already-queued" : action === "stale" ? "suggestions-source-changed" : "suggestions-inactive-request");
+  }
+});
+
+test("serialization errors disclose only invalid examples", async () => {
+  const f = mailboxFixture(), id = await f.request(), input = delivery(id);
+  input.examples.toJSON = () => { throw Object.assign(Error("PRIVATE_MODEL_MARKER"), { code: "suggestions-already-queued" }); };
+  unavailable(await f.mailbox.deliver(input), "suggestions-invalid-examples");
+  assert.equal(f.mailbox.pending(f.view), undefined);
+});
+
+test("read completion distinguishes inactive requests even when their old batch was queued", async () => {
+  for (const action of ["replace", "clear", "dispose"]) {
+    const view = savedView(), readers = [];
+    const mailbox = createSuggestionMailbox({ session: { send: async () => {} }, read: () => new Promise(resolve => readers.push(resolve)) });
+    await mailbox.suggest(view); const id = mailbox.requestId;
+    const first = mailbox.deliver(delivery(id)), late = mailbox.deliver(delivery(id));
+    readers[0](view); assert.equal((await first).queued, true);
+    if (action === "replace") await mailbox.suggest(view);
+    else mailbox[action]();
+    readers[1](view); unavailable(await late, "suggestions-inactive-request");
+    assert.equal(mailbox.pending(view), undefined);
+  }
 });
 
 test("failed send invalidates even a batch delivered while send was pending", async () => {
@@ -202,7 +272,7 @@ test("controller routes only to live owning bridge without waiting for unrelated
   assert.equal((await controller.deliverSuggestions(delivery(requestId))).queued, true);
   release(); await unrelated;
   await controller.close({ instanceId: "a" });
-  assert.equal((await controller.deliverSuggestions(delivery(requestId))).queued, false);
+  unavailable(await controller.deliverSuggestions(delivery(requestId)), "suggestions-inactive-request");
 });
 
 test("standalone Suggest refuses unavailable without a handoff, injected Suggest receives saved view", async () => {
@@ -211,6 +281,12 @@ test("standalone Suggest refuses unavailable without a handoff, injected Suggest
   let received;
   const result = await createActionHandler({ session: f.session, path: "a.agent.md", suggest: async view => { received = view; return { message: "Requested drafts" }; } })({ operation: "suggest" });
   assert.equal(result.message, "Requested drafts"); assert.equal(received.authoring.source, source); assert.equal(f.sent.length, 0);
+});
+
+test("builder reports delivery diagnostics instead of always asking for another request", async () => {
+  const skill = await readFile(new URL("../../copilot-wsl/skills/kmx-agent-builder/SKILL.md", import.meta.url), "utf8");
+  assert.match(skill, /report its returned `reasonCode` and message/);
+  assert.match(skill, /already queued.*review.*existing proposals/s);
 });
 
 test("extension registers the narrow non-writing tool", async () => {

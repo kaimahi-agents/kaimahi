@@ -1,6 +1,6 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "kmx-agent-builder",
-  "version": "0.9.0-rc.5",
+  "version": "0.9.0-rc.6",
   "description": "Create, edit and test agents in any repository with kmx in WSL, through chat, text or canvas."
 }

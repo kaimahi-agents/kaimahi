@@ -2,7 +2,7 @@
 
 The plugin contains skills, canvas assets and MCP configuration. It uses the
 Linux kmx binary in your default WSL distribution; it does not bundle an engine.
-The v0.9.0-rc.5 install below exposes Create/Edit/Run/Test and the revision-checked
+The v0.9.0-rc.6 install below exposes Create/Edit/Run/Test and the revision-checked
 `set_tool_state` folder-settings writer. Older rc.2 binaries expose only the first
 four tools.
 Internal preview children retain only Create/Edit/Run/Test and never gain
@@ -10,10 +10,10 @@ config-write authority.
 
 ## Install
 
-1. In WSL, install the paired v0.9.0-rc.5 prerelease Linux binary at `/usr/local/bin/kmx`:
+1. In WSL, install the paired v0.9.0-rc.6 prerelease Linux binary at `/usr/local/bin/kmx`:
 
    ```sh
-   curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.5/install.sh | sudo sh -s -- --version=v0.9.0-rc.5 --bin-dir=/usr/local/bin
+   curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.6/install.sh | sudo sh -s -- --version=v0.9.0-rc.6 --bin-dir=/usr/local/bin
    ```
 
    The installer downloads the binary and checks its published SHA256 over HTTPS;
@@ -33,7 +33,7 @@ The WSL and native-bundle plugins share the name `kmx-agent-builder`; PATH uses
 `kmx-agent-builder-path`. Install only one variant per host profile.
 For an existing direct install, follow [migration and paired upgrades](../../docs/copilot-app.md#existing-direct-installs-and-upgrades), rather than leaving both registrations active.
 
-**Release boundary:** The v0.9.0-rc.5 pair includes the paired-file canvas and
+**Release boundary:** The v0.9.0-rc.6 pair includes the paired-file canvas and
 structured text workflow below. Older rc.4 fallback text is bounded and read-only;
 it cannot seed a revision-checked Edit in a fresh chat. Native read-only text is
 still not an Edit baseline.
@@ -49,7 +49,7 @@ To open an existing file without a model turn, use
 `/kmx-canvas open /mnt/c/work/release-notes.agent.md`. Keep path spaces literal,
 without surrounding quotes. `/kmx-canvas` or `/kmx-canvas help` shows usage;
 `/agent-view FULL_PATH` shows bounded read-only text. Native `/kmx-canvas open`
-also displays only that bounded fallback. In rc.5, the separate chat
+also displays only that bounded fallback. In rc.6, the separate chat
 tool's text mode returns exact source/revision when the checked resource is
 editable, so a fresh extension-backed chat can continue with revision-checked
 Edit. Native open was checked in the Copilot app with a main build before rc.4
@@ -95,7 +95,7 @@ prompts and inputs to the selected model. On hosts that forward native tool
 progress, test rows update as cases finish. The final full Test result remains
 authoritative. Local model comparison is lost when the canvas is closed and
 reopened. An unconfirmed execution requires reload rather than silently retrying.
-In rc.5, if the host has no canvas renderer, text mode is a normal
+In rc.6, if the host has no canvas renderer, text mode is a normal
 success path. Chat
 reports structured Test rows and keeps a chosen runtime model for that exact file
 within the conversation. It lists newly saved tests as not run, requests answer

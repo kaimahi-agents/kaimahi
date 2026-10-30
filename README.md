@@ -63,17 +63,17 @@ Use a dedicated test environment. See [other install methods, prerequisites and 
 ## Agent files in Copilot
 
 On macOS, use the [plain Copilot plugin](plugins/copilot/README.md#install-on-macos):
-install the rc.5 prerelease darwin binary, register `kmx-plugins`, then install the
+install the rc.6 prerelease darwin binary, register `kmx-plugins`, then install the
 plain Mac plugin. macOS CI checks installation and
 the offline fake-model loop, not a Copilot model or the desktop app.
 
 ### Windows through WSL
 
 For the Markdown-agent inner loop without a Kubernetes cluster, use the
-[WSL Copilot plugin](plugins/copilot-wsl/README.md). Install the paired v0.9.0-rc.5 prerelease in WSL:
+[WSL Copilot plugin](plugins/copilot-wsl/README.md). Install the paired v0.9.0-rc.6 prerelease in WSL:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.5/install.sh | sudo sh -s -- --version=v0.9.0-rc.5 --bin-dir=/usr/local/bin
+curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.6/install.sh | sudo sh -s -- --version=v0.9.0-rc.6 --bin-dir=/usr/local/bin
 ```
 
 Then, in a Windows terminal:

@@ -177,9 +177,9 @@ WSL variant from the SHA-pinned catalog.
 On macOS, use the [plain Mac plugin](../plugins/copilot/README.md#install-on-macos),
 which launches `/usr/local/bin/kmx` directly rather than relying on Copilot's PATH,
 with the release's darwin binary. The tap is not updated for prereleases.
-The catalog pins both plugin variants to the published v0.9.0-rc.5 commit
-(`78050cbc`) and matching version, which include the paired prompt/tests canvas
-loop and revision-safe text mode. Install the matching binary before updating the
+The catalog pins both plugin variants to the matching published release commit
+and version. The current pair includes the paired prompt/tests canvas loop and
+revision-safe text mode. Install the matching binary before updating the
 catalog and plugin. A Mac walk does not qualify Windows/WSL.
 The separate macOS plugin CI checks install and the offline fake-model loop;
 it does not exercise a Copilot model or the desktop app.

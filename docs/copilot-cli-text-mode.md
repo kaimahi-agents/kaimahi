@@ -1,6 +1,6 @@
 # Copilot CLI text mode
 
-**Status:** Included in the v0.9.0-rc.5 paired release for
+**Status:** Included in the v0.9.0-rc.6 paired release for
 [#750](https://github.com/kaimahi-agents/kaimahi/issues/750). Older rc.4 fallback
 returns bounded display text only.
 
