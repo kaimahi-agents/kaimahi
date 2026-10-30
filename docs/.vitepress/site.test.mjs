@@ -194,6 +194,9 @@ test('agent-file CI reports retain failure status and content-free summaries', a
   assert.match(app, /cannot seed a revision-checked Edit in a fresh chat/)
   assert.match(app, /rc\.6(?:'|&#39;)s open_kmx_canvas text result returns the full revision/)
   assert.match(app, /new tests live in its \.agent\.test\.md companion/)
+  for (const marker of ['kmx://agent-sources/{path}', 'selectedSources', 'sourceVersion', 'expectedSourceVersion']) {
+    assert.ok(app.includes(marker), `paired text Edit contract: ${marker}`)
+  }
   assert.match(app, /v0\.9\.0-rc\.6\/install\.sh \| sudo sh -s -- --version=v0\.9\.0-rc\.6/)
   assert.match(app, /1\s*A completed assertion failed/)
   assert.match(app, /2\s*Could not run or decide/)
@@ -212,6 +215,9 @@ test('agent-file CI reports retain failure status and content-free summaries', a
   assert.match(appHtml, /href="\.\/local-preview(?:\.html)?#copilot-sign-in-in-ci"/)
 
   const reference = plainText(await readFile(path.join(dist, 'docs/kmx.html'), 'utf8')).replace(/\s+/g, ' ')
+  for (const marker of ['kmx://agent-sources/{path}', 'selectedSources', 'sourceVersion', 'expectedSourceVersion']) {
+    assert.ok(reference.includes(marker), `paired reference Edit contract: ${marker}`)
+  }
   for (const marker of [
     'durationMs', 'effective judge identity', 'Enabled/Disabled settings',
     'live/recorded/unavailable source', 'GITHUB_STEP_SUMMARY',

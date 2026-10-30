@@ -718,8 +718,12 @@ and a revision-bound chat text fallback over this resource. The Mac plugin start
 `/usr/local/bin/kmx mcp` directly rather than via PATH. Native
 `/kmx-canvas open` and `/agent-view PATH` display bounded read-only text only;
 the model-facing `open_kmx_canvas` tool returns the full revision and exact
-source only when the resource supplied a complete authoring snapshot. Its
-bounded display is never an Edit baseline. The v0.9.0-rc.6 marketplace pair
+source only when the resource supplied a complete authoring snapshot. For paired
+files, the opener can read `kmx://agent-sources/{path}` when the initial resource
+indicates paired data. Paired Edit uses the checked `selectedSources` context and
+its `sourceVersion` as `expectedSourceVersion` for schema version 3; the agent's
+file revision alone is not that edit token. Its bounded display is never an Edit
+baseline. The v0.9.0-rc.6 marketplace pair
 includes the paired-file canvas and this revision-bound text workflow; older rc.4
 returns only bounded display text. Canvas and chat Edit/Test/Run use existing same-session MCP tools; explicit
 **Suggest tests** starts chat with the exact saved source, path and revision,

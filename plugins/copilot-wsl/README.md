@@ -89,7 +89,8 @@ and offline.
 Edit prompts and tests in the canvas. Enter saves and tests; Shift+Enter inserts
 one line break. Long prompts scroll inside their box, with the save/run footer
 outside the scroll area. New agents keep the prompt in `.agent.md` and tests in
-`.agent.test.md`; `.github/agents/` pairs with sibling `.github/agent-tests/`.
+`.agent.test.md`; agents directly inside `.github/agents/` use sibling
+`.github/agent-tests/`.
 Existing inline tests remain supported. Saved files remain ordinary Markdown. Tests send
 prompts and inputs to the selected model. On hosts that forward native tool
 progress, test rows update as cases finish. The final full Test result remains

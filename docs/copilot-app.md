@@ -174,10 +174,14 @@ passes text to the model rather than exercising native command dispatch. In a
 headless environment, the CLI can acknowledge a canvas and offer a browser URL
 without displaying a native window; that is not proof of app rendering.
 
-Chat Edit and add-tests requests need complete source plus its current revision.
-In rc.6, the model-facing `open_kmx_canvas` text result returns both only
-from the checked `kmx://agent/{path}` authoring snapshot. Its formatted `text` is
-bounded display and never an Edit baseline. Native `/kmx-canvas open` displays
+Chat Edit and add-tests requests need complete source plus its checked context.
+In rc.6, the model-facing `open_kmx_canvas` text result returns a complete
+snapshot only when the resource supplies one. Legacy snapshots come from
+`kmx://agent/{path}`. For paired files, the opener can read
+`kmx://agent-sources/{path}` after the initial resource indicates paired data.
+Paired Edit uses the checked `selectedSources` context and its `sourceVersion` as
+`expectedSourceVersion` for schema version 3, not the agent's file revision as the
+edit token. Its formatted `text` is bounded display and never an Edit baseline. Native `/kmx-canvas open` displays
 that bounded projection only. The rc.4 pair also exposes bounded text only, so a
 fresh chat cannot begin a revision-checked Edit from its fallback. If the full
 snapshot is unavailable, the rc.6 text view is read-only. **Suggest
