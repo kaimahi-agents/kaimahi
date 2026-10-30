@@ -15,6 +15,18 @@ var renameNoReplace = func(dir int, from, to string) error {
 var linkPublication = (*os.Root).Link
 
 func renameExclusive(root *os.Root, from, to string) error {
+	return renameExclusiveObserved(root, from, to, nil)
+}
+
+// Keep the published object's identity, not a later observation of its name.
+func renameExclusiveObserved(root *os.Root, from, to string, published *os.FileInfo) error {
+	if published != nil {
+		info, err := root.Lstat(from)
+		if err != nil {
+			return err
+		}
+		*published = info
+	}
 	dir, err := root.Open(".")
 	if err != nil {
 		return err
@@ -33,14 +45,14 @@ func renameExclusive(root *os.Root, from, to string) error {
 	if !publicationUnsupported(err) && !errors.Is(err, unix.EPERM) {
 		return err
 	}
-	return copyExclusive(root, from, to)
+	return copyExclusive(root, from, to, published)
 }
 
 func publicationUnsupported(err error) bool {
 	return errors.Is(err, unix.EINVAL) || errors.Is(err, unix.ENOSYS) || errors.Is(err, unix.ENOTSUP)
 }
 
-func copyExclusive(root *os.Root, from, to string) error {
+func copyExclusive(root *os.Root, from, to string, published *os.FileInfo) error {
 	source, err := root.Open(from)
 	if err != nil {
 		return err
@@ -58,6 +70,9 @@ func copyExclusive(root *os.Root, from, to string) error {
 		return err
 	}
 	opened, statErr := target.Stat()
+	if published != nil {
+		*published = opened
+	}
 	_, copyErr := io.Copy(target, source)
 	syncErr := target.Sync()
 	closeErr := target.Close()

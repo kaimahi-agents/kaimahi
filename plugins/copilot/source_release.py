@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Check source-plugin versions and derive PATH provider references from WSL sources.
+"""Check source-plugin versions and derive PATH variant identities from WSL sources.
 
 Run from the repository root. Checks never write; --write explicitly regenerates
 three identity-bearing files and optionally stamps the paired release version.
+The mocked-SDK Node contracts remain the semantic provider-registration check.
 """
 from __future__ import annotations
 
@@ -18,6 +19,12 @@ IDENTITIES = {"copilot-wsl": "kmx-agent-builder", "copilot": "kmx-agent-builder-
 WORDING = "plugins/copilot-wsl/com.github.copilot/extensions/agent-view/failure-wording"
 PROVIDER = b"plugin:kmx-agent-builder:agent-view"
 PATH_PROVIDER = b"plugin:kmx-agent-builder-path:agent-view"
+SKILL_ENTRY = b"/kmx-agent-builder:"
+PATH_SKILL_ENTRY = b"/kmx-agent-builder-path:"
+SKILL_NAMES = {
+    "skills/kmx/SKILL.md": b"kmx",
+    "skills/kmx-agent-builder/SKILL.md": b"kmx-agent-builder",
+}
 NUMBER = r"(?:0|[1-9][0-9]*)"
 PRERELEASE = r"(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)"
 SEMVER = re.compile(rf"{NUMBER}\.{NUMBER}\.{NUMBER}(?:-{PRERELEASE}(?:\.{PRERELEASE})*)?")
@@ -50,13 +57,92 @@ def versions(values: dict, version: str | None) -> None:
         raise ValueError(f"source plugin versions must match {version} exactly (including RC suffix)")
 
 
+def skill_body(relative: str, canonical: bytes) -> bytes:
+    normalized = canonical.replace(b"\r\n", b"\n")
+    frontmatter = re.match(rb"\A---\n(.*?)\n---\n", normalized, re.DOTALL)
+    if frontmatter is None:
+        raise ValueError(f"{relative}: canonical skill frontmatter is invalid")
+    fields = frontmatter.group(1).split(b"\n")
+    if (len(fields) != 2 or fields[0] != b"name: " + SKILL_NAMES[relative]
+            or not fields[1].startswith(b"description: ") or not fields[1][len(b"description: "):].strip()):
+        raise ValueError(f"{relative}: canonical skill name is invalid")
+    return re.sub(rb"<!--.*?-->", b"", normalized[frontmatter.end():], flags=re.DOTALL)
+
+
+def markdown_prose(source: bytes) -> bytes:
+    lines, output, fence = source.splitlines(keepends=True), [], None
+    for line in lines:
+        if fence is None and (line.startswith(b"    ") or line.startswith(b"\t")):
+            output.append(b"\n")
+            continue
+        marker = re.match(rb"^[ \t]{0,3}(`{3,}|~{3,})", line)
+        if fence is None and marker:
+            fence = (marker.group(1)[:1], len(marker.group(1)))
+            output.append(b"\n")
+            continue
+        if fence is not None:
+            closing = re.match(rb"^[ \t]{0,3}([`~]+)[ \t]*(?:\r?\n)?$", line)
+            if closing and closing.group(1)[:1] == fence[0] and len(closing.group(1)) >= fence[1]:
+                fence = None
+            output.append(b"\n")
+            continue
+        output.append(line)
+    return b"".join(output)
+
+
+def validate_canonical(relative: str, canonical: bytes) -> None:
+    if PATH_PROVIDER in canonical:
+        raise ValueError(f"{relative}: canonical provider identity is missing or mixed")
+    if PATH_SKILL_ENTRY in canonical:
+        raise ValueError(f"{relative}: canonical skill entry identity is missing or mixed")
+    if relative == "skills/kmx/SKILL.md":
+        body = skill_body(relative, canonical)
+        prose = markdown_prose(body)
+        blocks = re.findall(rb"(?ms)^```json[ \t]*\n(.*?)^```[ \t]*$", body)
+        try:
+            canvas = json.loads(blocks[0]) if len(blocks) == 1 else None
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            canvas = None
+        if canvas is None or canvas.get("extensionId") != PROVIDER.decode():
+            raise ValueError(f"{relative}: canonical provider identity is missing or mixed")
+        entry = b"`Use /kmx-agent-builder:kmx open FULL_PATH, or ask: Open the kmx agent for FULL_PATH.`"
+        lines = [line.strip() for line in prose.splitlines()]
+        if lines.count(entry) != 1 or prose.count(SKILL_ENTRY) != 1:
+            raise ValueError(f"{relative}: canonical skill entry identity is missing or mixed")
+        return
+    if relative == "skills/kmx-agent-builder/SKILL.md":
+        body = markdown_prose(skill_body(relative, canonical))
+        provider = b"Use provider `" + PROVIDER + b"` and canvas `kmx-agent-view`."
+        lines = [line.strip() for line in body.splitlines()]
+        if lines.count(provider) != 1 or body.count(PROVIDER) != 1 or SKILL_ENTRY in body:
+            raise ValueError(f"{relative}: canonical provider identity is missing or mixed")
+        return
+    if b"`" in canonical:
+        raise ValueError(f"{relative}: canonical provider registration uses unsupported JavaScript syntax")
+    active = re.sub(rb"/\*.*?\*/", b"", canonical, flags=re.DOTALL)
+    active = re.sub(rb"(?m)^[ \t]*//[^\r\n]*(?:\r?\n|$)", b"", active)
+    lines = [line.strip() for line in active.splitlines()]
+    handlers = (
+        b'handler: createOpenHandler({ getSession: () => session, extensionId: "' + PROVIDER + b'" }),',
+        b'handler: createOpenCommand({ getSession: () => session, extensionId: "' + PROVIDER + b'" }),',
+    )
+    import_line = b'import { OPEN_TOOL_NAME, OPEN_TOOL_PARAMETERS, createOpenHandler, createOpenCommand, readOpenView } from "./open.mjs";'
+    provider_ids = re.findall(rb"plugin:[A-Za-z0-9._-]+:agent-view", active)
+    identifiers = (active.count(b"createOpenHandler"), active.count(b"createOpenCommand"))
+    if (provider_ids != [PROVIDER, PROVIDER] or identifiers != (2, 2)
+            or lines.count(import_line) != 1 or any(lines.count(handler) != 1 for handler in handlers)):
+        raise ValueError(f"{relative}: canonical provider identity is missing or mixed")
+
+
 def derived(root: Path) -> dict:
     files = {}
     for relative in DERIVED:
         canonical = (root / "plugins/copilot-wsl" / relative).read_bytes()
-        if PROVIDER not in canonical:
-            raise ValueError(f"{relative}: canonical provider reference missing")
-        files[root / "plugins/copilot" / relative] = canonical.replace(PROVIDER, PATH_PROVIDER)
+        validate_canonical(relative, canonical)
+        content = canonical.replace(PROVIDER, PATH_PROVIDER)
+        if relative.startswith("skills/"):
+            content = content.replace(SKILL_ENTRY, PATH_SKILL_ENTRY)
+        files[root / "plugins/copilot" / relative] = content
     return files
 
 

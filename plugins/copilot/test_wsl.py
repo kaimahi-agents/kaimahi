@@ -10,7 +10,7 @@ ASSETS = {VIEW + name for name in (
     "extension.mjs", "view.mjs", "open.mjs", "index.html", "app.js", "style.css", "authoring.mjs", "editor.mjs",
     "draft-controller.mjs", "action-controller.mjs", "observation-controller.mjs", "host-relay.mjs", "tool-catalog.mjs", "tools-view.mjs", "test-tools.mjs",
     "dom.mjs", "results.mjs", "check-controls.mjs", "instruction-text.mjs",
-    "run-views.mjs", "view-resource.mjs", "failure-wording.mjs")}
+    "run-views.mjs", "view-resource.mjs", "paired-actions.mjs", "suggestions.mjs", "failure-wording.mjs")}
 SKILLS = {"skills/kmx/SKILL.md", "skills/kmx-agent-builder/SKILL.md"}
 
 
@@ -65,6 +65,10 @@ class WSLPluginTests(unittest.TestCase):
         self.assertIn("/usr/local/bin/kmx", text)
         self.assertIn("copilot plugin marketplace add kaimahi-agents/kaimahi", text)
         self.assertIn("copilot plugin install kmx-agent-builder@kmx-plugins", text)
+        self.assertIn("v0.9.0-rc.4 marketplace plugin can display bounded", text)
+        self.assertIn("unreleased current-main behavior", text)
+        self.assertIn("Native `/kmx-canvas open`", text)
+        self.assertIn("separate chat", text)
         self.assertNotIn("model login", text)
         self.assertNotIn("__SELECTED_ROOT__", text)
         self.assertNotIn("try-it.sh", text)

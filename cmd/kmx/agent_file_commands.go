@@ -110,6 +110,55 @@ func fileFlagsWithoutFile(cmd *cobra.Command) error {
 }
 
 func runFileCommand(cmd *cobra.Command, state *commandState, file string, f fileCommandOptions, prompt, promptFile string) error {
+	var summary io.WriteCloser
+	result, err := previewFileCommand(cmd, state, file, f, prompt, promptFile, func() error {
+		if !f.GitHubSummary {
+			return nil
+		}
+		var err error
+		summary, err = state.deps.openGitHubSummary()
+		return fileUsageError(err)
+	})
+	if result.SchemaVersion == 0 {
+		if summary != nil {
+			_ = summary.Close()
+		}
+		return err
+	}
+	var outputErr error
+	// Text auth failures have one actionable stderr error, not a second report.
+	if f.Output == "json" || !fileSignInFailure(result.ReasonCode) {
+		if cmd.Name() == "run" && f.Output == "text" {
+			if result.State == "complete" {
+				outputErr = app.WriteFileRunAnswers(cmd.OutOrStdout(), result)
+			}
+			if outputErr == nil {
+				outputErr = app.WriteFilePreview(cmd.ErrOrStderr(), result, "text")
+			}
+		} else {
+			outputErr = app.WriteFilePreview(cmd.OutOrStdout(), result, f.Output)
+		}
+	}
+	if outputErr != nil {
+		if summary != nil {
+			_ = summary.Close()
+		}
+		return fmt.Errorf("cannot write local preview output")
+	}
+	var summaryErr, closeErr error
+	if summary != nil {
+		summaryErr = app.WriteFilePreviewGitHubSummary(summary, result)
+		closeErr = summary.Close()
+	}
+	if summaryErr != nil || closeErr != nil {
+		return fmt.Errorf("cannot write GitHub Actions summary")
+	}
+	return err
+}
+
+// previewFileCommand preserves one checked pair and returns the shared safe result.
+// beforeRun admits a presentation sink after intake but before execution effects.
+func previewFileCommand(cmd *cobra.Command, state *commandState, file string, f fileCommandOptions, prompt, promptFile string, beforeRun func() error) (app.FilePreviewResult, error) {
 	opt := app.FilePreviewOptions{File: file, Operation: cmd.Name(), CaseID: f.CaseID,
 		Model: f.Model, DefaultCopilot: true, AdHocOnly: f.PositionalInput && f.CaseID == "", ShowFailedContent: !f.NoContent,
 		SkipAssertions:        cmd.Name() == "run",
@@ -128,7 +177,7 @@ func runFileCommand(cmd *cobra.Command, state *commandState, file string, f file
 	var pairErr error
 	if state.deps.goos == "windows" {
 		if pair == nil || !windowsPackageFreeFakeAgent(pair.Agent) || f.Provider != "" || f.Endpoint != "" || f.ToolBindings != "" || len(f.MCPServers) > 0 || f.NoMCPServers || f.GitHubSummary || promptFile != "" {
-			return errWindowsOperationUnsupported
+			return app.FilePreviewResult{}, errWindowsOperationUnsupported
 		}
 	} else {
 		pair, pairErr = agentfile.LoadPair(file, f.TestsFile)
@@ -151,7 +200,7 @@ func runFileCommand(cmd *cobra.Command, state *commandState, file string, f file
 		}
 	}
 	if state.deps.goos == "windows" && opt.ValidateSource(cmd.Context()) != nil {
-		return errWindowsOperationUnsupported
+		return app.FilePreviewResult{}, errWindowsOperationUnsupported
 	}
 	if f.Verbose {
 		opt.Progress = func(message string) error {
@@ -171,31 +220,28 @@ func runFileCommand(cmd *cobra.Command, state *commandState, file string, f file
 		if promptFile != "-" {
 			info, err := os.Stat(promptFile)
 			if err != nil || !info.Mode().IsRegular() || info.Size() > agentfile.MaxInputBytes {
-				return fileUsageError(fmt.Errorf("prompt file must be a readable regular file of at most 16 KiB"))
+				return app.FilePreviewResult{}, fileUsageError(fmt.Errorf("prompt file must be a readable regular file of at most 16 KiB"))
 			}
 			input, err := os.Open(promptFile)
 			if err != nil {
-				return fileUsageError(fmt.Errorf("cannot read prompt file"))
+				return app.FilePreviewResult{}, fileUsageError(fmt.Errorf("cannot read prompt file"))
 			}
 			defer input.Close()
 			reader = input
 		}
 		if reader == nil {
-			return fileUsageError(fmt.Errorf("prompt stdin is unavailable"))
+			return app.FilePreviewResult{}, fileUsageError(fmt.Errorf("prompt stdin is unavailable"))
 		}
 		b, err := io.ReadAll(io.LimitReader(reader, agentfile.MaxInputBytes+1))
 		if err != nil || len(b) > agentfile.MaxInputBytes {
-			return fileUsageError(fmt.Errorf("prompt input must be readable and at most 16 KiB"))
+			return app.FilePreviewResult{}, fileUsageError(fmt.Errorf("prompt input must be readable and at most 16 KiB"))
 		}
 		input := string(b)
 		opt.Input = &input
 	}
-	var summary io.WriteCloser
-	if f.GitHubSummary {
-		var err error
-		summary, err = state.deps.openGitHubSummary()
-		if err != nil {
-			return fileUsageError(err)
+	if beforeRun != nil {
+		if err := beforeRun(); err != nil {
+			return app.FilePreviewResult{}, err
 		}
 	}
 	// Intake precedes signal interception: blocking stdin cannot observe cancellation.
@@ -228,42 +274,14 @@ func runFileCommand(cmd *cobra.Command, state *commandState, file string, f file
 	if f.Verbose {
 		if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] Total elapsed=%s\n",
 			time.Since(start).Round(time.Millisecond)); writeErr != nil {
-			return fmt.Errorf("cannot write local preview diagnostics")
+			return app.FilePreviewResult{}, fmt.Errorf("cannot write local preview diagnostics")
 		}
 	}
 	err = fileCommandResultError(result, err)
 	if err != nil && fileSignInFailure(result.ReasonCode) {
 		result.Reason = err.Error()
 	}
-	var outputErr error
-	// Text auth failures have one actionable stderr error, not a second report.
-	if f.Output == "json" || !fileSignInFailure(result.ReasonCode) {
-		if cmd.Name() == "run" && f.Output == "text" {
-			if result.State == "complete" {
-				outputErr = app.WriteFileRunAnswers(cmd.OutOrStdout(), result)
-			}
-			if outputErr == nil {
-				outputErr = app.WriteFilePreview(cmd.ErrOrStderr(), result, "text")
-			}
-		} else {
-			outputErr = app.WriteFilePreview(cmd.OutOrStdout(), result, f.Output)
-		}
-	}
-	if outputErr != nil {
-		if summary != nil {
-			_ = summary.Close()
-		}
-		return fmt.Errorf("cannot write local preview output")
-	}
-	var summaryErr, closeErr error
-	if summary != nil {
-		summaryErr = app.WriteFilePreviewGitHubSummary(summary, result)
-		closeErr = summary.Close()
-	}
-	if summaryErr != nil || closeErr != nil {
-		return fmt.Errorf("cannot write GitHub Actions summary")
-	}
-	return err
+	return result, err
 }
 
 // Keep CLI status choices out of the shared App/MCP result contract.

@@ -18,6 +18,15 @@ func WriteFilePreview(w io.Writer, r FilePreviewResult, format string) error {
 	if format != "text" {
 		return &FilePreviewError{code: "invalid_options", exit: 1}
 	}
+	return writeFilePreviewText(w, r, true)
+}
+
+// WriteFilePreviewDetails shares file text details without a standalone report heading.
+func WriteFilePreviewDetails(w io.Writer, r FilePreviewResult) error {
+	return writeFilePreviewText(w, r, false)
+}
+
+func writeFilePreviewText(w io.Writer, r FilePreviewResult, standalone bool) error {
 	var b strings.Builder
 	if r.Runner != "" {
 		fmt.Fprintln(&b, r.Runner)
@@ -26,7 +35,10 @@ func WriteFilePreview(w io.Writer, r FilePreviewResult, format string) error {
 	if r.Selection.Scope == "subset" {
 		scope = "partial"
 	}
-	fmt.Fprintf(&b, "kmx local preview of this charter (%s): %s\nrevision: %s\nmodel: %s/%s\n%s %s: %s\n", scope, r.File.Path, r.File.Revision, r.ModelRoute.Provider, r.ModelRoute.Model, r.State, r.Verdict, r.Reason)
+	if standalone {
+		fmt.Fprintf(&b, "kmx local preview of this charter (%s): %s\n", scope, r.File.Path)
+	}
+	fmt.Fprintf(&b, "revision: %s\nmodel: %s/%s\n%s %s: %s\n", r.File.Revision, r.ModelRoute.Provider, r.ModelRoute.Model, r.State, r.Verdict, r.Reason)
 	if r.Tests != nil {
 		fmt.Fprintf(&b, "tests: %s (%s)\ntests revision: %s\nsnapshot revision: %s\n", r.Tests.Path, r.Tests.State, r.Tests.Revision, r.SnapshotRevision)
 	}

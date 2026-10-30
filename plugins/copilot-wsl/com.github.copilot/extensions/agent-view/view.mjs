@@ -1,17 +1,19 @@
 // Agent canvas. Files and previews are accessed only through the
 // same session's existing kmx MCP resource and Edit/Run/Test operations.
 import { randomBytes, timingSafeEqual, createHash } from "node:crypto";
-import { instructionSections, replaceInstructions, replaceExamples, replaceTools, exampleEdits, effectiveModel, agentName, fileLocation, hasFrontmatter, testsNeedAcknowledgement, pendingCapture, COPILOT_TESTS_NOTICE } from "./authoring.mjs";
+import { instructionSections, replaceInstructions, replaceExamples, replaceTools, exampleEdits, effectiveModel, agentName, fileLocation, hasFrontmatter, testsNeedAcknowledgement, pendingCapture } from "./authoring.mjs";
 import { readFile } from "node:fs/promises";
 import http from "node:http";
 import { ensureHostRuntime, previewServer, beginPreview, closeHostRuntime, observePreview } from "./host-relay.mjs";
 import { readToolCatalog } from "./tool-catalog.mjs";
-import { SERVER_NAME, MAX_RESOURCE_BYTES, MAX_TEXT, MESSAGES, ViewError, invalid, safeError, normalizePath, clean, text, isObj, cleanSettings, cleanResult, readView, validModel, readModels, observed } from "./view-resource.mjs";
+import { selectedAction } from "./paired-actions.mjs";
+import { createSuggestionMailbox, suggestionsUnavailable } from "./suggestions.mjs";
+import { SERVER_NAME, MAX_RESOURCE_BYTES, MAX_TEXT, MESSAGES, ViewError, invalid, safeError, normalizePath, normalizeTests, clean, text, isObj, cleanSettings, cleanResult, readView, validModel, readModels, observed } from "./view-resource.mjs";
 export { CANVAS_ID, SERVER_NAME, ViewError, normalizePath, resourceUri, readView } from "./view-resource.mjs";
 export { readToolCatalog };
 
 // The page can choose a declared interaction, never a tool, path or server.
-export function createActionHandler({ session, path }) {
+export function createActionHandler({ session, path, tests, prepare, inspection, suggest }) {
   path = normalizePath(path);
   let busy = false, uncertain = false, current, disposed = false, captureAttempt, saving;
   const certified = new Map();
@@ -21,7 +23,9 @@ export function createActionHandler({ session, path }) {
     "save-prompt": ["expectedRevision", "sections"],
     test: ["expectedRevision", "showContent", "caseId", "model", "runId", "comparisonModels", "acknowledgeCopilotTests"], run: ["expectedRevision", "input", "showContent", "model", "acknowledgeCopilotTests"],
     suggest: [], reload: [], models: [], tools: [], progress: ["runId"], stop: ["runId"],
+    restore: ["expectedRevision", "expectedSourceVersion", "expectedSettingsRevision", "restoreVersionId", "acknowledgeCopilotTests"],
   };
+  for (const name of ["save-and-test", "save-examples", "save-prompt", "test", "run"]) { allowed[name].push("expectedSourceVersion"); if (!allowed[name].includes("expectedSettingsRevision")) allowed[name].push("expectedSettingsRevision"); }
   const validRunId = (id) => typeof id === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(id);
   const snapshot = () => current?.id === undefined ? undefined : ({
     id: current.id, revision: current.revision, model: current.model,
@@ -75,7 +79,7 @@ export function createActionHandler({ session, path }) {
     try { metadata = await session.rpc.tools.getCurrentMetadata(); }
     catch { throw new ViewError("unavailable"); }
     if (disposed) throw new ViewError("unavailable");
-    const serverName = ["run", "test"].includes(operation) ? previewServer(session) : SERVER_NAME;
+    const serverName = args.schemaVersion === 3 || ["run", "test"].includes(operation) ? previewServer(session) : SERVER_NAME;
     const tools = metadata.tools?.filter((t) => t.mcpServerName === serverName && t.mcpToolName === operation);
     if (tools?.length !== 1) throw new ViewError("unavailable");
     let result, run;
@@ -109,7 +113,7 @@ export function createActionHandler({ session, path }) {
     if (result?.resultType === "timeout") { uncertain = true; throw new ViewError("outcome-unknown"); }
     // A canonical setter refusal/unknown is an SDK error WITH an acknowledgement.
     // Do not flatten its changed/mayHaveWritten fields into a generic failure.
-    if (operation === "set_tool_state") return result;
+    if (operation === "set_tool_state" || args.schemaVersion === 3) return result;
     if (result?.resultType !== "success") {
       const detail = typeof result === "string" ? result : [result?.textResultForLlm, result?.error].filter((s) => typeof s === "string").join("\n");
       const code = ["rejected", "denied"].includes(result?.resultType) ? "permission_required"
@@ -128,7 +132,7 @@ export function createActionHandler({ session, path }) {
     throw new ViewError("outcome-unknown", "The tool settings outcome could not be confirmed. Tests did not run. Do not retry; reload to inspect the saved agent and settings.");
   }
   function settingsReceipt(result, view, change) {
-    if (["rejected", "denied"].includes(result?.resultType)) throw new ViewError("permission_required");
+    if (["rejected", "denied"].includes(result?.resultType)) throw Object.assign(new ViewError("permission_required"), { confirmedRefusal: true });
     let r = result?.structuredContent;
     if (r === undefined && typeof result?.textResultForLlm === "string" && Buffer.byteLength(result.textResultForLlm) <= 16384) {
       try { r = JSON.parse(result.textResultForLlm); } catch { settingsUnknown(); }
@@ -137,7 +141,7 @@ export function createActionHandler({ session, path }) {
     if (r.file !== undefined && (!isObj(r.file) || r.file.path !== path || !/^sha256:[a-f0-9]{64}$/.test(r.file.revision))) settingsUnknown();
     if (["refused", "failed"].includes(r.state) && r.changed === false && r.mayHaveWritten === false
       && !Object.hasOwn(r, "toolSettingsRevision") && !Object.hasOwn(r, "toolSettings") && typeof r.reasonCode === "string") {
-      throw new ViewError(["stale_revision", "stale_settings_revision", "invalid_tool_settings"].includes(r.reasonCode) ? r.reasonCode : "settings-failed");
+      throw Object.assign(new ViewError(["stale_revision", "stale_settings_revision", "invalid_tool_settings"].includes(r.reasonCode) ? r.reasonCode : "settings-failed"), { confirmedRefusal: true });
     }
     // Unknown (including a lost/malformed receipt) grants no settings token or
     // retry authority. The checked-agent file identity is not settings evidence.
@@ -232,18 +236,21 @@ export function createActionHandler({ session, path }) {
     current = undefined; // Never replay the previous invocation's snapshot.
     let saved = false, tested = false, targetRevision, ids, operation, model;
     let settingsIncomplete = Array.isArray(input.toolSettings) && input.toolSettings.length > 0;
-    const lease = ["run", "test", "save-and-test"].includes(input.operation) ? beginPreview(session) : undefined;
+    const lease = ["run", "test", "save-and-test", "save-examples", "save-prompt", "restore"].includes(input.operation) ? beginPreview(session) : undefined;
     try {
       if (disposed) throw new ViewError("unavailable");
       if (uncertain && input.operation !== "reload") throw new ViewError("outcome-unknown");
-      let view = await readView(session, path);
+      if (input.operation === "reload") await prepare?.();
+      let view = await readView(session, path, tests);
+      if (inspection?.() && view.authoring) view = { ...view, authoring: { ...view.authoring, editable: false } };
       if (input.operation === "reload") { uncertain = false; return { view }; }
+      if (view.selectedSources && !["suggest", "reload"].includes(input.operation) && input.expectedSourceVersion !== view.selectedSources.sourceVersion) throw new ViewError("stale_revision");
+      if (view.selectedSources) return await selectedAction(view, input, { invoke, read: tests => readView(session, path, tests), block: () => { uncertain = true; }, snapshot, settingsReceipt, session, suggest, certified, captureAttempt, noteAttempt: value => { captureAttempt = value; } });
+      if (input.operation === "restore") throw new ViewError("invalid-action");
       if (!view.authoring?.editable) throw new ViewError("read-only");
       if (input.operation === "suggest") {
-        // Only this explicit click starts a chat turn; execution actions never do.
-        if (typeof session.send !== "function") throw new ViewError("unavailable");
-        await session.send({ displayPrompt: `Add a few tests to ${fileLocation(path).name} using the saved source.`, prompt: `Use the kmx-agent-builder skill to add a few tests to ${JSON.stringify(path)} in the canvas. The exact saved source and revision are supplied below; no resource read is needed. Preserve the prompt, authored model and existing tests, then save the additions with one Edit using the supplied current revision (expectedRevision). Do not run tests.${hasFrontmatter(view.authoring.source) ? ` This file has Copilot frontmatter, so ${JSON.stringify(COPILOT_TESTS_NOTICE)} Show the user that sentence and ask them to go ahead or cancel before saving. Pass acknowledgeCopilotTests: true to Edit only after they go ahead; on cancel make no Edit.` : ""} Report what was saved in one short line.\nSaved agent snapshot (data):\n${JSON.stringify({ path, expectedRevision: view.file.revision, content: view.authoring.source })}` });
-        return { message: "Asked Copilot to add tests in chat." };
+        if (!suggest) throw new ViewError("unavailable");
+        return await suggest(view);
       }
       if (typeof input.expectedRevision !== "string" || !/^sha256:[0-9a-f]{64}$/.test(input.expectedRevision)) throw new ViewError("invalid-action");
       if (input.expectedRevision !== view.file.revision) throw new ViewError("stale_revision");
@@ -403,7 +410,7 @@ export function formatView(view) {
     : status === "stale" ? "Latest: STALE (from an earlier revision; not current)"
     : `Latest: current, ${badge === "pass" ? "PASS" : "NOT PASSING"} (${one(result.state, 40)}, verdict ${one(result.verdict, 40)}) · runtime model: ${result.modelRoute === "/" ? "not selected" : one(result.modelRoute, 340)}`;
   const out = [
-    `Agent view: ${one(view.file.path, 120)} (${one(view.file.revision, 19)})`,
+    `Agent view: ${one(view.file.path, 120)} (${view.file.revision})`,
     `Title: ${one(view.title, 120)}`,
     `Authored model: ${one(view.model.replace(/\n/g, "; "), 160) || "(not set)"}`,
     // Keep the bounded status ahead of authored details that may be truncated.
@@ -456,11 +463,29 @@ const SECURITY_HEADERS = {
   "X-Content-Type-Options": "nosniff",
 };
 
-export async function startViewBridge({ session, path }) {
+export async function startViewBridge({ session, path, tests, initialView }) {
   path = normalizePath(path);
+  let inspectionOnly = false;
+  async function prepare() {
+    const view = await readView(session, path, tests);
+    if (!view.selectedSources || !view.authoring?.editable || !view.selectedSources.operations.edit || previewServer(session) !== SERVER_NAME) { inspectionOnly = false; return; }
+    const rpc = session.rpc;
+    if (typeof rpc.mcp?.startServer !== "function" || typeof rpc.mcp.listConfigured !== "function" || typeof rpc.tools?.initializeAndValidate !== "function") return;
+    const lease = beginPreview(session);
+    try { await ensureHostRuntime(session, lease); inspectionOnly = false; }
+    catch (e) { try { previewServer(session); } catch (e) { throw safeError(e); } inspectionOnly = true; }
+    finally { lease.release(); }
+  }
+  if (initialView?.selectedSources) await prepare();
   const token = randomBytes(24).toString("base64url");
   let port = 0;
-  const act = createActionHandler({ session, path });
+  const read = async () => {
+    const view = await readView(session, path, tests);
+    if (inspectionOnly && view.authoring) view.authoring.editable = false;
+    return view;
+  };
+  const mailbox = createSuggestionMailbox({ session, read });
+  const act = createActionHandler({ session, path, tests, prepare, inspection: () => inspectionOnly, suggest: view => mailbox.suggest(view) });
   const server = http.createServer(async (req, res) => {
     const reply = (status, type, body, extra = {}) => {
       res.writeHead(status, { ...SECURITY_HEADERS, ...extra, "Content-Type": type, "Content-Length": Buffer.byteLength(body) });
@@ -487,13 +512,26 @@ export async function startViewBridge({ session, path }) {
         let input;
         try { input = JSON.parse(Buffer.concat(chunks).toString("utf8")); }
         catch { return reply(400, "application/json", JSON.stringify({ error: "invalid-action", message: MESSAGES["invalid-action"] })); }
-        const result = await act(input);
+        // Acknowledgment is transport-only: it must work even during Test or
+        // while the action handler is locked after an uncertain execution.
+        let result;
+        if (input?.operation === "acknowledge-suggestions") {
+          result = isObj(input) && Object.keys(input).sort().join(",") === "batchId,operation" && typeof input.batchId === "string"
+            ? { acknowledged: mailbox.acknowledge(input.batchId) }
+            : { error: "invalid-action", message: MESSAGES["invalid-action"] };
+        } else {
+          if (input?.operation === "reload") mailbox.clear();
+          result = await act(input);
+        }
         return reply(result.error ? 409 : 200, "application/json; charset=utf-8", JSON.stringify(result));
       }
       if (req.method !== "GET") return refuse(405, "Method not allowed", { Allow: "GET, POST" });
       if (name === "view.json") {
         try {
-          return reply(200, "application/json; charset=utf-8", JSON.stringify(await readView(session, path)));
+          // A read begun before Suggest cannot invalidate its newer request.
+          const requestId = mailbox.requestId, view = await read();
+          const suggestedTests = requestId === mailbox.requestId ? mailbox.pending(view) : undefined;
+          return reply(200, "application/json; charset=utf-8", JSON.stringify({ ...view, ...(suggestedTests ? { suggestedTests } : {}) }));
         } catch (e) {
           const err = safeError(e);
           return reply(502, "application/json; charset=utf-8", JSON.stringify({ error: err.code, message: err.message }));
@@ -516,33 +554,35 @@ export async function startViewBridge({ session, path }) {
   let closing;
   const close = () =>
     (closing ??= new Promise((resolve) => {
-      act.dispose();
+      mailbox.dispose(); act.dispose();
       server.close(() => resolve());
       server.closeAllConnections();
     }));
-  return { url: `http://127.0.0.1:${port}/${token}/`, port, close };
+  return { url: `http://127.0.0.1:${port}/${token}/`, port, close, matchesSuggestions: mailbox.matches, deliverSuggestions: mailbox.deliver };
 }
 
 // --- canvas/command lifecycle ----------------------------------------------
 export function createViewController({ getSession }) {
   const instances = new Map(); // instanceId -> { path, ready }
-  const stop = (entry) => entry.ready.then((b) => b.close(), () => {});
+  const stop = (entry) => { entry.bridge?.close(); return entry.ready.then((b) => b.close(), () => {}); };
 
   async function open(ctx, validatedView) {
     const input = ctx?.input;
-    if (!isObj(input) || Object.keys(input).some((k) => k !== "path")) throw new ViewError("invalid-path");
-    const path = normalizePath(input.path);
+    if (!isObj(input) || Object.keys(input).some((k) => !["path", "tests"].includes(k))) throw new ViewError("invalid-path");
+    const path = normalizePath(input.path), tests = normalizeTests(input.tests);
+    if (tests !== undefined && !path.endsWith(".agent.md")) throw new ViewError("invalid-path");
     const id = ctx.instanceId;
     if (typeof id !== "string" || !id) throw new ViewError("invalid-path");
     const existing = instances.get(id);
     let entry = existing;
-    if (existing?.path !== path) {
+    if (existing?.path !== path || existing?.tests !== tests) {
       const session = getSession();
       if (!session) throw new ViewError("unavailable");
-      const title = (validatedView ? Promise.resolve(validatedView) : readView(session, path)).then(view => agentName(view.title), () => fileLocation(path).name);
-      entry = { path, ready: Promise.all([startViewBridge({ session, path }), title]).then(([bridge, name]) => ({ ...bridge,
-        title: name + (fileLocation(path).folder ? ` · ${fileLocation(path).folder}` : "") })) };
+      const initial = validatedView ? Promise.resolve(validatedView) : readView(session, path, tests).catch(() => undefined);
+      entry = { path, tests, ready: initial.then(async view => ({ ...await startViewBridge({ session, path, tests, initialView: view }),
+        title: (view ? agentName(view.title) : fileLocation(path).name) + (fileLocation(path).folder ? ` · ${fileLocation(path).folder}` : "") })) };
       instances.set(id, entry);
+      entry.ready.then(bridge => { entry.bridge = bridge; }, () => {});
       entry.ready.catch(() => instances.get(id) === entry && instances.delete(id));
       if (existing) await stop(existing);
     }
@@ -575,5 +615,10 @@ export function createViewController({ getSession }) {
       await session.log(safeError(e).message, { level: "error" });
     }
   }
-  return { open, close, closeAll, command, get size() { return instances.size; } };
+  async function deliverSuggestions(input) {
+    // Pending startups cannot own a request yet; never await unrelated bridges.
+    const bridge = [...instances.values()].find(entry => entry.bridge?.matchesSuggestions(input?.requestId))?.bridge;
+    return bridge ? bridge.deliverSuggestions(input) : suggestionsUnavailable();
+  }
+  return { open, close, closeAll, command, deliverSuggestions, get size() { return instances.size; } };
 }

@@ -22,14 +22,22 @@ class PlainPluginTests(unittest.TestCase):
             "type": "stdio", "command": "/usr/local/bin/kmx", "args": ["mcp"]}})
         self.assertFalse((HERE / "bin").exists())
         self.assertEqual(json.loads((HERE / "plugin.json").read_text())["name"], "kmx-agent-builder-path")
+        readme = (HERE / "README.md").read_text()
+        self.assertIn("v0.9.0-rc.4 marketplace plugin can display bounded", readme)
+        self.assertIn("unreleased current-main behavior", readme)
+        self.assertIn("native\n`/kmx-canvas open` displays", readme)
+        self.assertIn("model-facing `open_kmx_canvas` tool returns", readme)
         derived = {"skills/kmx/SKILL.md", "skills/kmx-agent-builder/SKILL.md",
                    "com.github.copilot/extensions/agent-view/extension.mjs"}
         for name in ASSETS | SKILLS:
             with self.subTest(name=name):
                 if name in derived:
                     self.assertFalse((HERE / name).is_symlink())
-                    self.assertEqual((HERE / name).read_bytes(), (SHARED / name).read_bytes().replace(
-                        b"plugin:kmx-agent-builder:agent-view", b"plugin:kmx-agent-builder-path:agent-view"))
+                    expected = (SHARED / name).read_bytes().replace(
+                        b"plugin:kmx-agent-builder:agent-view", b"plugin:kmx-agent-builder-path:agent-view")
+                    if name.startswith("skills/"):
+                        expected = expected.replace(b"/kmx-agent-builder:", b"/kmx-agent-builder-path:")
+                    self.assertEqual((HERE / name).read_bytes(), expected)
                 else:
                     self.assertEqual((HERE / name).resolve(), (SHARED / name).resolve())
                     self.assertEqual((HERE / name).read_bytes(), (SHARED / name).read_bytes())

@@ -190,6 +190,9 @@ test('agent-file CI reports retain failure status and content-free summaries', a
     'Neither output creates automatic local history'
   ]) assert.ok(app.includes(marker), `CI report contract: ${marker}`)
   assert.match(app, /CLI section follows current main, not the rc\.4 app walkthrough/)
+  assert.match(app, /rc\.4 can display bounded, read-only fallback text/)
+  assert.match(app, /cannot seed a revision-checked Edit in a fresh chat/)
+  assert.match(app, /unreleased open_kmx_canvas text result returns the full revision/)
   assert.match(app, /1\s*A completed assertion failed/)
   assert.match(app, /2\s*Could not run or decide/)
   assert.doesNotMatch(app, /release candidates do not contain it/i)

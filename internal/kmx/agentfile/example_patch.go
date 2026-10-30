@@ -100,10 +100,6 @@ func applyExampleEdits(source []byte, edits []ExampleEdit, block bool) ([]byte, 
 	}
 	text := string(source)
 	lines := strings.SplitAfter(text, "\n")
-	starts := make([]int, len(lines))
-	for i := 1; i < len(lines); i++ {
-		starts[i] = starts[i-1] + len(lines[i-1])
-	}
 	plain := func(i int) string { return strings.TrimSuffix(strings.TrimSuffix(lines[i], "\n"), "\r") }
 	open := before.Locations["Examples"].Line
 	for strings.TrimSpace(plain(open)) == "" {
@@ -123,6 +119,25 @@ func applyExampleEdits(source []byte, edits []ExampleEdit, block bool) ([]byte, 
 		return r
 	}(), "\n")+"\n"), &root) != nil {
 		return nil, ErrRecordingInvalid
+	}
+	eol := "\n"
+	if strings.HasSuffix(lines[open], "\r\n") {
+		eol = "\r\n"
+	}
+	return patchExampleNodes(source, edits, &root, open, close, eol, block, func(candidate []byte) bool {
+		_, err := Parse("edit.agent.md", candidate)
+		return err == nil
+	})
+}
+
+// patchExampleNodes shares exact field/fixture patching between inline Examples
+// and companion mappings. The caller supplies parsed nodes and source boundaries.
+func patchExampleNodes(source []byte, edits []ExampleEdit, root *yaml.Node, open, close int, eol string, block bool, valid func([]byte) bool) ([]byte, error) {
+	text := string(source)
+	lines := strings.SplitAfter(text, "\n")
+	starts := make([]int, len(lines))
+	for i := 1; i < len(lines); i++ {
+		starts[i] = starts[i-1] + len(lines[i-1])
 	}
 	offset := func(n *yaml.Node) int {
 		at := starts[open+n.Line]
@@ -233,10 +248,6 @@ func applyExampleEdits(source []byte, edits []ExampleEdit, block bool) ([]byte, 
 	var patches []sourcePatch
 	add := func(start, end int, value string) { patches = append(patches, sourcePatch{start, end, value}) }
 	encode := func(v any) string { b, _ := json.Marshal(v); return string(b) }
-	eol := "\n"
-	if strings.HasSuffix(lines[open], "\r\n") {
-		eol = "\r\n"
-	}
 	indent := func(n *yaml.Node) string { return strings.Repeat(" ", n.Column-1) }
 	// pair renders `key: value` as block YAML for a block mapping, or "" if not.
 	pair := func(m *yaml.Node, key string, value any) string {
@@ -449,7 +460,7 @@ func applyExampleEdits(source []byte, edits []ExampleEdit, block bool) ([]byte, 
 		last = p.start
 		text = text[:p.start] + p.text + text[p.end:]
 	}
-	if _, err := Parse("edit.agent.md", []byte(text)); err != nil {
+	if !valid([]byte(text)) {
 		return nil, ErrRecordingInvalid
 	}
 	if bytes.Equal(source, []byte(text)) {

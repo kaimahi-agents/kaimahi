@@ -74,6 +74,12 @@ export function canvasHeader(doc, view, actionNodes, readOnly) {
   const sourceSummary = el(doc, "summary", "meta agent-meta", `${file.name}${file.folder ? ` · in ${file.folder}` : ""}`);
   sourceSummary.setAttribute("title", "Source details"); source.append(sourceSummary, info);
   info.append(el(doc, "p", "source-title", view.title), pathControls(doc, view.file.path), el(doc, "code", "revision", view.file.revision));
+  if (view.selectedSources) {
+    const s = view.selectedSources;
+    info.append(el(doc, "p", "", "Agent source (prompt)"), el(doc, "p", "", `Tests source · ${s.testsState}`), pathControls(doc, s.testsPath, "tests"));
+    if (s.testsRevision) info.append(el(doc, "code", "revision", s.testsRevision));
+    if (s.validation === "invalid_pair") info.append(el(doc, "p", "", "These sources need repair before Test. Your drafts can still be saved."));
+  }
   const head = el(doc, "header", "agent-header"), identity = el(doc, "div", "agent-identity"), actions = el(doc, "div", "header-controls");
   identity.append(el(doc, "span", "agent-eyebrow", "Your agent"), el(doc, "h1", "", displayName));
   actions.append(...actionNodes);
@@ -172,11 +178,11 @@ export function testNameControl(doc, settings, change) {
   update(); return { input, hint, update };
 }
 
-export function pathControls(doc, path) {
+export function pathControls(doc, path, role = "agent") {
   const box = el(doc, "div", "source-path");
   const button = el(doc, "button", "copy-path", "Copy path");
   button.setAttribute("type", "button");
-  button.setAttribute("aria-label", "Copy agent path");
+  button.setAttribute("aria-label", `Copy ${role} path`);
   button.setAttribute("data-action", "copy-path");
   const feedback = el(doc, "span", "copy-status");
   feedback.setAttribute("role", "status");
@@ -195,6 +201,6 @@ export function pathControls(doc, path) {
       feedback.textContent = unavailable;
     }
   });
-  box.append(el(doc, "p", "path-label", "Agent file path"), el(doc, "code", "path-value", path), button, feedback);
+  box.append(el(doc, "p", "path-label", role === "tests" ? "Tests file path" : "Agent file path"), el(doc, "code", "path-value", path), button, feedback);
   return box;
 }

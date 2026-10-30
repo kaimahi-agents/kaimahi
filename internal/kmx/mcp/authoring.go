@@ -27,11 +27,15 @@ func (f *Files) copilotTestsChanged(ctx context.Context, operation, filename str
 			before, source, _ = f.inspect(ctx, target)
 		}
 	}
+	if len(edits) > 0 {
+		return after.HasFrontmatter || before != nil && before.HasFrontmatter
+	}
+	return inlineCopilotTestsChanged(before, source, after, content)
+}
+
+func inlineCopilotTestsChanged(before *agentfile.Agent, source []byte, after *agentfile.Agent, content []byte) bool {
 	if !after.HasFrontmatter && (before == nil || !before.HasFrontmatter) {
 		return false
-	}
-	if len(edits) > 0 {
-		return true
 	}
 	section := func(a *agentfile.Agent, b []byte) []byte {
 		if a == nil || a.Locations["Examples"].Line == 0 {

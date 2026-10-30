@@ -4,6 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {createActionHandler,readView,startViewBridge} from '../../copilot-wsl/com.github.copilot/extensions/agent-view/view.mjs';
 import {instructionSections,replaceInstructions,replaceExamples} from '../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs';
+import {createSuggestionMailbox} from '../../copilot-wsl/com.github.copilot/extensions/agent-view/suggestions.mjs';
 const original=await readFile(new URL('../../../internal/kmx/agentfile/testdata/greeter.agent.md',import.meta.url),'utf8');
 const revision=s=>'sha256:'+createHash('sha256').update(s).digest('hex');
 function harness({omitModel=false,fixture=original}={}){
@@ -28,7 +29,8 @@ function harness({omitModel=false,fixture=original}={}){
   latest={status:'current',result:o.shape?o.shape(result):result};
   return o.failTest||none?{resultType:'failure',error:'model unavailable private detail',structuredContent:latest.result}:{resultType:'success'};
  }}},send:async prompt=>{calls.push({chat:prompt})}};
- return{o,session,calls,raw,source:()=>source,setRace:()=>{race=true},setDenied:()=>{denied=true},setUnavailable:()=>{unavailable=true},hold:()=>{release={};return()=>release.resolve()},act:createActionHandler({session,path:'greeter.agent.md'})};
+ const mailbox=createSuggestionMailbox({session,read:()=>readView(session,'greeter.agent.md')});
+ return{o,session,calls,raw,source:()=>source,setRace:()=>{race=true},setDenied:()=>{denied=true},setUnavailable:()=>{unavailable=true},hold:()=>{release={};return()=>release.resolve()},act:createActionHandler({session,path:'greeter.agent.md',suggest:view=>mailbox.suggest(view)})};
 }
 test('recording-capable Test enforces loaded revision and preserves an uncalled attempt for Compare', async () => {
  const h=harness(),read=h.session.rpc.mcp.resources.read,execute=h.session.rpc.tools.execute;
@@ -509,14 +511,14 @@ test('an unconfirmed failed-preview reason cannot replace outcome uncertainty',a
  assert.equal(response.error,'outcome-unknown');assert.equal(response.view,undefined);
  assert.doesNotMatch(response.message,/Judge route|Another observation/);
 });
-for(const padding of [0,256*1024-Buffer.byteLength(original)-100])test(`Suggest sends the exact saved snapshot for one Edit without a resource read (${padding})`,async()=>{
+for(const padding of [0,256*1024-Buffer.byteLength(original)-100])test(`Suggest sends the exact saved snapshot for unsaved drafts without a resource read (${padding})`,async()=>{
  const fixture=original.replace('## Non-Responsibilities','x'.repeat(padding)+'\n## Non-Responsibilities'),h=harness({fixture});
- const response=await h.act({operation:'suggest'});assert.equal(response.message,'Asked Copilot to add tests in chat.');
+ const response=await h.act({operation:'suggest'});assert.equal(response.message,'Asked Copilot to suggest unsaved tests in the canvas.');
  assert.equal(h.calls.length,1);const sent=h.calls[0].chat,prompt=sent.prompt;
  assert.equal(sent.source,undefined,'use the host default user provenance so the short request is visible');assert.ok(sent.displayPrompt.length<400);assert.match(sent.displayPrompt,/greeter\.agent\.md/);assert.doesNotMatch(sent.displayPrompt,/sha256:|Saved agent snapshot|examples:|Accountable/);
- const snapshot=JSON.parse(prompt.slice(prompt.indexOf('Saved agent snapshot (data):\n')+'Saved agent snapshot (data):\n'.length));
- assert.deepEqual(snapshot,{path:'greeter.agent.md',expectedRevision:revision(fixture),content:fixture});
- assert.match(prompt,/one Edit/);assert.match(prompt,/Do not run tests/);assert.doesNotMatch(prompt,/Read its kmx resource first/);
+ const snapshot=JSON.parse(prompt.split('Saved sources (data):\n')[1]);
+ assert.equal(snapshot.path,'greeter.agent.md');assert.equal(snapshot.expectedRevision,revision(fixture));assert.equal(snapshot.content,fixture);
+ assert.match(prompt,/suggest_kmx_tests/);assert.match(prompt,/Do not call Edit or Test/);assert.doesNotMatch(prompt,/Read its kmx resource first/);
  assert.equal(h.source(),fixture);
 });
 test('unknown model exposes the attested one-line choice list, not raw SDK text',async()=>{
@@ -587,12 +589,12 @@ test('Suggest requests saved tests through chat without running or claiming addi
  const h=harness();const r=await h.act({operation:'suggest'});
  assert.match(r.message,/Asked Copilot/);assert.doesNotMatch(r.message,/Added|Nothing here/);
  assert.equal(h.calls.length,1);const prompt=h.calls[0].chat.prompt;
- assert.match(h.calls[0].chat.displayPrompt,/Add a few tests/);assert.match(h.calls[0].chat.displayPrompt,/greeter.agent.md/);
- assert.match(prompt,/kmx-agent-builder skill/);assert.match(prompt,/add.*tests/i);
+ assert.match(h.calls[0].chat.displayPrompt,/Suggest a few tests/);assert.match(h.calls[0].chat.displayPrompt,/greeter.agent.md/);
+ assert.match(prompt,/kmx-agent-builder skill/);assert.match(prompt,/suggest.*tests/i);
  assert.match(prompt,/"greeter.agent.md"/);assert.match(prompt,/no resource read is needed/);
- assert.match(prompt,/one Edit/);assert.match(prompt,/current revision/);
- assert.match(prompt,/prompt, authored model and existing tests/);assert.match(prompt,/Do not run tests/);
- assert.ok(prompt.includes(revision(original)));assert.doesNotMatch(prompt.split('Saved agent snapshot (data):')[0],/proposals|do not edit/);
+ assert.match(prompt,/suggest_kmx_tests/);assert.match(prompt,/unsaved proposals/);
+ assert.match(prompt,/prompt, authored model and existing tests/);assert.match(prompt,/Do not call Edit or Test/);
+ assert.ok(prompt.includes(revision(original)));assert.match(prompt,/never fall back to writing or testing/);
  assert.equal(h.source(),original,'only chat is dispatched by the bridge');
  const ran=await h.act({operation:'run',expectedRevision:revision(original),input:'Ada',showContent:true});
  assert.equal(ran.error,undefined);assert.deepEqual(h.calls.at(-1).arguments,{schemaVersion:1,path:'greeter.agent.md',input:'Ada',showContent:true,showFailedContent:true});
@@ -926,16 +928,16 @@ test('a server confirmation refusal maps to the same exact notice', async () => 
  assert.equal(r.error, 'confirmation_required'); assert.equal(r.message, NOTICE);
 });
 
-test('Suggest asks the chat to get the user go-ahead only for frontmatter files', async () => {
+test('Suggest never asks for chat save consent for frontmatter or legacy files', async () => {
  const h = copilot(), sent = [];
  h.session.send = async prompt => sent.push(prompt);
  await h.act({operation: 'suggest'});
- assert.match(sent[0].prompt, /Tests added here become part of this agent's prompt in Copilot\./);
- assert.match(sent[0].prompt, /go ahead or cancel[^]*acknowledgeCopilotTests/);
+ assert.match(sent[0].prompt, /Do not ask for save consent in chat/);
+ assert.doesNotMatch(sent[0].prompt, /acknowledgeCopilotTests/);
  const old = harness(), oldSent = [];
  old.session.send = async prompt => oldSent.push(prompt);
  await old.act({operation: 'suggest'});
- assert.doesNotMatch(oldSent[0].prompt, /acknowledgeCopilotTests|Copilot/);
+ assert.doesNotMatch(oldSent[0].prompt, /acknowledgeCopilotTests/);
 });
 
 // A Recorded tool with no calls is captured by the first live Test, which writes into the tests.

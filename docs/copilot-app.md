@@ -6,14 +6,19 @@ You want to improve an agent's prompt without losing track of what it should do.
 > check that each answer has a heading, mentions the change and avoids internal
 > issue numbers. Change the prompt, rerun the same tests, then try another model.
 
-kmx keeps the prompt and tests in one Markdown file. The Copilot app opens that
-file in a canvas where you can edit and test it. This path needs no Kubernetes
+kmx keeps the prompt and tests in one Markdown file. Copilot can edit and test it
+through chat or the app canvas. Current main also supports a revision-bound chat
+text view when no canvas renderer is available. This path needs no Kubernetes
 cluster, Docker or local model download.
 
 **Experimental.** The app walkthrough describes v0.9.0-rc.4. The install below
 pairs that prerelease binary with plugin source pinned to its release commit.
 Updating the plugin alone does not update kmx. Features merged after rc.4 need
 a newer tested pair; a feature on main is not necessarily in your installed release.
+In particular, rc.4 can display bounded, read-only fallback text, but its
+`open_kmx_canvas` result does not return a structured full revision, source or
+editability and cannot seed a revision-checked Edit in a fresh chat. The
+revision-bound text workflow below is unreleased until a later paired release.
 
 ## Install
 
@@ -55,15 +60,13 @@ the skills can load while `kmx-agent-builder` fails to start. Restart Copilot an
 start a fresh session after installation first; an existing session may not pick
 up newly installed servers.
 
-Without a new release, use the app's **Settings → MCP Servers → Add Server →
-Add Custom server** to add a **Local** (stdio) server named `kmx-agent-builder`,
-with **Command** `/usr/local/bin/kmx` and **Arguments** `mcp`. Keep only one active
-server with that name; do not remove the plugin's skills or canvas. Start a fresh
-session to pick up the configuration. These controls are shown in Microsoft's
-[Copilot app MCP guide](https://github.com/microsoft/mcp-for-beginners/blob/main/12-tooling/01-copilot-app/README.md).
-This is a temporary local server definition, not a plugin or binary upgrade.
-Remove that manual definition when a paired release supplies the absolute-path
-plugin so it does not collide with the plugin's server.
+The rc.5 source plugin fixes this with an absolute executable path. Until the
+rc.5 release is published and its catalog pin advances, the install commands
+above still select rc.4; they do not install the fix. Upgrade the binary and
+plugin together when the new pair is available. If you added a manual kmx MCP
+definition while trying rc.4, remove that specific definition before using the
+fixed plugin so only one kmx server is active. Do not edit plugin caches or add
+a custom server to make the new release work.
 
 ### Existing direct installs and upgrades
 
@@ -121,17 +124,18 @@ kmx does not read the app's credentials or start sign-in during a test.
 
 Natural phrases select a skill through the chat model; they are not fixed
 commands. Naming kmx and the agent file makes the request explicit. Creating an
-agent and opening its canvas are separate calls; opening alone never runs tests.
+agent and opening its canvas or text view are separate calls; opening alone never
+runs tests.
 
 | Intent | What to type or select | What happens |
 |---|---|---|
-| Create and open | `Create a kmx agent called Release notes that writes a short release note from a supplied pull request title, and open its canvas.` | The builder creates the file, then calls the canvas opener. It does not automatically run tests. |
+| Create and open | `Create a kmx agent called Release notes that writes a short release note from a supplied pull request title, and open it.` | The builder creates the file, then opens a canvas or, on current main, a revision-bound text view when the extension is available. It does not automatically run tests. |
 | Open without a model turn | `/kmx-canvas open release-notes.agent.md` | The native command opens or focuses the existing file. `/kmx-canvas` or `/kmx-canvas help` shows usage. |
-| Open through chat | `Open the kmx canvas for release-notes.agent.md` | The model selects the opener skill. This uses a model turn. |
+| Open through chat | `Open the kmx agent for release-notes.agent.md` | The model selects the installed opener skill. This uses a model turn. |
 | Run one input | `Use kmx to run release-notes.agent.md with input Add dark mode` | Run sends that input and returns the preview result. |
 | Run saved tests | `Use kmx to test release-notes.agent.md and show its test results` | Test checks the saved cases and reports their actual verdicts. |
-| Add tests from saved source | Select **Suggest tests** in the saved canvas | The request supplies source and revision to chat for a checked Edit, without automatically running tests. Wait for the save result. |
-| Read-only text | `/agent-view FULL_PATH` | The native command displays the file projection as text, not a canvas. |
+| Add tests from saved source | Ask chat, or select **Suggest tests** in the saved canvas | Asking chat uses complete source and revision for one checked Edit, lists the saved tests as not run, and does not automatically Test. **Suggest tests** instead queues the suggested examples as unsaved drafts in the canvas's existing test editor; nothing is saved or run until Save and run. |
+| Native read-only text | `/agent-view FULL_PATH` | The native command displays the bounded file projection as text, not a canvas or edit baseline. |
 
 Use your own filename. For Windows+WSL, a full `/mnt/c/.../name.agent.md` path
 avoids depending on the MCP server's working directory. After native `open`, the
@@ -147,12 +151,16 @@ opening fails or shows nothing, try the explicit chat-open phrase with a full pa
 Start the interactive CLI with `copilot --experimental` to load the native
 extension commands and opener. Without that extension, the skills and MCP tools
 can still be available, but neither a canvas opener nor `/agent-view` is available.
-MCP results in chat are still text; `/agent-view` is not a remedy for a missing
-extension.
+Create/Edit/Run/Test still work in the same chat from source and revision already
+returned by their tools. A fresh chat cannot safely reopen an existing file:
+there is no generic read tool or shell fallback, and `/agent-view` is not a remedy
+for a missing extension.
 
-In CLI 1.0.103 with the macOS/PATH plugin, the full skill entries are:
+In CLI 1.0.103, use the full entry for the installed variant:
 
 ```text
+/kmx-agent-builder:kmx open FULL_PATH
+/kmx-agent-builder:kmx-agent-builder Create an agent that summarizes a supplied paragraph.
 /kmx-agent-builder-path:kmx open FULL_PATH
 /kmx-agent-builder-path:kmx-agent-builder Create an agent that summarizes a supplied paragraph.
 ```
@@ -168,20 +176,24 @@ passes text to the model rather than exercising native command dispatch. In a
 headless environment, the CLI can acknowledge a canvas and offer a browser URL
 without displaying a native window; that is not proof of app rendering.
 
-Chat Edit and add-tests requests need a current revision. In a CLI check with
-shell deliberately denied, no saved snapshot and no model-facing resource reader,
-add-tests selected the builder but could not save. Supplying a saved snapshot or
-allowing a hash read let it save. This does not establish a failure under normal
-manual approval. **Suggest tests** supplies a snapshot by design; a similar CLI
-snapshot request saved one Edit without Run/Test, but the app button still needs
-its own check. Do not treat a suggestion or a successful trigger as a saved test.
+Chat Edit and add-tests requests need complete source plus its current revision.
+On current main, the model-facing `open_kmx_canvas` text result returns both only
+from the checked `kmx://agent/{path}` authoring snapshot. Its formatted `text` is
+bounded display and never an Edit baseline. Native `/kmx-canvas open` displays
+that bounded projection only. The rc.4 pair also exposes bounded text only, so a
+fresh chat cannot begin a revision-checked Edit from its fallback. If the full
+snapshot is unavailable, the current-main text view is read-only. **Suggest
+tests** supplies a snapshot by design, and its results return to the canvas as
+drafts rather than saved edits. Do not treat a suggestion, trigger or
+failed/uncertain Edit as a saved test, and do not run newly saved tests unless
+the user asked.
 
 ## Create an agent
 
 Open a conversation in the Copilot app and ask:
 
 > Use kmx to create a release-notes agent at
-> `/mnt/c/work/release-notes/release-notes.agent.md` and open its canvas.
+> `/mnt/c/work/release-notes/release-notes.agent.md` and open it.
 > It should turn a change summary into a short release note with a heading,
 > explain the user-visible change and omit internal issue numbers.
 
@@ -191,8 +203,19 @@ Files can live in different repositories; installation does not bind kmx to one 
 
 The canvas shows **Prompt**, **Tools** and **Tests**. The saved `.agent.md` file
 holds the prompt, tool names and tests; you can keep it in version control with
-the code it describes. If your host
-cannot render the canvas, Copilot can still use kmx's tools in text.
+the code it describes. If your host cannot render the canvas, current main's
+unreleased `open_kmx_canvas` text result returns the full revision and complete
+source when safe so chat can continue with revision-checked edits. The rc.4
+fallback is bounded display only. Without the extension, only the same chat that
+already holds source/revision can continue safely.
+
+Chat reads Run/Test from `structuredContent`, not tool-call success. It reports
+the exact revision, runtime provider/model and full/subset counts, then one row
+per returned test. Full pass, partial pass, failed, inconclusive, refused,
+cancelled, did-not-finish and not-run stay distinct. An explicit runtime model is
+remembered only for that agent path in the current conversation and never
+rewrites the authored model. Answers are requested only when you ask to see them;
+missing content is never recovered with an automatic rerun.
 
 ![The release-notes prompt and tests during a run, with two tests passed and the third running](images/copilot-running.png)
 
@@ -226,10 +249,12 @@ Ask Copilot to add and save tests for the agent. For example:
 > internal issue number BUG-123 in the input and check that it is absent from
 > the answer. Save the tests; do not run them yet.
 
-You can also use **Suggest tests** or add and edit tests in the canvas. A
-suggestion request is not a completed save: wait for the saved tests to appear.
-Open a test to see **The agent gets** and **Passes if**. Use explicit checks for
-requirements you can measure; an answer that looks good is not itself a check.
+You can also use **Suggest tests** or add and edit tests in the canvas. **Suggest
+tests** queues unsaved examples in the canvas's existing test editor. Review, edit
+or cancel them before pressing Save and run; suggestions alone do not change the
+agent or tests file or run any tests. Open a test to see **The agent gets** and
+**Passes if**. Use explicit checks for requirements you can measure; an answer
+that looks good is not itself a check.
 
 Press **Enter** in the main view to save pending edits and run every test.
 **Shift+Enter** adds a line break. In a test's detail view, the save/run control
