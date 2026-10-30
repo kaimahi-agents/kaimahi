@@ -366,8 +366,6 @@ The catalog still selects rc.4 pending publication and a separate catalog repin.
   repeating argument values; native Windows hints explicitly use PowerShell
   quoting and its call operator. Legacy refusals and exit codes stay unchanged.
 
-- Source plugin manifests report version 0.9.0-rc.6 for the paired release.
-
 - `kmx run FILE` now executes saved inputs without evaluating their checks or setting up a judge. Completed answers are not passing tests; use `kmx test FILE` to evaluate checks. Tool fixtures, journal finalization and completion checks still apply. Legacy single-source MCP preview behavior is unchanged; selected-pair MCP Run also answers without checks.
 
 - File Run/Test explains when an Enabled tool has no recording or live source. GitHub Actions summaries clarify that Calls counts requests, not successful live execution. JSON fields, recording replay, verdicts and exit codes are unchanged.
