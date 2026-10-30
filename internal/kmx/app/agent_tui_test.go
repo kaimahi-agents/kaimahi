@@ -58,6 +58,54 @@ func TestAgentTUINavigationAndInputModes(t *testing.T) {
 	}
 }
 
+func TestAgentTUIResponsiveTablesRetainSelectionAndFitPanes(t *testing.T) {
+	m := newAgentTUIModel(AgentTUIOptions{Demo: true})
+	m.columns[0].Agents = nil
+	for i := 0; i < 30; i++ {
+		m.columns[0].Agents = append(m.columns[0].Agents, agentTUIAgent{Name: fmt.Sprintf("agent-%02d", i), Runtime: "md", Ready: "running", InstanceID: fmt.Sprint(i), Model: "gpt-test", Version: "abc12345", Provider: "copilot", Tools: []agentTUITool{{Name: "read"}}})
+	}
+	m.columns[0].Selection = 20
+	for _, tc := range []struct {
+		width   int
+		table   bool
+		headers []string
+	}{
+		{36, false, nil},
+		{52, true, []string{"NAME", "TYPE", "STATE", "MODEL"}},
+		{100, true, []string{"NAME", "TYPE", "STATE", "MODEL", "VERSION", "PROVIDER", "TOOLS"}},
+	} {
+		view := m.columnView(0, tc.width, 22)
+		plain := ansi.Strip(view)
+		if lipgloss.Width(view) > tc.width || lipgloss.Height(view) > 22 {
+			t.Fatalf("pane overflow at %d: %dx%d", tc.width, lipgloss.Width(view), lipgloss.Height(view))
+		}
+		if !strings.Contains(plain, "› agent-20") || !strings.Contains(plain, "21/30") {
+			t.Fatalf("selected agent or pagination missing:\n%s", plain)
+		}
+		for _, header := range tc.headers {
+			if !strings.Contains(plain, header) {
+				t.Fatalf("missing %s:\n%s", header, plain)
+			}
+		}
+		if tc.table && strings.Count(plain, "agent-") < 10 {
+			t.Fatal("table did not increase visible agent density")
+		}
+		if !tc.table && (!strings.Contains(plain, "type: md") || !strings.Contains(plain, "Tools:")) {
+			t.Fatal("narrow layout lost stacked details")
+		}
+		if m.columns[0].Selection != 20 {
+			t.Fatal("resize changed selected agent")
+		}
+	}
+	for _, width := range []int{104, 160, 208} {
+		m.width, m.height = width, 30
+		view := m.View().Content
+		if lipgloss.Width(view) > width || lipgloss.Height(view) > 30 {
+			t.Fatal("side-by-side view overflow")
+		}
+	}
+}
+
 func TestAgentTUIRetiredLiftCompletionAndQualifiedChat(t *testing.T) {
 	m := newAgentTUIModel(AgentTUIOptions{Demo: true})
 	m.opt.Demo = false
@@ -406,9 +454,9 @@ func TestAgentTUIEntriesAndDetailsOverlay(t *testing.T) {
 	m := newAgentTUIModel(AgentTUIOptions{Demo: true})
 	m.width, m.height = 120, 32
 	column := ansi.Strip(m.columnView(0, 60, 25))
-	for _, part := range []string{"› assistant", "    orka · ready: yes", "    qwen3:8b", "  ──────────"} {
+	for _, part := range []string{"NAME", "TYPE", "STATE", "MODEL", "› assistant", "qwen3:8b"} {
 		if !strings.Contains(column, part) {
-			t.Fatalf("missing indented/separated entry %q:\n%s", part, column)
+			t.Fatalf("missing table entry %q:\n%s", part, column)
 		}
 	}
 	before := ansi.Strip(m.View().Content)

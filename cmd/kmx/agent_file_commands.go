@@ -159,6 +159,34 @@ func runFileCommand(cmd *cobra.Command, state *commandState, file string, f file
 // previewFileCommand preserves one checked pair and returns the shared safe result.
 // beforeRun admits a presentation sink after intake but before execution effects.
 func previewFileCommand(cmd *cobra.Command, state *commandState, file string, f fileCommandOptions, prompt, promptFile string, beforeRun func() error) (app.FilePreviewResult, error) {
+	if info, err := os.Lstat(file); err == nil && info.IsDir() && !strings.HasSuffix(file, ".agent.md") {
+		resolved, err := app.ResolveMarkdownSource(file)
+		if err != nil {
+			return app.FilePreviewResult{}, fileUsageError(err)
+		}
+		file = resolved
+	}
+	companions := false
+	for _, path := range []string{app.MarkdownToolsPath(file), app.MarkdownTestsPath(file)} {
+		if _, err := os.Lstat(path); err == nil {
+			companions = true
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return app.FilePreviewResult{}, fileUsageError(err)
+		}
+	}
+	if companions {
+		if f.TestsFile != "" {
+			return app.FilePreviewResult{}, fileUsageError(fmt.Errorf("--tests-file cannot combine with named MD companions"))
+		}
+		if state.deps.goos == "windows" {
+			return app.FilePreviewResult{}, errWindowsOperationUnsupported
+		}
+		if native, ok := agentfile.DefaultTestsPath(file); ok {
+			if _, err := os.Lstat(native); err == nil {
+				return app.FilePreviewResult{}, fileUsageError(fmt.Errorf("multiple companion conventions; select one tests source"))
+			}
+		}
+	}
 	opt := app.FilePreviewOptions{File: file, Operation: cmd.Name(), CaseID: f.CaseID,
 		Model: f.Model, DefaultCopilot: true, AdHocOnly: f.PositionalInput && f.CaseID == "", ShowFailedContent: !f.NoContent,
 		SkipAssertions:        cmd.Name() == "run",
@@ -179,7 +207,7 @@ func previewFileCommand(cmd *cobra.Command, state *commandState, file string, f 
 		if pair == nil || !windowsPackageFreeFakeAgent(pair.Agent) || f.Provider != "" || f.Endpoint != "" || f.ToolBindings != "" || len(f.MCPServers) > 0 || f.NoMCPServers || f.GitHubSummary || promptFile != "" {
 			return app.FilePreviewResult{}, errWindowsOperationUnsupported
 		}
-	} else {
+	} else if !companions {
 		pair, pairErr = agentfile.LoadPair(file, f.TestsFile)
 	}
 	if pair != nil {
@@ -257,7 +285,9 @@ func previewFileCommand(cmd *cobra.Command, state *commandState, file string, f 
 	start := time.Now()
 	var result app.FilePreviewResult
 	var err error
-	if pairErr != nil {
+	if companions {
+		result, err = a.PreviewAgentFile(ctx, opt)
+	} else if pairErr != nil {
 		// Reuse the shared refusal/redaction projection; never fall back to
 		// executing an agent-only file after a selected tests source failed.
 		result, err = a.PreviewAgentSnapshot(ctx, nil, opt)

@@ -15,12 +15,16 @@ import (
 
 // AgentTUIOptions selects the two environments shown by kmx cluster console.
 type AgentTUIOptions struct {
+	Definitions                            bool
 	LocalContext, RemoteContext, Namespace string
+	Directory, Type                        string
+	LocalProvider                          string
 	Demo                                   bool
 }
 
 type agentTUIEnvironment struct {
 	Name, Kubeconfig, Server string
+	Directory                string
 	Local                    bool
 }
 
@@ -58,6 +62,8 @@ type agentTUIAgent struct {
 	External                                  bool
 	SystemPrompt, PromptSource, PromptError   string
 	Tools                                     []agentTUITool
+	DefinitionPath, TestsPath, TestStatus     string
+	InstanceID                                string
 }
 
 type agentTUITool struct {
@@ -113,7 +119,12 @@ func (a *App) agentTUIPrompt(ctx context.Context, namespace string, prompt agent
 	row.SystemPrompt = value
 }
 
-func (a agentTUIAgent) key() string   { return a.Runtime + "/" + a.Namespace + "/" + a.Name }
+func (a agentTUIAgent) key() string {
+	if a.Runtime == "md" {
+		return "md/" + a.DefinitionPath
+	}
+	return a.Runtime + "/" + a.Namespace + "/" + a.Name
+}
 func (a agentTUIAgent) canChat() bool { return !a.External }
 
 type agentTUIColumn struct {
@@ -233,6 +244,9 @@ func decodeConsoleList(raw []byte, dst any) error {
 // that runtime, so listing its Agents would advertise actions that cannot run.
 // What an older installation left on a cluster is outside this command.
 func (a *App) agentTUIInventory(ctx context.Context, env agentTUIEnvironment, namespace string) ([]agentTUIAgent, error) {
+	if env.Directory != "" {
+		return markdownAgentInventory(env.Directory)
+	}
 	a = env.app(a)
 	raw, err := a.orkaCapture(ctx, nil, "api-resources", "-o", "name")
 	if err != nil {
@@ -384,6 +398,74 @@ func (a *App) agentTUIInventory(ctx context.Context, env agentTUIEnvironment, na
 		return agents, fmt.Errorf("%s", strings.Join(problems, "; "))
 	}
 	return agents, nil
+}
+
+func markdownAgentInventory(directory string) ([]agentTUIAgent, error) {
+	paths, err := DiscoverMarkdownAgents(directory)
+	if err != nil {
+		return nil, err
+	}
+	rows := make([]agentTUIAgent, 0, len(paths))
+	for _, path := range paths {
+		absolute, e := filepath.Abs(path)
+		if e != nil {
+			return nil, e
+		}
+		row := agentTUIAgent{Name: strings.TrimSuffix(filepath.Base(path), ".agent.md"), Runtime: "md", DefinitionPath: absolute, TestsPath: MarkdownTestsPath(absolute), PromptSource: absolute, Provider: "copilot", Ready: "invalid", InferenceReady: "not probed"}
+		agent, e := ReadMarkdownAgent(path)
+		if e != nil {
+			row.PromptError = e.Error()
+			row.TestStatus = "INVALID"
+			rows = append(rows, row)
+			continue
+		}
+		row.Name, row.Model, row.Version, row.SystemPrompt, row.Ready = agent.Name, mdModelLabel(agent.Model), mdShort(agent.Revision), agent.Instructions, "valid"
+		history, e := LoadMarkdownHistory(agent)
+		var last *MarkdownTestResult
+		if len(history) > 0 {
+			last = &history[len(history)-1]
+		}
+		row.TestStatus = MarkdownStatus(agent, last)
+		if last != nil {
+			row.TestStatus = "HISTORICAL " + row.TestStatus
+		}
+		if e != nil {
+			row.TestStatus = "HISTORY UNAVAILABLE"
+		}
+		for _, tool := range agent.Tools {
+			row.Tools = append(row.Tools, agentTUITool{Name: tool, Kind: "mock-bound", Detail: "Test fixture required; ordinary chat has no real tool binding"})
+		}
+		rows = append(rows, row)
+	}
+	return rows, nil
+}
+
+// ResolveMarkdownAgent selects a literal path or one unambiguous display name
+// from the same inventory used by the agent console.
+func ResolveMarkdownAgent(directory, selector string) (string, error) {
+	if info, err := os.Lstat(selector); err == nil && info.IsDir() {
+		return ResolveMarkdownSource(selector)
+	}
+	if strings.HasSuffix(selector, ".md") {
+		return selector, nil
+	}
+	rows, err := markdownAgentInventory(directory)
+	if err != nil {
+		return "", err
+	}
+	var found string
+	for _, row := range rows {
+		if row.Name == selector {
+			if found != "" {
+				return "", fmt.Errorf("multiple md agents named %q; select an explicit file path", selector)
+			}
+			found = row.DefinitionPath
+		}
+	}
+	if found == "" {
+		return "", fmt.Errorf("md agent %q not found under %s; use kmx list --type md", selector, directory)
+	}
+	return found, nil
 }
 
 func agentTUIReady(ready *bool) string {

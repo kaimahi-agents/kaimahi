@@ -110,6 +110,10 @@ func TestBareUsageNamesEveryTopLevelCommand(t *testing.T) {
 	named := 0
 	for _, child := range root.Commands() {
 		if child.Hidden {
+			switch child.Name() {
+			case "import", "info", "inspect", "list", "rm", "settings", "stop", "tools", "validate":
+				continue
+			}
 			// Retirement stubs and compatibility routes remain parseable but
 			// are not advertised alongside canonical commands.
 			if child.Name() != "quickstart-wizard" && child.Name() != "aks" && child.Name() != "bundle" && child.Name() != "lift" && child.Name() != "eval" && child.Name() != "mcp" && child.Name() != "completion" {

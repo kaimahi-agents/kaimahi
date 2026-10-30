@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -18,6 +19,7 @@ import (
 )
 
 type FilePreviewOptions struct {
+	companions               *previewCompanions
 	ValidateSource           func(context.Context) error
 	PreparePairRecordingSave func(context.Context, *agentfile.Pair) (PairRecordingSaver, error)
 	pair                     *agentfile.Pair
@@ -59,6 +61,7 @@ type FilePreviewOptions struct {
 }
 
 type FilePreviewResult struct {
+	SnapshotDigest        string                  `json:"snapshotDigest,omitempty"`
 	SnapshotRevision      string                  `json:"snapshotRevision,omitempty"`
 	Tests                 *FilePreviewTestsSource `json:"tests,omitempty"`
 	RecordingTarget       *FileRecordingTarget    `json:"recordingTarget,omitempty"`
@@ -232,10 +235,53 @@ func previewReason(code string) string {
 func (a *App) PreviewAgentFile(ctx context.Context, opt FilePreviewOptions) (FilePreviewResult, error) {
 	started := a.timeNow()
 	parsed, err := agentfile.Load(opt.File)
+	if info, e := os.Lstat(opt.File); e == nil && info.IsDir() {
+		resolved, resolveErr := ResolveMarkdownSource(opt.File)
+		if resolveErr != nil {
+			err = resolveErr
+		} else {
+			opt.File = resolved
+			if opt.RetentionFile != "" {
+				opt.RetentionFile = resolved
+			}
+			parsed, err = agentfile.Load(resolved)
+		}
+	}
+	if err == nil {
+		parsed, opt.companions, err = loadPreviewCompanions(parsed, opt.File)
+	}
+	if opt.companions != nil {
+		// The existing recording writer and retained-failure store are single-file
+		// revision bound. Never let them write companion cases into the agent.
+		if opt.companions.multiFileExecution {
+			opt.PrepareRecordingSave, opt.retentionScope = nil, nil
+			opt.RetentionFile = ""
+		}
+		// Journal attribution covers the whole frozen input, while the public
+		// file revision below continues to identify original agent bytes.
+		if parsed != nil && opt.companions.multiFileExecution {
+			execution := *parsed
+			execution.Revision = opt.companions.digest
+			parsed = &execution
+		}
+	}
 	if err == nil && !opt.SkipAssertions && opt.RetentionFile != "" && opt.retentionScope == nil {
 		opt = WithFilePreviewRetention(opt, opt.RetentionFile, parsed.Revision)
 	}
-	return a.previewAgentSnapshot(ctx, parsed, opt, err, started)
+	result, previewErr := a.previewAgentSnapshot(ctx, parsed, opt, err, started)
+	if opt.companions != nil && result.File.Revision != "" {
+		result.SnapshotDigest = opt.companions.digest
+		result.File.Revision = opt.companions.agent.Revision
+		if opt.companions.multiFileExecution {
+			result.Notices = append(result.Notices, "Companion snapshot: saved recordings replay; automatic recording writes and retained failure history are unavailable for this multi-file input.")
+		}
+		if e := opt.companions.agent.CheckCurrent(); e != nil {
+			result.FullPass, result.State, result.Verdict = false, "error", runtime.EvaluationUnknown
+			result.ReasonCode, result.Reason = "recording_source_changed", previewReason("recording_source_changed")
+			previewErr = &FilePreviewError{code: result.ReasonCode, exit: 1}
+		}
+	}
+	return result, previewErr
 }
 
 // PreviewAgentSnapshot executes a caller-owned parsed snapshot without reopening
@@ -486,6 +532,23 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	}
 	request := agentpreview.Request{SkipAssertions: opt.SkipAssertions, Agent: parsed, Examples: selected, Route: route, JudgeRoute: opt.JudgeRoute, Input: opt.Input, Progress: opt.Progress, ToolBindings: opt.ToolBindings, FileLabel: r.File.Path, ToolSettings: append([]localtools.ToolSetting(nil), r.ToolSettings...)}
 	request.ValidateSource = opt.ValidateSource
+	if opt.companions != nil {
+		if len(opt.companions.agent.CLITools) > 0 {
+			if opt.ToolBindings != "" {
+				return fail("invalid_options", 1)
+			}
+			request.ResolveTools = opt.companions.resolveTools
+		}
+		validate := request.ValidateSource
+		request.ValidateSource = func(ctx context.Context) error {
+			if validate != nil {
+				if err := validate(ctx); err != nil {
+					return err
+				}
+			}
+			return opt.companions.agent.CheckCurrent()
+		}
+	}
 	if opt.pair != nil {
 		request.SnapshotRevision = opt.pair.SnapshotRevision
 		request.SourceAgent = opt.pair.Agent

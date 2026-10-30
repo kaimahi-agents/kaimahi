@@ -547,7 +547,10 @@ func TestChatPTYOperationalDetailsSurviveMessageInput(t *testing.T) {
 			if !strings.Contains(screen, "Call ID: exact") || !strings.Contains(screen, "durable") || !strings.Contains(screen, "resumed") {
 				t.Fatalf("message input damaged durable transcript details:\n%s", screen)
 			}
-			if strings.Count(screen, "╭") != 1 || strings.Count(screen, "─ YOU ") != 1 || strings.Contains(screen, "─ MESSAGE ") {
+			// The durable user frame shares the editor's solid left rail. Only
+			// one transcript frame remains after submission, with all three rail
+			// rows intact and no editor label or old rounded left corner.
+			if strings.Count(screen, "▌") != 3 || strings.Count(screen, "╯") != 1 || strings.Contains(screen, "╭") || strings.Count(screen, "─ YOU ") != 1 || strings.Contains(screen, "─ MESSAGE ") {
 				t.Fatalf("submission did not replace the editor with one durable message:\n%s", screen)
 			}
 			if strings.Contains(screen, "RESPONDING") || r.transient {
@@ -621,7 +624,7 @@ func TestChatPTYConversationIsATopToBottomTimeline(t *testing.T) {
 			io.WriteString(slave, "END\n")
 			chatPTYReadUntil(t, master, &captured, func(s string) bool { return strings.HasSuffix(s, "END\r\n") })
 			screen := chatScreen(captured.String(), width)
-			if strings.Count(screen, "╭─ YOU ") != 2 || strings.Count(screen, "╰") != 2 || strings.Contains(screen, "MESSAGE") || strings.Contains(screen, "  | ") {
+			if strings.Count(screen, "▌─ YOU ") != 2 || strings.Count(screen, "▌") != 6 || strings.Count(screen, "╯") != 2 || strings.Contains(screen, "MESSAGE") || strings.Contains(screen, "  | ") {
 				t.Fatalf("user boxes/agent background are inconsistent:\n%s", screen)
 			}
 			previous := -1

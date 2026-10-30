@@ -19,6 +19,18 @@ import (
 )
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "__agent-manager" {
+		if err := app.RunAgentManager(); err != nil {
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) == 2 && os.Args[1] == "__agent-worker" {
+		if err := app.RunAgentWorker(); err != nil {
+			os.Exit(1)
+		}
+		return
+	}
 	if err := execute(os.Args[1:], productionDependencies()); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(exitCode(err))

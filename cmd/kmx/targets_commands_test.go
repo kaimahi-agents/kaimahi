@@ -98,7 +98,7 @@ func TestTargetsInvalidFlagsFailBeforeConfig(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"-o", "yaml"}, "output"},
+		{[]string{"-o", "xml"}, "output"},
 		{[]string{"--sessions", " "}, "non-empty"},
 		{[]string{"--sessions-ca", "ca.pem"}, "requires --sessions"},
 		{[]string{"--sessions", "https://example.test"}, "InvalidArgument"},

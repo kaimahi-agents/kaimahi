@@ -26,7 +26,7 @@ func TestDestinationStatusRefusesBeforeConfiguration(t *testing.T) {
 		{[]string{"package", "status"}, []string{"kmx package status --to <destination>", "kmx cluster orka status"}},
 		{[]string{"package", "status", "--to="}, []string{"--to"}},
 		{[]string{"package", "status", "--to", " "}, []string{"--to"}},
-		{[]string{"package", "status", "--to", "prod", "-o", "yaml"}, []string{"table", "json"}},
+		{[]string{"package", "status", "--to", "prod", "-o", "xml"}, []string{"table", "json"}},
 		{[]string{"package", "status", "--to", "prod", "-o", "text"}, []string{"table", "json"}},
 		{[]string{"package", "status", "--to", "prod", "-o", ""}, []string{"table", "json"}},
 		{[]string{"package", "status", "--to", "prod", "--workspace="}, []string{"--workspace"}},

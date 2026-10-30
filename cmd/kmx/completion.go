@@ -70,6 +70,31 @@ func completionContext(cmd *cobra.Command) string {
 	return ""
 }
 
+func completeTypedAgents(cmd *cobra.Command, args []string, prefix string) ([]string, cobra.ShellCompDirective) {
+	if len(args) > 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	kind, _ := cmd.Flags().GetString("type")
+	runtime, _ := cmd.Flags().GetString("runtime")
+	clusterSelected := kind == "orka" || runtime == "orka"
+	for _, name := range []string{"namespace", "context"} {
+		if flag := cmd.Flag(name); flag != nil && flag.Changed {
+			clusterSelected = true
+		}
+	}
+	if clusterSelected && kind != "md" && cmd.Name() != "stop" && cmd.Name() != "rm" && cmd.Name() != "test" {
+		return completeLiveAgents(cmd, args, prefix)
+	}
+	values, err := app.AgentCompletionCandidates(prefix, cmd.Name() == "chat" || cmd.Name() == "stop")
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	if len(values) == 0 && (cmd.Name() == "run" || cmd.Name() == "inspect" || cmd.Name() == "test") {
+		return nil, cobra.ShellCompDirectiveDefault
+	}
+	return values, cobra.ShellCompDirectiveNoFileComp
+}
+
 func kubectlCompletion(args ...string) []string {
 	ctx, cancel := context.WithTimeout(context.Background(), 750*time.Millisecond)
 	defer cancel()

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"github.com/charmbracelet/x/ansi"
 	"io"
 	"strings"
 	"testing"
@@ -85,7 +86,7 @@ func TestQuickstartChatFullScreenTransitionSettlesBeforeInput(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	chatPTYReadUntil(t, master, &captured, func(s string) bool { return strings.Contains(s, "YOU >") })
+	chatPTYReadUntil(t, master, &captured, func(s string) bool { return strings.Contains(ansi.Strip(s), "Message or /command") })
 	if _, err := io.WriteString(master, "/exit\r"); err != nil {
 		t.Fatal(err)
 	}

@@ -66,7 +66,10 @@ func (r *runner) resolveTools(ctx context.Context, request agentpreview.Request,
 			}
 		}
 	} else if len(names) > 0 {
-		if r.options.ResolveAvailableTools != nil {
+		if request.ResolveTools != nil {
+			active := slices.DeleteFunc(slices.Clone(names), func(name string) bool { return localtools.IsDisabled(request.ToolSettings, name) })
+			host, err = request.ResolveTools(ctx, active)
+		} else if r.options.ResolveAvailableTools != nil {
 			host, err = r.options.ResolveAvailableTools(ctx, slices.Clone(names))
 		} else if r.options.ResolveTools != nil {
 			host, err = r.options.ResolveTools(ctx, slices.Clone(names))

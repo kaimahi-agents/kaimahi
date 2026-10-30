@@ -43,6 +43,9 @@ type Request struct {
 	ExampleFinished func(ExampleOutcome)
 	// ToolBindings and FileLabel are operator-owned host inputs, never harness config.
 	ToolBindings string
+	// ResolveTools is invocation-frozen host authority supplied by App after
+	// companion approval checks, never deserialized from agent content.
+	ResolveTools func(context.Context, []string) (*localtools.Host, error)
 	// ToolDefinitions is safe journal data, populated from the runner's trusted
 	// resolver. It grants no authority and caller-supplied values are replaced.
 	ToolDefinitions []api.ToolDefinition

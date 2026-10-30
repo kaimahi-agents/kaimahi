@@ -45,6 +45,9 @@ func writeFilePreviewText(w io.Writer, r FilePreviewResult, standalone bool) err
 	for _, notice := range r.Notices {
 		fmt.Fprintln(&b, notice)
 	}
+	if r.SnapshotDigest != "" {
+		fmt.Fprintf(&b, "snapshot: %s\n", r.SnapshotDigest)
+	}
 	if r.SavedRevision != "" {
 		if r.RecordingTarget != nil {
 			fmt.Fprintf(&b, "saved %s revision: %s; saved snapshot: %s (results use the executed snapshot above)\n", r.RecordingTarget.Role, r.SavedRevision, r.SavedSnapshotRevision)

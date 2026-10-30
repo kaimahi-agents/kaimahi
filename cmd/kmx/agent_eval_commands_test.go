@@ -51,7 +51,7 @@ func TestAgentEvalDiffRejectsLegacyReceiptOfflineCLI(t *testing.T) {
 }
 
 func TestRootEvalOutputSelectionBeforeConfiguration(t *testing.T) {
-	for _, format := range []string{"yaml", "", "JSON"} {
+	for _, format := range []string{"xml", "", "JSON"} {
 		var out, diagnostics bytes.Buffer
 		deps, loads := testDependencies(&out, &diagnostics)
 		err := execute([]string{"eval", "--output=" + format}, deps)

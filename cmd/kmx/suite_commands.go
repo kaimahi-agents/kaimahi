@@ -253,7 +253,7 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 		}
 		return nil
 	}
-	group.AddCommand(build, pull, newSuitePushCommand(state, false), validate, newSuitePolicyCommand())
+	group.AddCommand(build, pull, newSuitePushCommand(state, false), validate, newSuitePolicyCommand(), newSuiteMapCommand(state))
 	return group
 }
 

@@ -1,7 +1,10 @@
 package cliui
 
 import (
+	"encoding/json"
+	"fmt"
 	"image/color"
+	"io"
 	"strconv"
 	"strings"
 
@@ -9,7 +12,48 @@ import (
 	liptable "charm.land/lipgloss/v2/table"
 	"charm.land/lipgloss/v2/tree"
 	"github.com/charmbracelet/x/ansi"
+	"go.yaml.in/yaml/v3"
 )
+
+// WriteStructured preserves the JSON contract (tags, nulls and exact numbers)
+// when presenting YAML. JSON is parsed as YAML's JSON-compatible subset rather
+// than round-tripped through float64 or Go's default YAML field names.
+func WriteStructured(out io.Writer, format string, value any) error {
+	if format == "json" {
+		return json.NewEncoder(out).Encode(value)
+	}
+	if format != "yaml" {
+		return fmt.Errorf("structured output must be json or yaml")
+	}
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	return WriteJSONAsYAML(out, raw)
+}
+func WriteJSONAsYAML(out io.Writer, raw []byte) error {
+	if !json.Valid(raw) {
+		return fmt.Errorf("command did not produce one valid JSON report")
+	}
+	var node yaml.Node
+	if err := yaml.Unmarshal(raw, &node); err != nil {
+		return err
+	}
+	var block func(*yaml.Node)
+	block = func(n *yaml.Node) {
+		n.Style = 0
+		for _, child := range n.Content {
+			block(child)
+		}
+	}
+	block(&node)
+	encoder := yaml.NewEncoder(out)
+	encoder.SetIndent(2)
+	if err := encoder.Encode(&node); err != nil {
+		return err
+	}
+	return encoder.Close()
+}
 
 type Field struct {
 	Label string
@@ -284,7 +328,7 @@ func (o Output) FocusInput(kind FocusKind, prompt, value, hint string, width int
 
 // UserMessage is a durable transcript box, with no editor hint or background.
 func (o Output) UserMessage(value string, width int) []string {
-	return o.inputFrame("YOU", lipgloss.BrightBlack, "", value, "", width).Rows
+	return o.inputFrame("YOU", lipgloss.Blue, "", value, "", width).Rows
 }
 
 func (o Output) inputFrame(title string, color color.Color, prompt, value, hint string, width int) FocusFrame {
@@ -299,14 +343,19 @@ func (o Output) inputFrame(title string, color color.Color, prompt, value, hint 
 	}
 	topLabel := "─ " + title + " "
 	top := "╭" + topLabel + strings.Repeat("─", max(0, width-2-lipgloss.Width(topLabel))) + "╮"
+	left, bottomLeft := "│", "╰"
+	if title == "YOU" || title == "MESSAGE" {
+		left, bottomLeft = "▌", "▌"
+		top = "▌" + strings.TrimPrefix(top, "╭")
+	}
 	rows := []string{top}
 	for _, row := range textRows {
 		content := lipgloss.NewStyle().Width(inner).Render(row)
 		if o.cap.Color {
 			border := lipgloss.NewStyle().Foreground(color)
-			rows = append(rows, border.Render("│")+" "+content+" "+border.Render("│"))
+			rows = append(rows, border.Render(left)+" "+content+" "+border.Render("│"))
 		} else {
-			rows = append(rows, "│ "+content+" │")
+			rows = append(rows, left+" "+content+" │")
 		}
 	}
 	cursorRow := len(rows) - 1
@@ -316,12 +365,12 @@ func (o Output) inputFrame(title string, color color.Color, prompt, value, hint 
 		content := lipgloss.NewStyle().Foreground(lipgloss.BrightBlack).Width(inner).Render(hint)
 		if o.cap.Color {
 			border := lipgloss.NewStyle().Foreground(color)
-			rows = append(rows, border.Render("│")+" "+content+" "+border.Render("│"))
+			rows = append(rows, border.Render(left)+" "+content+" "+border.Render("│"))
 		} else {
-			rows = append(rows, "│ "+content+" │")
+			rows = append(rows, left+" "+content+" │")
 		}
 	}
-	rows = append(rows, "╰"+strings.Repeat("─", width-2)+"╯")
+	rows = append(rows, bottomLeft+strings.Repeat("─", width-2)+"╯")
 	if o.cap.Color {
 		border := lipgloss.NewStyle().Foreground(color)
 		rows[0] = border.Render(rows[0])

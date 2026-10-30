@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -52,6 +54,9 @@ type agentTUIModel struct {
 	loadInventory                                func(agentTUIEnvironment) ([]agentTUIAgent, error)
 	saveEnvironment                              func(local bool, name string) error
 	creation                                     *agentTUICreatePane
+	mdCreation                                   *consoleMDCreate
+	createdDefinitions                           map[string]agentTUIAgent
+	startMDJob                                   func(*consoleMDCreate, func(context.Context) consoleMDResult) tea.Cmd
 	inference                                    *consoleInferencePane
 	inferenceContext                             context.Context
 	loadAzureInference                           func(context.Context, string, string, string, string) ([]consoleAzureChoice, error)
@@ -81,6 +86,12 @@ func newAgentTUIModel(opt AgentTUIOptions) agentTUIModel {
 // AgentTUI releases terminal ownership before entering chat,
 // then restores the dashboard and refreshes both inventories on return.
 func (a *App) AgentTUI(opt AgentTUIOptions) error {
+	if opt.Type != "" && opt.Type != "md" && opt.Type != "orka" {
+		return fmt.Errorf("agent type must be md or orka")
+	}
+	if opt.Type == "md" && (opt.LocalContext != "" || opt.RemoteContext != "") {
+		return fmt.Errorf("md agents use local files, not cluster contexts")
+	}
 	if a.Stdin == nil || !isTerminalFile(a.Stdin) || !isInteractiveTerminal(a.Out) || os.Getenv("TERM") == "dumb" {
 		return fmt.Errorf("kmx cluster console requires an interactive terminal on stdin and stdout; use kmx cluster orka list for piped output")
 	}
@@ -100,11 +111,24 @@ func (a *App) AgentTUI(opt AgentTUIOptions) error {
 	}
 	if !opt.Demo && opt.LocalContext == "" && opt.RemoteContext == "" {
 		// Prefer the configured context only in its independently classified column.
-		m.status = "Discovering environments · configured context: " + a.Cfg.KubeContext
+		m.status = "Discovering environments and agents"
 	}
 	for {
 		ctx, cancel := context.WithCancel(a.operationContext())
 		var workers sync.WaitGroup
+		m.startMDJob = func(p *consoleMDCreate, work func(context.Context) consoleMDResult) tea.Cmd {
+			jobCtx, stop := context.WithCancel(ctx)
+			p.cancel = stop
+			result := make(chan consoleMDResult, 1)
+			workers.Add(1)
+			go func() {
+				defer workers.Done()
+				msg := work(jobCtx)
+				msg.pane = p
+				result <- msg
+			}()
+			return func() tea.Msg { return <-result }
+		}
 		m.inferenceContext = ctx
 		m.loadAzureInference = a.consoleAzureChoices
 		m.loadInference = func(env agentTUIEnvironment, agent agentTUIAgent) (consoleInferenceSnapshot, error) {
@@ -122,19 +146,69 @@ func (a *App) AgentTUI(opt AgentTUIOptions) error {
 		}
 		a.bindSuiteWorkspaceReviewWorkers(ctx, &m, &workers)
 		m.loadEnvs = func() tea.Msg {
-			envs, err := a.agentTUIEnvironments(ctx)
+			var envs []agentTUIEnvironment
+			var err error
+			if opt.Type != "md" {
+				if _, e := exec.LookPath("kubectl"); e == nil {
+					probe, stop := context.WithTimeout(ctx, 5*time.Second)
+					envs, err = a.agentTUIEnvironments(probe)
+					stop()
+				} else if opt.Type == "orka" || opt.LocalContext != "" || opt.RemoteContext != "" {
+					err = fmt.Errorf("kubectl is required to list Orka environments")
+				}
+			}
+			fileEnv := agentTUIEnvironment{}
+			if opt.Type != "orka" {
+				root := opt.Directory
+				if root == "" {
+					root = "."
+				}
+				root, e := filepath.Abs(root)
+				if e != nil {
+					return agentTUIEnvsMsg{err: e}
+				}
+				fileEnv = agentTUIEnvironment{Name: "files:" + root, Directory: root, Local: true}
+				envs = append([]agentTUIEnvironment{fileEnv}, envs...)
+			}
 			prefs, prefErr := loadLiftPreferences()
-			return agentTUIEnvsMsg{envs: envs, err: errors.Join(err, prefErr), preferred: agentTUIPreferredEnvironments(envs, prefs, a.Cfg.KubeContext)}
+			configured := ""
+			if a.Cfg != nil {
+				configured = a.Cfg.KubeContext
+			}
+			preferred := agentTUIPreferredEnvironments(envs, prefs, configured)
+			if fileEnv.Name != "" && opt.LocalContext == "" {
+				preferred[0] = fileEnv.Name
+			}
+			return agentTUIEnvsMsg{envs: envs, err: errors.Join(err, prefErr), preferred: preferred}
 		}
 		m.loadInventory = func(env agentTUIEnvironment) ([]agentTUIAgent, error) {
-			return a.agentTUIInventory(ctx, env, opt.Namespace)
+			if env.Directory != "" && !opt.Definitions {
+				return agentInstanceInventory(env.Directory)
+			}
+			rows, err := a.agentTUIInventory(ctx, env, opt.Namespace)
+			if env.Local && env.Directory == "" && opt.Type != "orka" {
+				directory := opt.Directory
+				if directory == "" {
+					directory = "."
+				}
+				var local []agentTUIAgent
+				var e error
+				if opt.Definitions {
+					local, e = markdownAgentInventory(directory)
+				} else {
+					local, e = agentInstanceInventory(directory)
+				}
+				rows = append(local, rows...)
+				err = errors.Join(err, e)
+			}
+			return rows, err
 		}
 		m.loadRuns = a.consoleRecentOrkaRuns
 		m.loadRun = func(readCtx context.Context, env agentTUIEnvironment, ref consoleRunRef) (runview.Run, error) {
 			return env.app(a).withRunContext(readCtx).ReadOrkaRun(readCtx, ref.Namespace, ref.Name, ref.UID)
 		}
 		filter := func(model tea.Model, msg tea.Msg) tea.Msg {
-			if _, ok := msg.(tea.InterruptMsg); ok && (model.(agentTUIModel).creation != nil || model.(agentTUIModel).inference != nil) {
+			if _, ok := msg.(tea.InterruptMsg); ok && (model.(agentTUIModel).creation != nil || model.(agentTUIModel).mdCreation != nil || model.(agentTUIModel).inference != nil) {
 				return tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
 			}
 			return msg
@@ -191,6 +265,16 @@ func (m *agentTUIModel) refresh() tea.Cmd {
 }
 
 func (m agentTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.mdCreation != nil {
+		if size, ok := msg.(tea.WindowSizeMsg); ok {
+			m.width, m.height = size.Width, size.Height
+		}
+		switch msg.(type) {
+		case agentTUIEnvsMsg, agentTUIInventoryMsg, agentTUIPreferenceMsg:
+		default:
+			return m.updateMDCreate(msg)
+		}
+	}
 	if loaded, ok := msg.(consoleRunsListed); ok {
 		if m.runs != nil && loaded.pane == m.runs {
 			m.runs.loading, m.runs.list, m.runs.listErr = false, loaded.list, consoleRunError(loaded.err)
@@ -299,6 +383,25 @@ func (m agentTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			selected = c.Agents[c.Selection].key()
 		}
 		c.Agents, c.Loading, c.Error = msg.agents, false, ""
+		envDir := c.Env.Directory
+		if resolved, err := filepath.EvalSymlinks(envDir); err == nil {
+			envDir = resolved
+		}
+		for path, row := range m.createdDefinitions {
+			if filepath.Dir(filepath.Dir(path)) != envDir {
+				continue
+			}
+			found := false
+			for _, existing := range c.Agents {
+				if existing.DefinitionPath == path {
+					found = true
+					break
+				}
+			}
+			if !found {
+				c.Agents = append(c.Agents, row)
+			}
+		}
 		c.Selection = min(c.Selection, max(0, len(c.Agents)-1))
 		for i, a := range c.Agents {
 			if a.key() == selected {
@@ -364,7 +467,20 @@ func (m agentTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.details = m.selected() != nil
 			m.detailScroll = 0
 		case "R":
+			if a := m.selected(); a != nil && a.Runtime == "md" {
+				m.status = "Open chat and use /tests for local test results"
+				return m, nil
+			}
 			return m.openRuns()
+		case "e", "T":
+			if a := m.selected(); a != nil && a.Runtime == "md" {
+				kind := "edit"
+				if msg.String() == "T" {
+					kind = "test"
+				}
+				m.action = &agentTUIAction{kind: kind, agent: *a, source: m.columns[m.focus].Env}
+				return m, tea.Quit
+			}
 		case "n":
 			return m.createAgent()
 		case "c":
@@ -394,6 +510,9 @@ func (m *agentTUIModel) move(delta int) {
 
 func (m agentTUIModel) createAgent() (tea.Model, tea.Cmd) {
 	c := m.columns[m.focus]
+	if c.Env.Directory != "" {
+		return m.openMDCreate(c.Env.Directory)
+	}
 	if c.Env.Name == "" {
 		m.status = "Select an environment with /env before creating an agent"
 		return m, nil
@@ -456,6 +575,9 @@ func (m agentTUIModel) agentActions(a agentTUIAgent) []agentTUIMenuAction {
 	if a.canChat() {
 		actions = append(actions, agentTUIMenuAction{"c", "Chat with agent"})
 	}
+	if a.Runtime == "md" {
+		return append(actions, agentTUIMenuAction{"e", "Edit definition"}, agentTUIMenuAction{"t", "Edit tests"}, agentTUIMenuAction{"b", "Edit tool bindings"}, agentTUIMenuAction{"T", "Run tests"}, agentTUIMenuAction{"s", "Suggest tools"}, agentTUIMenuAction{"a", "Review & approve tools"}, agentTUIMenuAction{"u", "Update running agent"})
+	}
 	if !a.External {
 		actions = append(actions, agentTUIMenuAction{"f", "Edit inference"}, agentTUIMenuAction{"t", "Add / edit tools"})
 	}
@@ -468,6 +590,9 @@ func (m agentTUIModel) agentActions(a agentTUIAgent) []agentTUIMenuAction {
 }
 
 func (m agentTUIModel) agentHints(a agentTUIAgent) string {
+	if a.Runtime == "md" {
+		return "c chat · i inspect · e edit · T test · <enter> actions"
+	}
 	hints := "i inspect"
 	if a.canChat() {
 		hints = "c chat · " + hints
@@ -515,17 +640,42 @@ func (m agentTUIModel) updateActions(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	m.actionsOpen = false
 	switch chosen {
+	case "a", "s":
+		if a.Runtime == "md" {
+			return m.openMDTools(*a, chosen == "s")
+		}
+	case "u":
+		if a.Runtime == "md" {
+			if m.opt.Demo {
+				m.status = "DEMO · update does not change running agents"
+				return m, nil
+			}
+			m.action = &agentTUIAction{kind: "update", agent: *a, source: m.columns[m.focus].Env}
+			return m, tea.Quit
+		}
+	case "e", "t", "b", "T":
+		if a.Runtime == "md" {
+			kind := map[string]string{"e": "edit", "t": "edit-tests", "b": "edit-tools", "T": "test"}[chosen]
+			m.action = &agentTUIAction{kind: kind, agent: *a, source: m.columns[m.focus].Env}
+			return m, tea.Quit
+		}
+		m.status = agentMutationRetirement
+		return m, nil
 	case "i":
 		m.details = true
 		m.detailScroll = 0
 	case "R":
+		if a := m.selected(); a != nil && a.Runtime == "md" {
+			m.status = "Open chat and use /tests to inspect local test results"
+			return m, nil
+		}
 		return m.openRuns()
 	case "c":
 		return m.execute("/chat " + m.agentToken(*a, m.focus))
 	case "L":
 		m.status = interactiveLiftRetirement
 		return m, nil
-	case "f", "t":
+	case "f":
 		m.status = agentMutationRetirement
 		return m, nil
 	}
@@ -805,7 +955,11 @@ func (m agentTUIModel) View() tea.View {
 		header += " · discovering environments…"
 	}
 	header = accent.Render(header)
-	footer := []string{fit("h/l ←/→ columns · j/k ↑/↓ agents · / commands · n create live · r refresh · R runs · ? help · q quit")}
+	createHint := "n deploy workspace"
+	if m.columns[m.focus].Env.Directory != "" {
+		createHint = "n create agent"
+	}
+	footer := []string{fit("h/l ←/→ columns · j/k ↑/↓ agents · / commands · " + createHint + " · r refresh · R runs · ? help · q quit")}
 	if m.status != "" {
 		footer = append([]string{fit(m.status)}, footer...)
 	}
@@ -836,7 +990,7 @@ func (m agentTUIModel) View() tea.View {
 		body = "KEYS & COMMANDS\n\n" +
 			"h/l or ←/→  switch columns; j/k or ↑/↓  select agent\n" +
 			"<enter> actions · i inspect · R recent runs (Orka) · c chat · r refresh\n\n" +
-			"n create, evaluate and deploy authored source in the focused environment\n" +
+			"n create a Markdown agent in files; deploy an authored workspace in clusters\n" +
 			"/inspect [agent]     details in the focused column\n" +
 			"/chat [agent]        open chat, /exit returns here\n" +
 			interactiveLiftRetirement + "\n" +
@@ -869,6 +1023,10 @@ func (m agentTUIModel) View() tea.View {
 	}
 	if m.creation != nil {
 		panel := m.creationView()
+		content = lipgloss.NewCompositor(lipgloss.NewLayer(content), lipgloss.NewLayer(panel).X((w-lipgloss.Width(panel))/2).Y(max(0, (h-lipgloss.Height(panel))/2)).Z(1)).Render()
+	}
+	if m.mdCreation != nil {
+		panel := m.mdCreationView()
 		content = lipgloss.NewCompositor(lipgloss.NewLayer(content), lipgloss.NewLayer(panel).X((w-lipgloss.Width(panel))/2).Y(max(0, (h-lipgloss.Height(panel))/2)).Z(1)).Render()
 	}
 	if m.details || m.actionsOpen {
@@ -929,51 +1087,136 @@ func (m agentTUIModel) columnView(index, width, height int) string {
 	}
 	lines[1] = muted.Render(fit(lines[1]))
 	lines = append(lines, "")
-	// Reserve an extra row for shortcut hints on the focused entry.
-	count := max(1, (height-7)/5)
-	start := max(0, c.Selection-count+1)
-	for i := start; i < min(len(c.Agents), start+count); i++ {
-		a := c.Agents[i]
-		prefix := "  "
-		if i == c.Selection && m.focus == index {
-			prefix = "› "
-		}
-		runtime := a.Runtime
-		if a.External {
-			runtime += " (external)"
-		}
-		name := fit(prefix + tuiOneLine(a.Name) + " · " + tuiOneLine(a.Version))
-		runtimeLine := fit("    " + tuiOneLine(runtime) + " · ready: " + tuiOneLine(a.Ready))
-		inferenceLine := fit("    " + tuiOneLine(valueOr(a.Model, "model unknown")) + " · " + tuiOneLine(valueOr(a.Provider, "provider unknown")))
-		toolLine := fit("    " + tuiOneLine(a.toolSummary()))
-		if i == c.Selection && m.focus == index {
-			name = selected.Bold(true).Render(name)
-			runtimeLine = selected.Render(runtimeLine)
-			inferenceLine = selected.Render(inferenceLine)
-			toolLine = selected.Render(toolLine)
-		}
-		lines = append(lines, name, runtimeLine, inferenceLine, toolLine)
-		if i == c.Selection && m.focus == index {
-			lines = append(lines, selected.Render(fit("    "+m.agentHints(a))))
-		}
-		lines = append(lines, border.Render("  "+strings.Repeat("─", max(0, inner-2))))
-	}
-	if len(c.Agents) == 0 && !c.Loading && c.Error == "" && c.Env.Name != "" {
-		empty := "<no live agents here, n to create a new one>"
-		for _, line := range strings.Split(ansi.Hardwrap(empty, inner, true), "\n") {
-			if m.focus == index {
-				line = selected.Render(line)
+	fields, widths := agentTableLayout(inner)
+	if len(fields) > 0 && len(c.Agents) > 0 {
+		lines = append(lines, heading.Render(agentTableRow(fields, widths, "  ")))
+		// Header, pane borders, focused hints and pagination stay outside rows.
+		count := max(1, height-8)
+		start := max(0, c.Selection-count+1)
+		for i := start; i < min(len(c.Agents), start+count); i++ {
+			prefix := "  "
+			if i == c.Selection && m.focus == index {
+				prefix = "› "
 			}
-			lines = append(lines, line)
+			row := agentTableRow(agentTableValues(c.Agents[i], fields), widths, prefix)
+			if i == c.Selection && m.focus == index {
+				row = selected.Bold(true).Render(row)
+			}
+			lines = append(lines, row)
 		}
-	}
-	if len(c.Agents) > count {
-		lines = append(lines, fmt.Sprintf("%d/%d", c.Selection+1, len(c.Agents)))
+		if m.focus == index && c.Selection >= 0 && c.Selection < len(c.Agents) {
+			lines = append(lines, muted.Render(fit(m.agentHints(c.Agents[c.Selection]))))
+		}
+		if len(c.Agents) > count {
+			lines = append(lines, fmt.Sprintf("%d/%d", c.Selection+1, len(c.Agents)))
+		}
+	} else {
+		// Reserve an extra row for shortcut hints on the focused entry.
+		count := max(1, (height-7)/5)
+		start := max(0, c.Selection-count+1)
+		for i := start; i < min(len(c.Agents), start+count); i++ {
+			a := c.Agents[i]
+			prefix := "  "
+			if i == c.Selection && m.focus == index {
+				prefix = "› "
+			}
+			runtime := a.Runtime
+			if a.External {
+				runtime += " (external)"
+			}
+			name := fit(prefix + tuiOneLine(a.Name) + " · " + tuiOneLine(a.Version))
+			runtimeLine := fit("    " + tuiOneLine(runtime) + " · ready: " + tuiOneLine(a.Ready))
+			if a.Runtime == "md" {
+				runtimeLine = fit("    type: md · " + tuiOneLine(a.TestStatus))
+			}
+			inferenceLine := fit("    " + tuiOneLine(valueOr(a.Model, "model unknown")) + " · " + tuiOneLine(valueOr(a.Provider, "provider unknown")))
+			toolLine := fit("    " + tuiOneLine(a.toolSummary()))
+			if i == c.Selection && m.focus == index {
+				name = selected.Bold(true).Render(name)
+				runtimeLine = selected.Render(runtimeLine)
+				inferenceLine = selected.Render(inferenceLine)
+				toolLine = selected.Render(toolLine)
+			}
+			lines = append(lines, name, runtimeLine, inferenceLine, toolLine)
+			if i == c.Selection && m.focus == index {
+				lines = append(lines, selected.Render(fit("    "+m.agentHints(a))))
+			}
+			lines = append(lines, border.Render("  "+strings.Repeat("─", max(0, inner-2))))
+		}
+		if len(c.Agents) == 0 && !c.Loading && c.Error == "" && c.Env.Name != "" {
+			empty := "<no live agents here, n to create a new one>"
+			for _, line := range strings.Split(ansi.Hardwrap(empty, inner, true), "\n") {
+				if m.focus == index {
+					line = selected.Render(line)
+				}
+				lines = append(lines, line)
+			}
+		}
+		if len(c.Agents) > count {
+			lines = append(lines, fmt.Sprintf("%d/%d", c.Selection+1, len(c.Agents)))
+		}
 	}
 	for i := range lines {
 		lines[i] = fit(lines[i])
 	}
 	return lipgloss.NewStyle().Width(width).Height(height).Border(lipgloss.RoundedBorder()).BorderForeground(color).Padding(0, 1).Render(strings.Join(lines, "\n"))
+}
+
+// Choose columns from the pane's available width, not the terminal width: a
+// two-column console can use a table on one side and stacked rows on the other.
+func agentTableLayout(width int) ([]string, []int) {
+	fields := []string{"NAME", "TYPE", "STATE", "MODEL"}
+	widths := []int{12, 5, 9, 14}
+	used := 2 + 12 + 5 + 9 + 14 + 3*2
+	if width < used {
+		return nil, nil
+	}
+	for _, extra := range []struct {
+		name  string
+		width int
+	}{{"VERSION", 10}, {"PROVIDER", 12}, {"TOOLS", 5}} {
+		if used+2+extra.width > width {
+			break
+		}
+		fields, widths = append(fields, extra.name), append(widths, extra.width)
+		used += 2 + extra.width
+	}
+	// Spend remaining space on the fields most likely to contain long names.
+	widths[0] += (width - used) / 2
+	widths[3] += width - used - (width-used)/2
+	return fields, widths
+}
+
+func agentTableValues(a agentTUIAgent, fields []string) []string {
+	runtime := a.Runtime
+	if a.External {
+		runtime += "*"
+	}
+	state := valueOr(a.Ready, "unknown")
+	if a.Runtime == "md" && a.InstanceID == "" {
+		state = valueOr(a.TestStatus, state)
+	}
+	enabled := 0
+	for _, tool := range a.Tools {
+		if !tool.Disabled {
+			enabled++
+		}
+	}
+	values := map[string]string{"NAME": a.Name, "TYPE": runtime, "STATE": state, "MODEL": valueOr(a.Model, "unknown"), "VERSION": valueOr(a.Version, "unknown"), "PROVIDER": valueOr(a.Provider, "unknown"), "TOOLS": fmt.Sprintf("%d/%d", enabled, len(a.Tools))}
+	row := make([]string, len(fields))
+	for i, field := range fields {
+		row[i] = values[field]
+	}
+	return row
+}
+
+func agentTableRow(values []string, widths []int, prefix string) string {
+	cells := make([]string, len(values))
+	for i, value := range values {
+		text := ansi.Truncate(tuiOneLine(value), widths[i], "…")
+		cells[i] = text + strings.Repeat(" ", max(0, widths[i]-lipgloss.Width(text)))
+	}
+	return prefix + strings.Join(cells, "  ")
 }
 
 func (m agentTUIModel) localColumnWidth(width int) int {
@@ -1051,6 +1294,15 @@ func (m agentTUIModel) agentDetailsLines(a agentTUIAgent, inner int) []string {
 		{"Endpoint", valueOr(a.Endpoint, "unknown")}, {"Inference Ready", a.InferenceReady},
 	} {
 		field(entry[0], entry[1])
+	}
+	if a.Runtime == "md" {
+		field("Type", "md")
+		if a.InstanceID != "" {
+			field("ID", a.InstanceID)
+		}
+		field("Definition", a.DefinitionPath)
+		field("Tests", a.TestsPath)
+		field("Test status", a.TestStatus)
 	}
 	if a.InferenceConfig != "" {
 		field("Inference config", a.InferenceConfig)

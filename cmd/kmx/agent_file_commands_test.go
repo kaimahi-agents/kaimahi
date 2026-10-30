@@ -435,7 +435,7 @@ func TestFileCommandsRefuseMixedModesBeforeConfig(t *testing.T) {
 		{"run", "FILE", "--github-summary"},
 		{"eval", "FILE", "--github-summary"},
 		{"test", "FILE", "--case", ""},
-		{"test", "FILE", "-o", "yaml"},
+		{"test", "FILE", "-o", "xml"},
 		{"eval", "FILE"},
 		{"test", "--case", "greeting"},
 		{"run", "--agent", "live", "--prompt", "x", "--case", "greeting"},
