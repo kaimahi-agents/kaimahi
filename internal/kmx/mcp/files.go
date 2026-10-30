@@ -1,5 +1,8 @@
 // Package mcp adapts local agent-file operations to stdio MCP.
-// File access is agent-only, optionally root-bound; execution uses shared App snapshots.
+// Legacy file tools are agent-only, optionally root-bound; execution uses shared App snapshots.
+// Separate source/history resources expose checked agent/tests pairs and observed
+// contexts for v3 operations. Checked sequential pair publication retains source
+// history and explicit per-source effects; legacy/native branches stay separate.
 // WSL resolves Windows drive-absolute inputs through existing /mnt drives before
 // ordinary absolute-path handling; responses retain the requested path identity.
 // Unbound non-fake previews default to Copilot's fixed endpoint and the authored
@@ -74,6 +77,8 @@ func (e *Error) Error() string {
 		return "settings_unavailable: folder settings cannot be safely read or written"
 	case "settings_write_unknown":
 		return "settings_write_unknown: settings publication is unconfirmed; read back before deciding what to do"
+	case "paired_source_required":
+		return "paired_source_required: use kmx run FILE or kmx test FILE for companion tests"
 	case "stale_revision":
 		return "stale_revision: source changed; review its current revision before editing"
 	case "busy":
@@ -115,12 +120,14 @@ type File struct {
 // A nil root resolves agent paths against cwd; explicit roots retain legacy policy.
 // v1 uses canonical parsing; native cast operations bind their explicit profile.
 type Files struct {
-	root        *os.Root
-	validate    func(string, []byte) error
-	viewMu      sync.Mutex
-	latest      previewObservation
-	historyDir  func() (string, error)
-	historyGate chan struct{}
+	root                    *os.Root
+	validate                func(string, []byte) error
+	viewMu                  sync.Mutex
+	latest                  previewObservation
+	pairContexts            []pairContext
+	pairExecute, pairWrites bool
+	historyDir              func() (string, error)
+	historyGate             chan struct{}
 	// exact is a private rootless capability for one CLI-selected physical file.
 	// OpenFiles and inbound MCP never set it.
 	exact string
@@ -173,12 +180,18 @@ func revision(b []byte) string { return fmt.Sprintf("sha256:%x", sha256.Sum256(b
 // root or absolute when unbound. Missing suffixes support Create; an existing
 // dangling link never becomes one. IO uses the retained root/parent descriptor.
 func (f *Files) rootRelative(p string) (string, error) {
+	return f.rootRelativeSource(p, false)
+}
+
+// Tests is a typed C3 selector, not another agent pathname. All root and alias
+// resolution checks remain identical; callers must ParseTests before disclosure.
+func (f *Files) rootRelativeSource(p string, tests bool) (string, error) {
 	p, err := hostAgentPath(p)
 	if err != nil {
 		return "", err
 	}
 	if f.root == nil {
-		if f.exact == "" && !agentPath(p) {
+		if f.exact == "" && !tests && !agentPath(p) {
 			return "", refusal("unsafe_path")
 		}
 		var err error
@@ -215,7 +228,7 @@ func (f *Files) rootRelative(p string) (string, error) {
 		resolved = filepath.Join(resolved, suffix)
 	}
 	if f.root == nil {
-		if f.exact != "" && resolved != f.exact || f.exact == "" && !agentPath(resolved) {
+		if f.exact != "" && (tests || resolved != f.exact) || f.exact == "" && !tests && !agentPath(resolved) {
 			return "", refusal("unsafe_path")
 		}
 		return resolved, nil
@@ -442,12 +455,21 @@ func (f *Files) Edit(ctx context.Context, p, expected string, b []byte) (File, e
 }
 
 func (f *Files) editObserved(ctx context.Context, p, expected string, b []byte, observed *sourceIdentity) (File, error) {
+	return f.editObservedChecked(ctx, p, expected, b, observed, nil, nil)
+}
+
+// Private pair checks run before staging and under the target lock immediately
+// before replacement. Public Edit and legacy recording saves supply no hooks.
+func (f *Files) editObservedChecked(ctx context.Context, p, expected string, b []byte, observed *sourceIdentity, beforeStage, beforePublish func() error) (File, error) {
 	if err := cancelled(ctx); err != nil {
 		return File{}, err
 	}
 	requested := p
 	p, err := f.rootRelative(p)
 	if err != nil {
+		return File{}, err
+	}
+	if err := f.requireSingleSource(p); err != nil {
 		return File{}, err
 	}
 	if err := f.valid(p, b); err != nil {
@@ -474,6 +496,11 @@ func (f *Files) editObserved(ctx context.Context, p, expected string, b []byte, 
 	}
 	if f.validate(p, old) != nil {
 		return File{}, refusal("invalid_file")
+	}
+	if beforeStage != nil {
+		if err := beforeStage(); err != nil {
+			return File{}, err
+		}
 	}
 	name, err := stage(parent, b, info.Mode(), true)
 	if err != nil {
@@ -525,6 +552,14 @@ func (f *Files) editObserved(ctx context.Context, p, expected string, b []byte, 
 		}
 	}
 	if err := cancelled(ctx); err != nil {
+		return File{}, err
+	}
+	if beforePublish != nil {
+		if err := beforePublish(); err != nil {
+			return File{}, err
+		}
+	}
+	if err := f.requireSingleSource(p); err != nil {
 		return File{}, err
 	}
 	if err := parent.Rename(name, filepath.Base(p)); err != nil {

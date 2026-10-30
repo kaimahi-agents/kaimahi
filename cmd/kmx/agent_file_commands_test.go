@@ -34,6 +34,11 @@ func (f *cliPreviewFake) Run(ctx context.Context, r agentpreview.Request) (agent
 	f.deadline, _ = ctx.Deadline()
 	f.calls++
 	f.request = r
+	if r.ValidateSource != nil && f.cause == nil {
+		if err := r.ValidateSource(ctx); err != nil {
+			return agentpreview.Outcome{State: agentpreview.Failed}, agentpreview.ErrSourceChanged
+		}
+	}
 	if r.BeforeExecute != nil && f.cause == nil {
 		if err := r.BeforeExecute(); err != nil {
 			return agentpreview.Outcome{State: agentpreview.Failed}, errors.Join(agentpreview.ErrDiagnosticsFailed, err)
@@ -43,7 +48,7 @@ func (f *cliPreviewFake) Run(ctx context.Context, r agentpreview.Request) (agent
 		if f.cause != nil {
 			return agentpreview.Completion{State: agentpreview.NotRun}
 		}
-		return agentpreview.Completion{State: agentpreview.Complete, ID: id, FileRevision: r.Agent.Revision, Provider: r.Route.Provider, Model: r.Route.Model, Answer: "PRIVATE ANSWER"}
+		return agentpreview.Completion{State: agentpreview.Complete, ID: id, FileRevision: r.Agent.Revision, SnapshotRevision: r.SnapshotRevision, Provider: r.Route.Provider, Model: r.Route.Model, Answer: "PRIVATE ANSWER"}
 	}
 	o := agentpreview.Outcome{State: agentpreview.Complete, Journal: "private-handle"}
 	if r.Input != nil {
@@ -290,7 +295,6 @@ func TestFileCommandGitHubSummaryRefusesBeforeExecution(t *testing.T) {
 		{"missing environment", []string{"test", "FILE", "-o", "json", "--github-summary"}, ""},
 		{"relative environment", []string{"test", "FILE", "-o", "json", "--github-summary"}, "summary.md"},
 		{"requires json", []string{"test", "FILE", "--github-summary"}, filepath.Join(t.TempDir(), "unused.md")},
-		{"requires file", []string{"test", "--github-summary", "-o", "json"}, filepath.Join(t.TempDir(), "unused.md")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			file := cliPreviewFile(t)
@@ -436,7 +440,6 @@ func TestFileCommandsRefuseMixedModesBeforeConfig(t *testing.T) {
 		{"test", "--case", "greeting"},
 		{"run", "--agent", "live", "--prompt", "x", "--case", "greeting"},
 		{"run", "--agent", "live", "--prompt", "x", "--verbose"},
-		{"test", "--verbose"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			path := cliPreviewFile(t)
@@ -626,7 +629,7 @@ func TestFileHelpIsCanonicalOnly(t *testing.T) {
 						t.Errorf("legacy help changed: missing %q", help)
 					}
 				}
-			} else if !strings.Contains(strings.ToLower(out.String()), verb+" file") || !strings.Contains(out.String(), "--case") {
+			} else if !strings.Contains(strings.ToLower(out.String()), map[string]string{"run": "run file", "test": "test [file]"}[verb]) || !strings.Contains(out.String(), "--case") {
 				t.Fatalf("canonical file preview missing from %s help: %s", verb, out.String())
 			}
 			if verb != "eval" {

@@ -3,6 +3,7 @@ package localpreview
 import (
 	"strconv"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 )
@@ -35,15 +36,24 @@ func wireRequestPayloadPaths(messages int) [][]string {
 
 func checkToolContent(check func(...string) error, r agentpreview.Request) error {
 	a := r.Agent
-	fields := []string{r.FileLabel, a.Title, a.Identity.ID, a.Identity.Purpose, a.Revision, a.Model, a.Instructions, a.NativeTaskInstructions, r.Route.Provider, r.Route.Model}
+	fields := []string{r.FileLabel, a.Title, a.Identity.ID, a.Identity.Purpose, a.Revision, a.Model, a.Instructions, a.NativeTaskInstructions, a.Frontmatter, r.Route.Provider, r.Route.Model}
 	fields = append(fields, a.Tools...)
+	fields = append(fields, r.SourceText...)
 	if r.JudgeRoute != nil {
 		fields = append(fields, r.JudgeRoute.Provider, r.JudgeRoute.Model)
 	}
 	if r.Input != nil {
 		fields = append(fields, *r.Input)
 	}
-	for _, ex := range r.Examples {
+	examples := r.Examples
+	if r.SourceAgent != nil {
+		source := r.SourceAgent
+		fields = append(fields, source.Title, source.Identity.ID, source.Identity.Purpose, source.Revision, source.Model, source.Instructions, source.NativeTaskInstructions, source.Frontmatter)
+		fields = append(fields, source.Tools...)
+		examples = append(agentfile.CloneExamples(examples), a.Examples...)
+		examples = append(examples, source.Examples...)
+	}
+	for _, ex := range examples {
 		if localtools.CheckJSONPayloads(ex.Mocks, check, mockPayloadPaths...) != nil {
 			return agentpreview.ErrUnsafeToolContent
 		}

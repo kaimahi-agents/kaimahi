@@ -33,6 +33,7 @@ export const MESSAGES = {
   tool_settings_changed: "Tool settings changed. Reload before comparing.",
   confirmation_required: COPILOT_TESTS_NOTICE,
   invalid_tool_settings: "The tool settings in kmx.yaml are invalid. Fix them before running this agent.",
+  paired_source_required: "Paired test files are not supported in this canvas.",
 };
 
 export class ViewError extends Error {
@@ -58,6 +59,10 @@ export function normalizePath(path) {
     if (agent || squad) return path;
   }
   throw new ViewError("invalid-path");
+}
+export function normalizeTests(tests) {
+  if (tests !== undefined && (typeof tests !== "string" || !tests || tests.includes("\0"))) throw new ViewError("invalid-path");
+  return tests;
 }
 export const resourceUri = (path) => `kmx://agent/${encodeURIComponent(normalizePath(path))}`;
 
@@ -151,14 +156,22 @@ export function cleanResult(r, status, revision) {
   };
 }
 
-function parseView(json, path) {
+function sourceHistory(raw) {
+  if (raw === undefined) return;
+  if (!isObj(raw) || raw.schemaVersion !== 1 || raw.read !== true ||
+      ["execute", "edit", "capture", "restore"].some(k => raw[k] !== false) ||
+      Object.keys(raw).some(k => !["schemaVersion", "read", "execute", "edit", "capture", "restore"].includes(k))) invalid();
+  return { schemaVersion: 1, read: true, execute: false, edit: false, capture: false, restore: false };
+}
+
+function parseView(json, path, external = false) {
   let raw;
   try {
     raw = JSON.parse(json);
   } catch {
     invalid();
   }
-  if (raw?.schemaVersion === 1 && raw.kind === "kmx.agent-view-error" && raw.reasonCode === "invalid_tool_settings") throw new ViewError("invalid_tool_settings");
+  if (raw?.schemaVersion === 1 && raw.kind === "kmx.agent-view-error" && ["invalid_tool_settings", "paired_source_required"].includes(raw.reasonCode)) throw new ViewError(raw.reasonCode);
   if (raw?.schemaVersion === 1 && raw.kind === "kmx.agent-view-error" && raw.reasonCode === "invalid_file") throw new ViewError("invalid-file");
   if (raw?.schemaVersion === 1 && raw.kind === "kmx.agent-view-error" && raw.reasonCode === "not_found") throw new ViewError("not-found");
   if (!isObj(raw) || raw.schemaVersion !== 1 || raw.kind !== KIND) invalid();
@@ -195,7 +208,8 @@ function parseView(json, path) {
   const result = latest.status === "current" ? cleanResult(latest.result, latest.status, file.revision) : undefined;
   if (result?.toolSettings && !settingsMatch(result.toolSettings, tools)) invalid();
   const badge = latest.status !== "current" ? latest.status : result.fullPass && result.state === "complete" && result.selection.scope === "full" && result.verdict === "pass" ? "pass" : "not-passing";
-  const authoring = authoringSnapshot(raw.authoring, raw.examples, file.revision);
+  const authoring = authoringSnapshot(raw.authoring, raw.examples, file.revision, external);
+  const historyCapability = sourceHistory(raw.sourceHistory);
   return {
     file: { path, revision: file.revision },
     title: clean(raw.title, 200),
@@ -206,11 +220,12 @@ function parseView(json, path) {
     ...(token !== undefined ? { toolSettingsRevision: token } : {}),
     examples,
     ...(authoring ? { authoring } : {}),
+    ...(historyCapability ? { sourceHistory: historyCapability } : {}),
     latest: { status: latest.status, badge, ...(result ? { result } : {}) },
   };
 }
 
-function authoringSnapshot(snapshot, examples, revision) {
+function authoringSnapshot(snapshot, examples, revision, external = false) {
   if (!isObj(snapshot) || typeof snapshot.source !== "string" || typeof snapshot.editable !== "boolean") return;
   if (Buffer.byteLength(snapshot.source, "utf8") > 256 * 1024 ||
       `sha256:${createHash("sha256").update(snapshot.source).digest("hex")}` !== revision) return;
@@ -218,7 +233,7 @@ function authoringSnapshot(snapshot, examples, revision) {
     if (snapshot.editable) {
       instructionSections(snapshot.source);
       // Tests the editor cannot find in the source must never be rewritten blind.
-      if ((examples ?? []).length && !hasExamples(snapshot.source)) return;
+      if (!external && (examples ?? []).length && !hasExamples(snapshot.source)) return;
       // A hash-verified canonical source may hold zero tests, which Go emits as null.
       if (snapshot.recordingControls === true) validateExamples(examples ?? [], true);
       else replaceExamples(snapshot.source, examples ?? []);
@@ -227,23 +242,57 @@ function authoringSnapshot(snapshot, examples, revision) {
   } catch { return; } // A malformed authoring snapshot cannot enable writes.
 }
 
-export async function readView(session, rawPath) {
+function parseSelectedSources(json, path, server, selector) {
+  let d; try { d = JSON.parse(json); } catch { invalid(); }
+  if (d?.kind === "kmx.agent-view-error" && d.reasonCode === "paired_source_required") throw new ViewError("paired_source_required");
+  if (d?.kind === "kmx.source-history-error") throw new ViewError(d.reasonCode === "invalid_file" ? "invalid-file" : d.reasonCode === "not_found" ? "not-found" : "unavailable");
+  const digest = s => `sha256:${createHash("sha256").update(s).digest("hex")}`, hash = s => typeof s === "string" && /^sha256:[a-f0-9]{64}$/.test(s);
+  const cap = d?.pairOperations, tests = d?.tests;
+  if (d?.schemaVersion !== 1 || d.kind !== "kmx.agent-sources" || d.readOnly !== true || !["valid", "invalid_pair"].includes(d.validation)
+    || typeof d.source !== "string" || Buffer.byteLength(d.source) > 256 * 1024 || !isObj(d.file) || typeof d.file.path !== "string" || d.file.revision !== digest(d.source)
+    || !isObj(tests) || !["external", "inline", "absent"].includes(tests.state) || typeof tests.path !== "string" || !hash(tests.selectionKey)
+    || typeof tests.source !== "string" || Buffer.byteLength(tests.source) > 256 * 1024 || (tests.state === "external" ? tests.revision !== digest(tests.source) : tests.source !== "" || tests.revision !== (tests.state === "inline" ? d.file.revision : ""))
+    || !hash(d.snapshotRevision) || typeof d.sourceVersion !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(d.sourceVersion)
+    || cap?.schemaVersion !== 1 || cap.toolSchemaVersion !== 3 || ["execute", "create", "edit", "capture", "restore"].some(k => typeof cap[k] !== "boolean")
+    || d.validation === "invalid_pair" && (cap.execute || cap.capture)) invalid();
+  sourceHistory(d.sourceHistory);
+  const view = d.canvas === undefined ? { file: { path, revision: d.file.revision }, title: path.split("/").at(-1), instructions: "", model: "", tools: [], toolSettings: [], examples: [], latest: { status: "none", badge: "none" } }
+    : parseView(JSON.stringify(d.canvas), path, tests.state === "external");
+  if (view.file.revision !== d.file.revision || d.canvas && (view.authoring?.source !== d.source || view.latest.status !== "none")) invalid();
+  const h = d.history;
+  if (h !== undefined && (!isObj(h) || !["available", "unavailable"].includes(h.status) || !Array.isArray(h.versions) || h.versions.length > 20)) invalid();
+  return { ...view, selectedSources: { source: d.source, sourceVersion: d.sourceVersion, snapshotRevision: d.snapshotRevision, agentPath: d.file.path, testsPath: tests.path, testsState: tests.state, testsSource: tests.source, testsRevision: tests.revision, selectionKey: tests.selectionKey, operations: { ...cap }, validation: d.validation, server, ...(selector !== undefined ? { selector } : {}), ...(h ? { history: { status: h.status, versions: h.versions.map(v => ({ versionId: text(v.versionId, 128), label: text(v.label, 100), sourceKind: text(v.sourceKind, 40) })) } } : {}) } };
+}
+
+export async function readView(session, rawPath, tests) {
   const path = normalizePath(rawPath);
   const read = session?.rpc?.mcp?.resources?.read;
   if (typeof read !== "function") throw new ViewError("unavailable");
+  normalizeTests(tests);
+  if (tests !== undefined && !path.endsWith(".agent.md")) throw new ViewError("invalid-path");
   const chat = readChatModel(session);
+  let server; try { server = previewServer(session); } catch (e) { throw safeError(e); }
   let response;
   try {
-    response = await session.rpc.mcp.resources.read({ serverName: previewServer(session), uri: resourceUri(path) });
+    response = await session.rpc.mcp.resources.read({ serverName: server, uri: tests === undefined ? resourceUri(path) : `kmx://agent-sources/${encodeURIComponent(path)}?tests=${encodeURIComponent(tests)}` });
   } catch (e) {
     throw safeError(e); // never surface raw transport errors
   }
   const contents = response?.contents;
   if (!Array.isArray(contents) || contents.length !== 1 || typeof contents[0]?.text !== "string") invalid();
-  const body = contents[0].text;
+  let body = contents[0].text;
   if (Buffer.byteLength(body, "utf8") > MAX_RESOURCE_BYTES) throw new ViewError("too-large");
   if (typeof body.isWellFormed === "function" && !body.isWellFormed()) invalid();
-  const view = parseView(body, path), metadata = await chat;
+  let raw; try { raw = JSON.parse(body); } catch { invalid(); }
+  let selected = tests !== undefined || raw?.kind === "kmx.agent-sources";
+  if (!selected && (raw?.reasonCode === "paired_source_required" || raw?.pairOperations?.toolSchemaVersion === 3)) {
+    const sources = await session.rpc.mcp.resources.read({ serverName: server, uri: `kmx://agent-sources/${encodeURIComponent(path)}` });
+    if (!Array.isArray(sources?.contents) || sources.contents.length !== 1 || typeof sources.contents[0]?.text !== "string") invalid();
+    body = sources.contents[0].text;
+    if (Buffer.byteLength(body) > MAX_RESOURCE_BYTES) throw new ViewError("too-large");
+    selected = true;
+  }
+  const view = selected ? parseSelectedSources(body, path, server, tests) : parseView(body, path), metadata = await chat;
   return { ...view, ...(metadata.model ? { chatModel: metadata.model } : {}), ...(metadata.name ? { chatModelName: metadata.name } : {}) };
 }
 

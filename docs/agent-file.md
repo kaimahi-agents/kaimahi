@@ -58,15 +58,34 @@ uses `acknowledgeCopilotTests: true` only after the user agrees to that warning;
 MCP Run/Test also requires this acknowledgment before capturing pending tool
 recordings into a Copilot file's tests (replay-only runs do not write);
 without acknowledgment it reports `confirmation_required` and does not write.
-Prompt-only edits retaining identical tests do not ask again. CLI and MCP preview
-and authoring still use inline tests; the companion reader below is not wired into
-those operations yet.
+Prompt-only edits retaining identical tests do not ask again. Existing MCP/canvas
+inline authoring keeps this rule; paired CLI recording writes only the tests file.
 
-## Tests in a separate file (reader only)
+<a id="tests-in-a-separate-file-reader-only"></a>
 
-The shared reader supports a separate tests file. CLI/MCP Run/Test and the canvas
-do not use it yet. The reader does not migrate inline tests, write files or run
-tests.
+## Tests in a separate file (CLI)
+
+`kmx run FILE` and `kmx test FILE` read the selected tests file with the shared
+reader. Run returns answers without checks; Test evaluates the checks. Add
+`--tests FILE` to select an override, or use `run FILE "input"` for only that
+input. No source migration is automatic. A missing or empty test source is not
+a passing Test.
+
+MCP has separate read-only source/history resources and paired offline export.
+The existing Run/Test tools also accept version 3 with a checked `sourceVersion`
+from the source resource: Run answers without checks; Test evaluates selected
+checks. Version-3 Create/Edit write the selected pair with per-source
+acknowledgements, source-only history and current-binding restore. Pending tool
+capture saves only after journal close; external capture leaves agent bytes exact.
+Partial/uncertain saves require refresh, never automatic retry or Test. The canvas
+keeps separate prompt/tests drafts, saves them before Enter/Test, and shows checked
+source history without treating it as saved verdicts. New chat Create writes both
+sources; existing inline tests stay in place. Frozen recordings replay without
+another capture. Explicit suite selection is also available to the canvas opener.
+The legacy version-1 agent-view resource, Run/Test and Edit refuse an agent-only view when its
+default tests file exists; they do not ignore it, report an old agent-only pass
+as current, or fall back to inline writes. Native Squad and single-source files
+remain supported.
 
 The tests file is `NAME.agent.test.md` beside `NAME.agent.md`. An agent directly
 inside `.github/agents/` instead pairs with `.github/agent-tests/NAME.agent.test.md`.
@@ -128,6 +147,83 @@ changes can conservatively invalidate this check without changing either file.
 Pure `ComposePair` values cannot claim a checked file version. These cooperative
 checks are not an atomic two-file transaction, a hostile-filesystem sandbox or
 write permission. The reader keeps separate tests out of the agent's prompt.
+
+CLI JSON keeps `file.revision` as the raw agent hash and adds `snapshotRevision`
+and selected `tests` metadata. Capturing a pending Recorded tool patches only its
+actual source after journal close: separate tests for paired storage, the agent
+for legacy inline storage. The result remains bound to the executed snapshot;
+`recordingTarget`, raw `savedRevision` and `savedSnapshotRevision` acknowledge the
+save separately. Cancellation, journal failure or source change saves nothing;
+a refused tests save never falls back to the agent. Comments, prose, line endings
+and unrelated numeric lexemes remain unchanged. CLI adds no source history.
+
+`kmx test explain --file FILE [--tests FILE]` compares retained failures with the
+current selection. Tests-only edits and a different identical-content override
+make the old result historical without changing the raw agent revision. After a
+downgrade, older binaries may report the retained store unavailable on encountering
+new pair metadata; use this version or newer to read it. No records are migrated
+or removed automatically. Put journal/summary files outside the checked source parent when possible: creating
+entries there can conservatively stale source-version checks.
+
+## Test a folder
+
+Bare `kmx test` selects direct `*.agent.md` entries in the current folder and
+`.github/agents/`, sorted by path, without recursion or Git-root discovery.
+Each agent uses the same companion rule above. Tests files and agents in other
+subfolders are not selected. Missing optional folders are fine; unreadable or
+invalid folders are reported rather than silently treated as empty.
+Matching unsafe files are refused by the existing checked reader.
+
+```sh
+kmx test
+kmx test -o json --no-content --github-summary
+kmx test greeter.agent.md --tests selected-tests.md --case greeting
+```
+
+`--tests` and `--case` require an explicit agent FILE, even if the folder contains
+exactly one agent. Route/model, tool-server selection, `--no-content` and verbose
+options apply to each selected file. Native workspace evaluation stays at
+`kmx package test`; bare Test never falls back to it. Native Windows still
+requires an explicit file through its guarded fake/tool-free path.
+
+Each file gets its own checked pair, journal and five-minute execution budget.
+This is not one atomic folder snapshot. Assertion failures, completed inconclusive
+checks and invalid/missing/empty tests do not prevent the next file from being
+checked. Execution, route/auth, journal, source and other operational failures
+abort later execution; remaining selected files are explicitly `not_run`, not
+passing. This also includes invalid tool settings, unavailable tools/models,
+recording mismatches or missing recordings, and runner content refusals
+(`unsafe_tool_content` or `credential_content`). Load-time parser refusals,
+including credential-shaped source rejected as `invalid_file`, remain
+file-attributable and may continue to later agents. An inconclusive judge is `unknown`, including an unavailable judge; no
+automatic retries occur.
+
+Text has per-file details and one final summary. Folder JSON is one
+`schemaVersion: 1`, `kind: kmx.agent-folder-test` document. Its ordered `files`
+rows include an ordinal, safe display directory/name, status and the existing
+safe per-file `result` when available. Root and repository agents with the same
+basename stay distinct for completed results. Unrun rows use `[agent file]`
+rather than an unchecked filename, and have no fabricated result or revisions.
+Non-complete results also withhold discovered agent/tests/recording path names:
+intake refusals may precede resolved-credential checks. Their known revisions
+and selection keys remain, not a claim that the test executed.
+Final `summary` counts are `total`, `passed`, `failed`, `unknown`, `couldNotRun`
+and `notRun`, followed by `exitCode` and `reasonCode`.
+
+Exit 2 takes precedence over assertion-failure exit 1 if any file is unknown,
+could not run or was not run; an empty/invalid discovery also exits 2.
+Otherwise all pass is 0; interruption is 130. Output/diagnostic/summary I/O errors
+are exceptional exit 1 and stop later sends. Output streams one file at a time:
+a failed write can leave a partial document without its final counts.
+Do not interpret partial output as a completed folder result.
+
+The optional GitHub summary opens once before execution, including for an empty
+folder or discovery error. It contains ordinal-only per-file sections and final
+counts, never source paths or authored content. The whole summary is bounded to
+1 MiB; sections that do not fit are omitted with an exact omitted-section count
+and a pointer to the JSON report. Final counts still cover all selected files.
+The summary sink must finish successfully before JSON's final counts are written;
+neither output is an atomic two-sink publication.
 
 ## Existing kmx charters
 
@@ -227,8 +323,8 @@ The CLI supports one [host-bound read-only GitHub MCP operation](local-preview.m
 with an explicit local binding and environment credential reference. In addition, file Run/Test
 can select named stdio MCP servers from the agent folder's `kmx.yaml` with repeatable
 `--mcp-server NAME` (replaces the saved selection) or `--no-mcp-servers` (clears it); a fixed
-`--tool-bindings` takes precedence. Recorded and Disabled tools stay inert. See
-[selected stdio servers](local-preview.md#selected-stdio-servers-in-file-runtest). Missing
+`--tool-bindings` takes precedence. Disabled tools and populated recordings do not start a
+server. See [selected stdio servers](local-preview.md#selected-stdio-servers-in-file-runtest). Missing
 bindings leave a declared tool available as a stub answering "not available in this test".
 Malformed supplied bindings, missing credentials for an actual live binding, unsupported routes and invalid provider results still refuse.
 Bound tools also work on Copilot Chat Completions and Responses routes; judges
@@ -236,8 +332,7 @@ remain tool-free. Trusted embedding can bind multiple declared names to copied
 host schemas/executors. The Copilot extension runtime can bind those declarations
 to its currently offered MCP tools, using their input schemas without a binding
 file. Raw-name collisions and missing/deferred schemas refuse; no default server
-is selected. See [host tools](local-preview.md#copilot-host-tools). Copilot app host tools
-and native Windows policy are unchanged.
+is selected. See [host tools](local-preview.md#copilot-host-tools).
 Parsing is not a sandbox or
 a guarantee that arbitrary prose is safe or secret-free. The complete charter,
 including raw YAML comments, is checked with the existing credential-shape scanner
@@ -401,10 +496,12 @@ without inventing charter sections or rewriting the file.
 tested AgentSuite artifact handed off by digest (kmx pushes; the host pulls).
 This export does not implement that deployment path or define a host-side API.
 
-`kmx package run-profile export FILE` uses `agentfile.ExportRunProfile`, which calls
-`Load`/`Parse` once, without configuration, state, provider selection, credentials
-or execution. It accepts the same agent-file shapes as Parse, not the distinct native Squad
-profile. Existing tools/settings and safe parser refusals apply unchanged.
+`kmx package run-profile export FILE [--tests FILE]` uses the shared checked
+`LoadPair` reader without configuration, state, provider selection, credentials
+or execution. Default tests use the fixed companion rule; an explicit override
+uses the same C3 selection as file Run/Test. It accepts ordinary agent-file
+shapes, not the distinct native Squad profile. Both selected sources must be
+valid; there is no fallback to inline tests after a companion failure.
 Export still requires an explicit authored model; preview defaults and picker overrides are not export provenance.
 Zero-test authoring charters refuse export
 before any profile bytes are written. Packaging and deployment still require test
@@ -419,7 +516,15 @@ owned and can truncate a file before validation; it does not inherit kmx privacy
 or exclusive-create guarantees. Refusal writes no profile bytes; an output failure
 exits nonzero but may leave partial bytes at the caller's destination.
 
-The experimental v1 envelope has exactly these fields:
+Inline/single-source profiles retain the experimental v1 envelope below. External
+tests use v2 with the same fields plus `snapshotRevision` and `testsSource`
+(`state`, physical `path`, raw `revision`, `selectionKey`). The agent's raw hash
+stays `sourceRevision`. V2 includes local physical-path metadata and is deliberately
+machine/selection-bound: copying identical sources to another folder changes its
+snapshot/profile bytes, but not semantic example hashes. The profile is a
+normalized projection, not an editable raw-source bundle or a save acknowledgement.
+
+The v1 envelope has exactly these fields:
 
 | Field | Meaning |
 |---|---|
@@ -447,8 +552,9 @@ whitespace or trailing newline in the hash preimage. Neither `sha256` nor
 ```
 
 These hashes include assertion IDs and are **not** runtime evaluation-definition
-digests or AgentSuite JCS digests. Paths, source locations, timestamps, routes,
-credentials, local results and build state are omitted. Comments in the Examples YAML affect
+digests or AgentSuite JCS digests. Source locations, timestamps, routes,
+credentials, local results and build state are omitted; v1 also omits paths.
+V2's selected-source identity is separate from semantic hashes. Comments in the Examples YAML affect
 `sourceRevision` but never become example inputs/rubrics or instructions.
 Callers may separately hash the complete emitted artifact. An unsigned profile
 and recomputable hashes establish consistency, not authenticated parser/source

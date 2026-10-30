@@ -58,6 +58,7 @@ See [format boundaries](bundle-format.md) and [current CLI contracts](kmx.md).
 - [Command conventions](command-conventions.md): naming, flag, output and compatibility rules for kmx commands.
 - [Charm boundary](charm-ux-followup-plan.md): the implemented creation wizard and its limits.
 - [Interactive agent TUI](interactive-agent-tui-plan.md): two-environment overview, keyboard navigation, slash-command completion and demo mode.
+- [Copilot CLI text mode](copilot-cli-text-mode.md): unreleased current-main revision-bound text fallback, chat result reporting and model continuity without a canvas.
 - [Suite-first lifecycle direction](suite-first-lifecycle.md): workspace, release, deployment and evaluation objects; partly implemented, not an operator recipe.
 - [KMX lifecycle interface decision](kmx-lifecycle-interfaces.md): rationale for the experimental target, platform, runtime, deployment and receipt boundaries.
 - [KMX application API](kmx-application-api.md): how another Go layer uses AgentEnvironment, AgentSuites and AgentDeployments while management ports remain internal.

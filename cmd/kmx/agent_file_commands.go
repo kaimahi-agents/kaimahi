@@ -23,7 +23,7 @@ import (
 
 type fileCommandOptions struct {
 	CaseID, Provider, Endpoint, Output string
-	Model                              string
+	Model, TestsFile                   string
 	PositionalInput                    bool
 	ToolBindings                       string
 	MCPServers                         []string
@@ -50,6 +50,7 @@ func fileModelRoute(provider, endpoint string) modelaccess.Route {
 func registerFileCommandFlags(cmd *cobra.Command, f *fileCommandOptions, output bool) {
 	cmd.Flags().BoolVar(&f.Verbose, "verbose", false, "Content-free diagnostics and timings on stderr")
 	cmd.Flags().StringVar(&f.CaseID, "case", "", "One saved example ID (partial preview)")
+	cmd.Flags().StringVar(&f.TestsFile, "tests", "", "Tests file override (FILE)")
 	cmd.Flags().StringVar(&f.Provider, "provider", "", "copilot (default), fake, ollama, foundry-local, compatible")
 	cmd.Flags().StringVar(&f.Endpoint, "provider-url", "", "Required local model URL; fixed for Copilot")
 	cmd.Flags().StringVar(&f.Model, "model", "", "Model override for this invocation")
@@ -71,7 +72,7 @@ func validateFileCommand(cmd *cobra.Command, state *commandState, f fileCommandO
 	var invalid string
 	cmd.Flags().Visit(func(flag *pflag.Flag) {
 		switch flag.Name {
-		case "case", "output", "no-content", "model", "provider", "provider-url", "prompt", "prompt-file", "verbose", "tool-bindings", "mcp-server", "no-mcp-servers", "github-summary":
+		case "case", "tests", "output", "no-content", "model", "provider", "provider-url", "prompt", "prompt-file", "verbose", "tool-bindings", "mcp-server", "no-mcp-servers", "github-summary":
 		default:
 			invalid = flag.Name
 		}
@@ -79,7 +80,7 @@ func validateFileCommand(cmd *cobra.Command, state *commandState, f fileCommandO
 	if invalid != "" {
 		return fmt.Errorf("file preview refuses --%s", invalid)
 	}
-	for _, name := range []string{"case", "model", "provider", "provider-url", "prompt-file", "tool-bindings"} {
+	for _, name := range []string{"case", "tests", "model", "provider", "provider-url", "prompt-file", "tool-bindings"} {
 		if flag := cmd.Flag(name); flag != nil && flag.Changed && strings.TrimSpace(flag.Value.String()) == "" {
 			return fmt.Errorf("file preview requires nonempty --%s", name)
 		}
@@ -100,7 +101,7 @@ func validateFileCommand(cmd *cobra.Command, state *commandState, f fileCommandO
 	return nil
 }
 func fileFlagsWithoutFile(cmd *cobra.Command) error {
-	for _, name := range []string{"case", "model", "provider", "provider-url", "no-content", "verbose", "tool-bindings", "mcp-server", "no-mcp-servers", "github-summary"} {
+	for _, name := range []string{"case", "tests", "model", "provider", "provider-url", "no-content", "verbose", "tool-bindings", "mcp-server", "no-mcp-servers", "github-summary"} {
 		if flag := cmd.Flag(name); flag != nil && flag.Changed {
 			return fmt.Errorf("--%s requires an explicit agent FILE", name)
 		}
@@ -109,107 +110,20 @@ func fileFlagsWithoutFile(cmd *cobra.Command) error {
 }
 
 func runFileCommand(cmd *cobra.Command, state *commandState, file string, f fileCommandOptions, prompt, promptFile string) error {
-	opt := app.FilePreviewOptions{File: file, Operation: cmd.Name(), CaseID: f.CaseID,
-		Model: f.Model, DefaultCopilot: true, AdHocOnly: f.PositionalInput && f.CaseID == "", ShowFailedContent: !f.NoContent,
-		SkipAssertions:        cmd.Name() == "run",
-		IncludeAnswer:         cmd.Name() == "run" && !f.NoContent,
-		IncludeFailureDetails: !f.NoContent, ToolBindings: f.ToolBindings}
-	opt.RouteSelected = func(route app.FilePreviewRoute) error {
-		_, err := fmt.Fprintf(cmd.ErrOrStderr(), "Route: %s / %s\n", route.Provider, route.Model)
-		return err
-	}
-	if cmd.Name() == "test" {
-		opt.RetentionFile = file
-	}
-	var windowsAgent *agentfile.Agent
-	if state.deps.goos == "windows" {
-		// Freeze the exact snapshot admitted by the native Windows policy before
-		// any optional host input or execution setup. A source edit between Cobra
-		// hooks must not turn a fake, tool-free invocation into another route.
-		var err error
-		windowsAgent, err = agentfile.Load(file)
-		if err != nil || !windowsPackageFreeFakeAgent(windowsAgent) || f.Provider != "" || f.Endpoint != "" || f.ToolBindings != "" || len(f.MCPServers) > 0 || f.NoMCPServers || f.GitHubSummary || promptFile != "" {
-			return errWindowsOperationUnsupported
-		}
-	}
-	if f.Verbose {
-		opt.Progress = func(message string) error {
-			_, err := fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] %s\n", message)
-			return err
-		}
-	}
-	if f.Provider != "" || f.Endpoint != "" {
-		route := fileModelRoute(f.Provider, f.Endpoint)
-		opt.Route = &route
-	}
-	if flag := cmd.Flag("prompt"); f.PositionalInput || flag != nil && flag.Changed {
-		opt.Input = &prompt
-	}
-	if flag := cmd.Flag("prompt-file"); flag != nil && flag.Changed {
-		var reader io.Reader = state.deps.stdin
-		if promptFile != "-" {
-			info, err := os.Stat(promptFile)
-			if err != nil || !info.Mode().IsRegular() || info.Size() > agentfile.MaxInputBytes {
-				return fileUsageError(fmt.Errorf("prompt file must be a readable regular file of at most 16 KiB"))
-			}
-			input, err := os.Open(promptFile)
-			if err != nil {
-				return fileUsageError(fmt.Errorf("cannot read prompt file"))
-			}
-			defer input.Close()
-			reader = input
-		}
-		if reader == nil {
-			return fileUsageError(fmt.Errorf("prompt stdin is unavailable"))
-		}
-		b, err := io.ReadAll(io.LimitReader(reader, agentfile.MaxInputBytes+1))
-		if err != nil || len(b) > agentfile.MaxInputBytes {
-			return fileUsageError(fmt.Errorf("prompt input must be readable and at most 16 KiB"))
-		}
-		input := string(b)
-		opt.Input = &input
-	}
 	var summary io.WriteCloser
-	if f.GitHubSummary {
+	result, err := previewFileCommand(cmd, state, file, f, prompt, promptFile, func() error {
+		if !f.GitHubSummary {
+			return nil
+		}
 		var err error
 		summary, err = state.deps.openGitHubSummary()
-		if err != nil {
-			return fileUsageError(err)
+		return fileUsageError(err)
+	})
+	if result.SchemaVersion == 0 {
+		if summary != nil {
+			_ = summary.Close()
 		}
-	}
-	// Intake precedes signal interception: blocking stdin cannot observe cancellation.
-	// User think time must not consume the preview execution budget.
-	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-	defer cancel()
-	opt.PrepareRecordingSave = func(ctx context.Context, revision string) (app.RecordingSaver, error) {
-		save, err := kmxmcp.FileRecordingSaver(ctx, file, revision)
-		return app.RecordingSaver(save), err
-	}
-	selection := localtools.ServerSelection{Names: append([]string(nil), f.MCPServers...), Override: cmd.Flags().Changed("mcp-server"), Clear: f.NoMCPServers}
-	ctx = context.WithValue(ctx, fileMCPIntentKey{}, fileMCPIntent{file: file, selection: selection})
-	a := &app.App{FileRunner: state.deps.fileRunner}
-	start := time.Now()
-	var result app.FilePreviewResult
-	var err error
-	if windowsAgent != nil {
-		if cmd.Name() == "test" {
-			opt = app.WithFilePreviewRetention(opt, file, windowsAgent.Revision)
-		}
-		result, err = a.PreviewAgentSnapshot(ctx, windowsAgent, opt)
-	} else {
-		result, err = a.PreviewAgentFile(ctx, opt)
-	}
-	if f.Verbose {
-		if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] Total elapsed=%s\n",
-			time.Since(start).Round(time.Millisecond)); writeErr != nil {
-			return fmt.Errorf("cannot write local preview diagnostics")
-		}
-	}
-	err = fileCommandResultError(result, err)
-	if err != nil && fileSignInFailure(result.ReasonCode) {
-		result.Reason = err.Error()
+		return err
 	}
 	var outputErr error
 	// Text auth failures have one actionable stderr error, not a second report.
@@ -240,6 +154,134 @@ func runFileCommand(cmd *cobra.Command, state *commandState, file string, f file
 		return fmt.Errorf("cannot write GitHub Actions summary")
 	}
 	return err
+}
+
+// previewFileCommand preserves one checked pair and returns the shared safe result.
+// beforeRun admits a presentation sink after intake but before execution effects.
+func previewFileCommand(cmd *cobra.Command, state *commandState, file string, f fileCommandOptions, prompt, promptFile string, beforeRun func() error) (app.FilePreviewResult, error) {
+	opt := app.FilePreviewOptions{File: file, Operation: cmd.Name(), CaseID: f.CaseID,
+		Model: f.Model, DefaultCopilot: true, AdHocOnly: f.PositionalInput && f.CaseID == "", ShowFailedContent: !f.NoContent,
+		SkipAssertions:        cmd.Name() == "run",
+		IncludeAnswer:         cmd.Name() == "run" && !f.NoContent,
+		IncludeFailureDetails: !f.NoContent, ToolBindings: f.ToolBindings}
+	opt.RouteSelected = func(route app.FilePreviewRoute) error {
+		_, err := fmt.Fprintf(cmd.ErrOrStderr(), "Route: %s / %s\n", route.Provider, route.Model)
+		return err
+	}
+	if cmd.Name() == "test" {
+		opt.RetentionFile = file
+	}
+	// Native Windows passes the exact pair admitted by the platform gate. Other
+	// platforms load once here; later checks validate, never replace, this input.
+	pair := state.windowsFilePair
+	var pairErr error
+	if state.deps.goos == "windows" {
+		if pair == nil || !windowsPackageFreeFakeAgent(pair.Agent) || f.Provider != "" || f.Endpoint != "" || f.ToolBindings != "" || len(f.MCPServers) > 0 || f.NoMCPServers || f.GitHubSummary || promptFile != "" {
+			return app.FilePreviewResult{}, errWindowsOperationUnsupported
+		}
+	} else {
+		pair, pairErr = agentfile.LoadPair(file, f.TestsFile)
+	}
+	if pair != nil {
+		opt.SourceFile = pair.AgentPath
+		opt.ValidateSource = func(ctx context.Context) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			selected := ""
+			if pair.Tests.Selection.Explicit {
+				selected = pair.Tests.Selection.Path
+			}
+			current, err := agentfile.LoadPair(pair.AgentPath, selected)
+			if err != nil || !pair.SameSourceVersion(current) {
+				return agentfile.ErrRecordingChanged
+			}
+			return nil
+		}
+	}
+	if state.deps.goos == "windows" && opt.ValidateSource(cmd.Context()) != nil {
+		return app.FilePreviewResult{}, errWindowsOperationUnsupported
+	}
+	if f.Verbose {
+		opt.Progress = func(message string) error {
+			_, err := fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] %s\n", message)
+			return err
+		}
+	}
+	if f.Provider != "" || f.Endpoint != "" {
+		route := fileModelRoute(f.Provider, f.Endpoint)
+		opt.Route = &route
+	}
+	if flag := cmd.Flag("prompt"); f.PositionalInput || flag != nil && flag.Changed {
+		opt.Input = &prompt
+	}
+	if flag := cmd.Flag("prompt-file"); flag != nil && flag.Changed {
+		var reader io.Reader = state.deps.stdin
+		if promptFile != "-" {
+			info, err := os.Stat(promptFile)
+			if err != nil || !info.Mode().IsRegular() || info.Size() > agentfile.MaxInputBytes {
+				return app.FilePreviewResult{}, fileUsageError(fmt.Errorf("prompt file must be a readable regular file of at most 16 KiB"))
+			}
+			input, err := os.Open(promptFile)
+			if err != nil {
+				return app.FilePreviewResult{}, fileUsageError(fmt.Errorf("cannot read prompt file"))
+			}
+			defer input.Close()
+			reader = input
+		}
+		if reader == nil {
+			return app.FilePreviewResult{}, fileUsageError(fmt.Errorf("prompt stdin is unavailable"))
+		}
+		b, err := io.ReadAll(io.LimitReader(reader, agentfile.MaxInputBytes+1))
+		if err != nil || len(b) > agentfile.MaxInputBytes {
+			return app.FilePreviewResult{}, fileUsageError(fmt.Errorf("prompt input must be readable and at most 16 KiB"))
+		}
+		input := string(b)
+		opt.Input = &input
+	}
+	if beforeRun != nil {
+		if err := beforeRun(); err != nil {
+			return app.FilePreviewResult{}, err
+		}
+	}
+	// Intake precedes signal interception: blocking stdin cannot observe cancellation.
+	// User think time must not consume the preview execution budget.
+	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	opt.PreparePairRecordingSave = kmxmcp.FilePairRecordingSaver
+	selection := localtools.ServerSelection{Names: append([]string(nil), f.MCPServers...), Override: cmd.Flags().Changed("mcp-server"), Clear: f.NoMCPServers}
+	ctx = context.WithValue(ctx, fileMCPIntentKey{}, fileMCPIntent{file: file, selection: selection})
+	a := &app.App{FileRunner: state.deps.fileRunner}
+	start := time.Now()
+	var result app.FilePreviewResult
+	var err error
+	if pairErr != nil {
+		// Reuse the shared refusal/redaction projection; never fall back to
+		// executing an agent-only file after a selected tests source failed.
+		result, err = a.PreviewAgentSnapshot(ctx, nil, opt)
+		var detail *agentfile.Error
+		if errors.As(pairErr, &detail) {
+			result.Diagnostic = &app.FilePreviewDiagnostic{Field: detail.Field, Line: detail.Location.Line, Column: detail.Location.Column, Repair: detail.Problem}
+		}
+	} else {
+		if cmd.Name() == "test" {
+			opt = app.WithPairFilePreviewRetention(opt, pair)
+		}
+		result, err = a.PreviewAgentPairSnapshot(ctx, pair, opt)
+	}
+	if f.Verbose {
+		if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] Total elapsed=%s\n",
+			time.Since(start).Round(time.Millisecond)); writeErr != nil {
+			return app.FilePreviewResult{}, fmt.Errorf("cannot write local preview diagnostics")
+		}
+	}
+	err = fileCommandResultError(result, err)
+	if err != nil && fileSignInFailure(result.ReasonCode) {
+		result.Reason = err.Error()
+	}
+	return result, err
 }
 
 // Keep CLI status choices out of the shared App/MCP result contract.

@@ -9,13 +9,14 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
 type SuiteEvaluationExplainOptions struct {
-	Workspace, File, ID string
-	ShowContent, Clear  bool
+	Workspace, File, ID, TestsFile string
+	ShowContent, Clear             bool
 }
 
 // ExplainSuiteEvaluation reads only the workspace descriptor and private local
@@ -35,6 +36,9 @@ func (a *App) ExplainSuiteEvaluation(ctx context.Context, opt SuiteEvaluationExp
 	}
 	if opt.Clear && opt.ID == "" && strings.TrimSpace(opt.Workspace) == "" && strings.TrimSpace(opt.File) == "" {
 		return errors.New("clearing all failure diagnostics requires explicit --workspace DIR or --file FILE")
+	}
+	if opt.TestsFile != "" && strings.TrimSpace(opt.File) == "" {
+		return errors.New("--tests requires --file")
 	}
 	if strings.TrimSpace(opt.File) != "" {
 		return a.explainFileFailure(ctx, opt)
@@ -155,6 +159,9 @@ func (a *App) explainFileFailure(ctx context.Context, opt SuiteEvaluationExplain
 	if closeErr != nil {
 		return closeErr
 	}
+	// Resolve only the CURRENT selector against the physical agent subject.
+	// Persisted pair metadata contains no source pathname or read authority.
+	currentPair, pairErr := agentfile.LoadPair(scope.filename, opt.TestsFile)
 	var report strings.Builder
 	found := false
 	for _, entry := range entries {
@@ -164,12 +171,21 @@ func (a *App) explainFileFailure(ctx context.Context, opt SuiteEvaluationExplain
 		found = true
 		record := entry.file
 		status := "current"
-		if currentRevision != record.Revision {
+		current := currentRevision == record.Revision
+		if record.Pair != nil {
+			current = current && pairErr == nil && *record.Pair == *retainedPairMetadata(currentPair.SnapshotRevision, pairTestsSource(currentPair))
+		} else if pairErr != nil || currentPair.Tests.State == "external" {
+			current = false
+		}
+		if !current {
 			status = "historical"
 		}
 		fmt.Fprintf(&report, "%s · %s · %q · %s/%s · %s\n", record.Detail.ID, record.Detail.Verdict, record.Detail.CaseID, record.Model.Provider, record.Model.Model, status)
 		if opt.ID != "" || opt.ShowContent {
 			fmt.Fprintf(&report, "  revision %s; operation %s; scope=%s; agent=%q; complete=%t attributed=%t; local diagnostics, not evidence\n", record.Revision, record.Operation, record.Selection, record.AgentID, record.Detail.Complete, record.Detail.Attributed)
+			if record.Pair != nil {
+				fmt.Fprintf(&report, "  snapshot %s; tests=%s; tests revision %s\n", record.Pair.SnapshotRevision, record.Pair.State, record.Pair.Revision)
+			}
 			fmt.Fprintf(&report, "  judge %s/%s\n", record.Judge.Provider, record.Judge.Model)
 			for _, assertion := range record.Assertions {
 				fmt.Fprintf(&report, "  assertion %s (%s) %s; definition %s; reason=%s\n", assertion.ID, assertion.Type, assertion.Verdict, assertion.Digest, assertion.ReasonCode)

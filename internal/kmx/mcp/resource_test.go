@@ -48,7 +48,7 @@ func TestAgentResourceShapesAndConfinement(t *testing.T) {
 	}
 	cs := resourceClient(t, f, &app.App{})
 	templates, err := cs.ListResourceTemplates(t.Context(), nil)
-	if err != nil || len(templates.ResourceTemplates) != 1 {
+	if err != nil || len(templates.ResourceTemplates) != 2 {
 		t.Fatal("resource not discoverable", err)
 	}
 	tools, err := cs.ListTools(t.Context(), nil)

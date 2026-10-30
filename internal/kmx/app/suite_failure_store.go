@@ -38,6 +38,7 @@ type suiteFailureRecord struct {
 	Detail        suiteFailureDetail `json:"detail"`
 }
 type fileFailureRecord struct {
+	Pair          *fileFailurePairMetadata     `json:"pair,omitempty"`
 	SchemaVersion int                          `json:"schemaVersion"`
 	Sequence      uint64                       `json:"sequence"`
 	Subject       string                       `json:"subject"`
@@ -63,6 +64,7 @@ type suiteFailureCodec interface {
 }
 type workspaceFailureCodec struct{}
 type retainedFileFailureCodec struct {
+	pair       *fileFailurePairMetadata
 	subject    string
 	revision   string
 	agentID    string
@@ -128,7 +130,7 @@ func (c retainedFileFailureCodec) decode(raw []byte) (suiteFailureRecord, *fileF
 
 func (c retainedFileFailureCodec) encode(sequence uint64, detail suiteFailureDetail, keys []string) ([]byte, error) {
 	record := fileFailureRecord{
-		SchemaVersion: 2, Sequence: sequence, Subject: c.subject, Revision: c.revision, AgentID: c.agentID,
+		SchemaVersion: 2, Sequence: sequence, Subject: c.subject, Revision: c.revision, AgentID: c.agentID, Pair: c.pair,
 		Operation: c.operation, Selection: c.selection, Model: c.model, Judge: c.judge,
 		Assertions: append([]fileFailureAssertionRecord(nil), c.assertions...), Detail: detail,
 	}
@@ -345,6 +347,9 @@ func validateSuiteFailureRecord(r suiteFailureRecord, keys []string) error {
 }
 
 func validateFileFailureRecord(r fileFailureRecord, keys []string) error {
+	if r.Pair != nil && !validRetainedPairMetadata(r.Pair, r.Revision) {
+		return errSuiteFailureStore
+	}
 	d := r.Detail
 	if r.SchemaVersion != 2 || r.Sequence == 0 || !suitePrefixedDigest(r.Subject) || !suitePrefixedDigest(r.Revision) || !suiteFailureOperationID.MatchString(d.OperationID) || r.Operation != "test" || r.Selection != "full" && r.Selection != "subset" || r.Model.Provider == "" || r.Model.Model == "" || d.SuiteDigest != "" || d.Runtime != "" || d.MemberID != "" || d.Run != 1 || d.Runs != 1 || d.MinPasses != 1 || d.RetentionUnavailable || d.Class != "" || !d.Complete || !d.Attributed {
 		return errSuiteFailureStore

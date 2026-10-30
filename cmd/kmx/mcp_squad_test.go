@@ -68,12 +68,18 @@ func TestMCPSquadStartupConfigurationAndInertDiscovery(t *testing.T) {
 		if schema["oneOf"] != nil || schema["anyOf"] != nil || schema["allOf"] != nil {
 			t.Fatal("top-level schema union can break model tool loading")
 		}
-		versions := 2
+		versions := 3
 		if tool.Name == "set_tool_state" {
 			versions = 1
 		}
-		if len(schema["properties"].(map[string]any)["schemaVersion"].(map[string]any)["enum"].([]any)) != versions {
-			t.Fatal("native operation not advertised")
+		enum := schema["properties"].(map[string]any)["schemaVersion"].(map[string]any)["enum"].([]any)
+		if len(enum) != versions {
+			t.Fatal("native/paired operation not advertised")
+		}
+		for i, version := range enum {
+			if version != float64(i+1) {
+				t.Fatal("wrong version discriminator")
+			}
 		}
 
 	}

@@ -623,7 +623,23 @@ projects validated Copilot IDs/default for the picker, without startup auth or
 inference. Model selection is memory-only, never source/history. Fence model
 changes as well as revisions; never attribute another model's result as current. No folder confirmation is needed
 for charter content. After successful Create, open its returned file.path in the
-existing canvas. Give one plain notice before the first hosted-model send;
+existing canvas or revision-bound text fallback. Text mode is a successful
+presentation, not a failed canvas: return the full file revision and exact source
+only from the checked resource's complete authoring snapshot, and never edit from
+formatted or truncated text. Without the extension, same-chat Create/Edit/Run/Test
+may continue from returned source/revision, but a fresh chat gains no read tool or
+shell fallback. Shared skills read Run/Test structuredContent, preserve full versus
+subset and fail/unknown/refused/cancelled/error distinctions, and never infer pass
+from tool success. Handle the exact three-field MCP preflight refusal before
+preview attribution; every other Run/Test result requires the preview kind.
+Returned path/revision and any explicit requested route/model
+must match the held invocation before attribution; mismatch is not current, never
+pass. Conversation-local model choice is path-scoped, never source or
+history; answer content requires an explicit request and is never recovered by a
+second send. Retain submitted source with an Edit result only after its SHA-256
+matches the returned revision; sparse exampleEdits require a fresh checked
+authoring snapshot because the server, not the submitted baseline, creates the
+saved bytes. Give one plain notice before the first hosted-model send;
 ordinary agent-file creation stays confirmation-free, without path-character
 restrictions. Before writing new or changed inline tests in a frontmatter-based
 Copilot file, canvas/MCP shows "Tests added here become part of this agent's
@@ -641,7 +657,10 @@ same sources; do not maintain a second canvas/skill implementation. The macOS/PA
 plugin in `plugins/copilot` links to those shared sources except for generated
 provider-identity copies of both skills and `extension.mjs`. Regenerate these
 with `python3 plugins/copilot/source_release.py --write` in every PR that changes
-their canonical inputs; CI checks parity without writing. Its source plugin name
+their canonical inputs; CI checks parity without writing. Conservative Python
+identity-shape checks run before regeneration, while the mocked-SDK Node import
+of both real extensions is the semantic provider-registration authority; release
+publication requires both. Its source plugin name
 is `kmx-agent-builder-path`; WSL/native bundles keep `kmx-agent-builder`, and the
 MCP server key remains unchanged. Its MCP command is `/usr/local/bin/kmx mcp`,
 matching the installer destination without relying on a Dock-launched app's PATH.
@@ -650,6 +669,20 @@ without a bundled engine, root/model configuration or installation helper.
 Node tests stay outside both installable trees under `plugins/tests/copilot`.
 Legacy bundle tooling retains its separate `native-mcp.json` template.
 See [MCP](docs/kmx.md#local-stdio-mcp).
+Default new chat Create uses MCP v3 with separate prompt/tests sources. The
+paired canvas consumes the checked source resource plus optional normalized
+projection, keeps raw agent hashes separate from snapshot/context identities,
+and attributes direct v3 preview envelopes, never the legacy latest cache.
+Sparse companion edits reuse the existing Go field patcher/emitter. Complete
+per-source ACKs alone advance drafts; partial/uncertain effects preserve them and
+never trigger Test. Source history is not verdict history. Editable rendered
+pairs establish the existing relay before the baseline, including tool-free
+starts; its SDK filter exposes Run/Test/Edit only. Keep source reads and actions
+on their context owner, with opening leases and deliberate reconciliation after
+server changes. Text fallback preserves both sources/context without starting a
+relay. Legacy inline/native flows remain separate and existing inline consent
+is unchanged.
+See [Copilot CLI text mode](docs/copilot-cli-text-mode.md).
 
 ## Internal native Squad authoring boundary
 
@@ -694,10 +727,18 @@ revision binds both source paths and revisions; `Agent.Revision` remains
 agent-only. `SameSourceVersion` also checks handle-derived file/directory identity
 and version metadata; even unrelated directory timestamp changes can invalidate
 it. These are cooperative checks, not immutable filesystem attestation.
-A pure composition cannot claim a checked file version or write permission. Keep external
-examples separate from `Pair.Agent.Examples` and prompt instructions. Existing
-`Load`, CLI/App/MCP execution, captures and writes stay single-source until their
-paired result/publication guards ship; do not silently wire in this loader.
+A pure composition cannot claim a checked file version or write permission. Keep
+external examples separate from `Pair.Agent.Examples` and prompt instructions.
+File CLI Run/Test use the paired App adapter and `--tests` selection; completion
+and results bind the combined revision without changing raw agent attribution.
+Capture patches only the selected source after journal close with held source
+handles/full-pair checks; exact target and saved combined revision acknowledge
+publication separately. Keep original/unselected/raw-test content in credential
+preflight, never model instructions. File failure records retain raw agent and
+optional pair metadata; Explain uses the current selector, not retained paths.
+MCP/canvas pair capabilities remain separate: legacy reads/preview/edits refuse
+present default tests files rather than reporting or writing an agent-only view.
+`Load`, single-source/native adapters and CLI no-source-history remain unchanged.
 See [separate tests](docs/agent-file.md#tests-in-a-separate-file-reader-only).
 
 `internal/kmx/agentfile` accepts Copilot YAML-frontmatter/free-form prompts,

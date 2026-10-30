@@ -60,7 +60,7 @@ test('partial availability skips only absent names, never malformed or ambiguous
 
 test('trusted launch preserves route/root and uses only a public startup key', () => {
   const native = launchConfig(descriptor, 'public', 'linux');
-  assert.deepEqual(native, { type: 'stdio', command: descriptor.executable, cwd: '/work', args: [...descriptor.args, '--host-bridge-public-key', 'public'], tools: ['run', 'test'] });
+  assert.deepEqual(native, { type: 'stdio', command: descriptor.executable, cwd: '/work', args: [...descriptor.args, '--host-bridge-public-key', 'public'], tools: ['run', 'test', 'edit'] });
   const wsl = launchConfig(descriptor, 'public', 'win32');
   assert.equal(wsl.command, 'wsl.exe');
   assert.deepEqual(wsl.args.slice(0, 6), ['--distribution', 'Ubuntu', '--cd', '/work', '--exec', descriptor.executable]);
@@ -121,6 +121,53 @@ async function until(predicate) {
   const end = Date.now() + 3000;
   while (!predicate()) { if (Date.now() > end) assert.fail('relay did not finish'); await new Promise(r => setTimeout(r, 10)); }
 }
+
+function selectedResources(f, declared = true) {
+  const runtimeRead=f.session.rpc.mcp.resources.read;
+  const source='---\nmodel: fake\n'+(declared?'tools: [ping]\n':'')+'---\nPrompt\n',revision='sha256:'+createHash('sha256').update(source).digest('hex');
+  f.jobs.length=0;
+  f.session.rpc.mcp.resources.read=async ({serverName,uri})=>{
+    if(uri==='kmx://host-runtime')return runtimeRead({serverName,uri});
+    const d={schemaVersion:1,kind:'kmx.agent-sources',readOnly:true,validation:'valid',file:{path:'/work/a.agent.md',revision},source,tests:{state:'absent',path:'/work/a.agent.test.md',revision:'',source:'',selectionKey:revision},snapshotRevision:revision,sourceVersion:'context-'+serverName,sourceHistory:{schemaVersion:1,read:true,execute:false,edit:false,capture:false,restore:false},pairOperations:{schemaVersion:1,toolSchemaVersion:3,execute:true,create:true,edit:true,capture:true,restore:true},canvas:{schemaVersion:1,kind:'kmx.agent-view',file:{path:'a.agent.md',revision},title:'Agent',instructions:'Prompt',model:'fake',tools:declared?['ping']:[],examples:[],latest:{status:'none'},authoring:{source,editable:true,recordingControls:true}}};
+    return {contents:[{text:JSON.stringify(uri.startsWith('kmx://agent-sources/')?d:{schemaVersion:1,kind:'kmx.agent-view-error',reasonCode:'paired_source_required'})}]};
+  };
+}
+
+test('paired canvas establishes even a tool-free first page baseline without any host execution',async t=>{
+  const f=await fixture(t);selectedResources(f,false);
+  const controller=createViewController({getSession:()=>f.session});t.after(()=>controller.closeAll());
+  const opened=await controller.open({instanceId:'paired',input:{path:'a.agent.md'}});
+  const view=await (await fetch(opened.url+'view.json')).json();
+  assert.notEqual(previewServer(f.session),base);
+  assert.equal(view.selectedSources.server,previewServer(f.session));
+  assert.equal(view.selectedSources.sourceVersion,'context-'+previewServer(f.session));
+  assert.deepEqual(f.configs[0].config.tools,['run','test','edit']);
+  assert.equal(f.calls.length,0,'opening sends no tool/model call');
+  const lease=beginPreview(f.session);lease.release();
+});
+
+test('paired canvas contention is inspection-only until explicit reload and opening releases its lease',async t=>{
+  const f=await fixture(t);selectedResources(f,false);const lease=beginPreview(f.session);
+  const controller=createViewController({getSession:()=>f.session});t.after(()=>controller.closeAll());
+  const opened=await controller.open({instanceId:'paired-busy',input:{path:'a.agent.md'}});
+  const view=await (await fetch(opened.url+'view.json')).json();
+  assert.equal(view.authoring.editable,false);assert.equal(f.configs.length,0);
+  lease.release();
+  const reply=await fetch(opened.url+'actions',{method:'POST',headers:{Origin:new URL(opened.url).origin,'Content-Type':'application/json'},body:JSON.stringify({operation:'reload'})});
+  const reloaded=await reply.json();
+  assert.equal(reloaded.error,undefined);assert.equal(reloaded.view.authoring.editable,true);assert.notEqual(reloaded.view.selectedSources.server,base);
+  assert.equal(f.calls.length,0);
+});
+
+test('a no-tools paired baseline never sends its original context after another canvas activates the child',async t=>{
+  const f=await fixture(t);selectedResources(f,false);
+  const before=await readView(f.session,'a.agent.md');
+  await ensureHostRuntime(f.session);
+  let calls=0;f.session.rpc.tools.execute=async()=>{calls++;assert.fail('stale context submitted')};
+  const act=createActionHandler({session:f.session,path:'a.agent.md'});
+  const response=await act({operation:'test',expectedRevision:before.file.revision,expectedSourceVersion:before.selectedSources.sourceVersion});
+  assert.equal(response.error,'stale_revision');assert.equal(calls,0);act.dispose();
+});
 
 test('nested approval attribution uses exact outer progress and actual relay job, not a prefix or active lease', async t => {
   const f = await fixture(t); let finish;

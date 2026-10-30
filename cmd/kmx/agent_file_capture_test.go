@@ -36,12 +36,12 @@ func TestFileCommandsCaptureSelectedFileAndReplayWithoutLiveHost(t *testing.T) {
 			t.Setenv("KMX_HOME", privateCommandHome(t))
 			var output, diagnostic bytes.Buffer
 			deps, loads := testDependencies(&output, &diagnostic)
-			summary := filepath.Join(base, "step-summary.md")
+			summary := filepath.Join(t.TempDir(), "step-summary.md")
 			if operation == "test" {
 				t.Setenv("GITHUB_STEP_SUMMARY", summary)
 			}
 			calls, resolves := 0, 0
-			deps.fileRunner = localpreview.NewRunner(localpreview.RunnerOptions{JournalDir: func() (string, error) { return filepath.Join(base, "journals"), nil }, ResolveAvailableTools: func(context.Context, []string) (*localtools.Host, error) {
+			deps.fileRunner = localpreview.NewRunner(localpreview.RunnerOptions{JournalDir: func() (string, error) { return privateCommandHome(t), nil }, ResolveAvailableTools: func(context.Context, []string) (*localtools.Host, error) {
 				resolves++
 				return localtools.NewTrustedHost([]api.ToolDefinition{{Name: "ping", Description: "private-cli-schema", InputSchema: map[string]any{"type": "object"}}}, func(_ context.Context, _ controller.ToolCallContext, c api.ToolCall) (api.ToolResult, error) {
 					calls++

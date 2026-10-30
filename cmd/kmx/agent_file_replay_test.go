@@ -41,7 +41,7 @@ func TestFileCLIReplayAvailability(t *testing.T) {
 					t.Fatal(err)
 				}
 				t.Setenv("KMX_HOME", privateCommandHome(t))
-				summary := filepath.Join(folder, "summary.md")
+				summary := filepath.Join(t.TempDir(), "summary.md")
 				t.Setenv("GITHUB_STEP_SUMMARY", summary)
 				var out, diag bytes.Buffer
 				deps, loads := testDependencies(&out, &diag)

@@ -139,10 +139,23 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 		return nil
 	}
 	validate := func(ctx context.Context) error {
-		if access != nil {
-			return access.Validate(ctx)
+		if err := ctx.Err(); err != nil {
+			return err
 		}
-		return ctx.Err()
+		if access != nil {
+			if err := access.Validate(ctx); err != nil {
+				return err
+			}
+		}
+		if request.ValidateSource != nil {
+			if err := request.ValidateSource(ctx); err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					return err
+				}
+				return errors.Join(agentpreview.ErrSourceChanged, err)
+			}
+		}
+		return nil
 	}
 	request.ToolDefinitions = nil
 	declared := slices.Clone(agent.Tools)
@@ -189,6 +202,13 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 				Definitions  any
 			}{agent, request.FileLabel, request.Route, judgeSelection, request.Input, request.ToolDefinitions})
 			if checkJSONContent(content, checkContent, agentPayloadPaths...) != nil {
+				return agentpreview.Outcome{State: agentpreview.Failed}, agentpreview.ErrCredentialContent
+			}
+		}
+		if access != nil && (request.SourceAgent != nil || len(request.SourceText) > 0) {
+			// Check original/unselected sources using the same resolved provider
+			// and tool checkers, without placing them in model or journal data.
+			if err := checkToolContent(checkContent, request); err != nil {
 				return agentpreview.Outcome{State: agentpreview.Failed}, agentpreview.ErrCredentialContent
 			}
 		}
@@ -355,14 +375,15 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 	if access != nil || len(declared) > 0 {
 		client.check = checkContent
 	}
-	call := client.Model
+	modelCall := client.Model
 	if len(declared) > 0 {
-		call = func(ctx context.Context, req api.ModelRequest) (api.ModelResponse, error) {
-			if err := validate(ctx); err != nil {
-				return api.ModelResponse{}, err
-			}
-			return client.ToolModel(ctx, req)
+		modelCall = client.ToolModel
+	}
+	call := func(ctx context.Context, req api.ModelRequest) (api.ModelResponse, error) {
+		if err := validate(ctx); err != nil {
+			return api.ModelResponse{}, err
 		}
+		return modelCall(ctx, req)
 	}
 	used := map[string]bool{}
 	execute := func(ex agentfile.Example, index int) (completion agentpreview.Completion, assertions []agentruntime.EvaluationAssertionResult, cause error) {
@@ -439,7 +460,7 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 				}
 			}
 		}
-		completion = agentpreview.Completion{State: agentpreview.Complete, ID: execution.SessionUID, FileRevision: agent.Revision, Provider: request.Route.Provider, Model: request.Route.Model, Answer: execution.Answer, DurationMs: elapsedMilliseconds(r.timeNow().Sub(started)), ToolCalls: execution.ToolCalls, Tools: plan.summaries(execution.ToolCallCounts)}
+		completion = agentpreview.Completion{State: agentpreview.Complete, ID: execution.SessionUID, FileRevision: agent.Revision, SnapshotRevision: request.SnapshotRevision, Provider: request.Route.Provider, Model: request.Route.Model, Answer: execution.Answer, DurationMs: elapsedMilliseconds(r.timeNow().Sub(started)), ToolCalls: execution.ToolCalls, Tools: plan.summaries(execution.ToolCallCounts)}
 		for i := range completion.Tools {
 			for _, exchange := range execution.ToolExchanges {
 				if exchange.Call.Tool == completion.Tools[i].Name {

@@ -72,7 +72,24 @@ assertions or setting up a judge. Explicit positional input runs that input; sav
 inputs explicitly selected alongside it keep their own fixtures. Completed Run
 rows are **ANSWERED**, not passing tests; JSON keeps an unknown verdict and
 `fullPass: false`. No judge is selected or authenticated for CLI Run. Test and the
-existing MCP Run/Test behavior continue to evaluate checks.
+existing single-source MCP Run/Test behavior continue to evaluate checks. MCP
+Run/Test also accept schema version 3 with a checked `sourceVersion` from the
+source resource, running the selected agent/tests pairs: Run answers without
+checks, and Test evaluates the selected checks. Version-3 Create/Edit and
+post-journal tool capture share checked sequential source publication, complete
+pair-preimage history and current-binding restore. Inspect per-source partial or
+uncertain acknowledgements; do not retry or Test automatically. Frozen recordings
+replay read-only. The paired canvas uses these same operations and per-source
+acknowledgements; legacy/native versions stay separate. File
+CLI selects a [separate tests file](agent-file.md#tests-in-a-separate-file-reader-only)
+by the shared default rule or `--tests FILE`; its examples never enter the agent's
+prompt. Original/unselected agent content and raw tests prose still undergo the
+same credential preflight. Executed combined revision and saved target/revision
+are separate acknowledgements; tests-only edits stale retained results. Legacy
+v1 MCP/canvas capabilities still refuse a present default tests file instead of
+reporting an agent-only result. The current paired canvas requires the separate
+v3 capability and checked source context, including for comparison replay and
+source-only history restore.
 
 Selected examples and optional ad-hoc input share one invocation-owned journal;
 each gets a fresh Session, as does each of the two samples when judging is requested. The adapter aborts later sends on execution or deadline

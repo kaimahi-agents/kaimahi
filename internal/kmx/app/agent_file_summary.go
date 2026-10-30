@@ -22,15 +22,40 @@ var errInvalidFilePreviewSummary = errors.New("invalid file preview summary")
 // WriteFilePreviewGitHubSummary appends a bounded content-free Markdown view of
 // the same safe result returned by file Test. It is not evidence or history.
 func WriteFilePreviewGitHubSummary(w io.Writer, result FilePreviewResult) error {
+	return writeFilePreviewGitHubSummary(w, result, 0)
+}
+
+// WriteFilePreviewGitHubSection reuses the validated projection under a folder's
+// single heading/footer. Only an ordinal, never a path, identifies the section.
+func WriteFilePreviewGitHubSection(w io.Writer, result FilePreviewResult, ordinal int) error {
+	if ordinal < 1 {
+		return errInvalidFilePreviewSummary
+	}
+	return writeFilePreviewGitHubSummary(w, result, ordinal)
+}
+
+func writeFilePreviewGitHubSummary(w io.Writer, result FilePreviewResult, ordinal int) error {
 	if w == nil || !validFilePreviewSummary(result) {
 		return errInvalidFilePreviewSummary
 	}
 	var out strings.Builder
-	fmt.Fprintf(&out, "## kmx test: %s\n\n", strings.ToUpper(string(result.Verdict)))
+	level := "###"
+	if ordinal == 0 {
+		fmt.Fprintf(&out, "## kmx test: %s\n\n", strings.ToUpper(string(result.Verdict)))
+	} else {
+		fmt.Fprintf(&out, "### File %d: %s\n\n", ordinal, strings.ToUpper(string(result.Verdict)))
+		level = "####"
+	}
 	fmt.Fprintln(&out, "| Field | Value |")
 	fmt.Fprintln(&out, "|---|---|")
 	fmt.Fprintf(&out, "| State | `%s` |\n", result.State)
 	fmt.Fprintf(&out, "| Revision | `%s` |\n", summaryValue(result.File.Revision))
+	if result.SnapshotRevision != "" {
+		fmt.Fprintf(&out, "| Snapshot | `%s` |\n", result.SnapshotRevision)
+	}
+	if result.Tests != nil {
+		fmt.Fprintf(&out, "| Tests source | `%s` |\n| Tests revision | `%s` |\n", result.Tests.State, summaryValue(result.Tests.Revision))
+	}
 	fmt.Fprintf(&out, "| Model | `%s` |\n", summaryRoute(result.ModelRoute))
 	judge := "not used"
 	if result.JudgeRoute != nil {
@@ -46,14 +71,14 @@ func WriteFilePreviewGitHubSummary(w io.Writer, result FilePreviewResult) error 
 	fmt.Fprintf(&out, "| Reason | `%s`: %s |\n", result.ReasonCode, summaryReason(result.ReasonCode))
 
 	if len(result.Examples) > 0 {
-		fmt.Fprint(&out, "\n### Tests\n\n")
+		fmt.Fprintf(&out, "\n%s Tests\n\n", level)
 		fmt.Fprintln(&out, "| Test | Verdict | Duration | Reason |")
 		fmt.Fprintln(&out, "|---|---|---:|---|")
 		for _, example := range result.Examples {
 			fmt.Fprintf(&out, "| `%s` | `%s` | %s | `%s`: %s |\n", example.ID, example.Verdict, summaryDuration(example.DurationMs), example.ReasonCode, summaryReason(example.ReasonCode))
 		}
 
-		fmt.Fprint(&out, "\n### Checks\n\n")
+		fmt.Fprintf(&out, "\n%s Checks\n\n", level)
 		fmt.Fprintln(&out, "| Test | Check | Type | Verdict | Reason |")
 		fmt.Fprintln(&out, "|---|---|---|---|---|")
 		written, total := 0, 0
@@ -81,7 +106,7 @@ func WriteFilePreviewGitHubSummary(w io.Writer, result FilePreviewResult) error 
 		toolRows += len(example.Tools)
 	}
 	if toolRows > 0 {
-		fmt.Fprint(&out, "\n### Tools\n\n")
+		fmt.Fprintf(&out, "\n%s Tools\n\n", level)
 		fmt.Fprintln(&out, "| Test | Tool | Setting | Mode | Source | Calls |")
 		fmt.Fprintln(&out, "|---|---|---|---|---|---:|")
 		written := 0
@@ -108,7 +133,9 @@ func WriteFilePreviewGitHubSummary(w io.Writer, result FilePreviewResult) error 
 		}
 	}
 
-	fmt.Fprintln(&out, "\n> Local preview report only. It is not suite evidence, publication authority, or deployment authority.")
+	if ordinal == 0 {
+		fmt.Fprintln(&out, "\n> Local preview report only. It is not suite evidence, publication authority, or deployment authority.")
+	}
 	_, err := io.WriteString(w, out.String())
 	return err
 }
@@ -129,8 +156,11 @@ func validFilePreviewSummary(result FilePreviewResult) bool {
 	if result.File.Revision != "" && (!strings.HasPrefix(result.File.Revision, "sha256:") || !verificationDigest(strings.TrimPrefix(result.File.Revision, "sha256:"))) {
 		return false
 	}
+	if !validPairPreviewMetadata(result) {
+		return false
+	}
 	savedRevision := result.SavedRevision != ""
-	if savedRevision && (result.State != "complete" || result.SavedRevision == result.File.Revision || !strings.HasPrefix(result.SavedRevision, "sha256:") || !verificationDigest(strings.TrimPrefix(result.SavedRevision, "sha256:"))) {
+	if savedRevision && (result.State != "complete" || result.SnapshotRevision == "" && result.SavedRevision == result.File.Revision || !strings.HasPrefix(result.SavedRevision, "sha256:") || !verificationDigest(strings.TrimPrefix(result.SavedRevision, "sha256:"))) {
 		return false
 	}
 	if !summaryRouteValid(result.ModelRoute, true) || result.State == "complete" && result.ModelRoute.Provider == "" || result.JudgeRoute != nil && !summaryRouteValid(*result.JudgeRoute, false) {
@@ -227,6 +257,7 @@ func validFilePreviewSummary(result FilePreviewResult) bool {
 
 func redactedFilePreviewSummary(result FilePreviewResult) bool {
 	return result.State == "refused" && (result.ReasonCode == "unsafe_tool_content" || result.ReasonCode == "credential_content") &&
+		result.SnapshotRevision == "" && result.Tests == nil && result.RecordingTarget == nil && result.SavedSnapshotRevision == "" && result.SavedRevision == "" &&
 		result.Runner == "" && result.File == (FilePreviewIdentity{Path: "[agent file]"}) && result.ModelRoute == (FilePreviewRoute{}) && result.JudgeRoute == nil && result.Diagnostic == nil &&
 		result.Selection.Scope == "" && len(result.Selection.CaseIDs) == 0 && result.Selection.TotalCases == 0 && len(result.Examples) == 0 && result.AdHoc == nil &&
 		len(result.ToolSettings) == 0 && result.Retention.Status == "not_requested" && len(result.Retention.Diagnostics) == 0

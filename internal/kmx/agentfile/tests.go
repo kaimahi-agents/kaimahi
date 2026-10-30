@@ -23,9 +23,15 @@ type Tests struct {
 // ParseTests reads schemaVersion 1 Markdown with one yaml agent-test mapping per
 // fence. Prose and unrelated fences are source-only. It performs no filesystem IO.
 func ParseTests(filename string, data []byte) (*Tests, error) {
+	tests, _, err := parseTests(filename, data)
+	return tests, err
+}
+
+// parseTests also returns the canonical node tree with whole-source positions.
+func parseTests(filename string, data []byte) (*Tests, *yaml.Node, error) {
 	text, err := checkedSourceText(filename, data)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	lines := strings.Split(text, "\n")
 	location := func(n *yaml.Node) Location {
@@ -43,29 +49,29 @@ func ParseTests(filename string, data []byte) (*Tests, error) {
 		return Location{filename, n.Line, column}
 	}
 	if lines[0] != "---" {
-		return nil, refuse(filename, 1, 1, "Frontmatter", "start with schemaVersion: 1 YAML frontmatter")
+		return nil, nil, refuse(filename, 1, 1, "Frontmatter", "start with schemaVersion: 1 YAML frontmatter")
 	}
 	end := 1
 	for end < len(lines) && lines[end] != "---" {
 		end++
 	}
 	if end == len(lines) {
-		return nil, refuse(filename, 1, 1, "Frontmatter", "close the YAML frontmatter with a --- line")
+		return nil, nil, refuse(filename, 1, 1, "Frontmatter", "close the YAML frontmatter with a --- line")
 	}
 	header, err := decodeTestsDocument(filename, lines[1:end], 1, "Frontmatter")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	nodes := 0
 	if err := checkExamplesYAML(header, location, "Frontmatter", &nodes); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(header.Content) != 1 || header.Content[0].Kind != yaml.MappingNode || len(header.Content[0].Content) != 2 || header.Content[0].Content[0].Tag != "!!str" || header.Content[0].Content[0].Value != "schemaVersion" {
-		return nil, refuse(filename, 2, 1, "Frontmatter", "use only schemaVersion: 1 in frontmatter")
+		return nil, nil, refuse(filename, 2, 1, "Frontmatter", "use only schemaVersion: 1 in frontmatter")
 	}
 	version := header.Content[0].Content[1]
 	if version.Kind != yaml.ScalarNode || version.Tag != "!!int" || version.Value != "1" {
-		return nil, &Error{location(version), "Frontmatter", "set schemaVersion to integer 1"}
+		return nil, nil, &Error{location(version), "Frontmatter", "set schemaVersion to integer 1"}
 	}
 	// Keep the canonical wrapper so recorded call payload recognition and structural
 	// depth are identical to inline Examples. Fence nodes retain whole-file positions.
@@ -78,7 +84,7 @@ func ParseTests(filename string, data []byte) (*Tests, error) {
 	for i := end + 1; i < len(lines); i++ {
 		line := lines[i]
 		if strings.Contains(line, "<!--") {
-			return nil, refuse(filename, i+1, 1, "Tests", "remove HTML comments outside fenced prose")
+			return nil, nil, refuse(filename, i+1, 1, "Tests", "remove HTML comments outside fenced prose")
 		}
 		open, info, ok := openFence(line)
 		// Reserved lookalikes cannot silently become prose or hidden tests. A wider
@@ -87,7 +93,7 @@ func ParseTests(filename string, data []byte) (*Tests, error) {
 		candidate := strings.TrimLeft(line, " \t>-+*0123456789.)")
 		reserved := strings.Contains(strings.ToLower(candidate), "agent-test") && (strings.HasPrefix(candidate, "```") || strings.HasPrefix(candidate, "~~~"))
 		if reserved && (!ok || info != "yaml agent-test" || line != strings.TrimLeft(line, " \t")) {
-			return nil, refuse(filename, i+1, 1, "Tests", "use a canonical yaml agent-test fence opening at column 1")
+			return nil, nil, refuse(filename, i+1, 1, "Tests", "use a canonical yaml agent-test fence opening at column 1")
 		}
 		if !ok {
 			continue
@@ -97,15 +103,15 @@ func ParseTests(filename string, data []byte) (*Tests, error) {
 			close++
 		}
 		if close == len(lines) {
-			return nil, refuse(filename, i+1, 1, "Tests", "close every Markdown fence")
+			return nil, nil, refuse(filename, i+1, 1, "Tests", "close every Markdown fence")
 		}
 		if info == "yaml agent-test" {
 			document, err := decodeTestsDocument(filename, lines[i+1:close], i+1, "Examples")
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			if len(document.Content) != 1 {
-				return nil, refuse(filename, i+2, 1, "Examples", "provide one test mapping")
+				return nil, nil, refuse(filename, i+2, 1, "Examples", "provide one test mapping")
 			}
 			sequence.Content = append(sequence.Content, document.Content[0])
 		}
@@ -113,9 +119,34 @@ func ParseTests(filename string, data []byte) (*Tests, error) {
 	}
 	examples, err := parseExamplesDocument(filename, root, location, true, nodes)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return &Tests{Examples: examples, Source: bytes.Clone(data), Revision: fmt.Sprintf("sha256:%x", sha256.Sum256(data))}, nil
+	return &Tests{Examples: examples, Source: bytes.Clone(data), Revision: fmt.Sprintf("sha256:%x", sha256.Sum256(data))}, root, nil
+}
+
+// ApplyTestRecordings fills pending recorded calls in exact Markdown tests bytes.
+// Only targeted fixtures change; prose and unrelated fixtures remain byte-exact.
+// All recordings apply or none do. This function grants no filesystem authority.
+func ApplyTestRecordings(source []byte, recordings []Recording) ([]byte, error) {
+	if block, err := applyTestRecordings(source, recordings, true); err == nil {
+		return block, nil
+	}
+	return applyTestRecordings(source, recordings, false)
+}
+
+func applyTestRecordings(source []byte, recordings []Recording, block bool) ([]byte, error) {
+	before, root, err := parseTests("recording.agent.test.md", source)
+	if err != nil {
+		return nil, ErrRecordingChanged
+	}
+	return patchRecordings(source, recordings, before.Examples, root, 0, block, func(candidate []byte) bool {
+		after, err := ParseTests("recording.agent.test.md", candidate)
+		if err != nil {
+			return false
+		}
+		want := projectJSON(projectExamples(before.Examples))
+		return want != nil && bytes.Equal(want, projectJSON(projectExamples(after.Examples)))
+	})
 }
 
 func decodeTestsDocument(filename string, lines []string, base int, field string) (*yaml.Node, error) {

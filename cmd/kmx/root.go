@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
 	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	agentkitbuilder "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/agentkit"
@@ -73,6 +74,7 @@ type commandState struct {
 	app                 *app.App
 	argv                []string
 	evalNoticeShown     bool
+	windowsFilePair     *agentfile.Pair
 }
 
 func (s *commandState) executable() string {

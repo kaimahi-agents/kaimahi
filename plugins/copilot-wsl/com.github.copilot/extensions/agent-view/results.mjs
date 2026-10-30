@@ -1,6 +1,6 @@
 // Result reading: cases, check facts, plain reasons, rows and per-model history.
 import { failureWording } from "./failure-wording.mjs";
-import { preRouteRefusal, same, uniqueIndex, operandKey, quoted } from "./authoring.mjs";
+import { sourceIdentity, preRouteRefusal, same, uniqueIndex, operandKey, quoted } from "./authoring.mjs";
 
 export const checkKey = (a) => JSON.stringify([a.id, a.type]);
 export function inspectCases(payload) {
@@ -95,6 +95,7 @@ const PLAIN_REASONS = {
   runner_unavailable: "The agent could not start. No model was called.", execution_failed: "The agent could not finish this run.",
   invalid_completion: "The answer could not be confirmed for this run.", diagnostics_failed: "Run details could not be saved.",
   journal_failed: "The run could not be saved, so its result is unconfirmed.",
+  source_changed: "The agent or its tests changed during the run. Reload before testing again.",
   recording_mismatch: "Recording mismatch: tool arguments differ from the saved call. Update the saved call before retrying.",
   recording_source_changed: "The agent file changed. The recording was not saved.",
   recording_unrepresentable: "The recording does not fit this agent file. Nothing was saved.",
@@ -192,7 +193,7 @@ export function resultHistory(initial) {
     }
     const id = modelId(view), stopped = attempts.get(id);
     if (executed || stopped?.view && !stopped.run && !same(stopped.view.latest.result, view.latest.result)) attempts.delete(id);
-    else if (stopped?.run?.revision === view.file.revision) return;
+    else if (stopped?.run?.revision === sourceIdentity(view)) return;
     const route = view.latest.result.modelRoute, changed = !same(models.get(route)?.latest.result, view.latest.result);
     if (!models.has(route) && models.size === 2 && (view.latest.result.selection.scope !== "full" || view.latest.result.state !== "complete")) {
       attempts.set(id, { view });
@@ -220,9 +221,9 @@ export function resultHistory(initial) {
     get last() { return last; }, remember,
     selected(view, model) {
       const attempt = attempts.get(model);
-      if (attempt?.run?.revision === view.file.revision) return;
-      if (attempt?.view.file.revision === view.file.revision) return { ...view, latest: attempt.view.latest };
-      const matches = [...models.values()].filter(v => modelId(v) === model && v.file.revision === view.file.revision);
+      if (attempt?.run?.revision === sourceIdentity(view)) return;
+      if (sourceIdentity(attempt?.view) === sourceIdentity(view)) return { ...view, latest: attempt.view.latest };
+      const matches = [...models.values()].filter(v => modelId(v) === model && sourceIdentity(v) === sourceIdentity(view));
       return matches.length === 1 ? { ...view, latest: matches[0].latest } : undefined;
     },
     pair: () => [...models.values()],
@@ -230,7 +231,7 @@ export function resultHistory(initial) {
       capturedModel = receipt.model;
       const defs = uniqueIndex(saved?.authoring?.examples ?? [], e => e.id), route = receipt.modelRoute;
       if (saved) for (const c of inspectCases({ ...saved, latest: { status: "current", result: receipt } })) {
-        const id = c.example.id, record = { definition: defs.get(id), c: { ...c, capturedRevision: saved.file.revision }, model: route };
+        const id = c.example.id, record = { definition: defs.get(id), c: { ...c, capturedRevision: sourceIdentity(saved) }, model: route };
         if (record.definition && c.row) { records.set(id, record); modelCases.set(`${route}\0${id}`, record); }
       }
     },

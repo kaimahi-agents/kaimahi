@@ -98,12 +98,38 @@ inference retries or fallback. Existing live `run --agent`, full-workspace Test,
 workspace Explain and hidden legacy Eval remain unchanged. See
 [agent-file preview](kmx.md#agent-file-local-preview-unreleased-integration).
 
+Bare `kmx test` (no FILE) tests direct `*.agent.md` files in the current folder
+and `.github/agents/`, sorted by path, with no recursion or Git-root discovery. It
+reuses the per-file checked pair runner and companion tests-file rule, and never
+falls back to native workspace evaluation (`kmx package test`). `--tests` and
+`--case` still require an explicit FILE. Each file gets its own checked pair,
+journal and five-minute budget. Assertion failures, unknown (inconclusive or
+unavailable judge) and invalid/missing tests do not stop later files; operational
+failures (execution, route/auth, journal, source, invalid tool settings,
+unavailable tools/models, recording failures and runner `unsafe_tool_content` or
+`credential_content` refusals) abort later execution and the remaining files are
+`not_run`. Load-time parser refusals, including credential-shaped content reported
+as `invalid_file`, are file-attributable and may continue to later agents. There are no automatic retries. One text, JSON
+(`kind: kmx.agent-folder-test`, `schemaVersion: 1`) or GitHub summary reports
+`total`, `passed`, `failed`, `unknown`, `couldNotRun` and `notRun`. All pass exits
+0; exit 2 takes precedence over assertion-failure exit 1 if any file is unknown,
+could not run or was not run, or discovery is empty/invalid; interruption exits
+130; output/summary I/O errors exit 1. Native Windows still requires an explicit
+file through the guarded path. See
+[folder test](agent-file.md#test-a-folder).
+
 ## Frozen source-file run profiles (unreleased)
 
-`run-profile export FILE` calls the canonical agent-file loader offline and emits
-one content-bearing JSON document on stdout. It preserves instructions, authored
-model/judge identities and ordered examples with hashes; every target status is
-`not_run`. It neither executes nor loads operational configuration. This is not
+`run-profile export FILE [--tests FILE]` uses the checked paired loader offline
+(not the single-agent loader) and emits one content-bearing JSON document on
+stdout. The default companion rule or explicit tests override uses the same
+selection as file Run/Test. Both selected sources must be valid; there is no
+fallback to inline tests after a companion failure. It preserves instructions,
+authored model/judge identities and ordered examples with hashes; every target
+status is `not_run`. External tests produce a v2 profile with physical
+selection/snapshot identity (`snapshotRevision`, `testsSource`) that is
+machine/selection-bound; inline profiles retain v1. It neither executes nor
+loads configuration, credentials or a provider. This is not
 `test export` evidence, an AgentSuite runtime profile, a package or a Deploy
 operation. No route/model override or file writer is provided. See the
 [run-profile contract](agent-file.md#frozen-run-profile-export-unreleased).

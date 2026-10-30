@@ -27,11 +27,15 @@ func (f *Files) copilotTestsChanged(ctx context.Context, operation, filename str
 			before, source, _ = f.inspect(ctx, target)
 		}
 	}
+	if len(edits) > 0 {
+		return after.HasFrontmatter || before != nil && before.HasFrontmatter
+	}
+	return inlineCopilotTestsChanged(before, source, after, content)
+}
+
+func inlineCopilotTestsChanged(before *agentfile.Agent, source []byte, after *agentfile.Agent, content []byte) bool {
 	if !after.HasFrontmatter && (before == nil || !before.HasFrontmatter) {
 		return false
-	}
-	if len(edits) > 0 {
-		return true
 	}
 	section := func(a *agentfile.Agent, b []byte) []byte {
 		if a == nil || a.Locations["Examples"].Line == 0 {
@@ -76,6 +80,9 @@ func AuthoringOperations(files *Files) map[string]Operation {
 			}
 			if json.Unmarshal(req.Params.Arguments, &input) != nil {
 				return nil, refusal("invalid_options")
+			}
+			if err := files.requireSingleSource(input.Path); err != nil {
+				return nil, err
 			}
 			if !input.AcknowledgeCopilotTests && files.copilotTestsChanged(ctx, name, input.Path, []byte(input.Content), input.ExampleEdits) {
 				return nil, refusal("confirmation_required")

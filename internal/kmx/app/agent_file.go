@@ -18,7 +18,12 @@ import (
 )
 
 type FilePreviewOptions struct {
-	File, Operation, CaseID string
+	ValidateSource           func(context.Context) error
+	PreparePairRecordingSave func(context.Context, *agentfile.Pair) (PairRecordingSaver, error)
+	pair                     *agentfile.Pair
+	pairSave                 *PairRecordingSaveResult
+	retentionSnapshot        string
+	File, Operation, CaseID  string
 	// SkipAssertions is answer-only Run; Test refuses it. Default false.
 	SkipAssertions bool
 	// SourceFile is the trusted physical filename when File is only a display label.
@@ -54,7 +59,11 @@ type FilePreviewOptions struct {
 }
 
 type FilePreviewResult struct {
-	RecordedReplayOnly bool `json:"recordedReplayOnly,omitempty"`
+	SnapshotRevision      string                  `json:"snapshotRevision,omitempty"`
+	Tests                 *FilePreviewTestsSource `json:"tests,omitempty"`
+	RecordingTarget       *FileRecordingTarget    `json:"recordingTarget,omitempty"`
+	SavedSnapshotRevision string                  `json:"savedSnapshotRevision,omitempty"`
+	RecordedReplayOnly    bool                    `json:"recordedReplayOnly,omitempty"`
 
 	SchemaVersion int                       `json:"schemaVersion"`
 	SavedRevision string                    `json:"savedRevision,omitempty"`
@@ -212,6 +221,7 @@ func previewReason(code string) string {
 		"credential_content":        "Credential-bearing preview content was withheld.",
 		"runner_unavailable":        "Embedded preview runner is not available; no inference was performed.",
 		"execution_failed":          "Local preview execution failed.", "model_reply_unusable": "The model replied in a form kmx cannot use, so the test did not finish.", "invalid_completion": "Runner returned incomplete or mismatched execution metadata.",
+		"source_changed":     "Agent or selected tests changed; reload before running.",
 		"diagnostics_failed": "Cannot write local preview diagnostics.",
 		"journal_failed":     "Preview journal finalization failed; the result is unknown.",
 	}
@@ -253,6 +263,14 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	r := FilePreviewResult{SchemaVersion: 1, Kind: "kmx.agent-file-preview", Operation: opt.Operation,
 		File: FilePreviewIdentity{Path: filePath}, Selection: FilePreviewSelection{Scope: scope, CaseIDs: []string{}},
 		State: "refused", Verdict: runtime.EvaluationUnknown, Examples: []FilePreviewExample{}, Retention: FilePreviewRetention{Status: "not_requested"}}
+	if opt.pair != nil {
+		// A parsed pair's raw identity is already known, including for option
+		// refusals before route selection; keep summary metadata self-consistent.
+		r.File.Revision = opt.pair.Agent.Revision
+		r.SnapshotRevision = opt.pair.SnapshotRevision
+		r.Tests = pairTestsSource(opt.pair)
+		r.Tests.Path = pairPreviewPath(r.Tests.Path, opt.FullPath)
+	}
 	fail := func(code string, exit int) (FilePreviewResult, *FilePreviewError) {
 		r.FullPass = false
 		r.Verdict = runtime.EvaluationUnknown
@@ -286,6 +304,9 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		return fail("invalid_options", 1)
 	}
 	metadata := []string{r.File.Path, parsed.Model}
+	if r.Tests != nil {
+		metadata = append(metadata, r.Tests.Path)
+	}
 	for _, ex := range parsed.Examples {
 		metadata = append(metadata, ex.ID)
 		for _, as := range ex.Assertions {
@@ -295,6 +316,7 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	for _, s := range metadata {
 		if secretshapes.Match(s) != nil {
 			r.File.Path = "[agent file]"
+			r.SnapshotRevision, r.Tests = "", nil
 			return fail("invalid_file", 1)
 		}
 	}
@@ -463,7 +485,23 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		return recordingFail(prepareErr)
 	}
 	request := agentpreview.Request{SkipAssertions: opt.SkipAssertions, Agent: parsed, Examples: selected, Route: route, JudgeRoute: opt.JudgeRoute, Input: opt.Input, Progress: opt.Progress, ToolBindings: opt.ToolBindings, FileLabel: r.File.Path, ToolSettings: append([]localtools.ToolSetting(nil), r.ToolSettings...)}
-	request.ExampleFinished = previewCaseObserver(ctx, selected, parsed, route, opt.CaseFinished, opt.SkipAssertions)
+	request.ValidateSource = opt.ValidateSource
+	if opt.pair != nil {
+		request.SnapshotRevision = opt.pair.SnapshotRevision
+		request.SourceAgent = opt.pair.Agent
+		request.SourceText = []string{opt.pair.AgentPath, opt.pair.Tests.Selection.Path}
+		if suite := opt.pair.Tests.Suite; suite != nil && opt.pair.Tests.State == "external" {
+			request.SourceText = append(request.SourceText, string(suite.Source))
+		}
+	}
+	observer := previewCaseObserver(ctx, selected, parsed, route, opt.CaseFinished, opt.SkipAssertions)
+	if observer != nil {
+		request.ExampleFinished = func(row agentpreview.ExampleOutcome) {
+			if opt.pair == nil || row.Completion.SnapshotRevision == request.SnapshotRevision {
+				observer(row)
+			}
+		}
+	}
 	if opt.RouteSelected != nil {
 		request.BeforeExecute = func() error { return opt.RouteSelected(r.ModelRoute) }
 	}
@@ -475,6 +513,9 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	outcome, cause := a.FileRunner.Run(runCtx, request)
 	if errors.Is(cause, agentpreview.ErrUnsafeToolContent) || errors.Is(cause, agentpreview.ErrCredentialContent) || errors.Is(cause, copilot.ErrCredentialContent) {
 		r.File = FilePreviewIdentity{Path: "[agent file]"}
+		r.SnapshotRevision, r.SavedSnapshotRevision = "", ""
+		r.Tests, r.RecordingTarget = nil, nil
+		r.SavedRevision, r.Notices, r.Diagnostic = "", nil, nil
 		r.ModelRoute = FilePreviewRoute{}
 		r.JudgeRoute = nil
 		r.ToolSettings = nil
@@ -505,7 +546,7 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		if !validPreviewTools(c, ex, parsed.Tools) {
 			return false
 		}
-		if c.DurationMs < 0 || c.DurationMs > (5*time.Minute).Milliseconds() || c.ToolCalls < 0 || c.ToolCalls > localtools.MaxCalls || len(parsed.Tools) == 0 && c.ToolCalls != 0 || c.State != agentpreview.Complete || c.ID == "" || seen[c.ID] || c.FileRevision != parsed.Revision || c.Provider != route.Provider || c.Model != route.Model || len(c.Answer) > 256*1024 || !utf8.ValidString(c.Answer) {
+		if c.DurationMs < 0 || c.DurationMs > (5*time.Minute).Milliseconds() || c.ToolCalls < 0 || c.ToolCalls > localtools.MaxCalls || len(parsed.Tools) == 0 && c.ToolCalls != 0 || c.State != agentpreview.Complete || c.ID == "" || seen[c.ID] || c.FileRevision != parsed.Revision || opt.pair != nil && c.SnapshotRevision != opt.pair.SnapshotRevision || c.Provider != route.Provider || c.Model != route.Model || len(c.Answer) > 256*1024 || !utf8.ValidString(c.Answer) {
 			return false
 		}
 		seen[c.ID] = true
@@ -607,6 +648,9 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	if errors.Is(cause, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return fail("deadline_exceeded", 1)
 	}
+	if errors.Is(cause, agentpreview.ErrSourceChanged) {
+		return fail("source_changed", 1)
+	}
 	if errors.Is(cause, agentpreview.ErrModelUnavailable) {
 		return fail("model_unavailable", 1)
 	}
@@ -641,7 +685,7 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	if r.AdHoc != nil && r.AdHoc.State != "complete" {
 		return fail("invalid_completion", 1)
 	}
-	if saveErr := saveFileRecordings(ctx, recordingSave, outcome, selected, &r); saveErr != nil {
+	if saveErr := saveFileRecordings(ctx, recordingSave, outcome, selected, &r, opt); saveErr != nil {
 		return recordingFail(saveErr)
 	}
 	if opt.Operation == "test" && opt.retentionScope != nil {
@@ -718,6 +762,7 @@ func retainFilePreviewFailures(ctx context.Context, scope fileFailureScope, agen
 		codec := retainedFileFailureCodec{
 			revision: agent.Revision, agentID: agent.Identity.ID, operation: "test", selection: selection,
 			model: FilePreviewRoute{Provider: route.Provider, Model: route.Model}, judge: judgeRoute, assertions: assertions,
+			pair: retainedPairMetadata(result.SnapshotRevision, result.Tests),
 		}
 		id, saveErr := saveFileFailure(context.WithoutCancel(ctx), scope, codec, *detail)
 		if id != "" {

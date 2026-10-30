@@ -29,6 +29,9 @@ func newEvalExplainCommand(state *commandState) *cobra.Command {
 			if cmd.Flags().Changed("workspace") && cmd.Flags().Changed("file") {
 				return errors.New("--workspace and --file are mutually exclusive")
 			}
+			if cmd.Flags().Changed("tests") && (!cmd.Flags().Changed("file") || strings.TrimSpace(opt.TestsFile) == "") {
+				return errors.New("--tests requires --file FILE and a nonempty tests file")
+			}
 			if opt.Clear && opt.ShowContent {
 				return errors.New("--clear and --show-content are mutually exclusive")
 			}
@@ -47,6 +50,7 @@ func newEvalExplainCommand(state *commandState) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&opt.Workspace, "workspace", "", "exact workspace root; otherwise discover nearest workspace")
 	cmd.Flags().StringVar(&opt.File, "file", "", "exact agent file whose retained Test failures to inspect")
+	cmd.Flags().StringVar(&opt.TestsFile, "tests", "", "Current tests file override (requires --file)")
 	cmd.Flags().BoolVar(&opt.ShowContent, "show-content", false, "print sanitized bounded excerpts, expected values and retained rationale")
 	cmd.Flags().BoolVar(&opt.Clear, "clear", false, "clear one failure ID, or this explicitly selected workspace/file subject's retained failures")
 	cmd.MarkFlagsMutuallyExclusive("workspace", "file")

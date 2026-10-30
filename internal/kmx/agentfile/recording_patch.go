@@ -37,10 +37,6 @@ func applyRecordings(source []byte, recordings []Recording, block bool) ([]byte,
 	}
 	text := string(source)
 	lines := strings.SplitAfter(text, "\n")
-	starts := make([]int, len(lines))
-	for i := 1; i < len(lines); i++ {
-		starts[i] = starts[i-1] + len(lines[i-1])
-	}
 	plain := func(i int) string { return strings.TrimSuffix(strings.TrimSuffix(lines[i], "\n"), "\r") }
 	// Parse accepted exactly one fenced YAML document after the Examples heading.
 	open := before.Locations["Examples"].Line
@@ -56,10 +52,30 @@ func applyRecordings(source []byte, recordings []Recording, block bool) ([]byte,
 	if yaml.Unmarshal([]byte(strings.Join(yamlLines, "\n")+"\n"), &root) != nil {
 		return nil, ErrRecordingChanged
 	}
+	return patchRecordings(source, recordings, before.Examples, &root, open+1, block, func(candidate []byte) bool {
+		after, err := Parse("recording.agent.md", candidate)
+		want := projectAgent(before)
+		return err == nil && want != nil && bytes.Equal(want, projectAgent(after))
+	})
+}
+
+// patchRecordings targets canonical examples nodes. lineBase is the number of
+// source lines preceding the decoded YAML (zero for whole-source node positions).
+// The adapter revalidates the entire candidate and compares its authored meaning.
+func patchRecordings(source []byte, recordings []Recording, examplesBefore []Example, root *yaml.Node, lineBase int, block bool, valid func([]byte) bool) ([]byte, error) {
+	if len(recordings) == 0 {
+		return nil, ErrRecordingInvalid
+	}
+	text := string(source)
+	lines := strings.SplitAfter(text, "\n")
+	starts := make([]int, len(lines))
+	for i := 1; i < len(lines); i++ {
+		starts[i] = starts[i-1] + len(lines[i-1])
+	}
 	// YAML columns count runes on the LF-normalized line; map them onto the
 	// original line so CRLF and multibyte text keep exact byte offsets.
 	offset := func(n *yaml.Node) int {
-		at := starts[open+n.Line]
+		at := starts[lineBase+n.Line-1]
 		for range n.Column - 1 {
 			_, size := utf8.DecodeRuneInString(text[at:])
 			at += size
@@ -95,7 +111,7 @@ func applyRecordings(source []byte, recordings []Recording, block bool) ([]byte,
 		}
 		var key, calls, entry *yaml.Node
 		_, examples := value(root.Content[0], "examples")
-		for i, e := range before.Examples {
+		for i, e := range examplesBefore {
 			if e.ID != r.ExampleID || e.Mocks == nil {
 				continue
 			}
@@ -105,11 +121,11 @@ func applyRecordings(source []byte, recordings []Recording, block bool) ([]byte,
 				if saved.Name == tool.Name && saved.Mode == "recorded" && len(saved.Calls) == 0 {
 					key, calls = value(entries.Content[j], "calls")
 					entry = entries.Content[j]
-					before.Examples[i].Mocks.Tools[j] = tool
+					examplesBefore[i].Mocks.Tools[j] = tool
 					separator := ", "
 					if entries.Content[j].Style&yaml.FlowStyle == 0 {
 						eol := "\n"
-						if strings.HasSuffix(lines[open+key.Line], "\r\n") {
+						if strings.HasSuffix(lines[lineBase+key.Line-1], "\r\n") {
 							eol = "\r\n"
 						}
 						separator = eol + strings.Repeat(" ", key.Column-1)
@@ -147,7 +163,7 @@ func applyRecordings(source []byte, recordings []Recording, block bool) ([]byte,
 				return nil, ErrRecordingInvalid
 			}
 			eol := "\n"
-			if strings.HasSuffix(lines[open+key.Line], "\r\n") {
+			if strings.HasSuffix(lines[lineBase+key.Line-1], "\r\n") {
 				eol = "\r\n"
 			}
 			edits = append(edits, edit{offset(key), end + 1, strings.ReplaceAll(value, "\n", eol)})
@@ -159,8 +175,7 @@ func applyRecordings(source []byte, recordings []Recording, block bool) ([]byte,
 	for _, e := range edits {
 		text = text[:e.at] + e.text + text[e.end:]
 	}
-	after, err := Parse("recording.agent.md", []byte(text))
-	if want := projectAgent(before); err != nil || want == nil || !bytes.Equal(want, projectAgent(after)) {
+	if !valid([]byte(text)) {
 		return nil, ErrRecordingInvalid
 	}
 	return []byte(text), nil
@@ -193,11 +208,19 @@ func decodedJSON(value any) bool {
 // projectAgent compares authored meaning without locations or revision. The
 // JSON round trip treats lexical forms such as 1.0 and 1 as the same value.
 func projectAgent(a *Agent) []byte {
-	examples := make([]any, len(a.Examples))
-	for i, e := range a.Examples {
+	return projectJSON([]any{a.Identity, a.Title, a.Instructions, a.Model, a.Tools, projectExamples(a.Examples)})
+}
+
+func projectExamples(authored []Example) []any {
+	examples := make([]any, len(authored))
+	for i, e := range authored {
 		examples[i] = []any{e.ID, e.Input, e.Mocks, e.Assertions}
 	}
-	raw, err := json.Marshal([]any{a.Identity, a.Title, a.Instructions, a.Model, a.Tools, examples})
+	return examples
+}
+
+func projectJSON(authored any) []byte {
+	raw, err := json.Marshal(authored)
 	var value any
 	if err != nil || json.Unmarshal(raw, &value) != nil {
 		return nil

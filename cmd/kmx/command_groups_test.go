@@ -44,7 +44,7 @@ func TestCommandGroupsTestBoundaries(t *testing.T) {
 	t.Setenv("KMX_HOME", t.TempDir())
 	file := cliPreviewFile(t)
 	for _, args := range [][]string{
-		{"test", "--workspace", t.TempDir()}, {"test", "--to", "dev"}, {"test"},
+		{"test", "--workspace", t.TempDir()}, {"test", "--to", "dev"},
 		{"package", "test", file}, {"package", "test", "--provider", "fake"},
 		{"test", "explain"}, {"test", "explain", "--workspace", t.TempDir()}, {"eval", file},
 	} {

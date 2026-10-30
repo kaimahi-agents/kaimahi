@@ -116,6 +116,23 @@ function get(url, { headers = {}, method = "GET", host } = {}) {
   });
 }
 
+test("source history capability cannot upgrade legacy canvas actions", async () => {
+  const capability = { schemaVersion: 1, read: true, execute: false, edit: false, capture: false, restore: false };
+  const view = await readView(stubSession(resource(MINIMAL, { sourceHistory: capability })), MINIMAL);
+  assert.deepEqual(view.sourceHistory, capability);
+  for (const field of ["execute", "edit", "capture", "restore", "schemaVersion"]) {
+    await assert.rejects(readView(stubSession(resource(MINIMAL, { sourceHistory: { ...capability, [field]: field === "schemaVersion" ? 2 : true } })), MINIMAL), e => e.code === "invalid-resource", field);
+  }
+  await assert.rejects(readView(stubSession({ schemaVersion: 1, kind: "kmx.agent-view-error", reasonCode: "paired_source_required", sourceHistory: capability }), MINIMAL), e => e.code === "paired_source_required");
+});
+
+test("unused source history metadata cannot hide the current agent view", async () => {
+  const view = await readView(stubSession(resource(MINIMAL, { history: { status: "available", versions: [{ sourceKind: "pair", label: "untrusted optional metadata" }] } })), MINIMAL);
+  assert.equal(view.file.revision, REV);
+  assert.equal(view.history, undefined);
+  assert.equal(view.authoring, undefined);
+});
+
 test("agent paths preserve ordinary names in any directory", () => {
   for (const path of [MINIMAL, SQUAD, "/repo one/agents/Release Notes.agent.md", "/repo Māori/.squad/agents/greeter/charter.md",
     "../other/greeter.agent.md", "/Bob's (agents) + notes/@release=2026/report.agent.md", "a/b.agent.md", "con.agent.md", "x%2e.agent.md", "x#draft.agent.md", "x".repeat(64) + ".agent.md"]) {
@@ -282,6 +299,7 @@ test("formatView is compact, plain and visibly truncated", async () => {
   const withResult = resource(MINIMAL, { latest: { status: "current", result: result() } });
   const text = formatView(await readView(stubSession(withResult), MINIMAL));
   assert.match(text, /greeter\.agent\.md/);
+  assert.match(text, new RegExp(REV));
   assert.match(text, /Greeter/);
   assert.match(text, /hello/);
   assert.match(text, /Latest: current, PASS/);
@@ -499,6 +517,7 @@ test("plainReason translates every preview engine code and retains only validate
     runner_unavailable: "The agent could not start. No model was called.", execution_failed: "The agent could not finish this run.",
     invalid_completion: "The answer could not be confirmed for this run.", diagnostics_failed: "Run details could not be saved.",
     journal_failed: "The run could not be saved, so its result is unconfirmed.",
+    source_changed: "The agent or its tests changed during the run. Reload before testing again.",
     recording_mismatch: "Recording mismatch: tool arguments differ from the saved call. Update the saved call before retrying.",
     recording_source_changed: "The agent file changed. The recording was not saved.",
     recording_unrepresentable: "The recording does not fit this agent file. Nothing was saved.",
@@ -1387,11 +1406,11 @@ test("frontend and provider sources avoid unsafe sinks and mutation surfaces", a
   assert.match(strip(app), /method: "POST"/);
   assert.match(strip(app), /fetch\("actions"/);
   const operations = strip(view).match(/const allowed = \{([\s\S]*?)\n  \};/)[1];
-  assert.deepEqual([...operations.matchAll(/(?:"([a-z-]+)"|\b([a-z]+))\s*:\s*\[/g)].map((m) => m[1] ?? m[2]).sort(), ["models", "progress", "reload", "run", "save-and-test", "save-examples", "save-prompt", "stop", "suggest", "test", "tools"]);
+  assert.deepEqual([...operations.matchAll(/(?:"([a-z-]+)"|\b([a-z]+))\s*:\s*\[/g)].map((m) => m[1] ?? m[2]).sort(), ["models", "progress", "reload", "restore", "run", "save-and-test", "save-examples", "save-prompt", "stop", "suggest", "test", "tools"]);
   assert.doesNotMatch(strip(app), /createElement\(\s*["']button["']/);
   assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)[^>]*>|\son[a-z]+\s*=|style\s*=|<form|<button|<input|<textarea|http-equiv/i);
   assert.doesNotMatch(css, /@import|url\(/i);
-  for (const src of [strip(ext), strip(view), strip(viewResource)]) {
+  for (const src of [strip(ext), strip(view), strip(viewResource), strip(await readFile(here("paired-actions.mjs"), "utf8"))]) {
     assert.doesNotMatch(src, /child_process|node:net|node:dgram|\bfetch\s*\(|writeFile|appendFile|unlink|rename|mkdir|\bexec\b|spawn|sendAndWait|\.sh\b|Access-Control-Allow|innerHTML/);
     assert.doesNotMatch(src, /listen\([^)]*0\.0\.0\.0|"::"/);
   }
@@ -4248,6 +4267,77 @@ test("tool settings: an invalid_tool_settings poll after a pass makes the old pa
   }
 });
 
+test("paired source: resource refusal reaches the idle poll, fences actions and recovers without reviving a cached pass", async t => {
+  const seed = await toolCanvas(); t.after(() => seed.app.dispose());
+  const raw = resource(MINIMAL, { file: seed.view.file, instructions: seed.source, model: "fake", examples: seed.examples,
+    tools: ["ping"], toolSettings: ENABLED("ping"), toolSettingsRevision: "absent", authoring: { source: seed.source, editable: true, recordingControls: true },
+    latest: passing(ENABLED("ping"))(seed.view.file.revision, seed.examples) });
+  let current = raw;
+  const session = stubSession(raw);
+  session.rpc.mcp.resources.read = async params => ({ contents: [{ uri: params.uri, mimeType: "application/json", text: JSON.stringify(current) }] });
+  const bridge = await startViewBridge({ session, path: MINIMAL }); t.after(() => bridge.close());
+  const doc = fakeDoc(), root = doc.createElement("main"), actions = [];
+  doc.getElementById = () => root; doc.visibilityState = "visible";
+  const before = { document: globalThis.document, fetch: globalThis.fetch, setInterval: globalThis.setInterval };
+  let poll, ready;
+  const started = new Promise(resolve => { ready = resolve; });
+  globalThis.document = doc;
+  globalThis.setInterval = fn => { poll = fn; ready(); return 1; };
+  globalThis.fetch = async (url, options) => {
+    if (url === "actions") {
+      const action = JSON.parse(options.body);
+      if (action.operation === "tools") return { json: async () => pingCatalog() };
+      actions.push(action); return { json: async () => ({ view: await readView(session, MINIMAL) }) };
+    }
+    const response = await get(bridge.url + url);
+    return { json: async () => JSON.parse(response.body) };
+  };
+  t.after(() => {
+    if (before.document === undefined) delete globalThis.document; else globalThis.document = before.document;
+    globalThis.fetch = before.fetch; globalThis.setInterval = before.setInterval;
+  });
+  await import(new URL("../../copilot-wsl/com.github.copilot/extensions/agent-view/app.js?paired-source-poll", import.meta.url));
+  await started;
+  assert.equal(typeof poll, "function");
+  assert.match(c18Text(root, "result-pill"), /2 of 2 passing/);
+  current = { schemaVersion: 1, kind: "kmx.agent-view-error", reasonCode: "paired_source_required", reason: "private source text" };
+  await poll();
+  assert.doesNotMatch(c18Text(root, "result-pill"), /passing/, "a refused read must invalidate the current pass");
+  await assert.rejects(readView(session, MINIMAL), e => e.code === "paired_source_required" && !/private/.test(e.message));
+  assert.match(root.textContent, /paired.*not supported/i);
+  click(btn(root, "Run")); await tick();
+  assert.deepEqual(actions, [], "even a directly dispatched Run is fenced");
+  openTest(root, "a");
+  assert.equal(byClass(root, "tool-mode")[0].disabled, true, "recording mode changes are unavailable");
+  click(byClass(root, "tool-mode")[0]);
+  click(byClass(root, "save-run")[0]); await tick();
+  assert.deepEqual(actions, [], "Test/Save and recording controls cannot dispatch");
+  goBack(root);
+  await openServer({ root });
+  assert.equal(byClass(root, "tool-state")[0].disabled, true, "tool settings are unavailable");
+  goBack(root);
+  // Recovery must keep polling while actions are unavailable, and cannot revive the cached pass.
+  current = raw; await poll(); await poll();
+  assert.equal(c18Text(root, "result-pill"), "Out of date");
+  assert.equal(byClass(root, "save-run")[0].disabled, false);
+  c18Prompt(root).textContent = "My prompt draft."; c18Prompt(root).listeners.input[0]();
+  openTest(root, "a"); edited(byClass(root, "example-input")[0], "My input draft.");
+  current = { schemaVersion: 1, kind: "kmx.agent-view-error", reasonCode: "paired_source_required" }; await poll();
+  assert.equal(byClass(root, "save-run")[0].disabled, true, "draft Save/Test is unavailable");
+  click(byClass(root, "save-run")[0]); await tick();
+  assert.deepEqual(actions, [], "the blocked draft cannot be saved");
+  current = raw; await poll();
+  assert.equal(byClass(root, "example-input")[0].value, "My input draft.");
+  goBack(root); assert.equal(c18Prompt(root).textContent, "My prompt draft.");
+  assert.doesNotMatch(root.textContent, /private source text/);
+  // A new explicit Test, not a read, can establish currentness again.
+  click(btn(root, "Reload and discard draft")); await tick(); await tick();
+  assert.equal(c18Text(root, "result-pill"), "Out of date", "Reload cannot revive a cached pass either");
+  click(byClass(root, "save-run")[0]); await tick(); await tick();
+  assert.equal(actions.at(-1).operation, "test");
+  assert.match(c18Text(root, "result-pill"), /2 of 2 passing/);
+});
+
 test("tool settings: a valid response started before invalidation cannot restore an old pass", async () => {
   const h = await toolCanvas();
   const before = h.app.observation();
@@ -4377,6 +4467,132 @@ const addDraftTest = (h) => {
   click(btn(h.root, "Add test"));
   edited(byClass(h.root, "test-title-input")[0], "Greets Ada"); edited(byClass(h.root, "example-input")[0], "Ada"); edited(byClass(h.root, "check-value")[0], "Hello");
 };
+
+async function selectedCanvas({ examples = [], respond, latest } = {}) {
+  const source = "---\nmodel: fake\ntools: [ping]\n---\nPrompt\n";
+  const view = await viewFor(source, [], { status: "none" }, "fake", { tools: ["ping"], toolSettings: [{name:"ping",state:"Enabled"}] });
+  view.examples = examples.map(e=>({id:e.id,input:e.input,assertions:e.assertions.map(a=>({id:a.id,type:a.type,fields:[["value",a.value??""]]}))}));
+  view.authoring = {...view.authoring,examples,recordingControls:true};
+  view.selectedSources={sourceVersion:"held-source",snapshotRevision:"snapshot",server:SERVER_NAME,testsState:"external",testsPath:"/work/greeter.agent.test.md",testsRevision:REV,operations:{edit:true,execute:true,capture:true,restore:true},history:{status:"available",versions:[{versionId:"retained-version",sourceKind:"pair",label:"Tests changed"}]}};
+  if(latest)view.latest=latest;
+  const doc=fakeDoc(),root=doc.createElement("main"),calls=[];
+  const app=renderView(doc,root,view,async action=>{calls.push(action);return respond?respond(action,view):{error:"refused",message:"Draft kept."};},{fetchTools:async()=>({servers:[]})});
+  return {doc,root,calls,app,view};
+}
+
+const SUGGESTED = [{id:"suggested-one",input:"Ada",assertions:[{id:"text",type:"contains",value:"Ada"}]}, {id:"suggested-two",input:"Lin",assertions:[{id:"text",type:"contains",value:"Lin"}]}];
+const suggestionView = (view, examples = SUGGESTED, id = "batch-one") => ({...view,suggestedTests:{id,sourceIdentity:JSON.stringify([SERVER_NAME,"held-source"]),examples}});
+
+test("suggestions are unsaved drafts; dropping one and editing another saves only the reviewed value",async t=>{
+  const h=await selectedCanvas({respond:async action=>action.operation==="acknowledge-suggestions"?{acknowledged:true}:{error:"refused",message:"Draft kept."}});t.after(()=>h.app.dispose());
+  const saved=JSON.stringify(h.view);
+  h.app.observe(suggestionView(h.view));await tick();
+  assert.equal(byClass(h.root,"test-item").length,2,"proposals visible in existing test list");
+  assert.equal(JSON.stringify(h.view),saved,"saved baseline is untouched");
+  assert.deepEqual(h.calls.map(a=>a.operation),["acknowledge-suggestions"],"import has no save or Test");
+  click(byClass(h.root,"test-row")[0]);click(byClass(h.root,"cancel-test")[0]);
+  h.app.observe(suggestionView(h.view));await tick();
+  assert.equal(byClass(h.root,"test-item").length,1,"ack retry does not resurrect dropped draft");
+  click(byClass(h.root,"test-row")[0]);
+  const input=byClass(h.root,"example-input")[0];input.value="Edited input";input.listeners.input[0]();
+  click(byClass(h.root,"save-run")[0]);await tick();
+  const save=h.calls.find(a=>a.operation==="save-and-test");
+  assert.deepEqual(save.examples.map(e=>({id:e.id,input:e.input})),[{id:"suggested-two",input:"Edited input"}]);
+  assert.equal(save.acknowledgeCopilotTests,undefined,"external proposals keep existing no-warning save path");
+});
+
+test("suggestion ACK failure retries without a duplicate import and metadata never changes the saved observation",async t=>{
+  let acknowledgments=0;
+  const h=await selectedCanvas({respond:async()=>{if(++acknowledgments===1)throw Error("lost ACK");return {acknowledged:true}}});t.after(()=>h.app.dispose());
+  const before=h.app.observation();
+  h.app.observe(suggestionView(h.view,[SUGGESTED[0]]));await new Promise(resolve=>setImmediate(resolve));
+  h.app.observe(suggestionView(h.view,[SUGGESTED[0]]));await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(byClass(h.root,"test-item").length,1);
+  assert.equal(acknowledgments,2);
+  assert.equal(byClass(h.root,"conflict-notice").length,0);
+  assert.equal(h.app.observation().revision,before.revision);
+  assert.equal(h.app.observe(h.view),false,"transport does not leak into stored base equality");
+});
+
+test("an overtaken suggestion poll is deferred without ACK, then the same unchanged-source batch imports",async t=>{
+  const h=await selectedCanvas();t.after(()=>h.app.dispose());
+  const old=h.app.observation();
+  click(btn(h.root,"Reload and discard draft"));await tick();
+  h.calls.length=0;
+  h.app.observe(suggestionView(h.view),old);await tick();
+  assert.equal(byClass(h.root,"test-item").length,0);assert.equal(h.calls.length,0);
+  h.app.observe(suggestionView(h.view));await tick();
+  assert.equal(byClass(h.root,"test-item").length,2);assert.equal(h.calls[0].operation,"acknowledge-suggestions");
+});
+
+test("suggestions preserve manual drafts and reject colliding batches atomically",async t=>{
+  const h=await selectedCanvas();t.after(()=>h.app.dispose());
+  addDraftTest(h);
+  h.app.observe(suggestionView(h.view,[SUGGESTED[0]]));await tick();
+  assert.equal(byClass(h.root,"test-title-input")[0].value,"Greets Ada","manual editor retained");
+  const calls=h.calls.length, editor=byClass(h.root,"test-title-input")[0];
+  editor.focus();
+  h.app.observe(suggestionView(h.view,[SUGGESTED[1],SUGGESTED[0]],"collision"));await tick();
+  assert.equal(byClass(h.root,"test-title-input")[0],editor,"collision notice must not replace the active editor");
+  h.app.observe(suggestionView(h.view,[SUGGESTED[1],SUGGESTED[0]],"collision"));await tick();
+  assert.equal(byClass(h.root,"test-title-input")[0],editor,"repeated collision polls preserve focus and selection");
+  assert.equal(h.calls.length,calls,"unimported batch is not acknowledged");
+  assert.match(h.root.textContent,/already|name|collision/i);
+  click(byClass(h.root,"back")[0]);
+  assert.equal(byClass(h.root,"test-item").length,2,"no partial second batch");
+});
+
+test("suggestions wait while inline save consent is open so Go ahead saves only the reviewed drafts",async t=>{
+  const h=await copilotCanvas();t.after(()=>h.app.dispose());
+  addDraftTest(h);click(byClass(h.root,"save-run")[0]);
+  assert.equal(byClass(h.root,"copilot-tests").length,1);
+  h.app.observe({...h.view,suggestedTests:{id:"during-consent",sourceIdentity:h.view.file.revision,examples:[SUGGESTED[0]]}});await tick();
+  assert.equal(h.calls.length,0,"pending review imports and ACKs nothing");
+  click(btn(byClass(h.root,"copilot-tests")[0],"Go ahead"));await tick();
+  assert.deepEqual(h.calls[0].examples.map(e=>e.id),["greets-Ada"],"consent cannot expand its save set");
+});
+
+test("stale suggestion marker tells the user to suggest again without importing examples",async t=>{
+  const h=await selectedCanvas();t.after(()=>h.app.dispose());
+  h.app.observe({...h.view,suggestedTests:{id:"expired",stale:true}});await tick();
+  assert.match(h.root.textContent,/changed.*suggest|suggest.*again/i);
+  assert.equal(byClass(h.root,"test-item").length,0);assert.equal(h.calls[0].batchId,"expired");
+});
+
+test("paired external test drafts skip the inline prompt warning and carry the held source context", async t=>{
+  const h=await selectedCanvas();t.after(()=>h.app.dispose());
+  addDraftTest(h);click(byClass(h.root,"save-run")[0]);await tick();
+  assert.equal(byClass(h.root,"copilot-tests").length,0);
+  assert.equal(h.calls.length,1);assert.equal(h.calls[0].operation,"save-and-test");assert.equal(h.calls[0].expectedSourceVersion,"held-source");
+  assert.equal(h.calls[0].acknowledgeCopilotTests,undefined);
+});
+
+test("paired pending external capture does not warn that tests enter the agent prompt",async t=>{
+  const h=await selectedCanvas({examples:CAPTURE_TEST});t.after(()=>h.app.dispose());
+  click(byClass(h.root,"first-run")[0]);await tick();
+  assert.equal(byClass(h.root,"copilot-tests").length,0);assert.equal(h.calls.length,1);assert.equal(h.calls[0].operation,"test");
+});
+
+test("paired source details distinguish agent and tests and source history is not verdict history",async t=>{
+  const h=await selectedCanvas();t.after(()=>h.app.dispose());
+  assert.match(byClass(h.root,"source-info")[0].textContent,/Tests source/);
+  assert.equal(byClass(h.root,"path-label").filter(n=>n.textContent==="Tests file path").length,1);
+  assert.match(byClass(h.root,"source-info")[0].textContent,/greeter.agent.test.md/);
+  assert.match(byClass(h.root,"source-info")[0].textContent,/Source history/);
+  assert.match(byClass(h.root,"source-info")[0].textContent,/Tests changed/);
+  click(btn(h.root,"Restore sources"));await tick();
+  assert.equal(h.calls.length,1);assert.equal(h.calls[0].operation,"restore");assert.equal(h.calls[0].restoreVersionId,"retained-version");
+  assert.equal(h.calls[0].expectedSourceVersion,"held-source");
+});
+
+test("paired observation of the same selected sources retains only the controller-owned result",async t=>{
+  const result=savedFixture().latest.result;result.selection={scope:"full",caseIds:["one"],totalCases:1};result.examples=[{id:"one",state:"complete",verdict:"pass",assertions:[{id:"a",type:"contains",verdict:"pass"}]}];result.modelRoute="fake/fake";
+  const h=await selectedCanvas({examples:CAPTURE_TEST,latest:{status:"current",badge:"pass",result}});t.after(()=>h.app.dispose());
+  h.app.observe({...h.view,latest:{status:"none",badge:"none"}});
+  assert.match(byClass(h.root,"result-pill")[0].textContent,/passing/);
+  h.app.observe({...h.view,selectedSources:{...h.view.selectedSources,sourceVersion:"changed-tests"},latest:{status:"none",badge:"none"}});
+  assert.doesNotMatch(byClass(h.root,"result-pill")[0].textContent,/passing/);
+});
 
 test("Copilot file shows one editable Prompt and the whole header as inert, read-only preserved settings", async t => {
   const h = await copilotCanvas(); t.after(() => h.app.dispose());

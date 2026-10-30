@@ -1,41 +1,61 @@
-import { readSnapshot, portableId, effectiveModel, preRouteRefusal } from "./authoring.mjs";
+import { sourceIdentity, readSnapshot, portableId, effectiveModel, preRouteRefusal } from "./authoring.mjs";
 import { same, uniqueIndex, quoted } from "./editor.mjs";
 
 export function createObservationController(state, { path, options, drafts, clearUndo, render, refresh }) {
   const { sectionDrafts, testDrafts, invalidEditors, displayNames, history, modelChoice } = state;
   const { hasDrafts, pruneDrafts } = drafts;
-  const observation = () => ({ generation: state.observationGeneration, revision: state.base.file.revision });
+  const observation = () => ({ generation: state.observationGeneration, revision: sourceIdentity(state.base) });
   const matches = (view) => view && !view.error && view.file?.path === path;
 
-  // Only the fixed typed error invalidates; any other failure stays best effort.
+  // Only fixed typed errors invalidate; other failures stay best effort.
   const settingsError = (e) => e?.code === "invalid_tool_settings" || e?.error === "invalid_tool_settings";
+  const pairedError = (e) => e?.code === "paired_source_required" || e?.error === "paired_source_required";
   // Retained results stay visible as old, drafts are untouched, and a valid read recovers.
-  function invalidate(started) {
-    if (started.generation !== state.observationGeneration || started.revision !== state.base.file.revision
-      || state.busy || state.blocked || invalidEditors.size || state.base.settingsInvalid) return false;
+  function invalidate(started, paired = false) {
+    if (started.generation !== state.observationGeneration || started.revision !== sourceIdentity(state.base)
+      || state.busy || state.blocked || invalidEditors.size || !paired && state.base.settingsInvalid) return false;
+    if (paired) {
+      state.sourceUnavailable = true; state.sourceInvalidated = true; state.blocked = true;
+      state.message = "Paired test files are not supported in this canvas. Your drafts are kept.";
+      state.candidate = undefined; state.confirm = undefined; state.run = undefined; state.lastAdHoc = undefined;
+      history.reset(); clearUndo(); state.lastRun = undefined; state.runAlert = undefined;
+    }
     const { latest } = state.base;
-    state.base = { ...state.base, settingsInvalid: true, latest: latest.status === "current" ? { ...latest, status: "stale", badge: "stale" } : latest };
+    state.base = { ...state.base, ...(!paired ? { settingsInvalid: true } : {}), latest: latest.status === "current" ? { ...latest, status: "stale", badge: "stale" } : latest };
     state.observationGeneration++;
     render(); return true;
   }
-  function observeFailure(error, started = observation()) { return settingsError(error) ? invalidate(started) : false; }
+  function observeFailure(error, started = observation()) { return pairedError(error) ? invalidate(started, true) : settingsError(error) ? invalidate(started) : false; }
   // Observation never writes or clears a lock.
   function observe(view, started = observation()) {
+    // Transport is not saved source: never retain it in a baseline or history.
+    const suggestedTests = view?.suggestedTests;
+    if (suggestedTests !== undefined) { const { suggestedTests: _, ...saved } = view; view = saved; }
+    if (pairedError(view)) return invalidate(started, true);
     if (settingsError(view)) return invalidate(started);
-    if (started.generation !== state.observationGeneration || started.revision !== state.base.file.revision
-      || !matches(view) || state.busy || state.blocked || invalidEditors.size) return false;
+    if (started.generation !== state.observationGeneration || started.revision !== sourceIdentity(state.base)
+      || !matches(view) || state.busy || state.blocked && !state.sourceUnavailable || invalidEditors.size) return false;
+    // A valid read unlocks actions, but only a new execution can replace invalidated results.
+    if (state.sourceInvalidated) view = { ...view, latest: { status: "stale", badge: "stale" } };
+    const recoveringSource = state.sourceUnavailable;
+    if (recoveringSource) { state.sourceUnavailable = false; state.blocked = false; state.message = ""; }
+    const suggestionsChanged = options.onSuggestions?.(suggestedTests, view) === true;
     const observed = view;
     const selected = effectiveModel(view.model, modelChoice.override, view.chatModel);
     const route = view.latest.result?.modelRoute, incomingModel = route?.slice(route.indexOf("/") + 1);
-    const sameBaseline = view.file.revision === state.base.file.revision && (!state.settingsDraft.size || view.toolSettingsRevision === state.base.toolSettingsRevision);
+    const sameBaseline = sourceIdentity(view) === sourceIdentity(state.base) && (!state.settingsDraft.size || view.toolSettingsRevision === state.base.toolSettingsRevision);
     const adoptable = sameBaseline || !hasDrafts();
-    const stopped = history.attempt(incomingModel)?.run?.revision === view.file.revision;
+    const stopped = history.attempt(incomingModel)?.run?.revision === sourceIdentity(view);
     const previousHistory = [history.pair(), history.attempt(incomingModel)];
     if (adoptable) { history.focus(selected); if (!stopped) history.remember(observed); }
     const changedHistory = adoptable && !same(previousHistory, [history.pair(), history.attempt(incomingModel)]);
-    view = modelChoice.view(view, view.latest.status !== "current" || preRouteRefusal(view.latest.result) || incomingModel === selected ? undefined : history.selected(view, selected));
-    const recovering = !!state.base.settingsInvalid;
-    if (!changedHistory && ((!recovering && same(view, state.base)) || (state.candidate && same(view, state.candidate)))) return false;
+    const retained = view.selectedSources && sameBaseline ? history.selected(view, selected) : undefined;
+    view = modelChoice.view(view, retained ?? (view.latest.status !== "current" || preRouteRefusal(view.latest.result) || incomingModel === selected ? undefined : history.selected(view, selected)));
+    const recovering = !!state.base.settingsInvalid || recoveringSource;
+    if (!changedHistory && ((!recovering && same(view, state.base)) || (state.candidate && same(view, state.candidate)))) {
+      if (suggestionsChanged) render();
+      return suggestionsChanged;
+    }
     clearUndo(); displayNames.clear(); state.runAlert = undefined;
     state.observationGeneration++;
     state.lastRun = undefined;
