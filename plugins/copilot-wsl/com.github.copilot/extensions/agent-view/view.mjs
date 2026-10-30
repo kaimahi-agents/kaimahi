@@ -618,7 +618,7 @@ export function createViewController({ getSession }) {
   async function deliverSuggestions(input) {
     // Pending startups cannot own a request yet; never await unrelated bridges.
     const bridge = [...instances.values()].find(entry => entry.bridge?.matchesSuggestions(input?.requestId))?.bridge;
-    return bridge ? bridge.deliverSuggestions(input) : suggestionsUnavailable();
+    return bridge ? bridge.deliverSuggestions(input) : suggestionsUnavailable("suggestions-inactive-request");
   }
   return { open, close, closeAll, command, deliverSuggestions, get size() { return instances.size; } };
 }

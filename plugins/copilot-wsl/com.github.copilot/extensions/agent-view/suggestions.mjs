@@ -13,7 +13,25 @@ export const SUGGEST_TOOL_PARAMETERS = {
   required: ["requestId", "examples"],
   additionalProperties: false,
 };
-export const suggestionsUnavailable = () => ({ queued: false, reasonCode: "suggestions-unavailable", message: "Suggestions could not be delivered. Suggest tests again in the original canvas. Nothing was saved or run." });
+const deliveryFailures = {
+  "suggestions-unavailable": "Suggestions could not be delivered. Suggest tests again in the original canvas.",
+  "suggestions-invalid-delivery": "The suggestion delivery has an invalid shape. Copilot must send only requestId and examples.",
+  "suggestions-inactive-request": "The suggestion request is no longer active. Use Suggest tests again in the original canvas.",
+  "suggestions-already-queued": "Suggestions are already queued. Review the existing proposals in the original canvas.",
+  "suggestions-examples-too-large": "The suggested examples exceed the delivery size limit. Copilot must return fewer or shorter examples.",
+  "suggestions-empty-examples": "The suggestion delivery contains no examples. Copilot must return at least one example.",
+  "suggestions-invalid-examples": "The suggested examples do not match the supported format. Copilot must supply test IDs, inputs and typed checks with their required fields.",
+  "suggestions-mock-payload-forbidden": "The suggested examples contain mock fixture payloads that cannot be proposed. Use Live or pending Recorded modes, not invented recordings.",
+  "suggestions-source-unavailable": "The saved sources could not be read. Check the original canvas is available before using Suggest tests again.",
+  "suggestions-source-changed": "The saved sources, selection, owner or editability changed. Review the current sources and use Suggest tests again in the original canvas.",
+  "suggestions-examples-conflict": "The suggested examples conflict with saved examples or exceed the 128-test limit. Use new test IDs and fewer tests.",
+  "suggestions-draft-incompatible": "The suggested examples are not compatible with canvas drafts. Use unique test names and complete checks.",
+};
+export function suggestionsUnavailable(reasonCode) {
+  // Unknown callers cannot turn model data or thrown errors into diagnostics.
+  if (typeof reasonCode !== "string" || !Object.hasOwn(deliveryFailures, reasonCode)) reasonCode = "suggestions-unavailable";
+  return { queued: false, reasonCode, message: deliveryFailures[reasonCode] + " Nothing was saved or run." };
+}
 const editable = view => view?.authoring?.editable === true && (!view.selectedSources || view.selectedSources.operations.edit === true);
 // Keep the editor's identity verbatim; additionally bind the selection even if a
 // resource accidentally reuses a context token across selectors.
@@ -40,25 +58,34 @@ export function createSuggestionMailbox({ session, read }) {
     return { message: "Asked Copilot to suggest unsaved tests in the canvas." };
   }
   async function deliver(input) {
-    if (!isObj(input) || Object.keys(input).sort().join(",") !== "examples,requestId" || !matches(input.requestId) || current.batch) return suggestionsUnavailable();
+    if (!isObj(input) || Object.keys(input).sort().join(",") !== "examples,requestId") return suggestionsUnavailable("suggestions-invalid-delivery");
+    if (!matches(input.requestId)) return suggestionsUnavailable("suggestions-inactive-request");
+    if (current.batch) return suggestionsUnavailable("suggestions-already-queued");
     const request = current;
-    let examples, view;
+    let examples, view, failure = "suggestions-invalid-examples";
     try {
       // Same source-size bound as authored examples; never truncate model output.
-      if (Buffer.byteLength(JSON.stringify(input.examples)) > 256 * 1024) return suggestionsUnavailable();
+      if (Buffer.byteLength(JSON.stringify(input.examples)) > 256 * 1024) return suggestionsUnavailable("suggestions-examples-too-large");
       examples = clone(input.examples);
-      if (!examples.length) return suggestionsUnavailable();
+      if (Array.isArray(examples) && !examples.length) return suggestionsUnavailable("suggestions-empty-examples");
       validateExamples(examples, true);
+      // Classify failures by the held stage, never by thrown or model content.
+      failure = "suggestions-mock-payload-forbidden";
       // Reuse sparse-edit validation to exclude invented recorded call payloads.
       exampleEdits([], examples);
+      failure = "suggestions-source-unavailable";
       view = await read();
-      if (current !== request || disposed || request.batch) return suggestionsUnavailable();
+      if (current !== request || disposed) return suggestionsUnavailable("suggestions-inactive-request");
+      if (request.batch) return suggestionsUnavailable("suggestions-already-queued");
+      failure = "suggestions-source-changed";
       request.stale ||= !fresh(request, view);
-      if (request.stale) return suggestionsUnavailable();
+      if (request.stale) return suggestionsUnavailable(failure);
+      failure = "suggestions-examples-conflict";
       const intended = [...view.authoring.examples, ...examples];
       validateExamples(intended, true);
-      if (examples.some(raw => validateDraft({ raw, origin: null, fixedId: true }, intended))) return suggestionsUnavailable();
-    } catch { return suggestionsUnavailable(); }
+      failure = "suggestions-draft-incompatible";
+      if (examples.some(raw => validateDraft({ raw, origin: null, fixedId: true }, intended))) return suggestionsUnavailable(failure);
+    } catch { return suggestionsUnavailable(failure); }
     request.batch = { id: request.id, sourceIdentity: request.sourceIdentity, examples };
     return { queued: true, batchId: request.id, message: "Queued unsaved tests for review in the original canvas. Nothing was saved or run." };
   }
