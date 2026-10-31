@@ -14,6 +14,8 @@ const TRUNCATED = "… [truncated]";
 export const MESSAGES = {
   "invalid-path": "Choose an .agent.md file or a .squad/agents/<member>/charter.md file.",
   unavailable: "The kmx agent builder could not be read. Check that its MCP server is running.",
+  native_source_unavailable: "The native member or shared brief could not be verified. Your drafts are kept; inspect the saved files and refresh before testing.",
+  invalid_squad_brief: "The shared brief must be readable, nonempty UTF-8 text, at most 16 KiB, without NUL bytes. Repair or remove .squad/kmx-brief.md manually, then refresh.",
   "invalid-resource": "The kmx agent view was not in the supported format.",
   "invalid-file": "This agent file needs fixing before it can open. Check its format and test fields.",
   "not-found": "File not found. Check the name, or give the full path.",

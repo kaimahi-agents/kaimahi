@@ -22,6 +22,7 @@ type SquadProgram struct{ Path, Release, GOOS, GOARCH string }
 type SquadPlan struct {
 	Lead        SquadMember
 	Specialists []SquadMember
+	Brief       *string
 }
 type SquadMemberResult struct {
 	ID    string `json:"id"`
@@ -37,6 +38,7 @@ type SquadResult struct {
 	ChangedPaths   []string            `json:"changedPaths"`
 	EffectsUnknown bool                `json:"effectsUnknown"`
 	Setup          string              `json:"setup,omitempty"`
+	Brief          *File               `json:"brief,omitempty"`
 }
 
 // SquadCreator serializes its own calls. Other native processes/editors must
@@ -120,6 +122,11 @@ func personalSquadRoot(root string) bool {
 }
 
 func (c *SquadCreator) Create(ctx context.Context, plan SquadPlan) (result SquadResult, err error) {
+	if plan.Brief != nil {
+		if err := validateSquadBrief(squadBriefPath, []byte(*plan.Brief)); err != nil {
+			return result, err
+		}
+	}
 	members := append([]SquadMember{plan.Lead}, slices.Clone(plan.Specialists)...)
 	if len(members) > 8 {
 		return result, refusal("invalid_squad_members")
@@ -165,6 +172,13 @@ func (c *SquadCreator) Create(ctx context.Context, plan SquadPlan) (result Squad
 	}
 	if err := check(); err != nil {
 		return result, err
+	}
+	if plan.Brief != nil {
+		if _, err := c.root.Lstat(squadBriefPath); err == nil {
+			return result, refusal("already_exists")
+		} else if !os.IsNotExist(err) {
+			return result, refusal("io_failed")
+		}
 	}
 	before, err := c.snapshot()
 	if err != nil {
@@ -303,6 +317,13 @@ func (c *SquadCreator) Create(ctx context.Context, plan SquadPlan) (result Squad
 		// arrives afterwards. Later members still observe cancellation normally.
 		row.State = "enriched"
 		row.File = published
+	}
+	if plan.Brief != nil {
+		file, err := c.saveBrief(ctx, "none", *plan.Brief)
+		if err != nil {
+			return result, err
+		}
+		result.Brief = &file
 	}
 	return result, nil
 }

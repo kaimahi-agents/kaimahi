@@ -15,31 +15,67 @@ func (c *SquadCreator) Member(ctx context.Context, id string) (*agentfile.SquadC
 	d, _, err := c.readMember(ctx, id)
 	return d, err
 }
+
+type squadMemberInventory struct {
+	registry map[string]squadRegistration
+	roster   []byte
+}
+
+// One request owns this checked inventory; it is never cached across reads.
+func (c *SquadCreator) memberInventory(ctx context.Context) (squadMemberInventory, error) {
+	var inventory squadMemberInventory
+	if err := cancelled(ctx); err != nil {
+		return inventory, err
+	}
+	if err := c.checkRoot(); err != nil {
+		return inventory, err
+	}
+	agents, err := c.registry()
+	if err != nil {
+		return inventory, err
+	}
+	inventory.registry = agents
+	// Committed hashes alone are insufficient while native recovery is pending.
+	seen, err := c.snapshot()
+	if err != nil || squadRecoveryRequired(seen) {
+		// Preserve known IDs without qualifying any member.
+		return inventory, nil
+	}
+	inventory.roster, _ = c.readLocal(".squad/team.md")
+	return inventory, nil
+}
+
 func (c *SquadCreator) readMember(ctx context.Context, id string) (*agentfile.SquadCharter, *sourceIdentity, error) {
+	if err := cancelled(ctx); err != nil {
+		return nil, nil, err
+	}
+	if !safeID(id) {
+		return nil, nil, refusal("squad_not_setup")
+	}
+	inventory, err := c.memberInventory(ctx)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, nil, cancelled(ctx)
+		}
+		return nil, nil, refusal("squad_not_setup")
+	}
+	return c.readMemberFromInventory(ctx, id, inventory)
+}
+
+func (c *SquadCreator) readMemberFromInventory(ctx context.Context, id string, inventory squadMemberInventory) (*agentfile.SquadCharter, *sourceIdentity, error) {
 	bad := func() (*agentfile.SquadCharter, *sourceIdentity, error) { return nil, nil, refusal("squad_not_setup") }
 	if err := cancelled(ctx); err != nil {
 		return nil, nil, err
 	}
-	if !safeID(id) || c.checkRoot() != nil {
+	if !safeID(id) || inventory.roster == nil {
 		return bad()
 	}
-	// Committed hashes alone are insufficient while native recovery is pending.
-	// Reuse the bounded, read-only inventory and Create refusal policy.
-	seen, err := c.snapshot()
-	if err != nil || squadRecoveryRequired(seen) {
-		return bad()
-	}
-	agents, err := c.registry()
-	if err != nil {
-		return bad()
-	}
-	entry, ok := agents[id]
+	entry, ok := inventory.registry[id]
 	if !ok || entry.Name != id || entry.Status != "active" || entry.Role == "" {
 		return bad()
 	}
 	m := SquadMember{ID: id, DisplayRole: entry.Role}
-	team, err := c.readLocal(".squad/team.md")
-	if err != nil || !memberRosterMatches(team, m) {
+	if !memberRosterMatches(inventory.roster, m) {
 		return bad()
 	}
 	f := &Files{root: c.root}

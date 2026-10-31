@@ -743,9 +743,18 @@ reparses the candidate and uses the same source/parent CAS. Preview reparses an
 explicit native snapshot and shares the existing tool-free App/runner/judge path
 in memory, without writing a canonical file or inventing Identity.Purpose. Real
 routes receive preserved native plus task instructions excluding Examples; fake
-orientation reads task-only directives. Results bind exact native source revision,
-not an AgentSuite/package digest or team execution. Native flow is chat-only;
-there are no new Squad canvas actions.
+orientation reads task-only directives. The native canvas supplies a saved shared
+brief from `.squad/kmx-brief.md`; its revision is reported separately from the
+member source revision. Native Run/Test accepts optional `expectedRevision` and
+`expectedBriefRevision` together and checks both before previewing those snapshots.
+The brief revision is `none` when absent. Supplying only one refuses; omitting both
+preserves legacy caller behavior. The canvas always supplies the pair and observes
+outside member/brief changes without discarding drafts. An empty test list remains
+editable, but cannot produce a passing Test.
+
+Results are individual local previews, not an AgentSuite/package digest or team
+execution. The [native Squad canvas](../plugins/copilot/SQUAD-CANVAS.md) uses these
+existing MCP operations for reviewed creation and member editing/testing.
 
 ## Future AgentSuite mapping — not implemented
 

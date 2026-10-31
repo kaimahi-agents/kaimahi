@@ -4,9 +4,12 @@ import { CanvasError, createCanvas, joinSession } from "@github/copilot-sdk/exte
 import { CANVAS_ID, ViewError, createViewController } from "./view.mjs";
 import { OPEN_TOOL_NAME, OPEN_TOOL_PARAMETERS, createOpenHandler, createOpenCommand, readOpenView } from "./open.mjs";
 import { SUGGEST_TOOL_NAME, SUGGEST_TOOL_PARAMETERS } from "./suggestions.mjs";
+import { SQUAD_CANVAS_ID, createSquadViewController } from "./squad-view.mjs";
+import { SQUAD_INPUT_SCHEMA } from "./squad-backend.mjs";
 
 let session;
 const controller = createViewController({ getSession: () => session });
+const squadController = createSquadViewController({ getSession: () => session, extensionId: "plugin:kmx-agent-builder-path:agent-view" });
 const asCanvasError = (e) => {
   const safe = e instanceof ViewError ? e : new ViewError("unavailable");
   return new CanvasError(safe.code, safe.message);
@@ -33,8 +36,17 @@ const canvas = createCanvas({
   onClose: (ctx) => controller.close(ctx),
 });
 
+const squadCanvas = createCanvas({
+  id: SQUAD_CANVAS_ID,
+  displayName: "kmx Squad",
+  description: "Review and create a native Squad, then edit and test individual members.",
+  inputSchema: SQUAD_INPUT_SCHEMA,
+  open: (ctx) => squadController.open(ctx).catch((error) => { throw asCanvasError(error); }),
+  onClose: (ctx) => squadController.close(ctx),
+});
+
 session = await joinSession({
-  canvases: [canvas],
+  canvases: [canvas, squadCanvas],
   tools: [{
     name: OPEN_TOOL_NAME,
     description: "Open an existing kmx agent canvas, or return its revision-bound text view when no renderer is available. Complete source is returned only from the checked resource snapshot. Does not edit, run or test.",
@@ -47,6 +59,14 @@ session = await joinSession({
     handler: input => controller.deliverSuggestions(input),
   }],
   commands: [
+    {
+      name: "squad-view",
+      description: "Open the native Squad canvas for the configured project.",
+      handler: async () => {
+        try { await session.rpc.canvas.open({ extensionId: "plugin:kmx-agent-builder-path:agent-view", canvasId: SQUAD_CANVAS_ID, instanceId: "kmx-squad", input: {} }); }
+        catch { await session.log("Could not open the Squad canvas. Check the native Squad MCP setup.", { level: "error" }); }
+      },
+    },
     {
       name: "agent-view",
       description: "Show a kmx agent charter as text: /agent-view <path>",

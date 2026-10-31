@@ -18,5 +18,8 @@ func (a *App) PreviewSquadSnapshot(ctx context.Context, d *agentfile.SquadCharte
 		return a.previewAgentSnapshot(ctx, nil, opt, err, a.timeNow())
 	}
 	parsed := &agentfile.Agent{Identity: agentfile.Identity{ID: native.Profile.MemberID}, Title: native.Title, Instructions: native.Instructions, Model: native.Model, Examples: native.Examples, Revision: native.Revision, Locations: native.Locations, NativeTaskInstructions: native.TaskInstructions}
+	if opt.SquadBrief != "" {
+		parsed.Instructions = "# Shared team brief\n\n" + opt.SquadBrief + "\n\n" + parsed.Instructions
+	}
 	return a.previewAgentSnapshot(ctx, parsed, opt, nil, a.timeNow())
 }

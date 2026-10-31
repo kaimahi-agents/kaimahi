@@ -24,6 +24,7 @@ type FilePreviewOptions struct {
 	pairSave                 *PairRecordingSaveResult
 	retentionSnapshot        string
 	File, Operation, CaseID  string
+	SquadBrief               string
 	// SkipAssertions is answer-only Run; Test refuses it. Default false.
 	SkipAssertions bool
 	// SourceFile is the trusted physical filename when File is only a display label.

@@ -8,7 +8,9 @@ import (
 	"testing"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -38,6 +40,136 @@ func TestSquadMCPRejectsSecondLeadBeforeSetup(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, ".init-called")); !os.IsNotExist(err) {
 		t.Fatal("team failed only after native setup effects")
+	}
+}
+
+func TestSquadMCPPreviewRevisionPair(t *testing.T) {
+	t.Setenv("KMX_HOME", previewStateHome(t))
+	root, program := squadSetupRoot(t)
+	c, err := OpenSquadSetup(root, program)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	lead, brief := squadLead(), "Reviewed team context."
+	lead.Model = "fake"
+	created, err := c.Create(t.Context(), SquadPlan{Lead: lead, Brief: &brief})
+	if err != nil {
+		t.Fatal(err)
+	}
+	memberRevision, briefRevision := created.Members[0].File.Revision, created.Brief.Revision
+	files, err := OpenFiles(root, func(string, []byte) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer files.Close()
+	runner := &previewFixture{verdict: runtime.EvaluationPass, during: func(r agentpreview.Request) {
+		if r.Agent.Revision != memberRevision || !strings.Contains(r.Agent.Instructions, brief) || r.Agent.Model != "fake" {
+			t.Error("preview did not consume the reviewed member and brief")
+		}
+	}}
+	a := &app.App{FileRunner: runner}
+	client := connectFixture(t, WithSquadOperations(Operations(files, a, nil), c, a, nil))
+	for _, operation := range []string{"run", "test"} {
+		for _, tc := range []struct {
+			name, member, brief string
+			allowed             bool
+		}{
+			{"matching", memberRevision, briefRevision, true},
+			{"legacy", "", "", true},
+			{"stale-member", "sha256:" + strings.Repeat("0", 64), briefRevision, false},
+			{"stale-brief", memberRevision, "none", false},
+			{"member-only", memberRevision, "", false},
+			{"brief-only", "", briefRevision, false},
+			{"malformed-member", "invalid", briefRevision, false},
+			{"malformed-brief", memberRevision, "invalid", false},
+		} {
+			t.Run(operation+"/"+tc.name, func(t *testing.T) {
+				args := map[string]any{"schemaVersion": 2, "target": "squad-member", "memberId": lead.ID}
+				if tc.member != "" {
+					args["expectedRevision"] = tc.member
+				}
+				if tc.brief != "" {
+					args["expectedBriefRevision"] = tc.brief
+				}
+				before := runner.calls
+				result, err := client.CallTool(t.Context(), &sdk.CallToolParams{Name: operation, Arguments: args})
+				if err != nil || result.IsError == tc.allowed {
+					t.Fatalf("preview allowed=%v: %+v %v", tc.allowed, result, err)
+				}
+				want := before
+				if tc.allowed {
+					want++
+				}
+				if runner.calls != want {
+					t.Fatalf("runner calls=%d, want %d", runner.calls, want)
+				}
+			})
+		}
+	}
+	changedBrief, err := c.EditBrief(t.Context(), briefRevision, "Context changed while approval was pending.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := runner.calls
+	result, err := client.CallTool(t.Context(), &sdk.CallToolParams{Name: "test", Arguments: map[string]any{"schemaVersion": 2, "target": "squad-member", "memberId": lead.ID, "expectedRevision": memberRevision, "expectedBriefRevision": briefRevision}})
+	if err != nil || !result.IsError || runner.calls != before {
+		t.Fatal("changed brief reached preview", err)
+	}
+	lead.Model = "unselected-model"
+	if _, err := c.EditMember(t.Context(), lead.ID, memberRevision, lead); err != nil {
+		t.Fatal(err)
+	}
+	result, err = client.CallTool(t.Context(), &sdk.CallToolParams{Name: "test", Arguments: map[string]any{"schemaVersion": 2, "target": "squad-member", "memberId": lead.ID, "expectedRevision": memberRevision, "expectedBriefRevision": changedBrief.Revision}})
+	encoded, _ := json.Marshal(result.StructuredContent)
+	if err != nil || !result.IsError || runner.calls != before || !strings.Contains(string(encoded), `"reasonCode":"stale_revision"`) {
+		t.Fatal("changed model was not refused at the source precondition", err)
+	}
+}
+
+func TestSquadMCPEmptyTestsRemainEditable(t *testing.T) {
+	t.Setenv("KMX_HOME", previewStateHome(t))
+	root, program := squadSetupRoot(t)
+	c, err := OpenSquadSetup(root, program)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	lead := squadLead()
+	lead.Model = "fake"
+	examples := lead.Examples
+	lead.Examples = "```yaml\nexamples: []\n```"
+	created, err := c.Create(t.Context(), SquadPlan{Lead: lead})
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := OpenFiles(root, func(string, []byte) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer files.Close()
+	runner := &previewFixture{verdict: runtime.EvaluationPass}
+	a := &app.App{FileRunner: runner}
+	client := connectFixture(t, WithSquadOperations(Operations(files, a, nil), c, a, nil), func(s *sdk.Server) { AddSquadResource(s, c) })
+	view, err := client.ReadResource(t.Context(), &sdk.ReadResourceParams{URI: "kmx://squad-member/" + lead.ID})
+	if err != nil || !strings.Contains(view.Contents[0].Text, `"tests":[]`) || !strings.Contains(view.Contents[0].Text, `"state":"ready"`) {
+		t.Fatal("empty member is not readable", err)
+	}
+	result, err := client.CallTool(t.Context(), &sdk.CallToolParams{Name: "test", Arguments: map[string]any{"schemaVersion": 2, "target": "squad-member", "memberId": lead.ID, "expectedRevision": created.Members[0].File.Revision, "expectedBriefRevision": "none"}})
+	if err != nil || !result.IsError || runner.calls != 0 {
+		t.Fatal("empty tests executed", err)
+	}
+	result, err = client.CallTool(t.Context(), &sdk.CallToolParams{Name: "edit", Arguments: map[string]any{"schemaVersion": 2, "target": "squad-member", "memberId": lead.ID, "expectedRevision": created.Members[0].File.Revision, "taskInstructions": lead.TaskInstructions, "model": lead.Model, "examples": examples}})
+	if err != nil || result.IsError {
+		t.Fatal("first test could not be saved", err)
+	}
+	doc, err := c.Member(t.Context(), lead.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err = client.CallTool(t.Context(), &sdk.CallToolParams{Name: "test", Arguments: map[string]any{"schemaVersion": 2, "target": "squad-member", "memberId": lead.ID, "expectedRevision": doc.Revision, "expectedBriefRevision": "none"}})
+	if err != nil || result.IsError || runner.calls != 1 {
+		t.Fatal("newly added test did not execute", err)
 	}
 }
 func TestSquadMCPChatCreateMapEditAndPreview(t *testing.T) {

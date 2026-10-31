@@ -6,7 +6,7 @@ import { el, checkKey, operandKey, quoted, failureFacts, plural, plainReason, is
 export const defaultSettings = (view) => (view.tools ?? []).map((name) => ({ name, state: "Enabled" }));
 // A result without recorded settings predates them, when every tool ran Enabled.
 // Owned pre-route refusals never executed, so no settings vector applies to them.
-export const ranWith = (view, result) => !view.settingsInvalid && (preRouteRefusal(result) && result.toolSettings === undefined || same(result?.toolSettings ?? defaultSettings(view), view.toolSettings ?? defaultSettings(view)));
+export const ranWith = (view, result) => !view.settingsInvalid && view.contextRevision === result?.contextRevision && (preRouteRefusal(result) && result.toolSettings === undefined || same(result?.toolSettings ?? defaultSettings(view), view.toolSettings ?? defaultSettings(view)));
 // Retained results are current only if they ran with today's settings.
 export const settingsGuard = (history) => Object.create(history, { selected: { value(view, model) {
   const retained = history.selected(view, model);
@@ -18,11 +18,13 @@ export function createRunViews(state, { act, actions, doc, entries, hasDrafts, h
   // Partial runs use request-start settings, not the possibly changed Stop readback.
   // Legacy snapshots had no policy switches and therefore requested Enabled.
   const runFresh = (run) => {
+    if (run.contextRevision !== state.base.contextRevision) return false;
     const attempt = history.attempt(run.model), frozen = run.toolSettings ?? (attempt?.run === run ? defaultSettings(attempt.view) : undefined);
     return !state.base.settingsInvalid && (!frozen || same(frozen, state.base.toolSettings ?? defaultSettings(state.base)));
   };
   const currentRun = () => testing() ? state.run : history.attempt(selectedModel())?.run;
   function runSummary(run) {
+    if (run.stopError) return { tone: "error", text: run.stopError };
     if (run.state === "stopping") return { tone: "running", text: "Stopping…" };
     if (run.approvalWaiting) return { tone: "running", text: "Copilot approval is waiting in chat." };
     const n = run.caseIds.length, done = run.cases.length;
@@ -67,7 +69,7 @@ export function createRunViews(state, { act, actions, doc, entries, hasDrafts, h
 
   const total = () => localExamples().length;
   function footText(scope) {
-    if (testing() && state.run) return state.run.state === "stopping" ? "Saved · stopping Copilot turn…"
+    if (testing() && state.run) return state.run.state === "stopping" ? state.run.contextRevision !== undefined ? "Saved · stopping member test…" : "Saved · stopping Copilot turn…"
       : state.run.approvalWaiting ? "Copilot approval is waiting in chat." : `Saved · running ${state.pending.one ? "this test" : plural(total(), "test")}`;
     if (state.busy && state.saveApproval) return "Copilot approval is waiting in chat.";
     return canvasFooterText({ editable: !!state.snap, n: state.snap ? total() : 0, busy: state.busy, pending: state.pending, blocked: state.blocked, savedUntested: state.savedUntested, settingsIncomplete: state.settingsIncomplete,

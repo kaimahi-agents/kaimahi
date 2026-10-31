@@ -288,8 +288,21 @@ Read the returned member/setup states and changedPaths. Report partial/unknown
 setup rather than claiming registration or enrichment succeeded. A reopened
 `kmx://squad-member/{memberId}` with `state: not_setup` means **not set up by kmx**.
 Use its current revision for native edits. Native setup availability still depends
-on the existing configured standalone Squad program; the agent canvas above is
-for canonical agent files, not a native Squad proposal editor.
+on the existing configured standalone Squad program.
+
+For the native Squad canvas, use the built-in `open_canvas` with the same provider
+as the agent canvas above, canvasId `kmx-squad-view`, instanceId
+`kmx-squad`, and input `{}` to reopen the team or enter a goal for a new proposal.
+Proposal generation requires `kmx://models`: the operator must configure
+`--provider copilot` in the native MCP startup arguments and have an existing
+GitHub sign-in. Report missing setup instead of changing startup configuration.
+To open your proposed team, set input.proposal to an object with brief, lead and
+specialists. Each member has memberId, role, displayRole, taskInstructions, model
+and tests (id/input/assertions). The Lead is role `lead`, displayRole
+`Lead / Architect`. Opening only prepares the proposal; the user reviews setup
+effects and presses Create squad. Do not call native Create before that button.
+The read-only `kmx://squad` resource supplies the saved brief and native roster.
+The `/squad-view` native command opens this canvas without a generation turn.
 
 ## Deterministic orientation
 

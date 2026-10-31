@@ -437,7 +437,7 @@ export function formatView(view) {
 }
 
 // --- loopback bridge -------------------------------------------------------
-const ASSETS = {
+export const CANVAS_ASSETS = {
   "": ["index.html", "text/html; charset=utf-8"],
   "app.js": ["app.js", "text/javascript; charset=utf-8"],
   "style.css": ["style.css", "text/css; charset=utf-8"],
@@ -477,8 +477,6 @@ export async function startViewBridge({ session, path, tests, initialView }) {
     finally { lease.release(); }
   }
   if (initialView?.selectedSources) await prepare();
-  const token = randomBytes(24).toString("base64url");
-  let port = 0;
   const read = async () => {
     const view = await readView(session, path, tests);
     if (inspectionOnly && view.authoring) view.authoring.editable = false;
@@ -486,6 +484,12 @@ export async function startViewBridge({ session, path, tests, initialView }) {
   };
   const mailbox = createSuggestionMailbox({ session, read });
   const act = createActionHandler({ session, path, tests, prepare, inspection: () => inspectionOnly, suggest: view => mailbox.suggest(view) });
+  return startCanvasBridge({ read, act, assets: CANVAS_ASSETS, mailbox });
+}
+
+export async function startCanvasBridge({ read, act, assets, mailbox }) {
+  const token = randomBytes(24).toString("base64url");
+  let port = 0;
   const server = http.createServer(async (req, res) => {
     const reply = (status, type, body, extra = {}) => {
       res.writeHead(status, { ...SECURITY_HEADERS, ...extra, "Content-Type": type, "Content-Length": Buffer.byteLength(body) });
@@ -515,12 +519,12 @@ export async function startViewBridge({ session, path, tests, initialView }) {
         // Acknowledgment is transport-only: it must work even during Test or
         // while the action handler is locked after an uncertain execution.
         let result;
-        if (input?.operation === "acknowledge-suggestions") {
+        if (mailbox && input?.operation === "acknowledge-suggestions") {
           result = isObj(input) && Object.keys(input).sort().join(",") === "batchId,operation" && typeof input.batchId === "string"
             ? { acknowledged: mailbox.acknowledge(input.batchId) }
             : { error: "invalid-action", message: MESSAGES["invalid-action"] };
         } else {
-          if (input?.operation === "reload") mailbox.clear();
+          if (input?.operation === "reload") mailbox?.clear();
           result = await act(input);
         }
         return reply(result.error ? 409 : 200, "application/json; charset=utf-8", JSON.stringify(result));
@@ -529,15 +533,15 @@ export async function startViewBridge({ session, path, tests, initialView }) {
       if (name === "view.json") {
         try {
           // A read begun before Suggest cannot invalidate its newer request.
-          const requestId = mailbox.requestId, view = await read();
-          const suggestedTests = requestId === mailbox.requestId ? mailbox.pending(view) : undefined;
+          const requestId = mailbox?.requestId, view = await read();
+          const suggestedTests = mailbox && requestId === mailbox.requestId ? mailbox.pending(view) : undefined;
           return reply(200, "application/json; charset=utf-8", JSON.stringify({ ...view, ...(suggestedTests ? { suggestedTests } : {}) }));
         } catch (e) {
           const err = safeError(e);
           return reply(502, "application/json; charset=utf-8", JSON.stringify({ error: err.code, message: err.message }));
         }
       }
-      const asset = Object.hasOwn(ASSETS, name) ? ASSETS[name] : undefined;
+      const asset = Object.hasOwn(assets, name) ? assets[name] : undefined;
       if (!asset) return refuse(404, "Not found");
       return reply(200, asset[1], await readFile(new URL(asset[0], import.meta.url), "utf8"));
     } catch {
@@ -554,11 +558,11 @@ export async function startViewBridge({ session, path, tests, initialView }) {
   let closing;
   const close = () =>
     (closing ??= new Promise((resolve) => {
-      mailbox.dispose(); act.dispose();
+      mailbox?.dispose(); act.dispose?.();
       server.close(() => resolve());
       server.closeAllConnections();
     }));
-  return { url: `http://127.0.0.1:${port}/${token}/`, port, close, matchesSuggestions: mailbox.matches, deliverSuggestions: mailbox.deliver };
+  return { url: `http://127.0.0.1:${port}/${token}/`, port, close, ...(mailbox ? { matchesSuggestions: mailbox.matches, deliverSuggestions: mailbox.deliver } : {}) };
 }
 
 // --- canvas/command lifecycle ----------------------------------------------

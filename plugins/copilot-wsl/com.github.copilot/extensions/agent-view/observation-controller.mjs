@@ -1,6 +1,8 @@
 import { sourceIdentity, readSnapshot, portableId, effectiveModel, preRouteRefusal } from "./authoring.mjs";
 import { same, uniqueIndex, quoted } from "./editor.mjs";
 
+export const nativeSourceError = (error) => ["native_source_unavailable", "invalid_squad_brief"].includes(error?.code ?? error?.error);
+
 export function createObservationController(state, { path, options, drafts, clearUndo, render, refresh }) {
   const { sectionDrafts, testDrafts, invalidEditors, displayNames, history, modelChoice } = state;
   const { hasDrafts, pruneDrafts } = drafts;
@@ -11,27 +13,33 @@ export function createObservationController(state, { path, options, drafts, clea
   const settingsError = (e) => e?.code === "invalid_tool_settings" || e?.error === "invalid_tool_settings";
   const pairedError = (e) => e?.code === "paired_source_required" || e?.error === "paired_source_required";
   // Retained results stay visible as old, drafts are untouched, and a valid read recovers.
-  function invalidate(started, paired = false) {
+  function invalidate(started, source) {
+    const paired = source === "paired", native = source === "native";
     if (started.generation !== state.observationGeneration || started.revision !== sourceIdentity(state.base)
-      || state.busy || state.blocked || invalidEditors.size || !paired && state.base.settingsInvalid) return false;
-    if (paired) {
+      || state.busy || state.blocked || invalidEditors.size || !source && state.base.settingsInvalid) return false;
+    if (source) {
       state.sourceUnavailable = true; state.sourceInvalidated = true; state.blocked = true;
-      state.message = "Paired test files are not supported in this canvas. Your drafts are kept.";
+      state.message = native ? "Native member or shared brief unavailable. Your drafts and previous results are kept; inspect the saved files and refresh before testing." : "Paired test files are not supported in this canvas. Your drafts are kept.";
       state.candidate = undefined; state.confirm = undefined; state.run = undefined; state.lastAdHoc = undefined;
-      history.reset(); clearUndo(); state.lastRun = undefined; state.runAlert = undefined;
+      if (paired) history.reset();
+      clearUndo(); state.lastRun = undefined; state.runAlert = undefined;
     }
     const { latest } = state.base;
-    state.base = { ...state.base, ...(!paired ? { settingsInvalid: true } : {}), latest: latest.status === "current" ? { ...latest, status: "stale", badge: "stale" } : latest };
+    state.base = { ...state.base, ...(!source ? { settingsInvalid: true } : {}), latest: latest.status === "current" ? { ...latest, status: "stale", badge: "stale" } : latest };
     state.observationGeneration++;
     render(); return true;
   }
-  function observeFailure(error, started = observation()) { return pairedError(error) ? invalidate(started, true) : settingsError(error) ? invalidate(started) : false; }
+  function observeFailure(error, started = observation()) {
+    if (state.base.authoring?.profile === "squad-member" && nativeSourceError(error)) return invalidate(started, "native");
+    return pairedError(error) ? invalidate(started, "paired") : settingsError(error) ? invalidate(started) : false;
+  }
   // Observation never writes or clears a lock.
   function observe(view, started = observation()) {
     // Transport is not saved source: never retain it in a baseline or history.
     const suggestedTests = view?.suggestedTests;
     if (suggestedTests !== undefined) { const { suggestedTests: _, ...saved } = view; view = saved; }
-    if (pairedError(view)) return invalidate(started, true);
+    if (state.base.authoring?.profile === "squad-member" && nativeSourceError(view)) return invalidate(started, "native");
+    if (pairedError(view)) return invalidate(started, "paired");
     if (settingsError(view)) return invalidate(started);
     if (started.generation !== state.observationGeneration || started.revision !== sourceIdentity(state.base)
       || !matches(view) || state.busy || state.blocked && !state.sourceUnavailable || invalidEditors.size) return false;

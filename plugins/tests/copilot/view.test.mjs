@@ -4594,6 +4594,23 @@ test("paired observation of the same selected sources retains only the controlle
   assert.doesNotMatch(byClass(h.root,"result-pill")[0].textContent,/passing/);
 });
 
+test("paired tool-settings failures invalidate the selected-source observation and keep prompt drafts", async t => {
+  for (const mode of ["thrown", "payload"]) {
+    const h = await selectedCanvas({ examples: CAPTURE_TEST }); t.after(() => h.app.dispose());
+    const started = h.app.observation();
+    assert.notEqual(started.revision, h.view.file.revision);
+    c18Prompt(h.root).textContent = "My paired prompt draft."; c18Prompt(h.root).listeners.input[0]();
+    const error = new ViewError("invalid_tool_settings");
+    assert.equal(mode === "thrown" ? h.app.observeFailure(error, started) : h.app.observe({ error: error.code }, started), true);
+    assert.match(h.root.textContent, INVALID_MESSAGE);
+    assert.equal(byClass(h.root, "tool-settings").length, 0);
+    assert.equal(c18Prompt(h.root).textContent, "My paired prompt draft.");
+    assert.equal(h.app.observe(h.view, started), false);
+    assert.match(h.root.textContent, INVALID_MESSAGE);
+    assert.deepEqual(h.calls, []);
+  }
+});
+
 test("Copilot file shows one editable Prompt and the whole header as inert, read-only preserved settings", async t => {
   const h = await copilotCanvas(); t.after(() => h.app.dispose());
   assert.equal(byClass(h.root, "additional").length, 0, "no empty Additional instructions");
