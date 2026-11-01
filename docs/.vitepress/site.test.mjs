@@ -96,6 +96,7 @@ test('Test is canonical while compatibility and current runtime limits stay expl
     assert.match(text, /Docker/, `${page}: container prerequisite retained`)
     assert.match(text, /WSL/, `${page}: broader Windows route retained`)
     assert.match(text, /native Windows[^\n]*(?:day-zero CLI|CLI)/i, `${page}: narrow native path linked`)
+    assert.match(text, /v0\.9\.0-rc\.4/, `${page}: published Windows prerelease boundary`)
     assert.match(text, /v0\.8\.1[^\n]*no Windows \.exe/i, `${page}: stable Windows asset boundary`)
     assert.doesNotMatch(text, /kmx publish|kmx test --local/)
   }
@@ -115,7 +116,9 @@ test('native Windows documentation keeps the day-zero and release boundary narro
   const windows = plainText(html).replace(/\s+/g, ' ')
 
   for (const marker of [
-    'unreleased, narrow day-zero CLI',
+    'prerelease-only, narrow day-zero CLI',
+    'v0.9.0-rc.4',
+    'v0.9.0-rc.6',
     'Stable v0.8.1',
     'kmx-windows-amd64.exe',
     'kmx-windows-arm64.exe',
@@ -162,6 +165,7 @@ test('native Windows documentation keeps the day-zero and release boundary narro
   assert.match(windows, /Sigstore bundle signs the checksum manifest/i)
   assert.match(windows, /certificate-identity[^\n]*\$Version/i)
   assert.match(windows, /not evaluated[^.]*not[^.]*allowed/i)
+  assert.doesNotMatch(windows, /future tagged release|future containing release/i)
   assert.match(windows, /install\.sh[^.]*Homebrew[^.]*Go @latest[^.]*Unix or WSL/i)
   assert.doesNotMatch(windows, /native Windows builds are not supported yet|Windows CLI remains guarded/i)
   for (const forbiddenAdvice of [

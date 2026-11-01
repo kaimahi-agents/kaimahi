@@ -847,11 +847,12 @@ authority.
 
 ## Native Windows boundary
 
-Native Windows on `main` is unreleased and operation-specific. Permit only inert
-version/help/completion, package-free fake `run FILE` / `test FILE`, and offline
-`test explain ... --file FILE`; hidden `eval explain` may remain only as the
-deprecated compatibility spelling. File Run/Test may use inline `--prompt`, but
-provider, endpoint, tool-binding, prompt-file and GitHub-summary modes stay
+Native Windows support is prerelease-only and operation-specific. Current `main`
+and published v0.9.0 release candidates beginning with `v0.9.0-rc.4` permit only
+inert version/help/completion, package-free fake `run FILE` / `test FILE`, and
+offline `test explain ... --file FILE`; hidden `eval explain` may remain only as
+the deprecated compatibility spelling. File Run/Test may use inline `--prompt`,
+but provider, endpoint, tool-binding, prompt-file and GitHub-summary modes stay
 deferred. These previews create no suite evidence, publication or Deploy authority.
 
 Every other native Windows route refuses before configuration, state,
@@ -867,12 +868,14 @@ package-free fake Run/failing Test/offline Explain journey with no skips. Window
 arm64 is cross-built, vetted, metadata-checked and checksummed only; make no
 native-execution claim. Stable v0.8.1 and `@latest` have no Windows `.exe`.
 `install.sh`, Homebrew and generic Go `@latest` remain Unix/WSL routes where
-applicable; no Winget/package-manager claim. A future containing release uses
-exact `kmx-windows-{amd64,arm64}.exe` assets and signs their checksum manifest
-with Sigstore, not the executables with Authenticode. Current artifacts may be
-unsigned. Record clean-machine `Get-AuthenticodeSignature`, Zone.Identifier and
-SmartScreen results; never advise Unblock-File, disabled protections, execution-
-policy changes, Developer Mode or policy bypass. A policy block is a blocker.
+applicable; no Winget/package-manager claim. Published containing releases use
+exact `kmx-windows-{amd64,arm64}.exe` assets and sign their checksum manifest
+with Sigstore, not the executables with Authenticode. Published v0.9.0 release
+candidates beginning with `v0.9.0-rc.4` use that contract; future containing
+releases must preserve it. Current artifacts may be unsigned. Record clean-machine
+`Get-AuthenticodeSignature`, Zone.Identifier and SmartScreen results; never advise
+Unblock-File, disabled protections, execution-policy changes, Developer Mode or
+policy bypass. A policy block is a blocker.
 
 ## Offline multi-member workspace boundary
 

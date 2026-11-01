@@ -78,12 +78,13 @@ tests do not enable these model/provider routes in the narrow Windows CLI.
 ## Install
 
 On Windows, the install methods in this section are WSL routes for the full CLI;
-run them inside the Linux distribution. Current `main` separately supports an
-**unreleased, narrow** [native Windows day-zero CLI](windows.md):
+run them inside the Linux distribution. Current `main` and published v0.9.0
+release candidates beginning with `v0.9.0-rc.4` separately support a
+**prerelease-only, narrow** [native Windows day-zero CLI](windows.md):
 version/help/completion, package-free fake file Run/Test and offline file Explain.
 Stable v0.8.1 and `@latest` have no Windows `.exe`. Do not use Homebrew,
 `install.sh` or generic Go `@latest` guidance as a native Windows installer;
-future Windows release assets require the page's explicit manual verification.
+verify an exact containing Windows tag with the page's manual procedure.
 
 The stable release is available through the official Homebrew tap:
 

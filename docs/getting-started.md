@@ -13,7 +13,8 @@ first? Use the [local quickstart](#one-command-and-an-agent-that-answers) below.
 
 This guide covers the full cluster/workspace lifecycle. On Windows, run these
 install and workflow commands inside a Linux WSL distribution. Current `main`
-also has an **unreleased, narrow** [native Windows CLI](windows.md):
+and published v0.9.0 release candidates beginning with `v0.9.0-rc.4` also have a
+**prerelease-only, narrow** [native Windows CLI](windows.md):
 version/help/completion, package-free fake `kmx run FILE` and `kmx test FILE`,
 and offline `kmx test explain ... --file FILE`. It does not support the cluster,
 workspace, model, publication or deployment steps below. Stable v0.8.1 and

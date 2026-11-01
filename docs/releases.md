@@ -17,10 +17,10 @@ claimed; the remaining publication constraints are recorded in
 [NAMING.md](NAMING.md).
 
 **Windows release boundary:** stable v0.8.1, including the version selected by
-Go `@latest`, has no Windows `.exe`. Current `main` contains an unreleased,
-narrow native Windows day-zero CLI; only a future tag that actually publishes
-`kmx-windows-amd64.exe` or `kmx-windows-arm64.exe` makes that asset installable.
-See [native Windows](windows.md) for the exact command, trust and state limits.
+Go `@latest`, has no Windows `.exe`. Current `main` and published v0.9.0 release
+candidates beginning with `v0.9.0-rc.4` contain the narrow native Windows
+day-zero CLI as `kmx-windows-amd64.exe` and `kmx-windows-arm64.exe`. See
+[native Windows](windows.md) for the exact command, trust and state limits.
 
 ## Test command (unreleased)
 
@@ -208,11 +208,13 @@ Nightly schedules and runtime proof commands, pins and budgets are unchanged.
 
 On Windows, the Homebrew, `install.sh` and Go `@latest` instructions below remain
 Linux/WSL routes where applicable. Stable v0.8.1 and `@latest` have no native
-Windows `.exe`. Current `main` has a separate unreleased, narrow native CLI;
-follow [native Windows installation](windows.md#release-availability-and-installation)
-only after a future tag actually contains the exact `.exe` asset. There is no
-Winget or other Windows package-manager namespace claim. Use WSL for every
-cluster, workspace, model/provider, plugin, publication and deployment workflow.
+Windows `.exe`. Current `main` and published v0.9.0 release candidates beginning
+with `v0.9.0-rc.4` have a separate prerelease-only, narrow native CLI. For an
+exact containing tag, follow
+[native Windows installation](windows.md#release-availability-and-installation).
+There is no Winget or other Windows package-manager namespace claim. Use WSL for
+every cluster, workspace, model/provider, plugin, publication and deployment
+workflow.
 
 With Homebrew on macOS or Linux:
 
@@ -298,11 +300,12 @@ Stable v0.8.1 platforms are `linux/amd64`, `linux/arm64`, `darwin/amd64` and
 by `install.sh` and Homebrew. On Windows, use the Linux asset matching the WSL
 distribution's architecture (`amd64` or `arm64`) for the full CLI.
 
-A future containing release adds bare `kmx-windows-amd64.exe` and
-`kmx-windows-arm64.exe` assets without changing the Unix installer or formula.
-Download an exact Windows asset only from such a tag, verify the manifest's
-Sigstore bundle and then that asset's SHA-256, and retain Windows policy signals;
-the complete PowerShell procedure is in the [Windows guide](windows.md).
+Published v0.9.0 release candidates beginning with `v0.9.0-rc.4` add bare
+`kmx-windows-amd64.exe` and `kmx-windows-arm64.exe` assets without changing the
+Unix installer or formula. Download an exact Windows asset only from a tag that
+lists it, verify the manifest's Sigstore bundle and then that asset's SHA-256,
+and retain Windows policy signals; the complete PowerShell procedure is in the
+[Windows guide](windows.md).
 Windows amd64 has native hosted execution for the narrow day-zero commands.
 Windows arm64 has cross-build/vet/checksum evidence only, not native execution.
 

@@ -18,7 +18,7 @@ runtime contract when extending or comparing implementations.
 |---|---|
 | Create an agent, edit its prompt and test it in the Copilot app without a cluster | [Use kmx in the Copilot app](copilot-app.md) |
 | Set up the current development CLI and understand prerequisites | [Getting started](getting-started.md) |
-| Understand the unreleased native Windows day-zero commands, release availability, trust and state limits | [Native Windows](windows.md) |
+| Understand the prerelease-only native Windows day-zero commands, release availability, trust and state limits | [Native Windows](windows.md) |
 | Review Run, Test, Publish and Deploy stages, workspace/live paths and safety limits | [Workflow overview](workflow-overview.md) |
 | Inspect compiled runtime support and qualification evidence with `kmx cluster targets`; understand runtime and inference boundaries | [Runtime contract and support matrix](runtime-adapters.md) |
 | Install Orka, inspect before applying, or see the version actually running | [Orka](orka.md) |
