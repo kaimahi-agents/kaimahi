@@ -721,6 +721,9 @@ team runtime or native Squad canvas actions. See [native authoring](docs/agent-f
 
 `kmx test FILE --runner copilotd --host URL` selects the native AHP runner,
 never the embedded MCP tool wrapper; default/file Run/MCP behavior is unchanged.
+Selection is explicitly by unique discovered name plus matching authored
+description/model/tool set, not loaded-byte attestation; results and docs label
+this boundary. Do not silently claim source-path identity from name-only AHP URIs.
 The CLI owns checked Git working-tree snapshots and source freshness. Ignored
 files/dependencies and Git metadata are excluded; failed Git and declared
 submodules are unknown before inference, without hydration or source mutation.

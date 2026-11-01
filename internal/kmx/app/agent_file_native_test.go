@@ -8,12 +8,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
 func fileNativeMetadata() *agentpreview.NativeExecution {
-	return &agentpreview.NativeExecution{Host: "ws://127.0.0.1:8080", ProtocolVersion: "0.1", Session: "ahp-session:/abcdef", Chat: "ahp-chat:/abcdef", Turn: "abcdef", ContentRevision: "sha256:" + strings.Repeat("a", 64), ActualModels: []string{"gpt-4.1"}}
+	return &agentpreview.NativeExecution{Selection: "name", Host: "ws://127.0.0.1:8080", ProtocolVersion: "0.1", Session: "ahp-session:/abcdef", Chat: "ahp-chat:/abcdef", Turn: "abcdef", ContentRevision: "sha256:" + strings.Repeat("a", 64), ActualModels: []string{"gpt-4.1"}}
 }
 func nativeScript(cause error) *scriptedPreview {
 	return &scriptedPreview{verdict: runtime.EvaluationPass, err: cause, mutate: func(o *agentpreview.Outcome) {
@@ -36,6 +37,24 @@ func nativeScript(cause error) *scriptedPreview {
 		}
 	}}
 }
+func TestNativeOmittedToolsNotice(t *testing.T) {
+	parsed, err := agentfile.Load(previewFile(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed.CopilotToolsOmitted = true
+	for _, native := range []bool{false, true} {
+		result, _ := (&App{FileRunner: nativeScript(nil)}).PreviewAgentSnapshot(t.Context(), parsed, FilePreviewOptions{File: "reader.agent.md", Operation: "test", Model: "gpt-4.1", DefaultCopilot: true, Copilotd: native})
+		has := false
+		for _, notice := range result.Notices {
+			has = has || notice == agentfile.CopilotToolsNotice
+		}
+		if has == native {
+			t.Fatalf("native=%t embedded notice=%t", native, has)
+		}
+	}
+}
+
 func TestNativeObservedCallsAndTrustedPolicy(t *testing.T) {
 	for _, native := range []bool{false, true} {
 		runner := nativeScript(nil)
@@ -130,7 +149,7 @@ func TestNativeFailedWithoutCompletedCalls(t *testing.T) {
 }
 
 func TestNativeCompleteModelAndTraceFences(t *testing.T) {
-	for _, mutate := range []func(*agentpreview.NativeExecution){func(n *agentpreview.NativeExecution) { n.ActualModels = []string{"wrong-model"} }, func(n *agentpreview.NativeExecution) { n.ActualModels = nil }, func(n *agentpreview.NativeExecution) { n.Chat = "" }, func(n *agentpreview.NativeExecution) { n.Turn = "" }} {
+	for _, mutate := range []func(*agentpreview.NativeExecution){func(n *agentpreview.NativeExecution) { n.Selection = "" }, func(n *agentpreview.NativeExecution) { n.Selection = "path" }, func(n *agentpreview.NativeExecution) { n.ActualModels = []string{"wrong-model"} }, func(n *agentpreview.NativeExecution) { n.ActualModels = nil }, func(n *agentpreview.NativeExecution) { n.Chat = "" }, func(n *agentpreview.NativeExecution) { n.Turn = "" }} {
 		runner := nativeScript(nil)
 		original := runner.mutate
 		runner.mutate = func(o *agentpreview.Outcome) { original(o); mutate(o.Examples[0].Completion.Native) }

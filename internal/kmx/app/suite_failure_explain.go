@@ -185,7 +185,7 @@ func (a *App) explainFileFailure(ctx context.Context, opt SuiteEvaluationExplain
 		}
 		fmt.Fprintf(&report, "%s · %s · %q · %s/%s · %s\n", record.Detail.ID, record.Detail.Verdict, record.Detail.CaseID, record.Model.Provider, record.Model.Model, status)
 		if record.Native != nil {
-			fmt.Fprintf(&report, "  native session %q; host %q; actual models: %s; local diagnostics, not evidence\n", record.Native.Session, record.Native.Host, strings.Join(record.Native.ActualModels, ", "))
+			fmt.Fprintf(&report, "  native session %q; host %q; selection: %s; actual models: %s; local diagnostics, not evidence\n", record.Native.Session, record.Native.Host, record.Native.Selection, strings.Join(record.Native.ActualModels, ", "))
 		}
 		if opt.ID != "" || opt.ShowContent {
 			fmt.Fprintf(&report, "  revision %s; operation %s; scope=%s; agent=%q; complete=%t attributed=%t; local diagnostics, not evidence\n", record.Revision, record.Operation, record.Selection, record.AgentID, record.Detail.Complete, record.Detail.Attributed)

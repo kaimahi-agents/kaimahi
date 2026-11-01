@@ -5,7 +5,7 @@
 This is the shared caveats page linked by file Run, Test and Explain help.
 By default, file previews on fake, local and Copilot models use embedded Agent Sessions.
 Explicit [copilotd file tests](#copilotd-file-tests) use the host's native loop instead.
-They retain instructions, inputs, answers, judge payloads and reasoning in
+Embedded previews retain instructions, inputs, answers, judge payloads and reasoning in
 cleartext SQLite journals under the kmx state directory (`KMX_HOME` when set),
 in `local-preview/journals`. The journal is never suite evidence or permission
 to publish or deploy. Copilot content checks stay provider-owned and run before
@@ -60,6 +60,25 @@ limit. The copy is not a hostile-filesystem sandbox; native host tools retain
 the host's authority. The caller verifies source versions and records the starting
 Git and content identities. No case modifies the original checkout through the copy.
 
+Selection is **by name**, not source-path or loaded-byte attestation. The host
+must discover exactly one agent with the file's parsed name across project and
+plugin agents; its description, authored model and tool-name set must also match.
+Missing, ambiguous or mismatched discovery returns unknown with a reason before
+any turn is sent. A model override changes the turn's requested model, not this
+comparison of authored metadata. Matching metadata cannot prove identical prompt
+bytes: another source with the same metadata remains indistinguishable. Results
+record `native.selection: name` and label this limitation; a pass is not proof
+that the host loaded the named FILE's bytes.
+
+The original relative filename and bytes are preserved in the snapshot. An
+unchanged-byte random-filename experiment did not provide a stronger binding on
+copilotd 1.0.5: authored names still produced name-based URIs shared by same-named
+repository agents, and changing discovery order executed a decoy. Renaming also
+broke an instruction referring to its original filename. kmx therefore does not
+rename the agent or claim that filename randomness proves selection. A self-file
+reference still sees its original copied relative path, subject to normal host
+permissions and discovery.
+
 A bounded, quoted session URI appears on stderr before the first turn for each
 case, without `--verbose`. JSON stdout stays one final document. The host's
 approval mode is unchanged: kmx neither selects allow-all nor approves tools.
@@ -80,7 +99,8 @@ proof of tool-free execution; exact-host behavior must be qualified. Complete
 correlated native traces and observed model IDs are required. A request is not
 shell success, and requested model metadata is not observed model evidence.
 
-A pass covers these file assertions on the recorded snapshot and host; it is
+A pass covers these file assertions against the name-selected host agent on the
+recorded snapshot, subject to the selection limitation above; it is
 **not deployment or packaged-suite evidence**. The host owns transcripts; kmx
 creates no fabricated Sessions journal. Cleanup uncertainty names possible owned
 sessions/copies in Notices without changing the verdict or normal exit.

@@ -22,11 +22,30 @@ import (
 	"github.com/microsoft/agent-host-protocol/clients/go/ahptypes"
 )
 
-func wireRunner(t *testing.T, pending, cleanupFails bool) (agentpreview.Runner, *atomic.Int64, *atomic.Int64) {
+type wireFixture struct {
+	Customizations  string
+	DelayDiscovery  bool
+	Lifecycle       string
+	Sends, Disposed atomic.Int64
+}
+
+func wireRunner(t *testing.T, pending, cleanupFails bool, fixtures ...*wireFixture) (agentpreview.Runner, *atomic.Int64, *atomic.Int64) {
 	t.Helper()
 	t.Setenv("COPILOT_GITHUB_TOKEN", "fixture-private-token")
 	t.Setenv("COPILOTD_CLIENT_TOKEN", "fixture-connection-token")
 	created, closed := new(atomic.Int64), new(atomic.Int64)
+	fixture := &wireFixture{}
+	if len(fixtures) > 0 {
+		fixture = fixtures[0]
+	}
+	customizations := json.RawMessage(`[{"type":"agent","name":"Reader","uri":"copilot-agent:/reader","tools":["bash"]}]`)
+	if fixture.Customizations != "" {
+		customizations = json.RawMessage(fixture.Customizations)
+	}
+	lifecycle := fixture.Lifecycle
+	if lifecycle == "" {
+		lifecycle = "ready"
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, e := websocket.Accept(w, r, nil)
 		if e != nil {
@@ -35,6 +54,7 @@ func wireRunner(t *testing.T, pending, cleanupFails bool) (agentpreview.Runner, 
 		defer conn.CloseNow()
 		ctx := r.Context()
 		state := ahptypes.ChatState{Resource: "ahp-chat:/a"}
+		sessionReads := 0
 		seq := int64(1)
 		send := func(v any) { b, _ := json.Marshal(v); conn.Write(ctx, websocket.MessageText, b) }
 		action := func(raw string) {
@@ -69,10 +89,16 @@ func wireRunner(t *testing.T, pending, cleanupFails bool) (agentpreview.Runner, 
 					json.Unmarshal(m.Params, &p)
 					var s any = state
 					if strings.HasPrefix(p.Channel, "ahp-session:") {
-						s = map[string]any{"lifecycle": "ready", "chats": []any{map[string]any{"resource": "ahp-chat:/a"}}, "customizations": []any{map[string]any{"type": "agent", "id": "reader", "name": "Reader", "uri": "copilot-agent:/reader"}}}
+						sessionReads++
+						ready := map[string]any{"lifecycle": lifecycle, "chats": []any{map[string]any{"resource": "ahp-chat:/a"}}}
+						if !fixture.DelayDiscovery || sessionReads > 1 {
+							ready["customizations"] = customizations
+						}
+						s = ready
 					}
 					result = map[string]any{"snapshot": map[string]any{"resource": p.Channel, "fromSeq": seq - 1, "state": s}}
 				case "disposeSession":
+					fixture.Disposed.Add(1)
 					if cleanupFails {
 						send(map[string]any{"jsonrpc": "2.0", "id": *m.ID, "error": map[string]any{"code": -32000, "message": "cannot dispose"}})
 						continue
@@ -89,6 +115,7 @@ func wireRunner(t *testing.T, pending, cleanupFails bool) (agentpreview.Runner, 
 				if a.Type != "chat/turnStarted" {
 					continue
 				}
+				fixture.Sends.Add(1)
 				action(string(p.Action))
 				action(fmt.Sprintf(`{"type":"chat/usage","turnId":%q,"usage":{"model":"model"}}`, a.TurnId))
 				calls := 7
@@ -130,6 +157,13 @@ func wireRunner(t *testing.T, pending, cleanupFails bool) (agentpreview.Runner, 
 func wireRequest() agentpreview.Request {
 	return agentpreview.Request{Agent: &agentfile.Agent{Title: "Reader", Revision: "revision", Tools: []string{"bash"}}, Route: modelaccess.Route{Provider: "copilot", Model: "model"}, Examples: []agentfile.Example{{ID: "first", Input: "read"}, {ID: "second", Input: "read"}}}
 }
+func TestRunnerWireDelayedDiscovery(t *testing.T) {
+	r, _, _ := wireRunner(t, false, false, &wireFixture{DelayDiscovery: true})
+	if _, err := r.Run(t.Context(), wireRequest()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRunnerWireRoundsCleanupUncertainty(t *testing.T) {
 	r, created, closed := wireRunner(t, false, true)
 	req := wireRequest()
@@ -146,7 +180,7 @@ func TestRunnerWireRoundsCleanupUncertainty(t *testing.T) {
 		t.Fatalf("out=%+v err=%v created=%d closed=%d early=%d", out, err, created.Load(), closed.Load(), early)
 	}
 	for _, ex := range out.Examples {
-		if ex.Completion.Answer != "marker" || ex.Completion.ToolCalls != 7 || ex.Completion.Native.HostVersion != "1.0.5" {
+		if ex.Completion.Answer != "marker" || ex.Completion.ToolCalls != 7 || ex.Completion.Native.HostVersion != "1.0.5" || ex.Completion.Native.Selection != "name" {
 			t.Fatalf("%+v", ex)
 		}
 	}
@@ -174,6 +208,43 @@ func TestRunnerWireChecksFormattedSession(t *testing.T) {
 	_, err := r.Run(t.Context(), req)
 	if !errors.Is(err, copilot.ErrCredentialContent) || called {
 		t.Fatalf("err=%v called=%v", err, called)
+	}
+}
+
+func TestRunnerWireSelectionRefusalStopsCases(t *testing.T) {
+	for _, tc := range []struct {
+		name, customizations string
+		want                 error
+	}{
+		{"missing", `[]`, ErrAgentNotDiscovered},
+		{"tools mismatch", `[{"type":"agent","name":"Reader","uri":"copilot-agent:/reader","tools":["read"]}]`, ErrAgentMetadataMismatch},
+		{"missing metadata", `[{"type":"agent","name":"Reader","uri":"copilot-agent:/reader"}]`, ErrAgentMetadataMismatch},
+		{"duplicate", `[{"type":"agent","name":"Reader","uri":"copilot-agent:/reader","tools":["bash"]},{"type":"agent","name":"Reader","uri":"copilot-agent:/reader","tools":["other"]}]`, ErrAgentAmbiguous},
+		{"disabled", `[{"type":"agent","name":"Reader","uri":"copilot-agent:/reader","tools":["bash"],"enabled":false}]`, ErrAgentNotDiscovered},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := &wireFixture{Customizations: tc.customizations}
+			r, created, closed := wireRunner(t, false, false, fixture)
+			out, err := r.Run(t.Context(), wireRequest())
+			if !errors.Is(err, tc.want) || len(out.Examples) != 1 || created.Load() != 1 || closed.Load() != 1 || fixture.Sends.Load() != 0 || fixture.Disposed.Load() != 1 {
+				t.Fatalf("err=%v examples=%d created=%d closed=%d sends=%d disposed=%d", err, len(out.Examples), created.Load(), closed.Load(), fixture.Sends.Load(), fixture.Disposed.Load())
+			}
+		})
+	}
+}
+
+func TestRunnerWireSourceAgentAuthoredModel(t *testing.T) {
+	fixture := &wireFixture{Customizations: `[{"type":"agent","name":"Reader","uri":"copilot-agent:/reader","model":"authored-model","description":"Read files","tools":["bash"]}]`}
+	r, _, _ := wireRunner(t, false, false, fixture)
+	req := wireRequest()
+	source := *req.Agent
+	source.Model = "authored-model"
+	source.Identity.Purpose = "Read files"
+	req.SourceAgent = &source
+	req.Agent.Model = "model"
+	out, err := r.Run(t.Context(), req)
+	if err != nil || out.State != agentpreview.Complete || fixture.Sends.Load() != 2 {
+		t.Fatalf("state=%s err=%v sends=%d", out.State, err, fixture.Sends.Load())
 	}
 }
 

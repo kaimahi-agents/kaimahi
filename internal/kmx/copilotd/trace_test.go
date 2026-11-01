@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/microsoft/agent-host-protocol/clients/go/ahptypes"
+	"strings"
 	"testing"
 )
 
@@ -15,6 +16,31 @@ func event(t *testing.T, n int, action string) ahptypes.ActionEnvelope {
 	}
 	return a
 }
+func TestTraceRequiresTurnCorrelation(t *testing.T) {
+	for _, action := range []string{
+		`{"type":"chat/usage","turnId":"","usage":{"model":"model"}}`,
+		`{"type":"chat/toolCallStart","toolCallId":"call","toolName":"view","displayName":"View"}`,
+		`{"type":"chat/toolCallReady","toolCallId":"call","toolInput":"path","invocationMessage":"view"}`,
+		`{"type":"chat/toolCallComplete","toolCallId":"call","result":{"success":true,"content":[]}}`,
+		`{"type":"chat/responsePart","part":{"kind":"markdown","id":"answer","content":"marker"}}`,
+		`{"type":"chat/turnComplete","duration":1}`,
+	} {
+		t.Run(action, func(t *testing.T) {
+			tr := newTrace("ahp-chat:/a", "turn", "model", ahptypes.ChatState{Resource: "ahp-chat:/a"})
+			if strings.Contains(action, "toolCallReady") || strings.Contains(action, "toolCallComplete") {
+				tr.calls["call"] = &nativeCall{name: "view"}
+			}
+			if err := tr.accept(event(t, 1, action)); err == nil {
+				t.Fatal("accepted uncorrelated turn action")
+			}
+		})
+	}
+	tr := newTrace("ahp-chat:/a", "turn", "model", ahptypes.ChatState{Resource: "ahp-chat:/a"})
+	if err := tr.accept(event(t, 1, `{"type":"chat/isReadChanged","isRead":true}`)); err != nil {
+		t.Fatalf("chat-scoped event refused: %v", err)
+	}
+}
+
 func TestTraceNativeRoundsAndSnapshot(t *testing.T) {
 	tr := newTrace("ahp-chat:/a", "turn", "model", ahptypes.ChatState{Resource: "ahp-chat:/a"})
 	seq := 1

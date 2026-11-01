@@ -168,7 +168,9 @@ entries there can conservatively stale source-version checks.
 ### Test on a local copilotd host
 
 `kmx test FILE --runner copilotd --host ws://127.0.0.1:PORT --model MODEL`
-uses native host tools on a fresh Git working-tree snapshot. Embedded remains
+uses native host tools on a fresh Git working-tree snapshot. Agent selection is
+by unique name plus matching description, authored model and tools, not proof
+that the host loaded the FILE's bytes; the result labels this limitation. Embedded remains
 the default. Token/authentication, source exclusions, unsupported case semantics,
 model attribution, approval budgets and diagnostic compatibility are described in
 [copilotd file tests](local-preview.md#copilotd-file-tests). Native pass is file-test

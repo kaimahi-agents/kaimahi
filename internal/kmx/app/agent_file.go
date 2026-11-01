@@ -181,6 +181,9 @@ var previewCopilotFailures = []struct {
 	{agentpreview.ErrSnapshotUnavailable, "snapshot_unavailable"},
 	{agentpreview.ErrSubmodulesUnsupported, "submodules_unsupported"},
 	{copilotd.ErrUnsupported, "native_unsupported"},
+	{copilotd.ErrAgentNotDiscovered, "native_agent_not_discovered"},
+	{copilotd.ErrAgentAmbiguous, "native_agent_ambiguous"},
+	{copilotd.ErrAgentMetadataMismatch, "native_agent_metadata_mismatch"},
 	{copilot.ErrHostToken, "copilot_host_token"},
 	{copilot.ErrHostConnection, "copilot_host_connection"},
 	{copilot.ErrAuthRequired, "copilot_auth_required"},
@@ -329,7 +332,7 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 			return fail("invalid_file", 1)
 		}
 	}
-	if parsed.CopilotToolsOmitted {
+	if parsed.CopilotToolsOmitted && !opt.Copilotd {
 		r.Notices = []string{agentfile.CopilotToolsNotice}
 	}
 	missingModel := parsed.Model == ""

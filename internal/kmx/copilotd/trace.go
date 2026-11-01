@@ -47,12 +47,19 @@ func (t *trace) accept(e ahptypes.ActionEnvelope) error {
 	if err != nil {
 		return t.fail(errTrace)
 	}
-	var id struct{ TurnId string }
+	// Required turnId fields survive typed marshaling even when empty;
+	// genuinely chat-scoped actions have no such field.
+	var id struct{ TurnId *string }
 	if json.Unmarshal(b, &id) != nil {
 		return t.fail(errTrace)
 	}
-	if id.TurnId != "" && id.TurnId != t.turn {
-		return nil
+	if id.TurnId != nil {
+		if *id.TurnId == "" {
+			return t.fail(errTrace)
+		}
+		if *id.TurnId != t.turn {
+			return nil
+		}
 	}
 	if t.err != nil {
 		return t.err

@@ -101,7 +101,9 @@ workspace Explain and hidden legacy Eval remain unchanged. See
 `kmx test FILE --runner copilotd --host ws://127.0.0.1:PORT` explicitly selects
 an already-running local native host instead of embedded Sessions. Each case uses
 a fresh private Git working-tree copy and observed native model/tool evidence;
-kmx creates no Sessions journal. This path supports live Enabled cases only:
+kmx creates no Sessions journal. Agent selection is by unique name and matching
+description/model/tools, not loaded-file attestation, and is labelled in results.
+This path supports live Enabled cases only:
 judges, replay/capture and Disabled-tool semantics refuse before sends. It does
 not apply to Run, MCP, folder tests or packaged evaluation, and native Windows
 refuses before effects. A native pass is file-test feedback, not deployment or

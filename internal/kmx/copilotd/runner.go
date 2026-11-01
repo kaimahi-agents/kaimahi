@@ -19,7 +19,12 @@ import (
 	"github.com/microsoft/agent-host-protocol/clients/go/ahptypes"
 )
 
-var ErrUnsupported = errors.New("selected case semantics cannot run natively")
+var (
+	ErrUnsupported           = errors.New("selected case semantics cannot run natively")
+	ErrAgentNotDiscovered    = errors.New("native agent not discovered")
+	ErrAgentAmbiguous        = errors.New("native agent name is ambiguous")
+	ErrAgentMetadataMismatch = errors.New("native agent metadata does not match authored source")
+)
 
 type Options struct {
 	Host           string
@@ -59,7 +64,7 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 	defer cancel()
 	var active *trace
 	var mu sync.Mutex
-	access, err := r.options.Access(ctx, func(e ahptypes.ActionEnvelope) error {
+	access, setupErr := r.options.Access(ctx, func(e ahptypes.ActionEnvelope) error {
 		mu.Lock()
 		t := active
 		mu.Unlock()
@@ -71,9 +76,6 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 	if access != nil {
 		defer access.Close(context.Background())
 	}
-	if err != nil {
-		return out, err
-	}
 	fields := append([]string{}, req.SourceText...)
 	fields = append(fields, req.Agent.Instructions, req.Agent.Frontmatter, req.Agent.Title, req.Route.Model, req.FileLabel, r.options.Host)
 	if req.Input != nil {
@@ -82,8 +84,16 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 	for _, ex := range req.Examples {
 		fields = append(fields, ex.ID, ex.Input)
 	}
-	if err = access.CheckContent(fields...); err != nil {
-		return out, err
+	if access != nil {
+		if err = access.CheckContent(fields...); err != nil {
+			return out, err
+		}
+	}
+	if setupErr != nil {
+		return out, setupErr
+	}
+	if access == nil {
+		return out, copilot.ErrHostConnection
 	}
 	if req.BeforeExecute != nil {
 		if err = req.BeforeExecute(); err != nil {
@@ -144,6 +154,9 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 				warn(fmt.Sprintf("Cleanup unconfirmed: possible owned snapshot %q", snapshot.Directory))
 			}
 		}()
+		if cause = access.Validate(caseCtx); cause != nil {
+			return
+		}
 		if client == nil {
 			cause = copilot.ErrHostConnection
 			return
@@ -165,6 +178,10 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 				return
 			}
 		}
+		source := req.SourceAgent
+		if source == nil {
+			source = req.Agent
+		}
 		var state *ahptypes.SessionState
 		var agent string
 		for {
@@ -178,13 +195,19 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 			}
 			state = result.Snapshot.State.Session
 			if state != nil {
-				agent = findAgent(state.Customizations, req.Agent.Title, req.Agent.Identity.ID)
+				agent, e = findAgent(state.Customizations, source)
 				if state.CreationError != nil {
 					cause = errTrace
 					return
 				}
-				if agent != "" && len(state.Chats) > 0 {
-					break
+				if state.Lifecycle == ahptypes.SessionLifecycleReady && state.Customizations != nil {
+					if e != nil {
+						cause = e
+						return
+					}
+					if len(state.Chats) > 0 {
+						break
+					}
 				}
 			}
 			select {
@@ -194,6 +217,8 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 			case <-time.After(50 * time.Millisecond):
 			}
 		}
+		// Name selection checks advertised metadata, not exact source attestation.
+		c.Native.Selection = "name"
 		chat := state.Chats[0].Resource
 		if state.DefaultChat != nil {
 			chat = *state.DefaultChat
@@ -316,34 +341,65 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 	out.State = agentpreview.Complete
 	return out, nil
 }
-func findAgent(customizations []ahptypes.Customization, title, id string) string {
-	b, _ := json.Marshal(customizations)
-	var nodes []struct {
-		Type, Name, Uri string
-		Enabled         *bool
-		Children        json.RawMessage
+func findAgent(customizations []ahptypes.Customization, source *agentfile.Agent) (string, error) {
+	if source == nil || source.Title == "" {
+		return "", ErrAgentNotDiscovered
 	}
-	json.Unmarshal(b, &nodes)
-	found := ""
-	for _, n := range nodes {
-		if n.Enabled != nil && !*n.Enabled {
-			continue
+	var candidate ahptypes.AgentCustomization
+	count, selectable := 0, false
+	var walk func(json.RawMessage, bool)
+	walk = func(raw json.RawMessage, enabled bool) {
+		var nodes []struct {
+			ahptypes.AgentCustomization
+			Children json.RawMessage
 		}
-		candidate := ""
-		if n.Type == "agent" && (n.Name == title || title == "" && n.Name == id) {
-			candidate = n.Uri
+		if json.Unmarshal(raw, &nodes) != nil {
+			return
 		}
-		if len(n.Children) > 0 {
-			var children []ahptypes.Customization
-			json.Unmarshal(n.Children, &children)
-			candidate = findAgent(children, title, id)
-		}
-		if candidate != "" {
-			if found != "" {
-				return ""
+		for _, n := range nodes {
+			nodeEnabled := enabled && (n.Enabled == nil || *n.Enabled)
+			if n.Type == "agent" && n.Name == source.Title {
+				count++
+				candidate = n.AgentCustomization
+				selectable = nodeEnabled
 			}
-			found = candidate
+			if len(n.Children) > 0 {
+				walk(n.Children, nodeEnabled)
+			}
 		}
 	}
-	return found
+	raw, _ := json.Marshal(customizations)
+	walk(raw, true)
+	// Count the whole tree before filtering metadata or enablement. Even a
+	// disabled same-name entry makes name-based selection ambiguous.
+	if count > 1 {
+		return "", ErrAgentAmbiguous
+	}
+	if count == 0 || !selectable || candidate.Uri == "" {
+		return "", ErrAgentNotDiscovered
+	}
+	value := func(s *string) string {
+		if s == nil {
+			return ""
+		}
+		return *s
+	}
+	tools := func(names []string) map[string]bool {
+		set := make(map[string]bool, len(names))
+		for _, name := range names {
+			set[name] = true
+		}
+		return set
+	}
+	want, got := tools(source.Tools), tools(candidate.Tools)
+	matches := len(want) == len(got)
+	for name := range want {
+		matches = matches && got[name]
+	}
+	// The protocol omits both missing and empty tools. Matching empty sets
+	// does not attest that tools are disabled.
+	if value(candidate.Description) != source.Identity.Purpose || value(candidate.Model) != source.Model || !matches {
+		return "", ErrAgentMetadataMismatch
+	}
+	return string(candidate.Uri), nil
 }

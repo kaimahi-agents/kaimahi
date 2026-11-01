@@ -127,7 +127,12 @@ func copilotdSnapshots(pair *agentfile.Pair) func(context.Context, func(...strin
 		if _, e := inventory(); e != nil {
 			return fail(e)
 		}
-		directory, e := os.MkdirTemp("", "kmx-copilotd-")
+		// Resolve the trusted temp parent before creation, not during cleanup.
+		temp, e := filepath.EvalSymlinks(os.TempDir())
+		if e != nil {
+			return fail(agentpreview.ErrSnapshotUnavailable)
+		}
+		directory, e := os.MkdirTemp(temp, "kmx-copilotd-")
 		if e != nil {
 			return fail(agentpreview.ErrSnapshotUnavailable)
 		}

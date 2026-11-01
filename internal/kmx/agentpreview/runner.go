@@ -106,6 +106,7 @@ var (
 
 // Completion contains private bounded execution data, never a JSON projection.
 type NativeExecution struct {
+	Selection             string   `json:"selection,omitempty"`
 	Host                  string   `json:"host"`
 	HostVersion           string   `json:"hostVersion,omitempty"`
 	ProtocolVersion       string   `json:"protocolVersion"`

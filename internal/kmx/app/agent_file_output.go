@@ -139,7 +139,7 @@ func fileToolUnavailable(tool agentpreview.ToolSummary, settings []localtools.To
 
 func writeFileTools(b *strings.Builder, c FilePreviewCompletion, settings []localtools.ToolSetting) {
 	if n := c.Native; n != nil {
-		fmt.Fprintf(b, "  native session %q; actual models: %s\n", n.Session, strings.Join(n.ActualModels, ", "))
+		fmt.Fprintf(b, "  native session %q; selection: %s; actual models: %s\n", n.Session, n.Selection, strings.Join(n.ActualModels, ", "))
 		if n.PendingTool != "" {
 			fmt.Fprintf(b, "  pending tool %s\n", n.PendingTool)
 		}

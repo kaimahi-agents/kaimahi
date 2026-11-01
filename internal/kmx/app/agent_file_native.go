@@ -18,7 +18,7 @@ import (
 	"github.com/microsoft/agent-host-protocol/clients/go/ahptypes"
 )
 
-const nativeRunnerLabel = "copilotd native execution (no journal; not a receipt)"
+const nativeRunnerLabel = "copilotd native execution (name-based selection; no journal; not a receipt)"
 
 func previewCompletedPolicy(c agentpreview.Completion, show, native bool) FilePreviewCompletion {
 	row := previewCompleted(c, show)
@@ -60,7 +60,7 @@ func (a nativeDisplayAccess) CheckContent(fields ...string) error {
 }
 
 func validNative(n *agentpreview.NativeExecution) bool {
-	if n == nil {
+	if n == nil || n.Selection != "" && n.Selection != "name" {
 		return false
 	}
 	u, err := url.Parse(n.Host)
@@ -124,7 +124,7 @@ func validPreviewExecutionTools(c agentpreview.Completion, ex agentfile.Example,
 		return false
 	}
 	if c.State == agentpreview.Complete {
-		if c.Native.Chat == "" || c.Native.Turn == "" || len(c.Native.ActualModels) == 0 {
+		if c.Native.Selection != "name" || c.Native.Chat == "" || c.Native.Turn == "" || len(c.Native.ActualModels) == 0 {
 			return false
 		}
 		for _, model := range c.Native.ActualModels {

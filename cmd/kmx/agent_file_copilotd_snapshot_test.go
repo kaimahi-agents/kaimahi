@@ -35,7 +35,10 @@ func snapshotWrite(t *testing.T, root, name, content string) {
 }
 func snapshotFixture(t *testing.T) (string, *agentfile.Pair) {
 	t.Helper()
-	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	snapshotGit(t, root, "init", "-q")
 	snapshotWrite(t, root, ".github/agents/reader.agent.md", "---\ntools: [view]\n---\nRead files.\n")
 	snapshotWrite(t, root, "tracked", "original")
@@ -49,6 +52,30 @@ func snapshotFixture(t *testing.T) (string, *agentfile.Pair) {
 	}
 	return root, pair
 }
+func TestCopilotdSnapshotPhysicalTempCleanup(t *testing.T) {
+	_, pair := snapshotFixture(t)
+	parent, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(parent, "temp-link")
+	if err := os.Symlink(parent, link); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TMPDIR", link)
+	snap, err := makeCopilotdSnapshot(t.Context(), pair, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(snap.Directory)
+	if err := snap.Close(t.Context()); err != nil {
+		t.Fatalf("owned cleanup through temp alias: %v", err)
+	}
+	if _, err := os.Lstat(snap.Directory); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("snapshot retained: %v", err)
+	}
+}
+
 func TestCopilotdSnapshotWorkingFiles(t *testing.T) {
 	root, pair := snapshotFixture(t)
 	snapshotWrite(t, root, "tracked", "edited")
