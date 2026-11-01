@@ -16,8 +16,8 @@ The official Homebrew namespace is limited to the public
 claimed; the remaining publication constraints are recorded in
 [NAMING.md](NAMING.md).
 
-**Windows release boundary:** stable v0.8.1, including the version selected by
-Go `@latest`, has no Windows `.exe`. Current `main` and published v0.9.0 release
+**Windows release boundary:** stable v0.8.1 and the version selected by Go
+`@latest` have no Windows `.exe`. Current `main` and published v0.9.0 release
 candidates beginning with `v0.9.0-rc.4` contain the narrow native Windows
 day-zero CLI as `kmx-windows-amd64.exe` and `kmx-windows-arm64.exe`. See
 [native Windows](windows.md) for the exact command, trust and state limits.
