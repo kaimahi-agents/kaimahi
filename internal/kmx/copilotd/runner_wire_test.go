@@ -17,6 +17,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess/copilot"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 	"github.com/microsoft/agent-host-protocol/clients/go/ahp"
 	"github.com/microsoft/agent-host-protocol/clients/go/ahptypes"
 )
@@ -150,6 +151,20 @@ func TestRunnerWireRoundsCleanupUncertainty(t *testing.T) {
 		}
 	}
 }
+func TestRunnerWireSessionIsPublicIdentity(t *testing.T) {
+	r, _, _ := wireRunner(t, false, false)
+	req := wireRequest()
+	req.SessionCreated = func(_, uri string) error {
+		if secretshapes.Match(uri) != nil {
+			return errors.New("credential-shaped session identity")
+		}
+		return nil
+	}
+	if _, err := r.Run(t.Context(), req); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRunnerWireChecksFormattedSession(t *testing.T) {
 	r, _, _ := wireRunner(t, false, false)
 	t.Setenv("COPILOTD_CLIENT_TOKEN", "Native")

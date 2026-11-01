@@ -2,8 +2,6 @@ package copilotd
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
@@ -31,7 +30,7 @@ type Options struct {
 type runner struct{ options Options }
 
 func NewRunner(o Options) agentpreview.Runner { return &runner{o} }
-func nonce() string                           { var b [16]byte; rand.Read(b[:]); return hex.EncodeToString(b[:]) }
+func nonce() string                           { return uuid.NewString() }
 func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpreview.Outcome, err error) {
 	out.NoJournal = true
 	out.State = agentpreview.Failed

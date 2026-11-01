@@ -39,7 +39,9 @@ Without `--runner copilotd`, embedded behavior is unchanged. Native execution is
 for FILE Test only, not folder tests, Run, MCP previews or packaged evaluation.
 The endpoint must be a literal loopback ws/wss URL, with no credentials, query
 or fragment. Native Windows refuses before effects; WSL/Linux share the host's
-filesystem. This does not install or discover a host or place remote checkouts.
+filesystem. The host must permit the local temporary root used for copies
+(the standard `TMPDIR` setting); kmx never widens a host's allowlist.
+This does not install or discover a host or place remote checkouts.
 
 If the listener requires a connection secret, supply `COPILOTD_CLIENT_TOKEN`
 in the environment. Do not put it in `--host` or command arguments. An absent

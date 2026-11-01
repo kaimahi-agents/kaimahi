@@ -97,6 +97,22 @@ func TestNativeFailedPendingProjection(t *testing.T) {
 		}
 	}
 }
+func TestNativeFailedWithoutCompletedCalls(t *testing.T) {
+	runner := nativeScript(context.DeadlineExceeded)
+	original := runner.mutate
+	runner.mutate = func(o *agentpreview.Outcome) {
+		original(o)
+		for i := range o.Examples {
+			o.Examples[i].Completion.Tools = nil
+			o.Examples[i].Completion.ToolCalls = 0
+		}
+	}
+	r, _ := (&App{FileRunner: runner}).PreviewAgentFile(t.Context(), FilePreviewOptions{File: previewFile(t), Operation: "test", Model: "gpt-4.1", DefaultCopilot: true, Copilotd: true, ShowFailedContent: true})
+	if r.Examples[0].Native == nil || r.Examples[0].Native.PendingTool != "shell" {
+		t.Fatalf("lost partial native identity: %+v", r)
+	}
+}
+
 func TestNativeCompleteModelAndTraceFences(t *testing.T) {
 	for _, mutate := range []func(*agentpreview.NativeExecution){func(n *agentpreview.NativeExecution) { n.ActualModels = []string{"wrong-model"} }, func(n *agentpreview.NativeExecution) { n.ActualModels = nil }, func(n *agentpreview.NativeExecution) { n.Chat = "" }, func(n *agentpreview.NativeExecution) { n.Turn = "" }} {
 		runner := nativeScript(nil)
