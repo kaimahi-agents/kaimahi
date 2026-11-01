@@ -99,7 +99,18 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 		caseCtx, stop := context.WithTimeout(ctx, limit)
 		defer stop()
 		c = agentpreview.Completion{State: agentpreview.Failed, Provider: req.Route.Provider, Model: req.Route.Model, FileRevision: req.Agent.Revision, SnapshotRevision: req.SnapshotRevision}
-		defer func() { c.DurationMs = time.Since(start).Milliseconds() }()
+		defer func() {
+			c.DurationMs = time.Since(start).Milliseconds()
+			if c.Native != nil {
+				metadata, _ := json.Marshal(c.Native)
+				if e := access.CheckContent(string(metadata)); e != nil {
+					c.Native = nil
+					c.Answer = ""
+					c.State = agentpreview.Failed
+					cause = e
+				}
+			}
+		}()
 		if req.ValidateSource != nil {
 			if cause = req.ValidateSource(caseCtx); cause != nil {
 				return

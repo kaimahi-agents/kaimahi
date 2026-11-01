@@ -97,6 +97,22 @@ func TestNativeFailedPendingProjection(t *testing.T) {
 		}
 	}
 }
+func TestNativeChatDigestIsIdentity(t *testing.T) {
+	n := fileNativeMetadata()
+	n.Chat = "ahp-chat:/34449f0ecf1d574ab573fec561c5bec1"
+	if previewNative(n, true) == nil {
+		t.Fatal("provider chat identity withheld")
+	}
+}
+
+func TestNativeGitRevisionIsIdentity(t *testing.T) {
+	n := fileNativeMetadata()
+	n.GitRevision = "1b117bf31b298f80b2dbe5d285cd855f658c1d9d"
+	if previewNative(n, true) == nil {
+		t.Fatal("valid Git identity withheld")
+	}
+}
+
 func TestNativeFailedWithoutCompletedCalls(t *testing.T) {
 	runner := nativeScript(context.DeadlineExceeded)
 	original := runner.mutate

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"github.com/google/uuid"
 	"net"
 	"net/url"
 	"slices"
@@ -74,7 +75,17 @@ func validNative(n *agentpreview.NativeExecution) bool {
 	if !strings.HasPrefix(n.Session, "ahp-session:/") || len(n.Session) <= len("ahp-session:/") || !suitePrefixedDigest(n.ContentRevision) || n.ProtocolVersion == "" || n.GitRevision != "" && (len(n.GitRevision) != 40 && len(n.GitRevision) != 64 || strings.Trim(n.GitRevision, "0123456789abcdef") != "") {
 		return false
 	}
-	for _, field := range []string{n.Host, n.HostVersion, n.ProtocolVersion, n.Session, n.Chat, n.Turn, n.ContentRevision, n.GitRevision, n.EffectiveApprovalMode, n.PendingTool, n.PendingInput} {
+	chatSafe, ok := suiteDiagnosticText(n.Chat, 4096, nil)
+	if !ok || chatSafe != n.Chat {
+		// The host uses a 32-hex chat identifier, not a bearer credential.
+		if !strings.HasPrefix(n.Chat, "ahp-chat:/") {
+			return false
+		}
+		if _, err := uuid.Parse(strings.TrimPrefix(n.Chat, "ahp-chat:/")); err != nil {
+			return false
+		}
+	}
+	for _, field := range []string{n.Host, n.HostVersion, n.ProtocolVersion, n.Session, n.Turn, n.ContentRevision, n.GitRevision, n.EffectiveApprovalMode, n.PendingTool, n.PendingInput} {
 		safe, ok := suiteDiagnosticText(field, 4096, nil)
 		if !ok || safe != field {
 			return false
