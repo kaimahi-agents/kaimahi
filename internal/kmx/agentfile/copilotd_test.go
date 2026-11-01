@@ -11,7 +11,10 @@ import (
 )
 
 func TestCopilotdPairNativeNames(t *testing.T) {
-	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	file := filepath.Join(dir, "reader.agent.md")
 	tests := filepath.Join(dir, "reader.agent.test.md")
 	raw := "---\r\nname: Reader\r\ntools: [bash, view, glob, task]\r\n---\r\nRead files.\r\n"

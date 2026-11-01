@@ -529,6 +529,8 @@ test("plainReason translates every preview engine code and retains only validate
     copilot_quota: "Copilot's usage limit was reached.", copilot_model_unavailable: "Choose an available Copilot model.",
     copilot_malformed: "Copilot returned an answer that could not be used.", copilot_keychain_unavailable: "Copilot sign-in could not be read. Use an existing GitHub sign-in.",
     copilot_unavailable: "Copilot could not complete this run.",
+    copilot_host_connection: "The selected local host could not complete this run.",
+    copilot_host_token: "The local host connection token is invalid.",
     model_reply_unusable: "This model's reply couldn't be used, so the test didn't finish. Try another model.",
   };
   const source = await readFile(new URL("../../../internal/kmx/app/agent_file.go", import.meta.url), "utf8");
