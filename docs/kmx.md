@@ -1,5 +1,10 @@
 # `kmx` — agent tooling with Orka as the default
 
+For file-only feedback, `kmx test FILE` remains embedded by default.
+`--runner copilotd --host ws://127.0.0.1:PORT` explicitly uses a local native
+host; see [copilotd file tests](local-preview.md#copilotd-file-tests) for
+credentials, snapshots, approvals, limits and the non-deployment evidence boundary.
+
 [Orka](orka.md) remains the default runtime. `package create` authors one tool-free
 native workspace member offline; `--runtime kagent` selects exact v0.10.3
 Go/linux-amd64. Both profiles support full-workspace evaluation, evaluated

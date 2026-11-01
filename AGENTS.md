@@ -717,6 +717,24 @@ Native preview is revision-bound and tool-free; fake consumes task-only directiv
 real routes retain native+task instructions excluding Examples. No package digest,
 team runtime or native Squad canvas actions. See [native authoring](docs/agent-file.md#internal-native-cast-and-enrich).
 
+## Explicit native file tests
+
+`kmx test FILE --runner copilotd --host URL` selects the native AHP runner,
+never the embedded MCP tool wrapper; default/file Run/MCP behavior is unchanged.
+The CLI owns checked Git working-tree snapshots and source freshness. Ignored
+files/dependencies and Git metadata are excluded; failed Git and declared
+submodules are unknown before inference, without hydration or source mutation.
+The Copilot provider owns both GitHub and environment-only connection credentials.
+Native acceptance uses trusted invocation policy on completion/progress/summary;
+never relax embedded five-call checks from returned metadata. Observe all relevant
+native model IDs and complete correlated calls, not a requested-model echo.
+Per-case two-minute and whole-invocation five-minute deadlines include approvals;
+unknown/out-of-time stops later sends. Pending input follows bounded checked
+failed-case content and --no-content; name always shows. Cleanup Notices never
+change verdict. Native failure metadata shares file-v2's ten-record subject budget;
+older strict readers may reject that partition. Native Windows refuses before effects.
+See [copilotd file tests](docs/local-preview.md#copilotd-file-tests).
+
 ## Single-file charter boundary
 
 The additive companion-reader foundation lives in `internal/kmx/agentfile`:

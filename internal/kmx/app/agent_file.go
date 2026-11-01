@@ -10,6 +10,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/copilotd"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess/copilot"
@@ -18,6 +19,8 @@ import (
 )
 
 type FilePreviewOptions struct {
+	Copilotd                 bool
+	SessionCreated           func(caseID, sessionURI string) error
 	ValidateSource           func(context.Context) error
 	PreparePairRecordingSave func(context.Context, *agentfile.Pair) (PairRecordingSaver, error)
 	pair                     *agentfile.Pair
@@ -129,15 +132,16 @@ func WithFilePreviewRetention(opt FilePreviewOptions, filename, revision string)
 }
 
 type FilePreviewCompletion struct {
-	State         string                     `json:"state"`
-	ReasonCode    string                     `json:"reasonCode"`
-	Reason        string                     `json:"reason"`
-	Answer        *string                    `json:"answer,omitempty"`
-	AnswerExcerpt string                     `json:"answerExcerpt,omitempty"`
-	Truncated     bool                       `json:"truncated,omitempty"`
-	DurationMs    int64                      `json:"durationMs"`
-	ToolCalls     int                        `json:"toolCalls,omitempty"`
-	Tools         []agentpreview.ToolSummary `json:"tools,omitempty"`
+	Native        *agentpreview.NativeExecution `json:"native,omitempty"`
+	State         string                        `json:"state"`
+	ReasonCode    string                        `json:"reasonCode"`
+	Reason        string                        `json:"reason"`
+	Answer        *string                       `json:"answer,omitempty"`
+	AnswerExcerpt string                        `json:"answerExcerpt,omitempty"`
+	Truncated     bool                          `json:"truncated,omitempty"`
+	DurationMs    int64                         `json:"durationMs"`
+	ToolCalls     int                           `json:"toolCalls,omitempty"`
+	Tools         []agentpreview.ToolSummary    `json:"tools,omitempty"`
 }
 type FilePreviewExample struct {
 	ID string `json:"id"`
@@ -174,6 +178,11 @@ var previewCopilotFailures = []struct {
 	err  error
 	code string
 }{
+	{agentpreview.ErrSnapshotUnavailable, "snapshot_unavailable"},
+	{agentpreview.ErrSubmodulesUnsupported, "submodules_unsupported"},
+	{copilotd.ErrUnsupported, "native_unsupported"},
+	{copilot.ErrHostToken, "copilot_host_token"},
+	{copilot.ErrHostConnection, "copilot_host_connection"},
 	{copilot.ErrAuthRequired, "copilot_auth_required"},
 	{copilot.ErrAuthRevoked, "copilot_auth_revoked"},
 	{copilot.ErrSubscription, "copilot_no_subscription"},
@@ -385,6 +394,9 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 			usesJudge = usesJudge || assertion.Type == "llmJudge"
 		}
 	}
+	if opt.Copilotd && (usesJudge || opt.Operation != "test" || opt.ToolBindings != "" || opt.RecordedReplayOnly) {
+		return fail("native_unsupported", 2)
+	}
 	if usesJudge && !opt.SkipAssertions {
 		r.JudgeRoute = &FilePreviewRoute{judge.Provider, judge.Model}
 	}
@@ -486,6 +498,7 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	}
 	request := agentpreview.Request{SkipAssertions: opt.SkipAssertions, Agent: parsed, Examples: selected, Route: route, JudgeRoute: opt.JudgeRoute, Input: opt.Input, Progress: opt.Progress, ToolBindings: opt.ToolBindings, FileLabel: r.File.Path, ToolSettings: append([]localtools.ToolSetting(nil), r.ToolSettings...)}
 	request.ValidateSource = opt.ValidateSource
+	request.SessionCreated = opt.SessionCreated
 	if opt.pair != nil {
 		request.SnapshotRevision = opt.pair.SnapshotRevision
 		request.SourceAgent = opt.pair.Agent
@@ -494,7 +507,7 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 			request.SourceText = append(request.SourceText, string(suite.Source))
 		}
 	}
-	observer := previewCaseObserver(ctx, selected, parsed, route, opt.CaseFinished, opt.SkipAssertions)
+	observer := previewCaseObserver(ctx, selected, parsed, route, opt.CaseFinished, opt.SkipAssertions, opt.Copilotd)
 	if observer != nil {
 		request.ExampleFinished = func(row agentpreview.ExampleOutcome) {
 			if opt.pair == nil || row.Completion.SnapshotRevision == request.SnapshotRevision {
@@ -539,14 +552,22 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	if outcome.NoJournal {
 		r.Runner = "preview runner (no journal)"
 	}
+	if opt.Copilotd {
+		r.Runner = nativeRunnerLabel
+		for _, notice := range outcome.Notices {
+			if safe, ok := suiteDiagnosticText(notice, 4096, nil); ok {
+				r.Notices = append(r.Notices, safe)
+			}
+		}
+	}
 	// Whitelist result fields; never marshal runtime assertion rows (which include
 	// judge evidence and raw reasons), answers or journal handles directly.
 	seen := map[string]bool{}
 	validCompletion := func(c agentpreview.Completion, ex agentfile.Example) bool {
-		if !validPreviewTools(c, ex, parsed.Tools) {
+		if !validPreviewExecutionTools(c, ex, parsed.Tools, opt.Copilotd) {
 			return false
 		}
-		if c.DurationMs < 0 || c.DurationMs > (5*time.Minute).Milliseconds() || c.ToolCalls < 0 || c.ToolCalls > localtools.MaxCalls || len(parsed.Tools) == 0 && c.ToolCalls != 0 || c.State != agentpreview.Complete || c.ID == "" || seen[c.ID] || c.FileRevision != parsed.Revision || opt.pair != nil && c.SnapshotRevision != opt.pair.SnapshotRevision || c.Provider != route.Provider || c.Model != route.Model || len(c.Answer) > 256*1024 || !utf8.ValidString(c.Answer) {
+		if c.DurationMs < 0 || c.DurationMs > (5*time.Minute).Milliseconds() || c.State != agentpreview.Complete || c.ID == "" || seen[c.ID] || c.FileRevision != parsed.Revision || opt.pair != nil && c.SnapshotRevision != opt.pair.SnapshotRevision || c.Provider != route.Provider || c.Model != route.Model || len(c.Answer) > 256*1024 || !utf8.ValidString(c.Answer) {
 			return false
 		}
 		seen[c.ID] = true
@@ -555,7 +576,7 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	malformed := len(outcome.Examples) > len(selected) || (outcome.AdHoc == nil) != (opt.Input == nil)
 	if outcome.AdHoc != nil {
 		if validCompletion(*outcome.AdHoc, agentfile.Example{}) {
-			c := previewCompleted(*outcome.AdHoc, opt.ShowContent)
+			c := previewCompletedPolicy(*outcome.AdHoc, opt.ShowContent, opt.Copilotd)
 			if opt.IncludeAnswer {
 				c.Answer = previewFullAnswer(outcome.AdHoc.Answer)
 			}
@@ -578,6 +599,13 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 			break
 		}
 		if row.Completion.State != agentpreview.Complete {
+			if opt.Copilotd && row.Completion.DurationMs >= 0 && row.Completion.DurationMs <= (5*time.Minute).Milliseconds() && row.Completion.FileRevision == parsed.Revision && row.Completion.Provider == route.Provider && row.Completion.Model == route.Model && (opt.pair == nil || row.Completion.SnapshotRevision == opt.pair.SnapshotRevision) {
+				if n := previewNative(row.Completion.Native, opt.ShowFailedContent); n != nil && row.Completion.ID == n.Session {
+					r.Examples[i].Native = n
+					r.Examples[i].State = "error"
+					r.Examples[i].DurationMs = row.Completion.DurationMs
+				}
+			}
 			continue
 		}
 		expectedAssertions := len(ex.Assertions)
@@ -600,7 +628,7 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 			break
 		}
 		if opt.SkipAssertions {
-			completion := previewCompleted(row.Completion, opt.ShowContent)
+			completion := previewCompletedPolicy(row.Completion, opt.ShowContent, opt.Copilotd)
 			if opt.IncludeAnswer {
 				completion.Answer = previewFullAnswer(row.Completion.Answer)
 			}
@@ -618,7 +646,7 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 				}
 			}
 		}
-		completion := previewCompleted(row.Completion, show)
+		completion := previewCompletedPolicy(row.Completion, show, opt.Copilotd)
 		if opt.IncludeAnswer {
 			completion.Answer = previewFullAnswer(row.Completion.Answer)
 		}
@@ -646,6 +674,12 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		return fail("cancelled", 130)
 	}
 	if errors.Is(cause, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		if opt.Copilotd {
+			result, err := fail("deadline_exceeded", 2)
+			result.Reason = "Native execution ran out of time; later cases were not started."
+			err.message = result.Reason
+			return result, err
+		}
 		return fail("deadline_exceeded", 1)
 	}
 	if errors.Is(cause, agentpreview.ErrSourceChanged) {
@@ -673,7 +707,7 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		}
 		return fail("execution_failed", 1)
 	}
-	journalOK := outcome.NoJournal && outcome.Journal == "" || !outcome.NoJournal && outcome.Journal != ""
+	journalOK := outcome.NoJournal && outcome.Journal == "" || !opt.Copilotd && !outcome.NoJournal && outcome.Journal != ""
 	if malformed || outcome.State != agentpreview.Complete || !journalOK || len(outcome.Examples) != len(selected) {
 		return fail("invalid_completion", 1)
 	}
@@ -762,7 +796,8 @@ func retainFilePreviewFailures(ctx context.Context, scope fileFailureScope, agen
 		codec := retainedFileFailureCodec{
 			revision: agent.Revision, agentID: agent.Identity.ID, operation: "test", selection: selection,
 			model: FilePreviewRoute{Provider: route.Provider, Model: route.Model}, judge: judgeRoute, assertions: assertions,
-			pair: retainedPairMetadata(result.SnapshotRevision, result.Tests),
+			pair:   retainedPairMetadata(result.SnapshotRevision, result.Tests),
+			native: previewNative(result.Examples[i].Native, false),
 		}
 		id, saveErr := saveFileFailure(context.WithoutCancel(ctx), scope, codec, *detail)
 		if id != "" {

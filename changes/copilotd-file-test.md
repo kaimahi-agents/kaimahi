@@ -1,0 +1,8 @@
+### Added
+
+- `kmx test FILE --runner copilotd --host URL` can run live file tests on an explicitly selected local copilotd host, with environment-only connection tokens, early session URIs, private Git working-tree copies and observed native model/tool evidence. Embedded remains the default. Native judgments, replay/capture and Disabled-tool semantics remain unsupported.
+
+### Upgrading
+
+- Pending tool input follows existing bounded failure content and `--no-content`. Native cases keep the two-minute example limit within the five-minute invocation cap; timeouts are unknown/out of time, not assertion failures. Ignored dependencies are not copied, and native pass is not deployment evidence.
+- Native retained failures share the existing ten-record file-subject budget. Older strict file-v2 readers can reject a partition containing native metadata, affecting retention, Explain and clear. Use this version or newer; no migration or deletion is performed.

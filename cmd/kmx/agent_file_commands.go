@@ -22,6 +22,7 @@ import (
 )
 
 type fileCommandOptions struct {
+	Runner, Host                       string
 	CaseID, Provider, Endpoint, Output string
 	Model, TestsFile                   string
 	PositionalInput                    bool
@@ -59,6 +60,8 @@ func registerFileCommandFlags(cmd *cobra.Command, f *fileCommandOptions, output 
 	cmd.Flags().StringArrayVar(&f.MCPServers, "mcp-server", nil, "MCP server `NAME` (repeatable; replaces saved)")
 	cmd.Flags().BoolVar(&f.NoMCPServers, "no-mcp-servers", false, "Clear saved and explicit MCP servers")
 	if cmd.Name() == "test" {
+		cmd.Flags().StringVar(&f.Runner, "runner", "embedded", "Execution runner: embedded or copilotd (FILE only)")
+		cmd.Flags().StringVar(&f.Host, "host", "", "Literal loopback WebSocket host for copilotd (FILE only)")
 		cmd.Flags().BoolVar(&f.GitHubSummary, "github-summary", false, "JSON summary to $GITHUB_STEP_SUMMARY (-o json)")
 	}
 	if output {
@@ -66,13 +69,16 @@ func registerFileCommandFlags(cmd *cobra.Command, f *fileCommandOptions, output 
 	}
 }
 func validateFileCommand(cmd *cobra.Command, state *commandState, f fileCommandOptions) error {
+	if err := validateNativeFileCommand(cmd, f); err != nil {
+		return err
+	}
 	if state.contextFlag != "" {
 		return fmt.Errorf("file preview usage refuses --context")
 	}
 	var invalid string
 	cmd.Flags().Visit(func(flag *pflag.Flag) {
 		switch flag.Name {
-		case "case", "tests", "output", "no-content", "model", "provider", "provider-url", "prompt", "prompt-file", "verbose", "tool-bindings", "mcp-server", "no-mcp-servers", "github-summary":
+		case "runner", "host", "case", "tests", "output", "no-content", "model", "provider", "provider-url", "prompt", "prompt-file", "verbose", "tool-bindings", "mcp-server", "no-mcp-servers", "github-summary":
 		default:
 			invalid = flag.Name
 		}
@@ -80,7 +86,7 @@ func validateFileCommand(cmd *cobra.Command, state *commandState, f fileCommandO
 	if invalid != "" {
 		return fmt.Errorf("file preview refuses --%s", invalid)
 	}
-	for _, name := range []string{"case", "tests", "model", "provider", "provider-url", "prompt-file", "tool-bindings"} {
+	for _, name := range []string{"runner", "host", "case", "tests", "model", "provider", "provider-url", "prompt-file", "tool-bindings"} {
 		if flag := cmd.Flag(name); flag != nil && flag.Changed && strings.TrimSpace(flag.Value.String()) == "" {
 			return fmt.Errorf("file preview requires nonempty --%s", name)
 		}
@@ -126,6 +132,17 @@ func runFileCommand(cmd *cobra.Command, state *commandState, file string, f file
 		return err
 	}
 	var outputErr error
+	displayResult := result
+	if f.Runner == "copilotd" {
+		for _, notice := range result.Notices {
+			if _, err := fmt.Fprintln(cmd.ErrOrStderr(), notice); err != nil {
+				return fmt.Errorf("cannot write local preview diagnostics")
+			}
+		}
+		if f.Output == "text" {
+			displayResult.Notices = nil
+		}
+	}
 	// Text auth failures have one actionable stderr error, not a second report.
 	if f.Output == "json" || !fileSignInFailure(result.ReasonCode) {
 		if cmd.Name() == "run" && f.Output == "text" {
@@ -136,7 +153,7 @@ func runFileCommand(cmd *cobra.Command, state *commandState, file string, f file
 				outputErr = app.WriteFilePreview(cmd.ErrOrStderr(), result, "text")
 			}
 		} else {
-			outputErr = app.WriteFilePreview(cmd.OutOrStdout(), result, f.Output)
+			outputErr = app.WriteFilePreview(cmd.OutOrStdout(), displayResult, f.Output)
 		}
 	}
 	if outputErr != nil {
@@ -164,6 +181,13 @@ func previewFileCommand(cmd *cobra.Command, state *commandState, file string, f 
 		SkipAssertions:        cmd.Name() == "run",
 		IncludeAnswer:         cmd.Name() == "run" && !f.NoContent,
 		IncludeFailureDetails: !f.NoContent, ToolBindings: f.ToolBindings}
+	opt.Copilotd = f.Runner == "copilotd"
+	if opt.Copilotd {
+		if state.deps.goos == "windows" {
+			return app.FilePreviewResult{}, errWindowsOperationUnsupported
+		}
+		opt.SessionCreated = nativeSessionCreated(cmd.ErrOrStderr())
+	}
 	opt.RouteSelected = func(route app.FilePreviewRoute) error {
 		_, err := fmt.Fprintf(cmd.ErrOrStderr(), "Route: %s / %s\n", route.Provider, route.Model)
 		return err
@@ -180,7 +204,11 @@ func previewFileCommand(cmd *cobra.Command, state *commandState, file string, f 
 			return app.FilePreviewResult{}, errWindowsOperationUnsupported
 		}
 	} else {
-		pair, pairErr = agentfile.LoadPair(file, f.TestsFile)
+		load := agentfile.LoadPair
+		if opt.Copilotd {
+			load = agentfile.LoadCopilotdPair
+		}
+		pair, pairErr = load(file, f.TestsFile)
 	}
 	if pair != nil {
 		opt.SourceFile = pair.AgentPath
@@ -192,7 +220,11 @@ func previewFileCommand(cmd *cobra.Command, state *commandState, file string, f 
 			if pair.Tests.Selection.Explicit {
 				selected = pair.Tests.Selection.Path
 			}
-			current, err := agentfile.LoadPair(pair.AgentPath, selected)
+			load := agentfile.LoadPair
+			if opt.Copilotd {
+				load = agentfile.LoadCopilotdPair
+			}
+			current, err := load(pair.AgentPath, selected)
 			if err != nil || !pair.SameSourceVersion(current) {
 				return agentfile.ErrRecordingChanged
 			}
@@ -208,7 +240,7 @@ func previewFileCommand(cmd *cobra.Command, state *commandState, file string, f 
 			return err
 		}
 	}
-	if f.Provider != "" || f.Endpoint != "" {
+	if opt.Copilotd || f.Provider != "" || f.Endpoint != "" {
 		route := fileModelRoute(f.Provider, f.Endpoint)
 		opt.Route = &route
 	}
@@ -254,6 +286,9 @@ func previewFileCommand(cmd *cobra.Command, state *commandState, file string, f 
 	selection := localtools.ServerSelection{Names: append([]string(nil), f.MCPServers...), Override: cmd.Flags().Changed("mcp-server"), Clear: f.NoMCPServers}
 	ctx = context.WithValue(ctx, fileMCPIntentKey{}, fileMCPIntent{file: file, selection: selection})
 	a := &app.App{FileRunner: state.deps.fileRunner}
+	if opt.Copilotd {
+		a.FileRunner = app.NewCopilotdFileRunner(f.Host, copilotdSnapshots(pair))
+	}
 	start := time.Now()
 	var result app.FilePreviewResult
 	var err error
@@ -314,7 +349,11 @@ func fileCommandResultError(r app.FilePreviewResult, err error) error {
 		code = 130
 	}
 	if fileSignInFailure(r.ReasonCode) {
-		err = fmt.Errorf("Copilot sign-in unavailable: run gh auth login, or use --provider ollama --provider-url URL")
+		if strings.HasPrefix(r.Runner, "copilotd native execution") {
+			err = fmt.Errorf("Copilot sign-in unavailable: unlock your keyring, or sign in with gh auth login --hostname github.com")
+		} else {
+			err = fmt.Errorf("Copilot sign-in unavailable: run gh auth login, or use --provider ollama --provider-url URL")
+		}
 	}
 	return &fileCommandError{cause: err, exit: code}
 }

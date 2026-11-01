@@ -60,7 +60,7 @@ func completeCharter(lines []string) bool {
 // prompt) or a plain prompt with optional canonical Model/Tools controls. Both end
 // in an optional final structured Examples section; every other heading, comment
 // or fence is prompt text. Only exact valid model and tool identifiers map.
-func parseFreeForm(filename string, lines []string, a *Agent) (*Agent, error) {
+func parseFreeForm(filename string, lines []string, a *Agent, native bool) (*Agent, error) {
 	start := 0
 	a.Identity.ID = filenameID(filename)
 	if hasFrontmatter(lines) {
@@ -72,7 +72,7 @@ func parseFreeForm(filename string, lines []string, a *Agent) (*Agent, error) {
 		if end > 1 {
 			a.Frontmatter = strings.Join(lines[1:end], "\n") + "\n"
 		}
-		if err := mapFrontmatter(filename, a); err != nil {
+		if err := mapFrontmatter(filename, a, native); err != nil {
 			return nil, err
 		}
 	}
@@ -212,7 +212,7 @@ func structuredExamples(rest []string) bool {
 
 // mapFrontmatter maps only settings whose meaning is identical in kmx; the raw
 // header remains the source of truth and everything unmapped stays in it.
-func mapFrontmatter(filename string, a *Agent) *Error {
+func mapFrontmatter(filename string, a *Agent, native bool) *Error {
 	var doc yaml.Node
 	if yaml.Unmarshal([]byte(a.Frontmatter), &doc) != nil {
 		return refuse(filename, 2, 1, "Frontmatter", "provide valid YAML between the --- lines")
@@ -258,7 +258,7 @@ func mapFrontmatter(filename string, a *Agent) *Error {
 	}
 	for _, name := range names {
 		name = strings.TrimSpace(name)
-		if localtools.ValidToolName(name) && !slices.Contains(copilotToolAliases, strings.ToLower(name)) && !slices.Contains(a.Tools, name) {
+		if localtools.ValidToolName(name) && (native || !slices.Contains(copilotToolAliases, strings.ToLower(name))) && !slices.Contains(a.Tools, name) {
 			a.Tools = append(a.Tools, name)
 			// Keep larger declarations wholly unmapped and visible in the
 			// header, never activate a truncated preview-only subset.

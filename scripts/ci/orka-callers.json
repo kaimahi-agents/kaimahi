@@ -3,6 +3,7 @@
   "version": 3,
   "packages": [
     "github.com/kaimahi-agents/kaimahi/internal/kmx/app",
+    "github.com/kaimahi-agents/kaimahi/internal/kmx/copilotd",
     "github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess",
     "github.com/kaimahi-agents/kaimahi/internal/kmx/localpreview",
     "github.com/kaimahi-agents/kaimahi/internal/kmx/localtools",

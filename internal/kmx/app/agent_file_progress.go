@@ -6,7 +6,6 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
@@ -20,7 +19,7 @@ type FilePreviewCaseProgress struct {
 	FailedAssertionID string                    `json:"failedAssertionId,omitempty"`
 }
 
-func previewCaseObserver(ctx context.Context, selected []agentfile.Example, agent *agentfile.Agent, route modelaccess.Route, notify func(FilePreviewCaseProgress), skipAssertions bool) func(agentpreview.ExampleOutcome) {
+func previewCaseObserver(ctx context.Context, selected []agentfile.Example, agent *agentfile.Agent, route modelaccess.Route, notify func(FilePreviewCaseProgress), skipAssertions bool, native ...bool) func(agentpreview.ExampleOutcome) {
 	if notify == nil {
 		return nil
 	}
@@ -39,10 +38,9 @@ func previewCaseObserver(ctx context.Context, selected []agentfile.Example, agen
 		if skipAssertions {
 			assertionsOK = len(row.Assertions) == 0
 		}
-		valid := validPreviewTools(c, ex, agent.Tools) && row.ID == ex.ID && c.State == agentpreview.Complete && c.ID != "" && !seen[c.ID] &&
+		valid := validPreviewExecutionTools(c, ex, agent.Tools, len(native) > 0 && native[0]) && row.ID == ex.ID && c.State == agentpreview.Complete && c.ID != "" && !seen[c.ID] &&
 			c.FileRevision == agent.Revision && c.Provider == route.Provider && c.Model == route.Model &&
 			len(c.Answer) <= 256*1024 && utf8.ValidString(c.Answer) &&
-			c.ToolCalls >= 0 && c.ToolCalls <= localtools.MaxCalls && (len(agent.Tools) > 0 || c.ToolCalls == 0) &&
 			assertionsOK
 		for j, as := range row.Assertions {
 			if j >= len(ex.Assertions) {

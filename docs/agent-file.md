@@ -165,6 +165,16 @@ new pair metadata; use this version or newer to read it. No records are migrated
 or removed automatically. Put journal/summary files outside the checked source parent when possible: creating
 entries there can conservatively stale source-version checks.
 
+### Test on a local copilotd host
+
+`kmx test FILE --runner copilotd --host ws://127.0.0.1:PORT --model MODEL`
+uses native host tools on a fresh Git working-tree snapshot. Embedded remains
+the default. Token/authentication, source exclusions, unsupported case semantics,
+model attribution, approval budgets and diagnostic compatibility are described in
+[copilotd file tests](local-preview.md#copilotd-file-tests). Native pass is file-test
+feedback, never permission or evidence for deployment. Pending tool input follows
+existing failed-case detail: bounded and credential-checked, hidden by `--no-content`.
+
 ## Test a folder
 
 Bare `kmx test` selects direct `*.agent.md` entries in the current folder and
