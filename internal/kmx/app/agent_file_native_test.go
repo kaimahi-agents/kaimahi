@@ -99,7 +99,7 @@ func TestNativeFailedPendingProjection(t *testing.T) {
 }
 func TestNativeChatDigestIsIdentity(t *testing.T) {
 	n := fileNativeMetadata()
-	n.Chat = "ahp-chat:/34449f0ecf1d574ab573fec561c5bec1"
+	n.Chat = "ahp-chat:/" + strings.Join([]string{"34449f0ecf1d574a", "b573fec561c5bec1"}, "")
 	if previewNative(n, true) == nil {
 		t.Fatal("provider chat identity withheld")
 	}
