@@ -32,6 +32,12 @@ type wireFixture struct {
 
 func wireRunner(t *testing.T, pending, cleanupFails bool, fixtures ...*wireFixture) (agentpreview.Runner, *atomic.Int64, *atomic.Int64) {
 	t.Helper()
+	return wireRunnerWith(t, pending, cleanupFails, nil, fixtures...)
+}
+
+// wireRunnerWith lets a test add optional runner capabilities, such as a judge.
+func wireRunnerWith(t *testing.T, pending, cleanupFails bool, configure func(*Options), fixtures ...*wireFixture) (agentpreview.Runner, *atomic.Int64, *atomic.Int64) {
+	t.Helper()
 	t.Setenv("COPILOT_GITHUB_TOKEN", "fixture-private-token")
 	t.Setenv("COPILOTD_CLIENT_TOKEN", "fixture-connection-token")
 	created, closed := new(atomic.Int64), new(atomic.Int64)
@@ -156,11 +162,15 @@ func wireRunner(t *testing.T, pending, cleanupFails bool, fixtures ...*wireFixtu
 	if pending {
 		timeout = 100 * time.Millisecond
 	}
-	return NewRunner(Options{Host: host, ExampleTimeout: timeout, Access: func(ctx context.Context, observe func(ahptypes.ActionEnvelope) error) (copilot.HostAccess, error) {
+	options := Options{Host: host, ExampleTimeout: timeout, Access: func(ctx context.Context, observe func(ahptypes.ActionEnvelope) error) (copilot.HostAccess, error) {
 		return provider.CopilotdClient(ctx, host, observe)
 	}, Snapshot: func(context.Context, func(...string) error) (agentpreview.SourceSnapshot, error) {
 		return agentpreview.SourceSnapshot{Directory: "/fixture", ContentRevision: "sha256:" + strings.Repeat("a", 64), Close: func(context.Context) error { closed.Add(1); return nil }}, nil
-	}}), created, closed
+	}}
+	if configure != nil {
+		configure(&options)
+	}
+	return NewRunner(options), created, closed
 }
 func wireRequest() agentpreview.Request {
 	return agentpreview.Request{Agent: &agentfile.Agent{Title: "Reader", Revision: "revision", Tools: []string{"bash"}}, Route: modelaccess.Route{Provider: "copilot", Model: "model"}, Examples: []agentfile.Example{{ID: "first", Input: "read"}, {ID: "second", Input: "read"}}}

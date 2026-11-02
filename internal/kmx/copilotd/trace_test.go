@@ -2,6 +2,7 @@ package copilotd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/microsoft/agent-host-protocol/clients/go/ahptypes"
 	"strings"
@@ -16,6 +17,57 @@ func event(t *testing.T, n int, action string) ahptypes.ActionEnvelope {
 	}
 	return a
 }
+
+// A differently named tool must not hide child execution behind a complete
+// parent trace. These links are protocol metadata, not arbitrary output text.
+func TestTraceRejectsChildLinks(t *testing.T) {
+	child := `{"type":"subagent","resource":"ahp-chat:/child","title":"Worker"}`
+	for _, action := range []string{
+		`{"type":"chat/toolCallContentChanged","turnId":"turn","toolCallId":"call","content":[` + child + `]}`,
+		`{"type":"chat/toolCallComplete","turnId":"turn","toolCallId":"call","result":{"success":true,"content":[` + child + `]}}`,
+		`{"type":"chat/responsePart","turnId":"turn","part":{"kind":"toolCall","toolCall":{"status":"completed","toolCallId":"call","toolName":"custom_worker","content":[` + child + `]}}}`,
+		`{"type":"chat/backgroundWorkSet","work":{"kind":"subagent","id":"child","label":"Worker","startedAt":"2026-11-01T00:00:00Z","chat":"ahp-chat:/child"}}`,
+	} {
+		t.Run(action, func(t *testing.T) {
+			tr := newTrace("ahp-chat:/a", "turn", "model", ahptypes.ChatState{Resource: "ahp-chat:/a"})
+			tr.calls["call"] = &nativeCall{name: "custom_worker"}
+			rejected := event(t, 1, action)
+			reason := "foreign action rejected"
+			rejected.RejectionReason = &reason
+			if err := tr.accept(rejected); err != nil {
+				t.Fatalf("attributed rejected action: %v", err)
+			}
+			foreign := event(t, 1, action)
+			foreign.Channel = "ahp-chat:/other"
+			if err := tr.accept(foreign); err != nil {
+				t.Fatalf("attributed another chat: %v", err)
+			}
+			if err := tr.accept(event(t, 1, action)); !errors.Is(err, ErrDelegationUnverified) {
+				t.Fatalf("child link lost refusal: %v", err)
+			}
+		})
+	}
+}
+
+func TestTraceRejectsFinalChildLinks(t *testing.T) {
+	for _, linked := range []string{
+		`"turns":[{"id":"turn","state":"complete","responseParts":[{"kind":"toolCall","toolCall":{"status":"completed","toolCallId":"call","toolName":"custom_worker","content":[{"type":"subagent","resource":"ahp-chat:/child","title":"Worker"}]}},{"kind":"markdown","id":"answer","content":"marker"}]}]`,
+		`"backgroundWork":[{"kind":"subagent","id":"child","label":"Worker","startedAt":"2026-11-01T00:00:00Z","chat":"ahp-chat:/child"}],"turns":[{"id":"turn","state":"complete","responseParts":[{"kind":"toolCall","toolCall":{"status":"completed","toolCallId":"call","toolName":"custom_worker"}},{"kind":"markdown","id":"answer","content":"marker"}]}]`,
+	} {
+		tr := newTrace("ahp-chat:/a", "turn", "model", ahptypes.ChatState{})
+		tr.calls["call"] = &nativeCall{name: "custom_worker", complete: true}
+		tr.models = []string{"model"}
+		tr.end()
+		var state ahptypes.ChatState
+		if err := json.Unmarshal([]byte(`{"resource":"ahp-chat:/a",`+linked+`}`), &state); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, _, err := tr.finish(&state); !errors.Is(err, ErrDelegationUnverified) {
+			t.Fatalf("final child link lost refusal: %v", err)
+		}
+	}
+}
+
 func TestTraceRequiresTurnCorrelation(t *testing.T) {
 	for _, action := range []string{
 		`{"type":"chat/usage","turnId":"","usage":{"model":"model"}}`,

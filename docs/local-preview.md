@@ -85,14 +85,32 @@ approval mode is unchanged: kmx neither selects allow-all nor approves tools.
 A separate client with connection access must authenticate as the session
 principal to answer approval requests. Each case has the existing two-minute
 example limit, within the five-minute invocation limit; the earlier deadline wins.
-Approval waiting consumes these budgets. Either limit gives unknown, reads as
+Agent execution, approval waiting and both judge samples share these budgets.
+Either limit gives unknown, reads as
 out of time, exits 2 and stops later cases/sends. There is no timeout flag.
 A pending tool's name always shows. Its input is bounded, credential-checked
 failed-case detail shown by default; `--no-content` omits it.
 
-Only live Enabled cases work here. Selected replay/capture, Disabled declared
-tools and all selected judge assertions (including overrides) are unsupported
-before sends. Explicit kmx MCP selection/bindings conflict; saved kmx MCP choices
+Selected `llmJudge` assertions score the host's completed answer using kmx's
+**separate tool-free judge transport**, not another copilotd turn. The agent runs
+on the host; the judge does not. By default the judge uses the exact selected
+agent model through Copilot's HTTP API, with kmx's existing GitHub authentication.
+Host access alone does not establish HTTP judge-model availability. Run
+`kmx model list --provider copilot` and select a model available on both routes
+with `--model MODEL`; there is no automatic model substitution. Unlock your
+keyring or run `gh auth login --hostname github.com` if judge sign-in is unavailable.
+Trusted App callers can explicitly override the judge route; there is no CLI
+judge-route flag. The result's `judgeRoute` identifies this separate evaluator,
+not a host session or request.
+
+Each judge assertion sends the case input, answer and rubric for two independent
+samples without tools. Malformed, mismatched-model, unavailable or split scores
+are unknown, never pass or skipped. Judge execution errors stop later sends.
+The source is checked again after judging. Native host transcripts remain
+host-owned; the separate judge creates no kmx Sessions journal.
+
+Only live Enabled cases work here. Selected replay/capture and Disabled declared
+tools remain unsupported before sends. Explicit kmx MCP selection/bindings conflict; saved kmx MCP choices
 do not apply to the native host's tools. Raw native names are preserved, but tool
 assertion operands must still be declared. Empty/omitted declarations are not
 proof of tool-free execution; exact-host behavior must be qualified. Complete
@@ -100,6 +118,9 @@ correlated native traces and observed model IDs are required. A request is not
 shell success, and requested model metadata is not observed model evidence.
 A mismatched observed model returns unknown with `native_model_mismatch`;
 the requested route and observed actual model IDs remain visible.
+Delegating agents report unknown with `native_delegation_unverified`: contributing
+child models and tools cannot be attributed from the parent's trace. This also
+applies to protocol-linked child work returned by differently named tools.
 
 A pass covers these file assertions against the name-selected host agent on the
 recorded snapshot, subject to the selection limitation above; it is
