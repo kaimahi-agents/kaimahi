@@ -15,6 +15,17 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
+// SourceSnapshot is caller-owned private execution context, not deployment evidence.
+type SourceSnapshot struct {
+	Directory, GitRevision, ContentRevision string
+	Close                                   func(context.Context) error
+}
+
+var (
+	ErrSnapshotUnavailable   = errors.New("preview source snapshot unavailable")
+	ErrSubmodulesUnsupported = errors.New("preview source submodules unsupported")
+)
+
 type Runner interface {
 	Run(context.Context, Request) (Outcome, error)
 }
@@ -35,6 +46,8 @@ type Request struct {
 	JudgeRoute *modelaccess.Route
 	Input      *string
 	Progress   func(string) error
+	// SessionCreated exposes bounded native identity before its first turn.
+	SessionCreated func(caseID, sessionURI string) error
 	// BeforeExecute runs after credential/content preflight, before journaling or
 	// inference. A failed diagnostic sink must prevent all sends.
 	BeforeExecute func() error
@@ -49,6 +62,11 @@ type Request struct {
 	// ToolSettings is a frozen host input, never an agent declaration or tool argument.
 	ToolSettings []localtools.ToolSetting
 	FileLabel    string
+}
+
+// SessionCreatedLine is shared with sinks so credential checks cover formatting.
+func SessionCreatedLine(caseID, uri string) string {
+	return fmt.Sprintf("Native session for case %q: %q\n", caseID, uri)
 }
 
 // Report carries content-free diagnostics; a failed sink stops later execution.
@@ -87,7 +105,24 @@ var (
 )
 
 // Completion contains private bounded execution data, never a JSON projection.
+type NativeExecution struct {
+	Selection             string   `json:"selection,omitempty"`
+	Host                  string   `json:"host"`
+	HostVersion           string   `json:"hostVersion,omitempty"`
+	ProtocolVersion       string   `json:"protocolVersion"`
+	Session               string   `json:"session"`
+	Chat                  string   `json:"chat,omitempty"`
+	Turn                  string   `json:"turn,omitempty"`
+	GitRevision           string   `json:"gitRevision,omitempty"`
+	ContentRevision       string   `json:"contentRevision"`
+	EffectiveApprovalMode string   `json:"effectiveApprovalMode,omitempty"`
+	ActualModels          []string `json:"actualModels,omitempty"`
+	PendingTool           string   `json:"pendingTool,omitempty"`
+	PendingInput          string   `json:"pendingInput,omitempty"`
+}
+
 type Completion struct {
+	Native           *NativeExecution
 	SnapshotRevision string
 	State            State
 	ID               string
@@ -116,6 +151,7 @@ type ExampleOutcome struct {
 	Assertions []runtime.EvaluationAssertionResult
 }
 type Outcome struct {
+	Notices []string
 	// NoJournal identifies explicitly injected unjournaled runners, never evidence.
 	// Canonical file previews always journal, including Copilot.
 	NoJournal bool

@@ -151,7 +151,8 @@ func TestFoundationConsumersAreExplicit(t *testing.T) {
 				// The folder settings reader is the sole localtools foundation consumer.
 				settingsReader := filepath.Join(root, "internal", "kmx", "localtools", "settings.go")
 				settingsWriter := filepath.Join(root, "internal", "kmx", "mcp", "tool_settings.go")
-				if path != settingsReader && path != settingsWriter && !slices.ContainsFunc(allowed, func(prefix string) bool { return strings.HasPrefix(path, prefix) }) {
+				nativeSnapshot := filepath.Join(root, "cmd", "kmx", "agent_file_copilotd_snapshot.go")
+				if path != settingsReader && path != settingsWriter && path != nativeSnapshot && !slices.ContainsFunc(allowed, func(prefix string) bool { return strings.HasPrefix(path, prefix) }) {
 					t.Errorf("production package imports unwired filesystem foundation: %s", path)
 				}
 			}

@@ -3,8 +3,9 @@
 ## CLI storage, privacy and evidence caveats
 
 This is the shared caveats page linked by file Run, Test and Explain help.
-File previews on fake, local and Copilot models use embedded Agent Sessions.
-They retain instructions, inputs, answers, judge payloads and reasoning in
+By default, file previews on fake, local and Copilot models use embedded Agent Sessions.
+Explicit [copilotd file tests](#copilotd-file-tests) use the host's native loop instead.
+Embedded previews retain instructions, inputs, answers, judge payloads and reasoning in
 cleartext SQLite journals under the kmx state directory (`KMX_HOME` when set),
 in `local-preview/journals`. The journal is never suite evidence or permission
 to publish or deploy. Copilot content checks stay provider-owned and run before
@@ -23,6 +24,91 @@ The stores are independent: deleting journals does not clear failure diagnostics
 and clearing failure diagnostics does not delete journals, source history or
 passing proof. See [retained Test failures](#retained-test-failures) for scope,
 revision attribution, bounds and retention-unavailable behavior.
+
+## Copilotd file tests
+
+Choose an already-running local host for one file test:
+
+```sh
+kmx test .github/agents/reader.agent.md --runner copilotd \
+  --host ws://127.0.0.1:PORT --model MODEL -o json
+```
+
+Replace PORT and MODEL with the listener port and exact intended model ID.
+Without `--runner copilotd`, embedded behavior is unchanged. Native execution is
+for FILE Test only, not folder tests, Run, MCP previews or packaged evaluation.
+The endpoint must be a literal loopback ws/wss URL, with no credentials, query
+or fragment. Native Windows refuses before effects; WSL/Linux share the host's
+filesystem. The host must permit the local temporary root used for copies
+(the standard `TMPDIR` setting); kmx never widens a host's allowlist.
+This does not install or discover a host or place remote checkouts.
+
+If the listener requires a connection secret, supply `COPILOTD_CLIENT_TOKEN`
+in the environment. Do not put it in `--host` or command arguments. An absent
+variable means tokenless; a present empty value is invalid, without retry.
+GitHub authentication is separate: existing `COPILOT_GITHUB_TOKEN`, bounded gh
+sign-in capture, then the kmx keychain fallback. A locked or signed-out gh means
+unlock the keyring or `gh auth login --hostname github.com`, not a test failure.
+No login flow, credential persistence or automatic account substitution is added.
+
+Each case runs against a fresh private copy rooted at the source Git top-level,
+with current tracked and nonignored untracked bytes. Ignored dependencies are
+**not copied**. Deleted/sparse paths remain absent; LFS bytes/pointers stay as
+found, without hydration. Missing or failed Git and repositories declaring
+submodules report unknown before inference. Files stream without a per-file size
+limit. The copy is not a hostile-filesystem sandbox; native host tools retain
+the host's authority. The caller verifies source versions and records the starting
+Git and content identities. No case modifies the original checkout through the copy.
+
+Selection is **by name**, not source-path or loaded-byte attestation. The host
+must discover exactly one agent with the file's parsed name across project and
+plugin agents; its description, authored model and tool-name set must also match.
+Missing, ambiguous or mismatched discovery returns unknown with a reason before
+any turn is sent. A model override changes the turn's requested model, not this
+comparison of authored metadata. Matching metadata cannot prove identical prompt
+bytes: another source with the same metadata remains indistinguishable. Results
+record `native.selection: name` and label this limitation; a pass is not proof
+that the host loaded the named FILE's bytes.
+
+The original relative filename and bytes are preserved in the snapshot. An
+unchanged-byte random-filename experiment did not provide a stronger binding on
+copilotd 1.0.5: authored names still produced name-based URIs shared by same-named
+repository agents, and changing discovery order executed a decoy. Renaming also
+broke an instruction referring to its original filename. kmx therefore does not
+rename the agent or claim that filename randomness proves selection. A self-file
+reference still sees its original copied relative path, subject to normal host
+permissions and discovery.
+
+A bounded, quoted session URI appears on stderr before the first turn for each
+case, without `--verbose`. JSON stdout stays one final document. The host's
+approval mode is unchanged: kmx neither selects allow-all nor approves tools.
+A separate client with connection access must authenticate as the session
+principal to answer approval requests. Each case has the existing two-minute
+example limit, within the five-minute invocation limit; the earlier deadline wins.
+Approval waiting consumes these budgets. Either limit gives unknown, reads as
+out of time, exits 2 and stops later cases/sends. There is no timeout flag.
+A pending tool's name always shows. Its input is bounded, credential-checked
+failed-case detail shown by default; `--no-content` omits it.
+
+Only live Enabled cases work here. Selected replay/capture, Disabled declared
+tools and all selected judge assertions (including overrides) are unsupported
+before sends. Explicit kmx MCP selection/bindings conflict; saved kmx MCP choices
+do not apply to the native host's tools. Raw native names are preserved, but tool
+assertion operands must still be declared. Empty/omitted declarations are not
+proof of tool-free execution; exact-host behavior must be qualified. Complete
+correlated native traces and observed model IDs are required. A request is not
+shell success, and requested model metadata is not observed model evidence.
+A mismatched observed model returns unknown with `native_model_mismatch`;
+the requested route and observed actual model IDs remain visible.
+
+A pass covers these file assertions against the name-selected host agent on the
+recorded snapshot, subject to the selection limitation above; it is
+**not deployment or packaged-suite evidence**. The host owns transcripts; kmx
+creates no fabricated Sessions journal. Cleanup uncertainty names possible owned
+sessions/copies in Notices without changing the verdict or normal exit.
+Completed failures share the existing ten-record file-subject budget. Older strict
+v2 readers can reject native-bearing records, making that partition unavailable
+for retention, Explain or clear; use this version or newer, with no migration.
 
 ## Copilot sign-in in CI
 

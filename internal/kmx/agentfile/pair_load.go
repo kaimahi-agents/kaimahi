@@ -36,6 +36,10 @@ func (o *pairObservation) same(other *pairObservation) bool {
 // consumer. Relative overrides use cwd. Only a missing default source is absence;
 // no fallback search, symlinks, reparse points, parent traversal or special files.
 func LoadPair(agentFile, testsOverride string) (*Pair, error) {
+	return loadPair(agentFile, testsOverride, Parse)
+}
+
+func loadPair(agentFile, testsOverride string, parser func(string, []byte) (*Agent, error)) (*Pair, error) {
 	agentPath, err := pairAbsolute(agentFile, "File")
 	if err != nil {
 		return nil, err
@@ -61,7 +65,7 @@ func LoadPair(agentFile, testsOverride string) (*Pair, error) {
 	if err != nil {
 		return nil, err
 	}
-	agent, err := Parse(agentFile, agentBytes)
+	agent, err := parser(agentFile, agentBytes)
 	if err != nil {
 		return nil, err
 	}

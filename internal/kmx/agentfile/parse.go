@@ -123,6 +123,10 @@ func Inspect(filename string, data []byte) (*Agent, error) {
 }
 
 func parse(filename string, data []byte) (*Agent, error) {
+	return parseWithTools(filename, data, false)
+}
+
+func parseWithTools(filename string, data []byte, native bool) (*Agent, error) {
 	fail := func(field, problem string) (*Agent, error) { return nil, refuse(filename, 1, 1, field, problem) }
 	text, err := checkedSourceText(filename, data)
 	if err != nil {
@@ -131,7 +135,7 @@ func parse(filename string, data []byte) (*Agent, error) {
 	lines := strings.Split(text, "\n")
 	a := &Agent{Revision: fmt.Sprintf("sha256:%x", sha256.Sum256(data)), Locations: map[string]Location{}}
 	if hasFrontmatter(lines) || !completeCharter(lines) {
-		return parseFreeForm(filename, lines, a)
+		return parseFreeForm(filename, lines, a, native)
 	}
 	sections := map[string]section{}
 	current := ""

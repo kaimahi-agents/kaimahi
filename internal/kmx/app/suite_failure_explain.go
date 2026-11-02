@@ -161,7 +161,6 @@ func (a *App) explainFileFailure(ctx context.Context, opt SuiteEvaluationExplain
 	}
 	// Resolve only the CURRENT selector against the physical agent subject.
 	// Persisted pair metadata contains no source pathname or read authority.
-	currentPair, pairErr := agentfile.LoadPair(scope.filename, opt.TestsFile)
 	var report strings.Builder
 	found := false
 	for _, entry := range entries {
@@ -170,6 +169,10 @@ func (a *App) explainFileFailure(ctx context.Context, opt SuiteEvaluationExplain
 		}
 		found = true
 		record := entry.file
+		currentPair, pairErr := agentfile.LoadPair(scope.filename, opt.TestsFile)
+		if record.Native != nil {
+			currentPair, pairErr = agentfile.LoadCopilotdPair(scope.filename, opt.TestsFile)
+		}
 		status := "current"
 		current := currentRevision == record.Revision
 		if record.Pair != nil {
@@ -181,6 +184,9 @@ func (a *App) explainFileFailure(ctx context.Context, opt SuiteEvaluationExplain
 			status = "historical"
 		}
 		fmt.Fprintf(&report, "%s · %s · %q · %s/%s · %s\n", record.Detail.ID, record.Detail.Verdict, record.Detail.CaseID, record.Model.Provider, record.Model.Model, status)
+		if record.Native != nil {
+			fmt.Fprintf(&report, "  native session %q; host %q; selection: %s; actual models: %s; local diagnostics, not evidence\n", record.Native.Session, record.Native.Host, record.Native.Selection, strings.Join(record.Native.ActualModels, ", "))
+		}
 		if opt.ID != "" || opt.ShowContent {
 			fmt.Fprintf(&report, "  revision %s; operation %s; scope=%s; agent=%q; complete=%t attributed=%t; local diagnostics, not evidence\n", record.Revision, record.Operation, record.Selection, record.AgentID, record.Detail.Complete, record.Detail.Attributed)
 			if record.Pair != nil {
