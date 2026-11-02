@@ -98,6 +98,8 @@ assertion operands must still be declared. Empty/omitted declarations are not
 proof of tool-free execution; exact-host behavior must be qualified. Complete
 correlated native traces and observed model IDs are required. A request is not
 shell success, and requested model metadata is not observed model evidence.
+A mismatched observed model returns unknown with `native_model_mismatch`;
+the requested route and observed actual model IDs remain visible.
 
 A pass covers these file assertions against the name-selected host agent on the
 recorded snapshot, subject to the selection limitation above; it is

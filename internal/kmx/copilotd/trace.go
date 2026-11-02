@@ -121,6 +121,7 @@ func (t *trace) end() {
 		t.ended = true
 	}
 }
+func (t *trace) failure() error               { t.mu.Lock(); defer t.mu.Unlock(); return t.err }
 func (t *trace) fail(err error) error         { t.err = err; t.end(); return err }
 func (t *trace) snapshot() ahptypes.ChatState { t.mu.Lock(); defer t.mu.Unlock(); return t.state }
 func (t *trace) pending() (string, string) {

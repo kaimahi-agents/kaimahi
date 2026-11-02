@@ -24,6 +24,7 @@ import (
 
 type wireFixture struct {
 	Customizations  string
+	ActualModel     string
 	DelayDiscovery  bool
 	Lifecycle       string
 	Sends, Disposed atomic.Int64
@@ -117,7 +118,14 @@ func wireRunner(t *testing.T, pending, cleanupFails bool, fixtures ...*wireFixtu
 				}
 				fixture.Sends.Add(1)
 				action(string(p.Action))
-				action(fmt.Sprintf(`{"type":"chat/usage","turnId":%q,"usage":{"model":"model"}}`, a.TurnId))
+				actual := fixture.ActualModel
+				if actual == "" {
+					actual = "model"
+				}
+				action(fmt.Sprintf(`{"type":"chat/usage","turnId":%q,"usage":{"model":%q}}`, a.TurnId, actual))
+				if fixture.ActualModel != "" {
+					continue
+				}
 				calls := 7
 				if pending {
 					calls = 1
@@ -157,6 +165,18 @@ func wireRunner(t *testing.T, pending, cleanupFails bool, fixtures ...*wireFixtu
 func wireRequest() agentpreview.Request {
 	return agentpreview.Request{Agent: &agentfile.Agent{Title: "Reader", Revision: "revision", Tools: []string{"bash"}}, Route: modelaccess.Route{Provider: "copilot", Model: "model"}, Examples: []agentfile.Example{{ID: "first", Input: "read"}, {ID: "second", Input: "read"}}}
 }
+func TestRunnerWireModelMismatchReason(t *testing.T) {
+	r, created, closed := wireRunner(t, false, false, &wireFixture{ActualModel: "actual-wrong"})
+	out, err := r.Run(t.Context(), wireRequest())
+	if !errors.Is(err, agentpreview.ErrModelUnavailable) || len(out.Examples) != 1 || created.Load() != 1 || closed.Load() != 1 {
+		t.Fatalf("err=%v out=%+v", err, out)
+	}
+	c := out.Examples[0].Completion
+	if c.Model != "model" || c.State == agentpreview.Complete || len(c.Native.ActualModels) != 1 || c.Native.ActualModels[0] != "actual-wrong" {
+		t.Fatalf("%+v", c)
+	}
+}
+
 func TestRunnerWireDelayedDiscovery(t *testing.T) {
 	r, _, _ := wireRunner(t, false, false, &wireFixture{DelayDiscovery: true})
 	if _, err := r.Run(t.Context(), wireRequest()); err != nil {

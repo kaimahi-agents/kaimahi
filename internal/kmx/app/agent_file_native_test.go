@@ -148,6 +148,24 @@ func TestNativeFailedWithoutCompletedCalls(t *testing.T) {
 	}
 }
 
+func TestNativeModelMismatchReason(t *testing.T) {
+	runner := nativeScript(agentpreview.ErrModelUnavailable)
+	previous := runner.mutate
+	runner.mutate = func(o *agentpreview.Outcome) {
+		previous(o)
+		for i := range o.Examples {
+			o.Examples[i].Completion.Native.ActualModels = []string{"actual-wrong"}
+		}
+	}
+	r, err := (&App{FileRunner: runner}).PreviewAgentFile(t.Context(), FilePreviewOptions{File: previewFile(t), Operation: "test", Model: "gpt-4.1", DefaultCopilot: true, Copilotd: true})
+	if err == nil || r.ReasonCode != "native_model_mismatch" || r.Verdict != runtime.EvaluationUnknown || r.FullPass || r.ModelRoute.Model != "gpt-4.1" || r.Examples[0].Native.ActualModels[0] != "actual-wrong" {
+		t.Fatalf("result=%+v err=%v", r, err)
+	}
+	if e, ok := err.(*FilePreviewError); !ok || e.ExitCode() != 2 {
+		t.Fatalf("exit: %v", err)
+	}
+}
+
 func TestNativeCompleteModelAndTraceFences(t *testing.T) {
 	for _, mutate := range []func(*agentpreview.NativeExecution){func(n *agentpreview.NativeExecution) { n.Selection = "" }, func(n *agentpreview.NativeExecution) { n.Selection = "path" }, func(n *agentpreview.NativeExecution) { n.ActualModels = []string{"wrong-model"} }, func(n *agentpreview.NativeExecution) { n.ActualModels = nil }, func(n *agentpreview.NativeExecution) { n.Chat = "" }, func(n *agentpreview.NativeExecution) { n.Turn = "" }} {
 		runner := nativeScript(nil)

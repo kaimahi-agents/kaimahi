@@ -264,6 +264,10 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 		case <-caseCtx.Done():
 			cause = caseCtx.Err()
 		}
+		// A receive-side semantic refusal closes the transport; keep its cause.
+		if cause == nil {
+			cause = t.failure()
+		}
 		if cause != nil {
 			cancelCtx, done := context.WithTimeout(context.Background(), 5*time.Second)
 			_, _ = client.Dispatch(cancelCtx, string(chat), ahptypes.StateAction{Value: &ahptypes.ChatTurnCancelledAction{Type: ahptypes.ActionType("chat/turnCancelled"), TurnId: turn, Duration: time.Since(start).Milliseconds()}})

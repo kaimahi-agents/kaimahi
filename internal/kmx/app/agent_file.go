@@ -221,6 +221,7 @@ func previewReason(code string) string {
 		"no_tests":          "No tests yet — add or suggest one",
 		"invalid_selection": "Unknown example ID; select an authored example ID.", "invalid_options": "Invalid file preview options.",
 		"invalid_tool_settings":     "Tool settings in the agent folder's kmx.yaml are invalid.",
+		"native_model_mismatch":     "Observed native model differs from the requested model; the result is unknown.",
 		"model_unavailable":         "Selected model route is unavailable or does not match the file model; select an exact trusted route.",
 		"tools_unavailable":         "Host-bound tools are unavailable for the declared names.",
 		"recording_mismatch":        "Recording mismatch: tool arguments differ from the saved call. Update the saved call before retrying.",
@@ -689,6 +690,9 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		return fail("source_changed", 1)
 	}
 	if errors.Is(cause, agentpreview.ErrModelUnavailable) {
+		if opt.Copilotd {
+			return fail("native_model_mismatch", 2)
+		}
 		return fail("model_unavailable", 1)
 	}
 	if errors.Is(cause, agentpreview.ErrModelReply) {

@@ -89,6 +89,7 @@ const PLAIN_REASONS = {
   cancelled: "The run was cancelled.", deadline_exceeded: "The run ran out of time.",
   invalid_file: "This agent file needs fixing before it can run.", no_tests: "No tests yet — add or suggest one",
   invalid_selection: "This test is no longer in the agent file.", invalid_options: "This run's settings are not supported.",
+  native_model_mismatch: "The native host used a different model than requested.",
   model_unavailable: "The selected model is not available for this run.", tools_unavailable: "This run cannot use the agent's tools.",
   invalid_tool_settings: "The tool settings in kmx.yaml are invalid. Fix them before running this agent.",
   unsafe_tool_content: "Tool content was withheld before it could be saved.", credential_content: "Content containing credentials was withheld.",
