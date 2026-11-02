@@ -173,7 +173,7 @@ func TestSeparateJudgeLeavesMalformedReplyToScorer(t *testing.T) {
 }
 
 func TestJudgeTransportSharesEmbeddedRoutePolicy(t *testing.T) {
-	base, transport, err := JudgeTransport(modelaccess.Route{Provider: "fake", Model: FakeModel, Auth: "none"})
+	_, transport, err := JudgeTransport(modelaccess.Route{Provider: "fake", Model: FakeModel, Auth: "none"})
 	if err != nil || transport == nil {
 		t.Fatalf("fake route: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestJudgeTransportSharesEmbeddedRoutePolicy(t *testing.T) {
 			t.Fatalf("route accepted: %+v", route)
 		}
 	}
-	base, transport, err = JudgeTransport(modelaccess.Route{Provider: "compatible", Model: "m", Endpoint: "http://127.0.0.1:9/v1/", Auth: "none"})
+	base, transport, err := JudgeTransport(modelaccess.Route{Provider: "compatible", Model: "m", Endpoint: "http://127.0.0.1:9/v1/", Auth: "none"})
 	if err != nil || base != "http://127.0.0.1:9/v1" || transport == nil {
 		t.Fatalf("local route: %q %v", base, err)
 	}

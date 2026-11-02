@@ -87,7 +87,7 @@ func newNativeJudge(access func(context.Context, []modelaccess.Route) (modelacce
 			}
 		}
 		j.guard = &localpreview.SeparateJudgeTransport{Next: transport, SafeErrors: safeErrors, Check: j.check,
-			Report: func(line string) error { return req.Report("%s", line) },
+			Report: func(line string) error { return req.Report("%s", line) }, Reply: localFileJudgeReply,
 			Validate: func(ctx context.Context) error {
 				if err := j.validate(ctx); err != nil {
 					return err

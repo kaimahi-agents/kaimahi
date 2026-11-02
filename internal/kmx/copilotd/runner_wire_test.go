@@ -25,6 +25,8 @@ import (
 type wireFixture struct {
 	Customizations  string
 	ActualModel     string
+	HostVersion     string
+	ToolName        string
 	DelayDiscovery  bool
 	Lifecycle       string
 	Sends, Disposed atomic.Int64
@@ -88,7 +90,7 @@ func wireRunnerWith(t *testing.T, pending, cleanupFails bool, configure func(*Op
 				var result any = map[string]any{}
 				switch m.Method {
 				case "initialize":
-					result = map[string]any{"protocolVersion": "1.0.0", "serverInfo": map[string]any{"name": "fixture", "version": "1.0.5"}, "snapshots": []any{map[string]any{"resource": "ahp-root://", "fromSeq": 0, "state": map[string]any{"agents": []any{map[string]any{"provider": "copilot", "protectedResources": []any{map[string]any{"resource": "https://api.github.com"}}}}}}}}
+					result = map[string]any{"protocolVersion": "1.0.0", "serverInfo": map[string]any{"name": "fixture", "version": firstNonempty(fixture.HostVersion, "1.0.5")}, "snapshots": []any{map[string]any{"resource": "ahp-root://", "fromSeq": 0, "state": map[string]any{"agents": []any{map[string]any{"provider": "copilot", "protectedResources": []any{map[string]any{"resource": "https://api.github.com"}}}}}}}}
 				case "createSession":
 					created.Add(1)
 				case "subscribe":
@@ -137,7 +139,7 @@ func wireRunnerWith(t *testing.T, pending, cleanupFails bool, configure func(*Op
 					calls = 1
 				}
 				for i := 0; i < calls; i++ {
-					action(fmt.Sprintf(`{"type":"chat/toolCallStart","turnId":%q,"toolCallId":"call%d","toolName":"bash","displayName":"Bash"}`, a.TurnId, i))
+					action(fmt.Sprintf(`{"type":"chat/toolCallStart","turnId":%q,"toolCallId":"call%d","toolName":%q,"displayName":"Bash"}`, a.TurnId, i, firstNonempty(fixture.ToolName, "bash")))
 					extra := `,"confirmed":"not-needed"`
 					if pending {
 						extra = ""
@@ -172,6 +174,13 @@ func wireRunnerWith(t *testing.T, pending, cleanupFails bool, configure func(*Op
 	}
 	return NewRunner(options), created, closed
 }
+func firstNonempty(value, fallback string) string {
+	if value != "" {
+		return value
+	}
+	return fallback
+}
+
 func wireRequest() agentpreview.Request {
 	return agentpreview.Request{Agent: &agentfile.Agent{Title: "Reader", Revision: "revision", Tools: []string{"bash"}}, Route: modelaccess.Route{Provider: "copilot", Model: "model"}, Examples: []agentfile.Example{{ID: "first", Input: "read"}, {ID: "second", Input: "read"}}}
 }

@@ -107,6 +107,12 @@ func TestNativeJudgeExplicitOverrideScoresWithoutProviderAccess(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rows, err := evaluateNative(t, judge, nativeJudgeCase("fake", tc.rubric), tc.answer)
+			if tc.verdict == runtime.EvaluationUnknown {
+				if !errors.Is(err, errNativeJudge) || len(rows) != 0 {
+					t.Fatalf("rows=%+v err=%v", rows, err)
+				}
+				return
+			}
 			if err != nil || len(rows) != 1 || rows[0].Verdict != tc.verdict {
 				t.Fatalf("rows=%+v err=%v", rows, err)
 			}
@@ -148,8 +154,14 @@ func TestNativeJudgeSplitAndMismatchedModelStayUnknown(t *testing.T) {
 				return &previewAccessStub{transport: wire}, nil
 			})
 			rows, err := evaluateNative(t, judge, nativeJudgeCase("gpt-4.1", "be good"), "answer")
-			if err != nil || rows[0].Verdict != runtime.EvaluationUnknown {
-				t.Fatalf("rows=%+v err=%v", rows, err)
+			if name != "split" {
+				if !errors.Is(err, errNativeJudge) || len(rows) != 0 || wire.sends != 1 {
+					t.Fatalf("rows=%+v err=%v sends=%d", rows, err, wire.sends)
+				}
+				return
+			}
+			if err != nil || rows[0].Verdict != runtime.EvaluationUnknown || wire.sends != 2 {
+				t.Fatalf("rows=%+v err=%v sends=%d", rows, err, wire.sends)
 			}
 		})
 	}

@@ -92,6 +92,32 @@ func TestRunnerJudgeScoresEachCaseUnderItsCaseContext(t *testing.T) {
 	}
 }
 
+func TestRunnerJudgeCredentialsInObservedMetadataAndToolsAreWithheld(t *testing.T) {
+	for _, tc := range []struct {
+		name, secret string
+		fixture      *wireFixture
+	}{
+		{"metadata escaped by JSON", "opaque&private", &wireFixture{HostVersion: "opaque&private"}},
+		{"host-only tool name", "judge_bearer_only", &wireFixture{ToolName: "judge_bearer_only"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			j := &fakeJudge{check: func(fields ...string) error {
+				for _, field := range fields {
+					if strings.Contains(field, tc.secret) {
+						return agentpreview.ErrCredentialContent
+					}
+				}
+				return nil
+			}}
+			r, _, _ := wireRunnerWith(t, false, false, withJudge(j, new(atomic.Int64), nil), tc.fixture)
+			out, err := r.Run(t.Context(), judgeRequest())
+			if !errors.Is(err, agentpreview.ErrCredentialContent) || len(out.Examples) != 1 || out.Examples[0].Completion.Answer != "" || len(out.Examples[0].Assertions) != 0 {
+				t.Fatalf("err=%v out=%+v", err, out)
+			}
+		})
+	}
+}
+
 func TestRunnerWithoutSelectedJudgeNeverPreparesOne(t *testing.T) {
 	prepared := new(atomic.Int64)
 	r, _, _ := wireRunnerWith(t, false, false, withJudge(&fakeJudge{}, prepared, nil))

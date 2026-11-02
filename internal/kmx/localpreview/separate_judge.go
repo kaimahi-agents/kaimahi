@@ -22,13 +22,14 @@ func JudgeTransport(selection modelaccess.Route) (baseURL string, transport http
 // sends the fixed two-message, nonstreaming request the shared judge builds and
 // nothing else; the caller's scorer still validates the reply. Failures latch for
 // one invocation, so an unavailable or refused response cannot be resent.
-// An unparsable 200 reply is left to the scorer, which reports it unknown.
+// Reply lets the scorer's owner validate model and score shape before another send.
 type SeparateJudgeTransport struct {
 	Next       http.RoundTripper
 	SafeErrors bool
 	Check      func(...string) error
 	Validate   func(context.Context) error
 	Report     func(string) error
+	Reply      func([]byte, string, string) error
 	failure    error
 }
 
@@ -110,6 +111,11 @@ func (t *SeparateJudgeTransport) Sample(req *http.Request, model, version string
 	}
 	if err != nil {
 		return nil, err
+	}
+	if t.Reply != nil {
+		if err = t.Reply(captured, body.Model, version); err != nil {
+			return nil, err
+		}
 	}
 	if t.Report != nil {
 		if err = t.Report("Judge finished"); err != nil {

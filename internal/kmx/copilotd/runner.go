@@ -154,8 +154,7 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 		defer func() {
 			c.DurationMs = time.Since(start).Milliseconds()
 			if c.Native != nil {
-				metadata, _ := json.Marshal(c.Native)
-				if e := check(string(metadata)); e != nil {
+				if e := checkDocument(check, c.Native); e != nil {
 					c.Native = nil
 					c.Answer = ""
 					c.State = agentpreview.Failed
@@ -353,6 +352,9 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 		var tools []agentpreview.ToolSummary
 		total := 0
 		for _, name := range ordered {
+			if cause = check(name); cause != nil {
+				return
+			}
 			count := counts[name]
 			total += count
 			tools = append(tools, agentpreview.ToolSummary{Name: name, Mode: "live", Source: "live", CallCount: count, RequestCount: count})
@@ -520,22 +522,26 @@ func checkJudgeContent(check func(...string) error, req agentpreview.Request, fi
 		documents = append(documents, req.SourceAgent)
 	}
 	for _, document := range documents {
-		raw, err := json.Marshal(document)
-		if err != nil {
-			return err
-		}
-		if err = check(string(raw)); err != nil {
-			return err
-		}
-		var decoded any
-		if json.Unmarshal(raw, &decoded) != nil {
-			continue
-		}
-		if err = checkStrings(check, decoded); err != nil {
+		if err := checkDocument(check, document); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func checkDocument(check func(...string) error, document any) error {
+	raw, err := json.Marshal(document)
+	if err != nil {
+		return err
+	}
+	if err = check(string(raw)); err != nil {
+		return err
+	}
+	var decoded any
+	if err = json.Unmarshal(raw, &decoded); err != nil {
+		return err
+	}
+	return checkStrings(check, decoded)
 }
 
 func checkStrings(check func(...string) error, value any) error {
