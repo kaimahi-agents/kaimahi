@@ -31,7 +31,7 @@ func previewCompletedPolicy(c agentpreview.Completion, show, native bool) FilePr
 // NewCopilotdFileRunner uses the host's execution, not embedded tools or journals.
 func NewCopilotdFileRunner(host string, snapshot func(context.Context, func(...string) error) (agentpreview.SourceSnapshot, error)) agentpreview.Runner {
 	p := copilot.New(nil)
-	return copilotd.NewRunner(copilotd.Options{Host: host, ExampleTimeout: localpreview.DefaultExampleTimeout, Snapshot: snapshot, Access: func(ctx context.Context, observe func(ahptypes.ActionEnvelope) error) (copilot.HostAccess, error) {
+	return copilotd.NewRunner(copilotd.Options{Host: host, ExampleTimeout: localpreview.DefaultExampleTimeout, Snapshot: snapshot, Judge: newNativeJudge(p.PreviewClient), Access: func(ctx context.Context, observe func(ahptypes.ActionEnvelope) error) (copilot.HostAccess, error) {
 		access, err := p.CopilotdClient(ctx, host, observe)
 		if access != nil {
 			access = nativeDisplayAccess{access}
@@ -43,20 +43,28 @@ func NewCopilotdFileRunner(host string, snapshot func(context.Context, func(...s
 type nativeDisplayAccess struct{ copilot.HostAccess }
 
 func (a nativeDisplayAccess) CheckContent(fields ...string) error {
-	for _, field := range fields {
-		if err := a.HostAccess.CheckContent(field); err != nil {
-			return err
+	return nativeDisplayCheck(a.HostAccess.CheckContent)(fields...)
+}
+
+// nativeDisplayCheck also checks display-normalized views, for the host's and the
+// separate judge's credentials alike.
+func nativeDisplayCheck(check func(...string) error) func(...string) error {
+	return func(fields ...string) error {
+		for _, field := range fields {
+			if err := check(field); err != nil {
+				return err
+			}
+			views, _, ok := suiteDiagnosticViews(field, len(field))
+			if !ok {
+				// Binary working files are scanned as bytes, not rendered as text.
+				continue
+			}
+			if err := check(views...); err != nil {
+				return err
+			}
 		}
-		views, _, ok := suiteDiagnosticViews(field, len(field))
-		if !ok {
-			// Binary working files are scanned as bytes, not rendered as text.
-			continue
-		}
-		if err := a.HostAccess.CheckContent(views...); err != nil {
-			return err
-		}
+		return nil
 	}
-	return nil
 }
 
 func validNative(n *agentpreview.NativeExecution) bool {

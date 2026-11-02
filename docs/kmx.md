@@ -4,6 +4,8 @@ For file-only feedback, `kmx test FILE` remains embedded by default.
 `--runner copilotd --host ws://127.0.0.1:PORT` explicitly uses a local native
 host; see [copilotd file tests](local-preview.md#copilotd-file-tests) for
 credentials, snapshots, approvals, limits and the non-deployment evidence boundary.
+On that runner, `llmJudge` uses a separate tool-free transport to score the host's
+answer; it does not run on the host. Delegating agents report unknown.
 
 [Orka](orka.md) remains the default runtime. `package create` authors one tool-free
 native workspace member offline; `--runtime kagent` selects exact v0.10.3

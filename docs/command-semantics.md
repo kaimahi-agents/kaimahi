@@ -104,7 +104,11 @@ a fresh private Git working-tree copy and observed native model/tool evidence;
 kmx creates no Sessions journal. Agent selection is by unique name and matching
 description/model/tools, not loaded-file attestation, and is labelled in results.
 This path supports live Enabled cases only:
-judges, replay/capture and Disabled-tool semantics refuse before sends. It does
+replay/capture and Disabled-tool semantics refuse before sends. Selected `llmJudge`
+assertions score the host's answer through a separate tool-free transport, not a
+host turn. Both judge samples share the case deadline; malformed, unavailable or
+split scores stay unknown. Delegating agents report unknown, including
+protocol-linked child work under other tool names. It does
 not apply to Run, MCP, folder tests or packaged evaluation, and native Windows
 refuses before effects. A native pass is file-test feedback, not deployment or
 packaged-suite evidence. See [copilotd file tests](local-preview.md#copilotd-file-tests)

@@ -731,8 +731,15 @@ The Copilot provider owns both GitHub and environment-only connection credential
 Native acceptance uses trusted invocation policy on completion/progress/summary;
 never relax embedded five-call checks from returned metadata. Observe all relevant
 native model IDs and complete correlated calls, not a requested-model echo.
-Per-case two-minute and whole-invocation five-minute deadlines include approvals;
-unknown/out-of-time stops later sends. Pending input follows bounded checked
+Per-case two-minute and whole-invocation five-minute deadlines include approvals
+and both judge samples; unknown/out-of-time stops later sends. Selected llmJudge
+uses the existing separate tool-free transport/scorer, never a host judge turn.
+Default judge route is the selected model through Copilot HTTP; explicit App
+judge overrides retain their route. Host auth is not HTTP model availability.
+Prepare judge credentials/model before inference, compose both credential owners'
+content checks and recheck source after judging. Malformed/split/unavailable
+scores are unknown. Delegating agents stay unknown with a clear reason, including
+protocol-linked child work under arbitrary tool names. Pending input follows bounded checked
 failed-case content and --no-content; name always shows. Cleanup Notices never
 change verdict. Native failure metadata shares file-v2's ten-record subject budget;
 older strict readers may reject that partition. Native Windows refuses before effects.

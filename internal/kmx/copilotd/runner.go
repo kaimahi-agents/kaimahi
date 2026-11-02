@@ -26,11 +26,30 @@ var (
 	ErrAgentMetadataMismatch = errors.New("native agent metadata does not match authored source")
 )
 
+// JudgeAccess scores selected llmJudge assertions on a transport separate from
+// the host. CheckContent covers both the host's and the judge's credentials, so
+// the runner can use it for every retained or transferred value. Validate covers
+// only the judge's own lifecycle. Evaluate runs under the case's context and
+// returns a nonnil error when the judge itself cannot run; an unusable score is
+// an unknown row, not an error.
+type JudgeAccess interface {
+	CheckContent(...string) error
+	Validate(context.Context) error
+	Evaluate(context.Context, runtime.EvaluationCase, runtime.EvaluationEvidence) ([]runtime.EvaluationAssertionResult, error)
+}
+
+var errJudgeRows = errors.New("separate judge returned rows that do not match the selected assertions")
+
 type Options struct {
 	Host           string
 	ExampleTimeout time.Duration // caller supplies the existing example limit; no CLI input
 	Access         func(context.Context, func(ahptypes.ActionEnvelope) error) (copilot.HostAccess, error)
 	Snapshot       func(context.Context, func(...string) error) (agentpreview.SourceSnapshot, error)
+	// Judge prepares an invocation-local separate judge once, after host access and
+	// before any send. It receives the host's content checker and is called only
+	// when a selected case has an llmJudge assertion. A nonnil capability returned
+	// with an error is content-check-only.
+	Judge func(context.Context, agentpreview.Request, func(...string) error) (JudgeAccess, error)
 }
 type runner struct{ options Options }
 
@@ -42,13 +61,17 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 	if ctx.Err() != nil {
 		return out, ctx.Err()
 	}
+	hasJudge := false
 	for _, ex := range req.Examples {
 		if ex.Mocks != nil {
 			return out, ErrUnsupported
 		}
 		for _, as := range ex.Assertions {
 			if as.Type == "llmJudge" {
-				return out, ErrUnsupported
+				if r.options.Judge == nil {
+					return out, ErrUnsupported
+				}
+				hasJudge = hasJudge || !req.SkipAssertions
 			}
 		}
 	}
@@ -95,12 +118,31 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 	if access == nil {
 		return out, copilot.ErrHostConnection
 	}
+	// One checker covers host and judge credentials everywhere below.
+	check := access.CheckContent
+	var judge JudgeAccess
+	if hasJudge {
+		var judgeErr error
+		judge, judgeErr = r.options.Judge(ctx, req, access.CheckContent)
+		if judge != nil {
+			check = judge.CheckContent
+			if err = checkJudgeContent(check, req, fields); err != nil {
+				return out, err
+			}
+		}
+		if judgeErr != nil {
+			return out, judgeErr
+		}
+		if judge == nil {
+			return out, ErrUnsupported
+		}
+	}
 	if req.BeforeExecute != nil {
 		if err = req.BeforeExecute(); err != nil {
 			return out, fmt.Errorf("%w", agentpreview.ErrDiagnosticsFailed)
 		}
 	}
-	execute := func(ex agentfile.Example) (c agentpreview.Completion, cause error) {
+	execute := func(ex agentfile.Example) (c agentpreview.Completion, rows []runtime.EvaluationAssertionResult, cause error) {
 		start := time.Now()
 		limit := r.options.ExampleTimeout
 		if limit <= 0 {
@@ -112,11 +154,11 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 		defer func() {
 			c.DurationMs = time.Since(start).Milliseconds()
 			if c.Native != nil {
-				metadata, _ := json.Marshal(c.Native)
-				if e := access.CheckContent(string(metadata)); e != nil {
+				if e := checkDocument(check, c.Native); e != nil {
 					c.Native = nil
 					c.Answer = ""
 					c.State = agentpreview.Failed
+					rows = nil
 					cause = e
 				}
 			}
@@ -126,7 +168,7 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 				return
 			}
 		}
-		snapshot, e := r.options.Snapshot(caseCtx, access.CheckContent)
+		snapshot, e := r.options.Snapshot(caseCtx, check)
 		if e != nil {
 			cause = e
 			return
@@ -141,7 +183,7 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 			cleanCtx, done := context.WithTimeout(context.Background(), 5*time.Second)
 			defer done()
 			warn := func(s string) {
-				if access.CheckContent(s) == nil {
+				if check(s) == nil {
 					out.Notices = append(out.Notices, s)
 				}
 			}
@@ -169,7 +211,7 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 			return
 		}
 		owned = true
-		if cause = access.CheckContent(agentpreview.SessionCreatedLine(ex.ID, session)); cause != nil {
+		if cause = check(agentpreview.SessionCreatedLine(ex.ID, session)); cause != nil {
 			return
 		}
 		if req.SessionCreated != nil {
@@ -292,12 +334,9 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 				return
 			}
 		}
-		if cause = access.CheckContent(answer); cause != nil {
+		if cause = check(answer); cause != nil {
 			return
 		}
-		c.Answer = answer
-		c.Native.ActualModels = models
-		c.State = agentpreview.Complete
 		names := map[string]bool{}
 		for _, name := range req.Agent.Tools {
 			names[name] = true
@@ -310,29 +349,70 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 			ordered = append(ordered, name)
 		}
 		sort.Strings(ordered)
+		var tools []agentpreview.ToolSummary
+		total := 0
 		for _, name := range ordered {
+			if cause = check(name); cause != nil {
+				return
+			}
 			count := counts[name]
-			c.ToolCalls += count
-			c.Tools = append(c.Tools, agentpreview.ToolSummary{Name: name, Mode: "live", Source: "live", CallCount: count, RequestCount: count})
+			total += count
+			tools = append(tools, agentpreview.ToolSummary{Name: name, Mode: "live", Source: "live", CallCount: count, RequestCount: count})
 		}
+		if !req.SkipAssertions && len(ex.Assertions) > 0 {
+			evaluation := runtime.EvaluationCase{ID: ex.ID, Input: ex.Input, Assertions: ex.Assertions}
+			evidence := runtime.EvaluationEvidence{Answer: answer, AnswerAvailable: true, ToolSupported: true, ToolEvidenceComplete: true, ToolCalls: counts}
+			if judge != nil && hasLLMJudge(ex) {
+				// The separate judge shares this case's budget; its errors and the
+				// context are latched before the source or provider is trusted again.
+				var judged []runtime.EvaluationAssertionResult
+				judged, cause = judge.Evaluate(caseCtx, evaluation, evidence)
+				if interrupted := caseCtx.Err(); interrupted != nil {
+					cause = interrupted
+				}
+				if cause != nil {
+					return
+				}
+				if cause = matchJudgeRows(judged, ex.Assertions); cause != nil {
+					return
+				}
+				if cause = judge.Validate(caseCtx); cause != nil {
+					return
+				}
+				if cause = access.Validate(caseCtx); cause != nil {
+					return
+				}
+				if req.ValidateSource != nil {
+					if cause = req.ValidateSource(caseCtx); cause != nil {
+						if !errors.Is(cause, context.Canceled) && !errors.Is(cause, context.DeadlineExceeded) {
+							cause = errors.Join(agentpreview.ErrSourceChanged, cause)
+						}
+						return
+					}
+				}
+				rows = judged
+			} else {
+				rows = runtime.EvaluateAssertions(evaluation, evidence)
+			}
+		}
+		c.Answer = answer
+		c.Native.ActualModels = models
+		c.State = agentpreview.Complete
+		c.ToolCalls, c.Tools = total, tools
 		return
 	}
 	if req.Input != nil {
-		c, e := execute(agentfile.Example{ID: "input", Input: *req.Input})
+		c, _, e := execute(agentfile.Example{ID: "input", Input: *req.Input})
 		out.AdHoc = &c
 		if e != nil {
 			return out, e
 		}
 	}
 	for _, ex := range req.Examples {
-		c, e := execute(ex)
+		c, rows, e := execute(ex)
 		row := agentpreview.ExampleOutcome{ID: ex.ID, Completion: c}
-		if e == nil && !req.SkipAssertions {
-			counts := map[string]int{}
-			for _, tool := range c.Tools {
-				counts[tool.Name] = tool.CallCount
-			}
-			row.Assertions = runtime.EvaluateAssertions(runtime.EvaluationCase{ID: ex.ID, Input: ex.Input, Assertions: ex.Assertions}, runtime.EvaluationEvidence{Answer: c.Answer, AnswerAvailable: true, ToolSupported: true, ToolEvidenceComplete: true, ToolCalls: counts})
+		if e == nil {
+			row.Assertions = rows
 		}
 		out.Examples = append(out.Examples, row)
 		if e != nil {
@@ -406,4 +486,83 @@ func findAgent(customizations []ahptypes.Customization, source *agentfile.Agent)
 		return "", ErrAgentMetadataMismatch
 	}
 	return string(candidate.Uri), nil
+}
+
+func hasLLMJudge(ex agentfile.Example) bool {
+	for _, a := range ex.Assertions {
+		if a.Type == "llmJudge" {
+			return true
+		}
+	}
+	return false
+}
+
+// matchJudgeRows keeps a judge from dropping, reordering or redefining assertions.
+func matchJudgeRows(rows []runtime.EvaluationAssertionResult, want []runtime.EvaluationAssertion) error {
+	if len(rows) != len(want) {
+		return errJudgeRows
+	}
+	for i, row := range rows {
+		if row.ID != want[i].ID || row.Type != want[i].Type || row.DefinitionDigest != runtime.EvaluationAssertionDigest(want[i]) {
+			return errJudgeRows
+		}
+	}
+	return nil
+}
+
+// checkJudgeContent adds what only a judge receives or could echo: every
+// assertion (selected or not, in the original source too) and the original
+// source's strings, using decoded values as well as the encoded document.
+func checkJudgeContent(check func(...string) error, req agentpreview.Request, fields []string) error {
+	if err := check(fields...); err != nil {
+		return err
+	}
+	documents := []any{req.JudgeRoute, req.Examples, req.Agent}
+	if req.SourceAgent != nil {
+		documents = append(documents, req.SourceAgent)
+	}
+	for _, document := range documents {
+		if err := checkDocument(check, document); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func checkDocument(check func(...string) error, document any) error {
+	raw, err := json.Marshal(document)
+	if err != nil {
+		return err
+	}
+	if err = check(string(raw)); err != nil {
+		return err
+	}
+	var decoded any
+	if err = json.Unmarshal(raw, &decoded); err != nil {
+		return err
+	}
+	return checkStrings(check, decoded)
+}
+
+func checkStrings(check func(...string) error, value any) error {
+	switch v := value.(type) {
+	case string:
+		return check(v)
+	case []any:
+		for _, item := range v {
+			if err := checkStrings(check, item); err != nil {
+				return err
+			}
+		}
+	case map[string]any:
+		for key, item := range v {
+			if err := check(key); err != nil {
+				return err
+			}
+			if err := checkStrings(check, item); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

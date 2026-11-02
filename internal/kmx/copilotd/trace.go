@@ -1,4 +1,6 @@
 // Package copilotd runs checked file cases through the host's native agent loop.
+// A separately supplied tool-free judge may score completed answers within the
+// case deadline; contributing child execution remains unattributable and unknown.
 package copilotd
 
 import (
@@ -14,6 +16,9 @@ import (
 )
 
 var errTrace = errors.New("native execution evidence is incomplete")
+
+// ErrDelegationUnverified refuses parent-only evidence for contributing child work.
+var ErrDelegationUnverified = errors.New("delegated child execution cannot be attributed on this runner")
 
 type nativeCall struct {
 	name, input string
@@ -91,7 +96,7 @@ func (t *trace) accept(e ahptypes.ActionEnvelope) error {
 		t.calls[a.ToolCallId] = &nativeCall{name: a.ToolName}
 		// Contributing child execution is not provable from the parent's trace.
 		if a.ToolName == "task" || a.ToolName == "agent" {
-			return t.fail(errTrace)
+			return t.fail(ErrDelegationUnverified)
 		}
 	case *ahptypes.ChatToolCallReadyAction:
 		c := t.calls[a.ToolCallId]
@@ -101,7 +106,22 @@ func (t *trace) accept(e ahptypes.ActionEnvelope) error {
 		if a.ToolInput != nil && a.ToolInput.Inline != nil {
 			c.input = *a.ToolInput.Inline
 		}
+	case *ahptypes.ChatToolCallContentChangedAction:
+		if childContent(a.Content) {
+			return t.fail(ErrDelegationUnverified)
+		}
+	case *ahptypes.ChatResponsePartAction:
+		if part, ok := a.Part.Value.(*ahptypes.ToolCallResponsePart); ok && childToolCall(part.ToolCall) {
+			return t.fail(ErrDelegationUnverified)
+		}
+	case *ahptypes.ChatBackgroundWorkSetAction:
+		if _, ok := a.Work.Value.(*ahptypes.BackgroundSubagentWork); ok {
+			return t.fail(ErrDelegationUnverified)
+		}
 	case *ahptypes.ChatToolCallCompleteAction:
+		if childContent(a.Result.Content) {
+			return t.fail(ErrDelegationUnverified)
+		}
 		c := t.calls[a.ToolCallId]
 		if c == nil || c.complete {
 			return t.fail(errTrace)
@@ -115,6 +135,29 @@ func (t *trace) accept(e ahptypes.ActionEnvelope) error {
 	ahp.ApplyActionToChat(&t.state, e.Action)
 	return nil
 }
+func childContent(content []ahptypes.ToolResultContent) bool {
+	for _, item := range content {
+		if _, ok := item.Value.(*ahptypes.ToolResultSubagentContent); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func childToolCall(call ahptypes.ToolCallState) bool {
+	switch state := call.Value.(type) {
+	case *ahptypes.ToolCallRunningState:
+		return childContent(state.Content)
+	case *ahptypes.ToolCallAuthRequiredState:
+		return childContent(state.Content)
+	case *ahptypes.ToolCallPendingResultConfirmationState:
+		return childContent(state.Content)
+	case *ahptypes.ToolCallCompletedState:
+		return childContent(state.Content)
+	}
+	return false
+}
+
 func (t *trace) end() {
 	if !t.ended {
 		close(t.done)
@@ -148,6 +191,13 @@ func (t *trace) finish(state *ahptypes.ChatState) (string, []string, map[string]
 	if !t.ended || len(t.models) == 0 || state == nil {
 		return "", t.models, nil, errTrace
 	}
+	if state.BackgroundWork != nil {
+		for _, work := range *state.BackgroundWork {
+			if _, ok := work.Value.(*ahptypes.BackgroundSubagentWork); ok {
+				return "", t.models, nil, ErrDelegationUnverified
+			}
+		}
+	}
 	var turn *ahptypes.Turn
 	for i := range state.Turns {
 		if state.Turns[i].Id == t.turn {
@@ -165,6 +215,9 @@ func (t *trace) finish(state *ahptypes.ChatState) (string, []string, map[string]
 		case *ahptypes.MarkdownResponsePart:
 			answer.WriteString(p.Content)
 		case *ahptypes.ToolCallResponsePart:
+			if childToolCall(p.ToolCall) {
+				return "", t.models, nil, ErrDelegationUnverified
+			}
 			b, _ := json.Marshal(p.ToolCall)
 			var c struct{ ToolCallId, ToolName, Status string }
 			if json.Unmarshal(b, &c) != nil {

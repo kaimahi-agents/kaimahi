@@ -59,7 +59,12 @@ func writeFilePreviewText(w io.Writer, r FilePreviewResult, standalone bool) err
 		fmt.Fprintf(&b, "%s:%d:%d: %s\n", r.Diagnostic.Field, r.Diagnostic.Line, r.Diagnostic.Column, r.Diagnostic.Repair)
 	}
 	if r.JudgeRoute != nil {
-		fmt.Fprintf(&b, "explicit judge: %s/%s\n", r.JudgeRoute.Provider, r.JudgeRoute.Model)
+		label := "explicit judge"
+		if r.Runner == nativeRunnerLabel {
+			// The native judge defaults to the agent's route and is never a host turn.
+			label = "separate tool-free judge"
+		}
+		fmt.Fprintf(&b, "%s: %s/%s\n", label, r.JudgeRoute.Provider, r.JudgeRoute.Model)
 	}
 	if r.Retention.Status != "not_requested" {
 		fmt.Fprintf(&b, "failure retention: %s\n", r.Retention.Status)

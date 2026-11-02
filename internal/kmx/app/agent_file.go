@@ -234,9 +234,11 @@ func previewReason(code string) string {
 		"credential_content":        "Credential-bearing preview content was withheld.",
 		"runner_unavailable":        "Embedded preview runner is not available; no inference was performed.",
 		"execution_failed":          "Local preview execution failed.", "model_reply_unusable": "The model replied in a form kmx cannot use, so the test did not finish.", "invalid_completion": "Runner returned incomplete or mismatched execution metadata.",
-		"source_changed":     "Agent or selected tests changed; reload before running.",
-		"diagnostics_failed": "Cannot write local preview diagnostics.",
-		"journal_failed":     "Preview journal finalization failed; the result is unknown.",
+		"source_changed":               "Agent or selected tests changed; reload before running.",
+		"diagnostics_failed":           "Cannot write local preview diagnostics.",
+		"native_judge_unavailable":     nativeJudgeReason(nil),
+		"native_delegation_unverified": "The agent delegated work to child agents, which this runner cannot attribute, so the result is unknown.",
+		"journal_failed":               "Preview journal finalization failed; the result is unknown.",
 	}
 	return reasons[code]
 }
@@ -392,13 +394,15 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		selected = nil
 		r.Selection.Scope = "subset"
 	}
-	usesJudge := opt.JudgeRoute != nil
+	selectedJudge := false
 	for _, ex := range selected {
 		for _, assertion := range ex.Assertions {
-			usesJudge = usesJudge || assertion.Type == "llmJudge"
+			selectedJudge = selectedJudge || assertion.Type == "llmJudge"
 		}
 	}
-	if opt.Copilotd && (usesJudge || opt.Operation != "test" || opt.ToolBindings != "" || opt.RecordedReplayOnly) {
+	usesJudge := opt.JudgeRoute != nil || selectedJudge
+	// An explicit override needs a selected judge assertion to be meaningful here.
+	if opt.Copilotd && (opt.JudgeRoute != nil && !selectedJudge || opt.Operation != "test" || opt.ToolBindings != "" || opt.RecordedReplayOnly) {
 		return fail("native_unsupported", 2)
 	}
 	if usesJudge && !opt.SkipAssertions {
@@ -563,6 +567,9 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 				r.Notices = append(r.Notices, safe)
 			}
 		}
+		if r.JudgeRoute != nil {
+			r.Notices = append(r.Notices, nativeJudgeNotice)
+		}
 	}
 	// Whitelist result fields; never marshal runtime assertion rows (which include
 	// judge evidence and raw reasons), answers or journal handles directly.
@@ -681,6 +688,9 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		if opt.Copilotd {
 			result, err := fail("deadline_exceeded", 2)
 			result.Reason = "Native execution ran out of time; later cases were not started."
+			if r.JudgeRoute != nil {
+				result.Reason = "Native execution or separate judging ran out of time; later cases were not started."
+			}
 			err.message = result.Reason
 			return result, err
 		}
@@ -688,6 +698,16 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	}
 	if errors.Is(cause, agentpreview.ErrSourceChanged) {
 		return fail("source_changed", 1)
+	}
+	if errors.Is(cause, copilotd.ErrDelegationUnverified) {
+		return fail("native_delegation_unverified", 1)
+	}
+	if errors.Is(cause, errNativeJudge) {
+		// Before model mismatch: the host's observed model is not at fault here.
+		result, previewErr := fail("native_judge_unavailable", 1)
+		result.Reason = nativeJudgeReason(cause)
+		previewErr.message = result.Reason
+		return result, previewErr
 	}
 	if errors.Is(cause, agentpreview.ErrModelUnavailable) {
 		if opt.Copilotd {

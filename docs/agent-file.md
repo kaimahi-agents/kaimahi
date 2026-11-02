@@ -171,7 +171,9 @@ entries there can conservatively stale source-version checks.
 uses native host tools on a fresh Git working-tree snapshot. Agent selection is
 by unique name plus matching description, authored model and tools, not proof
 that the host loaded the FILE's bytes; the result labels this limitation. Embedded remains
-the default. Token/authentication, source exclusions, unsupported case semantics,
+the default. `llmJudge` scores the host's answer through a separate tool-free
+transport, not on the host. Delegating agents report unknown on this runner.
+Token/authentication, source exclusions, unsupported case semantics,
 model attribution, approval budgets and diagnostic compatibility are described in
 [copilotd file tests](local-preview.md#copilotd-file-tests). Native pass is file-test
 feedback, never permission or evidence for deployment. Pending tool input follows
