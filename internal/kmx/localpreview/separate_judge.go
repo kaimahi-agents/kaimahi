@@ -97,6 +97,9 @@ func (t *SeparateJudgeTransport) Sample(req *http.Request, model, version string
 		return nil, errRunnerExecution
 	}
 	captured, err := io.ReadAll(io.LimitReader(resp.Body, (64<<10)+1))
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 	if err != nil || len(captured) > 64<<10 {
 		return nil, errRunnerExecution
 	}

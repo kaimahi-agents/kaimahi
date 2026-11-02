@@ -262,7 +262,8 @@ func TestRunnerJudgeSharesCaseDeadlineWithTurn(t *testing.T) {
 	judge := &fakeJudge{}
 	judge.evaluate = func(ctx context.Context, c runtime.EvaluationCase, ev runtime.EvaluationEvidence) ([]runtime.EvaluationAssertionResult, error) {
 		<-ctx.Done()
-		return runtime.EvaluateAssertions(c, ev), nil
+		// A provider can report another error as cancellation interrupts its read.
+		return nil, errors.New("judge response read interrupted")
 	}
 	fixture := &wireFixture{}
 	r, _, _ := wireRunnerWith(t, false, false, func(o *Options) {

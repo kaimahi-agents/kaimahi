@@ -102,6 +102,28 @@ func TestSeparateJudgeLatchesUnavailableAndKeepsContextCauses(t *testing.T) {
 	}
 }
 
+type interruptedJudgeBody struct{ cancel context.CancelFunc }
+
+func (b interruptedJudgeBody) Read([]byte) (int, error) {
+	b.cancel()
+	return 0, context.Canceled
+}
+func (interruptedJudgeBody) Close() error { return nil }
+
+func TestSeparateJudgeKeepsContextDuringResponseRead(t *testing.T) {
+	ctx, cancel := context.WithCancel(testContext(t))
+	defer cancel()
+	next := &sendCounter{reply: func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: interruptedJudgeBody{cancel}}, nil
+	}}
+	judge := separateJudge(next, nil)
+	_, err := judge.Sample(judgeRequest(t, ctx, judgeBody), "judge", "")
+	_, again := judge.Sample(judgeRequest(t, ctx, judgeBody), "judge", "")
+	if !errors.Is(err, context.Canceled) || !errors.Is(again, context.Canceled) || next.sends.Load() != 1 {
+		t.Fatalf("err=%v again=%v sends=%d", err, again, next.sends.Load())
+	}
+}
+
 func TestSeparateJudgeValidatesBeforeEverySend(t *testing.T) {
 	next := &sendCounter{reply: judgeReply(200, `{}`)}
 	judge := separateJudge(next, nil)

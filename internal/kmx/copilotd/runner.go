@@ -364,10 +364,11 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 				// The separate judge shares this case's budget; its errors and the
 				// context are latched before the source or provider is trusted again.
 				var judged []runtime.EvaluationAssertionResult
-				if judged, cause = judge.Evaluate(caseCtx, evaluation, evidence); cause != nil {
-					return
+				judged, cause = judge.Evaluate(caseCtx, evaluation, evidence)
+				if interrupted := caseCtx.Err(); interrupted != nil {
+					cause = interrupted
 				}
-				if cause = caseCtx.Err(); cause != nil {
+				if cause != nil {
 					return
 				}
 				if cause = matchJudgeRows(judged, ex.Assertions); cause != nil {
