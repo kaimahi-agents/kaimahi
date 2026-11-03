@@ -68,17 +68,18 @@ def record_sequence():
     add(["get", "configmap", RECORD, "--ignore-not-found", "-o", "json"])
     for verb in ("get", "create", "patch"):
         add(["auth", "can-i", verb, "configmaps" + ("/" + RECORD if verb != "create" else "")])
+    documents = {kind: json.dumps({"apiVersion": "core.orka.ai/v1alpha1", "kind": kind,
+                 "metadata": {"name": "member", "namespace": "orka-system"}}).encode()
+                 for kind in ("Provider", "Agent")}
     for kind in ("Provider", "Agent"):
-        for _ in range(2):
-            add(["create", "--dry-run=server", "-f", "-"], json.dumps({"apiVersion": "core.orka.ai/v1alpha1", "kind": kind,
-                "metadata": {"name": "member", "namespace": "orka-system"}}).encode())
+        add(["create", "--dry-run=server", "-f", "-"], documents[kind])
     data = record_state()
     add(["create", "-f", "-", "--validate=strict", "-o", "json"], json.dumps(record_doc(data)).encode(), record_doc(data, 1))
     for i in range(3):
         if i < 2:
             kind = ("Provider", "Agent")[i]
-            add(["create", "-f", "-"], json.dumps({"apiVersion": "core.orka.ai/v1alpha1", "kind": kind,
-                "metadata": {"name": "member", "namespace": "orka-system"}}).encode())
+            add(["create", "--dry-run=server", "-f", "-"], documents[kind])
+            add(["create", "-f", "-"], documents[kind])
         next_data = record_state(min(i + 1, 2), i == 2)
         ops = [{"op": "test", "path": path, "value": value} for path, value in
                (("/metadata/uid", "record-uid"), ("/metadata/resourceVersion", str(i + 1)), ("/data/release.json", data))]

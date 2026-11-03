@@ -433,9 +433,11 @@ def verify_promote_effects(frames, member):
     writes = [f for f in records if f["persistent"]]
     require(len(writes) == 4 and re.fullmatch(r"kmx-release-[0-9a-f]{40}", writes[0]["name"]), "promote-record-count")
     name = writes[0]["name"]
-    expected = [("create", kind, member, True, False) for kind in ("Provider", "Agent") for _ in range(2)]
-    expected += [("create", "ConfigMap", name, False, True), ("create", "Provider", member, True, True),
-                 ("patch", "ConfigMap", name, False, True), ("create", "Agent", member, True, True),
+    expected = [("create", kind, member, True, False) for kind in ("Provider", "Agent")]
+    expected += [("create", "ConfigMap", name, False, True),
+                 ("create", "Provider", member, True, False), ("create", "Provider", member, True, True),
+                 ("patch", "ConfigMap", name, False, True),
+                 ("create", "Agent", member, True, False), ("create", "Agent", member, True, True),
                  ("patch", "ConfigMap", name, False, True), ("patch", "ConfigMap", name, False, True)]
     require([(f["verb"], f["resource"], f["name"], bool(f["admission"]), f["persistent"]) for f in effects] == expected, "promote-effects")
     native = [f for f in effects if not f.get("releaseRecord")]
@@ -476,7 +478,7 @@ def verify_promote_completion_order(frames):
     persistent = [f for f in effects if f["persistent"] and f["stage"] == "intent"]
     require(len(persistent) == 6, "promote-completion-order")
     first = effects.index(persistent[0])
-    require(sum(f["stage"] == "complete" and f.get("admission") and not f["persistent"] for f in effects[:first]) == 4,
+    require(sum(f["stage"] == "complete" and f.get("admission") and not f["persistent"] for f in effects[:first]) == 2,
             "promote-completion-order")
 
 
