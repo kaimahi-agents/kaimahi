@@ -287,8 +287,10 @@ don't write Squad metadata with host tools or treat canonical charter placement 
 Read the returned member/setup states and changedPaths. Report partial/unknown
 setup rather than claiming registration or enrichment succeeded. A reopened
 `kmx://squad-member/{memberId}` with `state: not_setup` means **not set up by kmx**.
-Use its current revision for native edits. Native setup availability still depends
-on the existing configured standalone Squad program.
+Use its current revision for native edits. Native Squad remains opt-in development
+packaging with an explicitly configured root and qualified standalone Squad 1.1.0
+program. A normal marketplace install does not enable it. Report missing setup;
+do not download a launcher or change trusted startup configuration automatically.
 
 For the native Squad canvas, use the built-in `open_canvas` with the same provider
 as the agent canvas above, canvasId `kmx-squad-view`, instanceId
@@ -296,11 +298,18 @@ as the agent canvas above, canvasId `kmx-squad-view`, instanceId
 Proposal generation requires `kmx://models`: the operator must configure
 `--provider copilot` in the native MCP startup arguments and have an existing
 GitHub sign-in. Report missing setup instead of changing startup configuration.
+Use the canvas's **Ask Copilot to propose** action for a host no-tools query;
+do not start an unrestricted chat turn as a substitute for its review boundary.
+Unsupported hosts refuse clearly. Native **Suggest tests** uses the same no-tools
+path and returns unsaved editor drafts; review them before Save and run.
 To open your proposed team, set input.proposal to an object with brief, lead and
 specialists. Each member has memberId, role, displayRole, taskInstructions, model
 and tests (id/input/assertions). The Lead is role `lead`, displayRole
 `Lead / Architect`. Opening only prepares the proposal; the user reviews setup
 effects and presses Create squad. Do not call native Create before that button.
+Specialists must have the same literal `role` and `displayRole`; do not hide a
+different catalog role behind the displayed title. Create refuses an existing
+team. Never put credentials in the shared brief.
 The read-only `kmx://squad` resource supplies the saved brief and native roster.
 The `/squad-view` native command opens this canvas without a generation turn.
 

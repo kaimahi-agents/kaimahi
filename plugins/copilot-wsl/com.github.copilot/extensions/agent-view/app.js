@@ -221,13 +221,13 @@ export function renderView(doc, root, payload, execute = postAction, options = {
 
     sourceActions(button, info, updates);
     const tests = testsSection(button, updates);
-    const tools = toolsSection(doc, button, { servers: toolServers, names: state.base.tools ?? [], settings: state.base.settingsInvalid ? null : state.base.toolSettings, editable: !!state.snap && options.toolsSelection !== false,
+    const tools = options.toolsSection === false ? undefined : toolsSection(doc, button, { servers: toolServers, names: state.base.tools ?? [], settings: state.base.settingsInvalid ? null : state.base.toolSettings, editable: !!state.snap && options.toolsSelection !== false,
       omitted: state.base.copilotToolsOmitted === true && !(state.base.tools ?? []).length,
       loading: toolsLoading, loaded: toolsLoaded, error: toolsError, menuOpen: toolsMenu, onToggleMenu: () => {
         toolsMenu = !toolsMenu;
         if (toolsMenu) loadTools(); else render();
       }, onOpen: openTools });
-    const out = [head, promptSection, ...(state.base.frontmatter ? [preservedSettings(doc, state.base.frontmatter)] : []), tools, tests];
+    const out = [head, promptSection, ...(state.base.frontmatter ? [preservedSettings(doc, state.base.frontmatter)] : []), ...(tools ? [tools] : []), tests];
     if (state.snap) out.push(pinnedBar(button, foot, tests, updates));
     return out;
   }

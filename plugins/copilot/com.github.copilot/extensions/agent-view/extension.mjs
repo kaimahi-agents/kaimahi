@@ -64,7 +64,7 @@ session = await joinSession({
       description: "Open the native Squad canvas for the configured project.",
       handler: async () => {
         try { await session.rpc.canvas.open({ extensionId: "plugin:kmx-agent-builder-path:agent-view", canvasId: SQUAD_CANVAS_ID, instanceId: "kmx-squad", input: {} }); }
-        catch { await session.log("Could not open the Squad canvas. Check the native Squad MCP setup.", { level: "error" }); }
+        catch { await session.log("Could not open the Squad canvas. Native Squad is an opt-in development feature, not part of the normal marketplace setup. Configure a root-bound MCP server with a qualified Squad 1.1.0 launcher using plugins/copilot/SQUAD-CANVAS.md, then open a fresh session.", { level: "error" }); }
       },
     },
     {

@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
 const squadBriefPath = ".squad/kmx-brief.md"
@@ -16,6 +18,9 @@ type SquadBrief struct {
 
 func validateSquadBrief(_ string, raw []byte) error {
 	if len(raw) > 16384 || !utf8.Valid(raw) || strings.TrimSpace(string(raw)) == "" || strings.ContainsRune(string(raw), 0) {
+		return refusal("invalid_squad_brief")
+	}
+	if secretshapes.Match(string(raw)) != nil {
 		return refusal("invalid_squad_brief")
 	}
 	return nil
@@ -39,6 +44,9 @@ func (c *SquadCreator) brief(ctx context.Context) (SquadBrief, error) {
 }
 
 func (c *SquadCreator) saveBrief(ctx context.Context, expected, text string) (File, error) {
+	if err := validateSquadBrief(squadBriefPath, []byte(text)); err != nil {
+		return File{}, err
+	}
 	if err := c.checkRoot(); err != nil {
 		return File{}, err
 	}

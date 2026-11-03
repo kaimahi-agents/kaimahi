@@ -21,6 +21,69 @@ type squadMemberInventory struct {
 	roster   []byte
 }
 
+func (c *SquadCreator) requireEmptyTeam(seen map[string]string) error {
+	agents, err := c.registry()
+	if err != nil {
+		return err
+	}
+	roster, err := c.readLocal(".squad/team.md")
+	if err != nil {
+		return err
+	}
+	if len(agents) != 0 {
+		return refusal("already_exists")
+	}
+	inMembers, foundMembers := false, false
+	for _, line := range strings.Split(strings.ReplaceAll(string(roster), "\r\n", "\n"), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "```") || strings.HasPrefix(line, "~~~") {
+			return refusal("invalid_squad_members")
+		}
+		if strings.HasPrefix(line, "## ") {
+			inMembers = line == "## Members"
+			if inMembers && foundMembers {
+				return refusal("invalid_squad_members")
+			}
+			foundMembers = foundMembers || inMembers
+			continue
+		}
+		if !inMembers || !strings.HasPrefix(line, "|") {
+			continue
+		}
+		fields := strings.Split(line, "|")
+		if len(fields) != 6 {
+			return refusal("invalid_squad_members")
+		}
+		name := strings.TrimSpace(fields[1])
+		if name == "Name" && strings.TrimSpace(fields[2]) == "Role" && strings.TrimSpace(fields[3]) == "Charter" && strings.TrimSpace(fields[4]) == "Status" {
+			continue
+		}
+		empty := true
+		for _, field := range fields[1:5] {
+			if strings.Trim(strings.TrimSpace(field), "-:") != "" {
+				empty = false
+			}
+		}
+		if !empty {
+			return refusal("already_exists")
+		}
+	}
+	if !foundMembers {
+		return refusal("invalid_squad_members")
+	}
+	for name := range seen {
+		if strings.HasPrefix(name, ".squad/agents/") {
+			id, _, _ := strings.Cut(strings.TrimPrefix(name, ".squad/agents/"), "/")
+			switch strings.ToLower(id) {
+			case "scribe", "ralph", "rai", "fact-checker":
+				continue
+			}
+			return refusal("already_exists")
+		}
+	}
+	return nil
+}
+
 // One request owns this checked inventory; it is never cached across reads.
 func (c *SquadCreator) memberInventory(ctx context.Context) (squadMemberInventory, error) {
 	var inventory squadMemberInventory
@@ -171,17 +234,25 @@ func (c *SquadCreator) EditMember(ctx context.Context, id, expected string, m Sq
 		span agentfile.ByteSpan
 		body string
 	}
+	raw := d.Source()
 	changes := []replacement{{*d.Preferred, m.Model}}
 	for _, section := range d.Sections {
+		var text, suffix string
 		switch section.Name {
 		case "Task Instructions":
-			changes = append(changes, replacement{section.Body, "\n" + m.TaskInstructions + "\n\n"})
+			text, suffix = m.TaskInstructions, "\n\n"
 		case "Examples":
-			changes = append(changes, replacement{section.Body, "\n" + m.Examples + "\n"})
+			text, suffix = m.Examples, "\n"
+		default:
+			continue
 		}
+		body := string(raw[section.Body.Start:section.Body.End])
+		if text == body || text == strings.ReplaceAll(body, "\r\n", "\n") {
+			continue
+		}
+		changes = append(changes, replacement{section.Body, "\n" + strings.Trim(text, "\r\n") + suffix})
 	}
 	sort.Slice(changes, func(i, j int) bool { return changes[i].span.Start > changes[j].span.Start })
-	raw := d.Source()
 	for _, change := range changes {
 		b := append([]byte{}, raw[:change.span.Start]...)
 		b = append(b, change.body...)

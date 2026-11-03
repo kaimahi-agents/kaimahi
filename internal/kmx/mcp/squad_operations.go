@@ -100,7 +100,7 @@ func WithSquadOperations(ops map[string]Operation, c *SquadCreator, a *app.App, 
 		if json.Unmarshal(req.Params.Arguments, &input) != nil {
 			return nil, refusal("invalid_options")
 		}
-		plan := SquadPlan{Lead: input.Lead.member(), Brief: input.Brief}
+		plan := SquadPlan{Lead: input.Lead.member(), Brief: input.Brief, RequireEmpty: true}
 		for _, m := range input.Specialists {
 			if strings.EqualFold(m.Role, "lead") || strings.EqualFold(m.DisplayRole, "Lead / Architect") {
 				return nil, refusal("invalid_squad_members")
@@ -217,6 +217,27 @@ func WithSquadOperations(ops map[string]Operation, c *SquadCreator, a *app.App, 
 		}}
 		bound[name] = op
 	}
+	run := bound["run"]
+	memberRun := run.V2
+	proposalSchema := nativeSchema("squad-proposal", map[string]*jsonschema.Schema{"goal": nativeString(16384), "model": nativeString(256), "draft": nativeString(1 << 20), "memberId": nativeString(63), "expectedRevision": nativeString(80), "expectedBriefRevision": nativeString(80)}, "goal", "model")
+	run.Description += " Native target squad-proposal checks and prepares authored input for a tool-free host query; it calls no model and creates no native state or preview result."
+	run.V2 = &Operation{Schema: nativeAlternatives(memberRun.Schema, proposalSchema), Handler: func(ctx context.Context, req *sdk.CallToolRequest) (*sdk.CallToolResult, error) {
+		var input struct {
+			Target string `json:"target"`
+		}
+		if json.Unmarshal(req.Params.Arguments, &input) != nil {
+			return nil, refusal("invalid_options")
+		}
+		if input.Target != "squad-proposal" {
+			return memberRun.Handler(ctx, req)
+		}
+		result, err := c.proposalInput(ctx, req)
+		if err != nil {
+			return versionedError(err, 2), nil
+		}
+		return result, nil
+	}}
+	bound["run"] = run
 	edit := bound["edit"]
 	memberEdit := edit.V2
 	briefSchema := nativeSchema("squad-brief", map[string]*jsonschema.Schema{"expectedRevision": nativeString(80), "text": nativeString(16384)}, "expectedRevision", "text")

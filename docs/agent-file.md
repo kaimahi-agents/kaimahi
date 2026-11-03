@@ -678,6 +678,9 @@ bundled or installed by kmx.
 The approved request has a Lead and up to seven specialists, at most 1 MiB of
 logical authored fields. Each member must fit the existing 256 KiB charter
 budget after enrichment. CLI role and expected native display Role are separate.
+Their values must agree with the qualified native catalog or literal role before
+casting. The canvas uses matching literal specialist titles and refuses creating
+another team in a saved roster. Fixed native support agents are not team members.
 Stable IDs must be portable, nonreserved and unchanged by native slugification.
 Role text excludes option prefixes, control characters and known Markdown/TS
 interpolation delimiters. Authored-field syntax and known cross-member identity

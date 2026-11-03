@@ -37,7 +37,49 @@ const edit = (root, label, value) => {
 };
 const revision = "sha256:" + "a".repeat(64), nextRevision = "sha256:" + "b".repeat(64);
 const member = { schemaVersion: 2, kind: "kmx.squad-member-operation", memberId: "lead", state: "ready", profile: { role: "Lead / Architect" }, file: { path: ".squad/agents/lead/charter.md", revision }, taskInstructions: "Reply with exactly `Ready`.", model: "fake", instructions: "Native", examples: "", tests: [{ id: "ready", input: "Hello", assertions: [{ id: "check", type: "contains", value: "Ready" }] }], brief: { text: "Saved brief", revision } };
-const team = { root: "/project", state: "ready", access: ["Tool-free member previews"], members: [member], brief: member.brief };
+const team = { root: "/project", state: "ready", access: ["Tool-free member previews"], proposalGeneration: "host-query-v1", members: [member], brief: member.brief };
+
+test("the shared brief Save button is outside its input label", () => {
+  const doc = fakeDoc(), root = doc.createElement("main");
+  const app = renderSquadView(doc, root, { team });
+  const save = all(root).find(node => node.tag === "button" && node.textContent === "Save brief");
+  assert.ok(save);
+  assert.equal(all(root).some(node => node.tag === "label" && all(node).includes(save)), false);
+  app.dispose();
+});
+
+test("native member previews do not show unsupported tools", async () => {
+  const doc = fakeDoc(), root = doc.createElement("main");
+  const app = renderSquadView(doc, root, { team }, async () => ({ view: projectMember(member) }));
+  await click(root, "Open member →");
+  assert.equal(all(root).some(node => node.className.split(" ").includes("tools-section")), false);
+  assert.doesNotMatch(root.textContent, /Tests use the same tools/);
+  app.dispose();
+});
+
+test("the Squad overview has no package-evaluation jargon", () => {
+  const doc = fakeDoc(), root = doc.createElement("main");
+  const app = renderSquadView(doc, root, { team });
+  assert.doesNotMatch(root.textContent, /Waza|package-digest evaluation/);
+  app.dispose();
+});
+
+for (const stale of [false, true]) test(`native suggested tests stay unsaved and require the current member context (stale=${stale})`, async () => {
+  const doc = fakeDoc(), root = doc.createElement("main"), calls = [];
+  const proposed = { id: "proposed-test", input: "A new input", assertions: [{ id: "ready", type: "contains", value: "Ready" }] };
+  const app = renderSquadView(doc, root, { team }, async input => {
+    calls.push(input);
+    if (input.operation === "member") return { view: projectMember(member) };
+    assert.equal(input.action.operation, "suggest");
+    return { proposedTests: [proposed], sourceIdentity: stale ? nextRevision : revision, briefRevision: revision, message: "Suggested tests are unsaved." };
+  });
+  await click(root, "Open member →");
+  await click(root, "Suggest tests");
+  assert.equal(calls.length, 2);
+  if (stale) assert.match(root.textContent, /member or brief changed/);
+  else assert.match(root.textContent, /Proposed test/);
+  app.dispose();
+});
 
 function proposalFixture(model = "fake") {
   const members = ["lead", "reviewer", "writer", "verifier"].map((id, index) => ({
@@ -61,6 +103,15 @@ test("an empty canvas requires an authored goal before requesting a proposal", a
   await click(root, "Ask Copilot to propose");
   assert.deepEqual(calls, [{ operation: "propose", goal: "Review our release" }]);
   assert.equal(all(root).find(n => n.attrs["aria-label"] === "What should the team do?").value, "Review our release");
+  app.dispose();
+});
+
+test("an unsupported host keeps the goal but disables automatic proposals", () => {
+  const doc = fakeDoc(), root = doc.createElement("main");
+  const app = renderSquadView(doc, root, { team: { ...team, members: [], proposalGeneration: "unavailable" } }, async () => assert.fail("unsupported proposals must not execute"));
+  edit(root, "What should the team do?", "Review our release");
+  assert.equal(all(root).find(node => node.tag === "button" && node.textContent === "Ask Copilot to propose").disabled, true);
+  assert.match(root.textContent, /no-tools queries/);
   app.dispose();
 });
 
@@ -437,6 +488,45 @@ test("creating the current draft retires a pending suggestion and opens the save
   app.observeOffer({ id: "late", proposal });
   assert.doesNotMatch(root.textContent, /Use suggested team/);
   app.dispose();
+});
+
+test("model-only proposals arrive in their originating canvas as an unsaved offer", async () => {
+  const proposal = proposalFixture(), generated = { ...proposal, brief: "A newly generated goal." }, calls = [];
+  const session = { send: async () => assert.fail("proposal generation cannot use chat"), rpc: {
+    ui: { ephemeralQuery: async () => ({ answer: JSON.stringify(generated) }) },
+    mcp: { resources: { read: async ({ uri }) => ({ contents: [{ text: JSON.stringify(uri === "kmx://models" ? { schemaVersion: 1, kind: "kmx.models", defaultModel: "fake", models: ["fake"] } : { ...team, schemaVersion: 2, kind: "kmx.squad-view", members: [] }) }] }) } },
+    tools: {
+      getCurrentMetadata: async () => ({ tools: [{ name: "run", mcpServerName: "kmx-agent-builder", mcpToolName: "run" }] }),
+      execute: async input => { calls.push(input); return { resultType: "success", structuredContent: { schemaVersion: 2, kind: "kmx.squad-proposal-input", preferredModel: "fake", question: "Checked goal" } }; },
+    },
+  } };
+  const bridge = await startSquadBridge({ session, proposal });
+  try {
+    const response = await fetch(bridge.url + "actions", { method: "POST", headers: { "Content-Type": "application/json", Origin: new URL(bridge.url).origin }, body: JSON.stringify({ operation: "propose", goal: "Review a release", draft: proposal }) });
+    assert.equal((await response.json()).error, undefined);
+    const view = await fetch(bridge.url + "view.json").then(response => response.json());
+    assert.deepEqual(view.proposal, proposal);
+    assert.deepEqual(view.proposalOffer.proposal, generated);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].arguments.target, "squad-proposal");
+  } finally { await bridge.close(); }
+});
+
+test("opening a proposal over an existing team keeps the saved team and refuses Create", async () => {
+  let writes = 0;
+  const session = { rpc: {
+    mcp: { resources: { read: async () => ({ contents: [{ text: JSON.stringify({ ...team, schemaVersion: 2, kind: "kmx.squad-view", brief: { text: "", revision: "none" } }) }] }) } },
+    tools: { execute: async () => { writes++; assert.fail("existing team must not be changed"); } },
+  } };
+  const proposal = proposalFixture(), bridge = await startSquadBridge({ session, proposal });
+  try {
+    const view = await fetch(bridge.url + "view.json").then(response => response.json());
+    assert.equal(view.proposal, undefined);
+    assert.equal(view.team.members.length, 1);
+    assert.throws(() => bridge.offerProposal(proposal), { code: "invalid-action" });
+    const response = await fetch(bridge.url + "actions", { method: "POST", headers: { "Content-Type": "application/json", Origin: new URL(bridge.url).origin }, body: JSON.stringify({ operation: "create", proposal }) }).then(response => response.json());
+    assert.equal(response.error, "invalid-action"); assert.equal(writes, 0);
+  } finally { await bridge.close(); }
 });
 
 for (const status of ["complete", "partial", "refused"]) test(`bridge fences pending suggestions during Create and retains only a no-effect offer (${status})`, async () => {

@@ -17,8 +17,8 @@ const ASSETS = {
 export async function startSquadBridge({ session, proposal, extensionId, instanceId }) {
   if (proposal !== undefined) validateProposal(proposal);
   const backend = createNativeSquadBackend(session, { extensionId, instanceId });
-  await backend.team();
-  let submitted = false, creating = false;
+  const initialTeam = await backend.team();
+  let submitted = initialTeam.members.length > 0, creating = false;
   let proposalOffer;
   const act = async (input) => {
       let ownsCreate = false;
@@ -35,6 +35,7 @@ export async function startSquadBridge({ session, proposal, extensionId, instanc
           creating = true; ownsCreate = true;
         }
         const result = await backend.action(input);
+        if (input?.operation === "propose" && result.proposal) { offerProposal(result.proposal); return { ...result, proposalOffer }; }
         if (ownsCreate && result.creation?.status !== "refused") { submitted = true; proposalOffer = undefined; }
         return result;
       } catch (error) {
@@ -45,12 +46,13 @@ export async function startSquadBridge({ session, proposal, extensionId, instanc
   };
   act.dispose = () => backend.dispose();
   const bridge = await startCanvasBridge({ assets: ASSETS, read: async () => ({ ...await backend.snapshot(), ...(!submitted && proposal ? { proposal } : {}), ...(proposalOffer ? { proposalOffer } : {}) }), act });
-  return { ...bridge, offerProposal(value) {
+  function offerProposal(value) {
     if (submitted || creating) throw new ViewError("invalid-action");
     validateProposal(value);
     const encoded = JSON.stringify(value);
     proposalOffer = { id: createHash("sha256").update(encoded).digest("hex"), proposal: JSON.parse(encoded) };
-  } };
+  }
+  return { ...bridge, offerProposal };
 }
 
 export function createSquadViewController({ getSession, extensionId }) {

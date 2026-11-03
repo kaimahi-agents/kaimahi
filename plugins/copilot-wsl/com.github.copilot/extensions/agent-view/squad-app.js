@@ -8,12 +8,13 @@ async function postAction(input) {
 
 export function renderSquadView(doc, root, data, action = postAction) {
 let { team, proposal } = data;
-let activeMember, working = false, notice = data.message ?? "", outcome = data.outcome, creation = data.creation, briefDraft;
+let activeMember, working = false, proposing = false, notice = data.message ?? "", outcome = data.outcome, creation = data.creation, briefDraft;
 let generation = 0, disposed = false, renderedTeam;
 let goal = proposal?.brief ?? "", proposalOffer = data.proposalOffer;
 const memberScreens = new Map();
 const clone = (v) => structuredClone(v);
-const button = (label, fn, cls = "sb") => { const b = el(doc, "button", cls, label); b.type = "button"; b.disabled = working; b.addEventListener("click", fn); return b; };
+const canPropose = () => team.proposalGeneration === "host-query-v1";
+const button = (label, fn, cls = "sb") => { const b = el(doc, "button", cls, label); b.type = "button"; b.disabled = working || proposing; b.addEventListener("click", fn); return b; };
 const field = (label, value, change, multiline = false) => {
   const wrap = el(doc, "label", "squad-field"), input = el(doc, multiline ? "textarea" : "input");
   input.value = value; input.disabled = working; input.setAttribute("aria-label", label);
@@ -84,14 +85,15 @@ function overview() {
   } else if (!proposalOffer) {
     if (proposal) renderProposal(content); else renderTeam(content);
   }
-  content.append(el(doc, "p", "meta squad-footnote", "Tests are quick member-level checks. Waza/package-digest evaluation and team runtime execution are separate integrations."));
   root.replaceChildren(content);
 }
 function renderProposal(content) {
   content.append(field("Shared team brief", proposal.brief, (value) => { proposal.brief = value; }, true));
   const heading = el(doc, "div", "title-line"); heading.append(el(doc, "h2", "", "Proposed team"));
   const controls = el(doc, "div", "squad-actions");
-  controls.append(button("Suggest changes", () => askCopilot(proposal.brief, proposal)));
+  const suggest = button("Suggest changes", () => askCopilot(proposal.brief, proposal));
+  suggest.disabled ||= !canPropose();
+  controls.append(suggest);
   controls.append(button("+ Add role", () => {
     if (proposal.specialists.length === 7) return;
     let n = 1; const ids = new Set([proposal.lead, ...proposal.specialists].map(m => m.memberId));
@@ -130,7 +132,7 @@ function renderProposal(content) {
       }
     } catch { team.uncertain = true; proposalOffer = undefined; notice = "Creation outcome is unknown. Inspect the project before another action."; }
     finally { working = false; overview(); }
-  }, "squad-primary"); create.disabled = !!(working || team.uncertain || team.createBlocked); setup.append(create); content.append(setup);
+  }, "squad-primary"); create.disabled = !!(working || proposing || team.uncertain || team.createBlocked); setup.append(create); content.append(setup);
 }
 async function refreshTeam() {
   const started = ++generation;
@@ -148,15 +150,19 @@ function renderTeam(content) {
   if (!team.members.length) {
     const box = el(doc, "div", "squad-empty");
     const propose = button("Ask Copilot to propose", () => askCopilot(goal), "squad-primary");
-    propose.disabled = working || !goal.trim();
-    const input = field("What should the team do?", goal, value => { goal = value; propose.disabled = working || !value.trim(); }, true);
-    box.append(el(doc, "h2", "", "Build a team from one goal"), input, propose); content.append(box); return;
+    const unavailable = !canPropose();
+    propose.disabled = working || proposing || unavailable || !goal.trim();
+    const input = field("What should the team do?", goal, value => { goal = value; propose.disabled = working || proposing || unavailable || !value.trim(); }, true);
+    box.append(el(doc, "h2", "", "Build a team from one goal"), input, propose);
+    if (unavailable) box.append(el(doc, "p", "meta", "Automatic proposals need a host that supports no-tools queries. You can still open and review a supplied proposal."));
+    content.append(box); return;
   }
   const shownBrief = team.brief;
   const briefField = field("Shared team brief", briefDraft?.text ?? shownBrief.text, (value) => {
     briefDraft = value === shownBrief.text ? undefined : { text: value, expectedRevision: briefDraft?.expectedRevision ?? shownBrief.revision };
   }, true);
-  briefField.append(button("Save brief", async () => {
+  const briefGroup = el(doc, "div", "squad-field");
+  briefGroup.append(briefField, button("Save brief", async () => {
     if (working || !briefDraft) return;
     const submitted = { ...briefDraft }; working = true; overview();
     try {
@@ -170,7 +176,7 @@ function renderTeam(content) {
       }
     } catch { notice = "The brief save could not be confirmed. Your draft is still here; refresh before reconciling."; }
     finally { working = false; overview(); }
-  })); content.append(briefField);
+  })); content.append(briefGroup);
   if (briefDraft) content.append(el(doc, "p", "meta", "Shared brief has unsaved edits. Member tests use the saved brief."));
   const heading = el(doc, "div", "title-line"); heading.append(el(doc, "h2", "", "Team members"), button("Refresh team", refreshTeam)); content.append(heading);
   for (const m of team.members) {
@@ -183,9 +189,11 @@ function renderTeam(content) {
   }
 }
 async function askCopilot(text, draft) {
-  try { const result = await action({ operation: "propose", goal: text, ...(draft ? { draft: clone(draft) } : {}) }); notice = result.message; }
+  if (proposing) return;
+  proposing = true; notice = "Generating a proposal for review…"; overview();
+  try { const result = await action({ operation: "propose", goal: text, ...(draft ? { draft: clone(draft) } : {}) }); notice = result.message; if (result.proposalOffer) proposalOffer = result.proposalOffer; }
   catch { notice = "Copilot could not receive the proposal request. Your draft is still here."; }
-  overview();
+  finally { proposing = false; overview(); }
 }
 async function openMember(memberId) {
   const started = ++generation, existing = memberScreens.get(memberId), observation = existing?.handle.observation();
@@ -234,6 +242,7 @@ async function openMember(memberId) {
     },
     modelSelection: false,
     toolsSelection: false,
+    toolsSection: false,
     ...(team.previewControl === "run-id-v1" ? { fetchProgress: runId => execute({ operation: "progress", runId }), interruptOnEdit: true } : {}),
   });
   activeMember = { memberId, shell, handle }; picker.update();

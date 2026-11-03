@@ -210,6 +210,14 @@ test(`actual ${variant} extension opens its own provider and registers the kmx s
     f.calls.length = 0;
     await registration.commands.find(c => c.name === "squad-view").handler();
     assert.deepEqual(f.calls, [["open", { extensionId: provider, canvasId: "kmx-squad-view", instanceId: "kmx-squad", input: {} }]]);
+    const squadOpen = f.session.rpc.canvas.open;
+    f.session.rpc.canvas.open = async () => { throw new Error("PRIVATE HOST DATA"); };
+    f.calls.length = 0;
+    await registration.commands.find(c => c.name === "squad-view").handler();
+    assert.match(f.calls[0][1], /opt-in development feature.*normal marketplace setup/);
+    assert.match(f.calls[0][1], /SQUAD-CANVAS\.md/);
+    assert.doesNotMatch(f.calls[0][1], /PRIVATE/);
+    f.session.rpc.canvas.open = squadOpen;
     const canvas = registration.canvases[0];
     const ctx = { instanceId: "direct-provider-proof", input: { path: PATH } };
     f.calls.length = 0;

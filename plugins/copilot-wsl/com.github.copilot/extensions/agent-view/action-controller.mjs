@@ -136,7 +136,13 @@ export function createActionController(state, { execute, fetchProgress, drafts, 
         state.runAlert = { text: response.message || "", saved: false, one: values.caseId };
       } else state.message = response.message || "The action was refused. Your draft is still here.";
     } else if (operation === "suggest") {
-      state.message = response?.message || "Asked Copilot to add tests in chat.";
+      if (state.base.authoring?.profile === "squad-member" && response?.proposedTests) {
+        if (response.sourceIdentity !== sourceIdentity(state.base) || response.briefRevision !== state.base.contextRevision) state.message = "The saved member or brief changed. Suggest tests again to review new drafts.";
+        else {
+          try { drafts.importSuggestions(response.proposedTests); state.message = response.message; }
+          catch { state.message = "The suggested tests conflict with your drafts. Review them before requesting new suggestions."; }
+        }
+      } else state.message = response?.message || "Asked Copilot to add tests in chat.";
     } else if (matches(response?.view)) {
       adopt(response.view, submitted);
       if (tested) state.lastRun = { one: values.caseId };

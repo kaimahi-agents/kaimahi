@@ -20,9 +20,10 @@ type SquadProgram struct{ Path, Release, GOOS, GOARCH string }
 // SquadPlan contains an already-approved composition and owned charter changes.
 // Approval enforcement/presentation belongs to the host, not this data object.
 type SquadPlan struct {
-	Lead        SquadMember
-	Specialists []SquadMember
-	Brief       *string
+	Lead         SquadMember
+	Specialists  []SquadMember
+	Brief        *string
+	RequireEmpty bool
 }
 type SquadMemberResult struct {
 	ID    string `json:"id"`
@@ -185,6 +186,11 @@ func (c *SquadCreator) Create(ctx context.Context, plan SquadPlan) (result Squad
 		return result, err
 	}
 	if !missing {
+		if plan.RequireEmpty {
+			if err := c.requireEmptyTeam(before); err != nil {
+				return result, err
+			}
+		}
 		for _, m := range members {
 			if err := c.preflightMember(m, before); err != nil {
 				return result, err
@@ -236,6 +242,11 @@ func (c *SquadCreator) Create(ctx context.Context, plan SquadPlan) (result Squad
 		if err != nil {
 			result.EffectsUnknown = true
 			return result, err
+		}
+		if plan.RequireEmpty {
+			if err := c.requireEmptyTeam(current); err != nil {
+				return result, err
+			}
 		}
 		for _, m := range members {
 			if err := c.preflightMember(m, current); err != nil {

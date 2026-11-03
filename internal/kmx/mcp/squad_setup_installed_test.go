@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"testing"
 )
@@ -68,7 +69,7 @@ func TestSquadInstalledSetupCreate(t *testing.T) {
 	lead, greeter := squadLead(), enrichMember()
 	lead.Model = "fake"
 	greeter.Model = "fake"
-	got, err := c.Create(context.Background(), SquadPlan{Lead: lead, Specialists: []SquadMember{greeter}})
+	got, err := c.Create(context.Background(), SquadPlan{Lead: lead, Specialists: []SquadMember{greeter}, RequireEmpty: true})
 	if err != nil {
 		t.Fatalf("integrated native setup failed: %+v %v", got, err)
 	}
@@ -96,6 +97,19 @@ func TestSquadInstalledSetupCreate(t *testing.T) {
 		if err != nil || !d.Enriched || d.Profile.Role != m.DisplayRole {
 			t.Fatalf("actual native mapping not reconstructed: %v", err)
 		}
+	}
+	before, err := c.snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherLead := lead
+	otherLead.ID = "other-lead"
+	if _, err := c.Create(t.Context(), SquadPlan{Lead: otherLead, RequireEmpty: true}); err == nil {
+		t.Fatal("existing native team accepted another lead")
+	}
+	after, err := c.snapshot()
+	if err != nil || !reflect.DeepEqual(before, after) {
+		t.Fatal("refused native team creation changed files")
 	}
 	entries, err := os.ReadDir(home)
 	if err != nil || len(entries) != 0 {

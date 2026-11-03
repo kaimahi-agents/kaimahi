@@ -4,10 +4,38 @@ The first vertical slice uses real native Squad 1.1.0 authoring through kmx MCP:
 review a proposal, Create once, reopen the team, save the shared brief, edit a
 member and run its tests. A new team starts with a blank goal. Enter the goal and
 ask Copilot to propose roles, instructions and tests, then review the suggestion.
-Proposals use the current model catalog; member previews use the configured route.
+Proposals follow the current chat model. Reviewed member preferences start from
+the model catalog; member previews use the configured route.
 
-New to Squad? Read [the illustrated code-flow guide](SQUAD-CODE-FLOW.md) for the
-concepts, source ownership and function-by-function creation/edit/test walkthrough.
+## Availability and setup
+
+Native Squad is an opt-in development feature in this PR. A normal marketplace
+plugin install supports agent files but does not configure a native Squad root or
+launcher. Use the development packaging setup below. The extension reports these
+requirements if `/squad-view` cannot open; it does not install Squad or change MCP
+configuration automatically.
+
+## Vocabulary and ownership
+
+| Term | Meaning |
+|---|---|
+| Squad | A saved team of named members with native roster and casting metadata |
+| Member | One role in that team |
+| Charter | The member definition at `.squad/agents/<member>/charter.md` |
+| Init / cast | Initialize native Squad files, then register members and create charters |
+| Enrich | Add the reviewed task instructions, model preference and tests |
+| Shared brief | Saved context supplied alongside every member's instructions |
+| Revision | A fingerprint of saved bytes used to reject stale edits and results |
+
+| Owner | Responsibility |
+|---|---|
+| Squad 1.1.0 | Identity, role, native charter context, roster and casting metadata |
+| kmx MCP | Checked native authoring, shared-brief writes and individual previews |
+| Copilot host | Transient no-tools queries and native tool approvals |
+| Canvas | Reviewable drafts, explicit Create/Save/Test actions and session-local results |
+
+Follow `squad-app.js`, `squad-backend.mjs`, `squad_operations.go`,
+`squad_cast.go`/`squad_member.go` and `agent_file_squad.go` for the main request path.
 
 ## Architecture after maintainer feedback
 
@@ -15,6 +43,7 @@ concepts, source ownership and function-by-function creation/edit/test walkthrou
 flowchart TB
   UI["Canvas: cast cards, access chips, Tests"] --> Host["Copilot session and typed authoring adapter"]
   Host --> KMX["kmx MCP: native Create / Edit / Run / Test"]
+  Host --> Draft["No-tools query: proposal data only"]
   KMX --> Native["Squad 1.1.0: init and cast"]
   KMX --> Preview["Existing individual-member preview"]
   Host -. "runtime integration, follow-up" .-> Backend["SquadBackend: capabilities, admission, events, cancellation"]
@@ -32,11 +61,11 @@ the renderer. Negotiated capabilities control available actions; access chips
 must describe actual host enforcement. The current chip describes tool-free
 native previews, which kmx enforces.
 
-Tests are the quick inner-loop checks. Waza is the deeper package-digest evaluation
-integration. Later recovery must distinguish journal replay from uncertain tool
-or sandbox calls requiring fencing/approval; never replay an uncertain Create.
+Tests are individual-member checks, not whole-team execution or package evidence.
+Later recovery must distinguish reading retained results from repeating uncertain
+tool or sandbox effects; never replay an uncertain Create.
 
-## Open in Copilot
+## Open a development package in Copilot
 
 Package a development plugin with a current kmx binary and a qualified standalone
 Squad 1.1.0 launcher using `package.py` as described in [README.md](README.md).
@@ -46,22 +75,33 @@ launcher arguments. This is trusted MCP startup configuration, not a `package.py
 flag. Use an existing supported GitHub sign-in as described in [README.md](README.md#agent-paths-and-real-tools).
 The provider selection makes `kmx://models` available for proposal generation and
 the model picker; the root-bound package default does not register that resource.
+Automatic proposals also require the host SDK's transient no-tools query. It
+answers from the current conversation context without tools or a new chat turn.
+kmx checks the goal, draft and native source before the query; the result is
+untrusted proposal data, not execution or model-identity evidence. Hosts without
+that capability report it as unavailable. There is no unrestricted-chat fallback.
 Install the configured directory, open its selected project in the Copilot
 app, and invoke `/squad-view`. The canvas can also be opened through the built-in
 opener with `canvasId: kmx-squad-view`, provider
 `plugin:kmx-agent-builder:agent-view`, stable instance ID `kmx-squad`, and input `{}`.
 
-For a chat-generated proposal, the opener accepts `input.proposal` with `brief`,
+For a separately reviewed proposal, the opener accepts `input.proposal` with `brief`,
 `lead` and `specialists`. Every member contains `memberId`, `role`, `displayRole`,
 `taskInstructions`, `model` and `tests` (the existing ID/input/assertions objects).
-The Lead uses role `lead` and display role `Lead / Architect`. Opening has no
-creation effects. The canvas validates and submits only on Create squad.
+The Lead uses role `lead` and display role `Lead / Architect`. Specialists use the
+same literal title for `role` and `displayRole`; the backend also checks the
+[qualified native role catalog](https://github.com/bradygaster/squad/blob/v1.1.0/packages/squad-cli/src/cli/commands/cast.ts)
+before native writes. Opening has no creation effects. The canvas validates and
+submits only on Create squad. A nonempty saved roster refuses another Create,
+including after waiting for the Go creator gate. External native writers remain
+outside that cooperative gate; use a quiet project.
 
 ## Browser rehearsal with real MCP
 
 This checkout helper opens an already-created team. Create the team in the Copilot
 app first; the helper refuses a fresh project without writing native state.
-Proposal generation and Suggest tests require the real Copilot chat session.
+Proposal generation and Suggest tests require the real host's no-tools query
+capability. The rehearsal helper does not supply a model or chat fallback.
 
 ```sh
 node plugins/tests/copilot/squad-demo.mjs /absolute/kmx /absolute/saved-team /absolute/squad copilot
@@ -103,6 +143,9 @@ an unsaved draft until the acknowledged source can be compared.
 The generated response returns to the same canvas as a reviewable offer. Use suggested team
 accepts it; Keep my draft preserves current work. Suggest changes follows the same
 review flow, with no native writes until Create squad.
+Native **Suggest tests** uses the same no-tools query and adds only unsaved
+drafts to the member editor. It checks the member and brief revisions again after
+generation. Review, edit or cancel these drafts before Save and run.
 Suggestions show collapsed role cards with responsibility previews and test counts.
 Expand a member, then a named test, to read its input and pass checks. Full
 instructions are separately expandable; the existing draft stays under Your
@@ -112,7 +155,9 @@ before effects keeps the draft and suggestion available for review.
 
 The shared brief is saved in `.squad/kmx-brief.md` using revision-checked source
 publication. Preview envelopes carry both member and brief revisions. Real model
-routes receive native instructions plus the shared brief.
+routes receive native instructions plus the shared brief. The deterministic fake
+route receives the brief followed by task instructions, without native boilerplate
+or Examples; changing only the brief can therefore change its answer.
 
 The canvas sends the displayed member and brief revisions with Run/Test. Native
 execution checks both before preview, including after a tool approval delay. Older
@@ -120,7 +165,9 @@ native callers may omit both; supplying only one refuses. Background reads refre
 the active member, mark changed results out of date and preserve unsaved drafts.
 Confirmed brief saves remain acknowledged if the subsequent team read fails.
 An invalid or unreadable shared brief refuses native operations. The brief must
-be nonempty UTF-8 text, at most 16 KiB, without NUL bytes; repair or remove
+be nonempty UTF-8 text, at most 16 KiB, without NUL bytes or known credential
+patterns. These checks run before saving and again before preview; they do not
+guarantee detection of every possible secret. Repair or remove
 `.squad/kmx-brief.md` manually and refresh. Failed native reads preserve drafts and
 historical results while removing current-pass status. Valid reads restore editing;
 an explicit new preview establishes a current result.
@@ -135,9 +182,9 @@ and add their first test; removing the last test saves without running a preview
 
 ## Remaining work
 
-The native authoring adapter supports generated proposals, per-case progress
+The native authoring adapter supports host-generated proposals, per-case progress
 and request-scoped Test cancellation. Actual SquadBackend/HarnessAdapter runtime
-integration, retained history and Waza integration remain follow-up work. Before
+integration, retained history and package evaluation remain follow-up work. Before
 shipping, complete real app visual approval and broader cross-platform/security
 qualification. Existing successful native creation can have partial brief-save
 effects; inspect them, never repeat Create automatically.

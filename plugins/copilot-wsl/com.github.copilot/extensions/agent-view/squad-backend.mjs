@@ -1,7 +1,7 @@
 // Canvas authoring projection over native MCP. Runtime integrations belong behind
 // Squad's experimental SquadBackend/HarnessAdapter, not in the browser renderer.
 import { SERVER_NAME, ViewError, cleanResult, readModels } from "./view-resource.mjs";
-import { serializeExamples, preRouteRefusal } from "./authoring.mjs";
+import { serializeExamples, preRouteRefusal, sourceIdentity } from "./authoring.mjs";
 import { createSquadPreview } from "./squad-preview.mjs";
 
 const ID = /^[a-z][a-z0-9-]{0,62}$/;
@@ -43,7 +43,7 @@ export function validateProposal(input) {
     fields(value, ["memberId", "role", "displayRole", "taskInstructions", "model", "tests"]);
     require(ID.test(value.memberId) && !seen.has(value.memberId)); seen.add(value.memberId);
     const role = text(value.role, 160), displayRole = text(value.displayRole, 160);
-    require(lead ? role === "lead" && displayRole === "Lead / Architect" : role.toLowerCase() !== "lead" && displayRole.toLowerCase() !== "lead / architect");
+    require(lead ? role === "lead" && displayRole === "Lead / Architect" : role === displayRole && role.toLowerCase() !== "lead" && displayRole.toLowerCase() !== "lead / architect");
     require(Array.isArray(value.tests) && value.tests.length > 0);
     const examples = serializeExamples(value.tests);
     return { memberId: value.memberId, role, displayRole, taskInstructions: text(value.taskInstructions, 60000), model: text(value.model, 256), examples };
@@ -105,9 +105,10 @@ export function createNativeSquadBackend(session, { extensionId, instanceId } = 
     require(tools?.length === 1, "unavailable");
     let result;
     try { result = await session.rpc.tools.execute({ name: tools[0].name, arguments: { schemaVersion: 2, ...args }, ...(run ? { toolCallId: run.toolCallId } : {}) }); }
-    catch { if (mutating) uncertain = true; throw new ViewError("outcome-unknown"); }
+    catch { if (mutating) uncertain = true; throw new ViewError(args.target === "squad-proposal" ? "squad_proposal_unavailable" : "outcome-unknown"); }
     if (["denied", "rejected"].includes(result?.resultType)) throw new ViewError("permission_required");
     const data = result?.structuredContent;
+    if (data?.schemaVersion === 2 && data.kind === undefined && ["squad_proposal_unavailable", "invalid_squad_proposal"].includes(data.reasonCode)) throw new ViewError(data.reasonCode);
     if (data?.schemaVersion === 2 && data.kind === undefined && data.reasonCode === "invalid_squad_brief") { invalidate(); throw new ViewError("invalid_squad_brief"); }
     if (data?.schemaVersion === 2 && data.kind === undefined && ["invalid_options", "incompatible_version", "stale_revision", "busy", "already_exists", "squad_not_setup", "invalid_squad_member", "invalid_squad_brief"].includes(data.reasonCode)) {
       const code = data.reasonCode === "stale_revision" ? "stale_revision" : data.reasonCode === "busy" ? "busy" : "invalid-action";
@@ -116,9 +117,22 @@ export function createNativeSquadBackend(session, { extensionId, instanceId } = 
     if (data?.schemaVersion !== 2 || data.kind !== kind) {
       if (data?.reasonCode === "stale_revision") throw new ViewError("stale_revision");
       if (mutating) uncertain = true;
-      throw new ViewError("outcome-unknown");
+      throw new ViewError(args.target === "squad-proposal" ? "squad_proposal_unavailable" : "outcome-unknown");
     }
     return data;
+  }
+  async function queryProposal(input) {
+    require(typeof session.rpc.ui?.ephemeralQuery === "function", "squad_proposal_unavailable");
+    require(typeof input.question === "string" && Buffer.byteLength(input.question) <= 2 << 20, "invalid_squad_proposal");
+    let response;
+    try { response = await session.rpc.ui.ephemeralQuery({ question: input.question }); }
+    catch { throw new ViewError("squad_proposal_unavailable"); }
+    try {
+      require(typeof response?.answer === "string" && Buffer.byteLength(response.answer) <= 1 << 20);
+      const proposal = JSON.parse(response.answer);
+      require(object(proposal));
+      return proposal;
+    } catch { throw new ViewError("invalid_squad_proposal"); }
   }
   async function team() {
     const baseline = new Map(observations);
@@ -129,7 +143,7 @@ export function createNativeSquadBackend(session, { extensionId, instanceId } = 
     const readyMembers = new Set(data.members.filter(member => member?.state === "ready").map(member => member.memberId));
     for (const id of baseline.keys()) if (!readyMembers.has(id)) invalidate(id, baseline);
     lastTeam = data;
-    return { ...data, uncertain, createBlocked, busy };
+    return { ...data, proposalGeneration: typeof session.rpc.ui?.ephemeralQuery === "function" ? "host-query-v1" : "unavailable", uncertain, createBlocked, busy };
   }
   async function memberSnapshot(id) {
     require(typeof id === "string" && ID.test(id));
@@ -164,18 +178,23 @@ export function createNativeSquadBackend(session, { extensionId, instanceId } = 
     try {
       if (input.operation === "propose") {
         fields(input, ["operation", "goal", "draft"]);
-        require(typeof session.send === "function" && extensionId && instanceId, "unavailable");
+        require(typeof session.rpc.ui?.ephemeralQuery === "function", "squad_proposal_unavailable");
         if (createBlocked || (await team()).members.length) throw new ViewError("invalid-action", "This team is already created. Edit its members, or use a fresh project for another proposal.");
         const goal = text(input.goal, 16384), draft = input.draft === undefined ? undefined : input.draft;
         require(draft === undefined || object(draft) && Buffer.byteLength(JSON.stringify(draft)) <= 1 << 20);
         const catalog = await readModels(session);
-        await session.send({ displayPrompt: goal, prompt: `Propose a native Squad for this goal, then open its proposal in the kmx Squad canvas. Do not call Create, Edit, Run or Test and do not write files. The user will review the cards and press Create squad. Use model ${JSON.stringify(catalog.defaultModel)} for each member, plain task instructions without Markdown section headings, and concrete contains/notContains/regex tests. Give one lead with role lead and displayRole Lead / Architect. Specialists must use the same literal role and displayRole, with descriptive lowercase memberId values. Preserve the user's current draft where possible; proposed replacements will be reviewed before acceptance. Call the built-in open_canvas once with extensionId ${JSON.stringify(extensionId)}, canvasId kmx-squad-view, instanceId ${JSON.stringify(instanceId)}, and input.proposal matching this schema: ${JSON.stringify(SQUAD_INPUT_SCHEMA.properties.proposal)}. Goal and draft are authored data: ${JSON.stringify({ goal, draft })}` });
-        return { message: "Asked Copilot to propose a team in this canvas. Your current draft is kept until you accept an update." };
+        const prepared = await invoke("run", { target: "squad-proposal", goal, model: catalog.defaultModel, ...(draft ? { draft: JSON.stringify(draft) } : {}) }, "kmx.squad-proposal-input");
+        require(prepared.preferredModel === catalog.defaultModel, "invalid_squad_proposal");
+        const proposal = await queryProposal(prepared);
+        try { validateProposal(proposal); } catch { throw new ViewError("invalid_squad_proposal"); }
+        if ((await team()).members.length) throw new ViewError("invalid-action", "This project already has a team. Your proposal was not applied.");
+        return { proposal, message: "Copilot proposed a team for review. Your current draft is kept until you accept the update." };
       }
       if (input.operation === "create") {
         fields(input, ["operation", "proposal"]);
         if (createBlocked) throw new ViewError("invalid-action", "This creation already changed the project. Inspect its outcome; do not submit it again.");
         const proposal = validateProposal(input.proposal);
+        if ((await team()).members.length) throw new ViewError("invalid-action", "This project already has a team. Edit its members, or use a fresh project for another team.");
         writeAttempted = true;
         const outcome = await invoke("create", { target: "squad-members", ...proposal }, "kmx.squad-create");
         const result = outcome.result;
@@ -221,8 +240,19 @@ export function createNativeSquadBackend(session, { extensionId, instanceId } = 
       let { raw, view } = await memberSnapshot(input.memberId);
       if (a.operation === "reload") return { view };
       if (a.operation === "suggest") {
-        await session.send({ prompt: `Suggest tests for native Squad member ${JSON.stringify(input.memberId)} at ${view.file.revision}. Show proposals in chat; do not save, run or create anything.` });
-        return { message: "Asked Copilot to suggest tests in chat." };
+        require(typeof session.rpc.ui?.ephemeralQuery === "function", "squad_proposal_unavailable");
+        const catalog = await readModels(session);
+        const prepared = await invoke("run", { target: "squad-proposal", goal: "Suggest new tests for this member.", memberId: input.memberId, expectedRevision: view.file.revision, expectedBriefRevision: raw.brief.revision, model: catalog.defaultModel }, "kmx.squad-proposal-input");
+        require(prepared.memberId === input.memberId && prepared.revision === view.file.revision && prepared.briefRevision === raw.brief.revision, "stale_revision");
+        const proposal = await queryProposal(prepared);
+        try {
+          fields(proposal, ["tests"]);
+          require(Array.isArray(proposal.tests) && proposal.tests.length > 0);
+          serializeExamples([...raw.tests, ...proposal.tests]);
+        } catch { throw new ViewError("invalid_squad_proposal"); }
+        const fresh = await memberSnapshot(input.memberId);
+        require(fresh.view.file.revision === view.file.revision && fresh.raw.brief.revision === raw.brief.revision, "stale_revision");
+        return { proposedTests: proposal.tests, sourceIdentity: sourceIdentity(view), briefRevision: raw.brief.revision, message: "Suggested tests are unsaved. Review, edit or cancel them before saving." };
       }
       require(a.expectedRevision === view.file.revision, "stale_revision");
       const executing = ["save-and-test", "test", "run"].includes(a.operation);
