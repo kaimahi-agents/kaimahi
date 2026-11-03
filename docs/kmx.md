@@ -233,6 +233,14 @@ File Run/Test also supports named stdio servers from the agent folder's
 `kmx.yaml`: repeat `--mcp-server NAME` to replace saved selection, or use
 `--no-mcp-servers` to clear it for CI. The fixed binding takes precedence if
 also supplied. See [stdio config and offline CI](local-preview.md#selected-stdio-servers-in-file-runtest).
+File Run/Test also resolves declared Enabled tools from `commandTools` in the
+physical agent folder's `kmx.yaml`, with a fixed absolute executable and argv
+and only empty-object tool input. `--no-mcp-servers` does not disable command
+tools; use the existing `tools` Enabled/Disabled settings. Populated recordings
+replay without launching commands or resolving their environment. See
+[fixed command tools](local-preview.md#fixed-command-tools-in-file-runtest)
+for configuration, checked output and Unix cleanup limits; native Windows command
+execution is unavailable.
 The operator binds one repository and an explicit environment credential name;
 no endpoint/credential comes from the agent or model. Only a selected call reads
 up to 20 merged PRs through the fixed Streamable-HTTP endpoint. Missing authority,
