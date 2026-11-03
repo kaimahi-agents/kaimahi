@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -67,6 +68,9 @@ func TestRunOnlyPreservesOrderedFixtures(t *testing.T) {
 	req.Examples = []agentfile.Example{second, req.Examples[0]}
 	req.Agent.Model = "unit"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.UserAgent(), "kmx/") {
+			t.Errorf("User-Agent = %q", r.UserAgent())
+		}
 		var body struct {
 			Messages []struct{ Role, Content string }
 		}

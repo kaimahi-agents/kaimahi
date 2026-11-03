@@ -475,6 +475,7 @@ class CandidateProofTests(unittest.TestCase):
         member = subject["PhysicalMember"]
         markers = dict(zip(Q.MARKERS, [subject[k] for k in ("Suite", "SuiteDigest", "Member", "Renderer", "BindingDigest", "RenderedDigest")]))
         markers["kaimahi.dev/suite-evaluation-run"] = run
+        markers[Q.CREATED_BY_VERSION] = "v0.0.0-dev.123456789abc"
         specs = {"Provider": {"type": "openai"}, "Agent": {"systemPrompt": {"inline": "PRIVATE_INSTRUCTIONS"}}}
         cases = cases or {"one.yaml": b'id: arithmetic\ninput: What is 2 + 2?\nexpectContains: ["4"]\n'}
         rows = [{"taskName": "member-eval-" + suffix, "taskUID": "task-uid" if i == 0 else "second-task-uid"}
@@ -498,6 +499,10 @@ class CandidateProofTests(unittest.TestCase):
             request.pop("status", None)
             for field in ("uid", "generation", "resourceVersion"):
                 request["metadata"].pop(field)
+            dry = A.classify(["create", "--dry-run=server", "-f", "-", "-o", "json"], json.dumps(request).encode())
+            dry_runs = 2 if kind == "Task" else 3
+            frames.extend({**dry, "returnCode": 0, "response": A.response_snapshot(json.dumps(request).encode())}
+                          for _ in range(dry_runs))
             create = A.classify(["create", "-f", "-", "-o", "json"], json.dumps(request).encode())
             pending = copy.deepcopy(doc); pending["status"] = None
             frames.append({**create, "returnCode": 0, "response": A.response_snapshot(json.dumps(pending).encode())})
@@ -520,20 +525,38 @@ class CandidateProofTests(unittest.TestCase):
         receipt, frames, cases, specs = self.fixture()
         tasks = Q.verify_candidate(receipt, frames, cases, specs)
         self.assertEqual(tasks[0]["uid"], "task-uid")
+        task_name = receipt["cases"][0]["taskName"]
+        self.assertEqual(sum(f.get("admission", False) for f in frames if (f["resource"], f["name"]) == ("Task", task_name)), 3)
         self.assertNotIn("PRIVATE_INSTRUCTIONS", json.dumps(tasks))
         for kind in ("Provider", "Agent", "Task"):
             changed = copy.deepcopy(frames)
             for f in changed:
                 if f.get("response", {}).get("kind") == kind:
                     f["response"]["metadata"]["annotations"].pop("kaimahi.dev/suite-evaluation-run", None)
-            with self.subTest(kind=kind), self.assertRaisesRegex(ValueError, "candidate-.*identity"):
+            with self.subTest(kind=kind), self.assertRaisesRegex(ValueError, "candidate-.*(identity|markers)"):
                 Q.verify_candidate(receipt, changed, cases, specs)
+        for edit in (
+                lambda annotations: annotations.pop(Q.CREATED_BY_VERSION),
+                lambda annotations: annotations.update({Q.CREATED_BY_VERSION: "foreign"})):
+            changed = copy.deepcopy(frames)
+            created = next(f for f in changed if f["persistent"] and f["resource"] == "Provider")
+            edit(created["response"]["metadata"]["annotations"])
+            with self.subTest(edit=edit), self.assertRaisesRegex(ValueError, "candidate-(created-(version|markers)|get-drift)"):
+                Q.verify_candidate(receipt, changed, cases, specs)
+        without_version = copy.deepcopy(frames)
+        for frame in without_version:
+            if frame.get("response", {}).get("kind") in {"Provider", "Agent", "Task"}:
+                frame["response"]["metadata"]["annotations"].pop(Q.CREATED_BY_VERSION, None)
+        self.assertEqual(Q.verify_candidate(receipt, without_version, cases, specs)[0]["uid"], "task-uid")
+        task_create = next(i for i, f in enumerate(frames) if f["persistent"] and f["resource"] == "Task")
+        task_get = next(i for i, f in enumerate(frames) if f["verb"] == "get" and
+                        f.get("response", {}).get("kind") == "Task")
         for edit in (lambda fs: fs[-1]["preconditions"].update(resourceVersion="stale"),
                      lambda fs: fs[-1]["preconditions"].update(uid="foreign"),
                      lambda fs: fs[-1]["response"].update(status="Failure"),
-                     lambda fs: fs.pop(5), lambda fs: fs[5]["response"].update(phase="Running"),
-                     lambda fs: fs[4]["response"].update(inputDigest="0" * 64),
-                     lambda fs: fs.append(dict(fs[4]))):
+                     lambda fs: fs.pop(task_get), lambda fs: fs[task_get]["response"].update(phase="Running"),
+                     lambda fs: fs[task_create]["response"].update(inputDigest="0" * 64),
+                     lambda fs: fs.append(dict(fs[task_create]))):
             changed = copy.deepcopy(frames); edit(changed)
             with self.subTest(edit=edit), self.assertRaises(ValueError):
                 Q.verify_candidate(receipt, changed, cases, specs)
@@ -729,6 +752,7 @@ class AuditTests(unittest.TestCase):
     def test_real_wrapper_projects_private_responses_and_forwards_original_bytes(self):
         doc = task()
         doc["metadata"].update(resourceVersion="19", annotations={"kaimahi.dev/suite-evaluation-run": "a" * 32,
+                                                                A.CREATED_BY_VERSION: "v0.0.0-dev.123456789abc",
                                                                 "foreign/payload": "PRIVATE_MARKER"})
         doc["status"]["answer"] = "PRIVATE_ANSWER"
         raw = json.dumps(doc).encode()
@@ -744,7 +768,9 @@ class AuditTests(unittest.TestCase):
             self.assertEqual((result.returncode, result.stdout), (0, raw))
             frames = A.completed([json.loads(line) for line in audit.read_text().splitlines()])
             self.assertIn("response", frames[0], "historical server snapshot missing")
-            self.assertEqual(frames[0]["response"]["metadata"]["annotations"], {"kaimahi.dev/suite-evaluation-run": "a" * 32})
+            self.assertEqual(frames[0]["response"]["metadata"]["annotations"],
+                             {"kaimahi.dev/suite-evaluation-run": "a" * 32,
+                              A.CREATED_BY_VERSION: "v0.0.0-dev.123456789abc"})
             self.assertNotIn("PRIVATE_", audit.read_text())
             self.assertNotIn("What is", audit.read_text())
             frames[0]["response"]["metadata"]["annotations"]["kaimahi.dev/suite-evaluation-run"] = "PRIVATE_PAYLOAD"

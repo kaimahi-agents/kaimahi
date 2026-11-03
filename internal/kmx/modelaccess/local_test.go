@@ -31,6 +31,9 @@ func TestLocalDiscoveryStates(t *testing.T) {
 					if r.Method != "GET" || r.Header.Get("Authorization") != "" {
 						t.Errorf("unexpected request %s", r.Method)
 					}
+					if !strings.HasPrefix(r.UserAgent(), "kmx/") {
+						t.Errorf("User-Agent = %q", r.UserAgent())
+					}
 					expected := "/openai/models"
 					body := tc.body
 					if provider == "ollama" {

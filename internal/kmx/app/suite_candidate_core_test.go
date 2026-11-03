@@ -11,13 +11,18 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
 )
 
 // Removing any fence must expose admission or a new CREATE, not merely change an error string.
 func TestCandidateCorePlacementFencesAndPartialACK(t *testing.T) {
-	for _, stage := range []string{"pass", "unguarded", "collision", "admission spec", "unknown create", "missing spec", "create marker", "ready UID", "source", "binding", "runtime", "cluster", "namespace"} {
+	for _, stage := range []string{"pass", "unguarded", "collision", "admission spec", "unknown create", "missing spec", "create marker", "create identity", "ready UID", "source", "binding", "runtime", "cluster", "namespace"} {
 		t.Run(stage, func(t *testing.T) {
 			a, p, r, f, reads, _, prepared := candidateCoreSetup(t)
+			if stage == "create identity" {
+				a.SetBuildIdentity(version.Build{Version: "v0.4.0", Release: true})
+			}
 			if stage == "unguarded" {
 				a.guarded = false
 			}
@@ -67,6 +72,8 @@ func TestCandidateCorePlacementFencesAndPartialACK(t *testing.T) {
 							delete(doc, "spec")
 						case "create marker":
 							delete(nativeMetadata(doc)["annotations"].(map[string]any), suiteCandidateRunMarker)
+						case "create identity":
+							delete(nativeMetadata(doc)["annotations"].(map[string]any), createdByVersionAnnotation)
 						case "ready UID":
 							nativeMetadata(f.objects["Provider/"+p.Subject.PhysicalMember])["uid"] = "replacement"
 						case "source":

@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
 )
 
 func releaseApplyFixture(t *testing.T, absent string) (*App, *nativeReadFixture, ReleaseLiftOptions, string) {
@@ -40,6 +42,7 @@ func TestApplyReleaseLiftCreateOrExactReuse(t *testing.T) {
 	for _, absent := range []string{"", "Provider", "Agent", "both"} {
 		t.Run(absent, func(t *testing.T) {
 			a, _, opt, dir := releaseApplyFixture(t, absent)
+			a.SetBuildIdentity(version.Build{Version: "v0.4.0", Release: true})
 			p, err := a.PrepareReleaseLift(t.Context(), opt)
 			if err != nil {
 				t.Fatal(err)
@@ -76,6 +79,10 @@ func TestApplyReleaseLiftCreateOrExactReuse(t *testing.T) {
 			for _, call := range writes {
 				if !slices.Contains(call.Args, "create") || call.Document["kind"] == "Secret" {
 					t.Fatal("not create-only")
+				}
+				annotations := call.Document["metadata"].(map[string]any)["annotations"].(map[string]any)
+				if annotations[createdByVersionAnnotation] != "v0.4.0" {
+					t.Fatalf("%s build identity = %v", call.Document["kind"], annotations)
 				}
 			}
 			raw, _ := json.Marshal(result)

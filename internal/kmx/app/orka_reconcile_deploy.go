@@ -96,13 +96,34 @@ func (a *App) inspectOrkaPlacement(ctx context.Context, namespace string, desire
 			return check, fmt.Errorf("prepare %s/%s create: %w", kind, name, err)
 		}
 		addOrkaMarker(doc, marker)
+		if err := a.annotateCreatedByVersion(doc); err != nil {
+			return check, fmt.Errorf("prepare %s/%s build identity: %w", kind, name, err)
+		}
 		body, err := json.Marshal(doc)
 		if err != nil {
 			return check, fmt.Errorf("encode %s/%s create: %w", kind, name, err)
 		}
-		if _, err := a.orkaCapture(ctx, body, "-n", namespace, "create", "--dry-run=server", "--validate=strict", "-f", "-", "-o", "json"); err != nil {
+		admitted, err := a.orkaCapture(ctx, body, "-n", namespace, "create", "--dry-run=server", "--validate=strict", "-f", "-", "-o", "json")
+		if err != nil {
 			return check, fmt.Errorf("%s/%s strict server create preflight failed: %w", kind, name, err)
 		}
+		if err := validateCreatedByVersion(admitted, doc, namespace, false); err != nil {
+			return check, fmt.Errorf("%s/%s strict server create preflight changed build identity: %w", kind, name, err)
+		}
+		var admittedDoc map[string]any
+		if json.Unmarshal(admitted, &admittedDoc) != nil {
+			return check, fmt.Errorf("%s/%s strict server create preflight returned invalid JSON", kind, name)
+		}
+		admittedMeta, _ := admittedDoc["metadata"].(map[string]any)
+		admittedAnnotations, _ := admittedMeta["annotations"].(map[string]any)
+		if admittedDoc["apiVersion"] != doc["apiVersion"] || admittedDoc["kind"] != kind ||
+			identity.suite.check(admittedAnnotations) != nil ||
+			!reflect.DeepEqual(identity.suite.markers(), suiteOnlyMarkers(admittedAnnotations)) ||
+			!orkaRenderedMetadataEqual(admittedMeta, doc["metadata"].(map[string]any)) ||
+			!orkaAuthoredFieldsEqual(doc["spec"], admittedDoc["spec"]) {
+			return check, fmt.Errorf("%s/%s strict server create preflight changed reviewed fields", kind, name)
+		}
+		doc["spec"] = admittedDoc["spec"]
 		check.candidate = doc
 		return check, nil
 	}
@@ -238,6 +259,24 @@ func orkaRenderedMetadataEqual(existing, desired map[string]any) bool {
 		return false
 	}
 	return true
+}
+
+func orkaAuthoredFieldsEqual(authored, admitted any) bool {
+	wanted, wantedMap := authored.(map[string]any)
+	actual, actualMap := admitted.(map[string]any)
+	if wantedMap || actualMap {
+		if !wantedMap || !actualMap {
+			return false
+		}
+		for key, value := range wanted {
+			observed, present := actual[key]
+			if !present || !orkaAuthoredFieldsEqual(value, observed) {
+				return false
+			}
+		}
+		return true
+	}
+	return reflect.DeepEqual(authored, admitted)
 }
 
 func cloneOrkaDoc(doc map[string]any) (map[string]any, error) {

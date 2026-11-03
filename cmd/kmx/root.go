@@ -93,6 +93,10 @@ func (s *commandState) application() (*app.App, error) {
 		return nil, err
 	}
 	a := s.deps.newApp(cfg)
+	if s.deps.buildInfo != nil {
+		info, ok := s.deps.buildInfo()
+		a.SetBuildIdentity(version.Resolve(info, ok))
+	}
 	a.Out, a.Err, a.Stdin = s.deps.stdout, s.deps.stderr, s.deps.stdin
 	a.Executable = s.executable()
 	a.Run.Stdout, a.Run.Stderr = s.deps.stdout, s.deps.stderr

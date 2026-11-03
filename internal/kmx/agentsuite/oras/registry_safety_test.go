@@ -65,6 +65,32 @@ func (t *responseRecordingTransport) RoundTrip(req *http.Request) (*http.Respons
 	return resp, err
 }
 
+func TestRegistryTransportDoesNotMutateCallerHeaders(t *testing.T) {
+	var observed string
+	transport := &registryTransport{base: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		observed = req.Header.Get("User-Agent")
+		return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody, Header: make(http.Header)}, nil
+	})}
+	req, err := http.NewRequest(http.MethodGet, "https://remote.example/v2/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("User-Agent", "caller/1")
+	if _, err := transport.RoundTrip(req); err != nil {
+		t.Fatal(err)
+	}
+	if got := req.Header.Get("User-Agent"); got != "caller/1" {
+		t.Fatalf("caller User-Agent = %q, want caller/1", got)
+	}
+	if !strings.HasPrefix(observed, "kmx/") {
+		t.Fatalf("outgoing User-Agent = %q, want kmx identity", observed)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
 func TestAnonymousRegistryUnauthorizedResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)

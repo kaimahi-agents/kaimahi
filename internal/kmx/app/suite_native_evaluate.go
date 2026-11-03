@@ -27,6 +27,12 @@ func validateSuiteNativeTask(raw []byte, desired map[string]any) error {
 	if meta["name"] != wanted["name"] || meta["namespace"] != wanted["namespace"] || meta["deletionTimestamp"] != nil {
 		return errSuiteNativeEvaluation
 	}
+	if value, expected := createdByVersionValue(desired); expected {
+		actual, _ := meta["annotations"].(map[string]any)
+		if actual[createdByVersionAnnotation] != value {
+			return errSuiteNativeEvaluation
+		}
+	}
 	if ann, ok := wanted["annotations"].(map[string]any); ok && ann[suiteCandidateRunMarker] != nil {
 		actual, _ := meta["annotations"].(map[string]any)
 		for _, key := range []string{orkaBundleMarker, orkaPortableMarker, orkaRenderedMarker} {
@@ -212,6 +218,9 @@ func (a *App) evaluateSuiteNativeTracked(ctx context.Context, placement *suiteNa
 	if err = worker.orkaAbsent(caseCtx, ns, task); err != nil {
 		return observation, err
 	}
+	if err = worker.annotateCreatedByVersion(task); err != nil {
+		return observation, err
+	}
 	body, err := json.Marshal(task)
 	if err != nil {
 		return observation, err
@@ -237,19 +246,20 @@ func (a *App) evaluateSuiteNativeTracked(ctx context.Context, placement *suiteNa
 		}
 	}
 	id, created, err := worker.createOrkaObjectObserved(caseCtx, ns, task)
+	if id.UID != "" {
+		observation.TaskUID = id.UID
+		if run != nil {
+			if acknowledgeErr := run.acknowledge(caseCtx, id, created); acknowledgeErr != nil {
+				return observation, acknowledgeErr
+			}
+		}
+	}
 	if err != nil {
 		return observation, err
-	}
-	if run != nil {
-		observation.TaskUID = id.UID
-		if err = run.acknowledge(caseCtx, id, created); err != nil {
-			return observation, err
-		}
 	}
 	if err = validateSuiteNativeTask(created, task); err != nil {
 		return observation, err
 	}
-	observation.TaskUID = id.UID
 	// The installed Task CRD has a status subresource: a spec change bumps
 	// generation. Existing UID/generation polls bind this CREATE spec frame.
 	answer, err = worker.waitOrkaTaskResult(caseCtx, ns, id, session)
@@ -264,10 +274,8 @@ func (a *App) evaluateSuiteNativeTracked(ctx context.Context, placement *suiteNa
 	if err = verify(caseCtx); err != nil {
 		return observation, err
 	}
-	if run != nil {
-		if err = worker.verifySuiteCandidateTask(caseCtx, ns, id, task); err != nil {
-			return observation, err
-		}
+	if err = worker.verifySuiteCandidateTask(caseCtx, ns, id, task); err != nil {
+		return observation, err
 	}
 	observation.AnswerSHA256 = agentruntime.EvaluationAnswerDigest(answer)
 	evidence := agentruntime.EvaluationEvidence{Answer: answer, AnswerAvailable: true}
@@ -281,18 +289,8 @@ func (a *App) evaluateSuiteNativeTracked(ctx context.Context, placement *suiteNa
 		if err = verify(caseCtx); err != nil {
 			return observation, err
 		}
-		if run != nil {
-			if err = worker.verifySuiteCandidateTask(caseCtx, ns, id, task); err != nil {
-				return observation, err
-			}
-		}
-		var current *orkaObject
-		current, err = worker.readOrkaObject(caseCtx, ns, id)
-		if err != nil {
+		if err = worker.verifySuiteCandidateTask(caseCtx, ns, id, task); err != nil {
 			return observation, err
-		}
-		if !orkaTaskSuccessful(current) {
-			return observation, errSuiteNativeEvaluation
 		}
 	}
 	attributed = true

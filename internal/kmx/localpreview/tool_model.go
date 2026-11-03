@@ -15,6 +15,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
 )
 
 type toolWireCall struct {
@@ -117,6 +118,7 @@ func (c *modelClient) ToolModel(ctx context.Context, r api.ModelRequest) (api.Mo
 		return fail()
 	}
 	req.Header.Set("Content-Type", "application/json")
+	version.SetUserAgent(req)
 	if err := ctx.Err(); err != nil {
 		return api.ModelResponse{}, err
 	}

@@ -322,6 +322,7 @@ func (b *orkaChatBackend) executeCopilotTool(ctx context.Context, tool copilotTo
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	b.app.setUserAgent(req)
 	response, err := connection.client.Do(req)
 	if err != nil {
 		connection.close()

@@ -20,6 +20,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
 )
 
 // Overlay Task admission only; native reads/placement and result transport retain
@@ -347,9 +348,10 @@ func TestSuiteWorkspaceEvaluationPipelineStopsAndExports(t *testing.T) {
 
 func TestSuiteNativeEvaluationAdmittedFrameAndOneShot(t *testing.T) {
 	// Omitting either admission check would execute or credit a changed prompt/ref.
-	for _, stage := range []string{"passing", "dry prompt", "create prompt", "create ref", "create override", "ambiguous", "uid", "generation", "failed", "cancelled", "result", "blank", "placement"} {
+	for _, stage := range []string{"passing", "dry prompt", "dry identity", "create prompt", "create identity", "create ref", "create override", "final identity", "ambiguous", "uid", "generation", "failed", "cancelled", "result", "blank", "placement"} {
 		t.Run(stage, func(t *testing.T) {
 			a, placement, frame, f := nativeEvaluationFixture(t)
+			a.SetBuildIdentity(version.Build{Version: "v0.4.0", Release: true})
 			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 			defer cancel()
 			var blankDeadline func() context.Context
@@ -393,6 +395,9 @@ func TestSuiteNativeEvaluationAdmittedFrameAndOneShot(t *testing.T) {
 						if stage == "create override" && !dry {
 							spec["ai"] = map[string]any{"model": "override"}
 						}
+						if stage == "dry identity" && dry || stage == "create identity" && !dry {
+							delete(nativeMetadata(doc)["annotations"].(map[string]any), createdByVersionAnnotation)
+						}
 						// These are the actual top-level v0.2.0 CRD defaults, not overrides.
 						for k, v := range map[string]any{"priority": 500, "concurrencyPolicy": "Forbid", "failedRunsHistoryLimit": 1, "successfulRunsHistoryLimit": 3, "startingDeadlineSeconds": 100} {
 							spec[k] = v
@@ -419,6 +424,9 @@ func TestSuiteNativeEvaluationAdmittedFrameAndOneShot(t *testing.T) {
 					}
 					if stage == "failed" {
 						doc["status"].(map[string]any)["phase"] = "Failed"
+					}
+					if stage == "final identity" {
+						delete(nativeMetadata(doc)["annotations"].(map[string]any), createdByVersionAnnotation)
 					}
 					if stage == "cancelled" {
 						cancel()
@@ -451,6 +459,9 @@ func TestSuiteNativeEvaluationAdmittedFrameAndOneShot(t *testing.T) {
 					if spec["prompt"] != frame.Case.Input || spec["type"] != "ai" || len(spec) != 4 {
 						t.Fatal("Task send changed authored behavior")
 					}
+					if nativeMetadata(call.Document)["annotations"].(map[string]any)[createdByVersionAnnotation] != "v0.4.0" {
+						t.Fatal("Task send omitted build identity")
+					}
 					ref := spec["agentRef"].(map[string]any)
 					if ref["name"] != placement.Subject.Member || ref["namespace"] != OrkaNamespace {
 						t.Fatal("Task sent to wrong member")
@@ -458,7 +469,7 @@ func TestSuiteNativeEvaluationAdmittedFrameAndOneShot(t *testing.T) {
 				}
 			}
 			wantCreates := 1
-			if stage == "dry prompt" || stage == "placement" {
+			if stage == "dry prompt" || stage == "dry identity" || stage == "placement" {
 				wantCreates = 0
 			}
 			if creates != wantCreates {
@@ -470,6 +481,9 @@ func TestSuiteNativeEvaluationAdmittedFrameAndOneShot(t *testing.T) {
 				}
 			} else if err == nil || observation.Verdict == agentruntime.EvaluationPass {
 				t.Fatalf("unsafe result credited: %+v %v", observation, err)
+			}
+			if stage == "create identity" && observation.TaskUID == "" {
+				t.Fatal("post-create validation failure lost acknowledged Task UID")
 			}
 			if stage != "placement" && !reached {
 				t.Fatal("Task boundary not reached")

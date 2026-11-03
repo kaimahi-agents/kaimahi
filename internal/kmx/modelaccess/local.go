@@ -13,6 +13,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
 )
 
 type State string
@@ -96,6 +98,7 @@ func (d LocalDiscovery) read(ctx context.Context, endpoint string) ([]byte, erro
 	if err != nil {
 		return nil, errors.New("invalid runtime endpoint")
 	}
+	version.SetUserAgent(req)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err

@@ -15,6 +15,7 @@ import (
 	"github.com/agent-primitives/sessions/api"
 
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
 )
 
 const (
@@ -113,6 +114,7 @@ func (c *modelClient) send(ctx context.Context, body []byte) (string, error) {
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
+	version.SetUserAgent(request)
 	if c.route.key != "" {
 		request.Header.Set("Authorization", "Bearer "+c.route.key)
 	}
