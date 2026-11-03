@@ -98,15 +98,18 @@ func runCommand(ctx context.Context, cfg CommandConfig, check func(...string) er
 		_ = childErr.Close()
 		return nil, ErrCommand
 	}
-	if !checkIdentity() {
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		_ = cmd.Wait()
-		_ = stdout.Close()
-		_ = stderr.Close()
-		return nil, ErrCommand
-	}
 	_ = childOut.Close()
 	_ = childErr.Close()
+	if !checkIdentity() {
+		killErr := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		_ = stdout.Close()
+		_ = stderr.Close()
+		waitErr := waitCommandExit(cmd.Wait)
+		if errors.Is(waitErr, ErrCommandCleanup) || killErr != nil && !errors.Is(killErr, syscall.ESRCH) {
+			return nil, ErrCommandCleanup
+		}
+		return nil, ErrCommand
+	}
 	capture := newCommandCapture()
 	var readers sync.WaitGroup
 	readers.Add(2)
@@ -150,8 +153,8 @@ func runCommand(ctx context.Context, cfg CommandConfig, check func(...string) er
 	}
 	_ = stdout.Close()
 	_ = stderr.Close()
-	waitErr := cmd.Wait()
-	if cleanupFailure {
+	waitErr := waitCommandExit(cmd.Wait)
+	if cleanupFailure || errors.Is(waitErr, ErrCommandCleanup) {
 		return nil, ErrCommandCleanup
 	}
 	if err := ctx.Err(); err != nil {
@@ -187,4 +190,20 @@ func runCommand(ctx context.Context, cfg CommandConfig, check func(...string) er
 	out, diagnostic := slices.Clone(capture.stdout.Bytes()), slices.Clone(capture.stderr.Bytes())
 	capture.mu.Unlock()
 	return commandResult(exitCode, out, diagnostic, check)
+}
+
+// waitCommandExit bounds reaping independently of the already-expired invocation
+// context. On timeout the sole waiter remains responsible for eventual reaping;
+// callers must withhold completion and never signal a potentially reused PID.
+func waitCommandExit(wait func() error) error {
+	waited := make(chan error, 1)
+	go func() { waited <- wait() }()
+	timer := time.NewTimer(time.Second)
+	defer timer.Stop()
+	select {
+	case err := <-waited:
+		return err
+	case <-timer.C:
+		return ErrCommandCleanup
+	}
 }

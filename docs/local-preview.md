@@ -420,13 +420,17 @@ or start a process. Pending recording capture uses the ordinary checked save onl
 after command cleanup; populated recordings replay offline without parsing the
 launch subtree.
 
-Stdout and stderr share a 12 KiB retained bound, reserving room for the complete
-32 KiB trusted result envelope. A normal nonzero exit is a completed tool
+Stdout and stderr share a 5 KiB retained bound, allowing worst-case sixfold JSON
+escaping plus 2 KiB for the complete 32 KiB trusted result envelope.
+A normal nonzero exit is a completed tool
 result with `succeeded: false`, the exit code and checked diagnostics; it is not
 reported as command success. Invalid UTF-8, overflow, credential-shaped output,
 cancellation, signals or uncertain cleanup withhold all output and completion.
 Linux, macOS and WSL use one process group per call and reap its leader after
-group cleanup. A child that deliberately escapes with `setsid` remains outside
+group cleanup. Pipe draining and leader reaping each have a one-second cleanup
+budget, including after cancellation. Unconfirmed reaping returns a cleanup
+failure; the existing waiter remains responsible for eventual reaping.
+A child that deliberately escapes with `setsid` remains outside
 that guarantee; this is neither sandboxing nor native Windows support. Command
 results, recordings and previews grant no package evidence, Publish or Deploy
 authority.

@@ -546,6 +546,15 @@ ambient baseline. Destination readers structurally validate then discard these
 two subtrees, keeping other operational decoding strict. Native Windows tools
 remain deferred; process groups are not containment.
 
+File CLI Run/Test also resolves declared Enabled `commandTools` from that folder:
+fixed absolute executable/argv, empty-object tool input, folder-confined working
+directory and frozen named environment references. MCP selection does not disable
+commands. Disabled and populated recorded tools do not resolve launches. Keep the
+combined output at 5 KiB to fit worst-case JSON escaping and the trusted result
+envelope. Close all owned pipe ends and bound draining/reaping separately to one
+second each; uncertain cleanup withholds completion. Native Windows commands
+remain deferred.
+
 Canonical `run FILE` / `test FILE` use the parser and `agentpreview.Runner`
 interface without cluster/workspace configuration. CLI/MCP fake/local and explicit
 Copilot routes use embedded Sessions: optional ad-hoc input first, selected ordered

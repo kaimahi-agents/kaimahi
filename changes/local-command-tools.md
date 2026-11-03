@@ -6,3 +6,9 @@
   This focused slice was extracted from the broader prototype in
   https://github.com/kaimahi-agents/kaimahi/pull/654 for
   https://github.com/kaimahi-agents/kaimahi/issues/698.
+
+### Fixed
+
+- Budget command output for worst-case JSON escaping, bound leader reaping after
+  cancellation or identity changes, and close child-side pipes on every launch
+  path.

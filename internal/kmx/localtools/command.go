@@ -20,7 +20,9 @@ import (
 var ErrCommand = errors.New("local tools: command unavailable")
 var ErrCommandCleanup = errors.New("local tools: command cleanup failed")
 
-const commandOutputLimit = 12 * 1024
+// JSON may expand each retained byte to six bytes (for example, '<' to
+// '\u003c'). Leave 2 KiB of the trusted host's 32 KiB limit for the envelope.
+const commandOutputLimit = 5 * 1024
 
 // CommandConfig is frozen host authority. Arguments are fixed and the complete
 // environment is explicit; no model value can alter the launched command.

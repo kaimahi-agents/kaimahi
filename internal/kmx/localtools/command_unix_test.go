@@ -4,12 +4,16 @@ package localtools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -60,14 +64,51 @@ func TestCommandHostFixedEnvironmentAndResults(t *testing.T) {
 }
 
 func TestCommandHostAcceptsCompleteRetainedOutputBudget(t *testing.T) {
-	cfg := commandFixture(t, "boundary")
-	host, err := NewCommandHost([]CommandConfig{cfg})
-	if err != nil {
-		t.Fatal(err)
+	for _, value := range []string{"x", "<", ">", "&", "\t", "\n", "\"", "\\"} {
+		t.Run(strconv.Quote(value), func(t *testing.T) {
+			cfg := commandFixture(t, "boundary", value)
+			host, err := NewCommandHost([]CommandConfig{cfg})
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := host.Execute(t.Context(), controller.ToolCallContext{SessionUID: "session"}, api.ToolCall{ID: strings.Repeat("c", 64), Tool: "check", Args: map[string]any{}, IdempotencyKey: "once", Mediation: api.MediationControllerMediated})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := strings.Repeat(value, commandOutputLimit/2)
+			raw, err := json.Marshal(result)
+			if err != nil || len(raw) > 32*1024 || result.Output["stdout"] != want || result.Output["stderr"] != want || result.Output["succeeded"] != true {
+				t.Fatalf("boundary result: bytes=%d err=%v", len(raw), err)
+			}
+		})
 	}
-	result, err := executeCommandTool(t.Context(), host)
-	if err != nil || len(result.Output["stdout"].(string)) != commandOutputLimit || result.Output["succeeded"] != true {
-		t.Fatalf("boundary result: %+v %v", result, err)
+}
+
+func TestCommandReapingTimeout(t *testing.T) {
+	// A stuck kernel wait cannot be induced reliably. Hold the sole waiter until
+	// the cleanup budget expires, then release it to verify eventual reaping.
+	release, finished := make(chan struct{}), make(chan struct{})
+	defer func() {
+		close(release)
+		select {
+		case <-finished:
+		case <-time.After(time.Second):
+			t.Error("waiter did not finish after release")
+		}
+	}()
+	started := time.Now()
+	err := waitCommandExit(func() error {
+		<-release
+		close(finished)
+		return nil
+	})
+	if !errors.Is(err, ErrCommandCleanup) || time.Since(started) > 3*time.Second {
+		t.Fatalf("unbounded or accepted incomplete reaping: %v", err)
+	}
+	select {
+	case <-finished:
+		t.Fatal("waiter unexpectedly completed")
+	default:
 	}
 }
 
@@ -102,6 +143,7 @@ func TestCommandHostCancellationKillsDescendants(t *testing.T) {
 	heartbeat := filepath.Join(t.TempDir(), "heartbeat")
 	cfg := commandFixture(t, "descendant", heartbeat)
 	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
 	host, err := NewCommandHost([]CommandConfig{cfg})
 	if err != nil {
 		t.Fatal(err)
@@ -122,14 +164,32 @@ func TestCommandHostCancellationKillsDescendants(t *testing.T) {
 	if err := <-done; !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancellation lost: %v", err)
 	}
-	first, err := os.ReadFile(heartbeat)
+	raw, err := os.ReadFile(heartbeat + ".pid")
 	if err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(100 * time.Millisecond)
-	last, err := os.ReadFile(heartbeat)
-	if err != nil || string(first) != string(last) {
-		t.Fatal("descendant survived", err)
+	pid, err := strconv.Atoi(string(raw))
+	if err != nil || pid <= 1 {
+		t.Fatalf("invalid descendant pid: %q", raw)
+	}
+	// An orphan zombie may remain under a container init that does not reap.
+	// Require kernel-observed absence or zombie state, never heartbeat silence.
+	probeCtx, stopProbe := context.WithTimeout(t.Context(), 2*time.Second)
+	defer stopProbe()
+	for {
+		if err := syscall.Kill(pid, 0); errors.Is(err, syscall.ESRCH) {
+			break
+		} else if err != nil {
+			t.Fatalf("probe descendant: %v", err)
+		}
+		state, err := exec.CommandContext(probeCtx, "ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output()
+		if err == nil && strings.HasPrefix(strings.TrimSpace(string(state)), "Z") {
+			break
+		}
+		if probeCtx.Err() != nil {
+			t.Fatalf("descendant still running: pid=%d state=%q err=%v", pid, state, err)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -199,7 +259,11 @@ func TestCommandHelperProcess(t *testing.T) {
 	case "oversized":
 		_, _ = os.Stdout.WriteString(strings.Repeat("x", commandOutputLimit+1))
 	case "boundary":
-		_, _ = os.Stdout.WriteString(strings.Repeat("x", commandOutputLimit))
+		if len(args) != 3 {
+			os.Exit(92)
+		}
+		_, _ = os.Stdout.WriteString(strings.Repeat(args[2], commandOutputLimit/2))
+		_, _ = os.Stderr.WriteString(strings.Repeat(args[2], commandOutputLimit/2))
 	case "sleep":
 		_, _ = os.Stdout.WriteString("partial")
 		time.Sleep(time.Minute)
@@ -225,6 +289,9 @@ func TestCommandHeartbeatProcess(t *testing.T) {
 		return
 	}
 	path := os.Args[len(os.Args)-1]
+	if err := os.WriteFile(path+".pid", []byte(strconv.Itoa(os.Getpid())), 0600); err != nil {
+		os.Exit(95)
+	}
 	for i := 0; ; i++ {
 		_ = os.WriteFile(path, []byte(strings.Repeat("x", i+1)), 0600)
 		time.Sleep(10 * time.Millisecond)
