@@ -42,6 +42,9 @@ func parseCommandConfig(raw []byte, names []string) ([]commandDefinition, error)
 	var selected []commandDefinition
 	for i := 0; i < len(commands.Content); i += 2 {
 		name, entry := commands.Content[i].Value, commands.Content[i+1]
+		if !wanted[name] {
+			continue
+		}
 		if !ValidToolName(name) || seen[name] || entry.Kind != yaml.MappingNode || entry.Tag != "!!map" {
 			return nil, ErrServerSelection
 		}
@@ -93,9 +96,7 @@ func parseCommandConfig(raw []byte, names []string) ([]commandDefinition, error)
 		if def.command == "" {
 			return nil, ErrServerSelection
 		}
-		if wanted[name] {
-			selected = append(selected, def)
-		}
+		selected = append(selected, def)
 	}
 	return selected, nil
 }

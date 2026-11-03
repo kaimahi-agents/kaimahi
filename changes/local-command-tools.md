@@ -11,4 +11,4 @@
 
 - Budget command output for worst-case JSON escaping, bound leader reaping after
   cancellation or identity changes, and close child-side pipes on every launch
-  path.
+  path. Unselected command declarations no longer block unrelated selected tools.

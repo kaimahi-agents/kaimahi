@@ -553,7 +553,8 @@ commands. Disabled and populated recorded tools do not resolve launches. Keep th
 combined output at 5 KiB to fit worst-case JSON escaping and the trusted result
 envelope. Close all owned pipe ends and bound draining/reaping separately to one
 second each; uncertain cleanup withholds completion. Native Windows commands
-remain deferred.
+remain deferred. Unselected command entries receive only the shared structural
+YAML checks; their launch semantics cannot block a selected command or MCP tool.
 
 Canonical `run FILE` / `test FILE` use the parser and `agentpreview.Runner`
 interface without cluster/workspace configuration. CLI/MCP fake/local and explicit

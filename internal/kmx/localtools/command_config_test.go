@@ -23,3 +23,14 @@ func TestCommandConfigRefusesDynamicOrAmbiguousLaunches(t *testing.T) {
 		}
 	}
 }
+
+func TestCommandConfigIgnoresUnselectedCommandSemantics(t *testing.T) {
+	raw := []byte("commandTools:\n  selected:\n    command: /usr/bin/true\n  unused:\n    command: relative\n    unknown: [invalid]\n")
+	defs, err := parseCommandConfig(raw, []string{"selected"})
+	if err != nil || len(defs) != 1 || defs[0].name != "selected" {
+		t.Fatalf("selected definition blocked by unused semantics: %+v %v", defs, err)
+	}
+	if _, err := parseCommandConfig(raw, []string{"unused"}); err == nil {
+		t.Fatal("invalid selected definition accepted")
+	}
+}

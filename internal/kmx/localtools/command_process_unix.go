@@ -51,6 +51,10 @@ func (c *commandCapture) copy(dst *bytes.Buffer, src io.Reader) {
 }
 
 func runCommand(ctx context.Context, cfg CommandConfig, check func(...string) error) (map[string]any, error) {
+	return runCommandAfterStart(ctx, cfg, check, nil)
+}
+
+func runCommandAfterStart(ctx context.Context, cfg CommandConfig, check func(...string) error, afterStart func(int) error) (map[string]any, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -100,6 +104,17 @@ func runCommand(ctx context.Context, cfg CommandConfig, check func(...string) er
 	}
 	_ = childOut.Close()
 	_ = childErr.Close()
+	if afterStart != nil {
+		if err := afterStart(cmd.Process.Pid); err != nil {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			_ = stdout.Close()
+			_ = stderr.Close()
+			if errors.Is(waitCommandExit(cmd.Wait), ErrCommandCleanup) {
+				return nil, ErrCommandCleanup
+			}
+			return nil, err
+		}
+	}
 	if !checkIdentity() {
 		killErr := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 		_ = stdout.Close()

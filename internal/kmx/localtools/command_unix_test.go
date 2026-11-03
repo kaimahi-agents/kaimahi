@@ -230,6 +230,57 @@ func TestCommandHostRefusesChangedExecutableIdentity(t *testing.T) {
 	}
 }
 
+func TestCommandHostCleansUpAfterPostStartIdentityChange(t *testing.T) {
+	cfg := commandFixture(t, "sleep")
+	source, err := os.Open(cfg.Command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program := filepath.Join(cfg.Dir, "command-helper")
+	target, err := os.OpenFile(program, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0700)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.Copy(target, source); err != nil {
+		t.Fatal(err)
+	}
+	if err := errors.Join(source.Close(), target.Close()); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Command = program
+	cfg.commandInfo, err = os.Stat(cfg.Command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.dirInfo, err = os.Stat(cfg.Dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid := 0
+	afterStart := func(started int) error {
+		pid = started
+		if err := os.Rename(program, program+".old"); err != nil {
+			return err
+		}
+		if err := os.WriteFile(program, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+			return err
+		}
+		return nil
+	}
+	check, err := validateCommandConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	result, err := runCommandAfterStart(t.Context(), cfg, check, afterStart)
+	if err == nil || result != nil || pid <= 1 || time.Since(started) > 3*time.Second {
+		t.Fatalf("post-start identity change accepted or cleanup unbounded: pid=%d result=%+v err=%v", pid, result, err)
+	}
+	if err := syscall.Kill(pid, 0); !errors.Is(err, syscall.ESRCH) {
+		t.Fatalf("started command not reaped: pid=%d err=%v", pid, err)
+	}
+}
+
 func TestCommandHelperProcess(t *testing.T) {
 	if os.Getenv("GO_WANT_COMMAND_HELPER") != "enabled" {
 		return
