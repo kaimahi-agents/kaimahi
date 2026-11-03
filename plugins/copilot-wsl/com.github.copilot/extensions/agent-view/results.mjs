@@ -1,6 +1,6 @@
 // Result reading: cases, check facts, plain reasons, rows and per-model history.
 import { failureWording } from "./failure-wording.mjs";
-import { preRouteRefusal, same, uniqueIndex, operandKey, quoted } from "./authoring.mjs";
+import { sourceIdentity, preRouteRefusal, same, uniqueIndex, operandKey, quoted } from "./authoring.mjs";
 
 export const checkKey = (a) => JSON.stringify([a.id, a.type]);
 export function inspectCases(payload) {
@@ -89,6 +89,9 @@ const PLAIN_REASONS = {
   cancelled: "The run was cancelled.", deadline_exceeded: "The run ran out of time.",
   invalid_file: "This agent file needs fixing before it can run.", no_tests: "No tests yet — add or suggest one",
   invalid_selection: "This test is no longer in the agent file.", invalid_options: "This run's settings are not supported.",
+  native_model_mismatch: "The native host used a different model than requested.",
+  native_judge_unavailable: "The separate judge could not run. Check its model and sign-in.",
+  native_delegation_unverified: "Child-agent execution could not be verified, so the result is unknown.",
   model_unavailable: "The selected model is not available for this run.", tools_unavailable: "This run cannot use the agent's tools.",
   invalid_tool_settings: "The tool settings in kmx.yaml are invalid. Fix them before running this agent.",
   unsafe_tool_content: "Tool content was withheld before it could be saved.", credential_content: "Content containing credentials was withheld.",
@@ -107,6 +110,8 @@ const PLAIN_REASONS = {
   copilot_quota: "Copilot's usage limit was reached.", copilot_model_unavailable: "Choose an available Copilot model.",
   copilot_malformed: "Copilot returned an answer that could not be used.", copilot_keychain_unavailable: "Copilot sign-in could not be read. Use an existing GitHub sign-in.",
   copilot_unavailable: "Copilot could not complete this run.",
+    copilot_host_connection: "The selected local host could not complete this run.",
+    copilot_host_token: "The local host connection token is invalid.",
   model_reply_unusable: "This model's reply couldn't be used, so the test didn't finish. Try another model.",
 };
 export function plainReason(row) {
@@ -193,7 +198,7 @@ export function resultHistory(initial) {
     }
     const id = modelId(view), stopped = attempts.get(id);
     if (executed || stopped?.view && !stopped.run && !same(stopped.view.latest.result, view.latest.result)) attempts.delete(id);
-    else if (stopped?.run?.revision === view.file.revision) return;
+    else if (stopped?.run?.revision === sourceIdentity(view)) return;
     const route = view.latest.result.modelRoute, changed = !same(models.get(route)?.latest.result, view.latest.result);
     if (!models.has(route) && models.size === 2 && (view.latest.result.selection.scope !== "full" || view.latest.result.state !== "complete")) {
       attempts.set(id, { view });
@@ -221,9 +226,9 @@ export function resultHistory(initial) {
     get last() { return last; }, remember,
     selected(view, model) {
       const attempt = attempts.get(model);
-      if (attempt?.run?.revision === view.file.revision) return;
-      if (attempt?.view.file.revision === view.file.revision) return { ...view, latest: attempt.view.latest };
-      const matches = [...models.values()].filter(v => modelId(v) === model && v.file.revision === view.file.revision);
+      if (attempt?.run?.revision === sourceIdentity(view)) return;
+      if (sourceIdentity(attempt?.view) === sourceIdentity(view)) return { ...view, latest: attempt.view.latest };
+      const matches = [...models.values()].filter(v => modelId(v) === model && sourceIdentity(v) === sourceIdentity(view));
       return matches.length === 1 ? { ...view, latest: matches[0].latest } : undefined;
     },
     pair: () => [...models.values()],
@@ -231,7 +236,7 @@ export function resultHistory(initial) {
       capturedModel = receipt.model;
       const defs = uniqueIndex(saved?.authoring?.examples ?? [], e => e.id), route = receipt.modelRoute;
       if (saved) for (const c of inspectCases({ ...saved, latest: { status: "current", result: receipt } })) {
-        const id = c.example.id, record = { definition: defs.get(id), c: { ...c, capturedRevision: saved.file.revision }, model: route };
+        const id = c.example.id, record = { definition: defs.get(id), c: { ...c, capturedRevision: sourceIdentity(saved) }, model: route };
         if (record.definition && c.row) { records.set(id, record); modelCases.set(`${route}\0${id}`, record); }
       }
     },

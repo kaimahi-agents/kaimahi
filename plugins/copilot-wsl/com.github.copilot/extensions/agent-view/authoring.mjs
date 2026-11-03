@@ -21,6 +21,9 @@ export const preRouteRefusal = (result) => result?.state === "refused" && result
   && result.modelRoute === "/" && ["no_tests", "model_unavailable", "invalid_selection"].includes(result.reasonCode);
 
 // Runtime state is separate from authored source and survives only this canvas.
+// Raw file.revision remains agent-only; controller freshness binds the selected sources.
+export const sourceIdentity = view => view?.selectedSources ? JSON.stringify([view.selectedSources.server, view.selectedSources.sourceVersion]) : view?.file?.revision;
+
 export function runtimeModelSelection() {
   let override = "", needsRun = false, previous;
   const selected = (view) => effectiveModel(view.model, override, view.chatModel);
@@ -42,7 +45,7 @@ export function runtimeModelSelection() {
       const next = selected(view);
       // Only controller-owned, revision-matched history can restore a picker result.
       // Callers still fence the observation generation before projecting it.
-      const restored = retained && retained.file.revision === view.file.revision && retained.latest.status === "current"
+      const restored = retained && sourceIdentity(retained) === sourceIdentity(view) && retained.latest.status === "current"
         && (actual(retained) === next || preRouteRefusal(retained.latest.result));
       if (restored) { view = { ...view, latest: retained.latest }; needsRun = false; }
       // Late metadata matching the actual run is not a model change. Once a

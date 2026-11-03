@@ -1,0 +1,1 @@
+../../../../copilot-wsl/com.github.copilot/extensions/agent-view/paired-actions.mjs

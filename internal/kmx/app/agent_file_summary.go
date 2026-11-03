@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
@@ -202,7 +203,16 @@ func validFilePreviewSummary(result FilePreviewResult) bool {
 		if !evaluationEvidenceID.MatchString(example.ID) || !summaryState(example.State) || !summaryVerdict(example.Verdict) || !summaryReasonCode(example.ReasonCode) || !summaryMilliseconds(example.DurationMs) || len(example.Assertions) > runtime.EvaluationMaxAssertions {
 			return false
 		}
-		if example.State == "complete" && example.ReasonCode != previewResultReasonCode(example.Verdict) || example.State != "complete" && example.DurationMs != 0 {
+		native := result.Runner == nativeRunnerLabel
+		if native && example.Native != nil && !validNative(example.Native) {
+			return false
+		}
+		if native && example.State == "complete" {
+			if example.Native == nil || !validPreviewExecutionTools(agentpreview.Completion{State: agentpreview.Complete, Model: result.ModelRoute.Model, ID: example.Native.Session, Native: example.Native, Tools: example.Tools, ToolCalls: example.ToolCalls}, agentfile.Example{}, nil, true) {
+				return false
+			}
+		}
+		if example.State == "complete" && example.ReasonCode != previewResultReasonCode(example.Verdict) || example.State != "complete" && example.DurationMs != 0 && !native {
 			return false
 		}
 		if example.State != "complete" && (example.Verdict != runtime.EvaluationUnknown || example.ReasonCode != "not_run") || example.State == "complete" && example.Verdict != summaryAssertionsVerdict(example.Assertions) {
@@ -212,12 +222,12 @@ func validFilePreviewSummary(result FilePreviewResult) bool {
 		if len(example.Tools) > 32 {
 			return false
 		}
-		if example.State == "complete" && len(settings) > 0 && len(example.Tools) != len(settings) {
+		if !native && example.State == "complete" && len(settings) > 0 && len(example.Tools) != len(settings) {
 			return false
 		}
 		calls := 0
 		for _, tool := range example.Tools {
-			if !localtools.ValidToolName(tool.Name) || seenTools[tool.Name] || len(settings) > 0 && !settings[tool.Name] || tool.Mode != "live" && tool.Mode != "recorded" || tool.Source != "live" && tool.Source != "recorded" && tool.Source != "unavailable" || tool.Mode == "live" && tool.Source == "recorded" || tool.CallCount < 0 || tool.CallCount > localtools.MaxCalls {
+			if !localtools.ValidToolName(tool.Name) || seenTools[tool.Name] || !native && len(settings) > 0 && !settings[tool.Name] || tool.Mode != "live" && tool.Mode != "recorded" || tool.Source != "live" && tool.Source != "recorded" && tool.Source != "unavailable" || tool.Mode == "live" && tool.Source == "recorded" || tool.CallCount < 0 || !native && tool.CallCount > localtools.MaxCalls {
 				return false
 			}
 			if tool.RecordingSaved {
@@ -229,7 +239,7 @@ func validFilePreviewSummary(result FilePreviewResult) bool {
 			seenTools[tool.Name] = true
 			calls += tool.CallCount
 		}
-		if calls != example.ToolCalls || calls > localtools.MaxCalls {
+		if calls != example.ToolCalls || !native && calls > localtools.MaxCalls {
 			return false
 		}
 		seenAssertions := map[string]bool{}

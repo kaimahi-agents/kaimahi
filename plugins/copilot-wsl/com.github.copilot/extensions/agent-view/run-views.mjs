@@ -1,5 +1,5 @@
 // The canvas's run rows, summaries and notices, created per view with its live state.
-import { effectiveModel, same, preRouteRefusal } from "./authoring.mjs";
+import { sourceIdentity, effectiveModel, same, preRouteRefusal } from "./authoring.mjs";
 import { el, checkKey, operandKey, quoted, failureFacts, plural, plainReason, isRefused, answerBlock, refusalContext, canvasResultSummary, canvasFooterText, runNotice } from "./editor.mjs";
 
 // Folder tool settings change a result's meaning without changing the file revision.
@@ -36,7 +36,7 @@ export function createRunViews(state, { act, actions, doc, entries, hasDrafts, h
     if (!run || !run.caseIds.includes(id)) return fallback;
     const attempt = history.attempt(run.model);
     if ((!testing() || partner) && !same(attempt?.view.authoring?.examples.find(e => e.id === id), state.base.authoring?.examples.find(e => e.id === id))) return fallback;
-    const old = partner || !testing() && (hasDrafts() || run.revision !== state.base.file.revision || !runFresh(run));
+    const old = partner || !testing() && (hasDrafts() || run.revision !== sourceIdentity(state.base) || !runFresh(run));
     const c = run.cases.find(c => c.caseId === id);
     let base = c?.verdict === "pass" ? "pass" : c?.verdict === "fail" ? "fail" : c ? "error" : "none";
     let label = c?.verdict === "pass" ? "Passed" : c?.verdict === "fail" ? "Failed" : c ? "Didn't finish" : "Not run";
@@ -59,7 +59,7 @@ export function createRunViews(state, { act, actions, doc, entries, hasDrafts, h
   }
   function resultSummary() {
     const run = currentRun();
-    if (run && !state.blocked && state.route.name !== "detail") return !testing() && (hasDrafts() || run.revision !== state.base.file.revision || !runFresh(run))
+    if (run && !state.blocked && state.route.name !== "detail") return !testing() && (hasDrafts() || run.revision !== sourceIdentity(state.base) || !runFresh(run))
       ? { tone: "none", text: "Out of date" } : runSummary(run);
     return canvasResultSummary(state.base, { n: entries().filter(e => !e.draft?.deleted).length, testing: testing(), one: state.pending?.one,
       blocked: state.blocked, dirty: hasDrafts(), last: history.last });
@@ -91,14 +91,26 @@ export function createRunViews(state, { act, actions, doc, entries, hasDrafts, h
   function sourceActions(button, info, updates) {
     // A Run that saved its capture ran the previous revision; show its answer only while that saved revision is the one open.
     const capture = state.lastAdHoc;
-    const adHoc = state.base.latest.status === "current" ? state.base.latest.result?.adHoc : capture?.savedRevision === state.base.file.revision && capture.model === selectedModel() && ranWith(state.base, capture) ? capture.adHoc : undefined;
+    const adHoc = state.base.latest.status === "current" ? state.base.latest.result?.adHoc : (capture?.savedSourceIdentity ?? capture?.savedRevision) === sourceIdentity(state.base) && capture.model === selectedModel() && ranWith(state.base, capture) ? capture.adHoc : undefined;
     if (adHoc) {
       const result = el(doc, "section", "ad-hoc-result");
       result.append(el(doc, "h3", "", "Last ad-hoc run"), el(doc, "p", "", `${adHoc.state} · ${adHoc.verdict}`), answerBlock(doc, adHoc, hasDrafts, undefined, updates));
       updates.push(() => { result.hidden = hasDrafts() || state.blocked; });
       info.append(result);
     }
-    if (!state.snap) return;
+    const sources = state.base.selectedSources;
+    if (sources) {
+      const history = el(doc, "details", "source-history"); history.append(el(doc, "summary", "", "Source history"));
+      history.append(el(doc, "p", "", "Source snapshots only, not saved verdicts."));
+      if (sources.history?.status !== "available") history.append(el(doc, "p", "", "Source history unavailable."));
+      for (const version of sources.history?.versions ?? []) {
+        const row = el(doc, "div", "history-row"); row.append(el(doc, "span", "", version.label));
+        if (state.snap && version.sourceKind === "pair" && sources.operations.restore) row.append(button("Restore sources", () => act("restore", { restoreVersionId: version.versionId }), "tb", "clean"));
+        history.append(row);
+      }
+      info.append(history);
+    }
+    if (!state.snap) { if (sources) info.append(button("Reload sources", () => act("reload"), "tb", "reload")); return; }
     const runInput = el(doc, "textarea"); runInput.setAttribute("aria-label", "Ad-hoc input"); runInput.rows = 2;
     const box = el(doc, "div", "source-actions"), run = el(doc, "details", "run-disclosure");
     run.append(el(doc, "summary", "", "Try another input"), runInput, button("Run", () => actions.runInput(runInput.value), "sb", "clean"));

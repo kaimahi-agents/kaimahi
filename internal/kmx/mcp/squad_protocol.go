@@ -7,11 +7,13 @@ import (
 
 func versionedError(err error, version int) *sdk.CallToolResult {
 	result := errorResult(err)
+	data := result.StructuredContent.(map[string]any)
+	if version == 2 || version == 3 {
+		data["schemaVersion"] = version
+	}
 	if version != 2 {
 		return result
 	}
-	data := result.StructuredContent.(map[string]any)
-	data["schemaVersion"] = 2
 	var safe *Error
 	if errors.As(err, &safe) {
 		switch safe.Code {

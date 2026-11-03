@@ -110,7 +110,7 @@ func ComposePair(agentPhysical string, agent *Agent, selection TestsSelection, t
 		source.State = "absent"
 	}
 	p := &Pair{Agent: agent, AgentPath: agentPhysical, Tests: source}
-	p.SnapshotRevision = pairHash("kmx-agent-tests-snapshot-v1", agentPhysical, agent.Revision, selection.Key, source.State, source.Revision)
+	_, p.SnapshotRevision = SourceRevisions(agentPhysical, agent.Revision, selection.Path, source.State, source.Revision)
 	return p, nil
 }
 
@@ -119,6 +119,15 @@ func ComposePair(agentPhysical string, agent *Agent, selection TestsSelection, t
 func (p *Pair) SameSourceVersion(other *Pair) bool {
 	return p != nil && other != nil && p.agentObservation != nil && other.agentObservation != nil && p.SnapshotRevision == other.SnapshotRevision &&
 		p.agentObservation.same(other.agentObservation) && p.testsObservation.same(other.testsObservation)
+}
+
+// SourceRevisions is metadata only: it neither validates a runnable pair nor
+// grants filesystem authority. Authoring views share the strict pair's identity.
+func SourceRevisions(agentPath, agentRevision, testsPath, state, testsRevision string) (key, snapshot string) {
+	if testsPath != "" {
+		key = pairHash("kmx-tests-selection-v1", testsPath)
+	}
+	return key, pairHash("kmx-agent-tests-snapshot-v1", agentPath, agentRevision, key, state, testsRevision)
 }
 
 func pairHash(domain string, values ...string) string {

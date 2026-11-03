@@ -7,10 +7,10 @@ skills, a canvas and MCP configuration, not an engine or a fixed working folder.
 ## Install on macOS
 
 With Copilot installed, run these three commands in a Mac terminal to install
-the paired v0.9.0-rc.4 prerelease:
+the paired v0.9.0-rc.6 prerelease:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.4/install.sh | sudo sh -s -- --version=v0.9.0-rc.4 --bin-dir=/usr/local/bin
+curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.6/install.sh | sudo sh -s -- --version=v0.9.0-rc.6 --bin-dir=/usr/local/bin
 copilot plugin marketplace add kaimahi-agents/kaimahi
 copilot plugin install kmx-agent-builder-path@kmx-plugins
 ```
@@ -20,15 +20,17 @@ The first command selects `kmx-darwin-arm64` on Apple Silicon and
 and installs it at `/usr/local/bin/kmx`. It uses the same binary installer as WSL,
 not a plugin setup script. It does not verify the separate signature bundle.
 The Homebrew tap tracks final releases, not release candidates; use this binary
-for rc.4. Use Homebrew for a final release only when its formula matches the
+for rc.6. Use Homebrew for a final release only when its formula matches the
 version named by the marketplace catalog.
 
 The source plugin starts `/usr/local/bin/kmx mcp`, matching the installer's
 `--bin-dir`; it does not depend on Copilot's PATH, which normally omits
-`/usr/local/bin` when the Mac app is launched from the Dock. rc.4's pinned plugin
-still starts `kmx` from PATH; see the [temporary MCP setup](../../docs/copilot-app.md#macos-rc4-server-not-available)
-until a newer paired release contains this fix. Restart Copilot after installing
-or updating the plugin and start a fresh session.
+`/usr/local/bin` when the Mac app is launched from the Dock. The rc.6 catalog
+includes that executable-lookup fix; the older rc.4 plugin started `kmx` from PATH.
+See the [paired upgrade guidance](../../docs/copilot-app.md#macos-rc4-server-not-available);
+remove any conflicting old manual kmx server definition, rather than adding a
+custom-server workaround. Restart Copilot after installing or updating the
+plugin and start a fresh session.
 No root, model or bundled binary is configured inside the plugin. The MCP schema has no
 per-OS command selector, so Windows keeps its separate WSL manifest. The PATH
 source plugin is named `kmx-agent-builder-path`; WSL and legacy native bundles
@@ -38,8 +40,13 @@ name must be uninstalled as `kmx-agent-builder` before installing this variant.
 The catalog pins source to the binary release's full commit SHA, not main.
 A plugin update never upgrades kmx. See [direct-install migration and paired upgrades](../../docs/copilot-app.md#existing-direct-installs-and-upgrades); keep native bundle setup separate.
 
+**Release boundary:** The v0.9.0-rc.6 pair includes the paired-file canvas and
+structured text workflow below. Older rc.4 fallback text is bounded and read-only;
+it cannot seed a revision-checked Edit in a fresh chat. Native read-only text is
+still not an Edit baseline.
+
 Ask Copilot: `Create a kmx agent called Release notes that writes a short release
-note from a supplied pull request title, and open its canvas.` Give it a full
+note from a supplied pull request title, and open it.` Give it a full
 Mac path when the file is outside the current directory. See the
 [launch table and CLI spellings](../../docs/copilot-app.md#launch-commands-and-phrases)
 for explicit create/open/run/test requests and saved-snapshot test additions.
@@ -134,10 +141,10 @@ The existing native bundle builder below still produces the legacy
 to its configured directory; the new unbound server needs neither file nor a
 folder confirmation. Plugin installation is replaced separately.
 
-The v0.9.0-rc.4 engine pinned above exposes exactly lowercase `create`, `edit`,
-`run`, `test` and `set_tool_state`; internal preview children retain the first four.
-Older rc.2 binaries expose only those first four. Canonical branches require
-`schemaVersion: 1` and an agent `path`; Create
+The engine retains legacy lowercase `create`, `edit`, `run`, `test` and
+`set_tool_state`; internal preview children retain the first four. Older rc.2
+binaries expose only those first four. The legacy single-source branches require
+`schemaVersion: 1` and an agent `path`; the paired canvas uses version 3. Create
 also needs canonical `content`, Edit needs `content` and `expectedRevision`.
 Run/Test accept `caseId`, `showContent` and `showFailedContent`; Run also accepts `input`.
 Use discovered schemas as authority. See the
@@ -207,8 +214,9 @@ or cross-compilation do not qualify Squad on Windows/macOS.
 
 ## Agent authoring canvas
 
-Ask Copilot to make an agent. The builder skill creates it through kmx and then
-opens the successful Create result's exact path in the canvas. To open an
+Ask Copilot to make an agent. In rc.6, the builder skill creates it
+through kmx and then opens the successful Create result's exact path in a canvas
+or text view. To open an
 existing agent **without a model turn**, select the native **kmx-canvas** command:
 `/kmx-canvas open /home/me/project/greeter.agent.md`. It opens or focuses the
 same file's canvas; a relative path is read in the session folder. If the canvas
@@ -235,17 +243,33 @@ different repositories. An unreadable resource does not close an already-running
 view. Opening does not edit, run or test the agent; the existing authoring
 controls and their checks remain unchanged. No folder confirmation is required.
 
-When the extension is loaded but the host cannot open a canvas, the native
-opener can return a text fallback. `/agent-view FULL_PATH` also displays the
-projection as read-only text; canonical Squad paths work there too. Neither
+When the extension is loaded but the host cannot open a canvas, native
+`/kmx-canvas open` displays a successful, read-only bounded text fallback; it
+does not return Edit authority to chat. In rc.6, the separate
+model-facing `open_kmx_canvas` tool returns the full file revision and, only from
+a checked complete snapshot, exact source and editability. Its bounded `text` is
+display-only and never an Edit baseline. `/agent-view FULL_PATH` also displays
+the projection as read-only text; canonical Squad paths work there too. Neither
 fallback exists when the extension itself is absent. Native commands must be
 submitted interactively: slash text passed to `copilot -p` is interpreted by the
 model instead. A headless CLI canvas acknowledgement/browser URL does not prove
 that the Copilot app rendered the view.
 
+The rc.6 shared chat skill reads Run/Test from `structuredContent`, not tool-call
+success. It reports revision, runtime model, full/subset counts and one row per
+returned test while keeping failed, inconclusive, refused, cancelled and error
+outcomes distinct. A runtime model choice remains conversation-local to the
+exact path and never edits source. Answers require an explicit request and are
+never recovered by rerunning. Newly saved tests are listed as not run unless the
+user also asked to Test them. Without the extension, same-chat work can continue
+from source/revision already returned by Create/Edit; a fresh chat gains no read
+tool or shell fallback. With rc.4, fallback text is display-only and cannot
+establish that fresh-chat source authority.
+
 Native open was checked in the Windows Copilot app with a main build before rc.4
 that includes the fix, not the released rc.4 pair or the Mac app. If the native
-command fails or shows nothing, try `Open the kmx canvas for FULL_PATH`. Historical release notes retain their original
+command fails or shows nothing, try `Open the kmx agent for FULL_PATH`.
+Historical release notes retain their original
 command spellings; use this host/version-specific guidance for current commands.
 
 The main view shows the **Prompt** and an ordered list of **Tests**. Open a test
@@ -253,8 +277,11 @@ for **The agent gets**, **Passes if** and the actual **The agent answered** exce
 Going back or opening another test keeps its draft marked **Unsaved**; it never
 silently saves or requires Cancel before editing something else.
 
-On main, **Enter** saves pending edits through one revision-checked MCP Edit and
-runs every test, including when nothing changed. In test detail, the save/run
+In rc.6, **Enter** saves pending edits through a revision-checked MCP Edit and
+runs every test, including when nothing changed. New agents use a companion
+`.agent.test.md`; legacy inline tests remain supported. Paired saves acknowledge
+each selected source separately and are not atomic; partial or uncertain saves
+require reload before testing. In test detail, the save/run
 control runs that test only through the existing case selection. **Shift+Enter**
 adds a line. Typing or navigation alone never saves or runs. Additional canonical
 instruction sections remain available in source details. Paragraph spacing and
@@ -266,8 +293,9 @@ check. An explicit `examples: []` is a valid zero-test authoring state. Ad-hoc R
 with an input still works; Test refuses with “No tests yet — add or suggest one”.
 Saving zero tests supplies no passing evidence, and run-profile export,
 packaging and deployment still refuse an agent without test evidence.
-Test saves reformat only the Examples YAML, including comments, and retain all
-known check fields, including existing judge metadata. No judge or check is
+Legacy inline test saves reformat only the Examples YAML, including comments,
+and retain all known check fields, including existing judge metadata. Paired test
+saves target the selected companion instead. No judge or check is
 inferred from an answer. Inputs, exact operands, code and answers stay literal.
 Only current results have status colours. Editing locally retains known icon
 shapes and counts in grey. Results already stale on the server stay neutral;
@@ -276,13 +304,16 @@ full pass. The sticky Tests header filters All / Not passing without reordering.
 Dark/light tokens and the same layout support a 600px panel.
 
 Test and ad-hoc Run use existing same-session MCP tools directly, not chat.
-**Suggest tests** gives Copilot the saved source, path and revision for one
-existing revision-checked Edit; it needs no MCP resource-reader tool. It keeps
-the prompt, authored model and existing tests and does not run them. The request status acknowledges the chat
-request, not a completed save. Saved additions appear through the normal canvas
-refresh; unsaved local drafts retain the existing outside-change reconciliation.
-Chat reports what was actually saved. An explicit request for proposals only
-leaves them in chat and says they are not saved. The host still enforces permissions. The private
+**Suggest tests** gives Copilot the saved sources and a request bound to this
+canvas. Copilot returns new examples through the non-writing `suggest_kmx_tests`
+extension tool. When you return to the visible idle canvas, suggestions appear
+as unsaved drafts: keep, edit or cancel them in the existing test editor, then
+save with the existing Save and run action. Suggestions alone never change the
+agent or tests file or run tests. Chat reports queued drafts, not a save.
+The page acknowledges each imported batch; repeated polling does not restore a
+draft you dropped. If saved sources change before delivery, suggest again rather
+than using proposals for the old version. Delivery failures never fall back to
+Edit or Test. The host still enforces permissions. The private
 asset bridge accepts only declared interactions for its fixed path, with token,
 Host, exact Origin and size checks; it is not a generic executor.
 The visible idle panel observes the same resource for outside changes. With a
@@ -311,7 +342,8 @@ and right-aligned verdict words distinguish current results from dimmed last-run
 results. Tests arrive together when the batch completes; a running indicator does
 not imply per-test progress.
 
-The typed resource remains `kmx://agent/{path}`; encode the entire path as one
+For legacy single-source authoring, the typed resource remains
+`kmx://agent/{path}`; encode the entire path as one
 URI component, for example
 `kmx://agent/.squad%2Fagents%2Fgreeter%2Fcharter.md`.
 An optional authoring snapshot carries exact source from the same bounded
@@ -352,7 +384,7 @@ or hosted-model run. Clock/history and the new model-check type are deferred.
 
 ## Results and verification
 
-Run/Test return `schemaVersion: 1`, `kind: kmx.agent-file-preview`,
+Legacy single-source Run/Test return `schemaVersion: 1`, `kind: kmx.agent-file-preview`,
 file revision, selected model, full/subset and pass/fail/unknown results.
 A passing subset still has `fullPass: false`. Complete preview data is in
 `structuredContent`; text is a compact human summary, not JSON. Completed

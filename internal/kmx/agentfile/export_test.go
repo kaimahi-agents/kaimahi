@@ -189,6 +189,200 @@ func TestExportRunProfileRetainsHighlyEscapedBoundedSource(t *testing.T) {
 	}
 }
 
+func TestExportRunProfileDefaultCompanion(t *testing.T) {
+	source := strings.Split(sample(t), "## Examples")[0]
+	path := exportSource(t, source)
+	testsPath := strings.TrimSuffix(path, ".md") + ".test.md"
+	tests := testsStarter + testFence("second")
+	pairWrite(t, testsPath, tests)
+	data, err := ExportRunProfile(path)
+	if err != nil {
+		t.Fatalf("valid default companion must export external cases: %v", err)
+	}
+	var got struct {
+		SchemaVersion                          int
+		Kind, SourceRevision, SnapshotRevision string
+		TestsSource                            struct{ State, Path, Revision, SelectionKey string }
+		Instructions                           struct{ Text, SHA256 string }
+		Model                                  struct{ ID, SHA256 string }
+		Examples                               []struct{ ID, Input, SHA256, TargetStatus string }
+	}
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	pair := pairLoad(t, path, "")
+	if got.SchemaVersion != 2 || got.Kind != "kmx.agent-run-profile" || got.SourceRevision != exportedDigest([]byte(source)) || got.SnapshotRevision != pair.SnapshotRevision || got.TestsSource.State != "external" || got.TestsSource.Path != testsPath || got.TestsSource.Revision != exportedDigest([]byte(tests)) || got.TestsSource.SelectionKey != pair.Tests.Selection.Key {
+		t.Fatalf("lost selected source identity: %+v", got)
+	}
+	if got.Instructions.Text != source || got.Instructions.SHA256 != exportedDigest([]byte(source)) || got.Model.ID != "fake" || len(got.Examples) != 2 || got.Examples[0].ID != "greeting" || got.Examples[1].ID != "second" || got.Examples[0].Input != "Ada" || got.Examples[0].TargetStatus != "not_run" {
+		t.Fatalf("lost authored profile content: %+v", got)
+	}
+}
+
+func TestExportRunProfileLegacyBytes(t *testing.T) {
+	for _, name := range []string{"greeter.agent.md", "charter.md"} {
+		path := filepath.Join(realTemp(t), name)
+		pairWrite(t, path, sample(t))
+		data, err := ExportRunProfile(path)
+		if err != nil || exportedDigest(data) != "sha256:846dc7409bd859b06c74ede79a36f1fab46f3780cdc847ea731fc5d2976929f4" {
+			t.Fatalf("legacy v1 bytes changed: %s / %v", exportedDigest(data), err)
+		}
+	}
+}
+
+func TestExportSelectedRunProfileIdentity(t *testing.T) {
+	path := exportSource(t, sample(t)) // Explicit selection can override inline.
+	testsPath := strings.TrimSuffix(path, ".md") + ".test.md"
+	pairWrite(t, testsPath, testsStarter)
+	if data, err := ExportRunProfile(path); err == nil || data != nil {
+		t.Fatal("default conflict exported")
+	}
+	selected, err := ExportSelectedRunProfile(path, filepath.Dir(testsPath)+string(filepath.Separator)+"."+string(filepath.Separator)+filepath.Base(testsPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(selected, []byte("explicit")) {
+		t.Fatal("selection intent entered export")
+	}
+	// Copying both sources to another root changes snapshot/profile, not examples.
+	otherPath := exportSource(t, sample(t))
+	otherTests := strings.TrimSuffix(otherPath, ".md") + ".test.md"
+	pairWrite(t, otherTests, testsStarter)
+	other, err := ExportSelectedRunProfile(otherPath, otherTests)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var a, b map[string]json.RawMessage
+	if err := json.Unmarshal(selected, &a); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(other, &b); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(a["snapshotRevision"], b["snapshotRevision"]) || bytes.Equal(selected, other) || !bytes.Equal(a["examples"], b["examples"]) || !bytes.Equal(a["instructions"], b["instructions"]) || !bytes.Equal(a["model"], b["model"]) {
+		t.Fatal("physical bindings or semantic content/hash identity lost")
+	}
+	// Same agent and equal suite bytes at another selection still differ.
+	alternate := filepath.Join(filepath.Dir(path), "alternate.md")
+	pairWrite(t, alternate, testsStarter)
+	other, err = ExportSelectedRunProfile(path, alternate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(other, &b); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(a["snapshotRevision"], b["snapshotRevision"]) || !bytes.Equal(a["examples"], b["examples"]) {
+		t.Fatal("selector-only change lost")
+	}
+	// Without inline tests, default and explicit selection are byte-identical.
+	pairWrite(t, path, strings.Split(sample(t), "## Examples")[0])
+	selected, err = ExportSelectedRunProfile(path, testsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defaultData, err := ExportRunProfile(path)
+	if err != nil || !bytes.Equal(selected, defaultData) {
+		t.Fatal("explicit intent changed output", err)
+	}
+	pairWrite(t, testsPath, strings.Replace(testsStarter, "input: Ada", "input: Grace", 1))
+	changed, err := ExportRunProfile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(defaultData, &a); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(changed, &b); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(a["sourceRevision"], b["sourceRevision"]) || bytes.Equal(a["snapshotRevision"], b["snapshotRevision"]) || bytes.Equal(a["examples"], b["examples"]) {
+		t.Fatal("tests-only edit lost")
+	}
+}
+
+func TestExportSelectedRunProfileDiagnosticSources(t *testing.T) {
+	for _, tc := range []struct {
+		name, source, tests, field string
+		agentError                 bool
+	}{
+		{"empty", strings.Split(sample(t), "## Examples")[0], testsHeader, "Examples", false},
+		{"judge", strings.Split(sample(t), "## Examples")[0], testsHeader + "```yaml agent-test\nid: a\ninput: Ada\nassertions: [{id: a, type: llmJudge, rubric: Be nice, minScore: 50, judgeVersion: v1}]\n```\n", "Examples", false},
+		{"model", "# Agent\nPrompt\n", testsStarter, "Model.Preferred", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := exportSource(t, tc.source)
+			tests := filepath.Join(filepath.Dir(path), "checks.md")
+			pairWrite(t, tests, tc.tests)
+			data, err := ExportSelectedRunProfile(path, tests)
+			var refusal *Error
+			want := tests
+			if tc.agentError {
+				want = path
+			}
+			if data != nil || !errors.As(err, &refusal) || refusal.Field != tc.field || refusal.Location.File != want || refusal.Location.Line < 1 {
+				t.Fatalf("diagnostic points at wrong source: %v (want%s)", err, want)
+			}
+		})
+	}
+}
+
+func TestExportSelectedRunProfileRestrictions(t *testing.T) {
+	for _, tc := range []struct{ name, tests, want string }{
+		{"zero", testsHeader, "at least one example"},
+		{"judge", testsHeader + "```yaml agent-test\nid: a\ninput: Ada\nassertions: [{id: a, type: llmJudge, rubric: Be nice, minScore: 50, judgeVersion: v1}]\n```\n", "pin judgeModel"},
+		{"mocks", strings.Replace(testsStarter, "input: Ada", "input: Ada\nmocks: {tools: []}", 1), "tool fixtures or tool checks"},
+		{"tool", strings.Replace(testsStarter, "type: contains\n    value: Ada", "type: toolNotCalled\n    tool: read", 1), "tool fixtures or tool checks"},
+		{"malformed", "PRIVATE_EXPORT_CANARY", "schemaVersion"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := exportSource(t, strings.Split(sample(t), "## Examples")[0]+"## Tools\n- read\n")
+			testsPath := strings.TrimSuffix(path, ".md") + ".test.md"
+			pairWrite(t, testsPath, tc.tests)
+			data, err := ExportSelectedRunProfile(path, testsPath)
+			if data != nil || err == nil || !strings.Contains(err.Error(), tc.want) || strings.Contains(err.Error(), "PRIVATE_EXPORT_CANARY") {
+				t.Fatalf("unsafe/lossy export: %q / %v", data, err)
+			}
+		})
+	}
+	path := exportSource(t, sample(t))
+	for _, tests := range []string{filepath.Join(filepath.Dir(path), "missing.md"), filepath.Dir(path), path} {
+		if data, err := ExportSelectedRunProfile(path, tests); data != nil || err == nil {
+			t.Fatalf("unsafe selector exported: %q / %v", data, err)
+		}
+	}
+}
+
+func TestExportRunProfileRejectsEscapedPairOverLimit(t *testing.T) {
+	source := strings.Replace(strings.Split(sample(t), "## Examples")[0], "Reply with exactly `Hello, ` followed by the input name.", strings.Repeat("<", 235000), 1)
+	path := exportSource(t, source)
+	testsPath := strings.TrimSuffix(path, ".md") + ".test.md"
+	var tests strings.Builder
+	tests.WriteString(testsHeader)
+	for i := 0; i < 7; i++ {
+		tests.WriteString(strings.Replace(testFence(fmt.Sprintf("case-%d", i)), "input: Ada", "input: '"+strings.Repeat("<", 16000)+"'", 1))
+	}
+	pairWrite(t, testsPath, tests.String())
+	data, err := ExportRunProfile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Pad with unescaped prose to exercise the exact encoded-byte boundary,
+	// independently of path lengths; hashes stay constant-width.
+	source = strings.Replace(source, "\n## Non-Responsibilities", strings.Repeat("x", 2*1024*1024-len(data))+"\n## Non-Responsibilities", 1)
+	pairWrite(t, path, source)
+	data, err = ExportRunProfile(path)
+	if err != nil || len(data) != 2*1024*1024 || data[len(data)-1] != '\n' {
+		t.Fatal("exact boundary profile refused", len(data), err)
+	}
+	pairWrite(t, path, strings.Replace(source, "\n## Non-Responsibilities", "x\n## Non-Responsibilities", 1))
+	pairLoad(t, path, "") // Both raw sources and all cases must still be valid.
+	data, err = ExportRunProfile(path)
+	if data != nil || err == nil || err.Error() != "cannot encode bounded run profile" {
+		t.Fatalf("oversize encoded pair exported: %d / %v", len(data), err)
+	}
+}
+
 func exportSource(t *testing.T, source string) string {
 	t.Helper()
 	path := filepath.Join(realTemp(t), "greeter.agent.md")

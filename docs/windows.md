@@ -1,9 +1,9 @@
 # Native Windows
 
-Native Windows support on `main` is an **unreleased, narrow day-zero CLI**.
-It is not the Kubernetes agent lifecycle on Windows. Stable v0.8.1, including
-the version selected by `@latest`, has no Windows `.exe`. A build from `main`
-does not make a Windows asset available in that stable release.
+Native Windows support is a **prerelease-only, narrow day-zero CLI** available on
+`main` and in published v0.9.0 release candidates beginning with
+`v0.9.0-rc.4`. It is not the Kubernetes agent lifecycle on Windows. Stable
+v0.8.1, including the version selected by `@latest`, has no Windows `.exe`.
 
 Use [WSL](#use-wsl-for-broader-workflows) for every broader workflow. In
 particular, the existing Windows Copilot integration remains the
@@ -11,16 +11,16 @@ particular, the existing Windows Copilot integration remains the
 
 ## Supported native commands
 
-The native command boundary on `main` is closed: only the following operations
-are supported by a checkout build, and eventually by a tagged release that
-actually contains the Windows assets described below.
+The native command boundary is closed: only the following operations are
+supported by a checkout build and by the published v0.9.0 release-candidate
+Windows assets described below.
 
 | Operation | Native Windows contract |
 |---|---|
 | Identity and documentation | `kmx version`, root or command help, and existing `completion bash\|zsh\|fish` generation. Help and completion are inert; seeing another command in their output does not enable it. There is no PowerShell completion claim. |
-| Package-free fake Run | `kmx run FILE ["input"]`, optionally with legacy inline `--prompt TEXT` or `--no-content`, for a Markdown agent whose effective model is `fake`. KMX opens no workspace, package, cluster, provider, network or tool-binding route. |
-| Package-free fake Test | `kmx test FILE` for the same offline fake route. A completed pass or failure is a local preview only. |
-| Offline file diagnostics | `kmx test explain [failure-id] --file FILE`, including its file-scoped content and clear options. Hidden `kmx eval explain ... --file FILE` may remain callable only as the deprecated compatibility spelling. |
+| Package-free fake Run | `kmx run FILE ["input"]`, optionally with `--tests FILE`, legacy inline `--prompt TEXT` or `--no-content`, for a Markdown agent whose effective model is `fake`. Run loads the selected agent-and-tests pair: the default companion tests, or the `--tests FILE` override. KMX opens no workspace, package, cluster, provider, network or tool-binding route. |
+| Package-free fake Test | `kmx test FILE [--tests FILE]` for the same offline fake route and the same selected agent-and-tests pair. A completed pass or failure is a local preview only. |
+| Offline file diagnostics | `kmx test explain [failure-id] --file FILE [--tests FILE]`, including its file-scoped content and clear options. Explain compares retained failures with the current agent-and-tests selection. Hidden `kmx eval explain ... --file FILE` may remain callable only as the deprecated compatibility spelling. |
 
 Flag-parsing errors label their help hint **PowerShell** on native Windows.
 The hint uses PowerShell's `&` call operator and quotes the executable path,
@@ -39,7 +39,9 @@ For example, after downloading a qualified amd64 artifact:
 .\kmx-windows-amd64.exe test explain --file .\greeter.agent.md
 ```
 
-The file must satisfy the [single-file agent contract](agent-file.md), and the
+The file must satisfy the [agent file contract](agent-file.md), including its
+[companion tests file](agent-file.md#tests-in-a-separate-file-cli) when one is
+selected, and the
 supported native execution route is the deterministic `fake` model. Provider,
 endpoint, tool-binding, prompt-file and `--github-summary` modes are outside this
 boundary.
@@ -142,14 +144,14 @@ instructions remain Unix or WSL installation routes where applicable. They are
 not native Windows installers. Kaimahi makes no Winget, Chocolatey, Scoop or
 other Windows package-manager namespace claim.
 
-Once a future tagged release actually lists a Windows asset, download the exact
-`.exe`, `checksums.txt` and `checksums.txt.sigstore.json` from that same release.
-Do not use these commands with v0.8.1. Select `amd64` for an x64 machine or
-`arm64` only with the [arm64 evidence limitation](#what-ci-and-release-qualification-prove)
-understood:
+Published v0.9.0 release candidates beginning with `v0.9.0-rc.4` list the
+Windows assets. Download the exact `.exe`, `checksums.txt` and
+`checksums.txt.sigstore.json` from one containing tag. Do not use these commands
+with v0.8.1. Select `amd64` for an x64 machine or `arm64` only with the
+[arm64 evidence limitation](#what-ci-and-release-qualification-prove) understood:
 
 ```powershell
-$Version = 'vX.Y.Z' # a release that actually contains Windows assets
+$Version = 'v0.9.0-rc.6' # or another exact tag containing Windows assets
 $Asset = 'kmx-windows-amd64.exe' # or kmx-windows-arm64.exe
 $Base = "https://github.com/kaimahi-agents/kaimahi/releases/download/$Version"
 

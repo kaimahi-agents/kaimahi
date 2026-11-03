@@ -115,10 +115,10 @@ export function launchConfig(d, publicKey, platform = process.platform) {
   }
   const args = [...d.args, "--host-bridge-public-key", publicKey];
   if (platform === "win32" && d.goos === "linux" && text(d.distro, 256) && path.posix.isAbsolute(d.executable) && path.posix.isAbsolute(d.cwd)) {
-    return { type: "stdio", command: "wsl.exe", args: ["--distribution", d.distro, "--cd", d.cwd, "--exec", d.executable, ...args], tools: ["run", "test"] };
+    return { type: "stdio", command: "wsl.exe", args: ["--distribution", d.distro, "--cd", d.cwd, "--exec", d.executable, ...args], tools: ["run", "test", "edit"] };
   }
   if (({ win32: "windows", linux: "linux", darwin: "darwin" })[platform] !== d.goos || !(platform === "win32" ? path.win32 : path.posix).isAbsolute(d.executable)) throw unavailable();
-  return { type: "stdio", command: d.executable, cwd: d.cwd, args, tools: ["run", "test"] };
+  return { type: "stdio", command: d.executable, cwd: d.cwd, args, tools: ["run", "test", "edit"] };
 }
 
 async function runtimeResource(session, serverName) {

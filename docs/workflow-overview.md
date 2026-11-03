@@ -72,7 +72,8 @@ source-evidence `--promote`, partial outcomes, and fresh-evaluation requirements
 ## Getting Started: Get Your First Answer
 
 This first-answer path creates a cluster, so Windows users run it inside a Linux
-WSL distribution. Current `main` has a separate **unreleased**
+WSL distribution. Current `main` and published v0.9.0 release candidates
+beginning with `v0.9.0-rc.4` have a separate **prerelease-only**
 [native Windows day-zero CLI](windows.md), limited to version/help/completion,
 package-free fake file Run/Test and offline file Explain. It creates no suite
 evidence and cannot perform the workspace, model, publication or Deploy stages

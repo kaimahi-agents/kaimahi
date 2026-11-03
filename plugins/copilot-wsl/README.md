@@ -2,7 +2,7 @@
 
 The plugin contains skills, canvas assets and MCP configuration. It uses the
 Linux kmx binary in your default WSL distribution; it does not bundle an engine.
-The v0.9.0-rc.4 install below exposes Create/Edit/Run/Test and the revision-checked
+The v0.9.0-rc.6 install below exposes Create/Edit/Run/Test and the revision-checked
 `set_tool_state` folder-settings writer. Older rc.2 binaries expose only the first
 four tools.
 Internal preview children retain only Create/Edit/Run/Test and never gain
@@ -10,10 +10,10 @@ config-write authority.
 
 ## Install
 
-1. In WSL, install the paired v0.9.0-rc.4 prerelease Linux binary at `/usr/local/bin/kmx`:
+1. In WSL, install the paired v0.9.0-rc.6 prerelease Linux binary at `/usr/local/bin/kmx`:
 
    ```sh
-   curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.4/install.sh | sudo sh -s -- --version=v0.9.0-rc.4 --bin-dir=/usr/local/bin
+   curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.6/install.sh | sudo sh -s -- --version=v0.9.0-rc.6 --bin-dir=/usr/local/bin
    ```
 
    The installer downloads the binary and checks its published SHA256 over HTTPS;
@@ -33,23 +33,34 @@ The WSL and native-bundle plugins share the name `kmx-agent-builder`; PATH uses
 `kmx-agent-builder-path`. Install only one variant per host profile.
 For an existing direct install, follow [migration and paired upgrades](../../docs/copilot-app.md#existing-direct-installs-and-upgrades), rather than leaving both registrations active.
 
+**Release boundary:** The v0.9.0-rc.6 pair includes the paired-file canvas and
+structured text workflow below. Older rc.4 fallback text is bounded and read-only;
+it cannot seed a revision-checked Edit in a fresh chat. Native read-only text is
+still not an Edit baseline.
+
 ## Use
 
 In Copilot, ask: `Create a kmx agent called Release notes that writes a short
-release note from a supplied pull request title, and open its canvas.` Give it a
+release note from a supplied pull request title, and open it.` Give it a
 full WSL path when the file is outside the current directory. The same server
 handles files in unrelated repositories.
 
 To open an existing file without a model turn, use
 `/kmx-canvas open /mnt/c/work/release-notes.agent.md`. Keep path spaces literal,
 without surrounding quotes. `/kmx-canvas` or `/kmx-canvas help` shows usage;
-`/agent-view FULL_PATH` shows read-only text. Native open was checked in the Copilot
-app with a main build before rc.4 that includes the fix, not the released rc.4 pair.
-If it fails or shows nothing, try `Open the kmx canvas for FULL_PATH` through chat.
+`/agent-view FULL_PATH` shows bounded read-only text. Native `/kmx-canvas open`
+also displays only that bounded fallback. In rc.6, the separate chat
+tool's text mode returns exact source/revision when the checked resource is
+editable, so a fresh extension-backed chat can continue with revision-checked
+Edit. Native open was checked in the Copilot app with a main build before rc.4
+that includes the fix, not the released rc.4 pair. If it fails or shows nothing, try
+`Open the kmx agent for FULL_PATH` through chat.
 
 In the interactive CLI, use `copilot --experimental` to load those native
 commands. Without the extension, `/agent-view` is unavailable too. Select the
-full installed plugin skill entry; short `/kmx` is not a universal CLI command.
+full installed plugin skill entry: `/kmx-agent-builder:kmx open FULL_PATH` or
+`/kmx-agent-builder:kmx-agent-builder` followed by a builder task. Short `/kmx`
+is not a universal CLI command.
 See the [launch table and CLI spellings](../../docs/copilot-app.md#launch-commands-and-phrases)
 for create/open/run/test requests, saved-snapshot test additions and recovery.
 CLI command checks are not a new Copilot-app acceptance claim.
@@ -77,12 +88,22 @@ and offline.
 
 Edit prompts and tests in the canvas. Enter saves and tests; Shift+Enter inserts
 one line break. Long prompts scroll inside their box, with the save/run footer
-outside the scroll area. Saved agent files remain ordinary Markdown. Tests send
+outside the scroll area. New agents keep the prompt in `.agent.md` and tests in
+`.agent.test.md`; agents directly inside `.github/agents/` use sibling
+`.github/agent-tests/`.
+Existing inline tests remain supported. Saved files remain ordinary Markdown. Tests send
 prompts and inputs to the selected model. On hosts that forward native tool
 progress, test rows update as cases finish. The final full Test result remains
 authoritative. Local model comparison is lost when the canvas is closed and
 reopened. An unconfirmed execution requires reload rather than silently retrying.
-If the host has no canvas renderer, the same kmx tools remain available in text.
+In rc.6, if the host has no canvas renderer, text mode is a normal
+success path. Chat
+reports structured Test rows and keeps a chosen runtime model for that exact file
+within the conversation. It lists newly saved tests as not run, requests answer
+content only when asked and never reruns to recover omitted content. Without the
+extension, a same-chat workflow can continue from returned source/revision, but a
+fresh chat cannot safely reopen an existing file. With rc.4, fallback text is
+display-only and opening an existing file does not establish an Edit baseline.
 
 See the [agent-file guide](../../docs/agent-file.md) for authoring and checks,
 and the [macOS/PATH plugin guide](../copilot/README.md) for the Mac install and

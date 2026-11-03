@@ -628,7 +628,23 @@ projects validated Copilot IDs/default for the picker, without startup auth or
 inference. Model selection is memory-only, never source/history. Fence model
 changes as well as revisions; never attribute another model's result as current. No folder confirmation is needed
 for charter content. After successful Create, open its returned file.path in the
-existing canvas. Give one plain notice before the first hosted-model send;
+existing canvas or revision-bound text fallback. Text mode is a successful
+presentation, not a failed canvas: return the full file revision and exact source
+only from the checked resource's complete authoring snapshot, and never edit from
+formatted or truncated text. Without the extension, same-chat Create/Edit/Run/Test
+may continue from returned source/revision, but a fresh chat gains no read tool or
+shell fallback. Shared skills read Run/Test structuredContent, preserve full versus
+subset and fail/unknown/refused/cancelled/error distinctions, and never infer pass
+from tool success. Handle the exact three-field MCP preflight refusal before
+preview attribution; every other Run/Test result requires the preview kind.
+Returned path/revision and any explicit requested route/model
+must match the held invocation before attribution; mismatch is not current, never
+pass. Conversation-local model choice is path-scoped, never source or
+history; answer content requires an explicit request and is never recovered by a
+second send. Retain submitted source with an Edit result only after its SHA-256
+matches the returned revision; sparse exampleEdits require a fresh checked
+authoring snapshot because the server, not the submitted baseline, creates the
+saved bytes. Give one plain notice before the first hosted-model send;
 ordinary agent-file creation stays confirmation-free, without path-character
 restrictions. Before writing new or changed inline tests in a frontmatter-based
 Copilot file, canvas/MCP shows "Tests added here become part of this agent's
@@ -646,7 +662,10 @@ same sources; do not maintain a second canvas/skill implementation. The macOS/PA
 plugin in `plugins/copilot` links to those shared sources except for generated
 provider-identity copies of both skills and `extension.mjs`. Regenerate these
 with `python3 plugins/copilot/source_release.py --write` in every PR that changes
-their canonical inputs; CI checks parity without writing. Its source plugin name
+their canonical inputs; CI checks parity without writing. Conservative Python
+identity-shape checks run before regeneration, while the mocked-SDK Node import
+of both real extensions is the semantic provider-registration authority; release
+publication requires both. Its source plugin name
 is `kmx-agent-builder-path`; WSL/native bundles keep `kmx-agent-builder`, and the
 MCP server key remains unchanged. Its MCP command is `/usr/local/bin/kmx mcp`,
 matching the installer destination without relying on a Dock-launched app's PATH.
@@ -655,6 +674,20 @@ without a bundled engine, root/model configuration or installation helper.
 Node tests stay outside both installable trees under `plugins/tests/copilot`.
 Legacy bundle tooling retains its separate `native-mcp.json` template.
 See [MCP](docs/kmx.md#local-stdio-mcp).
+Default new chat Create uses MCP v3 with separate prompt/tests sources. The
+paired canvas consumes the checked source resource plus optional normalized
+projection, keeps raw agent hashes separate from snapshot/context identities,
+and attributes direct v3 preview envelopes, never the legacy latest cache.
+Sparse companion edits reuse the existing Go field patcher/emitter. Complete
+per-source ACKs alone advance drafts; partial/uncertain effects preserve them and
+never trigger Test. Source history is not verdict history. Editable rendered
+pairs establish the existing relay before the baseline, including tool-free
+starts; its SDK filter exposes Run/Test/Edit only. Keep source reads and actions
+on their context owner, with opening leases and deliberate reconciliation after
+server changes. Text fallback preserves both sources/context without starting a
+relay. Legacy inline/native flows remain separate and existing inline consent
+is unchanged.
+See [Copilot CLI text mode](docs/copilot-cli-text-mode.md).
 
 ## Internal native Squad authoring boundary
 
@@ -688,6 +721,34 @@ Edit replaces only Preferred/Task Instructions/Examples with source/parent CAS.
 Native preview is revision-bound and tool-free; fake consumes task-only directives,
 real routes retain native+task instructions excluding Examples. No package digest,
 team runtime or native Squad canvas actions. See [native authoring](docs/agent-file.md#internal-native-cast-and-enrich).
+
+## Explicit native file tests
+
+`kmx test FILE --runner copilotd --host URL` selects the native AHP runner,
+never the embedded MCP tool wrapper; default/file Run/MCP behavior is unchanged.
+Selection is explicitly by unique discovered name plus matching authored
+description/model/tool set, not loaded-byte attestation; results and docs label
+this boundary. Do not silently claim source-path identity from name-only AHP URIs.
+The CLI owns checked Git working-tree snapshots and source freshness. Ignored
+files/dependencies and Git metadata are excluded; failed Git and declared
+submodules are unknown before inference, without hydration or source mutation.
+The Copilot provider owns both GitHub and environment-only connection credentials.
+Native acceptance uses trusted invocation policy on completion/progress/summary;
+never relax embedded five-call checks from returned metadata. Observe all relevant
+native model IDs and complete correlated calls, not a requested-model echo.
+Per-case two-minute and whole-invocation five-minute deadlines include approvals
+and both judge samples; unknown/out-of-time stops later sends. Selected llmJudge
+uses the existing separate tool-free transport/scorer, never a host judge turn.
+Default judge route is the selected model through Copilot HTTP; explicit App
+judge overrides retain their route. Host auth is not HTTP model availability.
+Prepare judge credentials/model before inference, compose both credential owners'
+content checks and recheck source after judging. Malformed/split/unavailable
+scores are unknown. Delegating agents stay unknown with a clear reason, including
+protocol-linked child work under arbitrary tool names. Pending input follows bounded checked
+failed-case content and --no-content; name always shows. Cleanup Notices never
+change verdict. Native failure metadata shares file-v2's ten-record subject budget;
+older strict readers may reject that partition. Native Windows refuses before effects.
+See [copilotd file tests](docs/local-preview.md#copilotd-file-tests).
 
 ## Single-file charter boundary
 
@@ -819,11 +880,12 @@ authority.
 
 ## Native Windows boundary
 
-Native Windows on `main` is unreleased and operation-specific. Permit only inert
-version/help/completion, package-free fake `run FILE` / `test FILE`, and offline
-`test explain ... --file FILE`; hidden `eval explain` may remain only as the
-deprecated compatibility spelling. File Run/Test may use inline `--prompt`, but
-provider, endpoint, tool-binding, prompt-file and GitHub-summary modes stay
+Native Windows support is prerelease-only and operation-specific. Current `main`
+and published v0.9.0 release candidates beginning with `v0.9.0-rc.4` permit only
+inert version/help/completion, package-free fake `run FILE` / `test FILE`, and
+offline `test explain ... --file FILE`; hidden `eval explain` may remain only as
+the deprecated compatibility spelling. File Run/Test may use inline `--prompt`,
+but provider, endpoint, tool-binding, prompt-file and GitHub-summary modes stay
 deferred. These previews create no suite evidence, publication or Deploy authority.
 
 Every other native Windows route refuses before configuration, state,
@@ -839,12 +901,14 @@ package-free fake Run/failing Test/offline Explain journey with no skips. Window
 arm64 is cross-built, vetted, metadata-checked and checksummed only; make no
 native-execution claim. Stable v0.8.1 and `@latest` have no Windows `.exe`.
 `install.sh`, Homebrew and generic Go `@latest` remain Unix/WSL routes where
-applicable; no Winget/package-manager claim. A future containing release uses
-exact `kmx-windows-{amd64,arm64}.exe` assets and signs their checksum manifest
-with Sigstore, not the executables with Authenticode. Current artifacts may be
-unsigned. Record clean-machine `Get-AuthenticodeSignature`, Zone.Identifier and
-SmartScreen results; never advise Unblock-File, disabled protections, execution-
-policy changes, Developer Mode or policy bypass. A policy block is a blocker.
+applicable; no Winget/package-manager claim. Published containing releases use
+exact `kmx-windows-{amd64,arm64}.exe` assets and sign their checksum manifest
+with Sigstore, not the executables with Authenticode. Published v0.9.0 release
+candidates beginning with `v0.9.0-rc.4` use that contract; future containing
+releases must preserve it. Current artifacts may be unsigned. Record clean-machine
+`Get-AuthenticodeSignature`, Zone.Identifier and SmartScreen results; never advise
+Unblock-File, disabled protections, execution-policy changes, Developer Mode or
+policy bypass. A policy block is a blocker.
 
 ## Offline multi-member workspace boundary
 

@@ -37,7 +37,8 @@ These docs follow main. `kmx package test` and `kmx package deploy` are unreleas
 
 Have Docker running and Homebrew installed. For Podman, [select it explicitly](docs/getting-started.md#using-podman-instead-of-docker).
 This cluster quickstart runs on macOS, Linux or Windows Subsystem for Linux (WSL),
-not native Windows. Current `main` has a separate, unreleased
+not native Windows. Current `main` and published v0.9.0 release candidates
+beginning with `v0.9.0-rc.4` have a separate
 [native Windows day-zero CLI](docs/windows.md) limited to version/help/completion,
 package-free fake `run FILE` / `test FILE`, and offline
 `test explain --file FILE`. Stable v0.8.1 and `@latest` have no Windows `.exe`;
@@ -63,17 +64,17 @@ Use a dedicated test environment. See [other install methods, prerequisites and 
 ## Agent files in Copilot
 
 On macOS, use the [plain Copilot plugin](plugins/copilot/README.md#install-on-macos):
-install the rc.4 prerelease darwin binary, register `kmx-plugins`, then install the
-PATH plugin. macOS CI checks installation and
+install the rc.6 prerelease darwin binary, register `kmx-plugins`, then install the
+plain Mac plugin. macOS CI checks installation and
 the offline fake-model loop, not a Copilot model or the desktop app.
 
 ### Windows through WSL
 
 For the Markdown-agent inner loop without a Kubernetes cluster, use the
-[WSL Copilot plugin](plugins/copilot-wsl/README.md). Install the paired v0.9.0-rc.4 prerelease in WSL:
+[WSL Copilot plugin](plugins/copilot-wsl/README.md). Install the paired v0.9.0-rc.6 prerelease in WSL:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.4/install.sh | sudo sh -s -- --version=v0.9.0-rc.4 --bin-dir=/usr/local/bin
+curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.6/install.sh | sudo sh -s -- --version=v0.9.0-rc.6 --bin-dir=/usr/local/bin
 ```
 
 Then, in a Windows terminal:
@@ -96,7 +97,7 @@ update kmx. See [direct-install migration and paired upgrades](docs/copilot-app.
 - [Workflow and runtime details](docs/workflow-overview.md): individual stages, version limits, safety and the workspace/live distinction.
 - [Workspace lifecycle](docs/suite-workspace.md) and [runtime support](docs/runtime-adapters.md): exact package identities, evaluation evidence and supported operations.
 - [Command reference](docs/kmx.md) and [models](docs/models.md).
-- [Native Windows boundary](docs/windows.md): unreleased local fake previews,
+- [Native Windows boundary](docs/windows.md): prerelease-only local fake previews,
   release availability, private state and WSL separation.
 - [Azure walkthrough](docs/aks-demo.md): take a local proof to a remote cluster.
 - [All guides](docs/README.md), [development](docs/development.md) and [contributing](CONTRIBUTING.md).

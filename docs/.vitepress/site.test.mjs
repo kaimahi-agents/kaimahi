@@ -96,6 +96,7 @@ test('Test is canonical while compatibility and current runtime limits stay expl
     assert.match(text, /Docker/, `${page}: container prerequisite retained`)
     assert.match(text, /WSL/, `${page}: broader Windows route retained`)
     assert.match(text, /native Windows[^\n]*(?:day-zero CLI|CLI)/i, `${page}: narrow native path linked`)
+    assert.match(text, /v0\.9\.0-rc\.4/, `${page}: published Windows prerelease boundary`)
     assert.match(text, /v0\.8\.1[^\n]*no Windows \.exe/i, `${page}: stable Windows asset boundary`)
     assert.doesNotMatch(text, /kmx publish|kmx test --local/)
   }
@@ -115,7 +116,9 @@ test('native Windows documentation keeps the day-zero and release boundary narro
   const windows = plainText(html).replace(/\s+/g, ' ')
 
   for (const marker of [
-    'unreleased, narrow day-zero CLI',
+    'prerelease-only, narrow day-zero CLI',
+    'v0.9.0-rc.4',
+    'v0.9.0-rc.6',
     'Stable v0.8.1',
     'kmx-windows-amd64.exe',
     'kmx-windows-arm64.exe',
@@ -162,6 +165,7 @@ test('native Windows documentation keeps the day-zero and release boundary narro
   assert.match(windows, /Sigstore bundle signs the checksum manifest/i)
   assert.match(windows, /certificate-identity[^\n]*\$Version/i)
   assert.match(windows, /not evaluated[^.]*not[^.]*allowed/i)
+  assert.doesNotMatch(windows, /future tagged release|future containing release/i)
   assert.match(windows, /install\.sh[^.]*Homebrew[^.]*Go @latest[^.]*Unix or WSL/i)
   assert.doesNotMatch(windows, /native Windows builds are not supported yet|Windows CLI remains guarded/i)
   for (const forbiddenAdvice of [
@@ -189,7 +193,15 @@ test('agent-file CI reports retain failure status and content-free summaries', a
     'content-free table',
     'Neither output creates automatic local history'
   ]) assert.ok(app.includes(marker), `CI report contract: ${marker}`)
-  assert.match(app, /CLI section follows current main, not the rc\.4 app walkthrough/)
+  assert.match(app, /rc\.6 binary includes these grouped commands and file-mode exit codes/)
+  assert.match(app, /rc\.4 can display bounded, read-only fallback text/)
+  assert.match(app, /cannot seed a revision-checked Edit in a fresh chat/)
+  assert.match(app, /rc\.6(?:'|&#39;)s open_kmx_canvas text result returns the full revision/)
+  assert.match(app, /new tests live in its \.agent\.test\.md companion/)
+  for (const marker of ['kmx://agent-sources/{path}', 'selectedSources', 'sourceVersion', 'expectedSourceVersion']) {
+    assert.ok(app.includes(marker), `paired text Edit contract: ${marker}`)
+  }
+  assert.match(app, /v0\.9\.0-rc\.6\/install\.sh \| sudo sh -s -- --version=v0\.9\.0-rc\.6/)
   assert.match(app, /1\s*A completed assertion failed/)
   assert.match(app, /2\s*Could not run or decide/)
   assert.doesNotMatch(app, /release candidates do not contain it/i)
@@ -207,6 +219,9 @@ test('agent-file CI reports retain failure status and content-free summaries', a
   assert.match(appHtml, /href="\.\/local-preview(?:\.html)?#copilot-sign-in-in-ci"/)
 
   const reference = plainText(await readFile(path.join(dist, 'docs/kmx.html'), 'utf8')).replace(/\s+/g, ' ')
+  for (const marker of ['kmx://agent-sources/{path}', 'selectedSources', 'sourceVersion', 'expectedSourceVersion']) {
+    assert.ok(reference.includes(marker), `paired reference Edit contract: ${marker}`)
+  }
   for (const marker of [
     'durationMs', 'effective judge identity', 'Enabled/Disabled settings',
     'live/recorded/unavailable source', 'GITHUB_STEP_SUMMARY',

@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
@@ -38,18 +40,19 @@ type suiteFailureRecord struct {
 	Detail        suiteFailureDetail `json:"detail"`
 }
 type fileFailureRecord struct {
-	Pair          *fileFailurePairMetadata     `json:"pair,omitempty"`
-	SchemaVersion int                          `json:"schemaVersion"`
-	Sequence      uint64                       `json:"sequence"`
-	Subject       string                       `json:"subject"`
-	Revision      string                       `json:"revision"`
-	AgentID       string                       `json:"agentID"`
-	Operation     string                       `json:"operation"`
-	Selection     string                       `json:"selection"`
-	Model         FilePreviewRoute             `json:"model"`
-	Judge         FilePreviewRoute             `json:"judge"`
-	Assertions    []fileFailureAssertionRecord `json:"assertions"`
-	Detail        suiteFailureDetail           `json:"detail"`
+	Native        *agentpreview.NativeExecution `json:"native,omitempty"`
+	Pair          *fileFailurePairMetadata      `json:"pair,omitempty"`
+	SchemaVersion int                           `json:"schemaVersion"`
+	Sequence      uint64                        `json:"sequence"`
+	Subject       string                        `json:"subject"`
+	Revision      string                        `json:"revision"`
+	AgentID       string                        `json:"agentID"`
+	Operation     string                        `json:"operation"`
+	Selection     string                        `json:"selection"`
+	Model         FilePreviewRoute              `json:"model"`
+	Judge         FilePreviewRoute              `json:"judge"`
+	Assertions    []fileFailureAssertionRecord  `json:"assertions"`
+	Detail        suiteFailureDetail            `json:"detail"`
 }
 type fileFailureAssertionRecord struct {
 	ID         string                         `json:"id"`
@@ -64,6 +67,7 @@ type suiteFailureCodec interface {
 }
 type workspaceFailureCodec struct{}
 type retainedFileFailureCodec struct {
+	native     *agentpreview.NativeExecution
 	pair       *fileFailurePairMetadata
 	subject    string
 	revision   string
@@ -130,7 +134,7 @@ func (c retainedFileFailureCodec) decode(raw []byte) (suiteFailureRecord, *fileF
 
 func (c retainedFileFailureCodec) encode(sequence uint64, detail suiteFailureDetail, keys []string) ([]byte, error) {
 	record := fileFailureRecord{
-		SchemaVersion: 2, Sequence: sequence, Subject: c.subject, Revision: c.revision, AgentID: c.agentID, Pair: c.pair,
+		SchemaVersion: 2, Sequence: sequence, Subject: c.subject, Revision: c.revision, AgentID: c.agentID, Pair: c.pair, Native: c.native,
 		Operation: c.operation, Selection: c.selection, Model: c.model, Judge: c.judge,
 		Assertions: append([]fileFailureAssertionRecord(nil), c.assertions...), Detail: detail,
 	}
@@ -347,6 +351,9 @@ func validateSuiteFailureRecord(r suiteFailureRecord, keys []string) error {
 }
 
 func validateFileFailureRecord(r fileFailureRecord, keys []string) error {
+	if r.Native != nil && (r.Model.Provider != "copilot" || !validPreviewExecutionTools(agentpreview.Completion{State: agentpreview.Complete, ID: r.Native.Session, Model: r.Model.Model, Native: r.Native}, agentfile.Example{}, nil, true) || r.Native.PendingInput != "" || r.Native.PendingTool != "") {
+		return errSuiteFailureStore
+	}
 	if r.Pair != nil && !validRetainedPairMetadata(r.Pair, r.Revision) {
 		return errSuiteFailureStore
 	}

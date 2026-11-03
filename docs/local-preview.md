@@ -3,8 +3,9 @@
 ## CLI storage, privacy and evidence caveats
 
 This is the shared caveats page linked by file Run, Test and Explain help.
-File previews on fake, local and Copilot models use embedded Agent Sessions.
-They retain instructions, inputs, answers, judge payloads and reasoning in
+By default, file previews on fake, local and Copilot models use embedded Agent Sessions.
+Explicit [copilotd file tests](#copilotd-file-tests) use the host's native loop instead.
+Embedded previews retain instructions, inputs, answers, judge payloads and reasoning in
 cleartext SQLite journals under the kmx state directory (`KMX_HOME` when set),
 in `local-preview/journals`. The journal is never suite evidence or permission
 to publish or deploy. Copilot content checks stay provider-owned and run before
@@ -23,6 +24,112 @@ The stores are independent: deleting journals does not clear failure diagnostics
 and clearing failure diagnostics does not delete journals, source history or
 passing proof. See [retained Test failures](#retained-test-failures) for scope,
 revision attribution, bounds and retention-unavailable behavior.
+
+## Copilotd file tests
+
+Choose an already-running local host for one file test:
+
+```sh
+kmx test .github/agents/reader.agent.md --runner copilotd \
+  --host ws://127.0.0.1:PORT --model MODEL -o json
+```
+
+Replace PORT and MODEL with the listener port and exact intended model ID.
+Without `--runner copilotd`, embedded behavior is unchanged. Native execution is
+for FILE Test only, not folder tests, Run, MCP previews or packaged evaluation.
+The endpoint must be a literal loopback ws/wss URL, with no credentials, query
+or fragment. Native Windows refuses before effects; WSL/Linux share the host's
+filesystem. The host must permit the local temporary root used for copies
+(the standard `TMPDIR` setting); kmx never widens a host's allowlist.
+This does not install or discover a host or place remote checkouts.
+
+If the listener requires a connection secret, supply `COPILOTD_CLIENT_TOKEN`
+in the environment. Do not put it in `--host` or command arguments. An absent
+variable means tokenless; a present empty value is invalid, without retry.
+GitHub authentication is separate: existing `COPILOT_GITHUB_TOKEN`, bounded gh
+sign-in capture, then the kmx keychain fallback. A locked or signed-out gh means
+unlock the keyring or `gh auth login --hostname github.com`, not a test failure.
+No login flow, credential persistence or automatic account substitution is added.
+
+Each case runs against a fresh private copy rooted at the source Git top-level,
+with current tracked and nonignored untracked bytes. Ignored dependencies are
+**not copied**. Deleted/sparse paths remain absent; LFS bytes/pointers stay as
+found, without hydration. Missing or failed Git and repositories declaring
+submodules report unknown before inference. Files stream without a per-file size
+limit. The copy is not a hostile-filesystem sandbox; native host tools retain
+the host's authority. The caller verifies source versions and records the starting
+Git and content identities. No case modifies the original checkout through the copy.
+
+Selection is **by name**, not source-path or loaded-byte attestation. The host
+must discover exactly one agent with the file's parsed name across project and
+plugin agents; its description, authored model and tool-name set must also match.
+Missing, ambiguous or mismatched discovery returns unknown with a reason before
+any turn is sent. A model override changes the turn's requested model, not this
+comparison of authored metadata. Matching metadata cannot prove identical prompt
+bytes: another source with the same metadata remains indistinguishable. Results
+record `native.selection: name` and label this limitation; a pass is not proof
+that the host loaded the named FILE's bytes.
+
+The original relative filename and bytes are preserved in the snapshot. An
+unchanged-byte random-filename experiment did not provide a stronger binding on
+copilotd 1.0.5: authored names still produced name-based URIs shared by same-named
+repository agents, and changing discovery order executed a decoy. Renaming also
+broke an instruction referring to its original filename. kmx therefore does not
+rename the agent or claim that filename randomness proves selection. A self-file
+reference still sees its original copied relative path, subject to normal host
+permissions and discovery.
+
+A bounded, quoted session URI appears on stderr before the first turn for each
+case, without `--verbose`. JSON stdout stays one final document. The host's
+approval mode is unchanged: kmx neither selects allow-all nor approves tools.
+A separate client with connection access must authenticate as the session
+principal to answer approval requests. Each case has the existing two-minute
+example limit, within the five-minute invocation limit; the earlier deadline wins.
+Agent execution, approval waiting and both judge samples share these budgets.
+Either limit gives unknown, reads as
+out of time, exits 2 and stops later cases/sends. There is no timeout flag.
+A pending tool's name always shows. Its input is bounded, credential-checked
+failed-case detail shown by default; `--no-content` omits it.
+
+Selected `llmJudge` assertions score the host's completed answer using kmx's
+**separate tool-free judge transport**, not another copilotd turn. The agent runs
+on the host; the judge does not. By default the judge uses the exact selected
+agent model through Copilot's HTTP API, with kmx's existing GitHub authentication.
+Host access alone does not establish HTTP judge-model availability. Run
+`kmx model list --provider copilot` and select a model available on both routes
+with `--model MODEL`; there is no automatic model substitution. Unlock your
+keyring or run `gh auth login --hostname github.com` if judge sign-in is unavailable.
+Trusted App callers can explicitly override the judge route; there is no CLI
+judge-route flag. The result's `judgeRoute` identifies this separate evaluator,
+not a host session or request.
+
+Each judge assertion sends the case input, answer and rubric for two independent
+samples without tools. Malformed, mismatched-model, unavailable or split scores
+are unknown, never pass or skipped. Judge execution errors stop later sends.
+The source is checked again after judging. Native host transcripts remain
+host-owned; the separate judge creates no kmx Sessions journal.
+
+Only live Enabled cases work here. Selected replay/capture and Disabled declared
+tools remain unsupported before sends. Explicit kmx MCP selection/bindings conflict; saved kmx MCP choices
+do not apply to the native host's tools. Raw native names are preserved, but tool
+assertion operands must still be declared. Empty/omitted declarations are not
+proof of tool-free execution; exact-host behavior must be qualified. Complete
+correlated native traces and observed model IDs are required. A request is not
+shell success, and requested model metadata is not observed model evidence.
+A mismatched observed model returns unknown with `native_model_mismatch`;
+the requested route and observed actual model IDs remain visible.
+Delegating agents report unknown with `native_delegation_unverified`: contributing
+child models and tools cannot be attributed from the parent's trace. This also
+applies to protocol-linked child work returned by differently named tools.
+
+A pass covers these file assertions against the name-selected host agent on the
+recorded snapshot, subject to the selection limitation above; it is
+**not deployment or packaged-suite evidence**. The host owns transcripts; kmx
+creates no fabricated Sessions journal. Cleanup uncertainty names possible owned
+sessions/copies in Notices without changing the verdict or normal exit.
+Completed failures share the existing ten-record file-subject budget. Older strict
+v2 readers can reject native-bearing records, making that partition unavailable
+for retention, Explain or clear; use this version or newer, with no migration.
 
 ## Copilot sign-in in CI
 
@@ -72,14 +179,24 @@ assertions or setting up a judge. Explicit positional input runs that input; sav
 inputs explicitly selected alongside it keep their own fixtures. Completed Run
 rows are **ANSWERED**, not passing tests; JSON keeps an unknown verdict and
 `fullPass: false`. No judge is selected or authenticated for CLI Run. Test and the
-existing single-source MCP Run/Test behavior continue to evaluate checks. File
+existing single-source MCP Run/Test behavior continue to evaluate checks. MCP
+Run/Test also accept schema version 3 with a checked `sourceVersion` from the
+source resource, running the selected agent/tests pairs: Run answers without
+checks, and Test evaluates the selected checks. Version-3 Create/Edit and
+post-journal tool capture share checked sequential source publication, complete
+pair-preimage history and current-binding restore. Inspect per-source partial or
+uncertain acknowledgements; do not retry or Test automatically. Frozen recordings
+replay read-only. The paired canvas uses these same operations and per-source
+acknowledgements; legacy/native versions stay separate. File
 CLI selects a [separate tests file](agent-file.md#tests-in-a-separate-file-reader-only)
 by the shared default rule or `--tests FILE`; its examples never enter the agent's
 prompt. Original/unselected agent content and raw tests prose still undergo the
 same credential preflight. Executed combined revision and saved target/revision
 are separate acknowledgements; tests-only edits stale retained results. Legacy
-MCP/canvas capabilities refuse a present default tests file until their paired
-reader/writer slice lands rather than silently reporting an agent-only result.
+v1 MCP/canvas capabilities still refuse a present default tests file instead of
+reporting an agent-only result. The current paired canvas requires the separate
+v3 capability and checked source context, including for comparison replay and
+source-only history restore.
 
 Selected examples and optional ad-hoc input share one invocation-owned journal;
 each gets a fresh Session, as does each of the two samples when judging is requested. The adapter aborts later sends on execution or deadline

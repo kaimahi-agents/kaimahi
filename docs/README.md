@@ -18,7 +18,7 @@ runtime contract when extending or comparing implementations.
 |---|---|
 | Create an agent, edit its prompt and test it in the Copilot app without a cluster | [Use kmx in the Copilot app](copilot-app.md) |
 | Set up the current development CLI and understand prerequisites | [Getting started](getting-started.md) |
-| Understand the unreleased native Windows day-zero commands, release availability, trust and state limits | [Native Windows](windows.md) |
+| Understand the prerelease-only native Windows day-zero commands, release availability, trust and state limits | [Native Windows](windows.md) |
 | Review Run, Test, Publish and Deploy stages, workspace/live paths and safety limits | [Workflow overview](workflow-overview.md) |
 | Inspect compiled runtime support and qualification evidence with `kmx cluster targets`; understand runtime and inference boundaries | [Runtime contract and support matrix](runtime-adapters.md) |
 | Install Orka, inspect before applying, or see the version actually running | [Orka](orka.md) |
@@ -58,6 +58,7 @@ See [format boundaries](bundle-format.md) and [current CLI contracts](kmx.md).
 - [Command conventions](command-conventions.md): naming, flag, output and compatibility rules for kmx commands.
 - [Charm boundary](charm-ux-followup-plan.md): the implemented creation wizard and its limits.
 - [Interactive agent TUI](interactive-agent-tui-plan.md): two-environment overview, keyboard navigation, slash-command completion and demo mode.
+- [Copilot CLI text mode](copilot-cli-text-mode.md): unreleased current-main revision-bound text fallback, chat result reporting and model continuity without a canvas.
 - [Suite-first lifecycle direction](suite-first-lifecycle.md): workspace, release, deployment and evaluation objects; partly implemented, not an operator recipe.
 - [KMX lifecycle interface decision](kmx-lifecycle-interfaces.md): rationale for the experimental target, platform, runtime, deployment and receipt boundaries.
 - [KMX application API](kmx-application-api.md): how another Go layer uses AgentEnvironment, AgentSuites and AgentDeployments while management ports remain internal.

@@ -6,6 +6,18 @@ import (
 )
 
 func renameExclusive(root *os.Root, from, to string) error {
+	return renameExclusiveObserved(root, from, to, nil)
+}
+
+// Keep the published object's identity, not a later observation of its name.
+func renameExclusiveObserved(root *os.Root, from, to string, published *os.FileInfo) error {
+	if published != nil {
+		info, err := root.Lstat(from)
+		if err != nil {
+			return err
+		}
+		*published = info
+	}
 	dir, err := root.Open(".")
 	if err != nil {
 		return err

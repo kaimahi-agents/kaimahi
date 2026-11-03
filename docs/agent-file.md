@@ -71,10 +71,21 @@ reader. Run returns answers without checks; Test evaluates the checks. Add
 input. No source migration is automatic. A missing or empty test source is not
 a passing Test.
 
-MCP/canvas pair capabilities and writers are a later slice. Existing MCP reads,
-Run/Test and Edit refuse an agent-only view when its default tests file exists;
-they do not ignore that file, report an old agent-only pass as current, or fall
-back to inline writes. Native Squad and single-source files remain supported.
+MCP has separate read-only source/history resources and paired offline export.
+The existing Run/Test tools also accept version 3 with a checked `sourceVersion`
+from the source resource: Run answers without checks; Test evaluates selected
+checks. Version-3 Create/Edit write the selected pair with per-source
+acknowledgements, source-only history and current-binding restore. Pending tool
+capture saves only after journal close; external capture leaves agent bytes exact.
+Partial/uncertain saves require refresh, never automatic retry or Test. The canvas
+keeps separate prompt/tests drafts, saves them before Enter/Test, and shows checked
+source history without treating it as saved verdicts. New chat Create writes both
+sources; existing inline tests stay in place. Frozen recordings replay without
+another capture. Explicit suite selection is also available to the canvas opener.
+The legacy version-1 agent-view resource, Run/Test and Edit refuse an agent-only view when its
+default tests file exists; they do not ignore it, report an old agent-only pass
+as current, or fall back to inline writes. Native Squad and single-source files
+remain supported.
 
 The tests file is `NAME.agent.test.md` beside `NAME.agent.md`. An agent directly
 inside `.github/agents/` instead pairs with `.github/agent-tests/NAME.agent.test.md`.
@@ -153,6 +164,20 @@ downgrade, older binaries may report the retained store unavailable on encounter
 new pair metadata; use this version or newer to read it. No records are migrated
 or removed automatically. Put journal/summary files outside the checked source parent when possible: creating
 entries there can conservatively stale source-version checks.
+
+### Test on a local copilotd host
+
+`kmx test FILE --runner copilotd --host ws://127.0.0.1:PORT --model MODEL`
+uses native host tools on a fresh Git working-tree snapshot. Agent selection is
+by unique name plus matching description, authored model and tools, not proof
+that the host loaded the FILE's bytes; the result labels this limitation. Embedded remains
+the default. `llmJudge` scores the host's answer through a separate tool-free
+transport, not on the host. Delegating agents report unknown on this runner.
+Token/authentication, source exclusions, unsupported case semantics,
+model attribution, approval budgets and diagnostic compatibility are described in
+[copilotd file tests](local-preview.md#copilotd-file-tests). Native pass is file-test
+feedback, never permission or evidence for deployment. Pending tool input follows
+existing failed-case detail: bounded and credential-checked, hidden by `--no-content`.
 
 ## Test a folder
 
@@ -309,7 +334,11 @@ this file; the parser neither checks availability nor chooses/falls back to a
 model. Prose cannot grant tools or hooks. Tool names declare a requirement,
 not authority: execution needs an explicit host binding and a qualified provider.
 The CLI supports one [host-bound read-only GitHub MCP operation](local-preview.md#host-tool-foundation)
-with an explicit local binding and environment credential reference. Missing
+with an explicit local binding and environment credential reference. In addition, file Run/Test
+can select named stdio MCP servers from the agent folder's `kmx.yaml` with repeatable
+`--mcp-server NAME` (replaces the saved selection) or `--no-mcp-servers` (clears it); a fixed
+`--tool-bindings` takes precedence. Disabled tools and populated recordings do not start a
+server. See [selected stdio servers](local-preview.md#selected-stdio-servers-in-file-runtest). Missing
 bindings leave a declared tool available as a stub answering "not available in this test".
 Malformed supplied bindings, missing credentials for an actual live binding, unsupported routes and invalid provider results still refuse.
 Bound tools also work on Copilot Chat Completions and Responses routes; judges
@@ -481,10 +510,12 @@ without inventing charter sections or rewriting the file.
 tested AgentSuite artifact handed off by digest (kmx pushes; the host pulls).
 This export does not implement that deployment path or define a host-side API.
 
-`kmx package run-profile export FILE` uses `agentfile.ExportRunProfile`, which calls
-`Load`/`Parse` once, without configuration, state, provider selection, credentials
-or execution. It accepts the same agent-file shapes as Parse, not the distinct native Squad
-profile. Existing tools/settings and safe parser refusals apply unchanged.
+`kmx package run-profile export FILE [--tests FILE]` uses the shared checked
+`LoadPair` reader without configuration, state, provider selection, credentials
+or execution. Default tests use the fixed companion rule; an explicit override
+uses the same C3 selection as file Run/Test. It accepts ordinary agent-file
+shapes, not the distinct native Squad profile. Both selected sources must be
+valid; there is no fallback to inline tests after a companion failure.
 Export still requires an explicit authored model; preview defaults and picker overrides are not export provenance.
 Zero-test authoring charters refuse export
 before any profile bytes are written. Packaging and deployment still require test
@@ -499,7 +530,15 @@ owned and can truncate a file before validation; it does not inherit kmx privacy
 or exclusive-create guarantees. Refusal writes no profile bytes; an output failure
 exits nonzero but may leave partial bytes at the caller's destination.
 
-The experimental v1 envelope has exactly these fields:
+Inline/single-source profiles retain the experimental v1 envelope below. External
+tests use v2 with the same fields plus `snapshotRevision` and `testsSource`
+(`state`, physical `path`, raw `revision`, `selectionKey`). The agent's raw hash
+stays `sourceRevision`. V2 includes local physical-path metadata and is deliberately
+machine/selection-bound: copying identical sources to another folder changes its
+snapshot/profile bytes, but not semantic example hashes. The profile is a
+normalized projection, not an editable raw-source bundle or a save acknowledgement.
+
+The v1 envelope has exactly these fields:
 
 | Field | Meaning |
 |---|---|
@@ -527,8 +566,9 @@ whitespace or trailing newline in the hash preimage. Neither `sha256` nor
 ```
 
 These hashes include assertion IDs and are **not** runtime evaluation-definition
-digests or AgentSuite JCS digests. Paths, source locations, timestamps, routes,
-credentials, local results and build state are omitted. Comments in the Examples YAML affect
+digests or AgentSuite JCS digests. Source locations, timestamps, routes,
+credentials, local results and build state are omitted; v1 also omits paths.
+V2's selected-source identity is separate from semantic hashes. Comments in the Examples YAML affect
 `sourceRevision` but never become example inputs/rubrics or instructions.
 Callers may separately hash the complete emitted artifact. An unsigned profile
 and recomputable hashes establish consistency, not authenticated parser/source

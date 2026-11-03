@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -13,12 +14,13 @@ func newRunProfileCommand(state *commandState) *cobra.Command {
 		Use: "run-profile", Short: "Export canonical agent-file content offline for a separate runtime",
 		Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
-	group.AddCommand(&cobra.Command{
+	var testsOverride string
+	export := &cobra.Command{
 		Use: "export FILE", Short: "Export a frozen source-file run profile as JSON on stdout",
 		Long: "Export one canonical agent file offline through the same parser as file Run/Test. The deterministic JSON on stdout contains authored instructions, model identity, ordered examples/assertions and SHA-256 hashes. Every example has targetStatus not_run; no configuration, credentials, model or runtime is accessed.\n\n" +
 			"This content-bearing source projection is not a package, evaluation receipt, provider attestation or deployment authorization. Authored model and judge identities are preserved without overrides. A run profile is not an AgentSuite runtime profile.\n\n" +
-			"Keep stdout private: it includes instructions, inputs and rubrics. Shell redirection is caller-owned, may truncate before validation, and has no kmx privacy or exclusive-create guarantee. No --out writer is provided.",
-		Example: "  kmx package run-profile export ./release-writer.agent.md",
+			"Keep stdout private: it includes instructions, inputs and rubrics. External tests use v2 with the physical selected tests path and a machine/selection-bound snapshot; inline profiles retain v1. Shell redirection is caller-owned, may truncate before validation, and has no kmx privacy or exclusive-create guarantee. No --out writer is provided.",
+		Example: "  kmx package run-profile export ./release-writer.agent.md\n  kmx package run-profile export ./release-writer.agent.md --tests ./checks.md",
 		Args:    cobra.ExactArgs(1),
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			if flag := cmd.Flag("context"); state.contextFlag != "" || flag != nil && flag.Changed {
@@ -33,7 +35,10 @@ func newRunProfileCommand(state *commandState) *cobra.Command {
 			return []string{"md"}, cobra.ShellCompDirectiveFilterFileExt
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			data, err := agentfile.ExportRunProfile(args[0])
+			if cmd.Flags().Changed("tests") && strings.TrimSpace(testsOverride) == "" {
+				return errors.New("run-profile export requires nonempty --tests")
+			}
+			data, err := agentfile.ExportSelectedRunProfile(args[0], testsOverride)
 			if err != nil {
 				return err
 			}
@@ -44,6 +49,8 @@ func newRunProfileCommand(state *commandState) *cobra.Command {
 			}
 			return nil
 		},
-	})
+	}
+	export.Flags().StringVar(&testsOverride, "tests", "", "Tests file override (FILE)")
+	group.AddCommand(export)
 	return group
 }

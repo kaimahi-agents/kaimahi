@@ -106,6 +106,9 @@ func (f *Files) historyView(ctx context.Context, p string) *AgentHistory {
 	for i := range view.Versions {
 		v := &view.Versions[i]
 		v.URI = agentVersionURI(p, v.VersionID)
+		if v.SourceKind == "pair" {
+			v.URI = pairVersionURI(p, v.VersionID)
+		}
 	}
 	return view
 }
@@ -171,7 +174,7 @@ func AddAgentVersionResource(server *sdk.Server, files *Files) {
 		if err != nil {
 			return nil, err
 		}
-		if _, _, err := files.inspect(ctx, target); err != nil {
+		if _, _, err := files.readHistoryAgent(ctx, target); err != nil {
 			return nil, err
 		}
 		root, key, err := files.historyLocation(target)
@@ -187,13 +190,16 @@ func AddAgentVersionResource(server *sdk.Server, files *Files) {
 		if err != nil {
 			return nil, err
 		}
+		if r.Pair != nil {
+			return nil, refusal("incompatible_version")
+		}
 		document := struct {
 			SchemaVersion int          `json:"schemaVersion"`
 			Kind          string       `json:"kind"`
 			File          File         `json:"file"`
 			Version       AgentVersion `json:"version"`
 			Source        string       `json:"source"`
-		}{1, "kmx.agent-version", File{Path: p, Revision: r.Revision}, AgentVersion{VersionID: r.VersionID, Revision: r.Revision, CapturedAt: r.CapturedAt, SourceBytes: len(r.Source), URI: req.Params.URI}, string(r.Source)}
+		}{1, "kmx.agent-version", File{Path: p, Revision: r.Revision}, func() AgentVersion { v := sourceVersion(r); v.URI = req.Params.URI; return v }(), string(r.Source)}
 		b, err := json.Marshal(document)
 		if err != nil || len(b) > 2<<20 {
 			return nil, refusal("history_unavailable")

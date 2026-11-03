@@ -84,11 +84,11 @@ stdout and exit contracts are preserved; this is not a receipt or bundle migrati
 
 ## Agent-file preview integration (unreleased)
 
-Canonical `run FILE` / `test FILE` dispatch to a cluster-independent App adapter
+By default, canonical `run FILE` / `test FILE` dispatch to a cluster-independent App adapter
 and the embedded-runner interface. Run optionally adds a separate ad-hoc input;
 both check saved ordered examples. `--case ID` is always partial. Versioned
 payload-free text/JSON results are local preview, never native evidence. The
-CLI uses embedded Agent Sessions for fake, local and Copilot models, with one
+CLI's default embedded runner uses Agent Sessions for fake, local and Copilot models, with one
 Session per agent turn and two independent judge samples per llmJudge assertion.
 The invocation-owned cleartext journal retains instructions, inputs, answers,
 judge payloads and reasoning under the existing retention and clearing policy.
@@ -98,11 +98,27 @@ inference retries or fallback. Existing live `run --agent`, full-workspace Test,
 workspace Explain and hidden legacy Eval remain unchanged. See
 [agent-file preview](kmx.md#agent-file-local-preview-unreleased-integration).
 
+`kmx test FILE --runner copilotd --host ws://127.0.0.1:PORT` explicitly selects
+an already-running local native host instead of embedded Sessions. Each case uses
+a fresh private Git working-tree copy and observed native model/tool evidence;
+kmx creates no Sessions journal. Agent selection is by unique name and matching
+description/model/tools, not loaded-file attestation, and is labelled in results.
+This path supports live Enabled cases only:
+replay/capture and Disabled-tool semantics refuse before sends. Selected `llmJudge`
+assertions score the host's answer through a separate tool-free transport, not a
+host turn. Both judge samples share the case deadline; malformed, unavailable or
+split scores stay unknown. Delegating agents report unknown, including
+protocol-linked child work under other tool names. It does
+not apply to Run, MCP, folder tests or packaged evaluation, and native Windows
+refuses before effects. A native pass is file-test feedback, not deployment or
+packaged-suite evidence. See [copilotd file tests](local-preview.md#copilotd-file-tests)
+for credentials, snapshots, approvals, deadlines and retained-record compatibility.
+
 Bare `kmx test` (no FILE) tests direct `*.agent.md` files in the current folder
 and `.github/agents/`, sorted by path, with no recursion or Git-root discovery. It
 reuses the per-file checked pair runner and companion tests-file rule, and never
-falls back to native workspace evaluation (`kmx package test`). `--tests` and
-`--case` still require an explicit FILE. Each file gets its own checked pair,
+falls back to native workspace evaluation (`kmx package test`). `--runner`, `--host`,
+`--tests` and `--case` require an explicit FILE. Each file gets its own checked pair,
 journal and five-minute budget. Assertion failures, unknown (inconclusive or
 unavailable judge) and invalid/missing tests do not stop later files; operational
 failures (execution, route/auth, journal, source, invalid tool settings,
@@ -120,10 +136,16 @@ file through the guarded path. See
 
 ## Frozen source-file run profiles (unreleased)
 
-`run-profile export FILE` calls the canonical agent-file loader offline and emits
-one content-bearing JSON document on stdout. It preserves instructions, authored
-model/judge identities and ordered examples with hashes; every target status is
-`not_run`. It neither executes nor loads operational configuration. This is not
+`run-profile export FILE [--tests FILE]` uses the checked paired loader offline
+(not the single-agent loader) and emits one content-bearing JSON document on
+stdout. The default companion rule or explicit tests override uses the same
+selection as file Run/Test. Both selected sources must be valid; there is no
+fallback to inline tests after a companion failure. It preserves instructions,
+authored model/judge identities and ordered examples with hashes; every target
+status is `not_run`. External tests produce a v2 profile with physical
+selection/snapshot identity (`snapshotRevision`, `testsSource`) that is
+machine/selection-bound; inline profiles retain v1. It neither executes nor
+loads configuration, credentials or a provider. This is not
 `test export` evidence, an AgentSuite runtime profile, a package or a Deploy
 operation. No route/model override or file writer is provided. See the
 [run-profile contract](agent-file.md#frozen-run-profile-export-unreleased).
