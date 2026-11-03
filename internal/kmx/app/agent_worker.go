@@ -38,6 +38,7 @@ type agentWorkerRequest struct {
 	Generation    int    `json:"generation"`
 }
 type agentWorkerReply struct {
+	Model         string             `json:"model,omitempty"`
 	Sessions      []AgentSessionInfo `json:"sessions,omitempty"`
 	SessionsKnown bool               `json:"sessionsKnown,omitempty"`
 	Conversation  *AgentSessionInfo  `json:"conversation,omitempty"`
@@ -189,6 +190,7 @@ func RunAgentWorker() error {
 						reply.Error = e.Error()
 					} else {
 						reply.Answer = answer.Text
+						reply.Model = answer.Model
 						reply.Ready = true
 					}
 				}
@@ -322,7 +324,7 @@ func (e *attachedAgentExecutor) Answer(ctx context.Context, _ *MarkdownAgent, in
 	if err == nil && reply.Session != "" {
 		e.session = reply.Session
 	}
-	return markdownAnswer{Text: reply.Answer}, err
+	return markdownAnswer{Text: reply.Answer, Model: reply.Model}, err
 }
 func (e *attachedAgentExecutor) selectSession(ctx context.Context, selected string, fresh bool, label string) error {
 	if e.record.Manager != localAgentManagerVersion {

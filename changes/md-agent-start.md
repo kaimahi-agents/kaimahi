@@ -1,5 +1,8 @@
 ### Added
 
+- Preserve the executor-observed model in background manager/worker replies and
+  attached one-shot output, rather than dropping it from the structured response.
+
 - Companion files now extend canonical CLI Run/Test without switching provider,
   journaling or exit semantics; persistent execution requires explicit --type md.
   Add composed snapshot identity and an approved CLI-command host adapter, with

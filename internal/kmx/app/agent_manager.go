@@ -693,7 +693,7 @@ func (m *localAgentManager) handle(ctx context.Context, req agentWorkerRequest) 
 		s.failed.Store(true)
 		return fail(err)
 	}
-	return agentWorkerReply{Ready: true, Answer: answer.Text, Session: s.id}
+	return agentWorkerReply{Ready: true, Answer: answer.Text, Model: answer.Model, Session: s.id}
 }
 func (m *localAgentManager) close() {
 	m.mu.Lock()

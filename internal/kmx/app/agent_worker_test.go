@@ -45,7 +45,7 @@ func TestAttachedAgentUsesVersionAndDoesNotOwnLifecycle(t *testing.T) {
 			e = json.NewDecoder(conn).Decode(&request)
 			if e == nil {
 				requests <- request
-				_ = json.NewEncoder(conn).Encode(agentWorkerReply{Ready: true, Answer: "Hello"})
+				_ = json.NewEncoder(conn).Encode(agentWorkerReply{Ready: true, Answer: "Hello", Model: "observed-model"})
 			}
 			conn.Close()
 		}
@@ -62,7 +62,7 @@ func TestAttachedAgentUsesVersionAndDoesNotOwnLifecycle(t *testing.T) {
 		t.Fatal("wrong cached definition")
 	}
 	answer, err := s.AnswerAgent(context.Background(), cached, "hello")
-	if err != nil || answer.Text != "Hello" {
+	if err != nil || answer.Text != "Hello" || answer.Model != "observed-model" {
 		t.Fatalf("answer=%+v err=%v", answer, err)
 	}
 	s.Close()

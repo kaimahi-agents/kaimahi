@@ -40,8 +40,8 @@ func TestSharedManagerSessionsAreIndependent(t *testing.T) {
 	call := func(r AgentInstance, op string) agentWorkerReply {
 		return m.handle(context.Background(), agentWorkerRequest{AgentID: r.ID, Version: r.Version, Generation: r.Generation, Operation: op, Prompt: "hello"})
 	}
-	if reply := call(ar, "send"); reply.Error != "" {
-		t.Fatal(reply.Error)
+	if reply := call(ar, "send"); reply.Error != "" || reply.Model != "test-model" {
+		t.Fatalf("manager lost model identity: %+v", reply)
 	}
 	if len(executors) != 1 || executors[0].calls != 1 {
 		t.Fatal("conversation crossed agents")
