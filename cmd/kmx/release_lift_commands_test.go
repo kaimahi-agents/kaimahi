@@ -88,7 +88,7 @@ func TestReleaseLiftRejectsBeforeConfiguration(t *testing.T) {
 		append(append([]string(nil), base...), "--model", "other"),
 		append(append([]string(nil), base...), "--override-gate", "why"),
 		append(append([]string(nil), base...), "--workspace", "."),
-		append(append([]string(nil), base...), "--output", "yaml"),
+		append(append([]string(nil), base...), "--output", "xml"),
 		append(append([]string(nil), base...), "--from-layout", ".", "--plain-http"),
 		append(append([]string(nil), base...), "--context", "other"),
 		append(append([]string(nil), base...), "--to-context", ""),

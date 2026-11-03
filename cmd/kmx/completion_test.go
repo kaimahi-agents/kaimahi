@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -23,6 +26,80 @@ func TestCobraCompletionIncludesCompleteCommandTree(t *testing.T) {
 	for _, want := range []string{"quickstart", ":4"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("completion output lacks %q:\n%s", want, out.String())
+		}
+	}
+}
+
+func TestLocalAgentIDsCompleteWithoutExternalProbes(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Markdown instance leases are Unix-only")
+	}
+	home := t.TempDir()
+	t.Setenv("KMX_HOME", home)
+	t.Setenv("PATH", t.TempDir())
+	source := filepath.Join(t.TempDir(), "frog.agent.md")
+	id := fmt.Sprintf("md-%x", sha256.Sum256([]byte(source)))
+	short := strings.TrimPrefix(id, "md-")[:12]
+	dir := filepath.Join(home, "agents", "instances", id)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(map[string]any{"schemaVersion": 1, "id": id, "name": "frog", "type": "md", "source": source, "version": "sha256:" + strings.Repeat("a", 64), "generation": 1, "state": "running"})
+	if err := os.WriteFile(filepath.Join(dir, "instance.json"), raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := os.OpenFile(filepath.Join(dir, "active.lock"), os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Close()
+	if err = testMDLease(lease, true); err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range []string{"stop", "rm", "chat", "inspect", "run", "test"} {
+		var out, diag bytes.Buffer
+		deps, loads := testDependencies(&out, &diag)
+		if err = execute([]string{"__complete", command, short[:6]}, deps); err != nil {
+			t.Fatal(err)
+		}
+		if *loads != 0 || !strings.Contains(out.String(), short+"\tfrog") {
+			t.Fatalf("%s: %s loads=%d", command, &out, *loads)
+		}
+	}
+	if err = testMDLease(lease, false); err != nil {
+		t.Fatal(err)
+	}
+	var out, diag bytes.Buffer
+	deps, _ := testDependencies(&out, &diag)
+	if err = execute([]string{"__complete", "stop", short[:6]}, deps); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), short) {
+		t.Fatal("stop completes stopped instance")
+	}
+	out.Reset()
+	if err = execute([]string{"__complete", "rm", short[:6]}, deps); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), short) {
+		t.Fatal("rm does not complete stopped instance")
+	}
+	for _, command := range []string{"run", "test"} {
+		out.Reset()
+		if err = execute([]string{"__complete", command, short[:6]}, deps); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out.String(), short) {
+			t.Fatalf("%s omitted stopped ID", command)
+		}
+	}
+	for _, command := range []string{"run", "test"} {
+		out.Reset()
+		if err = execute([]string{"__complete", command, "./missing"}, deps); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out.String(), ":0") {
+			t.Fatalf("%s did not allow path completion: %s", command, &out)
 		}
 	}
 }

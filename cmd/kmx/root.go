@@ -124,6 +124,7 @@ func (s *commandState) operationApplication(cmd *cobra.Command) (*app.App, error
 }
 
 func execute(argv []string, deps dependencies) error {
+	output := &yamlOutput{out: deps.stdout}
 	contextFlag := ""
 	var err error
 	if len(argv) == 0 || argv[0] != "__complete" && argv[0] != "__completeNoDesc" {
@@ -152,6 +153,28 @@ func execute(argv []string, deps dependencies) error {
 	}
 	state := &commandState{deps: deps, contextFlag: contextFlag, argv: append([]string(nil), argv...)}
 	root := newRootCommand(state)
+	output.selectOutput = func(enabled bool) {
+		writer := output.out
+		if enabled {
+			writer = output
+		}
+		state.deps.stdout = writer
+		root.SetOut(writer)
+	}
+	enableYAMLOutput(root, output)
+	// Help is recognized by Cobra after flag parsing, not by scanning values
+	// such as --prompt help or a positional agent named help.
+	disableYAML := func() {
+		output.enabled = false
+		if output.selectOutput != nil {
+			output.selectOutput(false)
+		}
+	}
+	defaultHelp := root.HelpFunc()
+	root.SetHelpFunc(func(cmd *cobra.Command, args []string) { disableYAML(); defaultHelp(cmd, args) })
+	if len(argv) > 0 && (argv[0] == "__complete" || argv[0] == "__completeNoDesc") {
+		output.selectOutput = nil
+	}
 	root.InitDefaultHelpCmd()
 	help, _, _ := root.Find([]string{"help"})
 	help.Hidden = true
@@ -183,7 +206,11 @@ func execute(argv []string, deps dependencies) error {
 		return flagErrorWithHelp(cmd, state, err)
 	})
 	root.SetArgs(argv)
-	return root.Execute()
+	err = root.Execute()
+	if output.selectOutput == nil {
+		return err
+	}
+	return output.finish(err)
 }
 
 // Recognize only the root command (or explicit help topic) after known global
@@ -220,7 +247,9 @@ func newRootCommand(state *commandState) *cobra.Command {
 		// flags or honoring --help. Bare root still runs the help handler.
 		SilenceErrors: true,
 		SilenceUsage:  true,
-		RunE:          func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
+		},
 	}
 	root.SetOut(state.deps.stdout)
 	root.SetErr(state.deps.stderr)
@@ -230,11 +259,21 @@ func newRootCommand(state *commandState) *cobra.Command {
 	root.PersistentPreRunE = validateContainerEngineFlag
 	_ = root.RegisterFlagCompletionFunc("context", completeContexts)
 	_ = root.RegisterFlagCompletionFunc("container-engine", staticCompletion([]string{"docker", "podman"}))
+	create, chat, run := newFileCreateCommand(state), newAgentChatCommand(state), newAgentRunCommand(state)
+	addAgentTypeRoute(state, create, "init")
+	addAgentTypeRoute(state, chat, "chat")
+	addAgentTypeRoute(state, run, "run")
+	test := newAgentTestCommand(state)
+	addAgentTypeRoute(state, test, "test")
+	settings := markdownOperation(state, "settings")
+	settings.Use = "settings"
 	root.AddCommand(
 		newVersionCommand(state), newMCPCommand(state), newCompletionCommand(root), newModelCommand(state),
-		newFileCreateCommand(state), newAgentChatCommand(state), newAgentRunCommand(state),
-		newAgentTestCommand(state), newAgentEvalCommand(state), newReleaseLiftCommand(state),
+		create, chat, run, test, newAgentEvalCommand(state), newReleaseLiftCommand(state),
 		newClusterCommand(state), newPackageCommand(state),
+		newListTypedAgentsCommand(state), newInspectAgentCommand(state), newTypedAgentCommand(state, "validate", "validate"), newInfoCommand(state), newStopAgentCommand(state), newRemoveAgentCommand(state), settings,
+		markdownOperation(state, "import"),
+		newToolsCommand(state),
 	)
 	configureCommandHelp(root, state)
 	installPlatformGate(root, state)
