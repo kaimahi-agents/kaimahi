@@ -62,7 +62,7 @@ func validDestinationNode(n *yaml.Node, depth int, key string) bool {
 				return false
 			}
 			seen[k.Value] = true
-			if depth == 0 && (k.Value == "mcpServers" || k.Value == "liveToolServers") {
+			if depth == 0 && (k.Value == "mcpServers" || k.Value == "liveToolServers" || k.Value == "commandTools") {
 				if !validIgnoredMCPNode(n.Content[i+1], depth+1) {
 					return false
 				}

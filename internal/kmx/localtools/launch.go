@@ -45,7 +45,7 @@ func (s *StdioInvocation) Resolve(ctx context.Context, names []string, settings 
 			needed = append(needed, name)
 		}
 	}
-	if s.selection.Clear || len(needed) == 0 {
+	if len(needed) == 0 || s.selection.Clear && !s.selection.Commands {
 		return nil, nil
 	}
 	raw, err := s.read(ctx, s.file)
@@ -61,6 +61,13 @@ func (s *StdioInvocation) Resolve(ctx context.Context, names []string, settings 
 		return nil, ErrServerSelection
 	}
 	defs, err := parseLaunchConfig(raw, s.selection)
+	if err != nil {
+		return nil, err
+	}
+	var commands []commandDefinition
+	if s.selection.Commands {
+		commands, err = parseCommandConfig(raw, needed)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +99,13 @@ func (s *StdioInvocation) Resolve(ctx context.Context, names []string, settings 
 			plans = append(plans, launchPlan{config: cfg, refs: def.env})
 		}
 	}
-	if len(plans) == 0 {
+	for _, command := range commands {
+		if claimed[command.name] {
+			return nil, ErrServerSelection
+		}
+		claimed[command.name] = true
+	}
+	if len(plans) == 0 && len(commands) == 0 {
 		return nil, nil
 	}
 	type envValue struct {
@@ -133,10 +146,52 @@ func (s *StdioInvocation) Resolve(ctx context.Context, names []string, settings 
 		}
 		credentialChecks = append(credentialChecks, check)
 	}
+	commandConfigs := make([]CommandConfig, 0, len(commands))
+	resolvedFolder, resolveErr := filepath.EvalSymlinks(folder)
+	if resolveErr != nil {
+		return nil, ErrServerSelection
+	}
+	for _, command := range commands {
+		dir, dirResolveErr := filepath.EvalSymlinks(filepath.Clean(filepath.Join(resolvedFolder, command.directory)))
+		relative, relErr := filepath.Rel(resolvedFolder, dir)
+		if dirResolveErr != nil || relErr != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return nil, ErrServerSelection
+		}
+		cfg := CommandConfig{Name: command.name, Command: command.command, Args: slices.Clone(command.args), Dir: dir, Env: map[string]string{}}
+		if path != "" {
+			cfg.Env["PATH"] = path
+		}
+		for key, ref := range command.env {
+			value, present := lookup(ref)
+			if !present || value == "" {
+				return nil, ErrServerSelection
+			}
+			cfg.Env[key] = value
+			cfg.CredentialEnv = append(cfg.CredentialEnv, key)
+		}
+		info, statErr := os.Stat(cfg.Command)
+		dirInfo, dirErr := os.Stat(cfg.Dir)
+		if statErr != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 || dirErr != nil || !dirInfo.IsDir() {
+			return nil, ErrServerSelection
+		}
+		cfg.commandInfo, cfg.dirInfo = info, dirInfo
+		check, validateErr := validateCommandConfig(cfg)
+		if validateErr != nil {
+			return nil, ErrServerSelection
+		}
+		credentialChecks = append(credentialChecks, check)
+		commandConfigs = append(commandConfigs, cfg)
+	}
 	// A server must not receive another selected server's credential in argv.
 	// Environments remain separate; check the frozen argument union before exec.
+	var commandVectors [][]string
 	for _, plan := range plans {
-		argv := append([]string{plan.config.Command}, plan.config.Args...)
+		commandVectors = append(commandVectors, append([]string{plan.config.Command}, plan.config.Args...))
+	}
+	for _, command := range commandConfigs {
+		commandVectors = append(commandVectors, append([]string{command.Command}, command.Args...))
+	}
+	for _, argv := range commandVectors {
 		for _, check := range credentialChecks {
 			if check(argv...) != nil {
 				return nil, ErrServerSelection
@@ -145,12 +200,25 @@ func (s *StdioInvocation) Resolve(ctx context.Context, names []string, settings 
 	}
 	var definitions []api.ToolDefinition
 	byName := map[string]*Host{}
+	var trustedHosts []*Host
+	if len(commandConfigs) > 0 {
+		commandHost, commandErr := NewCommandHost(commandConfigs)
+		if commandErr != nil {
+			return nil, ErrServerSelection
+		}
+		for _, def := range commandHost.Definitions() {
+			definitions = append(definitions, def)
+			byName[def.Name] = commandHost
+		}
+		trustedHosts = append(trustedHosts, commandHost)
+	}
 	for _, plan := range plans {
 		host, err := StartStdioHost(s.ctx, plan.config)
 		if err != nil {
 			return nil, ErrServerSelection
 		}
 		s.owned = append(s.owned, host)
+		trustedHosts = append(trustedHosts, host.Host())
 		for _, def := range host.Host().Definitions() {
 			definitions = append(definitions, def)
 			byName[def.Name] = host.Host()
@@ -159,8 +227,8 @@ func (s *StdioInvocation) Resolve(ctx context.Context, names []string, settings 
 	return NewTrustedHost(definitions, func(ctx context.Context, scope controller.ToolCallContext, call api.ToolCall) (api.ToolResult, error) {
 		return byName[call.Tool].Execute(ctx, scope, call)
 	}, func(values ...string) error {
-		for _, owned := range s.owned {
-			if err := owned.Host().Check(values...); err != nil {
+		for _, host := range trustedHosts {
+			if err := host.Check(values...); err != nil {
 				return err
 			}
 		}

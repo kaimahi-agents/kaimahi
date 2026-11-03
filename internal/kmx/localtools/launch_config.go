@@ -14,6 +14,7 @@ var ErrServerSelection = errors.New("MCP server selection or launch configuratio
 type ServerSelection struct {
 	Names           []string
 	Override, Clear bool
+	Commands        bool // file Run/Test may additionally resolve commandTools
 }
 
 type launchDefinition struct {

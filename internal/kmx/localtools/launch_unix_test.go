@@ -4,6 +4,7 @@ package localtools
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -184,5 +185,46 @@ func TestStdioSelectionPreflightAndPartialCleanup(t *testing.T) {
 				t.Fatal("started before full config/env validation")
 			}
 		})
+	}
+}
+
+func TestCommandSelectionFreezesFolderEnvironmentAndRuns(t *testing.T) {
+	file, doc := launchFixture(t, "structured")
+	delete(doc, "mcpServers")
+	delete(doc, "liveToolServers")
+	program, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc["commandTools"] = map[string]any{"ping": map[string]any{
+		"command": program,
+		"args":    []string{"-test.run=^TestCommandHelperProcess$", "--", "success"},
+		"env":     map[string]string{"GO_WANT_COMMAND_HELPER": "COMMAND_HELPER", "COMMAND_EXPLICIT": "COMMAND_VALUE"},
+	}}
+	writeLaunchFixture(t, file, doc)
+	owner := NewStdioInvocation(t.Context(), file, ServerSelection{Commands: true})
+	owner.lookup = func(key string) (string, bool) {
+		switch key {
+		case "COMMAND_HELPER":
+			return "enabled", true
+		case "COMMAND_VALUE":
+			return "present", true
+		case "PATH":
+			return "/usr/bin:/bin", true
+		default:
+			return "", false
+		}
+	}
+	host, err := owner.Resolve(t.Context(), []string{"ping"}, []ToolSetting{{Name: "ping", State: Enabled}})
+	if err != nil || host == nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	owner.lookup = func(string) (string, bool) { t.Fatal("lookup after freeze"); return "", false }
+	result, err := host.Execute(t.Context(), controller.ToolCallContext{SessionUID: "s"}, api.ToolCall{ID: "one", Tool: "ping", Args: map[string]any{}, IdempotencyKey: "once", Mediation: api.MediationControllerMediated})
+	if err != nil || result.Output["succeeded"] != true || fmt.Sprint(result.Output["exitCode"]) != "0" {
+		t.Fatalf("command result: %+v %v", result, err)
+	}
+	if err := owner.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
