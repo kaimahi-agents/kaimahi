@@ -14,6 +14,55 @@ Installation does not author an Agent or run a Task. Author a native Orka Agent 
 [native workspace authoring](suite-workspace.md), full eval, publication and digest Deploy.
 Installation and authoring are deliberately separate operations.
 
+## Read-only tool availability
+
+```sh
+kmx cluster orka tools --context kind-dev --namespace orka-system
+kmx cluster orka tools --context team --namespace agents -o json
+```
+
+Both selectors are required. The command performs bounded Kubernetes GETs only:
+no TokenRequest, Secret read, provisioning, endpoint probe or Tool invocation.
+Kubernetes credential helpers can still run through kubectl authentication.
+Native Windows remains unsupported. Help and completion do not load configuration.
+
+Built-ins are copied from the exact [Orka v0.3.0 API catalog](https://github.com/orka-agents/orka/blob/a533c3491d350263c0fa39bb7887dabd0d055c4e/internal/api/handlers.go#L56-L64).
+They are offered only after observing the supported current-generation Ready
+controller image/configuration and matching watch namespace. Their source and
+reason are `pinned-catalog`, not live catalog discovery or successful execution.
+An unqualified runtime or unwatched namespace produces incomplete inventory,
+exit 1, no built-in choices, and `unknown` HTTP availability with reason
+`unsupported_runtime`.
+
+HTTP candidates are namespace-local Tool resources. A plain HTTP candidate requires
+`spec.http` and no `spec.mcp`; MCP resources with HTTP transport settings are
+`unsupported` with `backend_unsupported`. All runtime-supported methods remain
+supported, including default POST. The command never invokes any method.
+An `available` row reflects structural checks and the controller's last reported
+`status.available: true`, not a fresh health check or credential validation.
+False or absent status is `unknown` with `endpoint_unavailable`.
+
+The shared App reader `ReadOrkaTools` returns target context/namespace and checked
+UIDs, runtime/catalog provenance, ordered rows and `complete`. Each row includes
+kind, name, availability, fixed reason, source and observed resource identity/spec
+digest where present. It never includes URLs, headers, schemas, status errors,
+Tool inputs/results or Secret values. Destination consumers call that reader
+with explicit requirements, require complete inventory and available selected
+rows, and reobserve before execution. Disabled requirements do not resolve an
+exact resource dependency. Only an authoritative exact Tool NotFound, after the
+namespace and Tool API are observed, gives `missing`/`resource_missing`.
+A forbidden read is `unknown`/`read_denied`; unrecognized failures are
+`unknown`/`read_unknown`, never absence.
+
+Complete inventory exits 0, even when empty or containing unavailable candidates.
+Incomplete inventory exits 1 and preserves fitting readable rows; never interpret
+a failed list as empty. Fixed reasons additionally include `observed`, `disabled`,
+`name_unsupported`, `authentication_required`, `resource_terminating`, `malformed`,
+`inventory_limit`, `stale_input` and `cancelled`. Reads, pages, total bytes and
+machine output are bounded; repeated cursors, duplicate identities and overflow
+cannot produce a complete result. Availability grants no native evaluation,
+publication or deployment authority. See [machine output](machine-output.md).
+
 ## The command
 
 ```console
