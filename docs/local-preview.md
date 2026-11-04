@@ -430,7 +430,7 @@ Linux, macOS and WSL use one process group per call and reap its leader after
 group cleanup. Pipe draining and leader reaping each have a one-second cleanup
 budget, including after cancellation. Unconfirmed reaping returns a cleanup
 failure; the existing waiter remains responsible for eventual reaping.
-A child that deliberately escapes with `setsid` remains outside
+A child that leaves the process group with `setsid` or `setpgid` remains outside
 that guarantee; this is neither sandboxing nor native Windows support. Command
 results, recordings and previews grant no package evidence, Publish or Deploy
 authority.
