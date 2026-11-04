@@ -297,22 +297,22 @@ func readOfflineFile(root *fileaccess.Directory, path string) ([]byte, error) {
 	for _, part := range parts[:len(parts)-1] {
 		next, err := fileaccess.OpenDirectoryAt(ctx, parent, part)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", path, err)
+			return nil, fmt.Errorf("%q: %w", path, err)
 		}
 		defer next.Close()
 		parent = next
 	}
 	f, err := fileaccess.OpenRegularAt(ctx, parent, parts[len(parts)-1])
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+		return nil, fmt.Errorf("%q: %w", path, err)
 	}
 	defer f.Close()
 	raw, err := io.ReadAll(io.LimitReader(f, offlineJSONLimit+1))
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+		return nil, fmt.Errorf("%q: %w", path, err)
 	}
 	if len(raw) > offlineJSONLimit {
-		return nil, fmt.Errorf("%s exceeds 1 MiB", path)
+		return nil, fmt.Errorf("%q exceeds 1 MiB", path)
 	}
 	return raw, nil
 }

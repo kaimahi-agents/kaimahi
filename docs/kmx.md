@@ -1589,7 +1589,9 @@ exactly one nonempty `CONTAINER_HOST=unix:///absolute/socket` or
 and setting both variables refuse. kmx neither guesses a socket nor starts a
 service. Later children retain the validated original socket URI with competing
 selectors cleared on a private Runner copy. This does not pin the socket inode,
-prove physical-host containment or prevent a local socket proxy.
+prove physical-host containment or prevent a local socket proxy. Offline children
+disable kubectl preferences so command defaults cannot override the verified
+connection; user preference files and online commands are unchanged.
 
 For an isolated target, select the matching kind name, context and kubeconfig:
 

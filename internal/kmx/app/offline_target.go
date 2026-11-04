@@ -86,7 +86,7 @@ func (a *App) offlineTarget() (*App, error) {
 		return nil, fmt.Errorf("offline endpoint: selected engine must use an existing local filesystem Unix socket")
 	}
 	local, runner := *a, *a.Run
-	clear = append(clear, "KIND_EXPERIMENTAL_PROVIDER")
+	clear = append(clear, "KIND_EXPERIMENTAL_PROVIDER", "KUBERC", "KUBECTL_KUBERC")
 	runner.Env = nil
 	for _, entry := range a.Run.Env {
 		key, _, _ := strings.Cut(entry, "=")
@@ -106,7 +106,8 @@ func (a *App) offlineTarget() (*App, error) {
 	if engine == "podman" {
 		key = "CONTAINER_HOST"
 	}
-	runner.Env = append(runner.Env, key+"="+host, "KIND_EXPERIMENTAL_PROVIDER="+engine)
+	// Command defaults must not redirect API calls after connection proof.
+	runner.Env = append(runner.Env, key+"="+host, "KIND_EXPERIMENTAL_PROVIDER="+engine, "KUBERC=off", "KUBECTL_KUBERC=false")
 	local.Run = &runner
 	return &local, nil
 }

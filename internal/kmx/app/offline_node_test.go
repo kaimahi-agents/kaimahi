@@ -617,7 +617,7 @@ func TestOfflineBundleSpecialFiles(t *testing.T) {
 			}
 			m["node"].(map[string]any)["configPath"] = "not-a-file"
 			offlineWriteManifest(t, dir, m)
-			if _, err := loadOfflineNodeBundle(dir, offlineTestIdentity()); err == nil || !strings.Contains(err.Error(), "node config: not-a-file:") {
+			if _, err := loadOfflineNodeBundle(dir, offlineTestIdentity()); err == nil || !strings.Contains(err.Error(), `node config: "not-a-file":`) {
 				t.Fatalf("want non-regular node config refusal, got %v", err)
 			}
 		})

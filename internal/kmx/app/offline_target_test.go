@@ -140,7 +140,9 @@ func TestOfflineEndpointEffectiveSelectionAndFreeze(t *testing.T) {
 				t.Setenv("DOCKER_CONTEXT", "inherited")
 				t.Setenv("DOCKER_TLS_VERIFY", "1")
 				t.Setenv("DOCKER_CERT_PATH", "/private/inherited")
-				a.Run.Env = append(a.Run.Env, "DOCKER_CONTEXT=copied", "DOCKER_TLS_VERIFY=1", "DOCKER_CERT_PATH=/private/copied")
+				t.Setenv("KUBERC", "/private/inherited-kuberc")
+				t.Setenv("KUBECTL_KUBERC", "true")
+				a.Run.Env = append(a.Run.Env, "DOCKER_CONTEXT=copied", "DOCKER_TLS_VERIFY=1", "DOCKER_CERT_PATH=/private/copied", "KUBERC=/private/copied-kuberc", "KUBECTL_KUBERC=true")
 				if engine == "docker" {
 					t.Setenv("OFFLINE_DOCKER_CONTEXT_JSON", `[{"Endpoints":{"docker":{"Host":"`+uri+`"}}}]`)
 					a.Run.Env = append(a.Run.Env, "DOCKER_HOST="+uri)
@@ -176,6 +178,7 @@ else
  [ "$CONTAINER_HOST" = "$OFFLINE_WANT_HOST" ] && [ -z "$CONTAINER_CONNECTION" ] || echo unfrozen >> "$OFFLINE_LOG.bad"
 fi
 [ "$KIND_EXPERIMENTAL_PROVIDER" = "` + engine + `" ] || echo provider >> "$OFFLINE_LOG.bad"
+[ "$KUBERC" = off ] && [ "$KUBECTL_KUBERC" = false ] || echo preferences >> "$OFFLINE_LOG.bad"
 ;; esac
 `
 					if err := os.WriteFile(path, []byte(strings.Replace(string(body), "#!/bin/sh\n", "#!/bin/sh\n"+check, 1)), 0700); err != nil {

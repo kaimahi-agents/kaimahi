@@ -263,8 +263,8 @@ func TestOfflineBundleValidation(t *testing.T) {
 					"null pairing image": "image controller: invalid OCI paths", "foreign node": "compiled offline profile",
 					"wrong local ref": "localRef does not match", "corrupt index": "index bytes differ",
 					"corrupt manifest": "manifest/config bytes differ", "corrupt config": "manifest/config bytes differ",
-					"symlink file": "node config: config.json:", "symlink ancestor": "node config: link/config.json:",
-					"oversize": "node config: config.json exceeds 1 MiB",
+					"symlink file": `node config: "config.json":`, "symlink ancestor": `node config: "link/config.json":`,
+					"oversize": `node config: "config.json" exceeds 1 MiB`,
 				}[tc.name]
 				if want == "" || err == nil || !strings.Contains(err.Error(), want) {
 					t.Fatalf("want refusal %q, got %v", want, err)
@@ -446,6 +446,23 @@ func TestOfflineBundleUnicodePaths(t *testing.T) {
 	offlineWriteManifest(t, dir, m)
 	if _, err := loadOfflineNodeBundle(dir, offlineTestIdentity()); err != nil {
 		t.Fatalf("ordinary Unicode paths refused: %v", err)
+	}
+}
+
+func TestOfflineBundleEscapesUnicodeDiagnostics(t *testing.T) {
+	for _, path := range []string{"missing\u202e.json", "missing\u2028/file.json"} {
+		t.Run(fmt.Sprintf("%q", path), func(t *testing.T) {
+			dir, manifest := offlineFixture(t)
+			manifest["node"].(map[string]any)["manifestPath"] = path
+			offlineWriteManifest(t, dir, manifest)
+			_, err := loadOfflineNodeBundle(dir, offlineTestIdentity())
+			if err == nil || !strings.Contains(err.Error(), "node manifest") {
+				t.Fatalf("expected missing node manifest: %v", err)
+			}
+			if strings.ContainsAny(err.Error(), "\u202e\u2028") || !strings.Contains(err.Error(), fmt.Sprintf("%q", path)) {
+				t.Fatalf("unescaped manifest path diagnostic: %q", err.Error())
+			}
+		})
 	}
 }
 
