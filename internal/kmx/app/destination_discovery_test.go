@@ -159,6 +159,19 @@ func TestDiscoveryTargetScopeUnavailable(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+func TestDiscoveryNamespaceSecretShapeIsSuppressed(t *testing.T) {
+	name := strings.Repeat("a1b2", 8)
+	if statusSafeText(name) {
+		t.Fatal("fixture must be secret-shaped")
+	}
+	a := captureTestApp()
+	a.captureCommand = func(_ context.Context, c *exec.Cmd) error { fmt.Fprint(c.Stdout, discoveryPage(name)); return nil }
+	got, err := a.Discover(t.Context(), DiscoveryOptions{Context: "chosen"})
+	if err == nil || got.Complete || len(got.Rows) != 0 {
+		t.Fatal("unsafe namespace retained")
+	}
+}
+
 func TestDiscoveryNamespaceTerminationIsNotReadiness(t *testing.T) {
 	a := captureTestApp()
 	a.captureCommand = func(_ context.Context, c *exec.Cmd) error {

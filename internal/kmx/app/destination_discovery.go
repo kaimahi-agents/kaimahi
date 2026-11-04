@@ -138,11 +138,10 @@ func (a *App) Discover(parent context.Context, opt DiscoveryOptions) (DiscoveryR
 		failure = readErr
 	} else {
 		type metadata struct {
-			Name              string `json:"name"`
-			UID               string `json:"uid"`
-			ResourceVersion   string `json:"resourceVersion"`
-			Continue          string `json:"continue"`
-			DeletionTimestamp any    `json:"deletionTimestamp"`
+			Name            string `json:"name"`
+			UID             string `json:"uid"`
+			ResourceVersion string `json:"resourceVersion"`
+			Continue        string `json:"continue"`
 		}
 		type item struct {
 			APIVersion string   `json:"apiVersion"`
@@ -182,7 +181,7 @@ func (a *App) Discover(parent context.Context, opt DiscoveryOptions) (DiscoveryR
 				version = list.Metadata.ResourceVersion
 				for _, entry := range list.Items {
 					m := entry.Metadata
-					if (entry.Kind != "" && entry.Kind != "Namespace") || (entry.APIVersion != "" && entry.APIVersion != "v1") || len(m.Name) > 63 || !discoveryNamespaceName.MatchString(m.Name) || !statusOpaque(m.UID) || seenName[m.Name] {
+					if (entry.Kind != "" && entry.Kind != "Namespace") || (entry.APIVersion != "" && entry.APIVersion != "v1") || len(m.Name) > 63 || !discoveryNamespaceName.MatchString(m.Name) || !statusSafeText(m.Name) || !statusOpaque(m.UID) || seenName[m.Name] {
 						r.problem("malformed")
 						continue
 					}
