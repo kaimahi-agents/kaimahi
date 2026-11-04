@@ -53,6 +53,10 @@ func TestVersionJSON(t *testing.T) {
 func TestVersionJSONErrors(t *testing.T) {
 	for _, argv := range [][]string{
 		{"version", "-o", "json", "private-operand"},
+		{"version", "-ojson", "--help=false", "private-operand"},
+		{"version", "-ojson", "-h=false", "private-operand"},
+		{"version", "-ojson", "--help=private-value"},
+		{"version", "-ojson", "--help=true", "--help=false", "private-operand"},
 		{"version", "--unknown=private-body", "-o", "json"},
 		{"version", "-o", "json", "--context", ""},
 		{"version", "-o", "json", "-context="},
@@ -104,8 +108,8 @@ func TestVersionJSONBoundary(t *testing.T) {
 		{[]string{"__complete", "version", "-o", "json"}, false},
 		{[]string{"__completeNoDesc", "version", "-o", "json"}, false},
 		{[]string{"help", "version", "-ojson"}, false},
-		{[]string{"version", "-ojson", "--help"}, false},
-		{[]string{"version", "-ojson", "-h"}, false},
+		{[]string{"version", "-ojson", "--help"}, true},
+		{[]string{"version", "-ojson", "-h"}, true},
 		{[]string{"unknown", "version", "-ojson"}, false},
 	} {
 		if got := versionJSONInvocation(tc.argv); got != tc.selected {

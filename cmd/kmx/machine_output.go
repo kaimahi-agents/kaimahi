@@ -93,7 +93,9 @@ func versionJSONInvocation(argv []string) bool {
 		case "--":
 			return command && count == 1 && output == "json"
 		case "--help", "-h":
-			return false
+			// Cobra decides whether help is enabled, disabled or malformed.
+			// Successful help returns nil without writing a machine record.
+			continue
 		case "--context", "-context", "--container-engine":
 			if !inline {
 				i++
