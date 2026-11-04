@@ -3,12 +3,13 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 )
 
-// Only normal empty-list defaulting is normalized. Relevant execution settings,
-// including env valueFrom and init containers, remain exact and bidirectional.
+// Only normal empty-list and readOnly=false omission are normalized. Execution
+// settings, storage sources, mounts and service accounts remain bidirectional.
 func offlineNormalizeWorkload(w offlineWorkload) offlineWorkload {
 	normalize := func(c *offlineContainer) {
 		if len(c.Command) == 0 {
@@ -25,6 +26,15 @@ func offlineNormalizeWorkload(w offlineWorkload) offlineWorkload {
 		}
 		if len(c.VolumeMounts) == 0 {
 			c.VolumeMounts = nil
+		} else {
+			c.VolumeMounts = slices.Clone(c.VolumeMounts)
+			for i, raw := range c.VolumeMounts {
+				if mount, ok := raw.(map[string]any); ok && mount["readOnly"] == false {
+					mount = maps.Clone(mount)
+					delete(mount, "readOnly")
+					c.VolumeMounts[i] = mount
+				}
+			}
 		}
 	}
 	for i := range w.Containers {

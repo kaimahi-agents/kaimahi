@@ -406,6 +406,14 @@ func TestOfflineInstallRenderRefusals(t *testing.T) {
 		}
 	}
 }
+func TestOfflineWorkloadDefaultedReadOnly(t *testing.T) {
+	base := offlineWorkload{Containers: []offlineContainer{{Name: "controller", VolumeMounts: []any{map[string]any{"name": "tls", "mountPath": "/tls"}}}}}
+	explicit := offlineWorkload{Containers: []offlineContainer{{Name: "controller", VolumeMounts: []any{map[string]any{"name": "tls", "mountPath": "/tls", "readOnly": false}}}}}
+	if !reflect.DeepEqual(offlineNormalizeWorkload(base), offlineNormalizeWorkload(explicit)) {
+		t.Fatal("normal API omission of readOnly=false changes workload identity")
+	}
+}
+
 func TestOfflineInstallChangedReuse(t *testing.T) {
 	for _, field := range []string{"values", "marker", "extra-values", "image", "policy", "command", "args", "env", "envFrom", "storage", "mounts", "service-account", "init", "extra-workload", "missing-workload", "unhealthy", "orphan"} {
 		t.Run(field, func(t *testing.T) {
