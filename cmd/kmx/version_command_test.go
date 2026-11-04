@@ -21,7 +21,7 @@ func versionTestDependencies(out, errOut *bytes.Buffer) dependencies {
 }
 
 func TestVersionJSON(t *testing.T) {
-	for _, goos := range []string{"linux", "windows"} {
+	for _, goos := range []string{"linux", "darwin", "windows"} {
 		for _, flags := range [][]string{{"-o", "json"}, {"-ojson"}, {"--output", "json"}, {"--output=json"}} {
 			t.Run(goos+strings.Join(flags, "_"), func(t *testing.T) {
 				var out, diagnostics bytes.Buffer
@@ -35,12 +35,24 @@ func TestVersionJSON(t *testing.T) {
 					t.Fatalf("bad version projection: %+v", r)
 				}
 				caps, ok := r["capabilities"].([]any)
-				if !ok || len(caps) != 1 {
+				want := 3
+				if goos == "windows" {
+					want = 1
+				}
+				if !ok || len(caps) != want {
 					t.Fatalf("advertises unimplemented operations: %+v", r)
 				}
 				capability := caps[0].(map[string]any)
 				if len(capability) != 3 || capability["operation"] != "version" || capability["output"] != "json" || capability["schemaVersion"] != float64(1) {
 					t.Fatalf("bad capability: %+v", capability)
+				}
+				if goos != "windows" {
+					for i, operation := range []string{"cluster.up", "cluster.orka.install"} {
+						c := caps[i+1].(map[string]any)
+						if len(c) != 3 || c["operation"] != operation || c["output"] != "jsonl" || c["schemaVersion"] != float64(1) {
+							t.Fatal(c)
+						}
+					}
 				}
 				if diagnostics.Len() != 0 {
 					t.Fatalf("version diagnostics: %q", diagnostics.String())
