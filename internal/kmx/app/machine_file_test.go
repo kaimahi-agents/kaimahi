@@ -133,6 +133,28 @@ func TestMachineFileInventoryBoundAndDeadlineFreeze(t *testing.T) {
 	}
 }
 
+func TestMachineFileFinalStageSinkFailureVetoesPass(t *testing.T) {
+	emitted := 0
+	m := NewMachineFileObserver("copilotd", func(p MachineFileProgress) error {
+		if p.Stage == "assertions" && p.Event == "stage.finished" {
+			emitted++
+			return errors.New("private sink")
+		}
+		return nil
+	})
+	runner := machinePreviewRunner(func(ctx context.Context, req agentpreview.Request) (agentpreview.Outcome, error) {
+		if err := req.TelemetryReady(func(...string) error { return nil }); err != nil {
+			return agentpreview.Outcome{}, err
+		}
+		out, err := nativeScript(nil).Run(ctx, req)
+		return out, err
+	})
+	result, err := (&App{FileRunner: runner}).PreviewAgentFile(t.Context(), FilePreviewOptions{Machine: m, File: previewFile(t), Operation: "test", Model: "gpt-4.1", DefaultCopilot: true, Copilotd: true})
+	if emitted != 1 || err == nil || result.Verdict != runtime.EvaluationUnknown || result.State != "error" || result.ReasonCode != "diagnostics_failed" {
+		t.Fatal("final sink failure accepted", result, err, emitted)
+	}
+}
+
 func machineObservation(event string, index int) agentpreview.Observation {
 	return agentpreview.Observation{Event: event, CaseIndex: index, FileRevision: "revision", SnapshotRevision: "snapshot", Provider: "copilot", Model: "gpt-4.1"}
 }

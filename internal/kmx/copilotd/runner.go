@@ -156,7 +156,13 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 		caseCtx, stop := context.WithTimeout(ctx, limit)
 		defer stop()
 		c = agentpreview.Completion{Telemetry: &agentpreview.Telemetry{}, State: agentpreview.Failed, Provider: req.Route.Provider, Model: req.Route.Model, FileRevision: req.Agent.Revision, SnapshotRevision: req.SnapshotRevision}
+		var caseTrace *trace
 		defer func() {
+			if caseTrace != nil {
+				if failure := caseTrace.failure(); errors.Is(failure, agentpreview.ErrDiagnosticsFailed) {
+					cause = errors.Join(failure, cause)
+				}
+			}
 			c.DurationMs = time.Since(start).Milliseconds()
 			if c.Native != nil {
 				if e := checkDocument(check, c.Native); e != nil {
@@ -294,6 +300,7 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 		turn := nonce()
 		c.Native.Turn = turn
 		t := newTrace(string(chat), turn, req.Route.Model, *initial.Snapshot.State.Chat)
+		caseTrace = t
 		if req.Observed != nil && index >= 0 {
 			t.observe = func(o agentpreview.Observation) error {
 				o.Session = session

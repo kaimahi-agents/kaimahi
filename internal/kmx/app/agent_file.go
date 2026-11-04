@@ -611,7 +611,10 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 			if result.State != "complete" {
 				status = "failed"
 			}
-			_ = opt.Machine.stage("assertions", status)
+			if e := opt.Machine.stage("assertions", status); e != nil {
+				result, resultErr = fail("diagnostics_failed", 1)
+				result.State = "error"
+			}
 		}()
 	}
 	// Whitelist result fields; never marshal runtime assertion rows (which include

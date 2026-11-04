@@ -7,6 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
 )
@@ -62,6 +63,26 @@ func TestRunnerTelemetryWireAndSinkFailure(t *testing.T) {
 				t.Fatal("sink failure lost/continued", err, fixture.Sends.Load(), finished)
 			}
 		})
+	}
+}
+
+func TestRunnerTelemetryDeadlinePreservesSinkFailure(t *testing.T) {
+	fixture := &wireFixture{}
+	r, _, _ := wireRunnerWith(t, false, false, func(o *Options) { o.ExampleTimeout = 70 * time.Millisecond }, fixture)
+	req := wireRequest()
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	req.Observed = func(o agentpreview.Observation) error {
+		if o.Event == "tool.finished" {
+			once.Do(func() { close(entered); <-release })
+			return errors.New("private sink")
+		}
+		return nil
+	}
+	go func() { <-entered; time.Sleep(150 * time.Millisecond); close(release) }()
+	out, err := r.Run(t.Context(), req)
+	if !errors.Is(err, agentpreview.ErrDiagnosticsFailed) || !errors.Is(err, context.DeadlineExceeded) || fixture.Sends.Load() != 1 || len(out.Examples) != 1 {
+		t.Fatal("deadline masked observed sink failure or continued", err, fixture.Sends.Load(), len(out.Examples))
 	}
 }
 
