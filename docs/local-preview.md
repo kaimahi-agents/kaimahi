@@ -1,12 +1,14 @@
 # Local preview
 
-## CLI storage, privacy and evidence caveats
+## Agent-file local preview
 
 Files with a decoded top-level `kmx` frontmatter key reserve native Orka
 semantics and refuse both embedded and copilotd file preview rather than ignoring
 native settings. Unmarked files retain their existing behavior. The
 [native Orka source reader](agent-file.md#native-orka-source-reader-unreleased-library-only)
 is library-only; it does not implement native file authoring, compilation or execution.
+
+## CLI storage, privacy and evidence caveats
 
 This is the shared caveats page linked by file Run, Test and Explain help.
 By default, file previews on fake, local and Copilot models use embedded Agent Sessions.

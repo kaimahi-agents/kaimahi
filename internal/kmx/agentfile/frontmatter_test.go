@@ -35,7 +35,7 @@ func TestOrkaMarkerRefusesPreview(t *testing.T) {
 					t.Fatalf("marker value leaked: %v", err)
 				}
 			}
-			path := filepath.Join(t.TempDir(), "reader.agent.md")
+			path := filepath.Join(realTemp(t), "reader.agent.md")
 			if err := os.WriteFile(path, source, 0600); err != nil {
 				t.Fatal(err)
 			}

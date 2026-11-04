@@ -84,12 +84,6 @@ stdout and exit contracts are preserved; this is not a receipt or bundle migrati
 
 ## Agent-file preview integration (unreleased)
 
-Files with a decoded top-level `kmx` frontmatter key reserve native Orka
-semantics and refuse embedded and copilotd file preview rather than ignoring
-native settings. Unmarked files retain their existing behavior. The
-[native Orka source reader](agent-file.md#native-orka-source-reader-unreleased-library-only)
-is library-only; it does not implement native file authoring, compilation or execution.
-
 By default, canonical `run FILE` / `test FILE` dispatch to a cluster-independent App adapter
 and the embedded-runner interface. Run optionally adds a separate ad-hoc input;
 both check saved ordered examples. `--case ID` is always partial. Versioned
@@ -151,8 +145,7 @@ authored model/judge identities and ordered examples with hashes; every target
 status is `not_run`. External tests produce a v2 profile with physical
 selection/snapshot identity (`snapshotRevision`, `testsSource`) that is
 machine/selection-bound; inline profiles retain v1. It neither executes nor
-loads configuration, credentials or a provider. Files marked with a native `kmx`
-profile refuse export rather than ignoring native fields. This is not
+loads configuration, credentials or a provider. This is not
 `test export` evidence, an AgentSuite runtime profile, a package or a Deploy
 operation. No route/model override or file writer is provided. See the
 [run-profile contract](agent-file.md#frozen-run-profile-export-unreleased).
