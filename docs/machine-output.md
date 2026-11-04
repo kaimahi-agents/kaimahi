@@ -12,7 +12,7 @@ kmx version -o json
 A successful invocation emits one UTF-8 JSON object and a newline:
 
 ```json
-{"schemaVersion":1,"kind":"kmx.version","kmxVersion":"v0.9.0-rc.6","orkaVersion":"v0.3.0","capabilities":[{"operation":"version","output":"json","schemaVersion":1},{"operation":"cluster.up","output":"jsonl","schemaVersion":1},{"operation":"cluster.orka.install","output":"jsonl","schemaVersion":1},{"operation":"file.test","output":"jsonl","schemaVersion":1,"runner":"embedded"},{"operation":"file.test","output":"jsonl","schemaVersion":1,"runner":"copilotd"}]}
+{"schemaVersion":1,"kind":"kmx.version","kmxVersion":"v0.9.0-rc.6","orkaVersion":"v0.3.0","capabilities":[{"operation":"version","output":"json","schemaVersion":1},{"operation":"cluster.up","output":"jsonl","schemaVersion":1},{"operation":"cluster.orka.install","output":"jsonl","schemaVersion":1},{"operation":"file.test","output":"jsonl","schemaVersion":1,"runner":"embedded"},{"operation":"file.test","output":"jsonl","schemaVersion":1,"runner":"copilotd"},{"operation":"cluster.discover","output":"jsonl","schemaVersion":1,"scope":"contexts"},{"operation":"cluster.discover","output":"jsonl","schemaVersion":1,"scope":"namespaces"}]}
 ```
 
 The version values above are examples. `kmxVersion` uses the build's resolved
@@ -21,8 +21,9 @@ version this binary targets, not a running controller's observed version.
 Capabilities describe implemented binary interfaces, not dependency availability,
 cluster readiness, permission, model access or qualified execution.
 
-Unix builds advertise version JSON, two setup JSONL adapters and `file.test`
-JSONL with separate `runner: embedded` and `runner: copilotd` selectors. Native
+Unix builds advertise version JSON, two setup JSONL adapters, `file.test`
+JSONL with separate `runner: embedded` and `runner: copilotd` selectors, and
+`cluster.discover` JSONL with separate `scope: contexts` and `scope: namespaces`. Native
 Windows advertises version JSON and only `file.test`/`runner: embedded`/`model: fake`;
 its existing package-free/tool-free fake intake gate still applies. Setup and
 native copilotd remain deferred there. Existing Run, Test, list, show, deployment and other JSON
@@ -41,7 +42,8 @@ Match the capability's exact operation, output and schema version before using
 it. Match any operation-specific selectors as well: `file.test` entries specify
 `runner`, and native Windows additionally restricts `model` to `fake`. Matching
 only the three common fields does not establish support for another runner or
-model. An unspecified runner is not a wildcard. Do not infer a capability by
+model. `cluster.discover` additionally requires its exact `scope` selector.
+An unspecified runner or scope is not a wildcard. Do not infer a capability by
 parsing human version text or interpreting an Orka pin as runtime readiness.
 
 ## Version failures

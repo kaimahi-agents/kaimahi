@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func discoveryPage(names ...string) string {
@@ -157,6 +158,91 @@ func TestDiscoveryTargetScopeUnavailable(t *testing.T) {
 	_, err := a.Discover(t.Context(), DiscoveryOptions{Namespace: "dev"})
 	if err == nil || DiscoveryError(err).Error() != "The requested operation is unsupported." {
 		t.Fatal(err)
+	}
+}
+func TestDiscoveryMalformedPaginationMetadata(t *testing.T) {
+	for _, meta := range []string{`{"continue":7}`, `{"resourceVersion":7}`, `null`} {
+		a := captureTestApp()
+		a.captureCommand = func(_ context.Context, c *exec.Cmd) error {
+			p := discoveryPage("dev")
+			fmt.Fprint(c.Stdout, strings.Replace(p, `{"resourceVersion":"1"}`, meta, 1))
+			return nil
+		}
+		got, err := a.Discover(t.Context(), DiscoveryOptions{Context: "chosen"})
+		if err == nil || got.Complete || got.Checks[0].Reason != "malformed" {
+			t.Fatal(meta, got, err)
+		}
+	}
+}
+func TestDiscoveryCancellationDuringDecode(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var timer *time.Timer
+	a := captureTestApp()
+	a.captureCommand = func(_ context.Context, c *exec.Cmd) error {
+		p := discoveryPage("dev")
+		fmt.Fprint(c.Stdout, `{"padding":"`+strings.Repeat(`\u0061`, 500000)+`",`+p[1:])
+		timer = time.AfterFunc(2*time.Millisecond, cancel)
+		return nil
+	}
+	got, err := a.Discover(ctx, DiscoveryOptions{Context: "chosen"})
+	if timer != nil {
+		timer.Stop()
+	}
+	if !errors.Is(err, context.Canceled) || got.Complete {
+		t.Fatal(got, err)
+	}
+}
+func TestDiscoveryCanonicalJSONKeysCannotBeShadowed(t *testing.T) {
+	a := captureTestApp()
+	a.captureCommand = func(_ context.Context, c *exec.Cmd) error {
+		p := discoveryPage("dev")
+		fmt.Fprint(c.Stdout, p[:len(p)-1]+`,"Items":[]}`)
+		return nil
+	}
+	got, err := a.Discover(t.Context(), DiscoveryOptions{Context: "chosen"})
+	if err != nil || !got.Complete || len(got.Rows) != 1 || got.Rows[0].Namespace != "dev" {
+		t.Fatal(got, err)
+	}
+	calls := 0
+	a.captureCommand = func(_ context.Context, c *exec.Cmd) error {
+		calls++
+		if calls == 1 {
+			fmt.Fprint(c.Stdout, strings.Replace(discoveryPage("dev"), `"resourceVersion":"1"`, `"resourceVersion":"1","continue":"next","Continue":""`, 1))
+			return nil
+		}
+		fmt.Fprint(c.Stderr, "Error from server (Forbidden): Forbidden")
+		return errors.New("exit")
+	}
+	got, err = a.Discover(t.Context(), DiscoveryOptions{Context: "chosen"})
+	if err == nil || got.Complete || calls != 2 || got.Checks[0].Reason != "read_denied" {
+		t.Fatal(got, err, calls)
+	}
+}
+func TestDiscoveryDuplicateNamespaceUIDIsAmbiguous(t *testing.T) {
+	a := captureTestApp()
+	a.captureCommand = func(_ context.Context, c *exec.Cmd) error {
+		fmt.Fprint(c.Stdout, strings.ReplaceAll(discoveryPage("dev", "qa"), "uid-qa", "uid-dev"))
+		return nil
+	}
+	got, err := a.Discover(t.Context(), DiscoveryOptions{Context: "chosen"})
+	if err == nil || got.Complete || len(got.Rows) != 1 || got.Checks[0].Reason != "malformed" {
+		t.Fatal(got, err)
+	}
+}
+func TestDiscoveryStandardUUIDIdentity(t *testing.T) {
+	uid := strings.Repeat("a", 8) + "-" + strings.Repeat("b", 4) + "-4" + strings.Repeat("c", 3) + "-8" + strings.Repeat("d", 3) + "-" + strings.Repeat("e", 12)
+	if !statusOpaque(uid) {
+		t.Fatal("standard UUID rejected")
+	}
+	a := captureTestApp()
+	a.captureCommand = func(_ context.Context, c *exec.Cmd) error {
+		fmt.Fprint(c.Stdout, strings.ReplaceAll(discoveryPage("dev"), "uid-dev", uid))
+		return nil
+	}
+	got, err := a.Discover(t.Context(), DiscoveryOptions{Context: "chosen"})
+	if err != nil || !got.Complete || got.Rows[0].UID != uid {
+		t.Fatal(got, err)
 	}
 }
 func TestDiscoveryNamespaceSecretShapeIsSuppressed(t *testing.T) {

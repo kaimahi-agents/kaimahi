@@ -1845,7 +1845,9 @@ recorded monitoring, not agents/plane; unknown ownership is left alone. Read
   remain unchanged. Both `cluster up` and `cluster orka install` accept
   `-o jsonl` for safe provisioning events/results on Unix. Explicit `test FILE`
   also supports JSONL with checked provisional telemetry and final case summaries;
-  embedded remains default. Native Windows retains only the package-free fake
+  embedded remains default. Unix `cluster discover -o jsonl` reports only its
+  advertised context or namespace scope, without provisioning or target selection.
+  Native Windows retains only the package-free fake
   embedded boundary. See the
   [machine-output contract](machine-output.md).
 - On capable terminals, reports use rich headings and responsive tables. Wide

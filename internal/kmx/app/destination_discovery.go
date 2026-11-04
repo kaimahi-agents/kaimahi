@@ -137,21 +137,10 @@ func (a *App) Discover(parent context.Context, opt DiscoveryOptions) (DiscoveryR
 		}
 		failure = readErr
 	} else {
-		type metadata struct {
-			Name            string `json:"name"`
-			UID             string `json:"uid"`
-			ResourceVersion string `json:"resourceVersion"`
-			Continue        string `json:"continue"`
-		}
-		type item struct {
-			APIVersion string   `json:"apiVersion"`
-			Kind       string   `json:"kind"`
-			Metadata   metadata `json:"metadata"`
-		}
 		var cursor, version string
 		total := 0
 		seenCursor := map[string]bool{}
-		seenName := map[string]bool{}
+		seenName, seenUID := map[string]bool{}, map[string]bool{}
 		for page := 0; page < 32; page++ {
 			query := url.Values{"limit": {"128"}}
 			if cursor != "" {
@@ -163,30 +152,53 @@ func (a *App) Discover(parent context.Context, opt DiscoveryOptions) (DiscoveryR
 				r.problem("read_unknown")
 				break
 			}
-			var list struct {
-				APIVersion string   `json:"apiVersion"`
-				Kind       string   `json:"kind"`
-				Metadata   metadata `json:"metadata"`
-				Items      []item   `json:"items"`
-			}
+			// Project exact Kubernetes map keys. A typed encoding/json decode
+			// would let an unknown case-folded alias override canonical fields.
+			var list map[string]any
+			var pageCursor string
 			if len(raw) > 0 {
-				if !statusDecode(raw, &list) || list.APIVersion != "v1" || list.Kind != "NamespaceList" || list.Items == nil {
+				if !statusDecode(raw, &list) || list["apiVersion"] != "v1" || list["kind"] != "NamespaceList" {
 					r.problem("malformed")
 					break
 				}
-				if page > 0 && (version == "" || list.Metadata.ResourceVersion != version) {
+				items, ok := list["items"].([]any)
+				if !ok {
+					r.problem("malformed")
+					break
+				}
+				metadata := statusMap(list, "metadata")
+				if value, present := list["metadata"]; present {
+					if _, ok := value.(map[string]any); !ok {
+						r.problem("malformed")
+						break
+					}
+				}
+				pageVersion, versionOK := metadata["resourceVersion"].(string)
+				_, hasVersion := metadata["resourceVersion"]
+				var cursorOK bool
+				pageCursor, cursorOK = metadata["continue"].(string)
+				_, hasCursor := metadata["continue"]
+				if (hasVersion && !versionOK) || (hasCursor && !cursorOK) {
+					r.problem("malformed")
+					break
+				}
+				if page > 0 && (version == "" || pageVersion != version) {
 					r.problem("read_unknown")
 					break
 				}
-				version = list.Metadata.ResourceVersion
-				for _, entry := range list.Items {
-					m := entry.Metadata
-					if (entry.Kind != "" && entry.Kind != "Namespace") || (entry.APIVersion != "" && entry.APIVersion != "v1") || len(m.Name) > 63 || !discoveryNamespaceName.MatchString(m.Name) || !statusSafeText(m.Name) || !statusOpaque(m.UID) || seenName[m.Name] {
+				version = pageVersion
+				for _, rawEntry := range items {
+					entry, ok := rawEntry.(map[string]any)
+					kind, hasKind := entry["kind"]
+					apiVersion, hasVersion := entry["apiVersion"]
+					m := statusMap(entry, "metadata")
+					name, uid := statusString(m, "name"), statusString(m, "uid")
+					if !ok || (hasKind && kind != "Namespace") || (hasVersion && apiVersion != "v1") || len(name) > 63 || !discoveryNamespaceName.MatchString(name) || !statusSafeText(name) || !statusOpaque(uid) || seenName[name] || seenUID[uid] {
 						r.problem("malformed")
 						continue
 					}
-					seenName[m.Name] = true
-					if !r.add(DiscoveryRow{Context: opt.Context, Namespace: m.Name, UID: m.UID}) {
+					seenName[name], seenUID[uid] = true, true
+					if !r.add(DiscoveryRow{Context: opt.Context, Namespace: name, UID: uid}) {
 						break
 					}
 				}
@@ -202,7 +214,7 @@ func (a *App) Discover(parent context.Context, opt DiscoveryOptions) (DiscoveryR
 			if !r.Complete {
 				break
 			}
-			cursor = list.Metadata.Continue
+			cursor = pageCursor
 			if cursor == "" {
 				break
 			}
@@ -212,6 +224,13 @@ func (a *App) Discover(parent context.Context, opt DiscoveryOptions) (DiscoveryR
 			}
 			seenCursor[cursor] = true
 		}
+	}
+	// Decoding and projection also consume the operation budget. Cancellation
+	// after a successful subprocess must still veto a complete observation.
+	if err := ctx.Err(); err != nil {
+		failure = &discoveryReadFailure{"read_unknown", err}
+		r.Complete = false
+		r.Checks = []DiscoveryCheck{{r.Scope, "unknown", "read_unknown"}}
 	}
 	if failure != nil {
 		// Only an exact, prerequisite-qualified read can claim missing. This PR
