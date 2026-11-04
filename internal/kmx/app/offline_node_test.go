@@ -383,6 +383,129 @@ case "$1 $2" in
 	}
 }
 
+// Returning to Runner.Capture would leak probe diagnostics and accept oversized
+// stdout; the real Up path must refuse before any image or cluster operation.
+func TestOfflineProbeOutputSafety(t *testing.T) {
+	for _, engine := range []string{"docker", "podman"} {
+		for _, tool := range []string{"kind", "kubectl", engine} {
+			for _, mode := range []string{"stderr", "oversized stderr", "oversized stdout"} {
+				t.Run(engine+"/"+tool+"/"+mode, func(t *testing.T) {
+					a, dir, _, log := offlineClusterApp(t, engine)
+					payload := "credential-probe-canary=synthetic\x1b[31m\r\n"
+					if mode != "stderr" {
+						payload += strings.Repeat("x", offlineJSONLimit+1)
+					}
+					input := filepath.Join(t.TempDir(), "probe-output")
+					if err := os.WriteFile(input, []byte(payload), 0600); err != nil {
+						t.Fatal(err)
+					}
+					label := tool
+					if tool == engine {
+						label = "engine"
+					}
+					redirect, status := " >&2", "1"
+					if mode == "oversized stdout" {
+						redirect, status = "", "0"
+					}
+					fakeTool(t, os.Getenv("PATH"), tool, `printf '%s %s\n' `+shellArg(label)+` "$*" >> "$OFFLINE_LOG"
+/bin/cat `+shellArg(input)+redirect+`
+exit `+status)
+					err := a.UpWithOptions(UpOptions{Step: "cluster", OfflineBundle: dir})
+					if err == nil {
+						t.Fatal("accepted unusable or oversized probe output")
+					}
+					output := a.Out.(*bytes.Buffer).String() + err.Error()
+					if len(output) > 4096 || strings.Contains(output, "credential-probe-canary") || strings.ContainsAny(output, "\x1b\r") {
+						t.Fatalf("probe diagnostics leaked or were unbounded (%d bytes)", len(output))
+					}
+					if !strings.Contains(err.Error(), tool) {
+						t.Fatalf("missing safe component diagnostic: %v", err)
+					}
+					raw, err := os.ReadFile(log)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var calls []string
+					for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+						calls = append(calls, strings.SplitN(line, "|", 2)[0])
+					}
+					if got := strings.Join(calls, "\n"); got != "kind version\nkubectl version --client\nengine info" {
+						t.Fatalf("probe order changed or continued beyond preflight:\n%s", got)
+					}
+				})
+			}
+		}
+	}
+}
+
+// Formatting probe failures into an aggregate string must not erase context
+// identity or allow commands after the active cancelled/deadline-bound probe.
+func TestOfflineCancellationDuringProbes(t *testing.T) {
+	for _, engine := range []string{"docker", "podman"} {
+		for stage, tool := range []string{"kind", "kubectl", engine} {
+			for _, deadline := range []bool{false, true} {
+				name := "cancelled"
+				if deadline {
+					name = "deadline"
+				}
+				t.Run(engine+"/"+tool+"/"+name, func(t *testing.T) {
+					a, dir, _, log := offlineClusterApp(t, engine)
+					label := tool
+					if tool == engine {
+						label = "engine"
+					}
+					fakeTool(t, os.Getenv("PATH"), tool, `printf '%s %s\n' `+shellArg(label)+` "$*" >> "$OFFLINE_LOG"
+exec /bin/sleep 30`)
+					limit, wantErr := 5*time.Second, context.Canceled
+					if deadline {
+						limit, wantErr = 250*time.Millisecond, context.DeadlineExceeded
+					}
+					ctx, cancel := context.WithTimeout(context.Background(), limit)
+					defer cancel()
+					a = a.withRunContext(ctx)
+					probes := []string{"kind version", "kubectl version --client", "engine info"}
+					observed := make(chan bool, 1)
+					go func() {
+						tick := time.NewTicker(time.Millisecond)
+						defer tick.Stop()
+						for {
+							select {
+							case <-ctx.Done():
+								observed <- false
+								return
+							case <-tick.C:
+								raw, _ := os.ReadFile(log)
+								if strings.Contains(string(raw), probes[stage]) {
+									observed <- true
+									if !deadline {
+										cancel()
+									}
+									return
+								}
+							}
+						}
+					}()
+					err := a.UpWithOptions(UpOptions{Step: "cluster", OfflineBundle: dir})
+					if !<-observed || !errors.Is(err, wantErr) {
+						t.Fatalf("active probe did not preserve %v: %v", wantErr, err)
+					}
+					raw, err := os.ReadFile(log)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var calls []string
+					for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+						calls = append(calls, strings.SplitN(line, "|", 2)[0])
+					}
+					if got := strings.Join(calls, "\n"); got != strings.Join(probes[:stage+1], "\n") {
+						t.Fatalf("continued after cancelled probe:\n%s", got)
+					}
+				})
+			}
+		}
+	}
+}
+
 func TestOfflineCancellationDuringInspection(t *testing.T) {
 	a, dir, _, log := offlineClusterApp(t, "docker")
 	t.Setenv("OFFLINE_BLOCK_IMAGE", "1")
@@ -428,11 +551,9 @@ func TestOfflineUpRequiresClusterBeforeAccess(t *testing.T) {
 }
 
 func TestOfflineLocalProbesNeverProvision(t *testing.T) {
-	t.Setenv("KMX_HOME", t.TempDir())
-	offlineNoDownloads(t)
+	a, dir, _, _ := offlineClusterApp(t, "docker")
 	t.Setenv("PATH", t.TempDir())
-	a := New(&config.Config{ContainerEngine: "docker"})
-	err := a.preflightLocal(depKind, depKubectl, a.engineDependency())
+	err := a.UpWithOptions(UpOptions{Step: "cluster", OfflineBundle: dir})
 	if err == nil || !strings.Contains(err.Error(), "3 missing or unusable") {
 		t.Fatalf("local missing tools: %v", err)
 	}

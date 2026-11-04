@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"unicode"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
 )
@@ -116,18 +117,23 @@ func offlineDigest(s string) bool {
 	return strings.HasPrefix(s, "sha256:") && offlineHex(strings.TrimPrefix(s, "sha256:"), 64)
 }
 func offlinePath(s string) bool {
-	return fs.ValidPath(s) && s != "." && !strings.ContainsAny(s, "\\:\x00")
+	return fs.ValidPath(s) && s != "." && !strings.ContainsAny(s, "\\:") && strings.IndexFunc(s, unicode.IsControl) < 0
 }
 
 // The token walk catches duplicate keys at every depth, including unknown OCI
-// metadata. Shape checking separately requires exact case, presence and nulls;
-// DisallowUnknownFields alone accepts case aliases and missing required fields.
+// metadata. Open JSON also rejects aliases of decoded struct fields, but keeps
+// dictionary keys case-sensitive. Closed shape checking requires exact case,
+// presence and nulls; DisallowUnknownFields alone does not enforce those.
 func offlineJSON(raw []byte, out any, closed bool) error {
 	if len(raw) > offlineJSONLimit {
 		return fmt.Errorf("JSON exceeds 1 MiB")
 	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
-	if err := offlineJSONValue(dec, 0); err != nil {
+	var t reflect.Type
+	if !closed {
+		t = reflect.TypeOf(out).Elem()
+	}
+	if err := offlineJSONValue(dec, 0, t); err != nil {
 		return fmt.Errorf("invalid or duplicate JSON")
 	}
 	if _, err := dec.Token(); err != io.EOF {
@@ -144,7 +150,7 @@ func offlineJSON(raw []byte, out any, closed bool) error {
 	}
 	return nil
 }
-func offlineJSONValue(dec *json.Decoder, depth int) error {
+func offlineJSONValue(dec *json.Decoder, depth int, t reflect.Type) error {
 	if depth > 64 {
 		return fmt.Errorf("JSON nesting")
 	}
@@ -156,6 +162,9 @@ func offlineJSONValue(dec *json.Decoder, depth int) error {
 	if !ok {
 		return nil
 	}
+	for t != nil && t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
 	keys := map[string]bool{}
 	count := 0
 	for dec.More() {
@@ -163,18 +172,23 @@ func offlineJSONValue(dec *json.Decoder, depth int) error {
 		if count > 1024 {
 			return fmt.Errorf("JSON count")
 		}
+		var child reflect.Type
+		if delim == '[' && t != nil && t.Kind() == reflect.Slice {
+			child = t.Elem()
+		}
 		if delim == '{' {
 			key, err := dec.Token()
 			if err != nil {
 				return err
 			}
 			name, ok := key.(string)
+			name, child = offlineJSONField(t, name)
 			if !ok || keys[name] {
 				return fmt.Errorf("JSON key")
 			}
 			keys[name] = true
 		}
-		if err := offlineJSONValue(dec, depth+1); err != nil {
+		if err := offlineJSONValue(dec, depth+1, child); err != nil {
 			return err
 		}
 	}
@@ -187,6 +201,39 @@ func offlineJSONValue(dec *json.Decoder, depth int) error {
 	}
 	return nil
 }
+
+// These private decode types have ordinary fields, not promoted embedded fields.
+// EqualFold includes the Unicode simple folding used by encoding/json.
+func offlineJSONField(t reflect.Type, name string) (string, reflect.Type) {
+	if t == nil {
+		return name, nil
+	}
+	if t.Kind() == reflect.Map {
+		return name, t.Elem()
+	}
+	var matched reflect.Type
+	canonical := name
+	if t.Kind() == reflect.Struct {
+		for i := 0; i < t.NumField(); i++ {
+			f := t.Field(i)
+			key, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+			if key == "-" {
+				continue
+			}
+			if key == "" {
+				key = f.Name
+			}
+			if key == name {
+				return key, f.Type
+			}
+			if matched == nil && strings.EqualFold(key, name) {
+				canonical, matched = key, f.Type
+			}
+		}
+	}
+	return canonical, matched
+}
+
 func offlineShape(value any, t reflect.Type) bool {
 	if t.Kind() == reflect.Pointer {
 		return value == nil || offlineShape(value, t.Elem())

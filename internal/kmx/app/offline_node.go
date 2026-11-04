@@ -2,7 +2,6 @@ package app
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
@@ -54,8 +53,26 @@ func (a *App) UpWithOptions(opt UpOptions) error {
 	runner.Env = append(append([]string(nil), runner.Env...), "KIND_EXPERIMENTAL_PROVIDER="+a.Cfg.ContainerEngine)
 	local.Run = &runner
 	a = &local
-	if err := a.preflightLocal(depKind, depKubectl, a.engineDependency()); err != nil {
-		return err
+	// Keep offline probes bounded and payload-free without changing online
+	// preflight, provisioning, or the guest-supplied tools' probe order.
+	var problems []string
+	for _, dep := range []dependency{depKind, depKubectl, a.engineDependency()} {
+		if err := a.operationContext().Err(); err != nil {
+			return err
+		}
+		if _, err := exec.LookPath(dep.name); err != nil {
+			problems = append(problems, fmt.Sprintf("%s is not on PATH — kmx needs it %s.\n  install: %s", dep.name, dep.why, dep.install))
+			continue
+		}
+		if _, err := a.offlineCapture(dep.name, dep.probe...); err != nil {
+			if cancelled := a.operationContext().Err(); cancelled != nil {
+				return fmt.Errorf("%s offline probe: %w", dep.name, cancelled)
+			}
+			problems = append(problems, fmt.Sprintf("%s was found but is unusable: %v\n  install: %s", dep.name, err, dep.install))
+		}
+	}
+	if len(problems) != 0 {
+		return fmt.Errorf("offline preflight: %d missing or unusable dependencies:\n\n- %s", len(problems), strings.Join(problems, "\n- "))
 	}
 	if err := a.verifyOfflineNodeImage(bundle, bundle.node.LocalRef); err != nil {
 		return err
@@ -145,20 +162,21 @@ func runningOfflineIdentity() (offlineKMXIdentity, error) {
 	if !clean || build.Modified || build.Version == "" || build.Version == version.Unknown || !offlineHex(build.Revision, 40) {
 		return offlineKMXIdentity{}, fmt.Errorf("offline bundle requires kmx built with known version/revision and unmodified VCS metadata")
 	}
-	path, err := os.Executable()
+	digest, err := offlineRunningBinaryDigest()
 	if err != nil {
-		return offlineKMXIdentity{}, fmt.Errorf("cannot locate running kmx executable: %w", err)
+		return offlineKMXIdentity{}, err
 	}
-	f, err := os.Open(path)
-	if err != nil {
-		return offlineKMXIdentity{}, fmt.Errorf("cannot read running kmx executable: %w", err)
+	return offlineKMXIdentity{Version: build.Version, Revision: build.Revision, SHA256: digest}, nil
+}
+
+func offlineRunningBinaryDigest() (string, error) {
+	// Hash the running Linux inode, not a pathname that an atomic update can
+	// replace. The shared reader bounds size and rejects changes while hashing.
+	digest := strings.TrimPrefix(suitePublicBinaryDigest(), "sha256:")
+	if !offlineHex(digest, 64) {
+		return "", fmt.Errorf("cannot hash running kmx executable")
 	}
-	defer f.Close()
-	hash := sha256.New()
-	if _, err := io.Copy(hash, f); err != nil {
-		return offlineKMXIdentity{}, fmt.Errorf("cannot hash running kmx executable: %w", err)
-	}
-	return offlineKMXIdentity{Version: build.Version, Revision: build.Revision, SHA256: fmt.Sprintf("%x", hash.Sum(nil))}, nil
+	return digest, nil
 }
 
 // Unlike Runner.Capture, inspection capture is bounded and never attaches raw

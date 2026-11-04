@@ -290,6 +290,165 @@ func TestOfflineBundleValidation(t *testing.T) {
 	}
 }
 
+// Both spellings address one decoded field. The pinned value is last in either
+// alias order, so accepting last-wins JSON would incorrectly accept this proof.
+func TestOfflineBundleEngineJSONAliases(t *testing.T) {
+	for _, engine := range []string{"docker", "podman"} {
+		for _, field := range []string{"image ID", "image OS unicode", "image rootfs", "image layers unicode", "container image", "container config", "container labels", "container digest"} {
+			for _, reverse := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/reverse=%t", engine, field, reverse), func(t *testing.T) {
+					a, _, b, log := offlineClusterApp(t, engine)
+					image := offlineImageFixture(t, b, b.node.ConfigDigest)
+					container := fmt.Sprintf(`[{"Image":%q,"Name":"/test-control-plane","Config":{"Labels":{"io.x-k8s.kind.cluster":"test"}},"ImageManifestDescriptor":{"Digest":%q}}]`, b.node.ConfigDigest, b.node.ManifestDigest)
+					var key, alias, valid, foreign string
+					switch field {
+					case "image ID":
+						key, alias, valid, foreign = "Id", "ID", fmt.Sprintf("%q", b.node.ConfigDigest), `"foreign"`
+					case "image OS unicode":
+						key, alias, valid, foreign = "Os", "Oſ", `"linux"`, `"darwin"`
+					case "image rootfs":
+						key, alias, foreign = "RootFS", "rootfs", `{"Type":"foreign"}`
+						layers, err := json.Marshal(b.diffIDs)
+						if err != nil {
+							t.Fatal(err)
+						}
+						valid = fmt.Sprintf(`{"Layers":%s,"Type":"layers"}`, layers)
+					case "image layers unicode":
+						key, alias, foreign = "Layers", "Layerſ", `[]`
+						layers, err := json.Marshal(b.diffIDs)
+						if err != nil {
+							t.Fatal(err)
+						}
+						valid = string(layers)
+					case "container image":
+						key, alias, valid, foreign = "Image", "image", fmt.Sprintf("%q", b.node.ConfigDigest), `"foreign"`
+					case "container config":
+						key, alias, valid, foreign = "Config", "config", `{"Labels":{"io.x-k8s.kind.cluster":"test"}}`, `{"Labels":{"io.x-k8s.kind.cluster":"foreign"}}`
+					case "container labels":
+						key, alias, valid, foreign = "Labels", "labels", `{"io.x-k8s.kind.cluster":"test"}`, `{"io.x-k8s.kind.cluster":"foreign"}`
+					case "container digest":
+						key, alias, valid, foreign = "Digest", "digest", fmt.Sprintf("%q", b.node.ManifestDigest), `"foreign"`
+					}
+					first, last := alias, key
+					if reverse {
+						first, last = key, alias
+					}
+					replace := func(raw string) string {
+						old := fmt.Sprintf(`%q:%s`, key, valid)
+						if !strings.Contains(raw, old) {
+							t.Fatalf("fixture lacks %s", old)
+						}
+						return strings.Replace(raw, old, fmt.Sprintf(`%q:%s,%q:%s`, first, foreign, last, valid), 1)
+					}
+					isContainer := strings.HasPrefix(field, "container")
+					if isContainer {
+						container = replace(container)
+					} else {
+						image = replace(image)
+					}
+					t.Setenv("OFFLINE_ALIAS_IMAGE", image)
+					t.Setenv("OFFLINE_ALIAS_CONTAINER", container)
+					fakeTool(t, filepath.Dir(log), engine, `case "$1 $2" in
+"image inspect") printf '%s' "$OFFLINE_ALIAS_IMAGE" ;;
+"container inspect") printf '%s' "$OFFLINE_ALIAS_CONTAINER" ;;
+"ps -a") echo test-control-plane ;;
+*) exit 98;; esac`)
+					var err error
+					if isContainer {
+						_, err = a.verifyOfflineClusterNodes(b)
+					} else {
+						err = a.verifyOfflineNodeImage(b, b.node.LocalRef)
+					}
+					if err == nil {
+						t.Fatal("ambiguous aliases accepted with the pinned value last")
+					}
+					want := "malformed/unknown engine inspection"
+					if isContainer {
+						want = "unknown or mismatched immutable image/cluster identity"
+					}
+					if !strings.Contains(err.Error(), want) {
+						t.Fatalf("want ambiguous JSON refusal %q, got %v", want, err)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestOfflineBundleOpenJSON(t *testing.T) {
+	var rows []struct {
+		ID     string `json:"Id"`
+		Config struct{ Labels map[string]string }
+	}
+	raw := []byte(`[{"ID":"pinned","config":{"labels":{"Foo":"upper","foo":"lower"}},"Extra":123,"extra":{"Id":"one","ID":"two"}}]`)
+	if err := offlineJSON(raw, &rows, false); err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].ID != "pinned" || rows[0].Config.Labels["Foo"] != "upper" || rows[0].Config.Labels["foo"] != "lower" {
+		t.Fatalf("valid aliases, unknown fields or case-distinct map keys lost: %+v", rows)
+	}
+}
+
+func TestOfflineBundleControlPaths(t *testing.T) {
+	for _, path := range []string{"node/indexPath", "node/manifestPath", "node/configPath", "chart/path", "artifacts/path", "image/indexPath", "image/manifestPath", "image/configPath"} {
+		for _, control := range []string{"\x1b", "\n", "\u0085"} {
+			t.Run(fmt.Sprintf("%s/%q", path, control), func(t *testing.T) {
+				a, dir, _, log := offlineClusterApp(t, "docker")
+				raw, err := os.ReadFile(filepath.Join(dir, "install.json"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				var m map[string]any
+				if err := json.Unmarshal(raw, &m); err != nil {
+					t.Fatal(err)
+				}
+				group, key, _ := strings.Cut(path, "/")
+				var row map[string]any
+				if group == "image" {
+					row = m["images"].([]any)[0].(map[string]any)
+					if key == "indexPath" {
+						row["indexDigest"] = "sha256:" + strings.Repeat("a", 64)
+					}
+				} else {
+					row = m[group].(map[string]any)
+				}
+				row[key] = "absent" + control + ".json"
+				offlineWriteManifest(t, dir, m)
+				err = a.UpWithOptions(UpOptions{Step: "cluster", OfflineBundle: dir})
+				if err == nil || !strings.Contains(err.Error(), "invalid") {
+					t.Errorf("want path syntax refusal, got %v", err)
+				}
+				if err != nil && strings.Contains(err.Error(), control) {
+					t.Errorf("raw terminal control in diagnostic: %q", err.Error())
+				}
+				if calls, err := os.ReadFile(log); !os.IsNotExist(err) {
+					t.Fatalf("tools reached before path refusal: calls=%q err=%v", calls, err)
+				}
+			})
+		}
+	}
+}
+
+func TestOfflineBundleUnicodePaths(t *testing.T) {
+	dir, m := offlineFixture(t)
+	node := m["node"].(map[string]any)
+	for _, key := range []string{"indexPath", "manifestPath", "configPath"} {
+		old := node[key].(string)
+		name := "节点-é-" + old
+		if err := os.Rename(filepath.Join(dir, old), filepath.Join(dir, name)); err != nil {
+			t.Fatal(err)
+		}
+		node[key] = name
+	}
+	m["chart"].(map[string]any)["path"] = "目录/chart.tgz"
+	m["artifacts"].(map[string]any)["path"] = "目录/images.json"
+	m["images"].([]any)[0].(map[string]any)["manifestPath"] = "目录/manifest.json"
+	offlineWriteManifest(t, dir, m)
+	if _, err := loadOfflineNodeBundle(dir, offlineTestIdentity()); err != nil {
+		t.Fatalf("ordinary Unicode paths refused: %v", err)
+	}
+}
+
 // Changing catalog checks alone cannot exercise self-consistent bad OCI
 // descriptors, because the compiled digest rejects them first. Exercise that
 // separate evidence boundary directly without adding a production pin override.
