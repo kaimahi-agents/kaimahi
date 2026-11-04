@@ -102,6 +102,9 @@ func orkaChartCRDs(chart []byte) ([]byte, int, error) {
 // Oversized chart CRDs cannot carry client-side apply's last-applied annotation.
 // Apply separately so a conflict identifies its CRD without forcing ownership.
 func (a *App) applyOrkaCRDs(crds []byte, dryRun bool) error {
+	return a.applyOrkaCRDsFor(crds, dryRun, false)
+}
+func (a *App) applyOrkaCRDsFor(crds []byte, dryRun, offline bool) error {
 	decoder := yaml.NewDecoder(bytes.NewReader(crds))
 	quiet := *a.Run
 	quiet.Echo = false
@@ -135,7 +138,13 @@ func (a *App) applyOrkaCRDs(crds []byte, dryRun bool) error {
 			args = append(args, "--dry-run=server")
 		}
 		args = append(args, "-f", "-")
-		if err := quiet.RunStdin(body, "kubectl", a.kubectl(args...)...); err != nil {
+		var applyErr error
+		if offline {
+			_, applyErr = a.offlineInput(body, "kubectl", a.kubectl(args...)...)
+		} else {
+			applyErr = quiet.RunStdin(body, "kubectl", a.kubectl(args...)...)
+		}
+		if err := applyErr; err != nil {
 			return fmt.Errorf("applying Orka CRD %s refused: %w. %s", identity.Metadata.Name, err, a.orkaInstallRecovery())
 		}
 	}
@@ -143,13 +152,22 @@ func (a *App) applyOrkaCRDs(crds []byte, dryRun bool) error {
 
 // A tag alone does not prove kmx owns a release. Only its chart version,
 // release status, explicit harness mode and marker together allow a repeat.
-func (a *App) orkaInstallState() (bool, error) {
+func (a *App) orkaInstallState() (bool, error) { return a.orkaInstallStateFor(nil) }
+func (a *App) orkaInstallStateFor(offline *offlineInstallBundle) (bool, error) {
+	capture := a.Run.Capture
+	if offline != nil {
+		capture = func(tool string, args ...string) (string, error) {
+			raw, err := a.offlineCapture(tool, args...)
+			return string(raw), err
+		}
+	}
+	kubecapture := func(args ...string) (string, error) { return capture("kubectl", a.kubectl(args...)...) }
 	listArgs := []string{"list", "-n", OrkaNamespace, "--kube-context", a.Cfg.KubeContext,
 		"-o", "json", "-f", "^" + orkaRelease + "$",
 		// Helm 3's --all was removed in Helm 4. These filters are shared by
 		// both versions and keep partial/history releases visible.
 		"--deployed", "--failed", "--pending", "--uninstalling", "--superseded", "--uninstalled"}
-	raw, err := a.Run.Capture("helm", listArgs...)
+	raw, err := capture("helm", listArgs...)
 	if err != nil {
 		return false, fmt.Errorf("cannot inspect Orka Helm releases: %w", err)
 	}
@@ -159,11 +177,27 @@ func (a *App) orkaInstallState() (bool, error) {
 		AppVersion string `json:"app_version"`
 		Status     string `json:"status"`
 	}
+	if offline != nil && (!strings.HasPrefix(strings.TrimSpace(raw), "[") || offlineJSON([]byte(raw), &releases, false) != nil) {
+		return false, fmt.Errorf("offline Orka Helm release list is unknown or ambiguous; refusing to guess absence")
+	}
 	if err := json.Unmarshal([]byte(raw), &releases); err != nil {
 		return false, fmt.Errorf("invalid Orka Helm release list: %w", err)
 	}
+	if offline != nil && len(releases) != 0 {
+		if len(releases) != 1 || releases[0].Name != orkaRelease || releases[0].Chart != "orka-"+offline.version || releases[0].AppVersion != offline.appVersion || releases[0].Status != "deployed" {
+			return false, fmt.Errorf("offline Orka release identity/status differs; refusing adoption, overwrite or partial retry")
+		}
+		values, err := capture("helm", "get", "values", orkaRelease, "-n", OrkaNamespace, "--kube-context", a.Cfg.KubeContext, "-o", "json")
+		if err != nil || !offlineSameValues([]byte(values), offline.values) {
+			return false, fmt.Errorf("offline Orka custom values/profile differ; refusing overwrite")
+		}
+		if err := a.verifyOfflineWorkloads(offline, false); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
 	if len(releases) == 1 && releases[0].Name == orkaRelease && releases[0].Chart == "orka-0.3.0" && strings.TrimPrefix(releases[0].AppVersion, "v") == "0.3.0" {
-		values, err := a.Run.Capture("helm", "get", "values", orkaRelease, "-n", OrkaNamespace, "--kube-context", a.Cfg.KubeContext, "-o", "json")
+		values, err := capture("helm", "get", "values", orkaRelease, "-n", OrkaNamespace, "--kube-context", a.Cfg.KubeContext, "-o", "json")
 		if err != nil {
 			// Helm stderr can include chart-controlled text. Refuse without
 			// repeating it or guessing whether this release is kmx-owned.
@@ -243,31 +277,38 @@ func (a *App) orkaInstallState() (bool, error) {
 		}
 		return nil
 	}
-	deploy, err := a.kubectlCapture("-n", OrkaNamespace, "get", "deployment", "--ignore-not-found=true", "-o", "name")
+	deploy, err := kubecapture("-n", OrkaNamespace, "get", "deployment", "--ignore-not-found=true", "-o", "name")
 	if isNotFound(err) {
 		err = nil
 	} // namespace absent
 	if err := refuse("deployments", deploy, err); err != nil {
 		return false, err
 	}
-	crds, err := a.kubectlCapture("get", "crd", "-o", "jsonpath={range .items[*]}{.metadata.name}{\" \"}{end}")
+	crds, err := kubecapture("get", "crd", "-o", "jsonpath={range .items[*]}{.metadata.name}{\" \"}{end}")
 	if err != nil {
 		return false, fmt.Errorf("cannot inspect existing cluster CRDs: %w", err)
 	}
 	for _, name := range strings.Fields(crds) {
 		if strings.HasSuffix(name, ".orka.ai") {
+			if offline != nil {
+				return false, fmt.Errorf("existing Orka CRDs without an owned offline release; refusing orphan adoption or overwrite")
+			}
 			return false, fmt.Errorf("existing Orka CRDs (%s) without a kmx-owned Helm release; refusing to overwrite v0.1.3 or a foreign installation. %s", name, a.orkaInstallRecovery())
 		}
 	}
 	return false, nil
 }
 
-func (a *App) applyOrkaChart(chart []byte) error {
-	known, err := a.orkaInstallState()
+func (a *App) applyOrkaChart(chart []byte) error { return a.applyOrkaChartFor(chart, nil) }
+func (a *App) applyOrkaChartFor(chart []byte, offline *offlineInstallBundle) error {
+	known, err := a.orkaInstallStateFor(offline)
 	if err != nil {
 		return err
 	}
 	if known {
+		if offline != nil {
+			return a.verifyOfflineWorkloads(offline, true)
+		}
 		if err := a.OrkaReady(); err != nil {
 			return fmt.Errorf("kmx-owned Orka %s is not ready; no reinstall attempted: %w", OrkaVersion, err)
 		}
@@ -297,29 +338,45 @@ func (a *App) applyOrkaChart(chart []byte) error {
 	quiet := *a.Run
 	quiet.Echo = false
 	fmt.Fprintf(a.Err, "kubectl --context %s apply --server-side --field-manager=kmx -f - # (%d CRDs, applied separately)\n", a.Cfg.KubeContext, count)
-	if err := a.applyOrkaCRDs(crds, false); err != nil {
+	if err := a.applyOrkaCRDsFor(crds, false, offline != nil); err != nil {
 		return err
 	}
-	if err := quiet.RunStdin(crds, "kubectl", a.kubectl("wait", "--for=condition=Established", "--timeout=120s", "-f", "-")...); err != nil {
+	var waitErr error
+	if offline != nil {
+		_, waitErr = a.offlineInput(crds, "kubectl", a.kubectl("wait", "--for=condition=Established", "--timeout=120s", "-f", "-")...)
+	} else {
+		waitErr = quiet.RunStdin(crds, "kubectl", a.kubectl("wait", "--for=condition=Established", "--timeout=120s", "-f", "-")...)
+	}
+	if err := waitErr; err != nil {
 		return fmt.Errorf("waiting for Orka CRDs before Gateway discovery: %w", err)
 	}
 	// Helm output is intentionally suppressed: chart hooks and NOTES are not
 	// an appropriate place to expose generated Secret values in kmx logs.
 	quiet.Stdout, quiet.Stderr = io.Discard, io.Discard
 	fmt.Fprintf(a.Err, "helm install orka <verified chart> -n %s --kube-context %s --wait # (harness-v2)\n", OrkaNamespace, a.Cfg.KubeContext)
-	if err := quiet.Run("helm", "install", orkaRelease, file.Name(), "-n", OrkaNamespace,
+	args := []string{"install", orkaRelease, file.Name(), "-n", OrkaNamespace,
 		"--kube-context", a.Cfg.KubeContext, "--create-namespace", "--wait", "--timeout", "10m",
 		"--set", "controller.mode=harness-v2", "--set", "fullnameOverride=orka-api",
 		"--set-string", "labels.kmx\\.kaimahi\\.dev/installed=true",
-		"--set-string", "controller.image.digest="+orkaControllerDigest,
-		"--set-string", "workers.ai.image.digest="+orkaAIWorkerDigest,
-		"--set-string", "workers.general.image.digest="+orkaGeneralWorkerDigest,
-		"--set-string", "publisher.image.digest="+orkaPublisherDigest,
-		"--set-string", "controller.acpRuntime.codexImage="+orkaCodexImage,
-		"--set-string", "controller.acpRuntime.claudeImage="+orkaClaudeImage,
-		"--set-string", "controller.acpRuntime.copilotImage="+orkaCopilotImage,
-		"--set-string", "controller.acpRuntime.opencodeImage="+orkaOpencodeImage); err != nil {
+		"--set-string", "controller.image.digest=" + orkaControllerDigest,
+		"--set-string", "workers.ai.image.digest=" + orkaAIWorkerDigest,
+		"--set-string", "workers.general.image.digest=" + orkaGeneralWorkerDigest,
+		"--set-string", "publisher.image.digest=" + orkaPublisherDigest,
+		"--set-string", "controller.acpRuntime.codexImage=" + orkaCodexImage,
+		"--set-string", "controller.acpRuntime.claudeImage=" + orkaClaudeImage,
+		"--set-string", "controller.acpRuntime.copilotImage=" + orkaCopilotImage,
+		"--set-string", "controller.acpRuntime.opencodeImage=" + orkaOpencodeImage}
+	var installErr error
+	if offline != nil {
+		_, installErr = a.offlineInput(offline.values, "helm", "install", orkaRelease, file.Name(), "-n", OrkaNamespace, "--kube-context", a.Cfg.KubeContext, "--create-namespace", "--wait", "--timeout", "10m", "-f", "-")
+	} else {
+		installErr = quiet.Run("helm", args...)
+	}
+	if err := installErr; err != nil {
 		return fmt.Errorf("installing pinned Orka chart: %w\n  A failed release and CRDs may remain; kmx refuses to silently reinstall over them. Inspect without exposing Secrets:\n  helm --kube-context %s -n %s status %s\n  kubectl --context %s -n %s get pods,events", err, shellArg(a.Cfg.KubeContext), OrkaNamespace, orkaRelease, shellArg(a.Cfg.KubeContext), OrkaNamespace)
+	}
+	if offline != nil {
+		return a.verifyOfflineWorkloads(offline, true)
 	}
 	return nil
 }

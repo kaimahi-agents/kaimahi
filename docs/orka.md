@@ -37,6 +37,22 @@ Do not mistake a pinned version for proof of a running version, or a
 ready Deployment for a completed Task. Status is read-only and does not
 authorize reinstallation over an older release.
 
+## Native installation from a local bundle
+
+`kmx cluster orka install --provider - --offline-bundle DIR` uses the compiled
+source-qualification native profile, not the online v0.3.0 pin. The guest supplies
+the pinned chart, source descriptor, all OCI metadata, tools and pre-imported
+images in every selected kind node. No tools, images, chart or models are fetched,
+and no Provider is created. See the [bundle input and install contract](kmx.md#native-orka-install)
+for exact cache/target checks, generated fixed values and disabled components.
+
+Exact healthy reuse compares all custom values and live workload execution
+settings, preserves chart data/keys and reconciles only the result reader.
+Foreign, online, changed, partial and orphan state refuse without repair.
+Bundle `--no-apply` is local-only and leaves target checks explicitly unchecked;
+bundle `--dry-run` validates only CRDs server-side after full preflight.
+A failed phase stops subsequent phases and retains effects for private inspection.
+
 ## Seeing it before doing it
 
 Both flags the other writing commands carry, for the same reasons:
@@ -63,7 +79,7 @@ kmx fetches the [v0.3.0 release chart](https://github.com/orka-agents/orka/relea
 before extracting CRDs or passing it to Helm. A changed or corrupted chart is
 refused, not installed. This kmx-maintained digest is not an independent
 publisher signature. Offline agent creation separately embeds CRD schemas;
-those fixtures do not install Orka. Installing the chart requires a download.
+those fixtures do not install Orka. Installing the online release chart requires a download.
 
 There is no `--version` flag. A version flag would either carry no
 verification or need a digest per version; moving the pin is an edit to this

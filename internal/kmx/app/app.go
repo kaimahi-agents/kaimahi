@@ -2,11 +2,13 @@
 // context guards, runtime adapters and external tools.
 //
 // Offline cluster bring-up validates a closed manifest and clean binary identity
-// against an embedded node-only catalog. It reads pinned OCI node evidence and
-// the selected local socket engine, never provisions tools or authorizes Orka
-// install. Offline reuse binds the selected kubeconfig cluster connection to
-// the verified node before export, node start or API readiness; online guards
-// and context repair remain unchanged.
+// against an embedded catalog. Cluster bring-up reads only pinned node evidence;
+// no-provider Orka install additionally verifies retained chart/image bytes,
+// generated values, local rendering and every schedulable node CRI reference.
+// Neither provisions tools or imports/pulls images. Offline reuse binds the
+// selected kubeconfig connection to verified nodes; install compares exact Helm
+// values and live workload execution settings without repair. Online guards and
+// context repair remain unchanged.
 //
 // App coordinates consent, side effects and runtime-specific evidence.
 // Placement observations are distinct from evaluation proof; successful

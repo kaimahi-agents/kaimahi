@@ -1,0 +1,275 @@
+{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {
+    "name": "orka-api-controller",
+    "namespace": "orka-system"
+  },
+  "spec": {
+    "replicas": 1,
+    "template": {
+      "spec": {
+        "containers": [
+          {
+            "name": "controller",
+            "image": "ghcr.io/orka-agents/orka@sha256:d0e11d621c4ff69f8477708ed5097eaf165e29d3cb36482da49b728ed37e6142",
+            "imagePullPolicy": "IfNotPresent",
+            "args": [
+              "--api-port=8080",
+              "--controller-url=http://orka-api.orka-system.svc:8080",
+              "--metrics-bind-address=:8081",
+              "--health-probe-bind-address=:8082",
+              "--metrics-secure=false",
+              "--watch-namespace=orka-system",
+              "--leader-elect=true",
+              "--controller-mode=harness-v2",
+              "--execution-mode-controller-usernames=system:serviceaccount:orka-system:orka-api",
+              "--webhook-cert-path=/var/run/orka/webhook/tls",
+              "--webhook-cert-name=tls.crt",
+              "--webhook-cert-key=tls.key",
+              "--webhook-cert-rotation-secret=orka-api-webhook-tls",
+              "--webhook-cert-rotation-webhook=orka-api-controller",
+              "--webhook-cert-rotation-dns-name=orka-api-webhook.orka-system.svc",
+              "--task-provenance-admission-enabled=true",
+              "--task-provenance-admission-trusted-users=system:serviceaccount:orka-system:orka-api",
+              "--workspace-class-use-admission-enabled=true",
+              "--agent-execution-snapshot-key-file=/var/run/orka/agent-execution-snapshot/key",
+              "--agent-execution-snapshot-secret=orka-api-agent-execution-snapshot",
+              "--agent-execution-snapshot-secret-key=key",
+              "--agent-execution-snapshot-retention=720h",
+              "--agent-execution-snapshot-retention-interval=1h",
+              "--acp-runtime-namespace=orka-runtimes",
+              "--acp-runtime-pool-max-running-prompts=4",
+              "--acp-runtime-pool-max-resident-sessions=10",
+              "--acp-dispatch-max-concurrent-tasks=4",
+              "--acp-upgrade-drain-bind-address=127.0.0.1:8083",
+              "--acp-upgrade-drain-timeout=5m",
+              "--acp-upgrade-drain-poll-interval=1s",
+              "--acp-upgrade-drain-trigger-timeout=5m15s",
+              "--acp-upgrade-drain-marker-namespace=orka-system",
+              "--zap-log-level=info",
+              "--gateway-enabled=false",
+              "--gateway-pending-per-session=100",
+              "--gateway-interim-messages-per-task=10",
+              "--gateway-max-records-per-gateway=1000",
+              "--gateway-max-rejected-records-per-gateway=250",
+              "--gateway-event-expiry=24h",
+              "--gateway-terminal-retention=720h",
+              "--gateway-delivery-timeout=15s",
+              "--gateway-delivery-max-attempts=10",
+              "--gateway-claim-lease=1m",
+              "--gateway-poll-interval=500ms",
+              "--gateway-batch-size=25",
+              "--store-backend=sqlite",
+              "--store-path=/data/orka.db",
+              "--ai-worker-image=ghcr.io/orka-agents/orka/ai-worker@sha256:76038d10ba534ace6a49b598f29325bf74914c887f76fb7a63ea55284548771c",
+              "--general-worker-image=ghcr.io/orka-agents/orka/general-worker@sha256:524401e0cb36086ee8d2ccf6ea71aa8d4098039eb3afb2f027b08622830ccc04",
+              "--session-loader-image=docker.io/library/busybox@sha256:66a6306db78bf2dbf3487f293aa8d6990d8e506fdffab9cc43fe422becf886e4",
+              "--ai-worker-service-account-name=orka-api-ai-worker",
+              "--vendor-worker-service-account-name=orka-api-vendor-worker",
+              "--container-worker-service-account-name=orka-api-container-worker",
+              "--ai-worker-cluster-role-name=orka-api-ai-worker-role",
+              "--vendor-worker-cluster-role-name=orka-api-vendor-worker-role",
+              "--container-worker-cluster-role-name=orka-api-container-worker-role",
+              "--worker-role-binding-prefix=orka-api",
+              "--enforce-namespace-isolation=true",
+              "--substrate-api-endpoint=api.ate-system.svc:443",
+              "--substrate-router-url=http://atenet-router.ate-system.svc",
+              "--substrate-actor-dns-suffix=actors.resources.substrate.ate.dev",
+              "--substrate-claim-timeout=2m",
+              "--substrate-command-timeout=30m",
+              "--substrate-cleanup-policy=delete"
+            ],
+            "env": [
+              {
+                "name": "ORKA_AI_WORKER_CLUSTER_ROLE_NAME",
+                "value": "orka-api-ai-worker-role"
+              },
+              {
+                "name": "ORKA_VENDOR_WORKER_CLUSTER_ROLE_NAME",
+                "value": "orka-api-vendor-worker-role"
+              },
+              {
+                "name": "ORKA_CONTAINER_WORKER_CLUSTER_ROLE_NAME",
+                "value": "orka-api-container-worker-role"
+              },
+              {
+                "name": "ORKA_ACP_ARTIFACT_CAPABILITY_SECRET_FILE",
+                "value": "/var/run/orka/acp-artifacts/capability-secret"
+              },
+              {
+                "name": "ORKA_ACP_ARTIFACT_ROOT",
+                "value": "/data/acp-artifacts"
+              },
+              {
+                "name": "ORKA_ACP_ARTIFACT_MAX_BYTES",
+                "value": "536870912"
+              },
+              {
+                "name": "ORKA_WORKSPACE_PUBLISHER_URL",
+                "value": "http://orka-api-workspace-publisher:8080"
+              },
+              {
+                "name": "ORKA_WORKSPACE_PUBLISHER_CONTROLLER_TOKEN_FILE",
+                "value": "/var/run/orka/publisher-auth/controller-token"
+              },
+              {
+                "name": "ORKA_WORKSPACE_PUBLISHER_CAPABILITY_SECRET_FILE",
+                "value": "/var/run/orka/publisher-auth/operation-capability-secret"
+              }
+            ]
+          }
+        ],
+        "initContainers": []
+      }
+    }
+  }
+}
+---
+{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {
+    "name": "orka-api-workspace-publisher",
+    "namespace": "orka-system"
+  },
+  "spec": {
+    "replicas": 1,
+    "template": {
+      "spec": {
+        "containers": [
+          {
+            "name": "publisher",
+            "image": "ghcr.io/orka-agents/orka/workspace-publisher@sha256:0247141a6f7c73a82b5dfb7ce32c7b1c4aecb514be77f76f105696bff88bb46a",
+            "imagePullPolicy": "IfNotPresent",
+            "env": [
+              {
+                "name": "ORKA_SCM_EGRESS_PROXY_TOKEN",
+                "valueFrom": {
+                  "secretKeyRef": {
+                    "name": "orka-api-scm-egress-proxy-auth",
+                    "key": "token"
+                  }
+                }
+              },
+              {
+                "name": "HTTPS_PROXY",
+                "value": "http://orka-publisher:$(ORKA_SCM_EGRESS_PROXY_TOKEN)@orka-api-scm-egress-proxy.orka-system.svc:8080"
+              },
+              {
+                "name": "https_proxy",
+                "value": "http://orka-publisher:$(ORKA_SCM_EGRESS_PROXY_TOKEN)@orka-api-scm-egress-proxy.orka-system.svc:8080"
+              },
+              {
+                "name": "NO_PROXY",
+                "value": "localhost,127.0.0.1,::1,.svc,.cluster.local"
+              },
+              {
+                "name": "no_proxy",
+                "value": "localhost,127.0.0.1,::1,.svc,.cluster.local"
+              },
+              {
+                "name": "ORKA_PUBLISHER_SCM_EGRESS_PROXY_REQUIRED",
+                "value": "true"
+              },
+              {
+                "name": "ORKA_PUBLISHER_LISTEN_ADDRESS",
+                "value": ":8080"
+              },
+              {
+                "name": "ORKA_PUBLISHER_TEMP_ROOT",
+                "value": "/tmp/orka-workspace-publisher/runtime"
+              },
+              {
+                "name": "ORKA_PUBLISHER_CONTROLLER_TOKEN_FILE",
+                "value": "/var/run/orka/publisher-auth/controller-token"
+              },
+              {
+                "name": "ORKA_PUBLISHER_OPERATION_CAPABILITY_SECRET_FILE",
+                "value": "/var/run/orka/publisher-auth/operation-capability-secret"
+              },
+              {
+                "name": "ORKA_PUBLISHER_ARTIFACT_AUTHORIZATION_BROKER_URL",
+                "value": "http://orka-api:8080"
+              },
+              {
+                "name": "ORKA_PUBLISHER_ARTIFACT_API_URL",
+                "value": "http://orka-api:8080"
+              },
+              {
+                "name": "ORKA_PUBLISHER_CREDENTIAL_BROKER_URL",
+                "value": "http://orka-api:8080"
+              },
+              {
+                "name": "ORKA_PUBLISHER_ALLOWED_SCM_HOSTS",
+                "value": "github.com"
+              },
+              {
+                "name": "ORKA_PUBLISHER_GITHUB_PR_ENABLED",
+                "value": "true"
+              },
+              {
+                "name": "ORKA_PUBLISHER_GITHUB_API_BASE_URL",
+                "value": "https://api.github.com"
+              },
+              {
+                "name": "ORKA_PUBLISHER_GITHUB_REQUEST_TIMEOUT",
+                "value": "15s"
+              },
+              {
+                "name": "ORKA_PUBLISHER_GITHUB_MAX_RESPONSE_BYTES",
+                "value": "4194304"
+              }
+            ]
+          }
+        ],
+        "initContainers": []
+      }
+    }
+  }
+}
+---
+{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {
+    "name": "orka-api-scm-egress-proxy",
+    "namespace": "orka-system"
+  },
+  "spec": {
+    "replicas": 1,
+    "template": {
+      "spec": {
+        "containers": [
+          {
+            "name": "proxy",
+            "image": "ghcr.io/orka-agents/orka@sha256:d0e11d621c4ff69f8477708ed5097eaf165e29d3cb36482da49b728ed37e6142",
+            "imagePullPolicy": "IfNotPresent",
+            "command": [
+              "/scm-egress-proxy"
+            ],
+            "args": [
+              "--listen-address=:8080",
+              "--allowed-hosts=github.com",
+              "--forge-api-base-url=https://api.github.com",
+              "--token-file=/var/run/secrets/orka/scm-egress/token",
+              "--max-request-header-bytes=32768",
+              "--max-response-header-bytes=65536",
+              "--max-request-bytes=4194304",
+              "--max-response-bytes=8388608",
+              "--max-tunnel-bytes=1073741824",
+              "--max-concurrent=8",
+              "--resolution-timeout=5s",
+              "--connect-timeout=10s",
+              "--response-header-timeout=30s",
+              "--forward-timeout=2m",
+              "--idle-timeout=30s",
+              "--tunnel-timeout=10m"
+            ]
+          }
+        ],
+        "initContainers": []
+      }
+    }
+  }
+}
