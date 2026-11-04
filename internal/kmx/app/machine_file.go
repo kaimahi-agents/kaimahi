@@ -3,10 +3,10 @@ package app
 import (
 	"fmt"
 	"strings"
-
-	"github.com/google/uuid"
 	"sync"
 	"unicode/utf8"
+
+	"github.com/google/uuid"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"

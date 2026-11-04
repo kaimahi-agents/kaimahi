@@ -134,24 +134,28 @@ func TestMachineFileInventoryBoundAndDeadlineFreeze(t *testing.T) {
 }
 
 func TestMachineFileFinalStageSinkFailureVetoesPass(t *testing.T) {
-	emitted := 0
-	m := NewMachineFileObserver("copilotd", func(p MachineFileProgress) error {
-		if p.Stage == "assertions" && p.Event == "stage.finished" {
-			emitted++
-			return errors.New("private sink")
-		}
-		return nil
-	})
-	runner := machinePreviewRunner(func(ctx context.Context, req agentpreview.Request) (agentpreview.Outcome, error) {
-		if err := req.TelemetryReady(func(...string) error { return nil }); err != nil {
-			return agentpreview.Outcome{}, err
-		}
-		out, err := nativeScript(nil).Run(ctx, req)
-		return out, err
-	})
-	result, err := (&App{FileRunner: runner}).PreviewAgentFile(t.Context(), FilePreviewOptions{Machine: m, File: previewFile(t), Operation: "test", Model: "gpt-4.1", DefaultCopilot: true, Copilotd: true})
-	if emitted != 1 || err == nil || result.Verdict != runtime.EvaluationUnknown || result.State != "error" || result.ReasonCode != "diagnostics_failed" {
-		t.Fatal("final sink failure accepted", result, err, emitted)
+	for _, event := range []string{"stage.started", "stage.finished"} {
+		t.Run(event, func(t *testing.T) {
+			emitted := 0
+			m := NewMachineFileObserver("copilotd", func(p MachineFileProgress) error {
+				if p.Stage == "assertions" && p.Event == event {
+					emitted++
+					return errors.New("private sink")
+				}
+				return nil
+			})
+			runner := machinePreviewRunner(func(ctx context.Context, req agentpreview.Request) (agentpreview.Outcome, error) {
+				if err := req.TelemetryReady(func(...string) error { return nil }); err != nil {
+					return agentpreview.Outcome{}, err
+				}
+				out, err := nativeScript(nil).Run(ctx, req)
+				return out, err
+			})
+			result, err := (&App{FileRunner: runner}).PreviewAgentFile(t.Context(), FilePreviewOptions{Machine: m, File: previewFile(t), Operation: "test", Model: "gpt-4.1", DefaultCopilot: true, Copilotd: true})
+			if emitted != 1 || err == nil || result.Verdict != runtime.EvaluationUnknown || result.State != "error" || result.ReasonCode != "diagnostics_failed" {
+				t.Fatal("final sink failure accepted", result, err, emitted)
+			}
+		})
 	}
 }
 

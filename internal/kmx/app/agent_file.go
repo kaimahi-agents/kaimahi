@@ -604,6 +604,7 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	}
 	if opt.Machine != nil {
 		if e := opt.Machine.stage("assertions", "active"); e != nil {
+			r.State = "error"
 			return fail("diagnostics_failed", 1)
 		}
 		defer func() {
