@@ -202,8 +202,11 @@ traffic. Configure its runtime and model access through the upstream interfaces.
   CRDs may already exist. KMX names the failing CRD, retains kubectl's owner
   diagnostics and never forces ownership or rolls back earlier writes.
   kmx refuses the next install rather than silently adopting, retrying or
-  deleting it. Inspect the context-pinned Helm release, Pods and events. After
-  resolving a transient failure, an operator can explicitly retry the same
+  deleting it. Inspect the context-pinned Helm release, Pods and events. If CRD
+  application or waiting fails before Helm creates a release, use a clean target
+  or the recovery steps below; `helm upgrade` cannot create that missing release.
+  Only when a KMX-owned release of this pinned version already exists, after
+  resolving its transient failure, an operator can explicitly retry the same
   SHA-256-verified chart with
   `helm --kube-context <ctx> -n orka-system upgrade orka <verified-orka-0.3.0.tgz> --reuse-values --wait`
   (never `--force`), or clean the failed target before retrying kmx. On a
