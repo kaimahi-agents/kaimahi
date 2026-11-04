@@ -302,7 +302,7 @@ KMX's native-Windows product boundary.
   review_git() {
     /usr/bin/env -i HOME="$review_home" PATH=/usr/bin:/bin LANG=C LC_ALL=C \
       GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
-      GIT_CONFIG_SYSTEM=/dev/null GIT_GRAFT_FILE=/dev/null \
+      GIT_CONFIG_SYSTEM=/dev/null GIT_GRAFT_FILE="$review_tmp/no-grafts" \
       GIT_NO_LAZY_FETCH=1 GIT_NO_REPLACE_OBJECTS=1 \
       GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0 \
       "$REVIEW_GIT" \
@@ -315,7 +315,9 @@ KMX's native-Windows product boundary.
   repo_root=$(review_git rev-parse --show-toplevel)
   base=$(review_git merge-base "$review_base" HEAD)
   head=$(review_git rev-parse HEAD)
-  test -z "$(review_git status --porcelain=v1 --untracked-files=all)" || {
+  review_git status --porcelain=v1 --untracked-files=all \
+    > "$review_results/status-before"
+  test ! -s "$review_results/status-before" || {
     printf 'PR handoff review requires a clean committed branch\n' >&2
     exit 1
   }
@@ -388,16 +390,87 @@ PY
 
   review_git diff --binary --no-ext-diff --no-textconv --no-renames \
     "$base" "$head" -- > "$review_inputs/candidate.patch"
-  review_git diff --numstat -z "$base" "$head" -- \
-    > "$review_inputs/numstat"
-  "$REVIEW_PYTHON" -I - "$review_inputs/numstat" <<'PY'
+  review_git diff-tree -r --raw --no-renames -z "$base" "$head" -- \
+    > "$review_inputs/raw-diff"
+  "$REVIEW_PYTHON" -I - \
+    "$review_inputs/raw-diff" "$repo_root" "$REVIEW_GIT" "$review_home" <<'PY'
+import subprocess
 import pathlib
 import sys
 
-for entry in pathlib.Path(sys.argv[1]).read_bytes().split(b"\0"):
-    if entry.startswith(b"-\t-\t"):
-        raise SystemExit("binary change requires a separately trusted review")
+records = open(sys.argv[1], "rb").read().split(b"\0")
+repository, git, home = sys.argv[2:]
+index = 0
+total = 0
+while index < len(records) and records[index]:
+    header = records[index].split()
+    index += 1
+    status = header[4][:1]
+    index += 2 if status in {b"R", b"C"} else 1
+    for mode in {header[0][1:], header[1]} - {b"000000"}:
+        if mode not in {b"100644", b"100755", b"120000"}:
+            raise SystemExit("non-file change requires a separately trusted review")
+    for oid in {header[2], header[3]} - {b"0" * 40}:
+        content = subprocess.run(
+            [
+                git,
+                "-c", "core.fsmonitor=false",
+                "-c", "core.hooksPath=/dev/null",
+                "cat-file", "blob", oid.decode("ascii"),
+            ],
+            cwd=repository, check=True, capture_output=True,
+            env={
+                "GIT_CONFIG_GLOBAL": "/dev/null",
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "GIT_CONFIG_SYSTEM": "/dev/null",
+                "GIT_GRAFT_FILE": str(pathlib.Path(home) / "no-grafts"),
+                "GIT_NO_LAZY_FETCH": "1",
+                "GIT_NO_REPLACE_OBJECTS": "1",
+                "GIT_OPTIONAL_LOCKS": "0",
+                "GIT_TERMINAL_PROMPT": "0",
+                "HOME": home,
+                "LANG": "C",
+                "LC_ALL": "C",
+                "PATH": "/usr/bin:/bin",
+            },
+        ).stdout
+        total += len(content)
+        if len(content) > 16 * 1024 * 1024 or total > 64 * 1024 * 1024:
+            raise SystemExit("changed blobs exceed the review preflight bound")
+        if b"\0" in content:
+            raise SystemExit("binary change requires a separately trusted review")
+        try:
+            content.decode("utf-8")
+        except UnicodeDecodeError:
+            raise SystemExit("non-UTF-8 change requires a separately trusted review")
 PY
+
+  review_git bundle create "$review_inputs/candidate.bundle" \
+    "$review_base" HEAD
+  /usr/bin/env -i HOME="$review_home" PATH=/usr/bin:/bin LANG=C LC_ALL=C \
+    GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+    GIT_CONFIG_SYSTEM=/dev/null GIT_NO_LAZY_FETCH=1 \
+    GIT_NO_REPLACE_OBJECTS=1 GIT_TERMINAL_PROMPT=0 \
+    "$REVIEW_GIT" init --quiet "$review_tmp/review"
+  /usr/bin/env -i HOME="$review_home" PATH=/usr/bin:/bin LANG=C LC_ALL=C \
+    GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+    GIT_CONFIG_SYSTEM=/dev/null GIT_NO_LAZY_FETCH=1 \
+    GIT_NO_REPLACE_OBJECTS=1 GIT_TERMINAL_PROMPT=0 \
+    "$REVIEW_GIT" -C "$review_tmp/review" fetch --quiet \
+    "$review_inputs/candidate.bundle" \
+    "${base}:refs/remotes/origin/main" "${head}:refs/heads/candidate"
+  /usr/bin/env -i HOME="$review_home" PATH=/usr/bin:/bin LANG=C LC_ALL=C \
+    GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+    GIT_CONFIG_SYSTEM=/dev/null GIT_NO_LAZY_FETCH=1 \
+    GIT_NO_REPLACE_OBJECTS=1 GIT_TERMINAL_PROMPT=0 \
+    "$REVIEW_GIT" -C "$review_tmp/review" checkout --quiet candidate
+  test "$(review_git rev-parse HEAD)" = "$head"
+  review_git status --porcelain=v1 --untracked-files=all \
+    > "$review_results/status-after"
+  test ! -s "$review_results/status-after" || {
+    printf 'candidate changed while preparing review\n' >&2
+    exit 1
+  }
 
   "$REVIEW_PYTHON" -I - "$REVIEW_PYTHON" "$review_bin/python3" <<'PY'
 import pathlib
@@ -434,9 +507,11 @@ PY
 
   review_policy=$(<"$review_inputs/review-policy.md")
   export TMPDIR="$review_engine_tmp"
-  "$REVIEW_PYTHON" -I "$review_helper" \
+  (
+    cd "$review_tmp/review"
+    "$REVIEW_PYTHON" -I "$review_helper" \
     --mode branch \
-    --base "$base" \
+    --base origin/main \
     --engine codex \
     --model gpt-6.1-sol \
     --thinking medium \
@@ -446,7 +521,19 @@ PY
     --codex-no-fallback \
     --prompt "$review_policy" \
     --status-output "$AUTOREVIEW_STATUS"
+  )
   test -f "$AUTOREVIEW_STATUS" && test ! -L "$AUTOREVIEW_STATUS"
+  "$REVIEW_PYTHON" -I - "$AUTOREVIEW_STATUS" "$head" <<'PY'
+import json
+import pathlib
+import sys
+
+status = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+if status.get("status") != "scoped-clean" or status.get("exit_code") != 0:
+    raise SystemExit("autoreview did not produce a clean machine status")
+if status.get("head") not in {None, sys.argv[2]}:
+    raise SystemExit("autoreview status does not match the frozen candidate head")
+PY
 )
 ```
 
