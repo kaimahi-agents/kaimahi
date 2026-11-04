@@ -202,10 +202,10 @@ test("refused proposal input never reaches a host query or unrestricted chat", a
     mcp: { resources: { read: async ({ uri }) => ({ contents: [{ text: JSON.stringify(uri === "kmx://models" ? { schemaVersion: 1, kind: "kmx.models", defaultModel: "real-model", models: ["real-model"] } : team) }] }) } },
     tools: {
       getCurrentMetadata: async () => ({ tools: [{ name: "run", mcpServerName: "kmx-agent-builder", mcpToolName: "run" }] }),
-      execute: async () => { calls++; return { resultType: "failure", structuredContent: { schemaVersion: 2, reasonCode: "squad_proposal_unavailable", reason: "PRIVATE HOST DATA" } }; },
+      execute: async () => { calls++; return { resultType: "failure", structuredContent: { schemaVersion: 2, reasonCode: "invalid_squad_proposal", reason: "PRIVATE HOST DATA" } }; },
     },
   } });
-  await assert.rejects(backend.action({ operation: "propose", goal: "Review a release" }), error => error.code === "squad_proposal_unavailable" && !error.message.includes("PRIVATE"));
+  await assert.rejects(backend.action({ operation: "propose", goal: "Review a release" }), error => error.code === "invalid_squad_proposal" && !error.message.includes("PRIVATE"));
   assert.equal(calls, 1);
   assert.equal((await backend.team()).uncertain, false);
   backend.dispose();

@@ -775,10 +775,12 @@ This includes edits back to the original baseline while a newer save is in fligh
 Generated proposals are offered for explicit review before replacing a draft.
 Native team and test suggestions use the host's transient no-tools query, never
 an ordinary chat turn. Native Run target squad-proposal only checks and prepares
-authored inputs; it calls no model and writes no files. The query follows the
-current chat model and context, with reviewed member preferences initialized from
-the model catalog; proposals are not execution/model attestation. Unsupported
-hosts refuse without a chat fallback. Test proposals bind and recheck member/brief revisions
+authored inputs; it calls no model and writes no files. Scan decoded draft JSON
+strings, including nested values and keys, before encoding host-query input.
+The query follows the current chat model and context, with reviewed member
+preferences initialized from the model catalog; proposals are not execution/model
+attestation. Unsupported hosts refuse without a chat fallback. Test proposals
+bind and recheck member/brief revisions
 and remain unsaved drafts. Native member views hide the unsupported Tools section.
 Native Squad remains opt-in development packaging, not normal marketplace setup;
 never download a launcher or edit trusted startup configuration automatically.

@@ -101,8 +101,7 @@ func (c *SquadCreator) memberInventory(ctx context.Context) (squadMemberInventor
 	// Committed hashes alone are insufficient while native recovery is pending.
 	seen, err := c.snapshot()
 	if err != nil || squadRecoveryRequired(seen) {
-		// Preserve known IDs without qualifying any member.
-		return inventory, nil
+		return inventory, nil //nolint:nilerr // Keep IDs; a nil roster refuses members.
 	}
 	inventory.roster, _ = c.readLocal(".squad/team.md")
 	return inventory, nil
@@ -246,11 +245,12 @@ func (c *SquadCreator) EditMember(ctx context.Context, id, expected string, m Sq
 		default:
 			continue
 		}
-		body := string(raw[section.Body.Start:section.Body.End])
-		if text == body || text == strings.ReplaceAll(body, "\r\n", "\n") {
+		body := strings.Trim(string(raw[section.Body.Start:section.Body.End]), "\r\n")
+		want := strings.Trim(text, "\r\n")
+		if strings.ReplaceAll(want, "\r\n", "\n") == strings.ReplaceAll(body, "\r\n", "\n") {
 			continue
 		}
-		changes = append(changes, replacement{section.Body, "\n" + strings.Trim(text, "\r\n") + suffix})
+		changes = append(changes, replacement{section.Body, "\n" + want + suffix})
 	}
 	sort.Slice(changes, func(i, j int) bool { return changes[i].span.Start > changes[j].span.Start })
 	for _, change := range changes {

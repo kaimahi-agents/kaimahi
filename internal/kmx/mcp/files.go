@@ -25,6 +25,7 @@
 // Whole-team creation refuses occupied rosters; role and brief checks precede writes.
 // Native edits retain untouched section bytes and stable section boundaries.
 // Native suggestions prepare checked inputs for a host no-tools query, never mutations.
+// Proposal checks inspect decoded JSON strings before re-encoding host input.
 // The original-server settings writer uses agent/config byte revisions and retained
 // physical parents; preview roles never advertise or dispatch this fifth tool.
 // Canonical Edit optionally retains bounded private source preimages. Retention

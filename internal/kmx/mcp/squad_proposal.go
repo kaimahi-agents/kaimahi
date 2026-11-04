@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"unicode/utf8"
 
@@ -16,6 +17,20 @@ func checkedSquadProposalJSON(raw string) (json.RawMessage, error) {
 	var value map[string]any
 	if len(raw) > 1<<20 || !utf8.ValidString(raw) || json.Unmarshal([]byte(raw), &value) != nil || value == nil {
 		return nil, refusal("invalid_squad_proposal")
+	}
+	// JSON escaping can hide credential boundaries, so inspect decoded strings.
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, refusal("invalid_squad_proposal")
+		}
+		if text, ok := token.(string); ok && secretshapes.Match(text) != nil {
+			return nil, refusal("invalid_squad_proposal")
+		}
 	}
 	var content strings.Builder
 	encoder := json.NewEncoder(&content)
