@@ -136,11 +136,37 @@ func quickstartModeFlags(cmd *cobra.Command, interactive bool) error {
 }
 
 func newUpCommand(state *commandState) *cobra.Command {
-	var step string
-	cmd := &cobra.Command{Use: "up", Short: "Bring up the local runtime", Args: cobra.NoArgs}
-	cmd.Flags().StringVar(&step, "step", "", "run one step only: "+strings.Join(app.UpSteps, ", "))
+	var opt app.UpOptions
+	cmd := &cobra.Command{
+		Use: "up", Short: "Bring up the local runtime",
+		Long: "Bring up the local runtime.\n\n" +
+			"An offline bundle requires --step cluster and guest-supplied tools/cache.\n" +
+			"It verifies only the pinned native Linux node, not chart/application inputs.\n" +
+			"No downloads, model setup or Orka install run in that path.\n" +
+			"Podman, non-classic Docker stores and arm64 execution remain unverified.",
+		Example: "  kmx cluster up\n" +
+			"  kmx cluster up --step cluster\n" +
+			"  kmx cluster up --step cluster --offline-bundle ./bundle",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if err := cobra.NoArgs(cmd, args); err != nil {
+				return err
+			}
+			if cmd.Flags().Changed("offline-bundle") {
+				if strings.TrimSpace(opt.OfflineBundle) == "" {
+					return fmt.Errorf("--offline-bundle requires a non-empty directory")
+				}
+				if opt.Step != "cluster" {
+					return fmt.Errorf("--offline-bundle requires --step cluster")
+				}
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&opt.Step, "step", "", "run one step only: "+strings.Join(app.UpSteps, ", "))
+	cmd.Flags().StringVar(&opt.OfflineBundle, "offline-bundle", "", "local node bundle DIR (requires --step cluster)")
+	_ = cmd.MarkFlagDirname("offline-bundle")
 	_ = cmd.RegisterFlagCompletionFunc("step", staticCompletion(app.UpSteps))
-	cmd.RunE = appRun(state, func(a *app.App) error { return a.Up(step) })
+	cmd.RunE = appRun(state, func(a *app.App) error { return a.UpWithOptions(opt) })
 	return cmd
 }
 

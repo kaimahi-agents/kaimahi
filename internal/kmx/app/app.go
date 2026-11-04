@@ -1,6 +1,13 @@
 // Package app orchestrates kmx operations using resolved configuration,
 // context guards, runtime adapters and external tools.
 //
+// Offline cluster bring-up validates a closed manifest and clean binary identity
+// against an embedded node-only catalog. It reads pinned OCI node evidence and
+// the selected local socket engine, never provisions tools or authorizes Orka
+// install. Offline reuse binds the selected kubeconfig cluster connection to
+// the verified node before export, node start or API readiness; online guards
+// and context repair remain unchanged.
+//
 // App coordinates consent, side effects and runtime-specific evidence.
 // Placement observations are distinct from evaluation proof; successful
 // placement alone must not be treated as proof of agent behavior. Retained
@@ -95,6 +102,9 @@ type App struct {
 	// releaseRecordPrepared configures the real private publisher in boundary tests.
 	// Nil leaves persistence unchanged.
 	releaseRecordPrepared func(*releaseLiftRecordWriter)
+	// offlineIdentity replaces running-binary identity only in isolated tests.
+	// Nil requires the actual clean executable metadata and SHA-256.
+	offlineIdentity func() (offlineKMXIdentity, error)
 	// waitTiming overrides retry pacing and phase deadlines in tests only.
 	// Nil preserves every production interval and timeout.
 	waitTiming *waitTiming

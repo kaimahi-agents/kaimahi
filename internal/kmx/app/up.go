@@ -225,7 +225,9 @@ func (a *App) rememberInventedContext() {
 // delegation so the fix is not lost: on that engine "listed" does not mean
 // "running", and a cluster whose nodes were stopped has to be started rather
 // than re-created.
-func (a *App) stepCluster() (err error) {
+func (a *App) stepCluster() error { return a.stepClusterWithNode(nil) }
+
+func (a *App) stepClusterWithNode(bundle *offlineNodeBundle) (err error) {
 	if err := a.validateKindTarget(); err != nil {
 		return err
 	}
@@ -236,7 +238,14 @@ func (a *App) stepCluster() (err error) {
 			a.rememberInventedContext()
 		}
 	}()
-	existing, err := a.Run.Capture("kind", "get", "clusters")
+	var existing string
+	if bundle != nil {
+		var raw []byte
+		raw, err = a.offlineCapture("kind", "get", "clusters")
+		existing = string(raw)
+	} else {
+		existing, err = a.Run.Capture("kind", "get", "clusters")
+	}
 	if err != nil {
 		return fmt.Errorf("`kind get clusters` failed — refusing to guess whether %q exists (is the %s daemon running?): %w",
 			a.Cfg.KindCluster, a.Cfg.ContainerEngine, err)
@@ -249,16 +258,39 @@ func (a *App) stepCluster() (err error) {
 		}
 	}
 
+	createCluster := a.createKindCluster
+	ensureContext := a.ensureKindContext
+	var verifiedNodes []string
+	if bundle != nil {
+		createCluster = func() error { return a.createKindClusterWithImage(bundle.node.LocalRef) }
+		if listed {
+			verifiedNodes, err = a.verifyOfflineClusterNodes(bundle)
+			if err != nil {
+				return err
+			}
+		}
+		exists, err := a.verifyOfflineKubeconfig(listed)
+		if err != nil {
+			return err
+		}
+		ensureContext = func() error {
+			if exists {
+				return nil
+			}
+			return a.Run.Run("kind", "export", "kubeconfig", "--name", a.Cfg.KindCluster)
+		}
+	}
+
 	// The Docker path: create it if it is not there.
 	if a.Cfg.ContainerEngine != "podman" {
 		if listed {
 			a.notef("kind cluster %q already exists", a.Cfg.KindCluster)
-			if err := a.ensureKindContext(); err != nil {
+			if err := ensureContext(); err != nil {
 				return err
 			}
 			return a.waitClusterServing()
 		}
-		if err := a.createKindCluster(); err != nil {
+		if err := createCluster(); err != nil {
 			return err
 		}
 		return a.waitClusterServing()
@@ -269,30 +301,35 @@ func (a *App) stepCluster() (err error) {
 	// lists the cluster and nothing can reach it. Listed-but-stopped is
 	// therefore not "already exists" — start the nodes back up.
 	if listed {
-		if err := a.ensureKindContext(); err != nil {
+		if err := ensureContext(); err != nil {
 			return err
 		}
-		nodes, err := a.Run.Capture("podman", "ps", "-a",
-			"--filter", "label=io.x-k8s.kind.cluster="+a.Cfg.KindCluster,
-			"--format", "{{.Names}}")
-		if err != nil {
-			return fmt.Errorf("cannot list podman's nodes for kind cluster %q: %w", a.Cfg.KindCluster, err)
-		}
-		names, err := podmanNodes(nodes, a.Cfg.KindCluster)
-		if err != nil {
-			return err
+		names := verifiedNodes
+		if bundle == nil {
+			nodes, err := a.Run.Capture("podman", "ps", "-a",
+				"--filter", "label=io.x-k8s.kind.cluster="+a.Cfg.KindCluster,
+				"--format", "{{.Names}}")
+			if err != nil {
+				return fmt.Errorf("cannot list podman's nodes for kind cluster %q: %w", a.Cfg.KindCluster, err)
+			}
+			names, err = podmanNodes(nodes, a.Cfg.KindCluster)
+			if err != nil {
+				return err
+			}
 		}
 		if err := a.Run.Run("podman", append([]string{"start"}, names...)...); err != nil {
 			return err
 		}
-	} else if err := a.createKindCluster(); err != nil {
+	} else if err := createCluster(); err != nil {
 		return err
 	}
 
 	return a.waitClusterServing()
 }
 
-func (a *App) createKindCluster() error {
+func (a *App) createKindCluster() error { return a.createKindClusterWithImage("") }
+
+func (a *App) createKindClusterWithImage(image string) error {
 	// A shorter kubelet sync is intended to limit Orka's webhook Secret
 	// projection jitter on new small local clusters; existing nodes stay untouched.
 	cfg := []byte(`apiVersion: kind.x-k8s.io/v1alpha4
@@ -303,7 +340,24 @@ kubeadmConfigPatches:
   kind: KubeletConfiguration
   syncFrequency: 5s
 `)
-	return a.Run.RunStdin(cfg, "kind", "create", "cluster", "--name", a.Cfg.KindCluster, "--config", "-")
+	args := []string{"create", "cluster", "--name", a.Cfg.KindCluster, "--config", "-"}
+	if image != "" {
+		args = append(args, "--image", image)
+	}
+	runner := a.Run
+	if image != "" {
+		local, cleanup, err := a.offlineKindRunner()
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+		runner = local
+	}
+	err := runner.RunStdin(cfg, "kind", args...)
+	if err != nil && image != "" {
+		return fmt.Errorf("kind create failed for %q; any node/kubeconfig effects are retained for inspection (kind may have cleaned partial nodes); kmx performs no cleanup: %w", a.Cfg.KindCluster, err)
+	}
+	return err
 }
 
 func (a *App) ensureKindContext() error {
