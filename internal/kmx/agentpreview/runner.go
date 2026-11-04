@@ -48,6 +48,9 @@ type Request struct {
 	Progress   func(string) error
 	// SessionCreated exposes bounded native identity before its first turn.
 	SessionCreated func(caseID, sessionURI string) error
+	// TelemetryReady admits the frozen combined credential checker before observations.
+	TelemetryReady func(func(...string) error) error
+	Observed       func(Observation) error
 	// BeforeExecute runs after credential/content preflight, before journaling or
 	// inference. A failed diagnostic sink must prevent all sends.
 	BeforeExecute func() error
@@ -122,6 +125,7 @@ type NativeExecution struct {
 }
 
 type Completion struct {
+	Telemetry        *Telemetry `json:"-"`
 	Native           *NativeExecution
 	SnapshotRevision string
 	State            State

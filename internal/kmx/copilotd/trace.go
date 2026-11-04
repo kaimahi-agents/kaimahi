@@ -23,18 +23,24 @@ var ErrDelegationUnverified = errors.New("delegated child execution cannot be at
 type nativeCall struct {
 	name, input string
 	complete    bool
+	ordinal     int
 }
 type trace struct {
-	mu                sync.Mutex
-	chat, turn, model string
-	state             ahptypes.ChatState
-	calls             map[string]*nativeCall
-	models            []string
-	size              int
-	seq               int64
-	done              chan struct{}
-	ended             bool
-	err               error
+	delivery              sync.Mutex
+	observe               func(agentpreview.Observation) error
+	queued, immediate     []agentpreview.Observation
+	liveDropped, notified bool
+	meta                  agentpreview.Telemetry
+	mu                    sync.Mutex
+	chat, turn, model     string
+	state                 ahptypes.ChatState
+	calls                 map[string]*nativeCall
+	models                []string
+	size                  int
+	seq                   int64
+	done                  chan struct{}
+	ended                 bool
+	err                   error
 }
 
 func newTrace(chat, turn, model string, state ahptypes.ChatState) *trace {
@@ -42,9 +48,7 @@ func newTrace(chat, turn, model string, state ahptypes.ChatState) *trace {
 }
 
 // Runs synchronously before AHP's lossy fan-out. Never hold mu across RPC or IO.
-func (t *trace) accept(e ahptypes.ActionEnvelope) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+func (t *trace) acceptLocked(e ahptypes.ActionEnvelope) error {
 	if string(e.Channel) != t.chat || e.RejectionReason != nil {
 		return nil
 	}
@@ -75,6 +79,9 @@ func (t *trace) accept(e ahptypes.ActionEnvelope) error {
 	}
 	t.seq = e.ServerSeq
 	switch a := e.Action.Value.(type) {
+	case *ahptypes.ChatTurnStartedAction:
+		t.meta.TurnObserved = true
+		t.observation("session.observed", "", 0)
 	case *ahptypes.ChatUsageAction:
 		if a.Usage.Model == nil || *a.Usage.Model == "" {
 			return t.fail(errTrace)
@@ -89,15 +96,19 @@ func (t *trace) accept(e ahptypes.ActionEnvelope) error {
 		if *a.Usage.Model != t.model {
 			return t.fail(agentpreview.ErrModelUnavailable)
 		}
+		t.meta.UsageReports++
+		t.meta.InputTokens = nonnegative(a.Usage.InputTokens)
+		t.meta.OutputTokens = nonnegative(a.Usage.OutputTokens)
 	case *ahptypes.ChatToolCallStartAction:
 		if !localtools.ValidToolName(a.ToolName) || a.ToolCallId == "" || t.calls[a.ToolCallId] != nil {
 			return t.fail(errTrace)
 		}
-		t.calls[a.ToolCallId] = &nativeCall{name: a.ToolName}
+		t.calls[a.ToolCallId] = &nativeCall{name: a.ToolName, ordinal: len(t.calls) + 1}
 		// Contributing child execution is not provable from the parent's trace.
 		if a.ToolName == "task" || a.ToolName == "agent" {
 			return t.fail(ErrDelegationUnverified)
 		}
+		t.observation("tool.started", a.ToolName, t.calls[a.ToolCallId].ordinal)
 	case *ahptypes.ChatToolCallReadyAction:
 		c := t.calls[a.ToolCallId]
 		if c == nil {
@@ -127,6 +138,7 @@ func (t *trace) accept(e ahptypes.ActionEnvelope) error {
 			return t.fail(errTrace)
 		}
 		c.complete = true
+		t.observation("tool.finished", c.name, c.ordinal)
 	case *ahptypes.ChatTurnCompleteAction:
 		t.end()
 	case *ahptypes.ChatTurnCancelledAction, *ahptypes.ChatErrorAction, *ahptypes.ChatTruncatedAction, *ahptypes.StateActionUnknown:
@@ -159,9 +171,10 @@ func childToolCall(call ahptypes.ToolCallState) bool {
 }
 
 func (t *trace) end() {
-	if !t.ended {
+	t.ended = true
+	if t.observe == nil && !t.notified {
 		close(t.done)
-		t.ended = true
+		t.notified = true
 	}
 }
 func (t *trace) failure() error               { t.mu.Lock(); defer t.mu.Unlock(); return t.err }
@@ -236,5 +249,6 @@ func (t *trace) finish(state *ahptypes.ChatState) (string, []string, map[string]
 	if len(seen) != len(t.calls) || answer.Len() > 256<<10 {
 		return "", t.models, nil, errTrace
 	}
+	t.meta.TraceComplete = true
 	return answer.String(), append([]string(nil), t.models...), counts, nil
 }

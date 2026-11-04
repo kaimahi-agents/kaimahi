@@ -333,6 +333,24 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 	if request.Input != nil && planErr != nil {
 		return abort(planErr)
 	}
+	if request.TelemetryReady != nil {
+		check := func(fields ...string) error {
+			if err := checkContent(fields...); err != nil {
+				return err
+			}
+			for _, key := range p.credentials {
+				for _, field := range fields {
+					if strings.Contains(field, key) {
+						return agentpreview.ErrCredentialContent
+					}
+				}
+			}
+			return nil
+		}
+		if err := request.TelemetryReady(check); err != nil {
+			return abort(errors.Join(agentpreview.ErrDiagnosticsFailed, err))
+		}
+	}
 	if request.BeforeExecute != nil {
 		if err := request.BeforeExecute(); err != nil {
 			return abort(fmt.Errorf("%w: %w", agentpreview.ErrDiagnosticsFailed, err))
@@ -390,6 +408,9 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 		turnCtx, turnCancel := context.WithTimeout(ctx, p.timeout)
 		defer turnCancel()
 		if err := validate(turnCtx); err != nil {
+			return completion, nil, err
+		}
+		if err := request.ObserveCase(index, agentpreview.Observation{Event: "case.started"}); err != nil {
 			return completion, nil, err
 		}
 		label := ex.ID

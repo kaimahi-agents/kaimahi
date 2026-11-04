@@ -137,12 +137,17 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 			return out, ErrUnsupported
 		}
 	}
+	if req.TelemetryReady != nil {
+		if e := req.TelemetryReady(check); e != nil {
+			return out, errors.Join(agentpreview.ErrDiagnosticsFailed, e)
+		}
+	}
 	if req.BeforeExecute != nil {
 		if err = req.BeforeExecute(); err != nil {
 			return out, fmt.Errorf("%w", agentpreview.ErrDiagnosticsFailed)
 		}
 	}
-	execute := func(ex agentfile.Example) (c agentpreview.Completion, rows []runtime.EvaluationAssertionResult, cause error) {
+	execute := func(ex agentfile.Example, index int) (c agentpreview.Completion, rows []runtime.EvaluationAssertionResult, cause error) {
 		start := time.Now()
 		limit := r.options.ExampleTimeout
 		if limit <= 0 {
@@ -150,7 +155,7 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 		}
 		caseCtx, stop := context.WithTimeout(ctx, limit)
 		defer stop()
-		c = agentpreview.Completion{State: agentpreview.Failed, Provider: req.Route.Provider, Model: req.Route.Model, FileRevision: req.Agent.Revision, SnapshotRevision: req.SnapshotRevision}
+		c = agentpreview.Completion{Telemetry: &agentpreview.Telemetry{}, State: agentpreview.Failed, Provider: req.Route.Provider, Model: req.Route.Model, FileRevision: req.Agent.Revision, SnapshotRevision: req.SnapshotRevision}
 		defer func() {
 			c.DurationMs = time.Since(start).Milliseconds()
 			if c.Native != nil {
@@ -167,6 +172,12 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 			if cause = req.ValidateSource(caseCtx); cause != nil {
 				return
 			}
+		}
+		if cause = caseCtx.Err(); cause != nil {
+			return
+		}
+		if cause = req.ObserveCase(index, agentpreview.Observation{Event: "case.started"}); cause != nil {
+			return
 		}
 		snapshot, e := r.options.Snapshot(caseCtx, check)
 		if e != nil {
@@ -219,6 +230,9 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 				cause = agentpreview.ErrDiagnosticsFailed
 				return
 			}
+		}
+		if cause = req.ObserveCase(index, agentpreview.Observation{Event: "session.observed", Session: session}); cause != nil {
+			return
 		}
 		source := req.SourceAgent
 		if source == nil {
@@ -280,6 +294,13 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 		turn := nonce()
 		c.Native.Turn = turn
 		t := newTrace(string(chat), turn, req.Route.Model, *initial.Snapshot.State.Chat)
+		if req.Observed != nil && index >= 0 {
+			t.observe = func(o agentpreview.Observation) error {
+				o.Session = session
+				o.Chat = string(chat)
+				return req.ObserveCase(index, o)
+			}
+		}
 		mu.Lock()
 		active = t
 		mu.Unlock()
@@ -287,6 +308,9 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 			mu.Lock()
 			active = nil
 			mu.Unlock()
+			metadata := t.telemetry()
+			metadata.Sent = c.Telemetry.Sent
+			c.Telemetry = &metadata
 			c.Native.ActualModels = t.observed()
 			c.Native.PendingTool, c.Native.PendingInput = t.pending()
 			if len(c.Native.PendingInput) > 4096 {
@@ -296,6 +320,7 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 		if cause = access.Validate(caseCtx); cause != nil {
 			return
 		}
+		c.Telemetry.Sent = true // A failed/lost acknowledgment cannot prove no send.
 		_, cause = client.Dispatch(caseCtx, string(chat), ahptypes.StateAction{Value: &ahptypes.ChatTurnStartedAction{Type: ahptypes.ActionType("chat/turnStarted"), TurnId: turn, StartedAt: time.Now().UTC().Format(time.RFC3339Nano), Message: ahptypes.Message{Text: ex.Input, Origin: ahptypes.MessageOrigin{Kind: ahptypes.MessageKind("user")}, Agent: &ahptypes.AgentSelection{Uri: ahptypes.URI(agent)}, Model: &ahptypes.ModelSelection{Id: req.Route.Model}}}})
 		if cause != nil {
 			return
@@ -303,6 +328,12 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 		select {
 		case <-t.done:
 		case <-client.Done():
+			if req.Observed != nil {
+				cause = t.failure()
+				if cause == nil {
+					cause = copilot.ErrHostConnection
+				}
+			}
 		case <-caseCtx.Done():
 			cause = caseCtx.Err()
 		}
@@ -402,14 +433,14 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 		return
 	}
 	if req.Input != nil {
-		c, _, e := execute(agentfile.Example{ID: "input", Input: *req.Input})
+		c, _, e := execute(agentfile.Example{ID: "input", Input: *req.Input}, -1)
 		out.AdHoc = &c
 		if e != nil {
 			return out, e
 		}
 	}
-	for _, ex := range req.Examples {
-		c, rows, e := execute(ex)
+	for index, ex := range req.Examples {
+		c, rows, e := execute(ex, index)
 		row := agentpreview.ExampleOutcome{ID: ex.ID, Completion: c}
 		if e == nil {
 			row.Assertions = rows
