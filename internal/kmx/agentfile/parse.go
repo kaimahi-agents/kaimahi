@@ -6,6 +6,9 @@
 // Recorded call arguments/results have 32 payload-relative nesting levels;
 // other Examples structure keeps 12 levels, sharing the same node/byte bounds.
 // Offline run-profile export preserves canonical content and hashes, not evidence.
+// Explicit Orka parsing and paired loading retain native source separately from
+// preview Agents. Native metadata and ordered test diagnostics grant no compiler,
+// runtime, evidence or write authority; marked profiles refuse preview intake.
 // Parsing, inspection and export do not execute agents or register them with Squad.
 package agentfile
 

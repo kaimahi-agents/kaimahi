@@ -5,6 +5,74 @@ This is a **format and parser**, not an execution command. Existing native suite
 loaders, `create`, `run --agent`, and workspace `test` are unchanged. There is no
 model call, workspace discovery, source write or implicit conversion.
 
+## Native Orka source reader (unreleased, library only)
+
+`agentfile.ParseOrkaSource` validates an explicit native profile in a
+`NAME.agent.md` file. `agentfile.LoadOrkaPair` reads that source and its selected
+companion through the existing checked, bounded file reader. These APIs are a
+source-only foundation: native file Create/Edit, compilation, native Test,
+publication and deployment are not implemented by this reader. No new CLI
+command or machine-output capability is advertised.
+
+```markdown
+---
+name: reader
+model: gpt-4.1
+kmx:
+  schemaVersion: 1
+  runtime: orka
+  soul:
+    inline: Be concise and state uncertainty.
+  skills: []
+  tools: []
+---
+Read the requested page and distinguish facts from guesses.
+```
+
+The body is the role prompt, separate from Soul, frontmatter and tests. The
+native model requirement uses the fixed `openai-compatible` protocol; parsing
+never selects a Provider, signs in, resolves credentials or calls a model.
+Known fields receive native name, model, text and decoded credential/control
+checks. Soul follows the pinned Orka v0.3.0 Agent schema: exactly one inline
+string (at most 8192 UTF-8 bytes) or namespace-local `configMapRef: {name, key}`.
+A reference requires an expected lowercase `sha256:` digest. An optional inline
+digest must match the exact decoded UTF-8 value, with YAML line breaks decoded
+to LF even when source bytes use CRLF. Skills retain ordered named Skill or
+ConfigMap references. Parsing does not fetch, create or qualify these resources.
+
+Raw agent/test bytes, comments and revisions are retained separately from the
+typed projection. Unknown frontmatter and nonempty native tools are retained and
+marked `Unsupported`, not silently removed. Anchors, aliases, duplicate/non-string
+keys, unsupported YAML types and non-JSON tool declarations refuse rather than
+producing a lossy projection. The existing bounded YAML complexity limits apply.
+This does not make the current tool-free native execution profile accept Soul,
+Skills or tools: downstream consumers must implement and qualify their complete
+semantics, or refuse them.
+
+Companions use the existing `NAME.agent.test.md` rule and test syntax below.
+`LoadOrkaPair` supports the same explicit tests override; only a missing default
+companion is absence. External cases remain separate from `Agent.Instructions`
+and retain ordered IDs, assertions, operands and mocks. Empty/absent tests,
+mocks, tool assertions and unbound judges are diagnosed as unrepresented or
+not yet supported, never treated as native proof. Case IDs differing only in
+letter case refuse; unknown test fields retain the existing parser refusal.
+
+`Agent.Revision` hashes exact agent bytes; `SnapshotRevision` additionally binds
+both source paths, selection, presence and raw test revision. It is not an OCI
+package digest or a write token. `SameSourceVersion` requires checked file and
+parent observations, so equal bytes after an in-operation replacement are not
+current. Pure parsed or manually constructed values cannot establish checked
+currentness. No source is written and no locking, hostile-filesystem isolation
+or cross-process edit authority is promised.
+
+A top-level `kmx` key reserves native semantics, including unsupported or malformed
+marker forms and root merges that expose it. Ordinary preview Parse/Inspect,
+embedded/copilotd file preview and export refuse marked sources instead of
+ignoring native fields. `errors.Is(err, agentfile.ErrOrkaSourceUnsupported)`
+distinguishes unsupported profiles/filenames; `errors.As` still obtains the
+existing safe field/location error. Invalid YAML/known fields remain validation
+errors. Ordinary unmarked Copilot and charter behavior is unchanged.
+
 ## Copilot custom agents and minimal prompts
 
 Open an existing `.agent.md` with YAML frontmatter and a free-form Markdown prompt.
