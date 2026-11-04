@@ -264,6 +264,7 @@ func (m *MachineFileObserver) returned(out agentpreview.Outcome) {
 		}
 		n := c.Native
 		row.started = true
+		row.row.State = "unknown"
 		row.row.DurationMs = &c.DurationMs
 		row.row.Session = m.identity(n.Session)
 		row.row.Chat = m.identity(n.Chat)

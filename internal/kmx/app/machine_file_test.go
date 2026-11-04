@@ -155,6 +155,18 @@ func TestMachineFileFinalStageSinkFailureVetoesPass(t *testing.T) {
 	}
 }
 
+func TestMachineFileReturnedStartWithoutLiveEventIsUnknown(t *testing.T) {
+	m := machineFileFixture(t, "copilotd", nil)
+	_ = m.ready(func(...string) error { return nil })
+	n := fileNativeMetadata()
+	c := agentpreview.Completion{ID: n.Session, Native: n, FileRevision: "revision", SnapshotRevision: "snapshot", Provider: "copilot", Model: "gpt-4.1", State: agentpreview.Failed, Telemetry: &agentpreview.Telemetry{Sent: true}}
+	m.returned(agentpreview.Outcome{Examples: []agentpreview.ExampleOutcome{{ID: "first", Completion: c}}})
+	p := m.Final(FilePreviewResult{State: "error"})
+	if p.StartedCases != 1 || p.Cases[0].State != "unknown" || p.RemoteState != "may_continue" {
+		t.Fatal("retained partial execution labelled not-started", p)
+	}
+}
+
 func machineObservation(event string, index int) agentpreview.Observation {
 	return agentpreview.Observation{Event: event, CaseIndex: index, FileRevision: "revision", SnapshotRevision: "snapshot", Provider: "copilot", Model: "gpt-4.1"}
 }
