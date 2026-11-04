@@ -6,6 +6,9 @@
 // Recorded call arguments/results have 32 payload-relative nesting levels;
 // other Examples structure keeps 12 levels, sharing the same node/byte bounds.
 // Offline run-profile export preserves canonical content and hashes, not evidence.
+// Explicit Orka parsing and paired loading retain native source separately from
+// preview Agents. Native metadata and ordered test diagnostics grant no compiler,
+// runtime, evidence or write authority; marked profiles refuse preview intake.
 // Parsing, inspection and export do not execute agents or register them with Squad.
 package agentfile
 
@@ -133,6 +136,13 @@ func parseWithTools(filename string, data []byte, native bool) (*Agent, error) {
 		return nil, err
 	}
 	lines := strings.Split(text, "\n")
+	if hasFrontmatter(lines) {
+		if end := frontmatterEnd(lines); end != 0 {
+			if _, _, err := decodePreviewFrontmatter(filename, strings.Join(lines[1:end], "\n")); err != nil {
+				return nil, err
+			}
+		}
+	}
 	a := &Agent{Revision: fmt.Sprintf("sha256:%x", sha256.Sum256(data)), Locations: map[string]Location{}}
 	if hasFrontmatter(lines) || !completeCharter(lines) {
 		return parseFreeForm(filename, lines, a, native)
