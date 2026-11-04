@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -24,6 +25,8 @@ var errModelStateEncoding = errors.New("model state cannot be represented")
 var modelTargetPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var modelCheckpointPattern = regexp.MustCompile(`^[0-9]{6}\.json$`)
 
+// modelOwnedResource contains a verified nonsecret execution projection from
+// the producer, never a raw API response, credential material or inference body.
 type modelOwnedResource struct {
 	APIVersion      string         `json:"apiVersion"`
 	Kind            string         `json:"kind"`
@@ -124,6 +127,9 @@ func openModelRecord(ctx context.Context, targetKey string, create bool) (record
 	}
 	r.anchor, err = fileaccess.OpenPrivateFileAt(ctx, dir, "connection.json")
 	if errors.Is(err, os.ErrNotExist) && create {
+		if err = r.checkFinishedModelFamilies(ctx); err != nil {
+			return nil, err
+		}
 		return r, nil
 	}
 	if err != nil {
@@ -148,9 +154,16 @@ func openModelRecord(ctx context.Context, targetKey string, create bool) (record
 	if err = fileaccess.CheckPrivate(ctx, r.family, true); err != nil {
 		return nil, err
 	}
+	if err = r.readModelCheckpoints(ctx); err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+func (r *modelRecord) readModelCheckpoints(ctx context.Context) error {
 	entries, err := r.family.ReadDir(-1)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	checkpoints := entries[:0]
 	for _, entry := range entries {
@@ -164,33 +177,93 @@ func openModelRecord(ctx context.Context, targetKey string, create bool) (record
 	entries = checkpoints
 	if len(entries) == 0 {
 		// Missing committed history is not proof that no effects ever ran.
-		return nil, errors.New("model family has no acknowledged checkpoint")
+		return errors.New("model family has no acknowledged checkpoint")
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 	for i, entry := range entries {
 		if err = ctx.Err(); err != nil {
-			return nil, err
+			return err
 		}
 		if entry.IsDir() || !modelCheckpointPattern.MatchString(entry.Name()) || entry.Name() != fmt.Sprintf("%06d.json", i) {
-			return nil, errors.New("invalid model checkpoint sequence")
+			return errors.New("invalid model checkpoint sequence")
 		}
 		var state modelCheckpoint
 		f, openErr := fileaccess.OpenPrivateFileAt(ctx, r.family, entry.Name())
 		if openErr != nil {
-			return nil, openErr
+			return openErr
 		}
 		err = decodeModelState(f, &state)
 		err = errors.Join(err, f.Close())
 		if err != nil {
-			return nil, err
+			return err
+		}
+		if i == 0 && !reflect.DeepEqual(state, r.initial) {
+			return errors.New("initial model checkpoint differs from anchor")
 		}
 		if err = r.validate(state); err != nil {
-			return nil, err
+			return err
 		}
 		r.state = state
 		r.next++
 	}
-	return r, nil
+	return nil
+}
+
+// Without an anchor, old families may exclude a fresh connection, never grant
+// authority to clean up their resources. Only validated terminal history is inert.
+func (r *modelRecord) checkFinishedModelFamilies(ctx context.Context) error {
+	entries, err := r.dir.ReadDir(-1)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if entry.Name() == "lock" {
+			continue
+		}
+		if !entry.IsDir() || !modelUUID(entry.Name()) {
+			return errors.New("orphaned model state is not terminal")
+		}
+		if err := func() error {
+			family, err := fileaccess.OpenDirectoryAt(ctx, r.dir, entry.Name())
+			if err != nil {
+				return err
+			}
+			defer family.Close()
+			if err := fileaccess.CheckPrivate(ctx, family, true); err != nil {
+				return err
+			}
+			first, err := fileaccess.OpenPrivateFileAt(ctx, family, "000000.json")
+			if err != nil {
+				return err
+			}
+			var initial modelCheckpoint
+			err = decodeModelState(first, &initial)
+			err = errors.Join(err, first.Close())
+			if err != nil {
+				return err
+			}
+			if err := validateModelCheckpoint(initial); err != nil {
+				return err
+			}
+			if initial.Connection.ID != entry.Name() {
+				return errors.New("orphaned model family identity differs")
+			}
+			history := modelRecord{family: family, initial: initial, anchored: true}
+			if err := history.readModelCheckpoints(ctx); err != nil {
+				return err
+			}
+			if !history.state.Complete {
+				return errors.New("orphaned model effects remain unresolved")
+			}
+			return nil
+		}(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *modelRecord) checkpoint(ctx context.Context, state modelCheckpoint) error {

@@ -452,6 +452,101 @@ func TestOrkaModelState(t *testing.T) {
 			})
 		}
 	})
+	t.Run("missing_anchor_does_not_bypass_unfinished_history", func(t *testing.T) {
+		home := filepath.Join(t.TempDir(), "state")
+		t.Setenv("KMX_HOME", home)
+		ctx := context.Background()
+		r, err := openModelRecord(ctx, modelTestTarget, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cp := modelTestCheckpoint()
+		cp.Pending = &modelPendingAction{OperationID: cp.Connection.ID, Verb: "create", Resource: modelOwnedResource{APIVersion: "apps/v1", Kind: "Deployment", Name: "gateway", Marker: cp.Connection.ID, Purpose: "connection"}}
+		if err := r.checkpoint(ctx, cp); err != nil {
+			t.Fatal(err)
+		}
+		r.close()
+		base := filepath.Join(home, "orka-models", modelTestTarget)
+		if err := os.Remove(filepath.Join(base, "connection.json")); err != nil {
+			t.Fatal(err)
+		}
+		if r, err := openModelRecord(ctx, modelTestTarget, true); err == nil {
+			r.close()
+			t.Fatal("missing anchor authorized a fresh connection beside pending effects")
+		}
+		if _, err := os.Stat(filepath.Join(base, cp.Connection.ID, "000000.json")); err != nil {
+			t.Fatal("unfinished history changed")
+		}
+	})
+	t.Run("completed_diagnostics_allow_fresh_connection", func(t *testing.T) {
+		home := filepath.Join(t.TempDir(), "state")
+		t.Setenv("KMX_HOME", home)
+		ctx := context.Background()
+		r, err := openModelRecord(ctx, modelTestTarget, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cp := modelTestCheckpoint()
+		if err := r.checkpoint(ctx, cp); err != nil {
+			t.Fatal(err)
+		}
+		cp.Complete = true
+		if err := r.checkpoint(ctx, cp); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.finish(ctx); err != nil {
+			t.Fatal(err)
+		}
+		r.close()
+		r, err = openModelRecord(ctx, modelTestTarget, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer r.close()
+		fresh := modelTestCheckpoint()
+		fresh.Connection.ID = "33333333-3333-4333-8333-333333333333"
+		if err := r.checkpoint(ctx, fresh); err != nil {
+			t.Fatal(err)
+		}
+		if r.state.Connection.ID != fresh.Connection.ID {
+			t.Fatal("diagnostic connection adopted")
+		}
+		if _, err := os.Stat(filepath.Join(home, "orka-models", modelTestTarget, cp.Connection.ID, "000001.json")); err != nil {
+			t.Fatal("finished diagnostics changed")
+		}
+	})
+	t.Run("checkpoint_zero_must_match_anchor_effects", func(t *testing.T) {
+		home := filepath.Join(t.TempDir(), "state")
+		t.Setenv("KMX_HOME", home)
+		ctx := context.Background()
+		r, err := openModelRecord(ctx, modelTestTarget, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cp := modelTestCheckpoint()
+		cp.Pending = &modelPendingAction{OperationID: cp.Connection.ID, Verb: "create", Resource: modelOwnedResource{APIVersion: "apps/v1", Kind: "Deployment", Name: "gateway", Marker: cp.Connection.ID, Purpose: "connection"}}
+		if err := r.checkpoint(ctx, cp); err != nil {
+			t.Fatal(err)
+		}
+		r.close()
+		cp.Pending = nil
+		cp.Complete = true
+		data, err := json.Marshal(cp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := filepath.Join(home, "orka-models", modelTestTarget, cp.Connection.ID, "000000.json")
+		if err := os.WriteFile(p, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if r, err := openModelRecord(ctx, modelTestTarget, false); err == nil {
+			defer r.close()
+			if err := r.finish(ctx); err == nil {
+				t.Fatal("conflicting zero checkpoint authorized anchor removal")
+			}
+			t.Fatal("conflicting checkpoint accepted")
+		}
+	})
 	t.Run("replaced_anchor_not_removed", func(t *testing.T) {
 		home := filepath.Join(t.TempDir(), "state")
 		t.Setenv("KMX_HOME", home)
