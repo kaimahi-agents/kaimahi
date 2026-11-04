@@ -268,7 +268,13 @@ func (a *App) kubeconfig() (*guard.Kubeconfig, error) {
 		"https://kubernetes.io/docs/tasks/tools/"); err != nil {
 		return nil, err
 	}
-	cfg, err := guard.LoadKubeconfig("kubectl")
+	var cfg *guard.Kubeconfig
+	var err error
+	if a.operationProgress != nil {
+		cfg, err = guard.LoadKubeconfigContext(a.operationContext(), "kubectl")
+	} else {
+		cfg, err = guard.LoadKubeconfig("kubectl")
+	}
 	if err != nil {
 		return nil, fmt.Errorf("kube-guard: %w", err)
 	}

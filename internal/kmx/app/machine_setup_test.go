@@ -3,10 +3,16 @@ package app
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
@@ -155,6 +161,56 @@ func TestMachineUpObserver(t *testing.T) {
 	}
 	if strings.Join(stages, ",") != "cluster,ollama,model,orka" {
 		t.Fatal(stages)
+	}
+}
+
+func TestMachinePreflightKubeconfigCancellation(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture")
+	}
+	dir := t.TempDir()
+	fakeTool(t, dir, "kubectl", "exec /bin/sleep 2")
+	t.Setenv("PATH", dir)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	a := (&App{Run: &run.Runner{Context: ctx}}).WithProvisioningProgress(func(string, string, error) {})
+	if _, err := a.kubeconfig(); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("machine preflight ignored cancellation: %v", err)
+	}
+	fakeTool(t, dir, "kubectl", `printf '{}'`)
+	legacy := &App{Run: &run.Runner{Context: ctx}}
+	if _, err := legacy.kubeconfig(); err != nil {
+		t.Fatal("changed legacy context behavior", err)
+	}
+}
+
+func TestMachineManagedDownloadCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	payload := []byte("fixture tool")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, ".sha256") {
+			fmt.Fprintf(w, "%x", sha256.Sum256(payload))
+			return
+		}
+		w.Write(payload)
+		w.(http.Flusher).Flush()
+		cancel()
+		select {
+		case <-r.Context().Done():
+		case <-time.After(300 * time.Millisecond):
+		}
+	}))
+	defer server.Close()
+	previous := toolchainBase
+	toolchainBase = server.URL
+	t.Cleanup(func() { toolchainBase = previous })
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("KMX_HOME", t.TempDir())
+	t.Setenv("KMX_TOOLCHAIN", "")
+	a := (&App{Run: &run.Runner{Context: ctx}, Err: io.Discard}).WithProvisioningProgress(func(string, string, error) {})
+	if err := a.provision([]dependency{depKubectl}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("machine managed preflight ignored cancellation: %v", err)
 	}
 }
 

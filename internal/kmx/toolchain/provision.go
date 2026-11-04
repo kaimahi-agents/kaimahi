@@ -55,6 +55,9 @@ func Provision(names []string, linkDir string, opt Options) ([]Tool, error) {
 	goos, goarch := Platform()
 	var tools []Tool
 	for _, name := range names {
+		if err := opt.context().Err(); err != nil {
+			return nil, err
+		}
 		if path, err := exec.LookPath(name); err == nil {
 			tools = append(tools, Tool{Name: name, Path: path, Source: FromPath})
 			continue
@@ -68,6 +71,9 @@ func Provision(names []string, linkDir string, opt Options) ([]Tool, error) {
 		// recorded digest no longer matches is deleted rather than run.
 		path, source, err := EnsureReporting(spec, opt)
 		if err != nil {
+			return nil, err
+		}
+		if err := opt.context().Err(); err != nil {
 			return nil, err
 		}
 		link := filepath.Join(linkDir, name)

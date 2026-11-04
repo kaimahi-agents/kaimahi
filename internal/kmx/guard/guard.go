@@ -61,11 +61,19 @@ type Posture struct {
 
 // LoadKubeconfig returns the merged kubeconfig as kubectl sees it.
 func LoadKubeconfig(kubectlBin string) (*Kubeconfig, error) {
+	return LoadKubeconfigContext(context.Background(), kubectlBin)
+}
+
+// LoadKubeconfigContext binds the inspection child to its owning invocation.
+func LoadKubeconfigContext(ctx context.Context, kubectlBin string) (*Kubeconfig, error) {
 	if kubectlBin == "" {
 		kubectlBin = "kubectl"
 	}
-	out, err := exec.Command(kubectlBin, "config", "view", "-o", "json").Output()
+	out, err := exec.CommandContext(ctx, kubectlBin, "config", "view", "-o", "json").Output()
 	if err != nil {
+		if ctx.Err() != nil {
+			err = ctx.Err()
+		}
 		return nil, fmt.Errorf("cannot read the kubeconfig — refusing to act blind: %w", err)
 	}
 	return ParseKubeconfig(out)
