@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"os"
 	"strings"
 	"testing"
 
@@ -126,6 +128,83 @@ func TestFileJSONLEarlyErrorsAndInertPaths(t *testing.T) {
 		}
 	}
 }
+
+type fileEventFailWriter struct {
+	bytes.Buffer
+	failed int
+}
+
+func (w *fileEventFailWriter) Write(b []byte) (int, error) {
+	if bytes.Contains(b, []byte(`"event":"case.started"`)) {
+		w.failed++
+		return 0, errors.New("PRIVATE OUTPUT ERROR")
+	}
+	return w.Buffer.Write(b)
+}
+
+func TestFileJSONLCancellationFailureAndWindows(t *testing.T) {
+	t.Run("cancel", func(t *testing.T) {
+		var out, diag bytes.Buffer
+		deps, _ := testDependencies(&out, &diag)
+		runner := &machineCLIRunner{fake: cliPreviewFake{cause: context.Canceled}}
+		deps.fileRunner = runner
+		err := execute([]string{"test", cliPreviewFile(t), "-ojsonl"}, deps)
+		records := fileRecords(t, out.Bytes())
+		last := records[len(records)-1]
+		if err == nil || exitCode(err) != 130 || last["exitCode"] != float64(130) || last["outcome"] != "cancelled" || last["verdict"] != "unknown" {
+			t.Fatal(last, err)
+		}
+	})
+	t.Run("midstream failure and borrowed input", func(t *testing.T) {
+		var out, diag bytes.Buffer
+		deps, _ := testDependencies(&out, &diag)
+		writer := &fileEventFailWriter{}
+		stdin, openErr := os.CreateTemp(t.TempDir(), "input")
+		if openErr != nil {
+			t.Fatal(openErr)
+		}
+		defer stdin.Close()
+		if _, e := stdin.WriteString("PRIVATE STDIN"); e != nil {
+			t.Fatal(e)
+		}
+		if _, e := stdin.Seek(0, io.SeekStart); e != nil {
+			t.Fatal(e)
+		}
+		deps.stdout = writer
+		deps.stdin = stdin
+		runner := &machineCLIRunner{fake: cliPreviewFake{verdict: runtime.EvaluationPass}}
+		deps.fileRunner = runner
+		err := execute([]string{"test", cliPreviewFile(t), "-ojsonl"}, deps)
+		position, seekErr := stdin.Seek(0, io.SeekCurrent)
+		if err == nil || exitCode(err) != 1 || writer.failed != 1 || strings.Contains(writer.String(), `"kind":"kmx.result"`) || position != 0 || seekErr != nil || strings.Contains(err.Error()+diag.String(), "PRIVATE") {
+			t.Fatal("write retry, terminal, input use or leak", err, writer.String(), stdin)
+		}
+	})
+	for _, native := range []bool{false, true} {
+		t.Run(map[bool]string{false: "windows fake", true: "windows refuses native"}[native], func(t *testing.T) {
+			var out, diag bytes.Buffer
+			deps, _ := testDependencies(&out, &diag)
+			deps.goos = "windows"
+			runner := &machineCLIRunner{fake: cliPreviewFake{verdict: runtime.EvaluationPass}}
+			deps.fileRunner = runner
+			args := []string{"test", cliPreviewFile(t), "-ojsonl"}
+			if native {
+				args = append(args, "--runner=copilotd", "--host=ws://127.0.0.1:8080")
+			}
+			err := execute(args, deps)
+			r := fileRecords(t, out.Bytes())
+			last := r[len(r)-1]
+			if native {
+				if err == nil || runner.fake.calls != 0 || last["error"].(map[string]any)["code"] != "unsupported" {
+					t.Fatal(last, err)
+				}
+			} else if err != nil || runner.fake.calls != 1 || last["outcome"] != "complete" {
+				t.Fatal(last, err)
+			}
+		})
+	}
+}
+
 func TestFileJSONLRecognitionAndOutputFailure(t *testing.T) {
 	for _, tc := range []struct {
 		args []string

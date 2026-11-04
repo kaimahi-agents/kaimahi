@@ -12,7 +12,7 @@ kmx version -o json
 A successful invocation emits one UTF-8 JSON object and a newline:
 
 ```json
-{"schemaVersion":1,"kind":"kmx.version","kmxVersion":"v0.9.0-rc.6","orkaVersion":"v0.3.0","capabilities":[{"operation":"version","output":"json","schemaVersion":1},{"operation":"cluster.up","output":"jsonl","schemaVersion":1},{"operation":"cluster.orka.install","output":"jsonl","schemaVersion":1}]}
+{"schemaVersion":1,"kind":"kmx.version","kmxVersion":"v0.9.0-rc.6","orkaVersion":"v0.3.0","capabilities":[{"operation":"version","output":"json","schemaVersion":1},{"operation":"cluster.up","output":"jsonl","schemaVersion":1},{"operation":"cluster.orka.install","output":"jsonl","schemaVersion":1},{"operation":"file.test","output":"jsonl","schemaVersion":1,"runner":"embedded"},{"operation":"file.test","output":"jsonl","schemaVersion":1,"runner":"copilotd"}]}
 ```
 
 The version values above are examples. `kmxVersion` uses the build's resolved
@@ -203,7 +203,7 @@ channels; dynamic identities are checked against both frozen credential owners.
 Unsafe or over-1024-byte identities are omitted/unavailable, never clipped.
 
 Ordered `case.summary` events immediately precede the terminal result, one per
-selected case including not-started cases (maximum128). `caseIndex` is one-based;
+selected case including not-started cases (maximum 128). `caseIndex` is one-based;
 `caseId` is optional. Each summary has `state`, `verdict`, nullable `durationMs`,
 `session`, `chat`, `turn`, `task`, `calls`, `usage` and separate `judgeUsage`.
 Identity fields have `availability` and an optional checked `id`; Task remains
@@ -222,7 +222,7 @@ Negative counters are withheld without changing execution acceptance. Judge
 usage is separately unavailable; no aggregate token total or cost is invented.
 
 Tool progress may wait until matching actual-model evidence arrives, possibly
-at turn end. At most512 payload-free observations are buffered per case; overflow
+at turn end. At most 512 payload-free observations are buffered per case; overflow
 withholds live tool observations without refusing execution or changing final
 trace acceptance. Native `calls` requested/completed counts are available only
 from an accepted final complete trace; failed/truncated traces say
@@ -232,7 +232,7 @@ counts; private Session/journal internals and usage are not inspected.
 The result includes runner, selection, `evidence: diagnostic_preview`, checked
 revisions, selected/started/completed case counts, `summaryCount` and `remoteState`.
 Counts are zero before selection. No setup `effects` array is added. Existing
-exit0/1/2/130 meanings remain authoritative; assertion failure differs from an
+exit 0/1/2/130 meanings remain authoritative; assertion failure differs from an
 unknown execution/verdict. Source/judge/journal/required-close vetoes remain
 final; prior case progress or a passing summary cannot override an unknown result.
 Name-based native selection is diagnostic preview, never package identity proof.
@@ -243,7 +243,7 @@ never proof of not-started. Stopped requires all started turns' accepted termina
 proof. Cooperative cancellation/disposal acknowledgment alone does not establish
 remote stop, and redaction cannot erase the attempted-send fact. Signals retain
 the existing post-intake timing; writer failure cancels the existing file context,
-wins over resulting cancellation, and exits1 when the write error returns.
+wins over resulting cancellation, and exits 1 when the write error returns.
 
 ## Reading the complete output
 
