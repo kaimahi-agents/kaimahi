@@ -133,6 +133,17 @@ func parseWithTools(filename string, data []byte, native bool) (*Agent, error) {
 		return nil, err
 	}
 	lines := strings.Split(text, "\n")
+	if hasFrontmatter(lines) {
+		if end := frontmatterEnd(lines); end != 0 {
+			doc, _, err := decodeFrontmatter(filename, strings.Join(lines[1:end], "\n"))
+			if err != nil {
+				return nil, err
+			}
+			if hasOrkaMarker(doc) {
+				return nil, unsupportedOrka(filename, "kmx", "use the native package path for this Orka source; preview is unsupported")
+			}
+		}
+	}
 	a := &Agent{Revision: fmt.Sprintf("sha256:%x", sha256.Sum256(data)), Locations: map[string]Location{}}
 	if hasFrontmatter(lines) || !completeCharter(lines) {
 		return parseFreeForm(filename, lines, a, native)
