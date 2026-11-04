@@ -141,7 +141,7 @@ func fileJSONInvocation(argv []string) bool {
 			}
 			continue
 		}
-		if name == "--" {
+		if arg == "--" {
 			afterDash = true
 			continue
 		}

@@ -218,6 +218,23 @@ func TestFileJSONLRefusalDoesNotInventRunner(t *testing.T) {
 	}
 }
 
+func TestFileJSONLMalformedDelimiterIsNotDashDash(t *testing.T) {
+	for _, selector := range [][]string{{"-o", "jsonl"}, {"-ojsonl"}, {"--output", "jsonl"}, {"--output=jsonl"}} {
+		t.Run(strings.Join(selector, " "), func(t *testing.T) {
+			var out, diag bytes.Buffer
+			deps, _ := testDependencies(&out, &diag)
+			runner := &machineCLIRunner{fake: cliPreviewFake{}}
+			deps.fileRunner = runner
+			args := append([]string{"test", cliPreviewFile(t), "--=PRIVATE"}, selector...)
+			err := execute(args, deps)
+			if err == nil || runner.fake.calls != 0 || strings.Contains(diag.String()+err.Error(), "PRIVATE") {
+				t.Fatal("malformed flag escaped safe framing", err, diag.String())
+			}
+			fileRecords(t, out.Bytes())
+		})
+	}
+}
+
 func TestFileJSONLRecognitionAndOutputFailure(t *testing.T) {
 	for _, tc := range []struct {
 		args []string

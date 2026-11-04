@@ -38,10 +38,11 @@ optional fields and capability entries are compatible; removing fields or
 changing their types or meanings requires a new major.
 
 Match the capability's exact operation, output and schema version before using
-it. Do not infer a capability by parsing the human version text or interpreting
-an Orka pin as runtime readiness. Capability entries currently have only those
-three fields. Future operation-specific selectors require matching their values
-as well, not treating an unspecified runner as a wildcard.
+it. Match any operation-specific selectors as well: `file.test` entries specify
+`runner`, and native Windows additionally restricts `model` to `fake`. Matching
+only the three common fields does not establish support for another runner or
+model. An unspecified runner is not a wildcard. Do not infer a capability by
+parsing human version text or interpreting an Orka pin as runtime readiness.
 
 ## Version failures
 
