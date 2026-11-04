@@ -48,7 +48,7 @@
               "--acp-upgrade-drain-trigger-timeout=5m15s",
               "--acp-upgrade-drain-marker-namespace=orka-system",
               "--zap-log-level=info",
-              "--gateway-enabled=false",
+              "--gateway-enabled=true",
               "--gateway-pending-per-session=100",
               "--gateway-interim-messages-per-task=10",
               "--gateway-max-records-per-gateway=1000",

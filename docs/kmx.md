@@ -1632,7 +1632,7 @@ The catalog profile `orka-59703d6e-native/v1` authorizes cluster bring-up and
 native, no-provider installation from source
 `59703d6eac1760aa2dc5fed4dee9dcb74c6e5186`. It is not the online v0.3.0
 release. The exact shipped [profile JSON](../internal/kmx/app/offline_profiles/orka-59703d6e-native-v1.json)
-has SHA-256 `eafe7b8e85cf350bbd250df1ffbcd5f7c3d976a5c19084a5f72d7ec956faeb3a`.
+has SHA-256 `9580f7967e2a952f0934ba1db533a58a1232bbe6055db05e88e295bda803774d`.
 This replaces the node-only profile hash; existing bundle records must use the
 new exact hash. No bundle input or environment variable can replace catalog pins.
 
@@ -1653,7 +1653,10 @@ configures a model/Provider, regardless of `KMX_TOOLCHAIN`. The literal provider
 Before target writes, kmx checks the retained chart, source descriptor, OCI
 indexes/manifests/configs and exact native child references. It renders locally
 with generated fixed values: harness-v2, persistent store, publisher and SCM
-proxy; all four ACP runtimes and optional components are disabled. The session
+proxy; all four ACP runtimes and optional components are disabled. The ordinary
+Gateway runs inside the controller. Its CRD-readiness lookup override is fixed
+because the verified CRDs are established before Helm, keeping local render and
+installed arguments identical. The session
 loader and both dynamic worker images use child digests; image policies are
 `IfNotPresent`. There is no caller values-file interface.
 

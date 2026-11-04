@@ -55,8 +55,13 @@ type offlineValues struct {
 		Profile string `json:"offlineProfileSha256"`
 	} `json:"kmx,omitempty"`
 	Controller struct {
-		Mode       string            `json:"mode"`
-		Image      offlineValueImage `json:"image"`
+		Mode  string            `json:"mode"`
+		Image offlineValueImage `json:"image"`
+		// CRDs are verified locally and established before Helm. Pin the chart's
+		// lookup override so local rendering and the installed arguments agree.
+		Gateway struct {
+			CRDsReadyOverride bool `json:"crdsReadyOverride"`
+		} `json:"gateway"`
 		ACPRuntime struct {
 			Codex     string         `json:"codexImage"`
 			Claude    string         `json:"claudeImage"`

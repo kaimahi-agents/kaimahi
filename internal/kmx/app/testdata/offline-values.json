@@ -5,6 +5,9 @@
   },
   "controller": {
     "mode": "harness-v2",
+    "gateway": {
+      "crdsReadyOverride": true
+    },
     "image": {
       "repository": "ghcr.io/orka-agents/orka",
       "tag": "",

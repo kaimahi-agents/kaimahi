@@ -118,6 +118,9 @@
             "tag": "",
             "pullPolicy": "IfNotPresent"
           },
+          "gateway": {
+            "crdsReadyOverride": true
+          },
           "acpRuntime": {
             "codexImage": "",
             "claudeImage": "",
@@ -206,6 +209,9 @@
             "digest": "sha256:95c3dda90fdd2cfc4edf8695999e8e226f33c9fa5fbf664ac8ebdddca77f3a6c",
             "tag": "",
             "pullPolicy": "IfNotPresent"
+          },
+          "gateway": {
+            "crdsReadyOverride": true
           },
           "acpRuntime": {
             "codexImage": "",

@@ -188,7 +188,10 @@ func (a *App) orkaInstallStateFor(offline *offlineInstallBundle) (bool, error) {
 			return false, fmt.Errorf("offline Orka release identity/status differs; refusing adoption, overwrite or partial retry")
 		}
 		values, err := capture("helm", "get", "values", orkaRelease, "-n", OrkaNamespace, "--kube-context", a.Cfg.KubeContext, "-o", "json")
-		if err != nil || !offlineSameValues([]byte(values), offline.values) {
+		if err != nil {
+			return false, fmt.Errorf("cannot inspect offline Orka custom values: %w", err)
+		}
+		if !offlineSameValues([]byte(values), offline.values) {
 			return false, fmt.Errorf("offline Orka custom values/profile differ; refusing overwrite")
 		}
 		if err := a.verifyOfflineWorkloads(offline, false); err != nil {

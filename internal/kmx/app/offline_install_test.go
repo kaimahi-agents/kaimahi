@@ -7,8 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
-	"go.yaml.in/yaml/v3"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +15,10 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"go.yaml.in/yaml/v3"
 )
 
 func offlineInstallFixture(t *testing.T) (string, map[string]any) {
@@ -306,6 +308,52 @@ func TestOfflineInstallEverySchedulableNode(t *testing.T) {
 		t.Fatalf("did not inspect every image in every node: %s", commands)
 	}
 }
+func TestOfflineInstallValuesCancellation(t *testing.T) {
+	a, dir, _, log := offlineInstallApp(t)
+	t.Setenv("OFFLINE_RELEASE", `[{"name":"orka","chart":"orka-0.0.0-dev","app_version":"v0.0.0-dev","status":"deployed"}]`)
+	signal := filepath.Join(filepath.Dir(log), "values-started")
+	t.Setenv("OFFLINE_VALUES_STARTED", signal)
+	helm := filepath.Join(filepath.Dir(log), "helm")
+	script, err := os.ReadFile(helm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	script = bytes.Replace(script, []byte(`"get values") /bin/cat "$OFFLINE_VALUES";;`), []byte(`"get values") : > "$OFFLINE_VALUES_STARTED";exec /bin/sleep 60;;`), 1)
+	if err := os.WriteFile(helm, script, 0755); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	a = a.withRunContext(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		until := time.Now().Add(5 * time.Second)
+		for time.Now().Before(until) {
+			if _, err := os.Stat(signal); err == nil {
+				cancel()
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		cancel()
+	}()
+	err = a.OrkaInstall(OrkaOptions{OfflineBundle: dir, Provider: "-"})
+	<-done
+	if _, err := os.Stat(signal); err != nil {
+		t.Fatal("values-read cancellation barrier not reached")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("values read lost typed cancellation: %v", err)
+	}
+	commands, _ := os.ReadFile(log)
+	for _, forbidden := range []string{"--server-side", "helm install", "rollout status", "apply -f -"} {
+		if strings.Contains(string(commands), forbidden) {
+			t.Fatalf("cancelled values read reached %q", forbidden)
+		}
+	}
+}
+
 func TestOfflineInstallActualHelm(t *testing.T) {
 	if _, err := exec.LookPath("helm"); err != nil {
 		t.Skip("guest supplied Helm unavailable")
@@ -318,6 +366,12 @@ func TestOfflineInstallActualHelm(t *testing.T) {
 	a := New(&config.Config{KubeContext: "kind-test"}).offlineHelmTarget()
 	if err := a.renderOfflineChart(b.install); err != nil {
 		t.Fatal(err)
+	}
+	// The verified chart's CRDs are established before install. Local lookup
+	// cannot observe them, so the fixed values must render the same Gateway flag.
+	args := b.install.workloads["orka-api-controller"].Containers[0].Args
+	if !slices.Contains(args, "--gateway-enabled=true") {
+		t.Fatal("local render differs from the post-CRD installed Gateway state")
 	}
 }
 func TestOfflineInstallRenderRefusals(t *testing.T) {
