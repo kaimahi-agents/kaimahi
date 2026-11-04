@@ -1671,11 +1671,13 @@ the verified config's rootfs diff IDs. No pull or fallback repairs a mismatch.
 }
 ```
 
-This path has hermetic contract tests, not blocked-egress installation or Task
-qualification. Catalog pins exist for Linux amd64 and arm64; pins do not prove
-native execution. Podman, Docker's containerd image store and native arm64
-execution remain unverified. Non-Linux runtime use refuses; cross-building the
-CLI does not qualify cluster execution.
+Node creation and exact reuse were walked on Linux amd64 with classic Docker
+29.9.2, kind 0.33.0, kubectl 1.35.1 and node v1.35.0. This is not blocked-egress
+creation, Orka installation or Task qualification. Catalog pins exist for Linux
+amd64 and arm64; pins do not prove native execution. Podman, Docker's containerd
+image store, native arm64 execution and other tool-version pairings remain
+unverified. Non-Linux runtime use refuses; cross-building the CLI does not
+qualify cluster execution.
 
 <a id="kmx-orka-list"></a>
 
