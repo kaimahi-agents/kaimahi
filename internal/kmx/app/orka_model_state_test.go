@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
@@ -110,7 +112,11 @@ func TestOrkaModelState(t *testing.T) {
 		}
 		r.close()
 		p := filepath.Join(home, "orka-models", modelTestTarget, "11111111-1111-4111-8111-111111111111", "000001.json")
-		bad := []byte(`{"version":1,"SYNTHETIC_PRIVATE_INPUT":"token"}`)
+		valid, err := json.Marshal(modelTestCheckpoint())
+		if err != nil {
+			t.Fatal(err)
+		}
+		bad := []byte(strings.TrimSuffix(string(valid), "}") + `,"SYNTHETIC_PRIVATE_INPUT":"token"}`)
 		if err := os.WriteFile(p, bad, 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -317,6 +323,133 @@ func TestOrkaModelState(t *testing.T) {
 		if r, err := openModelRecord(ctx, modelTestTarget, false); err == nil {
 			r.close()
 			t.Fatal("ambiguous checkpoint accepted")
+		}
+	})
+	t.Run("writer_never_accepts_unreadable_records", func(t *testing.T) {
+		for _, large := range []bool{false, true} {
+			t.Run(map[bool]string{false: "annotation_keys", true: "anchor_envelope"}[large], func(t *testing.T) {
+				home := filepath.Join(t.TempDir(), "state")
+				t.Setenv("KMX_HOME", home)
+				ctx := context.Background()
+				r, err := openModelRecord(ctx, modelTestTarget, true)
+				if err != nil {
+					t.Fatal(err)
+				}
+				cp := modelTestCheckpoint()
+				if !large {
+					if err := r.checkpoint(ctx, cp); err != nil {
+						t.Fatal(err)
+					}
+				}
+				annotations := map[string]any{}
+				cp.Pending = &modelPendingAction{OperationID: cp.Connection.ID, Verb: "create", Resource: modelOwnedResource{APIVersion: "apps/v1", Kind: "Deployment", Name: "gateway", Marker: cp.Connection.ID, Purpose: "connection", Spec: map[string]any{"template": map[string]any{"metadata": map[string]any{"annotations": annotations}}}}}
+				if large {
+					annotations["codec.example/note"] = ""
+					data, err := json.Marshal(cp)
+					if err != nil {
+						t.Fatal(err)
+					}
+					annotations["codec.example/note"] = strings.Repeat("x", modelStateLimit-len(data))
+				} else {
+					for i := 0; i < 65; i++ {
+						annotations[fmt.Sprintf("codec.example/key-%02d", i)] = "nonsecret"
+					}
+				}
+				err = r.checkpoint(ctx, cp)
+				if err != nil {
+					if !errors.Is(err, errModelStateEncoding) {
+						t.Fatalf("wrong refusal: %v", err)
+					}
+					if err := r.close(); err != nil {
+						t.Fatal(err)
+					}
+					if large {
+						if _, err := os.Stat(filepath.Join(home, "orka-models", modelTestTarget, "connection.json")); !os.IsNotExist(err) {
+							t.Fatal("unreadable anchor published")
+						}
+						return
+					}
+					r, err = openModelRecord(ctx, modelTestTarget, false)
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer r.close()
+					if r.next != 1 || r.state.Pending != nil {
+						t.Fatal("rejected record changed the valid family")
+					}
+					return
+				}
+				// If the codec is extended later, accepting these inputs is fine,
+				// but successful writes must still survive a process reopen.
+				resource := cp.Pending.Resource
+				resource.UID = "created-uid"
+				resource.ResourceVersion = "17"
+				resource.Generation = 1
+				cp.Pending = nil
+				cp.Resources = []modelOwnedResource{resource}
+				if err := r.checkpoint(ctx, cp); err != nil {
+					t.Fatal(err)
+				}
+				r.close()
+				r, err = openModelRecord(ctx, modelTestTarget, false)
+				if err != nil {
+					t.Fatalf("successful write unreadable: %v", err)
+				}
+				defer r.close()
+				if len(r.state.Resources) != 1 || r.state.Resources[0].UID != "created-uid" {
+					t.Fatal("acknowledged identity lost")
+				}
+			})
+		}
+	})
+	t.Run("interrupted_stages_are_diagnostics_not_checkpoints", func(t *testing.T) {
+		for _, linked := range []bool{false, true} {
+			t.Run(map[bool]string{false: "before_link", true: "after_link"}[linked], func(t *testing.T) {
+				home := filepath.Join(t.TempDir(), "state")
+				t.Setenv("KMX_HOME", home)
+				ctx := context.Background()
+				r, err := openModelRecord(ctx, modelTestTarget, true)
+				if err != nil {
+					t.Fatal(err)
+				}
+				cp := modelTestCheckpoint()
+				if err := r.checkpoint(ctx, cp); err != nil {
+					t.Fatal(err)
+				}
+				family := filepath.Join(home, "orka-models", modelTestTarget, cp.Connection.ID)
+				stage := filepath.Join(family, ".model-stage-33333333-3333-4333-8333-333333333333")
+				if linked {
+					if err := os.Link(filepath.Join(family, "000000.json"), stage); err != nil {
+						t.Fatal(err)
+					}
+				} else if err := os.WriteFile(stage, []byte("unfinished bytes, not a record"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				before, err := os.ReadFile(stage)
+				if err != nil {
+					t.Fatal(err)
+				}
+				r.close()
+				r, err = openModelRecord(ctx, modelTestTarget, false)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer r.close()
+				if r.next != 1 || r.state.Connection.ID != cp.Connection.ID {
+					t.Fatal("stage treated as checkpoint")
+				}
+				cp.Connection.State = "model_ready"
+				if err := r.checkpoint(ctx, cp); err != nil {
+					t.Fatal(err)
+				}
+				after, err := os.ReadFile(stage)
+				if err != nil || string(before) != string(after) {
+					t.Fatal("diagnostic stage adopted or removed")
+				}
+				if _, err := os.Stat(filepath.Join(family, "000001.json")); err != nil {
+					t.Fatal("retained stage blocked the next publication")
+				}
+			})
 		}
 	})
 	t.Run("replaced_anchor_not_removed", func(t *testing.T) {

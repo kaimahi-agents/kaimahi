@@ -10,14 +10,17 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strings"
 
+	"github.com/google/uuid"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
 )
 
-const modelOperationAnnotation = "kaimahi.dev/orka-model-operation"
+const modelStagePrefix = ".model-stage-"
 const modelStateLimit = 64 << 10
 
+var errModelStateEncoding = errors.New("model state cannot be represented")
 var modelTargetPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var modelCheckpointPattern = regexp.MustCompile(`^[0-9]{6}\.json$`)
 
@@ -98,7 +101,7 @@ func openModelRecord(ctx context.Context, targetKey string, create bool) (record
 	if err != nil {
 		return nil, modelStateError(err)
 	}
-	r := &modelRecord{target: targetKey, dir: dir, publish: fileaccess.PublishPrivate}
+	r := &modelRecord{target: targetKey, dir: dir, publish: publishModelState}
 	defer func() {
 		if err != nil {
 			_ = r.close()
@@ -149,7 +152,18 @@ func openModelRecord(ctx context.Context, targetKey string, create bool) (record
 	if err != nil {
 		return nil, err
 	}
+	checkpoints := entries[:0]
+	for _, entry := range entries {
+		// An interrupted named stage is diagnostic only: never read, adopt or
+		// delete it. Only numbered publications participate in the fold.
+		if entry.Type().IsRegular() && strings.HasPrefix(entry.Name(), modelStagePrefix) && modelUUID(strings.TrimPrefix(entry.Name(), modelStagePrefix)) {
+			continue
+		}
+		checkpoints = append(checkpoints, entry)
+	}
+	entries = checkpoints
 	if len(entries) == 0 {
+		// Missing committed history is not proof that no effects ever ran.
 		return nil, errors.New("model family has no acknowledged checkpoint")
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
@@ -189,9 +203,16 @@ func (r *modelRecord) checkpoint(ctx context.Context, state modelCheckpoint) err
 	if err := r.validate(state); err != nil {
 		return modelStateError(err)
 	}
-	data, err := json.Marshal(state)
-	if err != nil || len(data) > modelStateLimit {
-		return modelStateError(errors.New("invalid model checkpoint bytes"))
+	data, err := encodeModelState(state)
+	if err != nil {
+		return modelStateError(err)
+	}
+	var anchor []byte
+	if !r.anchored {
+		anchor, err = encodeModelState(modelAnchor{Version: 1, Target: r.target, Initial: state})
+		if err != nil {
+			return modelStateError(err)
+		}
 	}
 	fail := func(err error) error { r.failed = true; return modelStateError(err) }
 	if !r.anchored {
@@ -201,7 +222,6 @@ func (r *modelRecord) checkpoint(ctx context.Context, state modelCheckpoint) err
 			return fail(err)
 		}
 		// The anchor is visible before a caller may send its first remote mutation.
-		anchor, _ := json.Marshal(modelAnchor{Version: 1, Target: r.target, Initial: state})
 		observed, publishErr := r.publish(ctx, r.dir, "connection.json", anchor)
 		r.anchored = observed.Visible
 		if publishErr != nil {
@@ -284,6 +304,31 @@ func validateModelResource(r modelOwnedResource, ack bool) error {
 	}
 	return nil
 }
+
+// Use caller-owned stage names so interrupted writes remain recognizable
+// without coupling the record format to fileaccess's private staging names.
+func publishModelState(ctx context.Context, dir *fileaccess.Directory, name string, data []byte) (fileaccess.PublicationResult, error) {
+	id, err := uuid.NewRandom()
+	if err != nil {
+		return fileaccess.PublicationResult{VisibilityKnown: true}, err
+	}
+	return fileaccess.PublishPrivateNamed(ctx, dir, name, data, modelStagePrefix+id.String())
+}
+
+func encodeModelState(value any) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", errModelStateEncoding, err)
+	}
+	// Apply the reader's complete byte/structure bounds before either file
+	// becomes visible; the anchor envelope is larger than its initial state.
+	var decoded any
+	if err := decodeModelState(bytes.NewReader(data), &decoded); err != nil {
+		return nil, fmt.Errorf("%w: %w", errModelStateEncoding, err)
+	}
+	return data, nil
+}
+
 func decodeModelState(reader io.Reader, out any) error {
 	data, err := io.ReadAll(io.LimitReader(reader, modelStateLimit+1))
 	if err != nil {
