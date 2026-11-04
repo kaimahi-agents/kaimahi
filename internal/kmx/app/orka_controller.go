@@ -9,7 +9,7 @@ import (
 
 // Both manifests identify the controller by role, not by Deployment name.
 // The v0.1.3 kustomize manifest uses control-plane=controller-manager and
-// app.kubernetes.io/name=orka; v0.2.0's chart uses component=controller.
+// app.kubernetes.io/name=orka; v0.3.0's chart uses component=controller.
 type orkaDeployment struct {
 	Kind     string `json:"kind"`
 	Metadata struct {
@@ -115,7 +115,7 @@ func (a *App) orkaRunningVersion() (string, error) {
 	}
 	image := strings.TrimSpace(controller.Spec.Template.Spec.Containers[0].Image)
 	if image == "ghcr.io/orka-agents/orka@"+orkaControllerDigest {
-		return "0.2.0 (release image digest)", nil
+		return "0.3.0 (release image digest)", nil
 	}
 	// A foreign digest cannot be inferred from a release tag.
 	if strings.Contains(image, "@sha256:") {

@@ -40,7 +40,7 @@ func reference(in io.Reader, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	validator, err := orkaschema.Offline("v0.2.0")
+	validator, err := orkaschema.Offline("v0.3.0")
 	if err != nil {
 		return err
 	}

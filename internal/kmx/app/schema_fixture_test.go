@@ -22,7 +22,7 @@ func loadFixtureCRDs() (map[string][]byte, error) {
 	}
 	crds := make(map[string][]byte, 3)
 	for _, kind := range []string{"Agent", "Provider", "Task"} {
-		raw, err := os.ReadFile(filepath.Join(filepath.Dir(source), "../orkaschema/fixtures/v0.1.3", strings.ToLower(kind)+"s.yaml"))
+		raw, err := os.ReadFile(filepath.Join(filepath.Dir(source), "../orkaschema/fixtures/v0.3.0", strings.ToLower(kind)+"s.yaml"))
 		if err != nil {
 			return nil, err
 		}

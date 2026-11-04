@@ -230,7 +230,7 @@ func TestCLIMigrationOrkaStatusDefaultAndTableReportsAndReadsAreIdentical(t *tes
 printf '%s\n' "$*" >> "$KMX_STATUS_LOG"
 case "$*" in
 *"config view"*) printf '%s' '{"current-context":"kind-test","contexts":[{"name":"kind-test","context":{"cluster":"kind-test"}}],"clusters":[{"name":"kind-test","cluster":{"server":"https://127.0.0.1:6443"}}]}';;
-*"get deploy -o json") printf '%s' '{"items":[{"metadata":{"name":"chart-controller","labels":{"app.kubernetes.io/component":"controller","app.kubernetes.io/name":"orka"}},"spec":{"template":{"spec":{"containers":[{"image":"ghcr.io/orka-agents/orka:0.2.0"}]}}}}]}';;
+*"get deploy -o json") printf '%s' '{"items":[{"metadata":{"name":"chart-controller","labels":{"app.kubernetes.io/component":"controller","app.kubernetes.io/name":"orka"}},"spec":{"template":{"spec":{"containers":[{"image":"ghcr.io/orka-agents/orka:0.3.0"}]}}}}]}';;
 *"get deploy"*) printf '%s' 'orka-controller=1/1 ';;
 *"get crd"*) printf '%s' 'agents.core.orka.ai providers.core.orka.ai ';;
 *"get providers"*) printf '%s' 'local=true ';;
@@ -249,7 +249,7 @@ esac
 		if err := execute(append(append([]string(nil), path...), "--context", "kind-test"), deps); err != nil || *loads != 1 {
 			t.Fatalf("%v: err=%v loads=%d diagnostics=%s", path, err, *loads, &diagnostics)
 		}
-		for _, want := range []string{"version running", "0.2.0", "deployments", "orka-controller=1/1", "providers", "local=true"} {
+		for _, want := range []string{"version running", "0.3.0", "deployments", "orka-controller=1/1", "providers", "local=true"} {
 			if !strings.Contains(out.String(), want) {
 				t.Fatalf("%v report lacks %q: %s", path, want, &out)
 			}

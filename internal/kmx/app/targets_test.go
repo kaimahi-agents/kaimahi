@@ -90,9 +90,9 @@ func TestTargetsOrkaDetectionIsScopedReadOnlyAndFailClosed(t *testing.T) {
 	}{
 		{name: "absent", response: `{"kind":"DeploymentList","items":[]}`, state: "absent"},
 		{name: "kubectl empty List", response: `{"apiVersion":"v1","items":[],"kind":"List","metadata":{"resourceVersion":""}}`, state: "absent"},
-		{name: "kubectl populated List", response: `{"apiVersion":"v1","items":[{"apiVersion":"apps/v1","kind":"Deployment","metadata":{"name":"orka-api-controller","namespace":"orka-system","labels":{"app.kubernetes.io/name":"orka","app.kubernetes.io/component":"controller"}},"spec":{"template":{"spec":{"containers":[{"name":"controller","image":"ghcr.io/orka-agents/orka@` + orkaControllerDigest + `"}]}}}}],"kind":"List","metadata":{"resourceVersion":""}}`, state: "present", version: "v0.2.0"},
-		{name: "pinned with sidecar", response: `{"kind":"DeploymentList","items":[` + pinned + `]}`, state: "present", version: "v0.2.0"},
-		{name: "tag is not qualification", response: `{"kind":"DeploymentList","items":[` + controller(`[{"name":"controller","image":"ghcr.io/orka-agents/orka:v0.2.0"}]`) + `]}`, state: "present"},
+		{name: "kubectl populated List", response: `{"apiVersion":"v1","items":[{"apiVersion":"apps/v1","kind":"Deployment","metadata":{"name":"orka-api-controller","namespace":"orka-system","labels":{"app.kubernetes.io/name":"orka","app.kubernetes.io/component":"controller"}},"spec":{"template":{"spec":{"containers":[{"name":"controller","image":"ghcr.io/orka-agents/orka@` + orkaControllerDigest + `"}]}}}}],"kind":"List","metadata":{"resourceVersion":""}}`, state: "present", version: "v0.3.0"},
+		{name: "pinned with sidecar", response: `{"kind":"DeploymentList","items":[` + pinned + `]}`, state: "present", version: "v0.3.0"},
+		{name: "tag is not qualification", response: `{"kind":"DeploymentList","items":[` + controller(`[{"name":"controller","image":"ghcr.io/orka-agents/orka:v0.3.0"}]`) + `]}`, state: "present"},
 		{name: "foreign digest", response: `{"kind":"DeploymentList","items":[` + controller(`[{"name":"controller","image":"example.test/foreign@`+orkaControllerDigest+`"}]`) + `]}`, state: "present"},
 		{name: "ambiguous", response: `{"kind":"DeploymentList","items":[` + pinned + `,` + pinned + `]}`, state: "unreadable", code: "ambiguous"},
 		{name: "invalid JSON", response: `PRIVATE-REMOTE-PAYLOAD`, state: "unreadable", code: "malformed"},

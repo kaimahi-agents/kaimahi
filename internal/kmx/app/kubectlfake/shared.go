@@ -55,8 +55,8 @@ func (r Request) pins() {
 		"token":             orkaTestToken(),
 		"providerPlural":    orkaPlural("Provider"),
 		"annotationPointer": orkaAnnotationPointer("a~/b"),
-		"workerController":  workerController("controller", "orka-0.2.0", "orka", "Helm", `["--ai-worker-service-account-name=worker"]`),
-		"workerAccount":     workerAccount("worker", OrkaNamespace, "orka-0.2.0", "orka", "ai"),
+		"workerController":  workerController("controller", "orka-0.3.0", "orka", "Helm", `["--ai-worker-service-account-name=worker"]`),
+		"workerAccount":     workerAccount("worker", OrkaNamespace, "orka-0.3.0", "orka", "ai"),
 	}); err != nil {
 		fmt.Fprintln(r.Stderr, err)
 		exit(1)

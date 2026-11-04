@@ -7,7 +7,7 @@ import (
 )
 
 func TestReleaseLiftPromotionRuntimeFieldPolicy(t *testing.T) {
-	source := suiteNativeRuntime{ControllerName: "controller", ControllerUID: "controller-uid", ControllerServiceAccount: "controller-account", ControllerImage: "controller-image", ControllerGeneration: 1, ControllerReplicas: 1, Mode: "harness-v2", WatchNamespace: "staging", AIWorkerImage: "worker-image", WorkerAccount: "worker-account", WorkerAccountUID: "worker-uid", Helm: suiteNativeHelmIdentity{Chart: "orka-0.2.0", Instance: "staging", App: "orka", ManagedBy: "Helm"}}
+	source := suiteNativeRuntime{ControllerName: "controller", ControllerUID: "controller-uid", ControllerServiceAccount: "controller-account", ControllerImage: "controller-image", ControllerGeneration: 1, ControllerReplicas: 1, Mode: "harness-v2", WatchNamespace: "staging", AIWorkerImage: "worker-image", WorkerAccount: "worker-account", WorkerAccountUID: "worker-uid", Helm: suiteNativeHelmIdentity{Chart: "orka-0.3.0", Instance: "staging", App: "orka", ManagedBy: "Helm"}}
 	for _, tc := range []struct {
 		field   string
 		allowed bool

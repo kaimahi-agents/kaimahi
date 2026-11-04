@@ -51,10 +51,10 @@ func TestSuitePublicExportOfflineAndPrivacy(t *testing.T) {
 	if err := suitecore.Unmarshal(data, &e); err != nil {
 		t.Fatal(err)
 	}
-	if e.Execution.Runtime != (suitecore.EvidenceImplementation{ID: "orka", Version: "0.2.0", Digest: "sha256:7c1727f92d5c0cf05d464c6eb9e70b8342cb5a7a87c2e35338f051d7b85aa370"}) {
+	if e.Execution.Runtime != (suitecore.EvidenceImplementation{ID: "orka", Version: "0.3.0", Digest: "sha256:84cdbd635c61169f46acef1b7b4003e253c4f7cd920519577634e834776535c5"}) {
 		t.Fatalf("runtime: %#v", e.Execution.Runtime)
 	}
-	if e.Execution.Harness != (suitecore.EvidenceImplementation{ID: "orka", Version: "harness-v2", Digest: "sha256:814d7149308e62730df59759c5137667cad04520c94cc50ff56e5028fdc8bcd4"}) {
+	if e.Execution.Harness != (suitecore.EvidenceImplementation{ID: "orka", Version: "harness-v2", Digest: "sha256:7777385848bf8382bcc66b570ac23414f39be375e4c7f2b4f194de079ae82bb4"}) {
 		t.Fatalf("harness: %#v", e.Execution.Harness)
 	}
 	if e.Execution.Renderer.ID != "kmx.native-orka" || e.Execution.Renderer.Version != "v2" || e.Execution.Profile.ID != "kmx.orka-harness-v2-tool-free-openai" {

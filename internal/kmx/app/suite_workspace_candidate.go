@@ -170,7 +170,7 @@ func (a *App) evaluateSuiteWorkspaceCandidate(ctx context.Context, p *PreparedSu
 	if err := checkOutput(); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintln(worker.Err, "Task execution uses the selected ServiceAccount's full effective authority. v0.2.0 Task-read enforcement is unverified; v0.1.3 only authenticates result reads. Retain the namespaced Task-get grant. Discarding the token is not revocation. Candidate cleanup does not erase runtime/model logs or independently retained results."); err != nil {
+	if _, err := fmt.Fprintln(worker.Err, "Task execution uses the selected ServiceAccount's full effective authority. v0.3.0 Task-read enforcement is unverified; v0.1.3 only authenticates result reads. Retain the namespaced Task-get grant. Discarding the token is not revocation. Candidate cleanup does not erase runtime/model logs or independently retained results."); err != nil {
 		return err
 	}
 	if _, err := fmt.Fprintf(worker.Out, "Workspace: %q; AgentSuite: %s\n", p.root, p.prepared.Descriptor.Digest); err != nil {

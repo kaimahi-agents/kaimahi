@@ -9,7 +9,9 @@ v0.8.1 includes native suite evaluation, publication and Lift, with the
 Orka v0.2.0 Helm installer. Pin `@v0.8.1` for a repeatable build; `@main` is the moving
 development option. Orka's own installation and upgrade limits are separate:
 see [orka.md](orka.md). This release pins the **Orka v0.2.0** chart; the
-historical Kaimahi v0.2.0 release reported Orka v0.1.3.
+historical Kaimahi v0.2.0 release reported Orka v0.1.3. Current `main`
+pins **Orka v0.3.0** for fresh installations only, with v0.3.0 offline
+schemas by default; it does not upgrade existing v0.2.0 runtimes.
 
 The official Homebrew namespace is limited to the public
 `kaimahi-agents/homebrew-tap` repository and its `kmx` formula. No trademark is
@@ -138,6 +140,7 @@ Orka runtime pins are independent of kmx tags:
 
 | kmx build | Orka install | Offline schema target |
 |---|---|---|
+| Current `main` | v0.3.0 verified Helm chart, harness-v2 (`fullnameOverride=orka-api`); fresh installations only | v0.3.0 by default; explicit v0.2.0, v0.1.3 and old `main` snapshots remain readable |
 | Kaimahi v0.8.1 release | v0.2.0 verified Helm chart, harness-v2 (`fullnameOverride=orka-api`) | v0.2.0 by default; explicit v0.1.3 or old `main` snapshot still readable |
 | Historical Kaimahi v0.2.0 release | v0.1.3 pinned manifest | historical behavior; not an upgrade path to the current chart |
 

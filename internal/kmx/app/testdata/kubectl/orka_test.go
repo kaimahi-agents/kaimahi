@@ -102,7 +102,7 @@ func TestOrkaKubectlHelper(t *testing.T) {
 				fail()
 			}
 			target := "v0.1.3"
-			if scenario == "main" || scenario == "v0.2.0" {
+			if scenario == "main" || scenario == "v0.2.0" || scenario == "v0.3.0" {
 				target = scenario
 			}
 			plural, _, _ := strings.Cut(name, ".")

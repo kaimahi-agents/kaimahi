@@ -9,20 +9,22 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	"go.yaml.in/yaml/v3"
 )
 
 const (
 	orkaRelease    = "orka"
 	orkaChartLabel = "kmx.kaimahi.dev/installed"
-	// Digests are from v0.2.0 candidate.json, not tag-to-digest guesses.
-	orkaControllerDigest    = "sha256:7c1727f92d5c0cf05d464c6eb9e70b8342cb5a7a87c2e35338f051d7b85aa370"
-	orkaAIWorkerDigest      = "sha256:814d7149308e62730df59759c5137667cad04520c94cc50ff56e5028fdc8bcd4"
-	orkaGeneralWorkerDigest = "sha256:931ad167b916ee83ba1a2d4ba2ca275fd57922bc45a944e8ca84f136525a37fb"
-	orkaPublisherDigest     = "sha256:596a074bac827e65c8d8813a6f4ac1ebac2bc130632bf0a185db6d521a1b1243"
-	orkaCodexImage          = "ghcr.io/orka-agents/orka/acp-codex-runtime@sha256:1f3f52eaa2c17403219f595f99bfad2e4d2d66f861921357fbd939825fc113ea"
-	orkaClaudeImage         = "ghcr.io/orka-agents/orka/acp-claude-runtime@sha256:ec8b51083626c14d1dd206fc6a57ecd6f5aeabf10522fc665903fdb205543e92"
-	orkaCopilotImage        = "ghcr.io/orka-agents/orka/acp-copilot-runtime@sha256:32983da321bb03ef57eb80508454117a0142485782e28e935297dcd9234133ab"
-	orkaOpencodeImage       = "ghcr.io/orka-agents/orka/acp-opencode-runtime@sha256:3d8e84b811834d768785055fef63ea1f1179eb7cb0b0bc1856bbf81023c48f9a"
+	// Digests are from v0.3.0 candidate.json, not tag-to-digest guesses.
+	orkaControllerDigest    = "sha256:84cdbd635c61169f46acef1b7b4003e253c4f7cd920519577634e834776535c5"
+	orkaAIWorkerDigest      = "sha256:7777385848bf8382bcc66b570ac23414f39be375e4c7f2b4f194de079ae82bb4"
+	orkaGeneralWorkerDigest = "sha256:5134787670e53d283d22e448e4a3ab5f6c67460e95b152673d6d764247709274"
+	orkaPublisherDigest     = "sha256:f8414ac9fb528784eaf40791b5ae49f93a77082bc85b705d50bb8c1b8fa01a25"
+	orkaCodexImage          = "ghcr.io/orka-agents/orka/acp-codex-runtime@sha256:549486a886249d4fcb7ee37664fa94b400fd6ec9b9d90a174f125eaaf30bdf39"
+	orkaClaudeImage         = "ghcr.io/orka-agents/orka/acp-claude-runtime@sha256:96a683ff62ec527ea886b7fa6389d16ecc528f9b94a00fb898d52ee7f92a01e0"
+	orkaCopilotImage        = "ghcr.io/orka-agents/orka/acp-copilot-runtime@sha256:d921c217d9a58a888dab70422fbbfd85408efaf97c59493acdaa6b105bc461e1"
+	orkaOpencodeImage       = "ghcr.io/orka-agents/orka/acp-opencode-runtime@sha256:ec94fbf8e257400c148f0c64b29ed501723456c66e1d4d46abe253e085358414"
 )
 
 type orkaHelmImage struct {
@@ -97,6 +99,48 @@ func orkaChartCRDs(chart []byte) ([]byte, int, error) {
 	return bytes.Join(crds, []byte("\n---\n")), len(crds), nil
 }
 
+// Oversized chart CRDs cannot carry client-side apply's last-applied annotation.
+// Apply separately so a conflict identifies its CRD without forcing ownership.
+func (a *App) applyOrkaCRDs(crds []byte, dryRun bool) error {
+	decoder := yaml.NewDecoder(bytes.NewReader(crds))
+	quiet := *a.Run
+	quiet.Echo = false
+	if dryRun {
+		quiet.Stdout = io.Discard
+	}
+	for {
+		var document yaml.Node
+		if err := decoder.Decode(&document); err == io.EOF {
+			return nil
+		} else if err != nil {
+			return fmt.Errorf("read Orka chart CRD: %w", err)
+		}
+		if len(document.Content) == 0 || document.Content[0].Tag == "!!null" {
+			continue
+		}
+		var identity struct {
+			Metadata struct {
+				Name string `yaml:"name"`
+			} `yaml:"metadata"`
+		}
+		if err := document.Decode(&identity); err != nil || identity.Metadata.Name == "" {
+			return fmt.Errorf("Orka chart CRD has no readable name")
+		}
+		body, err := yaml.Marshal(&document)
+		if err != nil {
+			return fmt.Errorf("encode Orka CRD %s: %w", identity.Metadata.Name, err)
+		}
+		args := []string{"apply", "--server-side", "--field-manager=kmx"}
+		if dryRun {
+			args = append(args, "--dry-run=server")
+		}
+		args = append(args, "-f", "-")
+		if err := quiet.RunStdin(body, "kubectl", a.kubectl(args...)...); err != nil {
+			return fmt.Errorf("applying Orka CRD %s refused: %w. %s", identity.Metadata.Name, err, a.orkaInstallRecovery())
+		}
+	}
+}
+
 // A tag alone does not prove kmx owns a release. Only its chart version,
 // release status, explicit harness mode and marker together allow a repeat.
 func (a *App) orkaInstallState() (bool, error) {
@@ -118,7 +162,7 @@ func (a *App) orkaInstallState() (bool, error) {
 	if err := json.Unmarshal([]byte(raw), &releases); err != nil {
 		return false, fmt.Errorf("invalid Orka Helm release list: %w", err)
 	}
-	if len(releases) == 1 && releases[0].Name == orkaRelease && releases[0].Chart == "orka-0.2.0" && strings.TrimPrefix(releases[0].AppVersion, "v") == "0.2.0" {
+	if len(releases) == 1 && releases[0].Name == orkaRelease && releases[0].Chart == "orka-0.3.0" && strings.TrimPrefix(releases[0].AppVersion, "v") == "0.3.0" {
 		values, err := a.Run.Capture("helm", "get", "values", orkaRelease, "-n", OrkaNamespace, "--kube-context", a.Cfg.KubeContext, "-o", "json")
 		if err != nil {
 			// Helm stderr can include chart-controlled text. Refuse without
@@ -174,7 +218,7 @@ func (a *App) orkaInstallState() (bool, error) {
 			default:
 				status = "not deployed"
 			}
-			return false, fmt.Errorf("kmx-owned Orka Helm release is %s; refusing automatic retry over a partial installation. Inspect `helm --kube-context %s -n %s status %s` and Pod events. After resolving any pending operation, an operator may explicitly retry the same SHA-256-verified chart with `helm --kube-context %s -n %s upgrade %s <verified-orka-0.2.0.tgz> --reuse-values --wait` (never --force), or clean the target before retrying kmx. %s", status, shellArg(a.Cfg.KubeContext), OrkaNamespace, orkaRelease, shellArg(a.Cfg.KubeContext), OrkaNamespace, orkaRelease, a.orkaInstallRecovery())
+			return false, fmt.Errorf("kmx-owned Orka Helm release is %s; refusing automatic retry over a partial installation. Inspect `helm --kube-context %s -n %s status %s` and Pod events. After resolving any pending operation, an operator may explicitly retry the same SHA-256-verified chart with `helm --kube-context %s -n %s upgrade %s <verified-orka-0.3.0.tgz> --reuse-values --wait` (never --force), or clean the target before retrying kmx. %s", status, shellArg(a.Cfg.KubeContext), OrkaNamespace, orkaRelease, shellArg(a.Cfg.KubeContext), OrkaNamespace, orkaRelease, a.orkaInstallRecovery())
 		}
 		status := releases[0].Status
 		switch status {
@@ -252,9 +296,9 @@ func (a *App) applyOrkaChart(chart []byte) error {
 	}
 	quiet := *a.Run
 	quiet.Echo = false
-	fmt.Fprintf(a.Err, "kubectl --context %s apply -f - # (%d CRDs from verified Orka chart)\n", a.Cfg.KubeContext, count)
-	if err := quiet.RunStdin(crds, "kubectl", a.kubectl("apply", "-f", "-")...); err != nil {
-		return fmt.Errorf("applying Orka CRDs before chart: %w", err)
+	fmt.Fprintf(a.Err, "kubectl --context %s apply --server-side --field-manager=kmx -f - # (%d CRDs, applied separately)\n", a.Cfg.KubeContext, count)
+	if err := a.applyOrkaCRDs(crds, false); err != nil {
+		return err
 	}
 	if err := quiet.RunStdin(crds, "kubectl", a.kubectl("wait", "--for=condition=Established", "--timeout=120s", "-f", "-")...); err != nil {
 		return fmt.Errorf("waiting for Orka CRDs before Gateway discovery: %w", err)

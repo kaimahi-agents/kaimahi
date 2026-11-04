@@ -29,7 +29,7 @@ func workerAccount(name, namespace, chart, instance, trust string) string {
 }
 
 func TestOrkaAIWorkerAccount(t *testing.T) {
-	const chart = "orka-0.2.0"
+	const chart = "orka-0.3.0"
 	for _, tt := range []struct {
 		name, deployments, accounts, want, refusal string
 	}{
@@ -306,7 +306,7 @@ func TestQuickstartK8sToolUsesExactGatewayPolicy(t *testing.T) {
 		t.Fatal("Tool does not reference the exact managed gateway policy and authority")
 	}
 	if !readerRoleOK || !readerBindingOK {
-		t.Fatalf("v0.2.0 AI worker cannot read only the managed gateway policy (role=%t binding=%t)", readerRoleOK, readerBindingOK)
+		t.Fatalf("v0.3.0 AI worker cannot read only the managed gateway policy (role=%t binding=%t)", readerRoleOK, readerBindingOK)
 	}
 }
 
@@ -398,7 +398,7 @@ func TestRenderQuickstartK8sToolRejectsUnsafeInputs(t *testing.T) {
 
 func TestQuickstartK8sToolInstallDiscoversWorkerBeforeWrites(t *testing.T) {
 	for _, tt := range []struct{ name, deployments, account, want string }{
-		{"stock Helm worker", workerController("controller", "orka-0.2.0", "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`), workerAccount("orka-ai-worker", OrkaNamespace, "orka-0.2.0", "orka", "ai"), "orka-ai-worker"},
+		{"stock Helm worker", workerController("controller", "orka-0.3.0", "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`), workerAccount("orka-ai-worker", OrkaNamespace, "orka-0.3.0", "orka", "ai"), "orka-ai-worker"},
 		{"absent controller", "", "", ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -466,7 +466,7 @@ func TestQuickstartK8sToolInstallMissingGrantReportsDenial(t *testing.T) {
   *" create --raw /apis/authorization.k8s.io/v1/subjectaccessreviews -f - "*) printf 'sar\n' >> %[3]q; /bin/cat >/dev/null; printf '%%s' '{"status":{"allowed":false,"denied":false}}' ;;
   *" get tools.core.orka.ai "*) printf 'tool\n' >> %[3]q; exit 1 ;;
   *) exit 1 ;;
-esac`, workerController("controller", "orka-0.2.0", "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`), workerAccount("orka-ai-worker", OrkaNamespace, "orka-0.2.0", "orka", "ai"), steps))
+esac`, workerController("controller", "orka-0.3.0", "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`), workerAccount("orka-ai-worker", OrkaNamespace, "orka-0.3.0", "orka", "ai"), steps))
 	t.Setenv("PATH", dir)
 	a := &App{Cfg: &config.Config{KubeContext: "kind-demo"}, Run: &run.Runner{}, Err: io.Discard}
 	err := a.installQuickstartK8sTool()

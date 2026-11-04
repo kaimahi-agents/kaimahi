@@ -162,7 +162,7 @@ spec:
         description: Optional pod phase filter. Use Running when asked which pods are running.
     required: [resource]
   http:
-    # v0.2.0 requires a public original authority at execution time, with
+    # v0.3.0 requires a public original authority at execution time, with
     # bounded DNS answers. This public IP avoids DNS drift; it is logical,
     # not the transport destination. The policy routes to the exact
     # same-namespace Service above or refuses the Tool before execution.

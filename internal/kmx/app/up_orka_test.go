@@ -36,7 +36,7 @@ case "$*" in
   *kagent.dev*)
     printf 'error: the server doesn'"'"'t have a resource type "agents"\n' >&2
     exit 1 ;;
-  *"apply -f -"*)
+  *"apply --server-side --field-manager=kmx -f -"*|*"apply -f -"*)
     body=$(cat)
     case "$body" in
       *"kind: Provider"*) printf '%s' "$body" > "$KMX_TEST_ARGS.provider"; printf '3001' > "$KMX_TEST_ARGS.provider-rv" ;;
@@ -337,7 +337,7 @@ func TestOrkaProviderSemanticNoop(t *testing.T) {
 
 func TestOrkaUpRefusesForeignReleaseBeforeModelPull(t *testing.T) {
 	a, _, args := upFixture(t)
-	t.Setenv("KMX_TEST_UP_HELM_LIST", `[{"name":"orka","chart":"foreign-0.2.0","app_version":"0.2.0","status":"deployed"}]`)
+	t.Setenv("KMX_TEST_UP_HELM_LIST", `[{"name":"orka","chart":"foreign-0.3.0","app_version":"0.3.0","status":"deployed"}]`)
 	err := a.Up("")
 	if err == nil || !strings.Contains(err.Error(), "refusing to overwrite") {
 		t.Fatalf("foreign Orka release did not stop up: %v", err)
@@ -346,14 +346,14 @@ func TestOrkaUpRefusesForeignReleaseBeforeModelPull(t *testing.T) {
 	if !strings.Contains(calls, "helm list") {
 		t.Fatal("Orka ownership was not inspected")
 	}
-	if strings.Contains(calls, "apply -f -") || strings.Contains(calls, "ollama") {
+	if strings.Contains(calls, " apply ") || strings.Contains(calls, "ollama") {
 		t.Fatalf("model setup began before Orka refusal: %s", calls)
 	}
 }
 
 func TestOrkaUpRefusesUnreadyOwnedReleaseBeforeModelPull(t *testing.T) {
 	a, _, args := upFixture(t)
-	t.Setenv("KMX_TEST_UP_HELM_LIST", `[{"name":"orka","chart":"orka-0.2.0","app_version":"v0.2.0","status":"deployed"}]`)
+	t.Setenv("KMX_TEST_UP_HELM_LIST", `[{"name":"orka","chart":"orka-0.3.0","app_version":"v0.3.0","status":"deployed"}]`)
 	t.Setenv("KMX_TEST_UP_HELM_VALUES", pinnedOrkaHelmValues(t, nil))
 	controller := orkaDeployWithImage("chart-controller", "ghcr.io/orka-agents/orka@"+orkaControllerDigest)
 	controller["status"].(map[string]any)["availableReplicas"] = 0
@@ -363,7 +363,7 @@ func TestOrkaUpRefusesUnreadyOwnedReleaseBeforeModelPull(t *testing.T) {
 		t.Fatalf("unready release did not stop up: %v", err)
 	}
 	calls := upCalls(t, args)
-	if strings.Contains(calls, "ollama pull") || strings.Contains(calls, "apply -f -") {
+	if strings.Contains(calls, "ollama pull") || strings.Contains(calls, " apply ") {
 		t.Fatalf("model setup began before readiness refusal: %s", calls)
 	}
 }

@@ -69,6 +69,7 @@ func TestOfflineAndInstalledValidateOrdinaryWholeBundles(t *testing.T) {
 	for target, pin := range map[string]string{
 		"v0.1.3": "b07d42c0b9e52fe511b434827a342b4720f5d422",
 		"v0.2.0": "5f4eb543b2b35a3afb8e7ea01f5f53985e25d4c1",
+		"v0.3.0": "a533c3491d350263c0fa39bb7887dabd0d055c4e",
 		"main":   "7c4753c2c68a510112ea2bb25b60a406d9c45686",
 	} {
 		t.Run(target, func(t *testing.T) {
@@ -100,7 +101,7 @@ func TestOfflineAndInstalledValidateOrdinaryWholeBundles(t *testing.T) {
 		})
 	}
 	v, err := orkaschema.Offline("")
-	if err != nil || !strings.Contains(v.Provenance(), "v0.2.0") {
+	if err != nil || !strings.Contains(v.Provenance(), "v0.3.0") {
 		t.Fatalf("default target: %v", err)
 	}
 	for _, target := range []string{"latest", "v0.1.2", "../main"} {
@@ -115,7 +116,7 @@ func TestRateLimitDriftRefusesEachResourceByExactPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, target := range []string{"v0.2.0", "main"} {
+	for _, target := range []string{"v0.2.0", "v0.3.0", "main"} {
 		validator, err := orkaschema.Offline(target)
 		if err != nil {
 			t.Fatal(err)
@@ -161,7 +162,7 @@ func TestWholeResourceValidationNotJustRateLimits(t *testing.T) {
 		{"Task enum", "Task", "spec.type", func(d map[string]any) { d["spec"].(map[string]any)["type"] = "unsupported" }},
 		{"Task prompt type", "Task", "spec.prompt", func(d map[string]any) { d["spec"].(map[string]any)["prompt"] = false }},
 	}
-	for _, target := range []string{"v0.1.3", "v0.2.0", "main"} {
+	for _, target := range []string{"v0.1.3", "v0.2.0", "v0.3.0", "main"} {
 		v, err := orkaschema.Offline(target)
 		if err != nil {
 			t.Fatal(err)
@@ -290,6 +291,9 @@ func TestFixtureBytesMatchImmutableSources(t *testing.T) {
 		"v0.2.0/agents.yaml":    "01005e7fc327b2b5b7d8dc32ffa27d80d3c1ccfe9a2a36bab6dda84dafcff912",
 		"v0.2.0/providers.yaml": "6185d760bd43d00a4594cfa8fd50ff86b269f952be6656884d000f67e64562f8",
 		"v0.2.0/tasks.yaml":     "045a954158061183150067a1615bf037df337eaaa1f6b3c4e408b25c54a3e39c",
+		"v0.3.0/agents.yaml":    "cdc2de28707e422f6348a6a4e7f6a81ee4b0d2933b57353bacbe08a7ecfbb215",
+		"v0.3.0/providers.yaml": "6185d760bd43d00a4594cfa8fd50ff86b269f952be6656884d000f67e64562f8",
+		"v0.3.0/tasks.yaml":     "263d5e2d04e15e4ee62a422eba9189f0db80e8d4ce8a880c0bd492673f75f771",
 		"main/agents.yaml":      "9e7bc6252cdf45cdc9fc127a558b3b2f77eb4ff1a1388386996acbf1d58da43c",
 		"main/providers.yaml":   "6185d760bd43d00a4594cfa8fd50ff86b269f952be6656884d000f67e64562f8",
 		"main/tasks.yaml":       "e0c657f3a9c0878665e36ae18a3cfe62ecb563efb8b5141576b57024e8b52279",

@@ -118,6 +118,10 @@ independent, without resend.
 
 ## One command, and an agent that answers
 
+These examples require a build from the current `main` checkout and install
+Orka v0.3.0. With released kmx v0.8.1, use `kmx quickstart` instead; that release
+pins Orka v0.2.0.
+
 The local quickstart below is the **supported deterministic Orka first-answer
 path**: it ends with a native Orka Agent answering a question. For guided
 custom authoring and a first answer, use the wizard described below.
@@ -134,7 +138,7 @@ export KUBE_CTX=kind-kmx-local
 kmx cluster quickstart
 ```
 
-On a fresh cluster this creates kind, keyless Ollama, the pinned **Orka v0.2.0
+On a fresh cluster this creates kind, keyless Ollama, the pinned **Orka v0.3.0
 Helm chart**, a placeholder Provider Secret, the Task result-reader account and
 RBAC, and the tool-free `hello-world-agent` native source → full eval → publication →
 reviewed Deploy/placement Verify workflow. It then asks a separate **fresh Task** and requires a readable answer; readiness alone is not an answer.

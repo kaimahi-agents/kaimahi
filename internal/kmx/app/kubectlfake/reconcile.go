@@ -97,7 +97,7 @@ func (r Request) reconcile() {
 			fail()
 		}
 		if r.Getenv("KMX_LIFT_POLICY_TEST") == "1" && kind == "serviceaccounts" {
-			fmt.Fprintf(r.Stdout, `{"items":[%s]}`, workerAccount("orka-ai-worker", OrkaNamespace, "orka-0.2.0", "orka", "ai"))
+			fmt.Fprintf(r.Stdout, `{"items":[%s]}`, workerAccount("orka-ai-worker", OrkaNamespace, "orka-0.3.0", "orka", "ai"))
 			exit(0)
 		}
 		if r.Getenv("KMX_LIFT_TEST") == "1" {
@@ -114,7 +114,7 @@ func (r Request) reconcile() {
 					labels["app.kubernetes.io/component"] = "controller"
 				}
 				if r.Getenv("KMX_LIFT_POLICY_TEST") == "1" {
-					fmt.Fprintf(r.Stdout, `{"items":[%s]}`, workerController("orka-controller", "orka-0.2.0", "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`))
+					fmt.Fprintf(r.Stdout, `{"items":[%s]}`, workerController("orka-controller", "orka-0.3.0", "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`))
 					exit(0)
 				}
 				_ = json.NewEncoder(r.Stdout).Encode(map[string]any{"items": []any{map[string]any{"metadata": map[string]any{"name": selected, "labels": labels}}}})
@@ -216,7 +216,7 @@ func (r Request) reconcile() {
 		}
 		if kind == "crd" {
 			plural, _, _ := strings.Cut(name, ".")
-			raw, e := os.ReadFile(filepath.Join(r.Getenv("KMX_RECONCILE_FIXTURES"), "v0.1.3", plural+".yaml"))
+			raw, e := os.ReadFile(filepath.Join(r.Getenv("KMX_RECONCILE_FIXTURES"), "v0.3.0", plural+".yaml"))
 			if e != nil {
 				fail()
 			}
