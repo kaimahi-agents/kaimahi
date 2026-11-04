@@ -27,6 +27,8 @@ type wireFixture struct {
 	ActualModel     string
 	HostVersion     string
 	ToolName        string
+	UsageAtEnd      bool
+	DropDispatch    bool
 	DelayDiscovery  bool
 	Lifecycle       string
 	Sends, Disposed atomic.Int64
@@ -125,12 +127,17 @@ func wireRunnerWith(t *testing.T, pending, cleanupFails bool, configure func(*Op
 					continue
 				}
 				fixture.Sends.Add(1)
+				if fixture.DropDispatch {
+					return
+				}
 				action(string(p.Action))
 				actual := fixture.ActualModel
 				if actual == "" {
 					actual = "model"
 				}
-				action(fmt.Sprintf(`{"type":"chat/usage","turnId":%q,"usage":{"model":%q}}`, a.TurnId, actual))
+				if !fixture.UsageAtEnd {
+					action(fmt.Sprintf(`{"type":"chat/usage","turnId":%q,"usage":{"model":%q}}`, a.TurnId, actual))
+				}
 				if fixture.ActualModel != "" {
 					continue
 				}

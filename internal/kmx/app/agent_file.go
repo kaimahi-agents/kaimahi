@@ -19,6 +19,8 @@ import (
 )
 
 type FilePreviewOptions struct {
+	// Machine observes checked metadata without expanding legacy result schemas.
+	Machine                  *MachineFileObserver
 	Copilotd                 bool
 	SessionCreated           func(caseID, sessionURI string) error
 	ValidateSource           func(context.Context) error
@@ -427,6 +429,9 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		}
 		r.Examples = append(r.Examples, row)
 	}
+	if opt.Machine != nil {
+		opt.Machine.bind(selected, parsed.Revision, r.SnapshotRevision, route)
+	}
 	if opt.Input != nil {
 		c := previewCompletion("not_run", "not_run")
 		r.AdHoc = &c
@@ -515,7 +520,23 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 			request.SourceText = append(request.SourceText, string(suite.Source))
 		}
 	}
-	observer := previewCaseObserver(ctx, selected, parsed, route, opt.CaseFinished, opt.SkipAssertions, opt.Copilotd)
+	notify := opt.CaseFinished
+	if opt.Machine != nil {
+		request.TelemetryReady = opt.Machine.ready
+		request.Observed = func(o agentpreview.Observation) error {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return opt.Machine.observed(o)
+		}
+		notify = func(p FilePreviewCaseProgress) {
+			if opt.CaseFinished != nil {
+				opt.CaseFinished(p)
+			}
+			opt.Machine.finished(p)
+		}
+	}
+	observer := previewCaseObserver(ctx, selected, parsed, route, notify, opt.SkipAssertions, opt.Copilotd)
 	if observer != nil {
 		request.ExampleFinished = func(row agentpreview.ExampleOutcome) {
 			if opt.pair == nil || row.Completion.SnapshotRevision == request.SnapshotRevision {
@@ -532,6 +553,16 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		runCtx, judgeNotes = newFileJudgeContext(ctx)
 	}
 	outcome, cause := a.FileRunner.Run(runCtx, request)
+	if opt.Machine != nil {
+		opt.Machine.returned(outcome)
+		status := "complete"
+		if cause != nil {
+			status = "failed"
+		}
+		if e := opt.Machine.stage("execution", status); e != nil {
+			cause = errors.Join(agentpreview.ErrDiagnosticsFailed, cause, e)
+		}
+	}
 	if errors.Is(cause, agentpreview.ErrUnsafeToolContent) || errors.Is(cause, agentpreview.ErrCredentialContent) || errors.Is(cause, copilot.ErrCredentialContent) {
 		r.File = FilePreviewIdentity{Path: "[agent file]"}
 		r.SnapshotRevision, r.SavedSnapshotRevision = "", ""
@@ -570,6 +601,22 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		if r.JudgeRoute != nil {
 			r.Notices = append(r.Notices, nativeJudgeNotice)
 		}
+	}
+	if opt.Machine != nil {
+		if e := opt.Machine.stage("assertions", "active"); e != nil {
+			r.State = "error"
+			return fail("diagnostics_failed", 1)
+		}
+		defer func() {
+			status := "complete"
+			if result.State != "complete" {
+				status = "failed"
+			}
+			if e := opt.Machine.stage("assertions", status); e != nil {
+				result, resultErr = fail("diagnostics_failed", 1)
+				result.State = "error"
+			}
+		}()
 	}
 	// Whitelist result fields; never marshal runtime assertion rows (which include
 	// judge evidence and raw reasons), answers or journal handles directly.
