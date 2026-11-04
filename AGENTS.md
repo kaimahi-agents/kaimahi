@@ -11,7 +11,8 @@ changes in the package's Go doc comment.
 
 For non-trivial code, workflow, checker, dependency, security, storage or
 cross-platform changes, run `$autoreview` after formatting and focused tests and
-before PR handoff. Skip only for trivial/docs-only changes, an equivalent
+before PR handoff. Skip only for trivial changes, docs-only changes that do not
+alter contributor workflow, checker, security or operational policy, an equivalent
 independent review of the exact candidate, explicit human opt-out or an unavailable
 reviewer that is reported as unavailable. Never describe a skipped, incomplete or
 invalid review as clean.

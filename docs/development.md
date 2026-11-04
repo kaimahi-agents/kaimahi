@@ -482,7 +482,7 @@ PY
     GIT_NO_REPLACE_OBJECTS=1 GIT_TERMINAL_PROMPT=0 \
     "$REVIEW_GIT" -C "$review_tmp/review" fetch --quiet \
     "$review_bundle" \
-    "${base}:refs/remotes/origin/main" "${head}:refs/heads/candidate"
+    "${base}:refs/remotes/kmx-review/base" "${head}:refs/heads/candidate"
   /usr/bin/env -i HOME="$review_home" PATH=/usr/bin:/bin LANG=C LC_ALL=C \
     GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
     GIT_CONFIG_SYSTEM=/dev/null GIT_NO_LAZY_FETCH=1 \
@@ -496,7 +496,7 @@ PY
     -c core.fsmonitor=false -c core.hooksPath=/dev/null \
     -c diff.external= -c diff.renames=false -c diff.suppressBlankEmpty=false \
     diff --binary --no-ext-diff --no-textconv --no-renames \
-    origin/main candidate -- > "$review_inputs/candidate.patch"
+    kmx-review/base candidate -- > "$review_inputs/candidate.patch"
   test "$(review_git rev-parse HEAD)" = "$head"
   review_git status --porcelain=v1 --untracked-files=all \
     > "$review_results/status-after"
@@ -539,16 +539,22 @@ PY
   fi
 
   export TMPDIR="$review_engine_tmp"
+  review_codex_dir=${REVIEW_CODEX%/*}; test -n "$review_codex_dir" || review_codex_dir=/
+  review_git_dir=${REVIEW_GIT%/*}; test -n "$review_git_dir" || review_git_dir=/
+  review_python_dir=${REVIEW_PYTHON%/*}; test -n "$review_python_dir" || review_python_dir=/
+  review_scope="requested base: $review_base; resolved merge base: $base; frozen head: $head"
+  set +e
   (
+    set -e
     cd "$review_tmp/review"
-    export PATH="$(dirname "$REVIEW_CODEX"):$(dirname "$REVIEW_GIT"):$(dirname "$REVIEW_PYTHON"):/usr/bin:/bin"
+    export PATH="$review_codex_dir:$review_git_dir:$review_python_dir:/usr/bin:/bin"
     export AUTOREVIEW_GIT="$REVIEW_GIT"
     export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
     export GIT_CONFIG_SYSTEM=/dev/null GIT_NO_LAZY_FETCH=1
     export GIT_NO_REPLACE_OBJECTS=1
     "$REVIEW_PYTHON" -I "$review_helper" \
     --mode branch \
-    --base origin/main \
+    --base kmx-review/base \
     --engine codex \
     --codex-bin "$REVIEW_CODEX" \
     --model gpt-6.1-sol \
@@ -557,9 +563,35 @@ PY
     --max-priority P2 \
     --no-web-search \
     --codex-no-fallback \
+    --prompt "$review_scope" \
     "${review_prompts[@]}" \
     --status-output "$AUTOREVIEW_STATUS"
   )
+  review_rc=$?
+  set -e
+  test "$(review_git rev-parse HEAD)" = "$head"
+  test "$(review_git merge-base "$review_base" HEAD)" = "$base"
+  review_git status --porcelain=v1 --untracked-files=all \
+    > "$review_results/status-final"
+  test ! -s "$review_results/status-final" || {
+    printf 'candidate changed while reviewer was running\n' >&2
+    exit 1
+  }
+  if test "$review_rc" -ne 0; then
+    if test -e "$AUTOREVIEW_STATUS"; then
+      test -f "$AUTOREVIEW_STATUS" && test ! -L "$AUTOREVIEW_STATUS"
+      "$REVIEW_PYTHON" -I - "$AUTOREVIEW_STATUS" "$review_rc" <<'PY'
+import json
+import pathlib
+import sys
+
+status = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+if status.get("exit_code") != int(sys.argv[2]) or status.get("status") == "scoped-clean":
+    raise SystemExit("autoreview non-clean status does not match its exit")
+PY
+    fi
+    exit "$review_rc"
+  fi
   test -f "$AUTOREVIEW_STATUS" && test ! -L "$AUTOREVIEW_STATUS"
   "$REVIEW_PYTHON" -I - "$AUTOREVIEW_STATUS" "$head" <<'PY'
 import json
@@ -572,14 +604,6 @@ if status.get("status") != "scoped-clean" or status.get("exit_code") != 0:
 if status.get("head") not in {None, sys.argv[2]}:
     raise SystemExit("autoreview status does not match the frozen candidate head")
 PY
-  test "$(review_git rev-parse HEAD)" = "$head"
-  test "$(review_git merge-base "$review_base" HEAD)" = "$base"
-  review_git status --porcelain=v1 --untracked-files=all \
-    > "$review_results/status-final"
-  test ! -s "$review_results/status-final" || {
-    printf 'candidate changed while reviewer was running\n' >&2
-    exit 1
-  }
 )
 ```
 
