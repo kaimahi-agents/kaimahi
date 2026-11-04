@@ -292,6 +292,7 @@ KMX's native-Windows product boundary.
   review_results="$review_tmp/results"
   review_trusted="$review_tmp/trusted"
   review_helper="$review_tmp/autoreview"
+  review_status="$review_results/autoreview-status.json"
   review_scan_tmp="$review_tmp/scanner-tmp"
   review_engine_tmp="$review_tmp/engine-tmp"
   review_home="$review_tmp/home"
@@ -408,7 +409,8 @@ PY
     > "$review_results/raw-diff"
   "$REVIEW_PYTHON" -I - \
     "$review_results/raw-diff" "$repo_root" "$REVIEW_GIT" \
-    "$review_home" "$review_inputs/blobs" <<'PY'
+    "$review_home" "$review_inputs/blobs" \
+    "$review_results/changed-paths" <<'PY'
 import subprocess
 import pathlib
 import os
@@ -417,44 +419,54 @@ import sys
 records = open(sys.argv[1], "rb").read().split(b"\0")
 repository, git, home = sys.argv[2:5]
 blob_dir = pathlib.Path(sys.argv[5])
+changed_paths_file = pathlib.Path(sys.argv[6])
 blob_dir.mkdir(mode=0o700)
 index = 0
 total = 0
+changed_paths = []
+git_env = {
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_CONFIG_SYSTEM": "/dev/null",
+    "GIT_GRAFT_FILE": str(pathlib.Path(home) / "no-grafts"),
+    "GIT_NO_LAZY_FETCH": "1",
+    "GIT_NO_REPLACE_OBJECTS": "1",
+    "GIT_OPTIONAL_LOCKS": "0",
+    "GIT_TERMINAL_PROMPT": "0",
+    "HOME": home,
+    "LANG": "C",
+    "LC_ALL": "C",
+    "PATH": "/usr/bin:/bin",
+}
+git_prefix = [git, "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null"]
 while index < len(records) and records[index]:
     header = records[index].split()
     index += 1
     status = header[4][:1]
-    index += 2 if status in {b"R", b"C"} else 1
+    path_count = 2 if status in {b"R", b"C"} else 1
+    for raw_path in records[index:index + path_count]:
+        raw_path.decode("utf-8")
+        changed_paths.append(raw_path)
+    index += path_count
     for mode in {header[0][1:], header[1]} - {b"000000"}:
         if mode not in {b"100644", b"100755", b"120000"}:
             raise SystemExit("non-file change requires a separately trusted review")
     for oid in {header[2], header[3]} - {b"0" * 40}:
-        content = subprocess.run(
-            [
-                git,
-                "-c", "core.fsmonitor=false",
-                "-c", "core.hooksPath=/dev/null",
-                "cat-file", "blob", oid.decode("ascii"),
-            ],
-            cwd=repository, check=True, capture_output=True,
-            env={
-                "GIT_CONFIG_GLOBAL": "/dev/null",
-                "GIT_CONFIG_NOSYSTEM": "1",
-                "GIT_CONFIG_SYSTEM": "/dev/null",
-                "GIT_GRAFT_FILE": str(pathlib.Path(home) / "no-grafts"),
-                "GIT_NO_LAZY_FETCH": "1",
-                "GIT_NO_REPLACE_OBJECTS": "1",
-                "GIT_OPTIONAL_LOCKS": "0",
-                "GIT_TERMINAL_PROMPT": "0",
-                "HOME": home,
-                "LANG": "C",
-                "LC_ALL": "C",
-                "PATH": "/usr/bin:/bin",
-            },
-        ).stdout
-        total += len(content)
-        if len(content) > 16 * 1024 * 1024 or total > 64 * 1024 * 1024:
+        size = int(subprocess.run(
+            [*git_prefix, "cat-file", "-s", oid.decode("ascii")],
+            cwd=repository, check=True, capture_output=True, text=True,
+            env=git_env,
+        ).stdout)
+        if size > 16 * 1024 * 1024 or total + size > 64 * 1024 * 1024:
             raise SystemExit("changed blobs exceed the review preflight bound")
+        content = subprocess.run(
+            [*git_prefix, "cat-file", "blob", oid.decode("ascii")],
+            cwd=repository, check=True, capture_output=True,
+            env=git_env,
+        ).stdout
+        if len(content) != size:
+            raise SystemExit("changed blob size changed during preflight")
+        total += size
         if b"\0" in content:
             raise SystemExit("binary change requires a separately trusted review")
         try:
@@ -466,6 +478,21 @@ while index < len(records) and records[index]:
             descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             with os.fdopen(descriptor, "wb") as stream:
                 stream.write(content)
+changed_paths_file.write_bytes(b"\0".join(changed_paths) + b"\0")
+PY
+  "$REVIEW_PYTHON" -I - \
+    "$review_helper" "$review_results/changed-paths" <<'PY'
+import runpy
+import sys
+
+policy = runpy.run_path(sys.argv[1])
+paths = [
+    raw.decode("utf-8")
+    for raw in open(sys.argv[2], "rb").read().split(b"\0")
+    if raw
+]
+if policy["tracked_sensitive_paths"](paths):
+    raise SystemExit("pinned helper would omit one or more changed paths")
 PY
 
   review_bundle="$review_tmp/candidate.bundle"
@@ -565,7 +592,7 @@ PY
     --codex-no-fallback \
     --prompt "$review_scope" \
     "${review_prompts[@]}" \
-    --status-output "$AUTOREVIEW_STATUS"
+    --status-output "$review_status"
   )
   review_rc=$?
   set -e
@@ -578,9 +605,9 @@ PY
     exit 1
   }
   if test "$review_rc" -ne 0; then
-    if test -e "$AUTOREVIEW_STATUS"; then
-      test -f "$AUTOREVIEW_STATUS" && test ! -L "$AUTOREVIEW_STATUS"
-      "$REVIEW_PYTHON" -I - "$AUTOREVIEW_STATUS" "$review_rc" <<'PY'
+    if test -e "$review_status"; then
+      test -f "$review_status" && test ! -L "$review_status"
+      "$REVIEW_PYTHON" -I - "$review_status" "$review_rc" <<'PY'
 import json
 import pathlib
 import sys
@@ -590,10 +617,9 @@ if status.get("exit_code") != int(sys.argv[2]) or status.get("status") == "scope
     raise SystemExit("autoreview non-clean status does not match its exit")
 PY
     fi
-    exit "$review_rc"
-  fi
-  test -f "$AUTOREVIEW_STATUS" && test ! -L "$AUTOREVIEW_STATUS"
-  "$REVIEW_PYTHON" -I - "$AUTOREVIEW_STATUS" "$head" <<'PY'
+  else
+    test -f "$review_status" && test ! -L "$review_status"
+    "$REVIEW_PYTHON" -I - "$review_status" "$head" <<'PY'
 import json
 import pathlib
 import sys
@@ -604,6 +630,38 @@ if status.get("status") != "scoped-clean" or status.get("exit_code") != 0:
 if status.get("head") not in {None, sys.argv[2]}:
     raise SystemExit("autoreview status does not match the frozen candidate head")
 PY
+  fi
+  if test -e "$review_status"; then
+    "$REVIEW_PYTHON" -I - "$review_status" "$AUTOREVIEW_STATUS" <<'PY'
+import os
+import pathlib
+import tempfile
+import sys
+
+source, destination = map(pathlib.Path, sys.argv[1:])
+content = source.read_bytes()
+parent = destination.parent.resolve(strict=True)
+descriptor, pending = tempfile.mkstemp(prefix=".autoreview-status-", dir=parent)
+try:
+    os.fchmod(descriptor, 0o600)
+    with os.fdopen(descriptor, "wb") as stream:
+        stream.write(content)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.link(pending, destination)
+    directory = os.open(parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+finally:
+    try:
+        os.unlink(pending)
+    except FileNotFoundError:
+        pass
+PY
+  fi
+  exit "$review_rc"
 )
 ```
 
