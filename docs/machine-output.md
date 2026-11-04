@@ -229,7 +229,8 @@ from an accepted final complete trace; failed/truncated traces say
 `incomplete_trace` with null counts. Embedded exposes only its checked final
 counts; private Session/journal internals and usage are not inspected.
 
-The result includes runner, selection, `evidence: diagnostic_preview`, checked
+The result includes runner (omitted before option admission), selection,
+`evidence: diagnostic_preview`, checked
 revisions, selected/started/completed case counts, `summaryCount` and `remoteState`.
 Counts are zero before selection. No setup `effects` array is added. Existing
 exit 0/1/2/130 meanings remain authoritative; assertion failure differs from an
