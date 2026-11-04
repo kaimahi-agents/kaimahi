@@ -37,6 +37,38 @@ func TestOrkaSourcePreservesOriginal(t *testing.T) {
 	}
 }
 
+func TestOrkaSoulLastField(t *testing.T) {
+	for _, tt := range []struct{ style, blank, inline string }{
+		{"|", "", "Be kind.\n"}, {">", "", "Be kind.\n"},
+		{"|-", "", "Be kind."}, {"|+", "\n", "Be kind.\n\n"},
+	} {
+		for _, eol := range []string{"\n", "\r\n"} {
+			for _, withDigest := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%q/digest=%t", tt.style, eol, withDigest), func(t *testing.T) {
+					source := strings.Split(orkaExample, "  tools: []")[0] + "  soul:\n"
+					digest := ""
+					if withDigest {
+						digest = fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(tt.inline)))
+						source += "    digest: " + digest + "\n"
+					}
+					source += "    inline: " + tt.style + "\n      Be kind.\n" + tt.blank + "---\nA prompt.\n"
+					raw := []byte(strings.ReplaceAll(source, "\n", eol))
+					s, err := ParseOrkaSource("reader.agent.md", raw)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if s.Soul == nil || s.Soul.Inline != tt.inline || s.Soul.Digest != digest {
+						t.Fatalf("final Soul changed: %#v", s.Soul)
+					}
+					if !bytes.Equal(s.Source, raw) || s.Revision != fmt.Sprintf("sha256:%x", sha256.Sum256(raw)) {
+						t.Fatal("raw identity changed")
+					}
+				})
+			}
+		}
+	}
+}
+
 func TestOrkaSoulAndSkills(t *testing.T) {
 	inline := "Be kind.\n"
 	digest := fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(inline)))

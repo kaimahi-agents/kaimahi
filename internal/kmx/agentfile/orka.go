@@ -72,7 +72,7 @@ func ParseOrkaSource(filename string, data []byte) (*OrkaSource, error) {
 	if end == 0 {
 		return nil, refuse(filename, 1, 1, "Frontmatter", "close the YAML frontmatter with a --- line")
 	}
-	doc, fields, e := decodeFrontmatter(filename, strings.Join(lines[1:end], "\n"))
+	doc, fields, e := decodeFrontmatter(filename, strings.Join(lines[1:end], "\n")+"\n")
 	if e != nil {
 		return nil, e
 	}
