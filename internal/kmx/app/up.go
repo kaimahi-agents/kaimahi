@@ -238,7 +238,14 @@ func (a *App) stepClusterWithNode(bundle *offlineNodeBundle) (err error) {
 			a.rememberInventedContext()
 		}
 	}()
-	existing, err := a.Run.Capture("kind", "get", "clusters")
+	var existing string
+	if bundle != nil {
+		var raw []byte
+		raw, err = a.offlineCapture("kind", "get", "clusters")
+		existing = string(raw)
+	} else {
+		existing, err = a.Run.Capture("kind", "get", "clusters")
+	}
 	if err != nil {
 		return fmt.Errorf("`kind get clusters` failed — refusing to guess whether %q exists (is the %s daemon running?): %w",
 			a.Cfg.KindCluster, a.Cfg.ContainerEngine, err)
@@ -252,6 +259,7 @@ func (a *App) stepClusterWithNode(bundle *offlineNodeBundle) (err error) {
 	}
 
 	createCluster := a.createKindCluster
+	ensureContext := a.ensureKindContext
 	var verifiedNodes []string
 	if bundle != nil {
 		createCluster = func() error { return a.createKindClusterWithImage(bundle.node.LocalRef) }
@@ -261,13 +269,23 @@ func (a *App) stepClusterWithNode(bundle *offlineNodeBundle) (err error) {
 				return err
 			}
 		}
+		exists, err := a.verifyOfflineKubeconfig(listed)
+		if err != nil {
+			return err
+		}
+		ensureContext = func() error {
+			if exists {
+				return nil
+			}
+			return a.Run.Run("kind", "export", "kubeconfig", "--name", a.Cfg.KindCluster)
+		}
 	}
 
 	// The Docker path: create it if it is not there.
 	if a.Cfg.ContainerEngine != "podman" {
 		if listed {
 			a.notef("kind cluster %q already exists", a.Cfg.KindCluster)
-			if err := a.ensureKindContext(); err != nil {
+			if err := ensureContext(); err != nil {
 				return err
 			}
 			return a.waitClusterServing()
@@ -283,7 +301,7 @@ func (a *App) stepClusterWithNode(bundle *offlineNodeBundle) (err error) {
 	// lists the cluster and nothing can reach it. Listed-but-stopped is
 	// therefore not "already exists" — start the nodes back up.
 	if listed {
-		if err := a.ensureKindContext(); err != nil {
+		if err := ensureContext(); err != nil {
 			return err
 		}
 		names := verifiedNodes

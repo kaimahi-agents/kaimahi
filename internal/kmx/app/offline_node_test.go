@@ -142,27 +142,51 @@ func offlineClusterApp(t *testing.T, engine string) (*App, string, *offlineNodeB
 	t.Setenv("OFFLINE_IMAGE_JSON", input)
 	t.Setenv("OFFLINE_LOG", log)
 	t.Setenv("OFFLINE_NODE_IMAGE", b.node.ConfigDigest)
+	socket := offlineSocketFixture(t)
+	t.Setenv("OFFLINE_SOCKET", socket)
+	t.Setenv("OFFLINE_DOCKER_CONTEXT_JSON", `[{"Endpoints":{"docker":{"Host":"`+socket+`"}}}]`)
+	t.Setenv("CONTAINER_HOST", socket)
+	t.Setenv("CONTAINER_CONNECTION", "")
+	t.Setenv("OFFLINE_SELECTED_CLUSTER", `{"server":"https://127.0.0.1:6443"}`)
+	t.Setenv("OFFLINE_EXPECTED_CONFIG", `apiVersion: v1
+kind: Config
+contexts:
+- name: kind-test
+  context: {cluster: kind-test, user: expected-admin}
+clusters:
+- name: kind-test
+  cluster: {server: "https://127.0.0.1:6443"}
+users:
+- name: expected-admin
+  user: {token: private-expected-credential}
+current-context: kind-test
+`)
 	t.Setenv("KMX_HOME", t.TempDir())
 	t.Setenv("KUBECONFIG", filepath.Join(tools, "selected-kubeconfig"))
 	for _, name := range []string{"OFFLINE_EXISTING", "OFFLINE_KIND_FAIL", "OFFLINE_CREATE_FAIL", "OFFLINE_NODE_BAD", "OFFLINE_INVENTORY_BAD", "OFFLINE_CONTEXT_MISSING", "OFFLINE_ENGINE_FAIL", "OFFLINE_BLOCK_IMAGE"} {
 		t.Setenv(name, "")
 	}
+	t.Setenv("OFFLINE_CONTEXT_MISSING", "1")
 	fakeTool(t, tools, "kind", `printf 'kind %s|kube=%s|provider=%s\n' "$*" "$KUBECONFIG" "${KIND_EXPERIMENTAL_PROVIDER-unset}" >> "$OFFLINE_LOG"
 case "$1 $2" in
 "version ") ;;
 "get clusters") if [ -n "$OFFLINE_KIND_FAIL" ]; then exit 1; fi; printf '%s' "$OFFLINE_EXISTING" ;;
 "get nodes") echo test-control-plane ;;
+"get kubeconfig") printf '%s' "$OFFLINE_EXPECTED_CONFIG" ;;
 "create cluster") /bin/cat > "$OFFLINE_LOG.stdin"; if [ -n "$OFFLINE_CREATE_FAIL" ]; then exit 1; fi ;;
 "export kubeconfig") ;;
 *) exit 98;; esac`)
 	fakeTool(t, tools, "kubectl", `printf 'kubectl %s|kube=%s\n' "$*" "$KUBECONFIG" >> "$OFFLINE_LOG"
 case "$*" in
 "version --client") ;;
+"--context kind-test config view --raw --minify -o jsonpath={.clusters[0].cluster}") printf '%s' "$OFFLINE_SELECTED_CLUSTER" ;;
 *"config view"*) if [ -n "$OFFLINE_CONTEXT_MISSING" ]; then echo '{"contexts":[],"clusters":[]}'; else echo '{"contexts":[{"name":"kind-test","context":{"cluster":"kind-test"}}],"clusters":[{"name":"kind-test","cluster":{"server":"https://127.0.0.1:6443"}}]}'; fi ;;
 "--context kind-test get --raw=/readyz"|"--context kind-test -n kube-system rollout status deployment/coredns --timeout=180s") ;;
 *) exit 98;; esac`)
 	fakeTool(t, tools, engine, `printf 'engine %s|kube=%s\n' "$*" "$KUBECONFIG" >> "$OFFLINE_LOG"
 case "$1 $2" in
+"context inspect") printf '%s' "$OFFLINE_DOCKER_CONTEXT_JSON" ;;
+"system connection") printf '%s' "$OFFLINE_CONNECTIONS" ;;
 "info ") if [ -n "$OFFLINE_ENGINE_FAIL" ]; then exit 1; fi ;;
 "image inspect") if [ -n "$OFFLINE_BLOCK_IMAGE" ]; then exec /bin/sleep 30; fi; /bin/cat "$OFFLINE_IMAGE_JSON" ;;
 "container inspect") if [ -n "$OFFLINE_NODE_BAD" ]; then echo '[{"Image":"sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","Name":"/test-control-plane","Config":{"Labels":{"io.x-k8s.kind.cluster":"test"}}}]'; else printf '[{"Image":"%s","Name":"/test-control-plane","Config":{"Labels":{"io.x-k8s.kind.cluster":"test"}}}]' "$OFFLINE_NODE_IMAGE"; fi ;;
@@ -194,6 +218,7 @@ func TestOfflineClusterUp(t *testing.T) {
 				switch mode {
 				case "reuse", "export", "wrong node", "inventory disagreement":
 					t.Setenv("OFFLINE_EXISTING", "test\n")
+					t.Setenv("OFFLINE_CONTEXT_MISSING", "")
 				}
 				switch mode {
 				case "export", "wrong node", "inventory disagreement":
@@ -354,6 +379,7 @@ func TestOfflineContainerSelectedChild(t *testing.T) {
 				t.Setenv("OFFLINE_CONTAINER_JSON", string(raw))
 				fakeTool(t, filepath.Dir(log), engine, `printf 'engine %s|kube=%s\n' "$*" "$KUBECONFIG" >> "$OFFLINE_LOG"
 case "$1 $2" in
+"context inspect") printf '%s' "$OFFLINE_DOCKER_CONTEXT_JSON" ;;
 "info ") ;;
 "image inspect") /bin/cat "$OFFLINE_IMAGE_JSON" ;;
 "container inspect") printf '%s' "$OFFLINE_CONTAINER_JSON" ;;
@@ -407,7 +433,8 @@ func TestOfflineProbeOutputSafety(t *testing.T) {
 					if mode == "oversized stdout" {
 						redirect, status = "", "0"
 					}
-					fakeTool(t, os.Getenv("PATH"), tool, `printf '%s %s\n' `+shellArg(label)+` "$*" >> "$OFFLINE_LOG"
+					fakeTool(t, os.Getenv("PATH"), tool, `if [ "$1 $2" = "context inspect" ]; then printf '%s' "$OFFLINE_DOCKER_CONTEXT_JSON"; exit 0; fi
+printf '%s %s\n' `+shellArg(label)+` "$*" >> "$OFFLINE_LOG"
 /bin/cat `+shellArg(input)+redirect+`
 exit `+status)
 					err := a.UpWithOptions(UpOptions{Step: "cluster", OfflineBundle: dir})
@@ -429,7 +456,8 @@ exit `+status)
 					for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
 						calls = append(calls, strings.SplitN(line, "|", 2)[0])
 					}
-					if got := strings.Join(calls, "\n"); got != "kind version\nkubectl version --client\nengine info" {
+					got := strings.TrimPrefix(strings.Join(calls, "\n"), "engine context inspect\n")
+					if got != "kind version\nkubectl version --client\nengine info" {
 						t.Fatalf("probe order changed or continued beyond preflight:\n%s", got)
 					}
 				})
@@ -454,7 +482,8 @@ func TestOfflineCancellationDuringProbes(t *testing.T) {
 					if tool == engine {
 						label = "engine"
 					}
-					fakeTool(t, os.Getenv("PATH"), tool, `printf '%s %s\n' `+shellArg(label)+` "$*" >> "$OFFLINE_LOG"
+					fakeTool(t, os.Getenv("PATH"), tool, `if [ "$1 $2" = "context inspect" ]; then printf '%s' "$OFFLINE_DOCKER_CONTEXT_JSON"; exit 0; fi
+printf '%s %s\n' `+shellArg(label)+` "$*" >> "$OFFLINE_LOG"
 exec /bin/sleep 30`)
 					limit, wantErr := 5*time.Second, context.Canceled
 					if deadline {
@@ -497,7 +526,8 @@ exec /bin/sleep 30`)
 					for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
 						calls = append(calls, strings.SplitN(line, "|", 2)[0])
 					}
-					if got := strings.Join(calls, "\n"); got != strings.Join(probes[:stage+1], "\n") {
+					got := strings.TrimPrefix(strings.Join(calls, "\n"), "engine context inspect\n")
+					if got != strings.Join(probes[:stage+1], "\n") {
 						t.Fatalf("continued after cancelled probe:\n%s", got)
 					}
 				})
@@ -554,7 +584,7 @@ func TestOfflineLocalProbesNeverProvision(t *testing.T) {
 	a, dir, _, _ := offlineClusterApp(t, "docker")
 	t.Setenv("PATH", t.TempDir())
 	err := a.UpWithOptions(UpOptions{Step: "cluster", OfflineBundle: dir})
-	if err == nil || !strings.Contains(err.Error(), "3 missing or unusable") {
+	if err == nil || !strings.Contains(err.Error(), "docker is not on PATH") {
 		t.Fatalf("local missing tools: %v", err)
 	}
 	if len(a.provisioned) != 0 {

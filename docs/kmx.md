@@ -1580,6 +1580,17 @@ a direct guard probe refuses before kind if execution is unavailable. Every offl
 kind call is bound to the selected engine, not provider auto-detection. The shim
 is removed after kind exits; shared PATH and Runner settings are unchanged.
 
+Before version, engine or inventory probes, offline mode resolves the selected
+engine from local CLI configuration and requires an existing filesystem Unix
+socket. TCP (including loopback), SSH, missing/non-socket paths and ambiguous
+selection refuse. Docker uses its current CLI context selection. Podman requires
+exactly one nonempty `CONTAINER_HOST=unix:///absolute/socket` or
+`CONTAINER_CONNECTION=<name>` selecting such a socket; implicit native selection
+and setting both variables refuse. kmx neither guesses a socket nor starts a
+service. Later children retain the validated original socket URI with competing
+selectors cleared on a private Runner copy. This does not pin the socket inode,
+prove physical-host containment or prevent a local socket proxy.
+
 For an isolated target, select the matching kind name, context and kubeconfig:
 
 ```bash
@@ -1597,6 +1608,20 @@ index image ID (prefixed or bare) requires that descriptor; missing or foreign
 child proof refuses rather than inspecting the index's host-default child.
 Classic config/selected-child IDs remain valid. It never certifies an older node
 just because the requested tag is also cached. API errors are not absence.
+
+For an existing selected context, local cluster-only kubeconfig reads and
+read-only `kind get kubeconfig --name <name>` must also establish the same server
+URL, effective CA bytes, TLS server name, insecure-TLS and proxy settings.
+Credential/user differences are allowed. Nonempty CA data takes precedence over
+a CA file; file-backed CAs require bounded regular local reads from an absolute
+path. Relative CA paths in the local projection refuse because the source-file
+origin is unavailable; kmx does not guess it or flatten credentials. Broken/ambiguous entries, mismatch or unavailable expected
+configuration refuse before export, node start or API readiness, without repair
+or overwrite. In particular, a stopped node that cannot supply expected
+configuration is not automatically started. A genuinely missing context still
+exports on reuse; an existing context with no verified kind cluster refuses
+before creation. Online context repair and engine selection are unchanged.
+
 Creation/readiness failures stop the operation without kmx cleanup, retry or
 recreation; inspect retained node/kubeconfig effects. Kind itself may clean
 partial nodes after failed creation.

@@ -48,11 +48,11 @@ func (a *App) UpWithOptions(opt UpOptions) error {
 	if err != nil {
 		return err
 	}
-	// Freeze every offline kind call to the verified engine, never auto-detect.
-	local, runner := *a, *a.Run
-	runner.Env = append(append([]string(nil), runner.Env...), "KIND_EXPERIMENTAL_PROVIDER="+a.Cfg.ContainerEngine)
-	local.Run = &runner
-	a = &local
+	// Establish locality before version/info/image or inventory probes.
+	a, err = a.offlineTarget()
+	if err != nil {
+		return err
+	}
 	// Keep offline probes bounded and payload-free without changing online
 	// preflight, provisioning, or the guest-supplied tools' probe order.
 	var problems []string
@@ -77,7 +77,7 @@ func (a *App) UpWithOptions(opt UpOptions) error {
 	if err := a.verifyOfflineNodeImage(bundle, bundle.node.LocalRef); err != nil {
 		return err
 	}
-	if err := a.GuardCreate("run the offline 'cluster' step", a.operationCommand("cluster", "up", "--step", "cluster", "--offline-bundle", opt.OfflineBundle)); err != nil {
+	if err := a.offlineGuardCreate("run the offline 'cluster' step", a.operationCommand("cluster", "up", "--step", "cluster", "--offline-bundle", opt.OfflineBundle)); err != nil {
 		return err
 	}
 	return a.runPhase(phase{current: 1, total: 1, name: upPhaseName("cluster")}, func() error { return a.stepClusterWithNode(bundle) })

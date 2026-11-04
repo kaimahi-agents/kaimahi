@@ -3,7 +3,10 @@
 //
 // Offline cluster bring-up validates a closed manifest and clean binary identity
 // against an embedded node-only catalog. It reads pinned OCI node evidence and
-// the selected local engine, never provisions tools or authorizes Orka install.
+// the selected local socket engine, never provisions tools or authorizes Orka
+// install. Offline reuse binds the selected kubeconfig cluster connection to
+// the verified node before export, node start or API readiness; online guards
+// and context repair remain unchanged.
 //
 // App coordinates consent, side effects and runtime-specific evidence.
 // Placement observations are distinct from evaluation proof; successful

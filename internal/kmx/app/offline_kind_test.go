@@ -47,6 +47,7 @@ func TestOfflineKindSelectedProvider(t *testing.T) {
 			fakeTool(t, filepath.Dir(log), "nerdctl", `echo 'alternate engine pull' >> "$OFFLINE_LOG"`)
 			fakeTool(t, filepath.Dir(log), engine, `printf 'engine %s\n' "$*" >> "$OFFLINE_LOG"
 case "$1 $2" in
+"context inspect") printf '%s' "$OFFLINE_DOCKER_CONTEXT_JSON" ;;
 "info ") ;;
 "image inspect") /bin/cat "$OFFLINE_IMAGE_JSON" ;;
 "info --format") exit 1 ;;
@@ -186,6 +187,7 @@ func TestOfflineKindEngineBoundary(t *testing.T) {
 				}
 				fakeTool(t, tools, engine, `printf 'engine %s|kube=%s\n' "$*" "$KUBECONFIG" >> "$OFFLINE_LOG"
 case "$1 $2" in
+"context inspect") printf '%s' "$OFFLINE_DOCKER_CONTEXT_JSON" ;;
 "info ") ;;
 "image inspect") /bin/cat "$OFFLINE_IMAGE_JSON" ;;
 "inspect --type=image") echo transient-inspection-failure >&2; exit 1 ;;
