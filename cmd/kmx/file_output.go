@@ -17,7 +17,7 @@ type fileOutput struct {
 func newFileOutput(out io.Writer) *machineOutput {
 	m := newMachineOutput(out, "file.test")
 	m.file = &fileOutput{}
-	m.file.observer = app.NewMachineFileObserver("embedded", func(p app.MachineFileProgress) error { return m.fileProgress(p) })
+	m.file.observer = app.NewMachineFileObserver("", func(p app.MachineFileProgress) error { return m.fileProgress(p) })
 	return m
 }
 func (m *machineOutput) fileProgress(p app.MachineFileProgress) error {

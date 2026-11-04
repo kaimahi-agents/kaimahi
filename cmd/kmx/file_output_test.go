@@ -205,6 +205,19 @@ func TestFileJSONLCancellationFailureAndWindows(t *testing.T) {
 	}
 }
 
+func TestFileJSONLRefusalDoesNotInventRunner(t *testing.T) {
+	var out, diag bytes.Buffer
+	deps, _ := testDependencies(&out, &diag)
+	err := execute([]string{"test", cliPreviewFile(t), "--runner=copilotd", "--github-summary", "-ojsonl"}, deps)
+	if err == nil {
+		t.Fatal("expected usage refusal")
+	}
+	r := fileRecords(t, out.Bytes())
+	if runner := r[len(r)-1]["runner"]; runner != nil {
+		t.Fatal("runner claimed before option admission", runner)
+	}
+}
+
 func TestFileJSONLRecognitionAndOutputFailure(t *testing.T) {
 	for _, tc := range []struct {
 		args []string
