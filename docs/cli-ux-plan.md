@@ -45,7 +45,7 @@ frozen by this rule: the audit exceptions below apply in plain and rich modes.
 | `chat` | interactive Orka session | none | One-shot chat and raw A2A `--json` output are retired. Enhanced input requires capable input/output terminals; scanner fallback is supported. |
 | context | fields | plain redirected text | Rich fields on a TTY; exact existing alignment when redirected. |
 | progress and guard | phases and decision callout | plain stderr transcript | Progress delimiters and plain guard geometry remain; corrected action/confirmation commands apply in both modes. |
-| version | fixed prose | release parser input | Keep exact plain format; only TTY token styling is safe. |
+| version | fixed prose | release parser input; `-o json` ([machine-output contract](machine-output.md)) | Keep exact default plain format; only TTY token styling is safe in text mode. JSON remains structured and unstyled. |
 | lift record | none | JSON recovery state | Permanently raw internal artifact. |
 
 Structured selection belongs to each command. There is no global output hook:

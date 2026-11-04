@@ -1839,6 +1839,11 @@ recorded monitoring, not agents/plane; unknown ownership is left alone. Read
 
 ## Output contracts
 
+- `version -o json` reports the resolved build version, targeted Orka pin and
+  implemented machine capabilities without configuration or credential access.
+  Version JSON errors use a safe single-result envelope. Other JSON formats
+  remain unchanged; setup and file-Test JSONL are not implemented. See the
+  [machine-output contract](machine-output.md).
 - On capable terminals, reports use rich headings and responsive tables. Wide
   tables become labelled records. Full identifiers/digests and exact numbers
   remain available. `TERM=dumb` chooses plain; non-empty `NO_COLOR` removes ANSI

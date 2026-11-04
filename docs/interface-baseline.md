@@ -69,7 +69,7 @@ kmx
 │   │   └── list
 │   └── task
 │       └── result <task>
-└── version
+└── version [-o text|json]
 ```
 
 `package test` is an operational workspace command with offline diff and independent

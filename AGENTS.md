@@ -9,6 +9,11 @@ changes in the package's Go doc comment.
 
 ## Command consistency
 
+- `version -o text|json` is config-free and inert on every supported platform.
+  JSON advertises only implemented machine adapters, not readiness or permission.
+  Version JSON errors use the bounded safe result envelope; preserve raw causes
+  only for exit mapping, never display. Existing command JSON/text stay unchanged.
+  Setup/file-Test JSONL remains unimplemented; see `docs/machine-output.md`.
 - Root help advertises exactly `create`, `run`, `test`, `chat`, `model`,
   `package`, `cluster`, `version`, in that order. MCP, completion and Help
   remain callable but are not root help entries. Keep root ordering local;
