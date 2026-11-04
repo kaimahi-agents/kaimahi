@@ -47,10 +47,11 @@ object for argument, flag or context-preprocessing errors, with no preceding
 progress lines. For example, `kmx version -o json unexpected` exits 1 and emits:
 
 ```json
-{"schemaVersion":1,"kind":"kmx.result","operation":"version","operationId":"0dd813fe-d889-4aaa-ac05-d4e45183936d","seq":1,"elapsedMs":0,"outcome":"failed","verdict":"not_applicable","exitCode":1,"error":{"code":"invalid_arguments","message":"The command arguments are invalid.","recovery":"check_inputs"}}
+{"schemaVersion":1,"kind":"kmx.result","operation":"version","operationId":"00000000-0000-4000-8000-000000000001","seq":1,"elapsedMs":0,"outcome":"failed","verdict":"not_applicable","exitCode":1,"error":{"code":"invalid_arguments","message":"The command arguments are invalid.","recovery":"check_inputs"}}
 ```
 
-The UUID and elapsed time vary. `operationId` is invocation correlation only,
+The UUID is a synthetic example; real invocation IDs and elapsed times vary.
+`operationId` is invocation correlation only,
 not a resumable handle, an idempotency key or permission to replay. `seq` is 1
 for this single terminal result. `elapsedMs` is a nonnegative integer measured
 by kmx's monotonic clock since invocation start. `exitCode` preserves the CLI's
@@ -101,9 +102,12 @@ require a final newline. Each machine record is at most 64 KiB including that
 newline. A valid JSON prefix followed by another object, malformed bytes or a
 truncated document is not a successful response.
 
-A write failure exits 1 with a fixed safe diagnostic. A partial write is not
-retried and cannot promise a second error record on the broken output channel.
-Hard kill, crash and transport loss may likewise prevent a terminal document.
+A write error returned to the CLI exits 1 with a fixed safe diagnostic. A
+partial write is not retried and cannot promise a second error record on the
+broken output channel. Broken stdout may instead terminate the process with
+SIGPIPE before a write error returns; no diagnostic or result is guaranteed in
+that case. Hard kill, crash and transport loss may likewise prevent a terminal
+document.
 Treat missing output or disagreement between a result and process exit as an
 incomplete operation, not success. Never infer absence of effects or blindly
 repeat another mutating operation from a disconnected process.
