@@ -1,7 +1,6 @@
 package agentfile
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -27,20 +26,51 @@ func frontmatterEnd(lines []string) int {
 	return 0
 }
 
-// Shared decoding does not project fields or apply native-only schema rules.
+// Native sources contain exactly one document; preview preserves the legacy
+// first-document projection but still refuses native markers in later documents.
 func decodeFrontmatter(file, source string) (*yaml.Node, map[string]*yaml.Node, *Error) {
+	decoder := yaml.NewDecoder(strings.NewReader(source))
+	doc, fields, err := decodeFrontmatterRoot(file, decoder)
+	if err != nil {
+		return nil, nil, err
+	}
+	var extra yaml.Node
+	if !errors.Is(decoder.Decode(&extra), io.EOF) {
+		return nil, nil, refuse(file, 2, 1, "Frontmatter", "provide exactly one YAML document")
+	}
+	return doc, fields, nil
+}
+
+func decodePreviewFrontmatter(file, source string) (*yaml.Node, map[string]*yaml.Node, error) {
+	decoder := yaml.NewDecoder(strings.NewReader(source))
+	doc, fields, err := decodeFrontmatterRoot(file, decoder)
+	if err != nil {
+		return nil, nil, err
+	}
+	next := doc
+	for {
+		if hasOrkaMarker(next) {
+			return nil, nil, unsupportedOrka(file, "kmx", "native package source cannot enter preview; use the native package path")
+		}
+		next = &yaml.Node{}
+		// Legacy yaml.Unmarshal ignored content after the first document, including
+		// malformed tails. It remains ignored unless a decoded document is native.
+		if decoder.Decode(next) != nil {
+			break
+		}
+	}
+	return doc, fields, nil
+}
+
+// Shared root decoding does not project fields or apply native-only schema rules.
+func decodeFrontmatterRoot(file string, decoder *yaml.Decoder) (*yaml.Node, map[string]*yaml.Node, *Error) {
 	var doc yaml.Node
-	decoder := yaml.NewDecoder(bytes.NewBufferString(source))
 	err := decoder.Decode(&doc)
 	if errors.Is(err, io.EOF) {
 		return &doc, map[string]*yaml.Node{}, nil
 	}
 	if err != nil {
 		return nil, nil, refuse(file, 2, 1, "Frontmatter", "provide valid YAML between the --- lines")
-	}
-	var extra yaml.Node
-	if !errors.Is(decoder.Decode(&extra), io.EOF) {
-		return nil, nil, refuse(file, 2, 1, "Frontmatter", "provide exactly one YAML document")
 	}
 	if doc.Kind == 0 || len(doc.Content) == 1 && doc.Content[0].Kind == yaml.ScalarNode && doc.Content[0].Tag == "!!null" {
 		return &doc, map[string]*yaml.Node{}, nil
@@ -82,7 +112,7 @@ func hasOrkaMarker(root *yaml.Node) bool {
 		case yaml.MappingNode:
 			for i := 0; i < len(n.Content); i += 2 {
 				key := n.Content[i]
-				if key.Value == "kmx" {
+				if orkaMarkerKey(key) {
 					return true
 				}
 				if key.Tag == "!!merge" && visit(n.Content[i+1]) {
@@ -93,4 +123,22 @@ func hasOrkaMarker(root *yaml.Node) bool {
 		return false
 	}
 	return visit(root)
+}
+
+// YAML aliases and binary scalars can name the same decoded root key. Decode
+// only a scalar key, never a referenced mapping or arbitrary metadata subtree.
+func orkaMarkerKey(key *yaml.Node) bool {
+	seen := map[*yaml.Node]bool{}
+	for key != nil && key.Kind == yaml.AliasNode {
+		if seen[key] {
+			return false
+		}
+		seen[key] = true
+		key = key.Alias
+	}
+	if key == nil || key.Kind != yaml.ScalarNode {
+		return false
+	}
+	var value string
+	return key.Decode(&value) == nil && value == "kmx"
 }

@@ -63,8 +63,8 @@ func LoadOrkaPair(agentFile, testsOverride string) (*OrkaSourcePair, error) {
 		}
 		source.State, source.Revision = "external", source.Suite.Revision
 	}
-	source.Selection.Key, _ = SourceRevisions(path, agent.Revision, target, source.State, source.Revision)
-	_, snapshot := SourceRevisions(path, agent.Revision, target, source.State, source.Revision)
+	var snapshot string
+	source.Selection.Key, snapshot = SourceRevisions(path, agent.Revision, target, source.State, source.Revision)
 	p := &OrkaSourcePair{AgentPath: path, Agent: agent, Tests: source, SnapshotRevision: snapshot, Unsupported: append([]OrkaUnsupported{}, agent.Unsupported...), agentObservation: agentObs, testsObservation: testsObs}
 	if source.Suite == nil || len(source.Suite.Examples) == 0 {
 		p.Unsupported = append(p.Unsupported, OrkaUnsupported{"Tests", "unrepresented"})

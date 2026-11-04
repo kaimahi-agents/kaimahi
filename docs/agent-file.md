@@ -65,8 +65,11 @@ current. Pure parsed or manually constructed values cannot establish checked
 currentness. No source is written and no locking, hostile-filesystem isolation
 or cross-process edit authority is promised.
 
-A top-level `kmx` key reserves native semantics, including unsupported or malformed
-marker forms and root merges that expose it. Ordinary preview Parse/Inspect,
+A decoded top-level `kmx` key reserves native semantics, including unsupported
+marker forms, aliased/binary keys and root merges that expose it. Preview keeps
+its legacy first-document projection for unmarked frontmatter, but refuses a
+native marker in any decoded document; native sources require exactly one YAML
+document. Ordinary preview Parse/Inspect,
 embedded/copilotd file preview and export refuse marked sources instead of
 ignoring native fields. `errors.Is(err, agentfile.ErrOrkaSourceUnsupported)`
 distinguishes unsupported profiles/filenames; `errors.As` still obtains the

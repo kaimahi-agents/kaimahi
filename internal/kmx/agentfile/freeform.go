@@ -213,7 +213,7 @@ func structuredExamples(rest []string) bool {
 // mapFrontmatter maps only settings whose meaning is identical in kmx; the raw
 // header remains the source of truth and everything unmapped stays in it.
 func mapFrontmatter(filename string, a *Agent, native bool) *Error {
-	_, fields, err := decodeFrontmatter(filename, a.Frontmatter)
+	_, fields, err := decodeFrontmatterRoot(filename, yaml.NewDecoder(strings.NewReader(a.Frontmatter)))
 	if err != nil {
 		return err
 	}

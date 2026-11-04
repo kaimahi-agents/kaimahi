@@ -91,6 +91,7 @@ func TestOrkaUnsupportedPreservesDeclarations(t *testing.T) {
 
 func TestOrkaValidationRejectsInvalidKnownContent(t *testing.T) {
 	cases := map[string][]byte{
+		"multiple documents": []byte(strings.Replace(orkaExample, "  skills: []\n---", "  skills: []\n--- !!map\ncustom: value\n---", 1)),
 		"missing marker":     []byte("A prompt.\n"),
 		"version":            []byte(strings.Replace(orkaExample, "schemaVersion: 1", "schemaVersion: 2", 1)),
 		"runtime":            []byte(strings.Replace(orkaExample, "runtime: orka", "runtime: other", 1)),

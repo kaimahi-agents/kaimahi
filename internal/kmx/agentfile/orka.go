@@ -21,8 +21,10 @@ type OrkaSource struct {
 	Source                                                     []byte
 	Soul                                                       *OrkaSoul
 	Skills                                                     []OrkaSkill
-	Tools                                                      []json.RawMessage
-	Unsupported                                                []OrkaUnsupported
+	// Tools is an ordered, normalized JSON projection, not authored syntax.
+	// Source remains the exact source of truth for future tool compilation.
+	Tools       []json.RawMessage
+	Unsupported []OrkaUnsupported
 }
 
 type OrkaReference struct{ Name, Key string }

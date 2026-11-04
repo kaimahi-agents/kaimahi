@@ -15,6 +15,10 @@ func TestOrkaMarkerRefusesPreview(t *testing.T) {
 		"kmx: null", "kmx: []", "kmx: private-marker-canary",
 		"defaults: &profile {kmx: {schemaVersion: 1, runtime: orka}}\n<<: *profile",
 		"<<: [{kmx: {schemaVersion: 1, runtime: orka}}]",
+		"marker: &key kmx\n? *key\n: {schemaVersion: 1, runtime: orka}",
+		"? !!binary a214\n: {schemaVersion: 1, runtime: orka}",
+		"marker: &key kmx\ndefaults: &profile {*key: {schemaVersion: 1, runtime: orka}}\n<<: *profile",
+		"name: reader\n--- !!map\nkmx: {schemaVersion: 1, runtime: orka}",
 	} {
 		t.Run(header, func(t *testing.T) {
 			source := []byte("---\n" + header + "\n---\nA prompt.\n")
@@ -35,8 +39,10 @@ func TestOrkaMarkerRefusesPreview(t *testing.T) {
 			if err := os.WriteFile(path, source, 0600); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := LoadCopilotdPair(path, ""); err == nil {
-				t.Fatal("native source entered copilotd")
+			for _, load := range []func(string, string) (*Pair, error){LoadPair, LoadCopilotdPair} {
+				if _, err := load(path, ""); !errors.Is(err, ErrOrkaSourceUnsupported) {
+					t.Fatalf("native source entered checked preview: %v", err)
+				}
 			}
 		})
 	}
@@ -47,6 +53,9 @@ func TestFrontmatterLegacyDelimitersAndUnknowns(t *testing.T) {
 		"--- \t\nname: reader\nmetadata: {nested: value}\n---\t\nA prompt.\n",
 		"---\nmetadata: &m {value: example}\nother: *m\n---\nA prompt.\n",
 		"---\nmetadata: {kmx: prose-only}\n---\nA prompt.\n",
+		"---\nname: reader\n...\nb: 1\n---\nA prompt.\n",
+		"---\nname: reader\n--- !!str later\n---\nA prompt.\n",
+		"---\nlabel: &kmx other\n? *kmx\n: value\n---\nA prompt.\n",
 	} {
 		agent, err := Parse("reader.agent.md", []byte(source))
 		if err != nil || agent.Instructions != "A prompt.\n" {
