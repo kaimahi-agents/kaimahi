@@ -81,6 +81,23 @@ func TestDiscoveryCaptureBoundsAndCancellation(t *testing.T) {
 	}
 }
 
+func TestDiscoveryChildSignalCancellation(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("Unix signal fixture")
+	}
+	for _, tc := range []struct {
+		command, code string
+		cancelled     bool
+	}{{"kill -INT $$", "cancelled", true}, {"kill -TERM $$", "cancelled", true}, {"kill -KILL $$", "operation_failed", false}, {"exit 130", "operation_failed", false}} {
+		a := captureTestApp()
+		a.captureCommand = func(context.Context, *exec.Cmd) error { return exec.Command("sh", "-c", tc.command).Run() }
+		_, err := a.discoveryCapture(t.Context(), "chosen", "get", "--raw", "/api/v1/namespaces")
+		if err == nil || err.safeCode() != tc.code || errors.Is(err, context.Canceled) != tc.cancelled {
+			t.Fatalf("%s: %v", tc.command, err)
+		}
+	}
+}
+
 func TestDiscoveryRunnerPreferencesAreIsolated(t *testing.T) {
 	a := captureTestApp()
 	a.Run.Env = []string{"KUBERC=foreign", "KUBECTL_KUBERC=true", "KEEP=yes"}

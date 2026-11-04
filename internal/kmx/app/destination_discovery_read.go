@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -138,6 +140,15 @@ func (a *App) discoveryCapture(ctx context.Context, selectedContext string, args
 		return nil, &discoveryReadFailure{"read_unknown", errors.New("bounded capture overflow")}
 	}
 	if err != nil {
+		// A foreground-group interrupt can reap kubectl before NotifyContext's
+		// goroutine runs. Trust the kernel's signal status, never an exit-code
+		// convention or stderr text; SIGKILL and voluntary exit 130 stay unknown.
+		var exited *exec.ExitError
+		if errors.As(err, &exited) {
+			if status, ok := exited.Sys().(syscall.WaitStatus); ok && status.Signaled() && (status.Signal() == syscall.SIGINT || status.Signal() == syscall.SIGTERM) {
+				return nil, &discoveryReadFailure{"read_unknown", context.Canceled}
+			}
+		}
 		return out.Bytes(), &discoveryReadFailure{classifyDiscoveryRead(diagnostics.Bytes(), false), err}
 	}
 	if diagnostics.Len() != 0 {
