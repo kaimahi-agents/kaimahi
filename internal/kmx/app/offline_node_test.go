@@ -315,6 +315,76 @@ func TestOfflineClusterUp(t *testing.T) {
 	}
 }
 
+// A parent index inspection can select the host child, not the child actually
+// used by a container. Removing container-specific binding must fail this test.
+func TestOfflineContainerSelectedChild(t *testing.T) {
+	for _, engine := range []string{"docker", "podman"} {
+		for _, mode := range []string{"index expected", "index foreign", "index missing", "index unknown", "index null", "bare index expected", "bare index missing", "bare index foreign", "config missing", "manifest missing", "config foreign"} {
+			t.Run(engine+"/"+mode, func(t *testing.T) {
+				a, dir, b, log := offlineClusterApp(t, engine)
+				t.Setenv("OFFLINE_EXISTING", "test\n")
+				t.Setenv("OFFLINE_CONTEXT_MISSING", "1")
+				id := *b.node.IndexDigest
+				if strings.HasPrefix(mode, "bare") {
+					id = strings.TrimPrefix(id, "sha256:")
+				} else if strings.HasPrefix(mode, "config") {
+					id = b.node.ConfigDigest
+				} else if strings.HasPrefix(mode, "manifest") {
+					id = b.node.ManifestDigest
+				}
+				row := map[string]any{"Image": id, "Name": "/test-control-plane", "Config": map[string]any{"Labels": map[string]string{"io.x-k8s.kind.cluster": "test"}}}
+				child := b.node.ManifestDigest
+				if strings.HasSuffix(mode, "foreign") {
+					// The other real child of the same compiled parent index.
+					child = "sha256:cf1d8a817f85226f8b256fca15fb0eebcb82ebc8598f496b9f9290f6cffb4688"
+					if b.platform.Architecture == "arm64" {
+						child = "sha256:986401fce0e567a9860075ba9df8c8459bd99a35f79024d8a682773fb40f0753"
+					}
+				}
+				if !strings.HasSuffix(mode, "missing") {
+					row["ImageManifestDescriptor"] = map[string]any{"mediaType": "application/vnd.oci.image.manifest.v1+json", "digest": child, "size": 1370}
+				}
+				if mode == "index unknown" {
+					row["ImageManifestDescriptor"] = map[string]any{}
+				} else if mode == "index null" {
+					row["ImageManifestDescriptor"] = nil
+				}
+				raw, err := json.Marshal([]any{row})
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Setenv("OFFLINE_CONTAINER_JSON", string(raw))
+				fakeTool(t, filepath.Dir(log), engine, `printf 'engine %s|kube=%s\n' "$*" "$KUBECONFIG" >> "$OFFLINE_LOG"
+case "$1 $2" in
+"info ") ;;
+"image inspect") /bin/cat "$OFFLINE_IMAGE_JSON" ;;
+"container inspect") printf '%s' "$OFFLINE_CONTAINER_JSON" ;;
+"ps -a") echo test-control-plane ;;
+"start test-control-plane") ;;
+*) exit 98;; esac`)
+				// Simulate an index-ID store reporting native metadata regardless of
+				// the container's actual selected manifest.
+				if err := os.WriteFile(os.Getenv("OFFLINE_IMAGE_JSON"), []byte(offlineImageFixture(t, b, *b.node.IndexDigest)), 0600); err != nil {
+					t.Fatal(err)
+				}
+				err = a.UpWithOptions(UpOptions{Step: "cluster", OfflineBundle: dir})
+				calls, _ := os.ReadFile(log)
+				valid := mode == "index expected" || mode == "bare index expected" || mode == "config missing" || mode == "manifest missing"
+				if valid {
+					if err != nil || !bytes.Contains(calls, []byte("kind export kubeconfig")) {
+						t.Fatalf("valid container refused: %v\n%s", err, calls)
+					}
+					if strings.HasSuffix(mode, "expected") && !bytes.Contains(calls, []byte("engine image inspect "+b.node.ManifestDigest)) {
+						t.Fatalf("did not inspect the container-selected child:\n%s", calls)
+					}
+				} else if err == nil || !strings.Contains(err.Error(), "selected manifest") || bytes.Contains(calls, []byte("kind export kubeconfig")) || bytes.Contains(calls, []byte("engine start")) {
+					t.Fatalf("unbound child crossed export/start boundary: %v\n%s", err, calls)
+				}
+			})
+		}
+	}
+}
+
 func TestOfflineCancellationDuringInspection(t *testing.T) {
 	a, dir, _, log := offlineClusterApp(t, "docker")
 	t.Setenv("OFFLINE_BLOCK_IMAGE", "1")

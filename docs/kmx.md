@@ -1565,13 +1565,18 @@ selected kind cluster from a locally cached, pinned node image. Other steps,
 an omitted step and an explicitly blank bundle refuse before configuration.
 Omitting the bundle retains the existing online journey.
 
-The guest must supply kind, kubectl, the selected Docker/Podman engine and its
-already imported node image. Offline bring-up never provisions tools, regardless
-of `KMX_TOOLCHAIN`; it performs no registry lookup, image pull, package download,
-Ollama/model setup, Helm or Provider phase. It does not import archives or
-change kubelet garbage collection. Keep the engine/cache quiet during the
+The guest must supply kind, kubectl, `/bin/sh`, the selected Docker/Podman
+engine and its already imported node image. Offline bring-up never provisions
+tools, regardless of `KMX_TOOLCHAIN`; it performs no registry lookup, image pull,
+package download, Ollama/model setup, Helm or Provider phase. It does not import
+archives or change kubelet garbage collection. Keep the engine/cache quiet during the
 operation. The guest owns cache import, retention and any blocked-egress policy;
-this command is not a network sandbox for substituted executables.
+this command is not a network sandbox for substituted executables. For kind
+creation only, a private temporary PATH shim blocks engine `pull`/`image pull`
+and forces `--pull=never` on `run`/`create`, including kind's fallback after a
+transient inspection failure. Other trusted-kind engine calls delegate to the
+original absolute executable. The shim is removed after kind exits; shared PATH
+and Runner settings are unchanged.
 
 For an isolated target, select the matching kind name, context and kubeconfig:
 
@@ -1584,7 +1589,11 @@ KIND_CLUSTER=local-offline KUBECONFIG=./local-kubeconfig \
 The existing context/consent guards remain. Children inherit the explicit
 `KUBECONFIG` on both creation and rerun. Reuse compares kind's actual node list
 with engine label inventory and checks every container's immutable image,
-platform and rootfs before export or start. It never certifies an older node
+platform and rootfs before export or start. A container's
+`ImageManifestDescriptor`, when exposed, must identify the pinned child. A parent
+index image ID (prefixed or bare) requires that descriptor; missing or foreign
+child proof refuses rather than inspecting the index's host-default child.
+Classic config/selected-child IDs remain valid. It never certifies an older node
 just because the requested tag is also cached. API errors are not absence.
 Creation/readiness failures stop the operation without kmx cleanup, retry or
 recreation; inspect retained node/kubeconfig effects. Kind itself may clean

@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 	"slices"
 	"strings"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
 )
 
@@ -56,6 +58,47 @@ func (a *App) UpWithOptions(opt UpOptions) error {
 		return err
 	}
 	return a.runPhase(phase{current: 1, total: 1, name: upPhaseName("cluster")}, func() error { return a.stepClusterWithNode(bundle) })
+}
+
+// Kind retries a failed local inspection with pull. Constrain only its create
+// child: trusted kind's engine calls, not arbitrary executables or OS isolation.
+func (a *App) offlineKindRunner() (*run.Runner, func(), error) {
+	if err := a.Run.Command("/bin/sh", "-c", ":").Run(); err != nil {
+		return nil, nil, fmt.Errorf("offline kind creation requires /bin/sh: %w", err)
+	}
+	engine := a.Run.Command(a.Cfg.ContainerEngine)
+	if engine.Err != nil {
+		return nil, nil, engine.Err
+	}
+	executable, err := filepath.Abs(engine.Path)
+	if err != nil {
+		return nil, nil, err
+	}
+	dir, err := os.MkdirTemp("", "kmx-offline-kind-")
+	if err != nil {
+		return nil, nil, err
+	}
+	cleanup := func() { _ = os.RemoveAll(dir) }
+	script := `#!/bin/sh
+case "$1 $2" in
+"pull "*|"image pull") echo 'offline kind: image pull is disabled' >&2; exit 1 ;;
+"run "*|"create "*) command="$1"; shift; set -- "$command" --pull=never "$@" ;;
+esac
+exec ` + shellArg(executable) + ` "$@"
+`
+	if err := os.WriteFile(filepath.Join(dir, a.Cfg.ContainerEngine), []byte(script), 0700); err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	path := dir
+	for _, entry := range engine.Environ() {
+		if value, ok := strings.CutPrefix(entry, "PATH="); ok {
+			path += string(os.PathListSeparator) + value
+		}
+	}
+	runner := *a.Run
+	runner.Env = append(append([]string(nil), runner.Env...), "PATH="+path)
+	return &runner, cleanup, nil
 }
 
 func runningOfflineIdentity() (offlineKMXIdentity, error) {
@@ -186,15 +229,25 @@ func (a *App) verifyOfflineClusterNodes(b *offlineNodeBundle) ([]string, error) 
 			return nil, err
 		}
 		var rows []struct {
-			Image, Name string
-			Config      struct{ Labels map[string]string }
+			Image, Name             string
+			Config                  struct{ Labels map[string]string }
+			ImageManifestDescriptor *struct{ Digest string }
 		}
 		if offlineJSON(raw, &rows, false) != nil || len(rows) != 1 || strings.TrimPrefix(rows[0].Name, "/") != name || rows[0].Config.Labels["io.x-k8s.kind.cluster"] != a.Cfg.KindCluster || !b.acceptsID(rows[0].Image) {
 			return nil, fmt.Errorf("kind node %s has unknown or mismatched immutable image/cluster identity", name)
 		}
-		// Inspect the immutable ID used by this container, never its original tag:
-		// a correctly cached tag cannot certify an older node created from another ID.
-		if err := a.verifyOfflineNodeImage(b, rows[0].Image); err != nil {
+		r := rows[0]
+		selected := r.ImageManifestDescriptor
+		parent := b.node.IndexDigest != nil && strings.TrimPrefix(r.Image, "sha256:") == strings.TrimPrefix(*b.node.IndexDigest, "sha256:")
+		if selected != nil && selected.Digest != b.node.ManifestDigest || parent && selected == nil {
+			return nil, fmt.Errorf("kind node %s has unknown or mismatched selected manifest", name)
+		}
+		// An index inspection may choose the host child rather than this node's.
+		ref := r.Image
+		if selected != nil {
+			ref = selected.Digest
+		}
+		if err := a.verifyOfflineNodeImage(b, ref); err != nil {
 			return nil, fmt.Errorf("kind node %s: %w", name, err)
 		}
 	}

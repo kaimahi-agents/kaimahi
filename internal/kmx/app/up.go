@@ -326,7 +326,16 @@ kubeadmConfigPatches:
 	if image != "" {
 		args = append(args, "--image", image)
 	}
-	err := a.Run.RunStdin(cfg, "kind", args...)
+	runner := a.Run
+	if image != "" {
+		local, cleanup, err := a.offlineKindRunner()
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+		runner = local
+	}
+	err := runner.RunStdin(cfg, "kind", args...)
 	if err != nil && image != "" {
 		return fmt.Errorf("kind create failed for %q; any node/kubeconfig effects are retained for inspection (kind may have cleaned partial nodes); kmx performs no cleanup: %w", a.Cfg.KindCluster, err)
 	}
