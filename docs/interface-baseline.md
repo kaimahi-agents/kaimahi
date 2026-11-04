@@ -205,6 +205,13 @@ No new GUI or source-less copying. Console Ready means placement, not an answer.
 probes distinguish present, absent and unreadable; they do not select, install
 or deploy a runtime.
 
+`kmx cluster discover` is separate progressive discovery: no context means only
+local labels/current marker; an explicit context lists namespace names and UIDs.
+The Unix JSONL adapter advertises exact `contexts`/`namespaces` scopes. It does
+not implement target inspection or Send, select a context, write config/state,
+provision resources or invoke models/Tools. Incomplete lists retain safe partial
+rows and exit 1, never prove absence. See [machine output](machine-output.md#destination-discovery).
+
 ## Runtime boundaries
 
 | Runtime/integration | Implemented KMX scope |

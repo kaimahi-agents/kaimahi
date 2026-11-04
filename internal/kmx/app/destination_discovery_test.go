@@ -84,7 +84,7 @@ func TestDiscoveryFailedListNeverProvesMissing(t *testing.T) {
 	}
 }
 func TestDiscoveryPaginationAndOutputBounds(t *testing.T) {
-	for _, kind := range []string{"repeat", "version", "rows", "output", "malformed"} {
+	for _, kind := range []string{"repeat", "version", "rows", "output", "malformed", "pages", "aggregate", "duplicate"} {
 		t.Run(kind, func(t *testing.T) {
 			a := captureTestApp()
 			calls := 0
@@ -93,7 +93,7 @@ func TestDiscoveryPaginationAndOutputBounds(t *testing.T) {
 				page := discoveryPage("dev")
 				switch kind {
 				case "repeat":
-					page = strings.Replace(page, `"resourceVersion":"1"`, `"resourceVersion":"1","continue":"same"`, 1)
+					page = strings.Replace(discoveryPage(fmt.Sprintf("ns-%d", calls)), `"resourceVersion":"1"`, `"resourceVersion":"1","continue":"same"`, 1)
 				case "version":
 					page = strings.Replace(page, `"resourceVersion":"1"`, `"resourceVersion":"`+fmt.Sprint(calls)+`","continue":"`+fmt.Sprint(calls)+`"`, 1)
 				case "rows":
@@ -108,6 +108,13 @@ func TestDiscoveryPaginationAndOutputBounds(t *testing.T) {
 						names = append(names, fmt.Sprintf("ns-%03d", i))
 					}
 					page = discoveryPage(names...)
+				case "pages", "aggregate":
+					page = strings.Replace(discoveryPage(fmt.Sprintf("ns-%d", calls)), `"resourceVersion":"1"`, `"resourceVersion":"1","continue":"`+fmt.Sprint(calls)+`"`, 1)
+					if kind == "aggregate" {
+						page = `{"padding":"` + strings.Repeat("x", 3<<20) + `",` + page[1:]
+					}
+				case "duplicate":
+					page = discoveryPage("dev", "dev")
 				case "malformed":
 					page = `{"apiVersion":"v1","kind":"NamespaceList","items":null}`
 				}
@@ -119,7 +126,7 @@ func TestDiscoveryPaginationAndOutputBounds(t *testing.T) {
 				selected = strings.Repeat("x", 1024)
 			}
 			got, err := a.Discover(t.Context(), DiscoveryOptions{Context: selected})
-			if err == nil || got.Complete || calls > 3 {
+			if err == nil || got.Complete || calls > 32 {
 				t.Fatal(got, err, calls)
 			}
 			b, _ := json.Marshal(got)
@@ -150,6 +157,25 @@ func TestDiscoveryTargetScopeUnavailable(t *testing.T) {
 	_, err := a.Discover(t.Context(), DiscoveryOptions{Namespace: "dev"})
 	if err == nil || DiscoveryError(err).Error() != "The requested operation is unsupported." {
 		t.Fatal(err)
+	}
+}
+func TestDiscoveryNamespaceTerminationIsNotReadiness(t *testing.T) {
+	a := captureTestApp()
+	a.captureCommand = func(_ context.Context, c *exec.Cmd) error {
+		fmt.Fprint(c.Stdout, strings.Replace(discoveryPage("dev"), `"uid":"uid-dev"`, `"uid":"uid-dev","deletionTimestamp":"2026-01-01T00:00:00Z"`, 1))
+		return nil
+	}
+	got, err := a.Discover(t.Context(), DiscoveryOptions{Context: "chosen"})
+	if err != nil || !got.Complete || len(got.Rows) != 1 {
+		t.Fatal(got, err)
+	}
+}
+func TestDiscoveryUnterminatedContextProjection(t *testing.T) {
+	a := captureTestApp()
+	a.captureCommand = func(_ context.Context, c *exec.Cmd) error { fmt.Fprint(c.Stdout, `""`); return nil }
+	got, err := a.Discover(t.Context(), DiscoveryOptions{})
+	if err == nil || got.Complete {
+		t.Fatal(got, err)
 	}
 }
 func TestDiscoveryContextReadFailureReason(t *testing.T) {

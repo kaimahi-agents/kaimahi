@@ -97,7 +97,9 @@ Only `invalid_arguments` and `output_failed` are used by version. Other codes
 are shared vocabulary, not claims that additional command adapters exist.
 Recovery is guidance, never automatic retry authorization. Unknown internal
 classifications fall back to `operation_failed`; untyped causes are not
-classified by substring matching their text.
+classified by substring matching their text. The narrow discovery exception below
+classifies only fixed, version-pinned kubectl diagnostic-line prefixes; it never
+reflects diagnostic bodies or grants API evidence.
 
 ## Provisioning event streams
 
@@ -265,3 +267,49 @@ incomplete operation, not success. Never infer absence of effects or blindly
 repeat another mutating operation from a disconnected process.
 
 See the [CLI output contracts](kmx.md#output-contracts) for existing formats.
+
+## Destination discovery
+
+`kmx cluster discover [-o text|jsonl]` defaults to text. Without context it projects
+only local labels; with explicit `--context CTX` it lists namespaces using GETs.
+Version capability entries have operation `cluster.discover`, output `jsonl`,
+schemaVersion `1`, and exact scope `contexts` or `namespaces`; `target` is unavailable.
+
+JSONL emits one terminal `kmx.result` with operation `cluster.discover`, normal
+UUID/sequence/elapsed fields, verdict `not_applicable`, and a `discovery` object:
+
+```json
+{"scope":"namespaces","complete":true,"checks":[],"rows":[{"context":"dev","namespace":"demo","uid":"observed-namespace-uid"}]}
+```
+
+Context rows instead contain `context` and boolean `current` (including false).
+`checks` and `rows` are arrays even when empty. Complete means bounded reads
+finished, not runtime readiness or model proof; complete results exit 0. Incomplete
+results retain fitting safe rows, `complete:false`, and fixed checks of shape
+`{scope,state:"unknown",reason}`, with failed outcome/exit 1. Cancellation uses
+outcome/code `cancelled`; deadlines use failed outcome/code `deadline_exceeded`.
+Output failure uses `output_failed` and never retries a partial terminal write.
+Read through EOF and match the actual process exit. Abrupt termination may leave
+no terminal record and never proves a complete observation or no effects.
+
+Diagnostic hints recognize only case-sensitive line-start markers with a following
+colon, whitespace or end boundary: `Error from server (Forbidden)` → `read_denied`
+(`permission_denied`); `error: You must be logged in to the server` → `unauthorized`
+(`credential_unavailable`); `Unable to connect` → `network_unavailable`
+(`dependency_unavailable`). NotFound on these lists is `read_unknown`, never resource
+absence. Unknown tokens, conflicts, truncation and lookalikes stay unknown. Raw
+bodies never leave capture. Hints are not authenticated API status or retry
+permission; connection-refused or credential-helper wording may stay unknown or
+be a coarse network hint. Real formatting fixtures are version-labelled.
+
+Kubernetes `get --raw` is used only for fixed, context-pinned GET paths with encoded
+pagination tokens, never kubeconfig `config view --raw`. Local projection contains
+no server/user/credential fields. Rows are safe identities, not full API documents.
+Malformed data uses `malformed`; bounds and ambiguous lists use `read_unknown`,
+with existing safe `operation_failed`. Unsafe explicit context uses
+`invalid_arguments` before reads. Unsafe/secret-shaped labels are omitted with
+explicit incompleteness, never redacted into a different selectable name.
+
+The adapter begins inside RunE: valid JSONL target-scope refusals are in-band;
+Cobra operand/flag/preprocessing errors retain their ordinary contract. Successful
+help/completion is inert and emits no stream or dynamic discovery reads.

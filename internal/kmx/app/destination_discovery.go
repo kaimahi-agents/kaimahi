@@ -104,6 +104,9 @@ func (a *App) Discover(parent context.Context, opt DiscoveryOptions) (DiscoveryR
 				r.problem("malformed")
 			}
 		} else {
+			if !strings.HasSuffix(string(raw), "\n") {
+				r.problem("malformed")
+			}
 			lines := strings.Split(strings.TrimSuffix(string(raw), "\n"), "\n")
 			current := ""
 			seen := map[string]bool{}
@@ -179,7 +182,7 @@ func (a *App) Discover(parent context.Context, opt DiscoveryOptions) (DiscoveryR
 				version = list.Metadata.ResourceVersion
 				for _, entry := range list.Items {
 					m := entry.Metadata
-					if (entry.Kind != "" && entry.Kind != "Namespace") || (entry.APIVersion != "" && entry.APIVersion != "v1") || len(m.Name) > 63 || !discoveryNamespaceName.MatchString(m.Name) || !statusOpaque(m.UID) || m.DeletionTimestamp != nil || seenName[m.Name] {
+					if (entry.Kind != "" && entry.Kind != "Namespace") || (entry.APIVersion != "" && entry.APIVersion != "v1") || len(m.Name) > 63 || !discoveryNamespaceName.MatchString(m.Name) || !statusOpaque(m.UID) || seenName[m.Name] {
 						r.problem("malformed")
 						continue
 					}

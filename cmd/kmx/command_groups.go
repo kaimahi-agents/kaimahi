@@ -9,7 +9,7 @@ func newClusterCommand(state *commandState) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
 	group.AddCommand(newUpCommand(state), newDownCommand(state), newOrkaStatusCommand(state),
 		newContextCommand(state), newQuickstartCommand(state), newConsoleCommand(state),
-		newTaskCommand(state), newTargetsCommand(state), newOrkaCommand(state), newAKSCommand(state),
+		newTaskCommand(state), newTargetsCommand(state), newClusterDiscoveryCommand(state), newOrkaCommand(state), newAKSCommand(state),
 		retiredCommand("quickstart-wizard", "kmx cluster quickstart --interactive"))
 	return group
 }
