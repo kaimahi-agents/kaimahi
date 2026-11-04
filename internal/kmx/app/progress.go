@@ -25,13 +25,22 @@ func (a *App) timeNow() time.Time {
 
 func (a *App) runPhase(p phase, fn func() error) error {
 	if a.operationProgress != nil {
+		if err := a.operationContext().Err(); err != nil {
+			return err
+		}
 		a.operationProgress(p.name, "active", nil)
+		if err := a.operationContext().Err(); err != nil {
+			return err
+		}
 	}
 	started := a.timeNow()
 	ui := a.presenter()
 	fmt.Fprintf(a.Err, "\n%s  [%d/%d] %s\n", ui.Phase("PHASE"), p.current, p.total, p.name)
 	err := fn()
 	if a.operationProgress != nil {
+		if cancelled := a.operationContext().Err(); cancelled != nil {
+			err = cancelled
+		}
 		status := "done"
 		if err != nil {
 			status = "failed"
