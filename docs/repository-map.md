@@ -78,6 +78,13 @@ packaging also copies those assets into platform bundles. Node tests live in
 
 Workflows and contributor guidance.
 
+## `.agents/` — contributor agent workflows
+
+Thin repository policy entrypoints for shared contributor workflows. Reviewer
+implementations, credentials and run output remain external. This area is not
+part of the kmx CLI, an embedded asset, a shipped plugin, CI automation or product
+agent source.
+
 ## `changes/` — release notes
 
 Per-change release notes, combined during release preparation.
