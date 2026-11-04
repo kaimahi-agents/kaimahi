@@ -134,7 +134,7 @@ an independent signature. See [releases](releases.md) for platforms and upgrades
 
 Local kind commands need Docker or Podman. kmx uses kind and kubectl from
 PATH first, otherwise fetches pinned, checksum-verified tools, including
-Helm 3 for Orka's v0.2.0 chart. Helm calls pin the selected Kubernetes context
+Helm 3 for Orka's v0.3.0 chart. Helm calls pin the selected Kubernetes context
 with `--kube-context`. No Orka runtime CLI is fetched or cached. Cached digests are
 rechecked before reuse. Set
 `KMX_TOOLCHAIN=off` to refuse missing tools instead. No container engine or Azure
@@ -231,16 +231,15 @@ An optional canonical Tools declaration and explicit `--tool-bindings FILE` sele
 one [host-owned read-only GitHub MCP operation](local-preview.md#host-tool-foundation).
 File Run/Test also supports named stdio servers from the agent folder's
 `kmx.yaml`: repeat `--mcp-server NAME` to replace saved selection, or use
-`--no-mcp-servers` to clear it for CI. The fixed binding takes precedence if
+`--no-mcp-servers` to clear only the MCP server selection for CI. The fixed binding takes precedence if
 also supplied. See [stdio config and offline CI](local-preview.md#selected-stdio-servers-in-file-runtest).
-File Run/Test also resolves declared Enabled tools from `commandTools` in the
-physical agent folder's `kmx.yaml`, with a fixed absolute executable and argv
-and only empty-object tool input. `--no-mcp-servers` does not disable command
-tools; use the existing `tools` Enabled/Disabled settings. Populated recordings
-replay without launching commands or resolving their environment. See
-[fixed command tools](local-preview.md#fixed-command-tools-in-file-runtest)
-for configuration, checked output and Unix cleanup limits; native Windows command
-execution is unavailable.
+The file CLI also resolves declared Enabled tools from `commandTools` in that
+folder's `kmx.yaml`, with a fixed absolute executable and arguments, an
+empty-object tool input, a folder-confined working directory and explicit named
+environment references. MCP selection flags do not disable command tools; use
+`tools` Enabled/Disabled settings instead. Native Windows command execution is
+not supported. See [fixed command tools](local-preview.md#fixed-command-tools-in-file-runtest)
+for configuration, execution limits and recording/replay behavior.
 The operator binds one repository and an explicit environment credential name;
 no endpoint/credential comes from the agent or model. Only a selected call reads
 up to 20 merged PRs through the fixed Streamable-HTTP endpoint. Missing authority,
@@ -1148,7 +1147,7 @@ See [digest deploy](suite-workspace.md#digest-lift) for gates and partial outcom
 |---|---|
 | `kmx package ctx [--workspace <directory>] [--check] [-o table\|json]` | list named workspace destinations (name, cluster context, namespace, declared runtime, inference/bindings reference, registry/repository), offline by default. No current/default pointer or switching. Optional checks cover local context names and anonymous registry reachability only, not runtime/inference/Secret readiness. [Named destinations](suite-workspace.md#named-destinations) |
 | `kmx cluster targets [-o table\|json] [--detect] [--sessions <host:port>]` | offline compiled support by default; explicit read-only probes report present/absent/unreadable separately from qualified versions. No runtime selection, installation or deployment. [Target view and support matrix](runtime-adapters.md#read-only-target-view) |
-| `kmx cluster orka install` | verify the pinned v0.2.0 release chart; apply its CRDs; install harness-v2 with fullname `orka-api` on the selected context; keep the chart-generated snapshot key private; optionally create a keyless Provider. Refuses old v0.1.3 installs rather than upgrading. [Orka](orka.md) |
+| `kmx cluster orka install` | verify the pinned v0.3.0 release chart; apply its CRDs; install harness-v2 with fullname `orka-api` on the selected context; keep the chart-generated snapshot key private; optionally create a keyless Provider. Refuses old v0.1.3 installs rather than upgrading. `--provider - --offline-bundle DIR` instead selects the fixed [local native profile](#native-orka-install), without downloads/model setup. [Orka](orka.md) |
 | `kmx cluster orka status` | Table-only Orka runtime report: running controller version, Deployments, CRDs and Providers; distinguish unreadable from absent and running version from pin. `-o table` only; `kmx package status` is separate destination inventory. |
 | `kmx create <name> [--path <directory>] [--description <text>]` | author one `NAME.agent.md` GitHub-frontmatter agent file (`name`, `description`, no model) with a generic greeting prompt, plus a paired `NAME.agent.test.md` (schemaVersion 1, one `greeting` case). Offline: no prompts, config or model calls; an existing file refuses with exit 2. [Create](#kmx-create) |
 | `kmx package create <name> [--model <model>] [--instructions <file>] [--workspace <directory>]` | default offline authoring of one tool-free native suite member; terminal prompts complete missing model/file inputs, scripts require both flags. Orka by default, or exact kagent v0.10.3 Go/linux-amd64 with `--runtime kagent`. `--runtime agentsessions` separately authors pinned chat offline only; ordinary push is supported; eval requires an explicit development host and `AgentSessionsBinding`; evaluated push consumes matching passing evidence offline; Deploy creates an immutable Agent at an AgentSessions destination, while `--harness-image --plan` keeps the offline render; destination status reads registration, and chat refuses. Private metadata only; authoring itself does not deploy/evaluate. Discover the nearest ancestor workspace, or select/initialize an exact root with `--workspace`. Optional `--description`; live-only flags and a second member refuse. No cluster configuration or image construction. [Workspace guide](suite-workspace.md) |
@@ -1545,9 +1544,9 @@ requires attachment, not visibility or trust.
 
 | Command | Current behavior |
 |---|---|
-| `kmx cluster quickstart` | kind + keyless Ollama + pinned Orka v0.2.0 Helm chart + the fixed tool-free native `hello-world-agent` source/full eval/publication/reviewed Deploy/placement Verify + a separate fresh answer Task; no Kagent installation or plane/governance enabled. [Getting started](getting-started.md#one-command-and-an-agent-that-answers) |
+| `kmx cluster quickstart` | kind + keyless Ollama + pinned Orka v0.3.0 Helm chart + the fixed tool-free native `hello-world-agent` source/full eval/publication/reviewed Deploy/placement Verify + a separate fresh answer Task; no Kagent installation or plane/governance enabled. [Getting started](getting-started.md#one-command-and-an-agent-that-answers) |
 | `kmx cluster quickstart --interactive` (`-i`) | Experimental TUI: author an Orka agent while kind, Ollama/model, and Orka start in the background; then full eval, exact publication, reviewed Deploy/placement Verify and a separate fresh answer Task. Flags for the other quickstart mode are refused before configuration loads. The retired `kmx cluster quickstart-wizard` spelling refuses and names this command. |
-| `kmx cluster up` | the runtime and no agent: cluster, ollama, model, orka. `--step` selects exactly one of those four; the three legacy steps are removed and are refused as unknown |
+| `kmx cluster up` | the runtime and no agent: cluster, ollama, model, orka. `--step` selects exactly one of those four; the three legacy steps are removed and are refused as unknown. `--step cluster --offline-bundle DIR` selects the [node-only local bundle path](#offline-cluster-bundle-unreleased), not Orka install. |
 | `kmx cluster aks up` / `kmx cluster aks down` | Temporary compatibility route, hidden from root help and shell completion; not a first-class KMX domain. Setup provisions AKS and installs Orka only, with optional Azure monitoring add-ons; the owner configures the model Provider. It does not deploy a model plane or capture its credentials. Teardown preserves cleanup of recorded owned resources, including historical runs. `--payload` defaults to `orka` and is the only payload (no Provider is created); the legacy payload is refused as retired, and an existing legacy lift can still be inspected and torn down. The root AKS aliases are removed; use `kmx cluster aks up` / `kmx cluster aks down`. [AKS](aks.md) |
 | `kmx cluster orka list` | live Orka Agent inventory in one namespace; table/JSON/YAML. [Inventory contract](#kmx-orka-list) |
 | `kmx cluster orka show <name>` | live Orka Agent detail and dependencies; requires `--namespace`, supports `--output table\|json` and `--tasks`. [Detail contract](#kmx-orka-show) |
@@ -1565,6 +1564,216 @@ result must be non-blank after sanitisation. These are not read-only
 operations: other setup steps still reconcile. Old gateway tool references on
 a cluster require an explicit owner decision, not a silent switch to direct
 access.
+
+### Offline cluster bundle (unreleased)
+
+`kmx cluster up --step cluster --offline-bundle DIR` creates or reuses only the
+selected kind cluster from a locally cached, pinned node image. Other steps,
+an omitted step and an explicitly blank bundle refuse before configuration.
+Omitting the bundle retains the existing online journey.
+
+The guest must supply kind, kubectl, `/bin/sh`, the selected Docker/Podman
+engine and its already imported node image. Offline bring-up never provisions
+tools, regardless of `KMX_TOOLCHAIN`; it performs no registry lookup, image pull,
+package download, Ollama/model setup, Helm or Provider phase. It does not import
+archives or change kubelet garbage collection. Keep the engine/cache quiet during the
+operation. The guest owns cache import, retention and any blocked-egress policy;
+this command is not a network sandbox for substituted executables. For kind
+creation only, a private temporary PATH shim blocks engine `pull`/`image pull`
+and forces `--pull=never` on `run`/`create`, including kind's fallback after a
+transient inspection failure. Other trusted-kind engine calls delegate to the
+original absolute executable. Creation requires an executable temporary directory;
+a direct guard probe refuses before kind if execution is unavailable. Every offline
+kind call is bound to the selected engine, not provider auto-detection. The shim
+is removed after kind exits; shared PATH and Runner settings are unchanged.
+
+Before version, engine or inventory probes, offline mode resolves the selected
+engine from local CLI configuration and requires an existing filesystem Unix
+socket. TCP (including loopback), SSH, missing/non-socket paths and ambiguous
+selection refuse. Docker uses its current CLI context selection. Podman requires
+exactly one nonempty `CONTAINER_HOST=unix:///absolute/socket` or
+`CONTAINER_CONNECTION=<name>` selecting such a socket; implicit native selection
+and setting both variables refuse. kmx neither guesses a socket nor starts a
+service. Later children retain the validated original socket URI with competing
+selectors cleared on a private Runner copy. This does not pin the socket inode,
+prove physical-host containment or prevent a local socket proxy. Offline children
+disable kubectl preferences so command defaults cannot override the verified
+connection; user preference files and online commands are unchanged.
+
+For an isolated target, select the matching kind name, context and kubeconfig:
+
+```bash
+KIND_CLUSTER=local-offline KUBECONFIG=./local-kubeconfig \
+  kmx --context kind-local-offline cluster up --step cluster \
+  --offline-bundle ./bundle
+```
+
+The existing context/consent guards remain. Children inherit the explicit
+`KUBECONFIG` on both creation and rerun. Reuse compares kind's actual node list
+with engine label inventory and checks every container's immutable image,
+platform and rootfs before export or start. A container's
+`ImageManifestDescriptor`, when exposed, must identify the pinned child. A parent
+index image ID (prefixed or bare) requires that descriptor; missing or foreign
+child proof refuses rather than inspecting the index's host-default child.
+Classic config/selected-child IDs remain valid. It never certifies an older node
+just because the requested tag is also cached. API errors are not absence.
+
+For an existing selected context, local cluster-only kubeconfig reads and
+read-only `kind get kubeconfig --name <name>` must also establish the same server
+URL, effective CA bytes, TLS server name, insecure-TLS and proxy settings.
+Credential/user differences are allowed. Nonempty CA data takes precedence over
+a CA file; file-backed CAs require bounded regular local reads from an absolute
+path. Relative CA paths in the local projection refuse because the source-file
+origin is unavailable; kmx does not guess it or flatten credentials. Broken/ambiguous entries, mismatch or unavailable expected
+configuration refuse before export, node start or API readiness, without repair
+or overwrite. In particular, a stopped node that cannot supply expected
+configuration is not automatically started. A genuinely missing context still
+exports on reuse; an existing context with no verified kind cluster refuses
+before creation. Online context repair and engine selection are unchanged.
+
+Creation/readiness failures stop the operation without kmx cleanup, retry or
+recreation; inspect retained node/kubeconfig effects. Kind itself may clean
+partial nodes after failed creation.
+
+The catalog profile `orka-59703d6e-native/v1` authorizes cluster bring-up and
+native, no-provider installation from source
+`59703d6eac1760aa2dc5fed4dee9dcb74c6e5186`. It is not the online v0.3.0
+release. The exact shipped [profile JSON](../internal/kmx/app/offline_profiles/orka-59703d6e-native-v1.json)
+has SHA-256 `9580f7967e2a952f0934ba1db533a58a1232bbe6055db05e88e295bda803774d`.
+This replaces the node-only profile hash; existing bundle records must use the
+new exact hash. No bundle input or environment variable can replace catalog pins.
+
+#### Native Orka install
+
+```bash
+KIND_CLUSTER=local-offline KUBECONFIG=./local-kubeconfig \
+  kmx --context kind-local-offline cluster orka install \
+  --provider - --offline-bundle ./bundle
+```
+
+The guest supplies Helm as well as the cluster tools and imports all five
+application images into **every schedulable kind node**. Install never imports
+archives, pulls images, downloads tools/charts, resolves registry references or
+configures a model/Provider, regardless of `KMX_TOOLCHAIN`. The literal provider
+`-` is required; model/model-url options remain inert with that provider.
+
+Before target writes, kmx checks the retained chart, source descriptor, OCI
+indexes/manifests/configs and exact native child references. It renders locally
+with generated fixed values: harness-v2, persistent store, publisher and SCM
+proxy; all four ACP runtimes and optional components are disabled. The ordinary
+Gateway runs inside the controller. Its CRD-readiness lookup override is fixed
+because the verified CRDs are established before Helm, keeping local render and
+installed arguments identical. The session
+loader and both dynamic worker images use child digests; image policies are
+`IfNotPresent`. There is no caller values-file interface.
+
+The selected existing kind/node inventory and kubeconfig server, CA, TLS and
+proxy settings must agree before API reads. No export/start/create is attempted.
+Kubernetes node names/platforms must match, and each required image must have
+its exact repository@child digest, config ID, native platform and rootfs in that
+node's local CRI. Missing or generic import records refuse without pulling.
+The copied Helm environment removes competing connection/auth selectors and
+remote SQL storage configuration; Helm uses Kubernetes Secret storage and the
+selected kubeconfig. Shared Runner settings and user files are unchanged.
+
+`--no-apply` verifies local artifacts, rendering, supplied tools and outer
+cache only: no kubeconfig/API/node execution, consent, ownership checks or
+writes. It reports target cache, ownership and readiness as unchecked.
+`--dry-run` performs full target/cache/ownership checks and only the existing
+non-forcing CRD server-side dry run; no Helm install/dry run, Established wait,
+rollouts or result-reader reconciliation. The flags are mutually exclusive.
+
+Normal install uses non-forcing CRD SSA, Established wait, Helm `--wait`,
+exact live execution-setting comparison and explicit rollouts of all three
+Deployments, then result-reader reconciliation. The full profile hash is a
+Helm value, not a label. Exact healthy reuse requires the complete custom values
+and live workload set, skips CRD/Helm writes and preserves chart keys/data.
+Online, foreign, changed, partial or orphan installs refuse; no adoption,
+upgrade, repair, retry or automatic cleanup occurs. Failures stop later phases;
+inspect retained effects privately. Cache checks are invocation-time evidence,
+not an indefinite Task-availability guarantee; the guest owns cache lifetime
+and blocked-egress enforcement. Installing Orka does not prove a Task answer.
+
+#### Manifest input
+
+`DIR/install.json` is a closed JSON object. Every field below is required.
+Unknown/missing/duplicate keys, including nested keys, refuse; names are
+case-sensitive. Hashes are 64 lowercase hex characters; digests are
+`sha256:` followed by that hash; revisions are full 40-character lowercase SHAs.
+JSON/evidence/config reads are limited to 1 MiB per file; chart bytes to 64 MiB. Declared paths must
+be relative regular files inside DIR, without traversal, symlink components,
+URLs or special files. No image archives or layer graphs are read; install parses the pinned chart archive.
+
+| Field | Exact shape or value |
+|---|---|
+| `schemaVersion` | `kmx-offline/v1` |
+| `profile`, `profileSha256` | Catalog key and exact shipped profile-byte hash above |
+| `platform` | `{"os":"linux","architecture":"amd64"}` or `arm64`; must match the running guest |
+| `kmx` | `{"version":string,"revision":revision,"sha256":hash}`, equal to the running binary's resolved version, clean VCS revision and executable SHA-256; absent/unknown/modified build metadata refuses |
+| `orka` | `{"mode":"source","identity":"59703d6eac1760aa2dc5fed4dee9dcb74c6e5186"}` |
+| `chart`, `artifacts` | Each `{"path":path,"sha256":hash}`; syntax-checked but unread in the cluster step; install requires exact catalog-authorized bytes |
+| `node` | Exactly `localRef`, `repository`, `indexPath`, `indexDigest`, `manifestPath`, `manifestDigest`, `configPath`, `configDigest` |
+| `components` | Complete boolean map below; no inferred enablement |
+| `images` | Exactly five unique rows below, syntax-checked but unread in the cluster step; install validates all OCI evidence against the catalog |
+
+Each image row has exactly `component`, `repository`, `indexPath`,
+`indexDigest`, `manifestPath`, `manifestDigest`, `configPath`, `configDigest`,
+`pullPolicy`. Policy is `IfNotPresent`. The component/repository pairs are:
+
+| Component | Repository |
+|---|---|
+| `controller` | `ghcr.io/orka-agents/orka` |
+| `ai-worker` | `ghcr.io/orka-agents/orka/ai-worker` |
+| `general-worker` | `ghcr.io/orka-agents/orka/general-worker` |
+| `publisher` | `ghcr.io/orka-agents/orka/workspace-publisher` |
+| `session-loader` | `docker.io/library/busybox` |
+
+An image's `indexPath` and `indexDigest` are both null or both present; other
+fields cannot be null. All declared paths are syntax-checked, including unread
+install inputs. The node requires the catalog's parent index plus selected
+manifest/config files. Raw-byte hashes, exact descriptor sizes and parent-child
+membership must agree. amd64 accepts only an absent/empty variant; arm64
+normalizes absent/empty and `v8`, rejecting ambiguous matching children.
+
+The node repository is `kindest/node`, from v1.35.0's immutable index
+`sha256:4613778f3cfcd10e615029370f5786704559103cf27bef934597ba562b269661`.
+Per-platform full manifest/config digests are in the shipped profile. Its
+local tag is `kindest/node:bridge-<first 16 manifest hex digits>-<architecture>`.
+The short tag is not an integrity check: the actual engine image must match
+the complete config, manifest or parent-index ID, native OS/architecture and
+the verified config's rootfs diff IDs. No pull or fallback repairs a mismatch.
+
+```json
+{
+  "controller": true,
+  "ai-worker": true,
+  "general-worker": true,
+  "publisher": true,
+  "session-loader": true,
+  "scm-egress-proxy": true,
+  "store": true,
+  "acp-codex-runtime": false,
+  "acp-claude-runtime": false,
+  "acp-copilot-runtime": false,
+  "acp-opencode-runtime": false,
+  "provider-proxy": false,
+  "toolboxes": false,
+  "execution-workspace-dispatch": false,
+  "substrate-mcp-tools": false,
+  "connectors": false,
+  "dashboard": false,
+  "agent-hosts": false,
+  "ingress": false
+}
+```
+
+Node creation and exact reuse were walked on Linux amd64 with classic Docker
+29.9.2, kind 0.33.0, kubectl 1.35.1 and node v1.35.0. This is not blocked-egress
+creation, Orka installation or Task qualification. Catalog pins exist for Linux
+amd64 and arm64; pins do not prove native execution. Podman, Docker's containerd
+image store, native arm64 execution and other tool-version pairings remain
+unverified. Non-Linux runtime use refuses; cross-building the CLI does not
+qualify cluster execution.
 
 <a id="kmx-orka-list"></a>
 
@@ -1637,6 +1846,15 @@ recorded monitoring, not agents/plane; unknown ownership is left alone. Read
 
 ## Output contracts
 
+- `version -o json` reports the resolved build version, targeted Orka pin and
+  implemented machine capabilities without configuration or credential access.
+  Version JSON errors use a safe single-result envelope. Other JSON formats
+  remain unchanged. Both `cluster up` and `cluster orka install` accept
+  `-o jsonl` for safe provisioning events/results on Unix. Explicit `test FILE`
+  also supports JSONL with checked provisional telemetry and final case summaries;
+  embedded remains default. Native Windows retains only the package-free fake
+  embedded boundary. See the
+  [machine-output contract](machine-output.md).
 - On capable terminals, reports use rich headings and responsive tables. Wide
   tables become labelled records. Full identifiers/digests and exact numbers
   remain available. `TERM=dumb` chooses plain; non-empty `NO_COLOR` removes ANSI
