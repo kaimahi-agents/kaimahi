@@ -1,0 +1,22 @@
+{
+  "profile": "orka-59703d6e-native/v1",
+  "capabilities": ["cluster"],
+  "orka": {
+    "mode": "source",
+    "identity": "59703d6eac1760aa2dc5fed4dee9dcb74c6e5186"
+  },
+  "node": {
+    "repository": "kindest/node",
+    "indexDigest": "sha256:4613778f3cfcd10e615029370f5786704559103cf27bef934597ba562b269661",
+    "platforms": {
+      "amd64": {
+        "manifestDigest": "sha256:986401fce0e567a9860075ba9df8c8459bd99a35f79024d8a682773fb40f0753",
+        "configDigest": "sha256:a9f00b2666c3e111d51e6cab9b122e2c96cc539f22ffbf0612169bfafdb9818b"
+      },
+      "arm64": {
+        "manifestDigest": "sha256:cf1d8a817f85226f8b256fca15fb0eebcb82ebc8598f496b9f9290f6cffb4688",
+        "configDigest": "sha256:b200139c59c438b5ab199e7b0886c95583cfb1a2508de05dd77a25930d99d13f"
+      }
+    }
+  }
+}

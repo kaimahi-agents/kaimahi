@@ -46,6 +46,12 @@ func (a *App) preflight(dependencies ...dependency) error {
 	if err := a.provision(dependencies); err != nil {
 		return err
 	}
+	return a.preflightLocal(dependencies...)
+}
+
+// preflightLocal only probes guest-supplied tools; it never provisions, even
+// when automatic toolchain management is enabled for online operations.
+func (a *App) preflightLocal(dependencies ...dependency) error {
 	seen := map[string]bool{}
 	var problems []string
 	for _, dep := range dependencies {
