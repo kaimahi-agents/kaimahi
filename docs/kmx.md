@@ -194,6 +194,12 @@ numbered versions or new publication command are introduced.
 
 ### Agent-file local preview (unreleased integration)
 
+Files with a decoded top-level `kmx` frontmatter key reserve native Orka
+semantics and refuse file Run/Test with either the embedded or copilotd runner
+rather than ignoring native settings. Unmarked files retain their existing
+behavior. The [native Orka source reader](agent-file.md#native-orka-source-reader-unreleased-library-only)
+is library-only; it does not implement native file authoring, compilation or execution.
+
 Bare `kmx test` tests direct agent files in the current folder and
 `.github/agents/`, not recursively, with one final text/JSON/CI summary.
 See [folder discovery, outcomes and output limits](agent-file.md#test-a-folder).
@@ -475,7 +481,8 @@ every example. External companions/overrides produce v2 with physical selected
 path, per-source revisions and a machine/selection-bound snapshot; inline profiles
 retain v1. Keep that local-path metadata private too. No configuration, credential,
 provider, model, runtime or registry is accessed. Unsupported declarations still refuse through the canonical parser;
-there is no model override. This source-file projection is not a tested package,
+there is no model override. Files marked with a native `kmx` profile refuse
+export rather than ignoring native fields. This source-file projection is not a tested package,
 evaluation receipt, AgentSuite runtime profile or deployment authorization.
 
 Stdout is explicitly content-bearing, including inputs and judge rubrics: keep
