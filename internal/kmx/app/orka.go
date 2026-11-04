@@ -105,6 +105,8 @@ func (a *App) installerDigest() string {
 // key is somebody else's to mint, which is why the only Provider this
 // command offers to create is the keyless one.
 type OrkaOptions struct {
+	// OfflineBundle selects the compiled native profile from local verified bytes.
+	OfflineBundle string
 	// Provider names the keyless Provider to create against an in-cluster
 	// model server. "-" creates none.
 	Provider string
@@ -141,6 +143,18 @@ func orkaDefaults(opt OrkaOptions) OrkaOptions {
 // CRDs from the verified chart are applied before Helm discovers Gateway
 // schema; the chart/controller own their generated snapshot encryption key.
 func (a *App) OrkaInstall(opt OrkaOptions) error {
+	if opt.OfflineBundle != "" {
+		if opt.NoApply && opt.DryRun {
+			return fmt.Errorf("--no-apply and --dry-run cannot be used together")
+		}
+		if strings.TrimSpace(opt.OfflineBundle) == "" {
+			return fmt.Errorf("--offline-bundle requires a non-empty directory")
+		}
+		if opt.Provider != "-" {
+			return fmt.Errorf("--offline-bundle requires --provider -")
+		}
+		return a.installOfflineOrka(opt)
+	}
 	started := a.timeNow()
 	opt = orkaDefaults(opt)
 	if opt.NoApply && opt.DryRun {

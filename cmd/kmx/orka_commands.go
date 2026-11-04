@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/spf13/cobra"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
@@ -38,9 +41,25 @@ func newOrkaInstallCommand(state *commandState) *cobra.Command {
 	var opt app.OrkaOptions
 	cmd := &cobra.Command{
 		Use:   "install",
-		Short: "Install Orka " + app.OrkaVersion + " and a keyless Provider",
-		Args:  cobra.NoArgs,
+		Short: "Install pinned Orka and an optional keyless Provider",
+		Long:  "Install the pinned online release and an optional keyless Provider.\nUse --provider - --offline-bundle DIR for the fixed local native profile.",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if err := cobra.NoArgs(cmd, args); err != nil {
+				return err
+			}
+			if cmd.Flags().Changed("offline-bundle") {
+				if strings.TrimSpace(opt.OfflineBundle) == "" {
+					return fmt.Errorf("--offline-bundle requires a non-empty directory")
+				}
+				if opt.Provider != "-" {
+					return fmt.Errorf("--offline-bundle requires --provider -")
+				}
+			}
+			return nil
+		},
 	}
+	cmd.Flags().StringVar(&opt.OfflineBundle, "offline-bundle", "", "verified local native Orka bundle (requires --provider -)")
+	_ = cmd.MarkFlagDirname("offline-bundle")
 	// No --version. The digest below the flag is of ONE tag's bytes, so a
 	// version flag would either carry no verification or need a digest per
 	// version; the pin is the point, and moving it is an edit to this
@@ -50,7 +69,7 @@ func newOrkaInstallCommand(state *commandState) *cobra.Command {
 	cmd.Flags().StringVar(&opt.Model, "model", "", "default model that Provider resolves (default: qwen2.5:3b)")
 	cmd.Flags().StringVar(&opt.ModelURL, "model-url", "",
 		"OpenAI-compatible endpoint the Provider points at (default: the in-cluster Ollama)")
-	cmd.Flags().BoolVar(&opt.NoApply, "no-apply", false, "fetch and verify the installer, write nothing")
+	cmd.Flags().BoolVar(&opt.NoApply, "no-apply", false, "verify the installer (fetch online), write nothing")
 	cmd.Flags().BoolVar(&opt.DryRun, "dry-run", false, "server-side validation only")
 	cmd.MarkFlagsMutuallyExclusive("no-apply", "dry-run")
 	cmd.RunE = appRun(state, func(a *app.App) error { return a.OrkaInstall(opt) })

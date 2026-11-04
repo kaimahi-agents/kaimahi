@@ -1,0 +1,92 @@
+{
+  "fullnameOverride": "orka-api",
+  "labels": {
+    "kmx.kaimahi.dev/installed": "true"
+  },
+  "controller": {
+    "mode": "harness-v2",
+    "gateway": {
+      "crdsReadyOverride": true
+    },
+    "image": {
+      "repository": "ghcr.io/orka-agents/orka",
+      "tag": "",
+      "digest": "sha256:d0e11d621c4ff69f8477708ed5097eaf165e29d3cb36482da49b728ed37e6142",
+      "pullPolicy": "IfNotPresent"
+    },
+    "acpRuntime": {
+      "codexImage": "",
+      "claudeImage": "",
+      "copilotImage": "",
+      "opencodeImage": "",
+      "toolboxes": {
+        "enabled": false
+      }
+    },
+    "executionWorkspace": {
+      "dispatchEnabled": false
+    },
+    "substrate": {
+      "mcpToolsEnabled": false
+    },
+    "connectors": {
+      "enabled": false
+    },
+    "dashboard": {
+      "enabled": false
+    },
+    "agentHosts": {
+      "enabled": false,
+      "github": {
+        "enabled": false
+      }
+    }
+  },
+  "workers": {
+    "ai": {
+      "image": {
+        "repository": "ghcr.io/orka-agents/orka/ai-worker",
+        "tag": "",
+        "digest": "sha256:76038d10ba534ace6a49b598f29325bf74914c887f76fb7a63ea55284548771c",
+        "pullPolicy": "IfNotPresent"
+      }
+    },
+    "general": {
+      "image": {
+        "repository": "ghcr.io/orka-agents/orka/general-worker",
+        "tag": "",
+        "digest": "sha256:524401e0cb36086ee8d2ccf6ea71aa8d4098039eb3afb2f027b08622830ccc04"
+      }
+    },
+    "sessionLoader": {
+      "image": {
+        "repository": "docker.io/library/busybox",
+        "tag": "",
+        "digest": "sha256:66a6306db78bf2dbf3487f293aa8d6990d8e506fdffab9cc43fe422becf886e4"
+      }
+    }
+  },
+  "publisher": {
+    "enabled": true,
+    "image": {
+      "repository": "ghcr.io/orka-agents/orka/workspace-publisher",
+      "tag": "",
+      "digest": "sha256:0247141a6f7c73a82b5dfb7ce32c7b1c4aecb514be77f76f105696bff88bb46a",
+      "pullPolicy": "IfNotPresent"
+    }
+  },
+  "store": {
+    "persistence": {
+      "enabled": true
+    }
+  },
+  "scmEgressProxy": {
+    "enabled": true
+  },
+  "providerProxy": {
+    "enabled": false
+  },
+  "ingress": {
+    "enabled": false
+  }
+}

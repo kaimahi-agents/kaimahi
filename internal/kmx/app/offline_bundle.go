@@ -19,7 +19,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
 )
 
-// This catalog authorizes only the outer node, never chart/application inputs.
+// The compiled catalog independently authorizes node and native install inputs.
 //
 //go:embed offline_profiles/orka-59703d6e-native-v1.json
 var offlineProfileJSON []byte
@@ -91,14 +91,17 @@ type offlineProfile struct {
 		IndexDigest string                    `json:"indexDigest"`
 		Platforms   map[string]offlineNodePin `json:"platforms"`
 	} `json:"node"`
+	Install *offlineInstallProfile `json:"install"`
 }
 
 // All fields stay private and are frozen before external tools run. No layer or
-// archive bytes, install authorization or caller-selected catalog survive here.
+// archive layers or caller-selected catalog survive here; install retains only
+// verified chart/values and validated image identities, never rendered Secrets.
 type offlineNodeBundle struct {
 	node     offlineNodeRow
 	platform offlinePlatform
 	diffIDs  []string
+	install  *offlineInstallBundle
 }
 
 func offlineHash(b []byte) string { return fmt.Sprintf("%x", sha256.Sum256(b)) }
@@ -288,6 +291,9 @@ func offlineShape(value any, t reflect.Type) bool {
 }
 
 func readOfflineFile(root *fileaccess.Directory, path string) ([]byte, error) {
+	return readOfflineBounded(root, path, offlineJSONLimit)
+}
+func readOfflineBounded(root *fileaccess.Directory, path string, limit int64) ([]byte, error) {
 	if !offlinePath(path) {
 		return nil, fmt.Errorf("invalid relative path %q", path)
 	}
@@ -307,17 +313,26 @@ func readOfflineFile(root *fileaccess.Directory, path string) ([]byte, error) {
 		return nil, fmt.Errorf("%q: %w", path, err)
 	}
 	defer f.Close()
-	raw, err := io.ReadAll(io.LimitReader(f, offlineJSONLimit+1))
+	raw, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if err != nil {
 		return nil, fmt.Errorf("%q: %w", path, err)
 	}
-	if len(raw) > offlineJSONLimit {
-		return nil, fmt.Errorf("%q exceeds 1 MiB", path)
+	if int64(len(raw)) > limit {
+		if limit == offlineJSONLimit {
+			return nil, fmt.Errorf("%q exceeds 1 MiB", path)
+		}
+		return nil, fmt.Errorf("%q exceeds artifact limit", path)
 	}
 	return raw, nil
 }
 
 func loadOfflineNodeBundle(dir string, identity offlineKMXIdentity) (*offlineNodeBundle, error) {
+	return loadOfflineBundle(dir, identity, false)
+}
+func loadOfflineInstallBundle(dir string, identity offlineKMXIdentity) (*offlineNodeBundle, error) {
+	return loadOfflineBundle(dir, identity, true)
+}
+func loadOfflineBundle(dir string, identity offlineKMXIdentity, install bool) (*offlineNodeBundle, error) {
 	if runtime.GOOS != "linux" {
 		return nil, fmt.Errorf("offline bundles require native Linux")
 	}
@@ -342,7 +357,7 @@ func loadOfflineNodeBundle(dir string, identity offlineKMXIdentity) (*offlineNod
 		return nil, fmt.Errorf("install.json: %w", err)
 	}
 	var p offlineProfile
-	if err := offlineJSON(offlineProfileJSON, &p, true); err != nil {
+	if err := offlineJSON(offlineProfileJSON, &p, false); err != nil {
 		return nil, fmt.Errorf("embedded offline profile: %w", err)
 	}
 	if m.SchemaVersion != "kmx-offline/v1" || m.Profile != p.Profile || m.ProfileSHA256 != offlineHash(offlineProfileJSON) || m.Orka != p.Orka {
@@ -384,7 +399,14 @@ func loadOfflineNodeBundle(dir string, identity offlineKMXIdentity) (*offlineNod
 	if err != nil {
 		return nil, fmt.Errorf("node evidence: %w", err)
 	}
-	return &offlineNodeBundle{node: n, platform: m.Platform, diffIDs: diffIDs}, nil
+	bundle := &offlineNodeBundle{node: n, platform: m.Platform, diffIDs: diffIDs}
+	if install {
+		bundle.install, err = loadOfflineInstall(root, m, p)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return bundle, nil
 }
 
 func validateOfflineShape(m offlineManifest) error {

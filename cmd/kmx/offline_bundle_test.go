@@ -36,6 +36,27 @@ func TestOfflineClusterFlagsValidateBeforeConfiguration(t *testing.T) {
 	}
 }
 
+func TestOfflineInstallFlagsBeforeConfiguration(t *testing.T) {
+	for _, args := range [][]string{
+		{"--offline-bundle", "bundle"},
+		{"--offline-bundle=", "--provider", "-"},
+		{"--offline-bundle", " ", "--provider", "-"},
+		{"--offline-bundle", "bundle", "--provider", " - "},
+		{"--offline-bundle", "bundle", "--provider", "-", "--no-apply", "--dry-run"},
+	} {
+		loads := 0
+		var out bytes.Buffer
+		err := execute(append([]string{"cluster", "orka", "install"}, args...), dependencies{stdout: &out, stderr: &out, goos: "linux", loadConfig: func(string, string) (*config.Config, error) { loads++; return nil, errors.New("must not load") }})
+		if err == nil || loads != 0 || strings.Contains(err.Error(), "unknown flag") {
+			t.Fatalf("args=%q loads=%d err=%v", args, loads, err)
+		}
+	}
+	var out bytes.Buffer
+	err := execute([]string{"cluster", "orka", "install", "--provider", "-", "--offline-bundle", "bundle", "--model", "ignored", "--model-url", "https://unused.invalid"}, dependencies{stdout: &out, stderr: &out, goos: "linux", loadConfig: func(string, string) (*config.Config, error) { return nil, errors.New("valid dispatch") }})
+	if err == nil || !strings.Contains(err.Error(), "valid dispatch") {
+		t.Fatalf("inert model flags refused: %v", err)
+	}
+}
 func TestOfflineClusterFlagDispatchAndInertHelp(t *testing.T) {
 	for _, args := range [][]string{
 		{"cluster", "up", "--step", "cluster", "--offline-bundle", "bundle"},
@@ -67,7 +88,7 @@ func TestOfflineClusterFlagDispatchAndInertHelp(t *testing.T) {
 	}
 	var out bytes.Buffer
 	err := execute([]string{"cluster", "orka", "install", "--offline-bundle", "bundle"}, dependencies{stdout: &out, stderr: &out, goos: "linux"})
-	if err == nil || !strings.Contains(err.Error(), "unknown flag: --offline-bundle") {
-		t.Fatalf("install flag unexpectedly exposed: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "--provider -") {
+		t.Fatalf("install requires no-provider combination: %v", err)
 	}
 }
