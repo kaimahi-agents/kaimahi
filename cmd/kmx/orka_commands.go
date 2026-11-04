@@ -72,7 +72,7 @@ func newOrkaInstallCommand(state *commandState) *cobra.Command {
 	cmd.Flags().BoolVar(&opt.NoApply, "no-apply", false, "verify the installer (fetch online), write nothing")
 	cmd.Flags().BoolVar(&opt.DryRun, "dry-run", false, "server-side validation only")
 	cmd.MarkFlagsMutuallyExclusive("no-apply", "dry-run")
-	cmd.RunE = appRun(state, func(a *app.App) error { return a.OrkaInstall(opt) })
+	bindProvisioningOutput(cmd, state, "cluster.orka.install", func() provisioningSelection { return installSelection(opt) }, func(a *app.App) error { return a.OrkaInstall(opt) })
 	return cmd
 }
 

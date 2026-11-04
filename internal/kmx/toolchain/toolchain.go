@@ -7,6 +7,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -133,6 +134,9 @@ func Verify(what string, payload, checksumFile []byte) error {
 
 // Options configure a fetch.
 type Options struct {
+	// Context optionally cancels downloads and stops later tool publication.
+	// Nil preserves the existing background behavior.
+	Context  context.Context
 	CacheDir string
 	// Log receives one line when a download actually happens. Fetching a
 	// binary onto someone's machine is not something to do silently.
@@ -169,6 +173,10 @@ func Ensure(spec Spec, opt Options) (string, error) {
 // call reports the tampered case — the one an operator most needs named — as
 // an ordinary cache hit.
 func EnsureReporting(spec Spec, opt Options) (string, Source, error) {
+	ctx := opt.context()
+	if err := ctx.Err(); err != nil {
+		return "", FromDownload, err
+	}
 	path := spec.CachePath(opt.CacheDir)
 
 	// A cache hit is re-verified against the digest recorded beside it when
@@ -196,11 +204,11 @@ func EnsureReporting(spec Spec, opt Options) (string, Source, error) {
 		fmt.Fprintf(opt.Log, "fetching %s v%s (%s), checksum-verified — %s\n", spec.Name, spec.Version, url, spec.Why)
 	}
 
-	payload, err := get(url)
+	payload, err := get(ctx, url)
 	if err != nil {
 		return "", FromDownload, err
 	}
-	checksumFile, err := get(checksumURL)
+	checksumFile, err := get(ctx, checksumURL)
 	if err != nil {
 		return "", FromDownload, err
 	}
@@ -217,6 +225,9 @@ func EnsureReporting(spec Spec, opt Options) (string, Source, error) {
 		}
 	}
 
+	if err := ctx.Err(); err != nil {
+		return "", FromDownload, err
+	}
 	if err := install(path, binary); err != nil {
 		return "", FromDownload, err
 	}
@@ -269,9 +280,16 @@ func rebase(url, base string) string {
 	return url
 }
 
-func get(url string) ([]byte, error) {
+func (o Options) context() context.Context {
+	if o.Context != nil {
+		return o.Context
+	}
+	return context.Background()
+}
+
+func get(ctx context.Context, url string) ([]byte, error) {
 	client := &http.Client{Timeout: 5 * time.Minute}
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("cannot construct download request for %s: %w", url, err)
 	}

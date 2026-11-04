@@ -134,7 +134,11 @@ func (a *App) provision(dependencies []dependency) error {
 	if err != nil {
 		return err
 	}
-	tools, err := toolchain.Provision(wanted, linkDir, toolchain.Options{CacheDir: cache, Log: a.Err, BaseOverride: toolchainBase})
+	options := toolchain.Options{CacheDir: cache, Log: a.Err, BaseOverride: toolchainBase}
+	if a.operationProgress != nil {
+		options.Context = a.operationContext()
+	}
+	tools, err := toolchain.Provision(wanted, linkDir, options)
 	if err != nil {
 		return fmt.Errorf("%w\n  kmx could not fetch a tool it needs. Install it yourself and put it on PATH, or set KMX_TOOLCHAIN=off to be told rather than helped", err)
 	}

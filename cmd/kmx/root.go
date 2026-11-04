@@ -136,8 +136,18 @@ func execute(argv []string, deps dependencies) error {
 			out = os.Stdout
 		}
 		machine = newMachineOutput(out, "version")
+	} else if operation := provisioningJSONInvocation(argv); operation != "" {
+		out := deps.stdout
+		if out == nil {
+			out = os.Stdout
+		}
+		machine = newProvisioningOutput(out, operation, context.Background())
+		defer machine.stop()
 	}
 	err := executeCommand(argv, deps, machine)
+	if machine != nil && machine.setup != nil {
+		return machine.finishSetup(err)
+	}
 	if err == nil || machine == nil {
 		return err
 	}
@@ -181,6 +191,9 @@ func executeCommand(argv []string, deps dependencies, machine *machineOutput) er
 	}
 	state := &commandState{deps: deps, contextFlag: contextFlag, argv: append([]string(nil), argv...), machine: machine}
 	root := newRootCommand(state)
+	if machine != nil && machine.ctx != nil {
+		root.SetContext(machine.ctx)
+	}
 	root.InitDefaultHelpCmd()
 	help, _, _ := root.Find([]string{"help"})
 	help.Hidden = true

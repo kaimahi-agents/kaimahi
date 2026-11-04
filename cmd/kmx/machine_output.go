@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -27,6 +28,11 @@ type machineOutput struct {
 	started   time.Time
 	done      bool
 	err       error
+	seq       uint64
+	cancel    context.CancelFunc
+	ctx       context.Context
+	stop      func()
+	setup     *provisioningOutput
 }
 
 func newMachineOutput(out io.Writer, operation string) *machineOutput {
@@ -36,6 +42,10 @@ func newMachineOutput(out io.Writer, operation string) *machineOutput {
 func (m *machineOutput) document(record any) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.writeLocked(record, true)
+}
+
+func (m *machineOutput) writeLocked(record any, terminal bool) error {
 	if m.err != nil {
 		return m.err
 	}
@@ -57,18 +67,20 @@ func (m *machineOutput) document(record any) error {
 		}
 	}
 	m.err = err
-	m.done = err == nil
+	m.done = err == nil && terminal
+	if err != nil && m.cancel != nil {
+		m.cancel()
+	}
 	return err
 }
 
 func (m *machineOutput) result(outcome, verdict string, exit int, safe *app.MachineError) error {
-	return m.document(app.MachineResult{
-		MachineEnvelope: app.MachineEnvelope{
-			SchemaVersion: 1, Kind: "kmx.result", Operation: m.operation,
-			OperationID: m.id, Seq: 1, ElapsedMs: time.Since(m.started).Milliseconds(),
-		},
-		Outcome: outcome, Verdict: verdict, ExitCode: exit, Error: safe,
-	})
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.writeLocked(app.MachineResult{
+		MachineEnvelope: m.envelope("kmx.result"),
+		Outcome:         outcome, Verdict: verdict, ExitCode: exit, Error: safe,
+	}, true)
 }
 
 // The cause remains available to exitCode/errors.Is, but main prints only the
@@ -76,6 +88,7 @@ func (m *machineOutput) result(outcome, verdict string, exit int, safe *app.Mach
 type machineCommandError struct {
 	cause error
 	safe  *app.MachineError
+	code  string
 }
 
 func (e *machineCommandError) Error() string { return e.safe.Error() }

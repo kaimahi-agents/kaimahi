@@ -2,6 +2,8 @@
 // context guards, runtime adapters and external tools.
 // Machine output shares payload-free envelopes and fixed error projections;
 // command adapters retain format selection, writing and exit semantics.
+// Provisioning JSONL observes existing phase boundaries with operation-local
+// cancellation and conservative mutation projections, never readiness proof.
 //
 // Offline cluster bring-up validates a closed manifest and clean binary identity
 // against an embedded catalog. Cluster bring-up reads only pinned node evidence;
@@ -266,7 +268,13 @@ func (a *App) kubeconfig() (*guard.Kubeconfig, error) {
 		"https://kubernetes.io/docs/tasks/tools/"); err != nil {
 		return nil, err
 	}
-	cfg, err := guard.LoadKubeconfig("kubectl")
+	var cfg *guard.Kubeconfig
+	var err error
+	if a.operationProgress != nil {
+		cfg, err = guard.LoadKubeconfigContext(a.operationContext(), "kubectl")
+	} else {
+		cfg, err = guard.LoadKubeconfig("kubectl")
+	}
 	if err != nil {
 		return nil, fmt.Errorf("kube-guard: %w", err)
 	}

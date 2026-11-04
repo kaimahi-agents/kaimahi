@@ -43,10 +43,16 @@ func newVersionCommand(state *commandState) *cobra.Command {
 			if state.machine == nil {
 				state.machine = newMachineOutput(cmd.OutOrStdout(), "version")
 			}
+			capabilities := []versionCapability{{Operation: "version", Output: "json", SchemaVersion: 1}}
+			if state.deps.goos != "windows" {
+				for _, operation := range []string{"cluster.up", "cluster.orka.install"} {
+					capabilities = append(capabilities, versionCapability{Operation: operation, Output: "jsonl", SchemaVersion: 1})
+				}
+			}
 			err := state.machine.document(versionDocument{
 				SchemaVersion: 1, Kind: "kmx.version", KmxVersion: build.Version,
 				OrkaVersion:  app.OrkaVersion,
-				Capabilities: []versionCapability{{Operation: "version", Output: "json", SchemaVersion: 1}},
+				Capabilities: capabilities,
 			})
 			if err != nil {
 				return &machineCommandError{cause: err, safe: app.NewMachineError("output_failed", "")}

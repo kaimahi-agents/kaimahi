@@ -114,7 +114,7 @@ Keep these distinctions:
 | `--context` | Kubernetes context for this invocation. Global, accepted anywhere on the line. |
 | `--namespace` | Kubernetes namespace the command reads or writes. |
 | `--to` | Named destination from workspace `kmx.yaml` for eval, Deploy or destination status. Never switches a saved/current context. |
-| `-o`, `--output` | Report format: `table` or `text`, `json`, `yaml`. Machine formats print exactly one document. |
+| `-o`, `--output` | Report format: `table` or `text`, `json`, `yaml`, or command-specific `jsonl`. JSON/YAML formats print exactly one document; `cluster up` and `cluster orka install` accept `text` (default) or `jsonl`, with progress events and one terminal result. |
 | `-i`, `--interactive` | Switch a command that has a scripted mode to its guided terminal mode. Not used on commands that are only interactive. |
 | `--out` | Path for written artifacts. Never reuse `--output` for a path. |
 | `--workspace` | Exact workspace root without discovery fallback; default create initializes it if absent, and push requires an existing workspace. |
@@ -167,7 +167,9 @@ Keep these distinctions:
 
 - **stdout carries the result only:** a report, an answer, a manifest or a
   JSON document. Progress, diagnostics, notices and deprecation warnings go to
-  stderr.
+  stderr. The explicit setup `-o jsonl` streams are an exception: stdout carries
+  safe progress events and one terminal result; raw App/child output and command
+  echoes are suppressed. See [Machine-readable output](machine-output.md#provisioning-event-streams).
 - **Machine output is never styled.** Rich output respects `TERM=dumb` and
   `NO_COLOR`.
 - **Exit codes:**

@@ -12,7 +12,7 @@ kmx version -o json
 A successful invocation emits one UTF-8 JSON object and a newline:
 
 ```json
-{"schemaVersion":1,"kind":"kmx.version","kmxVersion":"v0.9.0-rc.6","orkaVersion":"v0.3.0","capabilities":[{"operation":"version","output":"json","schemaVersion":1}]}
+{"schemaVersion":1,"kind":"kmx.version","kmxVersion":"v0.9.0-rc.6","orkaVersion":"v0.3.0","capabilities":[{"operation":"version","output":"json","schemaVersion":1},{"operation":"cluster.up","output":"jsonl","schemaVersion":1},{"operation":"cluster.orka.install","output":"jsonl","schemaVersion":1}]}
 ```
 
 The version values above are examples. `kmxVersion` uses the build's resolved
@@ -21,8 +21,9 @@ version this binary targets, not a running controller's observed version.
 Capabilities describe implemented binary interfaces, not dependency availability,
 cluster readiness, permission, model access or qualified execution.
 
-Only version JSON is currently advertised. Setup and file-Test JSONL streams are
-not implemented. Existing Run, Test, list, show, deployment and other JSON
+Unix builds advertise version JSON and the two setup JSONL adapters. Native
+Windows advertises only version JSON; setup remains deferred. File-Test JSONL
+is not implemented or advertised. Existing Run, Test, list, show, deployment and other JSON
 formats keep their current shapes and exit meanings. This contract does not
 wrap or replace those documents.
 
@@ -94,6 +95,78 @@ are shared vocabulary, not claims that additional command adapters exist.
 Recovery is guidance, never automatic retry authorization. Unknown internal
 classifications fall back to `operation_failed`; untyped causes are not
 classified by substring matching their text.
+
+## Provisioning event streams
+
+Use `kmx cluster up -o jsonl` or `kmx cluster orka install -o jsonl` to receive
+newline-delimited events and one terminal result. Their `--output` / `-o` accepts
+`text|jsonl`, default `text`; `json` is not a setup format. Existing confirmation
+and execution rules still apply. The adapter detaches stdin and suppresses raw
+App/child stdout, stderr and command echoes. It never drives a hidden prompt.
+Supply existing scoped consent through `KAIMAHI_CONFIRM` and existing environment
+configuration, not credential flags or prompt input. Keyed Provider creation is
+not added. Missing consent uses the existing nonterminal refusal.
+
+Every record has `schemaVersion`, `kind`, `operation`, fresh UUID `operationId`,
+contiguous one-based `seq` and monotonic nonnegative `elapsedMs`. Operations are
+`cluster.up` and `cluster.orka.install`; kinds are `kmx.event` and `kmx.result`.
+Events are `stage.started` and `stage.finished`; finished status is `complete`,
+`failed`, `cancelled` or an actually observed `skipped`. A result may close an
+interrupted stage without a finish event. Preflight covers argument/configuration
+and adapter preparation only. Early parse failures emit its pair on unwind;
+successful help/completion stays human output with no event prefix. This early
+framing guarantee accepts one explicit `-o jsonl`, `-ojsonl`, `--output jsonl` or
+`--output=jsonl` after the full command route, respecting known flag operands and
+`--`. Other ambiguous or combined forms keep ordinary Cobra error behavior;
+a valid selection can still start a stream at handler entry. Handler-owned
+validation is unchanged: an invalid step can return `operation_failed` after
+adapter preflight completes, without any stage or mutation.
+
+`cluster.up` observes the selected existing `cluster`, `ollama`, `model`, `orka`
+phases in that order. A single `--step` emits only that phase; offline node-only
+up retains its existing `cluster` callback. Inter-phase Orka checks have no
+invented stage. With stdin detached, interactive model reuse is not selected.
+
+Online Orka install maps installer fetch to `installer`, chart apply or dry-run
+validation to `runtime`, reader provisioning to `result_reader`, and keyless
+Provider wiring to `provider`. `--provider -` omits provider. Unknown observed
+phase labels become `other`, never raw labels. Dry-run has installer/runtime
+validation phases, not readiness. Online `--no-apply` has no internal phases:
+only preflight and result, with `effects: []`; complete means its fetch and
+verification branch completed, not an installed runtime.
+
+Offline Orka install has no internal phase callbacks in any mode, so it emits
+only preflight and result. Its one coarse `runtime` effect covers the existing
+whole handler, including reader work, not invented per-resource observations.
+Unlike online no-apply's empty effects, offline no-apply records that coarse
+entry as `completed` / `none` on success (`started` / `none` on failure).
+
+Setup results include `mode: apply|no_apply|dry_run`, `outcome: complete|failed|cancelled`,
+`verdict: not_applicable`, `exitCode`, ordered `effects`, and optional safe `error`.
+An effect has `stage`, `attempt: not_started|started|completed`, and
+`mutation: none|possible|acknowledged`. Mutating stages become possible before
+entry; even successful completion remains possible without granular write
+acknowledgment. No-apply/dry-run cluster mutation is none; tool/cache downloads
+are outside this cluster-mutation statement. Effects are not an exhaustive
+inventory, proof of creation, ownership or authority to delete, adopt or replay.
+Failures before accepted options use default apply mode and no selected effects.
+
+SIGINT/SIGTERM cooperatively cancel the invocation context before config/work;
+writer errors cancel that same context and stop later phases/sends. Direct
+children are killed and waited by existing CommandContext, not a remote workload
+or guaranteed descendant tree. Handled setup cancellation retains exit 1, not
+130. Untyped consent/dependency failures use fixed `operation_failed`; config
+load failures use `configuration_invalid`, Windows refusal `unsupported`, and
+context errors `cancelled` or `deadline_exceeded`. Writer failure takes precedence
+over consequent cancellation. No rollback, resubmission or new cancel endpoint.
+
+Consumers ignore unknown progress names/fields, display new stages generically,
+and reject unknown majors, operations, record kinds or terminal outcomes. Require
+exactly one final result with matching operation/UUID, contiguous seq and actual
+process exit. Truncated/missing result, sequence gaps, malformed bytes or bytes
+after the result mean incomplete delivery, never success or permission to retry.
+Progress alone cannot establish readiness; retain possible effects for read-only
+inspection. Legacy command JSON documents are unchanged.
 
 ## Reading the complete output
 
