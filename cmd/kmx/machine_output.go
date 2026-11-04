@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -79,3 +80,49 @@ type machineCommandError struct {
 
 func (e *machineCommandError) Error() string { return e.safe.Error() }
 func (e *machineCommandError) Unwrap() error { return e.cause }
+
+// Recognize the opt-in before preprocessing can fail. Only known flag operands
+// are consumed; a value equal to "version" must never discover a command.
+func versionJSONInvocation(argv []string) bool {
+	command := false
+	output, count := "", 0
+	for i := 0; i < len(argv); i++ {
+		arg := argv[i]
+		name, value, inline := strings.Cut(arg, "=")
+		switch name {
+		case "--":
+			return command && count == 1 && output == "json"
+		case "--help", "-h":
+			return false
+		case "--context", "-context", "--container-engine":
+			if !inline {
+				i++
+			}
+			continue
+		}
+		if !command {
+			if arg != "version" {
+				return false
+			}
+			command = true
+			continue
+		}
+		switch {
+		case name == "--output" || arg == "-o":
+			if !inline {
+				i++
+				if i >= len(argv) {
+					return false
+				}
+				value = argv[i]
+			}
+			output, count = value, count+1
+		case strings.HasPrefix(arg, "-o") && len(arg) > 2:
+			output, count = arg[2:], count+1
+		case strings.HasPrefix(arg, "-") && !inline:
+			// Its following operand is opaque: don't search past it for flags.
+			return count == 1 && output == "json"
+		}
+	}
+	return command && count == 1 && output == "json"
+}

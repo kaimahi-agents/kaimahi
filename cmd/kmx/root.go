@@ -75,6 +75,7 @@ type commandState struct {
 	argv                []string
 	evalNoticeShown     bool
 	windowsFilePair     *agentfile.Pair
+	machine             *machineOutput
 }
 
 func (s *commandState) executable() string {
@@ -128,6 +129,30 @@ func (s *commandState) operationApplication(cmd *cobra.Command) (*app.App, error
 }
 
 func execute(argv []string, deps dependencies) error {
+	var machine *machineOutput
+	if versionJSONInvocation(argv) {
+		out := deps.stdout
+		if out == nil {
+			out = os.Stdout
+		}
+		machine = newMachineOutput(out, "version")
+	}
+	err := executeCommand(argv, deps, machine)
+	if err == nil || machine == nil {
+		return err
+	}
+	safe := app.NewMachineError("invalid_arguments", "")
+	var reported *machineCommandError
+	if errors.As(err, &reported) {
+		safe = reported.safe
+	}
+	if writeErr := machine.result("failed", "not_applicable", exitCode(err), safe); writeErr != nil {
+		return &machineCommandError{cause: writeErr, safe: app.NewMachineError("output_failed", "")}
+	}
+	return &machineCommandError{cause: err, safe: safe}
+}
+
+func executeCommand(argv []string, deps dependencies, machine *machineOutput) error {
 	contextFlag := ""
 	var err error
 	if len(argv) == 0 || argv[0] != "__complete" && argv[0] != "__completeNoDesc" {
@@ -154,7 +179,7 @@ func execute(argv []string, deps dependencies) error {
 			return err
 		}
 	}
-	state := &commandState{deps: deps, contextFlag: contextFlag, argv: append([]string(nil), argv...)}
+	state := &commandState{deps: deps, contextFlag: contextFlag, argv: append([]string(nil), argv...), machine: machine}
 	root := newRootCommand(state)
 	root.InitDefaultHelpCmd()
 	help, _, _ := root.Find([]string{"help"})
@@ -296,15 +321,6 @@ func usageArgs(min, max int, usage string) cobra.PositionalArgs {
 		}
 		return nil
 	}
-}
-
-func newVersionCommand(state *commandState) *cobra.Command {
-	return &cobra.Command{Use: "version", Short: "Show this build and the component versions it targets", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
-		info, ok := state.deps.buildInfo()
-		fmt.Fprintf(cmd.OutOrStdout(), "kmx %s\n  kaimahi is pre-1.0 and incubating: minor versions may break behaviour, and say so in CHANGELOG.md\n  orka     %s\n  model    %s\n",
-			version.Resolve(info, ok), app.OrkaVersion, config.DefaultModel)
-		return nil
-	}}
 }
 
 func newCompletionCommand(root *cobra.Command) *cobra.Command {
