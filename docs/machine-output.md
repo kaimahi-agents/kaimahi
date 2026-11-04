@@ -12,7 +12,7 @@ kmx version -o json
 A successful invocation emits one UTF-8 JSON object and a newline:
 
 ```json
-{"schemaVersion":1,"kind":"kmx.version","kmxVersion":"v0.9.0-rc.6","orkaVersion":"v0.3.0","capabilities":[{"operation":"version","output":"json","schemaVersion":1},{"operation":"cluster.up","output":"jsonl","schemaVersion":1},{"operation":"cluster.orka.install","output":"jsonl","schemaVersion":1},{"operation":"file.test","output":"jsonl","schemaVersion":1,"runner":"embedded"},{"operation":"file.test","output":"jsonl","schemaVersion":1,"runner":"copilotd"},{"operation":"cluster.discover","output":"jsonl","schemaVersion":1,"scope":"contexts"},{"operation":"cluster.discover","output":"jsonl","schemaVersion":1,"scope":"namespaces"}]}
+{"schemaVersion":1,"kind":"kmx.version","kmxVersion":"v0.9.0-rc.6","orkaVersion":"v0.3.0","capabilities":[{"operation":"version","output":"json","schemaVersion":1},{"operation":"cluster.up","output":"jsonl","schemaVersion":1},{"operation":"cluster.orka.install","output":"jsonl","schemaVersion":1},{"operation":"file.test","output":"jsonl","schemaVersion":1,"runner":"embedded"},{"operation":"file.test","output":"jsonl","schemaVersion":1,"runner":"copilotd"},{"operation":"cluster.orka.tools","output":"json","schemaVersion":1},{"operation":"cluster.discover","output":"jsonl","schemaVersion":1,"scope":"contexts"},{"operation":"cluster.discover","output":"jsonl","schemaVersion":1,"scope":"namespaces"}]}
 ```
 
 The version values above are examples. `kmxVersion` uses the build's resolved
@@ -22,8 +22,9 @@ Capabilities describe implemented binary interfaces, not dependency availability
 cluster readiness, permission, model access or qualified execution.
 
 Unix builds advertise version JSON, two setup JSONL adapters, `file.test`
-JSONL with separate `runner: embedded` and `runner: copilotd` selectors, and
-`cluster.discover` JSONL with separate `scope: contexts` and `scope: namespaces`. Native
+JSONL with separate `runner: embedded` and `runner: copilotd` selectors,
+`cluster.orka.tools` JSON (schemaVersion 1), and `cluster.discover` JSONL with
+separate `scope: contexts` and `scope: namespaces`. Native
 Windows advertises version JSON and only `file.test`/`runner: embedded`/`model: fake`;
 its existing package-free/tool-free fake intake gate still applies. Setup and
 native copilotd remain deferred there. Existing Run, Test, list, show, deployment and other JSON
@@ -250,6 +251,40 @@ proof. Cooperative cancellation/disposal acknowledgment alone does not establish
 remote stop, and redaction cannot erase the attempted-send fact. Signals retain
 the existing post-intake timing; writer failure cancels the existing file context,
 wins over resulting cancellation, and exits 1 when the write error returns.
+
+## Orka Tool Discovery JSON
+
+```sh
+kmx cluster orka tools --context kind-dev --namespace orka-system -o json
+```
+
+The command returns one v1 `kmx.result` with operation `cluster.orka.tools`,
+verdict `not_applicable`, outcome `complete|failed`, exitCode 0 or 1, and an
+`inventory` object after selector/config admission. Handler-admitted errors use
+the existing fixed safe error vocabulary; Cobra parsing retains its ordinary
+contract without a new root-wide early-error framing promise. Output writes use
+the existing bounded terminal latch; partial writes are never retried.
+
+`inventory` contains `target` (context, namespace, optional clusterUid and
+namespaceUid), optional `runtimeVersion`/`catalogCommit`, `complete`, `reason`,
+and `tools`. Rows have `kind`, `name`, `availability`, `reason`, `source`, and
+optional namespace/UID/resourceVersion/generation/specDigest. Built-in source
+`pinned-catalog` means exact release data qualified against the observed runtime,
+not a live API or tool call. HTTP source `kubernetes` means read resource state,
+not endpoint execution. No auth token is minted by discovery.
+
+Availability is `available|missing|disabled|unsupported|unknown`. Require
+`complete: true` and available selected requirements; collection completeness
+alone does not certify every row. False or absent Tool status is unknown, not
+zero successful calls. Runtime/watch mismatch yields incomplete inventory and
+`unsupported_runtime`. Lists retain bounded readable rows on failure, never a
+successfully truncated collection. Reasons and their distinctions are documented
+in [tool availability](orka.md#read-only-tool-availability).
+
+This discovery interface supplies no tool-call proof, source/package identity,
+receipt, readiness guarantee or authority to Send. It leaves existing list,
+show, Test and deployment JSON documents unchanged. Both context and namespace
+are explicit; kubectl command preferences are disabled only for these reads.
 
 ## Reading the complete output
 

@@ -64,7 +64,7 @@ func parseFreeForm(filename string, lines []string, a *Agent, native bool) (*Age
 	start := 0
 	a.Identity.ID = filenameID(filename)
 	if hasFrontmatter(lines) {
-		end := slices.IndexFunc(lines[1:], func(l string) bool { return strings.TrimRight(l, " \t") == "---" }) + 1
+		end := frontmatterEnd(lines)
 		if end == 0 {
 			return nil, refuse(filename, 1, 1, "Frontmatter", "close the YAML frontmatter with a --- line")
 		}
@@ -213,25 +213,9 @@ func structuredExamples(rest []string) bool {
 // mapFrontmatter maps only settings whose meaning is identical in kmx; the raw
 // header remains the source of truth and everything unmapped stays in it.
 func mapFrontmatter(filename string, a *Agent, native bool) *Error {
-	var doc yaml.Node
-	if yaml.Unmarshal([]byte(a.Frontmatter), &doc) != nil {
-		return refuse(filename, 2, 1, "Frontmatter", "provide valid YAML between the --- lines")
-	}
-	if doc.Kind == 0 || doc.Content[0].Kind == yaml.ScalarNode && doc.Content[0].Tag == "!!null" {
-		a.CopilotToolsOmitted = true
-		return nil
-	}
-	root := doc.Content[0]
-	if root.Kind != yaml.MappingNode {
-		return refuse(filename, 2, 1, "Frontmatter", "use a YAML mapping of settings")
-	}
-	fields := map[string]*yaml.Node{}
-	for i := 0; i < len(root.Content); i += 2 {
-		key := root.Content[i].Value
-		if _, dup := fields[key]; dup {
-			return refuse(filename, 1+root.Content[i].Line, 1, "Frontmatter", "remove duplicate settings")
-		}
-		fields[key] = root.Content[i+1]
+	_, fields, err := decodeFrontmatterRoot(filename, yaml.NewDecoder(strings.NewReader(a.Frontmatter)))
+	if err != nil {
+		return err
 	}
 	text := func(n *yaml.Node) string {
 		if n != nil && n.Kind == yaml.ScalarNode && n.Tag == "!!str" {

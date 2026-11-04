@@ -35,7 +35,7 @@ func TestVersionJSON(t *testing.T) {
 					t.Fatalf("bad version projection: %+v", r)
 				}
 				caps, ok := r["capabilities"].([]any)
-				want := 7
+				want := 8
 				if goos == "windows" {
 					want = 2
 				}
@@ -71,6 +71,12 @@ func TestVersionJSON(t *testing.T) {
 							t.Fatal(c)
 						}
 					} else if len(c) != 4 {
+						t.Fatal(c)
+					}
+				}
+				if goos != "windows" {
+					c := caps[5].(map[string]any)
+					if c["operation"] != "cluster.orka.tools" || c["output"] != "json" || c["schemaVersion"] != float64(1) {
 						t.Fatal(c)
 					}
 				}

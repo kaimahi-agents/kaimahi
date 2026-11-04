@@ -63,6 +63,7 @@ func newVersionCommand(state *commandState) *cobra.Command {
 				capabilities = append(capabilities, c)
 			}
 			if state.deps.goos != "windows" {
+				capabilities = append(capabilities, versionCapability{Operation: "cluster.orka.tools", Output: "json", SchemaVersion: 1})
 				for _, scope := range []string{"contexts", "namespaces"} {
 					capabilities = append(capabilities, versionCapability{Operation: "cluster.discover", Output: "jsonl", SchemaVersion: 1, Scope: scope})
 				}
