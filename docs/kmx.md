@@ -1575,8 +1575,10 @@ this command is not a network sandbox for substituted executables. For kind
 creation only, a private temporary PATH shim blocks engine `pull`/`image pull`
 and forces `--pull=never` on `run`/`create`, including kind's fallback after a
 transient inspection failure. Other trusted-kind engine calls delegate to the
-original absolute executable. The shim is removed after kind exits; shared PATH
-and Runner settings are unchanged.
+original absolute executable. Creation requires an executable temporary directory;
+a direct guard probe refuses before kind if execution is unavailable. Every offline
+kind call is bound to the selected engine, not provider auto-detection. The shim
+is removed after kind exits; shared PATH and Runner settings are unchanged.
 
 For an isolated target, select the matching kind name, context and kubeconfig:
 
