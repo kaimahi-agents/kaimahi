@@ -61,6 +61,9 @@ func newVersionCommand(state *commandState) *cobra.Command {
 				}
 				capabilities = append(capabilities, c)
 			}
+			if state.deps.goos != "windows" {
+				capabilities = append(capabilities, versionCapability{Operation: "cluster.orka.tools", Output: "json", SchemaVersion: 1})
+			}
 			err := state.machine.document(versionDocument{
 				SchemaVersion: 1, Kind: "kmx.version", KmxVersion: build.Version,
 				OrkaVersion:  app.OrkaVersion,

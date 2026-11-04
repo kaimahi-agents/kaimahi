@@ -1,5 +1,8 @@
 // Package app orchestrates kmx operations using resolved configuration,
 // context guards, runtime adapters and external tools.
+// ReadOrkaTools shares bounded GET-only native tool inventory with destination
+// consumers: runtime-qualified pinned builtins and observed HTTP Tool resources,
+// never credentials, execution proof or provisioning.
 // Machine output shares payload-free envelopes and fixed error projections;
 // command adapters retain format selection, writing and exit semantics.
 // Provisioning JSONL observes existing phase boundaries with operation-local
