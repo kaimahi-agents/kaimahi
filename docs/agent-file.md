@@ -338,8 +338,16 @@ with an explicit local binding and environment credential reference. In addition
 can select named stdio MCP servers from the agent folder's `kmx.yaml` with repeatable
 `--mcp-server NAME` (replaces the saved selection) or `--no-mcp-servers` (clears it); a fixed
 `--tool-bindings` takes precedence. Disabled tools and populated recordings do not start a
-server. See [selected stdio servers](local-preview.md#selected-stdio-servers-in-file-runtest). Missing
-bindings leave a declared tool available as a stub answering "not available in this test".
+server. See [selected stdio servers](local-preview.md#selected-stdio-servers-in-file-runtest).
+File Run/Test can also bind declared Enabled tools through `commandTools` in the
+physical agent folder's `kmx.yaml`. Executable and argv are fixed host
+configuration, not agent-file declarations or model arguments; tool input accepts
+only an empty object. `--no-mcp-servers` does not disable command tools; use the
+existing `tools` Enabled/Disabled settings. Disabled tools and populated recordings
+do not launch commands or resolve their environment. See
+[fixed command tools](local-preview.md#fixed-command-tools-in-file-runtest)
+for configuration and Unix cleanup boundaries; native Windows execution is unavailable.
+Missing bindings leave a declared tool available as a stub answering "not available in this test".
 Malformed supplied bindings, missing credentials for an actual live binding, unsupported routes and invalid provider results still refuse.
 Bound tools also work on Copilot Chat Completions and Responses routes; judges
 remain tool-free. Trusted embedding can bind multiple declared names to copied
