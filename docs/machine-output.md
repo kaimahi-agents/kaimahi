@@ -114,7 +114,13 @@ Events are `stage.started` and `stage.finished`; finished status is `complete`,
 `failed`, `cancelled` or an actually observed `skipped`. A result may close an
 interrupted stage without a finish event. Preflight covers argument/configuration
 and adapter preparation only. Early parse failures emit its pair on unwind;
-successful help/completion stays human output with no event prefix.
+successful help/completion stays human output with no event prefix. This early
+framing guarantee accepts one explicit `-o jsonl`, `-ojsonl`, `--output jsonl` or
+`--output=jsonl` after the full command route, respecting known flag operands and
+`--`. Other ambiguous or combined forms keep ordinary Cobra error behavior;
+a valid selection can still start a stream at handler entry. Handler-owned
+validation is unchanged: an invalid step can return `operation_failed` after
+adapter preflight completes, without any stage or mutation.
 
 `cluster.up` observes the selected existing `cluster`, `ollama`, `model`, `orka`
 phases in that order. A single `--step` emits only that phase; offline node-only
