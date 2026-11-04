@@ -2,6 +2,9 @@ package app
 
 import (
 	"fmt"
+	"strings"
+
+	"github.com/google/uuid"
 	"sync"
 	"unicode/utf8"
 
@@ -77,6 +80,7 @@ type machineCaseState struct {
 // MachineFileObserver owns only checked presentation. Holding mu across the sink
 // serializes final freeze against in-flight and late receive-side observations.
 type MachineFileObserver struct {
+	failure                          error
 	mu                               sync.Mutex
 	emit                             func(MachineFileProgress) error
 	check                            func(...string) error
@@ -103,6 +107,12 @@ func (m *MachineFileObserver) bind(selected []agentfile.Example, rev, snapshot s
 	}
 }
 func (m *MachineFileObserver) identity(raw string) MachineIdentity {
+	return m.checkedIdentity(raw, false)
+}
+func (m *MachineFileObserver) chatIdentity(raw string) MachineIdentity {
+	return m.checkedIdentity(raw, true)
+}
+func (m *MachineFileObserver) checkedIdentity(raw string, chat bool) MachineIdentity {
 	unavailable := MachineIdentity{Availability: "unavailable"}
 	if m.check == nil || raw == "" || len(raw) > 1024 || !utf8.ValidString(raw) {
 		return unavailable
@@ -112,7 +122,13 @@ func (m *MachineFileObserver) identity(raw string) MachineIdentity {
 		return unavailable
 	}
 	if checked, ok := suiteDiagnosticText(raw, len(raw), nil); !ok || checked != raw {
-		return unavailable
+		// Match validNative's typed Chat exception, never a generic display bypass.
+		if !chat || !strings.HasPrefix(raw, "ahp-chat:/") {
+			return unavailable
+		}
+		if _, err := uuid.Parse(strings.TrimPrefix(raw, "ahp-chat:/")); err != nil {
+			return unavailable
+		}
 	}
 	return MachineIdentity{Availability: "available", ID: raw}
 }
@@ -130,17 +146,24 @@ func (m *MachineFileObserver) stage(stage, status string) error {
 	return m.publish(p)
 }
 func (m *MachineFileObserver) publish(p MachineFileProgress) error {
+	if m.failure != nil {
+		return m.failure
+	}
 	p.CaseID = m.identity(p.CaseID).ID
-	for _, field := range []**MachineIdentity{&p.Session, &p.Chat, &p.Turn} {
+	for _, field := range []**MachineIdentity{&p.Session, &p.Turn} {
 		if *field != nil {
 			v := m.identity((*field).ID)
 			*field = &v
 		}
 	}
-	if m.emit != nil {
-		return m.emit(p)
+	if p.Chat != nil {
+		v := m.chatIdentity(p.Chat.ID)
+		p.Chat = &v
 	}
-	return nil
+	if m.emit != nil {
+		m.failure = m.emit(p)
+	}
+	return m.failure
 }
 func (m *MachineFileObserver) ready(check func(...string) error) error {
 	m.mu.Lock()
@@ -160,6 +183,9 @@ func (m *MachineFileObserver) observed(o agentpreview.Observation) error {
 	defer m.mu.Unlock()
 	if m.closed || m.disabled || !m.prepared {
 		return nil
+	}
+	if m.failure != nil {
+		return m.failure
 	}
 	if o.FileRevision != m.revision || o.SnapshotRevision != m.snapshot || o.Provider != m.route.Provider || o.Model != m.route.Model || o.CaseIndex < 1 || o.CaseIndex > len(m.cases) {
 		m.disabled = true
@@ -195,7 +221,8 @@ func (m *MachineFileObserver) observed(o agentpreview.Observation) error {
 			previous *string
 			dst      *MachineIdentity
 			event    **MachineIdentity
-		}{{o.Session, &c.rawSession, &c.row.Session, &p.Session}, {o.Chat, &c.rawChat, &c.row.Chat, &p.Chat}, {o.Turn, &c.rawTurn, &c.row.Turn, &p.Turn}} {
+			chat     bool
+		}{{o.Session, &c.rawSession, &c.row.Session, &p.Session, false}, {o.Chat, &c.rawChat, &c.row.Chat, &p.Chat, true}, {o.Turn, &c.rawTurn, &c.row.Turn, &p.Turn, false}} {
 			if pair.raw == "" {
 				continue
 			}
@@ -204,7 +231,7 @@ func (m *MachineFileObserver) observed(o agentpreview.Observation) error {
 				return nil
 			}
 			*pair.previous = pair.raw
-			v := m.identity(pair.raw)
+			v := m.checkedIdentity(pair.raw, pair.chat)
 			*pair.dst = v
 			*pair.event = &v
 		}
@@ -267,7 +294,7 @@ func (m *MachineFileObserver) returned(out agentpreview.Outcome) {
 		row.row.State = "unknown"
 		row.row.DurationMs = &c.DurationMs
 		row.row.Session = m.identity(n.Session)
-		row.row.Chat = m.identity(n.Chat)
+		row.row.Chat = m.chatIdentity(n.Chat)
 		if c.Telemetry == nil {
 			continue
 		}
@@ -325,6 +352,7 @@ func (m *MachineFileObserver) Final(r FilePreviewResult) MachineFileProjection {
 	allTerminal := true
 	for i := range m.cases {
 		c := &m.cases[i]
+		c.row.Verdict = "unknown" // Provisional callbacks cannot grant a final verdict.
 		if i < len(r.Examples) && r.Examples[i].ID == m.ids[i] && r.Examples[i].State == "complete" {
 			c.started = true
 			c.row.State = "complete"
@@ -361,7 +389,7 @@ func (m *MachineFileObserver) Final(r FilePreviewResult) MachineFileProjection {
 		}
 		c.row.CaseID = m.identity(c.row.CaseID).ID
 		c.row.Session = m.identity(c.row.Session.ID)
-		c.row.Chat = m.identity(c.row.Chat.ID)
+		c.row.Chat = m.chatIdentity(c.row.Chat.ID)
 		c.row.Turn = m.identity(c.row.Turn.ID)
 		p.Cases = append(p.Cases, c.row)
 	}

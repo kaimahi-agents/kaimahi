@@ -167,6 +167,74 @@ func TestMachineFileReturnedStartWithoutLiveEventIsUnknown(t *testing.T) {
 	}
 }
 
+func TestMachineFilePublicationChatAndFinalVerdict(t *testing.T) {
+	t.Run("finished error latches", func(t *testing.T) {
+		failed := errors.New("private sink")
+		calls := 0
+		m := machineFileFixture(t, "copilotd", func(p MachineFileProgress) error {
+			if p.Event == "case.finished" {
+				calls++
+				return failed
+			}
+			return nil
+		})
+		_ = m.ready(func(...string) error { return nil })
+		_ = m.observed(machineObservation("case.started", 1))
+		m.finished(FilePreviewCaseProgress{CaseID: "first", Verdict: runtime.EvaluationPass})
+		if !errors.Is(m.observed(machineObservation("case.started", 2)), failed) || !errors.Is(m.stage("execution", "complete"), failed) || calls != 1 {
+			t.Fatal("case-finished failure discarded/retried", calls)
+		}
+	})
+	t.Run("typed chat only", func(t *testing.T) {
+		chat := "ahp-chat:/" + strings.Repeat("a", 32)
+		var events []MachineFileProgress
+		m := machineFileFixture(t, "copilotd", func(p MachineFileProgress) error { events = append(events, p); return nil })
+		_ = m.ready(func(...string) error { return nil })
+		_ = m.observed(machineObservation("case.started", 1))
+		o := machineObservation("session.observed", 1)
+		o.Chat = chat
+		_ = m.observed(o)
+		if events[len(events)-1].Chat == nil || events[len(events)-1].Chat.ID != chat {
+			t.Fatal("valid typed chat withheld", events)
+		}
+		n := fileNativeMetadata()
+		n.Chat = chat
+		c := agentpreview.Completion{ID: n.Session, Native: n, FileRevision: "revision", SnapshotRevision: "snapshot", Provider: "copilot", Model: "gpt-4.1", Telemetry: &agentpreview.Telemetry{Sent: true}}
+		m.returned(agentpreview.Outcome{Examples: []agentpreview.ExampleOutcome{{ID: "first", Completion: c}}})
+		p := m.Final(FilePreviewResult{State: "error"})
+		if p.Cases[0].Chat.ID != chat {
+			t.Fatal("final typed chat withheld", p)
+		}
+		if m.identity(chat).Availability != "unavailable" {
+			t.Fatal("generic fields acquired chat exception")
+		}
+		blocked := machineFileFixture(t, "copilotd", func(MachineFileProgress) error { return nil })
+		_ = blocked.ready(func(fields ...string) error {
+			for _, f := range fields {
+				if strings.Contains(f, strings.Repeat("a", 32)) {
+					return errors.New("held key")
+				}
+			}
+			return nil
+		})
+		_ = blocked.observed(machineObservation("case.started", 1))
+		_ = blocked.observed(o)
+		if blocked.cases[0].row.Chat.Availability != "unavailable" {
+			t.Fatal("typed chat bypassed exact credential checker")
+		}
+	})
+	t.Run("redaction discards provisional pass", func(t *testing.T) {
+		m := machineFileFixture(t, "copilotd", nil)
+		_ = m.ready(func(...string) error { return nil })
+		_ = m.observed(machineObservation("case.started", 1))
+		m.finished(FilePreviewCaseProgress{CaseID: "first", Verdict: runtime.EvaluationPass})
+		p := m.Final(FilePreviewResult{State: "error", ReasonCode: "credential_content"})
+		if p.Cases[0].Verdict != "unknown" {
+			t.Fatal("provisional verdict became final", p)
+		}
+	})
+}
+
 func machineObservation(event string, index int) agentpreview.Observation {
 	return agentpreview.Observation{Event: event, CaseIndex: index, FileRevision: "revision", SnapshotRevision: "snapshot", Provider: "copilot", Model: "gpt-4.1"}
 }
