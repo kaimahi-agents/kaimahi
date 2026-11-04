@@ -30,6 +30,9 @@ type machineOutput struct {
 	err       error
 	seq       uint64
 	cancel    context.CancelFunc
+	ctx       context.Context
+	stop      func()
+	setup     *provisioningOutput
 }
 
 func newMachineOutput(out io.Writer, operation string) *machineOutput {
@@ -85,6 +88,7 @@ func (m *machineOutput) result(outcome, verdict string, exit int, safe *app.Mach
 type machineCommandError struct {
 	cause error
 	safe  *app.MachineError
+	code  string
 }
 
 func (e *machineCommandError) Error() string { return e.safe.Error() }

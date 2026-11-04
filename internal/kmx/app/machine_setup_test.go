@@ -1,9 +1,11 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
@@ -62,6 +64,97 @@ func TestMachinePhaseCancellation(t *testing.T) {
 				t.Fatal("mutated original App")
 			}
 		})
+	}
+}
+
+func TestMachineProvisioningFixtures(t *testing.T) {
+	for _, mode := range []string{"apply", "no_apply", "dry_run", "no_provider", "cancel"} {
+		t.Run(mode, func(t *testing.T) {
+			chart := orkaChart(t)
+			f := newOrkaFixture(t, chart)
+			f.app.orkaInstallerDigest = digestOf(chart)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			f.app.Run.Context = ctx
+			var stages []string
+			a := f.app.WithProvisioningProgress(func(label, status string, _ error) {
+				if status == "active" {
+					stages = append(stages, MachineProvisioningStage("cluster.orka.install", label))
+					if mode == "cancel" && stages[len(stages)-1] == "runtime" {
+						cancel()
+					}
+				}
+			})
+			runner := *a.Run
+			runner.Stdout, runner.Stderr, runner.Echo = io.Discard, io.Discard, false
+			a.Run = &runner
+			a.Out, a.Err, a.Stdin = io.Discard, io.Discard, nil
+			opt := OrkaOptions{NoApply: mode == "no_apply", DryRun: mode == "dry_run"}
+			if mode == "no_provider" {
+				opt.Provider = "-"
+			}
+			err := a.OrkaInstall(opt)
+			if mode == "cancel" {
+				if !errors.Is(err, context.Canceled) || f.writes(t) != "" {
+					t.Fatal("entered cancelled mutation", err, f.writes(t))
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := "installer,runtime,result_reader,provider"
+			switch mode {
+			case "no_apply":
+				want = ""
+			case "dry_run":
+				want = "installer,runtime"
+			case "no_provider":
+				want = "installer,runtime,result_reader"
+			}
+			if strings.Join(stages, ",") != want {
+				t.Fatal(stages, want)
+			}
+			if f.out.Len() != 0 || f.errOut.Len() != 0 {
+				t.Fatal("raw output escaped copied sinks")
+			}
+		})
+	}
+	for _, mode := range []string{"apply", "no_apply", "dry_run"} {
+		t.Run("offline-"+mode, func(t *testing.T) {
+			original, dir, _, _ := offlineInstallApp(t)
+			var raw bytes.Buffer
+			original.Out, original.Err = &raw, &raw
+			original.Run.Stdout, original.Run.Stderr = &raw, &raw
+			notifications := 0
+			a := original.WithProvisioningProgress(func(string, string, error) { notifications++ })
+			runner := *a.Run
+			runner.Stdout, runner.Stderr, runner.Echo = io.Discard, io.Discard, false
+			a.Run = &runner
+			a.Out, a.Err, a.Stdin = io.Discard, io.Discard, nil
+			if err := a.OrkaInstall(OrkaOptions{OfflineBundle: dir, Provider: "-", NoApply: mode == "no_apply", DryRun: mode == "dry_run"}); err != nil {
+				t.Fatal(err)
+			}
+			if notifications != 0 || raw.Len() != 0 {
+				t.Fatal("invented offline phases or leaked child output", notifications, raw.String())
+			}
+		})
+	}
+}
+
+func TestMachineUpObserver(t *testing.T) {
+	a, _, _ := upFixture(t)
+	var stages []string
+	a = a.WithProvisioningProgress(func(label, status string, _ error) {
+		if status == "active" {
+			stages = append(stages, MachineProvisioningStage("cluster.up", label))
+		}
+	})
+	if err := a.Up(""); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(stages, ",") != "cluster,ollama,model,orka" {
+		t.Fatal(stages)
 	}
 }
 

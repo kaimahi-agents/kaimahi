@@ -166,7 +166,7 @@ func newUpCommand(state *commandState) *cobra.Command {
 	cmd.Flags().StringVar(&opt.OfflineBundle, "offline-bundle", "", "local node bundle DIR (requires --step cluster)")
 	_ = cmd.MarkFlagDirname("offline-bundle")
 	_ = cmd.RegisterFlagCompletionFunc("step", staticCompletion(app.UpSteps))
-	cmd.RunE = appRun(state, func(a *app.App) error { return a.UpWithOptions(opt) })
+	bindProvisioningOutput(cmd, state, "cluster.up", func() provisioningSelection { return upSelection(opt) }, func(a *app.App) error { return a.UpWithOptions(opt) })
 	return cmd
 }
 
