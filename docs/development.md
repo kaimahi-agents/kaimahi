@@ -229,21 +229,22 @@ a review. `autoreview --version` identifies helper bytes but is not authenticati
 so candidate instructions never use it to establish trust. A missing or untrusted
 installation makes review unavailable; an agent must not fetch, replace or
 downgrade it just to complete a review. Updating the KMX baseline requires a new
-review of the upstream source and an explicit commit change here.
+review of the upstream source and an explicit commit change here. At the pinned
+commit, `skills/autoreview/scripts/autoreview` has SHA-256
+`043ff83ecf52a36c8fb305d1c6f32be58c073e7a04f402691eb75aa1c6839613`.
 
-For a complete local candidate, replace `origin/main` below with the actual PR
-base when it differs. Reviewer guidance comes from that merge-base commit, not the
-candidate's working tree, so a change cannot rewrite its own review instructions.
-The current rubric remains in the reviewed diff as ordinary untrusted evidence.
-The preflight materializes the merge-base scanners and credential-shape manifest
-in private storage and runs them with an operator-selected isolated Python, never
-with candidate scanner code or its import path. It scans every tracked or addable
-untracked file and three patch views so removed and index-only text is also
-checked. These scanners recognize bounded credential and infrastructure-identifier
-shapes; they do not prove arbitrary source is secret-free. Do not add private or
-ignored data as review context. Infrastructure-scan details can themselves identify
-resources, so this recipe retains them only in invocation-private temporary storage
-and removes them on exit rather than printing or publishing them.
+For PR handoff, replace `origin/main` below with the actual PR base when it differs.
+The branch must be clean and committed; staged, unstaged or untracked work makes
+review unavailable. Reviewer guidance comes from the merge-base commit, not the
+candidate, so a change cannot rewrite its own review instructions. The preflight
+uses sanitized object-to-object Git reads, materializes merge-base scanners in
+private storage and runs them with isolated Python. It scans the exact outgoing
+patch and frozen authority context before either reaches the reviewer. These
+scanners recognize bounded credential and infrastructure-identifier shapes; they
+do not prove arbitrary source is secret-free. Their details remain in private
+temporary storage and are removed on exit rather than printed or published. Binary
+changes refuse because these text scanners cannot inspect their payloads; use an
+equivalent separately trusted review for such a candidate.
 
 This procedure supports an author-owned local candidate. Repository instructions
 cannot safely bootstrap themselves from a hostile external checkout. Review such a
@@ -263,105 +264,114 @@ KMX's native-Windows product boundary.
   set -euo pipefail
   umask 077
   review_base=origin/main
+  expected_autoreview_sha=043ff83ecf52a36c8fb305d1c6f32be58c073e7a04f402691eb75aa1c6839613
+  : "${REVIEW_GIT:?set REVIEW_GIT to an absolute operator-owned Git executable}"
   : "${REVIEW_PYTHON:?set REVIEW_PYTHON to an absolute operator-owned Python 3.10+ executable}"
   : "${AUTOREVIEW:?set AUTOREVIEW to the absolute operator-owned helper path}"
   : "${AUTOREVIEW_STATUS:?set AUTOREVIEW_STATUS to a fresh path in an operator-owned private directory}"
-  case "$REVIEW_PYTHON:$AUTOREVIEW:$AUTOREVIEW_STATUS" in
-    /*:/*:/*) ;;
-    *) printf 'review Python, helper and status paths must be absolute\n' >&2; exit 1 ;;
+  case "$REVIEW_GIT" in /*) ;; *) printf 'REVIEW_GIT must be absolute\n' >&2; exit 1 ;; esac
+  case "$REVIEW_PYTHON" in /*) ;; *) printf 'REVIEW_PYTHON must be absolute\n' >&2; exit 1 ;; esac
+  case "$AUTOREVIEW" in /*) ;; *) printf 'AUTOREVIEW must be absolute\n' >&2; exit 1 ;; esac
+  case "$AUTOREVIEW_STATUS" in
+    /*) ;;
+    *) printf 'AUTOREVIEW_STATUS must be absolute\n' >&2; exit 1 ;;
   esac
-  if test -L "$REVIEW_PYTHON" || ! test -f "$REVIEW_PYTHON" \
+  if test -L "$REVIEW_GIT" || ! test -f "$REVIEW_GIT" \
+    || test -L "$REVIEW_PYTHON" || ! test -f "$REVIEW_PYTHON" \
     || test -L "$AUTOREVIEW" || ! test -f "$AUTOREVIEW"; then
-    printf 'review Python and helper must be physical files\n' >&2
+    printf 'review Git, Python and helper must be physical files\n' >&2
     exit 1
   fi
-  repo_root=$(git rev-parse --show-toplevel)
-  case "$REVIEW_PYTHON:$AUTOREVIEW:$AUTOREVIEW_STATUS" in
-    *"$repo_root"*) printf 'review prerequisites must be outside the candidate repository\n' >&2; exit 1 ;;
-  esac
-  if test -e "$AUTOREVIEW_STATUS" || test -L "$AUTOREVIEW_STATUS"; then
-    printf 'AUTOREVIEW_STATUS must be a fresh path\n' >&2
-    exit 1
-  fi
-  "$REVIEW_PYTHON" -I - "$AUTOREVIEW_STATUS" <<'PY'
-import os
-import pathlib
-import stat
-import sys
-
-parent = pathlib.Path(sys.argv[1]).parent.resolve(strict=True)
-status = parent.stat()
-if status.st_uid != os.geteuid() or status.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
-    raise SystemExit("AUTOREVIEW_STATUS parent must be current-user owned and private")
-PY
-  base=$(git merge-base "$review_base" HEAD)
-  review_tmp=$(/usr/bin/mktemp -d)
+  "$REVIEW_PYTHON" -I -c \
+    'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)'
+  review_tmp=$("$REVIEW_PYTHON" -I -c \
+    'import tempfile; print(tempfile.mkdtemp(prefix="kmx-autoreview-"))')
   review_inputs="$review_tmp/inputs"
   review_results="$review_tmp/results"
   review_trusted="$review_tmp/trusted"
+  review_helper="$review_tmp/autoreview"
   review_scan_tmp="$review_tmp/scanner-tmp"
   review_engine_tmp="$review_tmp/engine-tmp"
+  review_home="$review_tmp/home"
+  review_bin="$review_tmp/bin"
   /bin/mkdir "$review_inputs" "$review_results" "$review_trusted" \
+    "$review_home" "$review_bin" \
     "$review_scan_tmp" "$review_engine_tmp"
   trap '/bin/rm -rf "$review_tmp"' EXIT
-  "$REVIEW_PYTHON" -I -c \
-    'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)'
 
-  git ls-files -z --cached --others --exclude-standard \
-    > "$review_inputs/worktree-files"
+  review_git() {
+    /usr/bin/env -i HOME="$review_home" PATH=/usr/bin:/bin LANG=C LC_ALL=C \
+      GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+      GIT_CONFIG_SYSTEM=/dev/null GIT_GRAFT_FILE=/dev/null \
+      GIT_NO_LAZY_FETCH=1 GIT_NO_REPLACE_OBJECTS=1 \
+      GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0 \
+      "$REVIEW_GIT" \
+      -c core.fsmonitor=false -c core.hooksPath=/dev/null \
+      -c core.pager=cat -c diff.external= -c diff.renames=false \
+      -c diff.suppressBlankEmpty=false -c pager.diff=cat -c pager.status=cat \
+      "$@"
+  }
+
+  repo_root=$(review_git rev-parse --show-toplevel)
+  base=$(review_git merge-base "$review_base" HEAD)
+  head=$(review_git rev-parse HEAD)
+  test -z "$(review_git status --porcelain=v1 --untracked-files=all)" || {
+    printf 'PR handoff review requires a clean committed branch\n' >&2
+    exit 1
+  }
+
   "$REVIEW_PYTHON" -I - \
-    "$repo_root" "$review_inputs/worktree-files" "$review_trusted" <<'PY'
+    "$AUTOREVIEW" "$review_helper" "$repo_root" \
+    "$expected_autoreview_sha" "$AUTOREVIEW_STATUS" <<'PY'
+import hashlib
 import os
 import pathlib
 import stat
 import sys
 
-source, inventory, destination = map(pathlib.Path, sys.argv[1:])
-source = source.resolve(strict=True)
-total = 0
+source, destination, repository = map(pathlib.Path, sys.argv[1:4])
+wanted, status_path = sys.argv[4:]
+if source.is_symlink():
+    raise SystemExit("AUTOREVIEW must not be a symlink")
+resolved = source.resolve(strict=True)
+repository = repository.resolve(strict=True)
+if resolved == repository or repository in resolved.parents:
+    raise SystemExit("AUTOREVIEW must be outside the candidate repository")
 no_follow = getattr(os, "O_NOFOLLOW", 0)
-for raw in inventory.read_bytes().split(b"\0"):
-    if not raw:
-        continue
-    relative = pathlib.PurePosixPath(os.fsdecode(raw))
-    if relative.is_absolute() or ".." in relative.parts:
-        raise SystemExit("unsafe Git path in review inventory")
-    candidate = source.joinpath(*relative.parts)
-    try:
-        status = candidate.lstat()
-    except FileNotFoundError:
-        continue  # Removed and index-only content remains in the patch inputs.
-    if stat.S_ISLNK(status.st_mode):
-        candidate = candidate.resolve(strict=True)
-        if source not in candidate.parents or not candidate.is_file():
-            raise SystemExit("review input link leaves the candidate repository")
-    elif not stat.S_ISREG(status.st_mode):
-        raise SystemExit("review input is not a regular file")
-    descriptor = os.open(candidate, os.O_RDONLY | no_follow)
-    try:
-        chunks = []
-        while chunk := os.read(descriptor, 65536):
-            total += len(chunk)
-            if total > 1024 * 1024 * 1024:
-                raise SystemExit("review tree exceeds the snapshot bound")
-            chunks.append(chunk)
-    finally:
-        os.close(descriptor)
-    target = destination.joinpath(*relative.parts)
-    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    output = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(output, "wb") as stream:
-        stream.write(b"".join(chunks))
+descriptor = os.open(resolved, os.O_RDONLY | no_follow)
+try:
+    if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+        raise SystemExit("AUTOREVIEW must be a regular file")
+    content = b""
+    while chunk := os.read(descriptor, 65536):
+        content += chunk
+        if len(content) > 1024 * 1024:
+            raise SystemExit("AUTOREVIEW exceeds the verified size bound")
+finally:
+    os.close(descriptor)
+if hashlib.sha256(content).hexdigest() != wanted:
+    raise SystemExit("AUTOREVIEW does not match the reviewed pin")
+output = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+with os.fdopen(output, "wb") as stream:
+    stream.write(content)
+
+status = pathlib.Path(status_path)
+if status.exists() or status.is_symlink():
+    raise SystemExit("AUTOREVIEW_STATUS must be a fresh path")
+parent = status.parent.resolve(strict=True)
+info = parent.stat()
+if info.st_uid != os.geteuid() or info.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+    raise SystemExit("AUTOREVIEW_STATUS parent must be current-user owned and private")
 PY
 
   /bin/mkdir -p "$review_trusted/scripts" \
-    "$review_trusted/internal/kmx/secretshapes" "$review_tmp/bin" "$review_tmp/home"
+    "$review_trusted/internal/kmx/secretshapes"
   for candidate_path in \
     scripts/check-secret-shapes.py \
     scripts/check-no-azure-ids.sh \
     internal/kmx/secretshapes/shapes.json
   do
-    git show "${base}:$candidate_path" > "$review_trusted/$candidate_path"
+    review_git show "${base}:$candidate_path" > "$review_trusted/$candidate_path"
   done
   : > "$review_inputs/review-policy.md"
   for policy_path in \
@@ -373,17 +383,23 @@ PY
   do
     printf '\n\n# Trusted merge-base file: %s\n\n' "$policy_path" \
       >> "$review_inputs/review-policy.md"
-    git show "${base}:$policy_path" >> "$review_inputs/review-policy.md"
+    review_git show "${base}:$policy_path" >> "$review_inputs/review-policy.md"
   done
 
-  git diff --binary --no-ext-diff --no-textconv --no-renames \
-    "$base" -- > "$review_inputs/base-to-worktree.patch"
-  git diff --binary --no-ext-diff --no-textconv --no-renames \
-    --cached "$base" -- > "$review_inputs/base-to-index.patch"
-  git diff --binary --no-ext-diff --no-textconv --no-renames \
-    -- > "$review_inputs/index-to-worktree.patch"
+  review_git diff --binary --no-ext-diff --no-textconv --no-renames \
+    "$base" "$head" -- > "$review_inputs/candidate.patch"
+  review_git diff --numstat -z "$base" "$head" -- \
+    > "$review_inputs/numstat"
+  "$REVIEW_PYTHON" -I - "$review_inputs/numstat" <<'PY'
+import pathlib
+import sys
 
-  "$REVIEW_PYTHON" -I - "$REVIEW_PYTHON" "$review_tmp/bin/python3" <<'PY'
+for entry in pathlib.Path(sys.argv[1]).read_bytes().split(b"\0"):
+    if entry.startswith(b"-\t-\t"):
+        raise SystemExit("binary change requires a separately trusted review")
+PY
+
+  "$REVIEW_PYTHON" -I - "$REVIEW_PYTHON" "$review_bin/python3" <<'PY'
 import pathlib
 import shlex
 import sys
@@ -399,25 +415,7 @@ PY
   if ! (
     cd "$review_trusted"
     /usr/bin/env -i HOME="$review_tmp/home" TMPDIR="$review_scan_tmp" \
-      PATH="$review_tmp/bin:/usr/bin:/bin" \
-      "$REVIEW_PYTHON" -I "$review_trusted/scripts/check-secret-shapes.py"
-  ) > "$review_results/secret-tree.txt" 2>&1; then
-    printf 'credential-shape tree scan failed; private details removed\n' >&2
-    exit 1
-  fi
-  if ! (
-    cd "$review_trusted"
-    /usr/bin/env -i HOME="$review_tmp/home" TMPDIR="$review_scan_tmp" \
-      PATH="$review_tmp/bin:/usr/bin:/bin" \
-      /bin/bash "$review_trusted/scripts/check-no-azure-ids.sh"
-  ) > "$review_results/infrastructure-tree.txt" 2>&1; then
-    printf 'infrastructure identifier tree scan failed; private details removed\n' >&2
-    exit 1
-  fi
-  if ! (
-    cd "$review_trusted"
-    /usr/bin/env -i HOME="$review_tmp/home" TMPDIR="$review_scan_tmp" \
-      PATH="$review_tmp/bin:/usr/bin:/bin" \
+      PATH="$review_bin:/usr/bin:/bin" \
       "$REVIEW_PYTHON" -I "$review_trusted/scripts/check-secret-shapes.py" \
       "$review_inputs"
   ) > "$review_results/secret-inputs.txt" 2>&1; then
@@ -427,7 +425,7 @@ PY
   if ! (
     cd "$review_trusted"
     /usr/bin/env -i HOME="$review_tmp/home" TMPDIR="$review_scan_tmp" \
-      PATH="$review_tmp/bin:/usr/bin:/bin" \
+      PATH="$review_bin:/usr/bin:/bin" \
       /bin/bash "$review_trusted/scripts/check-no-azure-ids.sh" "$review_inputs"
   ) > "$review_results/infrastructure-inputs.txt" 2>&1; then
     printf 'infrastructure identifier scan failed; private details removed\n' >&2
@@ -436,8 +434,8 @@ PY
 
   review_policy=$(<"$review_inputs/review-policy.md")
   export TMPDIR="$review_engine_tmp"
-  "$REVIEW_PYTHON" -I "$AUTOREVIEW" \
-    --mode local \
+  "$REVIEW_PYTHON" -I "$review_helper" \
+    --mode branch \
     --base "$base" \
     --engine codex \
     --model gpt-6.1-sol \

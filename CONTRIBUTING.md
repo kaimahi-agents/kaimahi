@@ -390,16 +390,16 @@ or cross-platform changes use the repository's
 This is an agent-maintainer closeout step, not an installation prerequisite for
 human contributors and not a required GitHub check.
 
-Run review after formatting and focused verification. Select the actual PR base
-explicitly and review the complete local candidate, including staged, unstaged and
-untracked work, at P0-P2. Use the merge-base review rubric so the candidate cannot
-rewrite its own reviewer instructions. Run the repository's credential-shape and
-infrastructure-identifier checks over the tree and selected Git states before source leaves the
-machine. Web search and reviewer route fallback stay disabled unless a human
-explicitly authorizes a different review. The shared reviewer must match the
-reviewed pinned source and be installed in operator-owned storage; review runs
-never install or update it. Run merge-base scanner copies with isolated Python
-rather than executing candidate scanner code.
+Run review after formatting, focused verification and committing the intended
+candidate. Select the actual PR base explicitly and review the clean committed
+merge-base-to-HEAD range at P0-P2; staged, unstaged or untracked work makes handoff
+review unavailable. Use merge-base policy so the candidate cannot rewrite its own
+reviewer instructions. Scan the exact outgoing patch and policy context before
+source leaves the machine. Web search and reviewer route fallback stay disabled
+unless a human explicitly authorizes a different review. The shared reviewer must
+match the reviewed pinned helper bytes and be installed in operator-owned storage;
+review runs never install or update it. Run merge-base scanner copies with isolated
+Python rather than executing candidate scanner code.
 
 Verify findings against the real code path rather than applying them blindly. If
 accepted fixes materially change reviewed code, rerun focused tests and review the
