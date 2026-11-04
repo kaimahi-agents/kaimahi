@@ -61,6 +61,12 @@ case "$*" in
     cat >/dev/null
     printf '{"status":{"allowed":true}}'
     exit 0 ;;
+  *"apply --server-side --field-manager=kmx"*)
+    cat >> "$KMX_TEST_STDIN"
+    case "$*" in *"--dry-run=server"*)
+      [ "$KMX_TEST_DRYRUN" != refused ] || { printf 'error: admission webhook denied the request\n' >&2; exit 1; } ;;
+    esac
+    exit 0 ;;
   *"apply -f -"*)
     [ -n "$KMX_TEST_STDIN" ] && cat >> "$KMX_TEST_STDIN"
     exit 0 ;;
@@ -167,7 +173,7 @@ func orkaChart(t *testing.T) []byte {
 	gz := gzip.NewWriter(&buf)
 	tarball := tar.NewWriter(gz)
 	for _, file := range []struct{ name, body string }{
-		{"orka/Chart.yaml", "apiVersion: v2\nname: orka\nversion: 0.2.0\nappVersion: 0.2.0\n"},
+		{"orka/Chart.yaml", "apiVersion: v2\nname: orka\nversion: 0.3.0\nappVersion: 0.3.0\n"},
 		{"orka/crds/tasks.core.orka.ai.yaml", "apiVersion: apiextensions.k8s.io/v1\nkind: CustomResourceDefinition\nmetadata:\n  name: tasks.core.orka.ai\n"},
 		{"orka/templates/controller.yaml", "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: orka-controller-manager\n"},
 	} {
@@ -259,7 +265,7 @@ func (f *orkaFixture) writes(t *testing.T) string {
 	calls := f.calls(t)
 	var writes []string
 	for _, call := range strings.Split(calls, "\n") {
-		if (strings.HasPrefix(call, "helm install ") && !strings.Contains(call, "--dry-run")) || strings.Contains(call, " apply -f -") || strings.Contains(call, " create secret ") {
+		if (strings.HasPrefix(call, "helm install ") && !strings.Contains(call, "--dry-run")) || (strings.Contains(call, " apply ") && !strings.Contains(call, "--dry-run")) || strings.Contains(call, " create secret ") {
 			writes = append(writes, call)
 		}
 	}
@@ -337,7 +343,7 @@ func TestOrkaInstallRefusesForeignOrMismatchedHelmRelease(t *testing.T) {
 	for _, tc := range []struct {
 		name, releases string
 	}{
-		{"foreign release", `[{"name":"orka","namespace":"orka-system","chart":"another-chart-0.2.0","app_version":"0.2.0","status":"deployed"}]`},
+		{"foreign release", `[{"name":"orka","namespace":"orka-system","chart":"another-chart-0.3.0","app_version":"0.3.0","status":"deployed"}]`},
 		{"mismatched version", `[{"name":"orka","namespace":"orka-system","chart":"orka-0.1.3","app_version":"0.1.3","status":"deployed"}]`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -372,10 +378,10 @@ func pinnedOrkaHelmValues(t *testing.T, mutate func(map[string]any)) string {
 		"controller": map[string]any{
 			"mode": "harness-v2", "image": map[string]any{"digest": orkaControllerDigest},
 			"acpRuntime": map[string]any{
-				"codexImage":    "ghcr.io/orka-agents/orka/acp-codex-runtime@sha256:1f3f52eaa2c17403219f595f99bfad2e4d2d66f861921357fbd939825fc113ea",
-				"claudeImage":   "ghcr.io/orka-agents/orka/acp-claude-runtime@sha256:ec8b51083626c14d1dd206fc6a57ecd6f5aeabf10522fc665903fdb205543e92",
-				"copilotImage":  "ghcr.io/orka-agents/orka/acp-copilot-runtime@sha256:32983da321bb03ef57eb80508454117a0142485782e28e935297dcd9234133ab",
-				"opencodeImage": "ghcr.io/orka-agents/orka/acp-opencode-runtime@sha256:3d8e84b811834d768785055fef63ea1f1179eb7cb0b0bc1856bbf81023c48f9a",
+				"codexImage":    "ghcr.io/orka-agents/orka/acp-codex-runtime@sha256:549486a886249d4fcb7ee37664fa94b400fd6ec9b9d90a174f125eaaf30bdf39",
+				"claudeImage":   "ghcr.io/orka-agents/orka/acp-claude-runtime@sha256:96a683ff62ec527ea886b7fa6389d16ecc528f9b94a00fb898d52ee7f92a01e0",
+				"copilotImage":  "ghcr.io/orka-agents/orka/acp-copilot-runtime@sha256:d921c217d9a58a888dab70422fbbfd85408efaf97c59493acdaa6b105bc461e1",
+				"opencodeImage": "ghcr.io/orka-agents/orka/acp-opencode-runtime@sha256:ec94fbf8e257400c148f0c64b29ed501723456c66e1d4d46abe253e085358414",
 			},
 		},
 		"workers":   map[string]any{"ai": map[string]any{"image": map[string]any{"digest": orkaAIWorkerDigest}}, "general": map[string]any{"image": map[string]any{"digest": orkaGeneralWorkerDigest}}},
@@ -398,7 +404,7 @@ func TestOrkaInstallFailedReleaseNamesRecoverySteps(t *testing.T) {
 			f := newOrkaFixture(t, chart)
 			f.app.Cfg.KubeContext = "team's cluster; staging"
 			f.app.orkaInstallerDigest = digestOf(chart)
-			t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.2.0","app_version":"v0.2.0","status":"`+state+`"}]`)
+			t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.3.0","app_version":"v0.3.0","status":"`+state+`"}]`)
 			t.Setenv("KMX_TEST_HELM_VALUES", pinnedOrkaHelmValues(t, nil))
 			err := f.app.OrkaInstall(OrkaOptions{Provider: "-"})
 			if err == nil {
@@ -406,7 +412,7 @@ func TestOrkaInstallFailedReleaseNamesRecoverySteps(t *testing.T) {
 			}
 			for _, want := range []string{"kmx-owned", state,
 				`helm --kube-context 'team'"'"'s cluster; staging' -n orka-system status orka`,
-				`helm --kube-context 'team'"'"'s cluster; staging' -n orka-system upgrade orka <verified-orka-0.2.0.tgz> --reuse-values --wait`,
+				`helm --kube-context 'team'"'"'s cluster; staging' -n orka-system upgrade orka <verified-orka-0.3.0.tgz> --reuse-values --wait`,
 				f.app.operationCommand("cluster", "down"), f.app.operationCommand("cluster", "up"), "Tasks", "AKS", "snapshot key"} {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("missing %q in recovery: %v", want, err)
@@ -439,7 +445,7 @@ func TestOrkaInstallUnavailableReleaseValuesRefusesWithSafeRecovery(t *testing.T
 	f := newOrkaFixture(t, chart)
 	f.app.Cfg.KubeContext = "team's cluster; staging"
 	f.app.orkaInstallerDigest = digestOf(chart)
-	t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.2.0","app_version":"v0.2.0","status":"pending-install"}]`)
+	t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.3.0","app_version":"v0.3.0","status":"pending-install"}]`)
 	t.Setenv("KMX_TEST_HELM_VALUES_READ", "failed")
 	err := f.app.OrkaInstall(OrkaOptions{Provider: "-"})
 	if err == nil {
@@ -462,7 +468,7 @@ func TestOrkaInstallKeepsIdentifiedChartAndReconcilesReader(t *testing.T) {
 	chart := orkaChart(t)
 	f := newOrkaFixture(t, chart)
 	f.app.orkaInstallerDigest = digestOf(chart)
-	t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.2.0","app_version":"v0.2.0","status":"deployed"}]`)
+	t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.3.0","app_version":"v0.3.0","status":"deployed"}]`)
 	t.Setenv("KMX_TEST_HELM_VALUES", pinnedOrkaHelmValues(t, nil))
 	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeployWithImage("chart-controller", "ghcr.io/orka-agents/orka@"+orkaControllerDigest)))
 	if err := f.app.OrkaInstall(OrkaOptions{Provider: "-"}); err != nil {
@@ -489,7 +495,7 @@ func TestOrkaInstallRepeatRejectsLiveControllerImageDrift(t *testing.T) {
 			chart := orkaChart(t)
 			f := newOrkaFixture(t, chart)
 			f.app.orkaInstallerDigest = digestOf(chart)
-			t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.2.0","app_version":"v0.2.0","status":"deployed"}]`)
+			t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.3.0","app_version":"v0.3.0","status":"deployed"}]`)
 			t.Setenv("KMX_TEST_HELM_VALUES", pinnedOrkaHelmValues(t, nil))
 			controller := orkaDeploy("chart-controller", nil)
 			controller["spec"].(map[string]any)["template"].(map[string]any)["spec"].(map[string]any)["containers"] = tc.images
@@ -530,7 +536,7 @@ func TestOrkaInstallRefusesChangedChartImageValues(t *testing.T) {
 			chart := orkaChart(t)
 			f := newOrkaFixture(t, chart)
 			f.app.orkaInstallerDigest = digestOf(chart)
-			t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.2.0","app_version":"v0.2.0","status":"deployed"}]`)
+			t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.3.0","app_version":"v0.3.0","status":"deployed"}]`)
 			t.Setenv("KMX_TEST_HELM_VALUES", pinnedOrkaHelmValues(t, tc.change))
 			err := f.app.OrkaInstall(OrkaOptions{Provider: "-"})
 			if err == nil || !strings.Contains(err.Error(), "refusing") {
@@ -547,7 +553,7 @@ func TestOrkaInstallRepeatRefusesUnreadyController(t *testing.T) {
 	chart := orkaChart(t)
 	f := newOrkaFixture(t, chart)
 	f.app.orkaInstallerDigest = digestOf(chart)
-	t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.2.0","app_version":"v0.2.0","status":"deployed"}]`)
+	t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.3.0","app_version":"v0.3.0","status":"deployed"}]`)
 	t.Setenv("KMX_TEST_HELM_VALUES", pinnedOrkaHelmValues(t, nil))
 	// Keep the image pinned so this test isolates rollout readiness.
 	d := orkaDeployWithImage("chart-controller", "ghcr.io/orka-agents/orka@"+orkaControllerDigest)
@@ -569,7 +575,7 @@ func TestOrkaInstallRefusesOldLabelWithoutWrites(t *testing.T) {
 	chart := orkaChart(t)
 	f := newOrkaFixture(t, chart)
 	f.app.orkaInstallerDigest = digestOf(chart)
-	t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.2.0","app_version":"v0.2.0","status":"deployed"}]`)
+	t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.3.0","app_version":"v0.3.0","status":"deployed"}]`)
 	t.Setenv("KMX_TEST_HELM_VALUES", pinnedOrkaHelmValues(t, func(v map[string]any) {
 		v["labels"] = map[string]any{"kmx.kaimahi.ai/installed": "true"}
 	}))
@@ -586,7 +592,7 @@ func TestOrkaInstallRefusesUnmarkedChart(t *testing.T) {
 	chart := orkaChart(t)
 	f := newOrkaFixture(t, chart)
 	f.app.orkaInstallerDigest = digestOf(chart)
-	t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.2.0","app_version":"v0.2.0","status":"deployed"}]`)
+	t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.3.0","app_version":"v0.3.0","status":"deployed"}]`)
 	t.Setenv("KMX_TEST_HELM_VALUES", `{"controller":{"mode":"harness-v2"},"fullnameOverride":"orka-api"}`)
 	err := f.app.OrkaInstall(OrkaOptions{Provider: "-"})
 	if err == nil {
@@ -613,7 +619,7 @@ func TestOrkaInstallAppliesChartCRDsBeforeHelm(t *testing.T) {
 		t.Fatalf("fresh chart install: %v\n%s", err, f.errOut)
 	}
 	calls := f.calls(t)
-	crd := strings.Index(calls, "kubectl --context kind-kaimahi-p1 apply -f -")
+	crd := strings.Index(calls, "kubectl --context kind-kaimahi-p1 apply --server-side --field-manager=kmx -f -")
 	helm := strings.Index(calls, "helm install orka ")
 	if crd < 0 || helm < 0 || crd > helm {
 		t.Fatalf("chart CRDs must be applied before Helm install:\n%s", calls)
@@ -718,7 +724,7 @@ func TestOrkaInstallSkipsTheProviderWhenAskedTo(t *testing.T) {
 	}
 }
 
-// Helm's --wait is the readiness boundary for the v0.2.0 chart; the
+// Helm's --wait is the readiness boundary for the v0.3.0 chart; the
 // v0.1.3 wrapper must not be treated as part of the new install.
 func TestOrkaInstallWaitsForHelmChart(t *testing.T) {
 	chart := orkaChart(t)
@@ -823,12 +829,12 @@ func TestOrkaStatusDoesNotCallAMatchingVersionASkew(t *testing.T) {
 func TestOrkaStatusParsesImageTagAfterRegistryPort(t *testing.T) {
 	f := newOrkaFixture(t, nil)
 	t.Setenv("KMX_TEST_DEPLOYMENTS", "chart-controller=1/1 ")
-	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeployWithImage("chart-controller", "registry.example:5000/orka:0.2.0")))
+	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeployWithImage("chart-controller", "registry.example:5000/orka:0.3.0")))
 	if err := f.app.OrkaStatus(); err != nil {
 		t.Fatal(err)
 	}
 	out := f.out.String()
-	if !strings.Contains(out, "version running        0.2.0") || strings.Contains(out, "installed another way") {
+	if !strings.Contains(out, "version running        0.3.0") || strings.Contains(out, "installed another way") {
 		t.Fatalf("misparsed tagged controller image: %s", out)
 	}
 }
@@ -868,7 +874,7 @@ func TestOrkaStatusReadsPinnedDigestControllerVersion(t *testing.T) {
 	if err := f.app.OrkaStatus(); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(f.out.String(), "0.2.0") || strings.Contains(f.out.String(), "unknown") {
+	if !strings.Contains(f.out.String(), "0.3.0") || strings.Contains(f.out.String(), "unknown") {
 		t.Fatalf("pinned digest not recognized: %s", f.out)
 	}
 }
@@ -876,11 +882,11 @@ func TestOrkaStatusReadsPinnedDigestControllerVersion(t *testing.T) {
 func TestOrkaStatusReadsChartControllerVersion(t *testing.T) {
 	f := newOrkaFixture(t, nil)
 	t.Setenv("KMX_TEST_DEPLOYMENTS", "orka-api-controller=1/1 ")
-	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeployWithImage("chart-controller", "ghcr.io/orka-agents/orka:0.2.0")))
+	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeployWithImage("chart-controller", "ghcr.io/orka-agents/orka:0.3.0")))
 	if err := f.app.OrkaStatus(); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(f.out.String(), "0.2.0") || strings.Contains(f.out.String(), "unknown") {
+	if !strings.Contains(f.out.String(), "0.3.0") || strings.Contains(f.out.String(), "unknown") {
 		t.Fatalf("chart version not found: %s", f.out)
 	}
 }

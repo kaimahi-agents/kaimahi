@@ -91,5 +91,5 @@ preparation, composed and digest Deploy, evaluated publication and the experimen
 AgentKit sandbox builder refuse rather than ignore a declaration. No policy is
 installed or enforced, and no allowed/blocked worker traffic has been qualified by
 these offline operations. Runtime enforcement requires a separately qualified
-backend and an Orka release supplying controller-owned worker labels; the current
-pinned Orka v0.2.0 does not supply them. No-policy runtime behavior is unchanged.
+backend and controller-owned worker labels; it is not qualified for the current
+pinned Orka v0.3.0. No-policy runtime behavior is unchanged.

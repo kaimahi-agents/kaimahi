@@ -24,6 +24,7 @@ var fixtures embed.FS
 var pins = map[string]string{
 	"v0.1.3": "b07d42c0b9e52fe511b434827a342b4720f5d422",
 	"v0.2.0": "5f4eb543b2b35a3afb8e7ea01f5f53985e25d4c1",
+	"v0.3.0": "a533c3491d350263c0fa39bb7887dabd0d055c4e",
 	"main":   "7c4753c2c68a510112ea2bb25b60a406d9c45686",
 }
 
@@ -36,15 +37,15 @@ type Validator struct {
 	provenance string
 }
 
-// Offline selects a bundled snapshot; an empty target means v0.2.0. "main" is
+// Offline selects a bundled snapshot; an empty target means v0.3.0. "main" is
 // the immutable commit recorded below, never a request to fetch a moving branch.
 func Offline(target string) (*Validator, error) {
 	if target == "" {
-		target = "v0.2.0"
+		target = "v0.3.0"
 	}
 	pin, ok := pins[target]
 	if !ok {
-		return nil, fmt.Errorf("unknown offline Orka schema target; choose v0.1.3, v0.2.0 or main")
+		return nil, fmt.Errorf("unknown offline Orka schema target; choose v0.1.3, v0.2.0, v0.3.0 or main")
 	}
 	crds := make(map[string][]byte)
 	for _, resource := range resourceKinds {

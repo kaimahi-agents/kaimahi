@@ -399,7 +399,7 @@ func suiteNativeControllerRuntime(controller orkaDeployment, namespace string) (
 }
 
 func suiteNativePinnedHelm(h suiteNativeHelmIdentity) bool {
-	return h.Chart == "orka-0.2.0" && h.Instance != "" && h.App == "orka" && h.ManagedBy == "Helm"
+	return h.Chart == "orka-0.3.0" && h.Instance != "" && h.App == "orka" && h.ManagedBy == "Helm"
 }
 
 func suiteNativePinnedRuntime(r suiteNativeRuntime, namespace string) bool {

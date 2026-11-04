@@ -1058,7 +1058,7 @@ placement backend.
 
 ## Evaluate the whole workspace
 
-For Orka, provision the pinned v0.2.0 harness-v2 runtime, a Ready
+For Orka, provision the pinned v0.3.0 harness-v2 runtime, a Ready
 OpenAI-compatible inference Provider with its referenced Secret, and the existing
 result-access ServiceAccount/Task-get grant separately. For kagent, provision
 exact v0.10.3 Go, author a `KagentBindings` file, and provision its referenced
@@ -1252,7 +1252,7 @@ Service-proxy audit bodies and model transfers. No auth settings are modified.
 
 For Orka, the temporary result session uses the selected ServiceAccount's **full effective
 authority**. Discarding its bearer is not revocation; Task-read enforcement is
-unverified for v0.2.0. One pinned loopback connection is opened per run, without
+unverified for v0.3.0. One pinned loopback connection is opened per run, without
 reconnect. Default summaries omit prompts, answers, assertion operands and
 reasoning. `test --show-content` and executing workspace `deploy --show-content`
 opt into expected values/patterns, short judge rationale and answer excerpts on

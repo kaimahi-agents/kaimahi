@@ -33,11 +33,11 @@ const (
 	// OrkaVersion is the tag whose installer this command was tested
 	// against. It is a pin, not a floor: the digest below is of THESE
 	// bytes, so a moved tag is refused rather than installed.
-	OrkaVersion = "v0.2.0"
+	OrkaVersion = "v0.3.0"
 
 	// OrkaInstallerDigest is the published release chart asset's SHA-256.
-	// v0.2.0 dereferences to 5f4eb543b2b35a3afb8e7ea01f5f53985e25d4c1.
-	OrkaInstallerDigest = "b7596c4e35d7189a3b2cf25921cd50e6c31328dbb83bdee50e20c757e0f03b79"
+	// v0.3.0 dereferences to a533c3491d350263c0fa39bb7887dabd0d055c4e.
+	OrkaInstallerDigest = "a83e374c76e223ae6a96d598d62fd0af3b081ea1c01787783a3b7294f3418bce"
 
 	// OrkaNamespace is kmx's Orka release and watched namespace.
 	OrkaNamespace = "orka-system"
@@ -79,7 +79,7 @@ const (
 
 // OrkaInstallerURL is the pinned source of the installer.
 func OrkaInstallerURL() string {
-	return "https://github.com/orka-agents/orka/releases/download/" + OrkaVersion + "/orka-0.2.0.tgz"
+	return "https://github.com/orka-agents/orka/releases/download/" + OrkaVersion + "/orka-0.3.0.tgz"
 }
 
 // installerSource and installerDigest resolve the shipped pin unless a test
@@ -159,7 +159,7 @@ func (a *App) OrkaInstall(opt OrkaOptions) error {
 			return err
 		}
 		a.notef("--no-apply: nothing was written. %d chart CRDs would precede harness-v2 in %s.", count, OrkaNamespace)
-		a.notef("  Inspect after saving and SHA-256-verifying the chart: tar -tzf <verified-orka-0.2.0.tgz> | grep '^orka/crds/'")
+		a.notef("  Inspect after saving and SHA-256-verifying the chart: tar -tzf <verified-orka-0.3.0.tgz> | grep '^orka/crds/'")
 		return nil
 	}
 
@@ -194,10 +194,7 @@ func (a *App) OrkaInstall(opt OrkaOptions) error {
 			if err != nil {
 				return err
 			}
-			quiet := *a.Run
-			quiet.Echo = false
-			quiet.Stdout, quiet.Stderr = io.Discard, io.Discard
-			return quiet.RunStdin(crds, "kubectl", a.kubectl("apply", "--dry-run=server", "-f", "-")...)
+			return a.applyOrkaCRDs(crds, true)
 		}); err != nil {
 			return fmt.Errorf("this cluster would refuse Orka's installer: %w", err)
 		}

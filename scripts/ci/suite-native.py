@@ -669,9 +669,9 @@ def observed_runtime(controller, worker):
               "AIWorkerImage": flags["ai-worker-image"], "WorkerAccount": flags["ai-worker-service-account-name"],
               "WorkerAccountUID": worker["metadata"]["uid"], "Helm": helm}
     require(not container.get("command") and not meta.get("deletionTimestamp"), "runtime-identity")
-    require(actual["Mode"] == "harness-v2" and actual["WatchNamespace"] == "orka-system" and helm["Chart"] == "orka-0.2.0" and
-            container["image"] == "ghcr.io/orka-agents/orka@sha256:7c1727f92d5c0cf05d464c6eb9e70b8342cb5a7a87c2e35338f051d7b85aa370" and
-            actual["AIWorkerImage"] == "ghcr.io/orka-agents/orka/ai-worker@sha256:814d7149308e62730df59759c5137667cad04520c94cc50ff56e5028fdc8bcd4", "runtime-pin")
+    require(actual["Mode"] == "harness-v2" and actual["WatchNamespace"] == "orka-system" and helm["Chart"] == "orka-0.3.0" and
+            container["image"] == "ghcr.io/orka-agents/orka@sha256:84cdbd635c61169f46acef1b7b4003e253c4f7cd920519577634e834776535c5" and
+            actual["AIWorkerImage"] == "ghcr.io/orka-agents/orka/ai-worker@sha256:7777385848bf8382bcc66b570ac23414f39be375e4c7f2b4f194de079ae82bb4", "runtime-pin")
     require(status["observedGeneration"] == meta["generation"] and all(status[k] == spec["replicas"] for k in
             ("replicas", "updatedReplicas", "readyReplicas", "availableReplicas")) and not status.get("unavailableReplicas", 0), "runtime-ready")
     wm = worker["metadata"]

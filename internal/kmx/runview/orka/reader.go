@@ -1,4 +1,4 @@
-// Package orka projects caller-authorized Orka v0.2.0 Tasks into a runview.
+// Package orka projects caller-authorized Orka v0.3.0 Tasks into a runview.
 package orka
 
 import (

@@ -397,7 +397,7 @@ fi
 ```
 
 This uses AKS `--tier free`, one `Standard_B4ms` worker, a 64 GiB OS disk,
-Cilium, ACR Basic, and pinned Orka v0.2.0. Interrupted phases can leave billable
+Cilium, ACR Basic, and pinned Orka v0.3.0. Interrupted phases can leave billable
 resources; use the exact recovery command printed by the same executable.
 
 ## 7. Configure the AKS Provider

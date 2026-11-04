@@ -15,7 +15,7 @@ func TestReleaseLiftPinnedCRDDefaultsPreserveClosedSpec(t *testing.T) {
 	_, _, _, p := releaseLiftFixture(t)
 	for _, desired := range []map[string]any{p.bundle.Provider, p.bundle.Agent} {
 		kind := desired["kind"].(string)
-		raw, err := os.ReadFile(filepath.Join("..", "orkaschema", "fixtures", "v0.2.0", strings.ToLower(kind)+"s.yaml"))
+		raw, err := os.ReadFile(filepath.Join("..", "orkaschema", "fixtures", "v0.3.0", strings.ToLower(kind)+"s.yaml"))
 		if err != nil {
 			t.Fatal(err)
 		}

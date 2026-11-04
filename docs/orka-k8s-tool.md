@@ -7,13 +7,14 @@ The name uses hyphens because it is a Kubernetes Tool resource name.
 New quickstart agents are tool-free; no tool instructions are appended. Existing tool resources and custom instruction files are not deleted.
 
 The earlier Orka v0.1.3 run refused private Service IPs as direct Tool
-authorities. The current pinned installer is v0.2.0; KMX gives
+authorities. The current pinned installer is v0.3.0; KMX gives
 the Tool the credential-free logical authority `https://1.1.1.1/resources`
 and binds it to an exact same-namespace `OutboundAccessPolicy`; Orka sends the
 request only to the `kmx-k8s-tool` Service on port 8080. The public IP avoids
-v0.2.0's bounded DNS-answer check on the logical authority; no Tool data is
-sent to that public IP. The v0.2.0 chart worker lacks read access to the
-policy by default. kmx reads the installed Orka controller's configured AI
+DNS-answer drift on the logical authority; no Tool data is sent to that public
+IP. The v0.3.0 chart already grants its AI worker `get`/`list` on policies.
+KMX retains a named-policy grant for the Tool fixture; this does not narrow
+permissions already granted by the chart. kmx reads the installed Orka controller's configured AI
 worker ServiceAccount and checks the release-namespace account's matching
 Helm and AI-worker labels before granting it `get` on **only this named
 policy** in `orka-system`.
@@ -106,7 +107,7 @@ python3 -B scripts/test_orka_k8s_tool.py
 go test ./internal/kmx/app -run 'TestQuickstart(K8sTool|ToolDefault)'
 ```
 
-CI checks both kmx-owned and stock Helm v0.2.0 releases. Its opt-in kind-only
+CI checks both kmx-owned and stock Helm v0.3.0 releases. Its opt-in kind-only
 Go entrypoint invokes the retained Tool fixture installer after confirming
 that its context exists and points to a local loopback kind API server. CI
 asserts the exact RoleBinding subject and named-policy authorization, then runs

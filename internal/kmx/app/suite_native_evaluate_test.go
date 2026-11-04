@@ -398,7 +398,7 @@ func TestSuiteNativeEvaluationAdmittedFrameAndOneShot(t *testing.T) {
 						if stage == "dry identity" && dry || stage == "create identity" && !dry {
 							delete(nativeMetadata(doc)["annotations"].(map[string]any), createdByVersionAnnotation)
 						}
-						// These are the actual top-level v0.2.0 CRD defaults, not overrides.
+						// These are the actual top-level v0.3.0 CRD defaults, not overrides.
 						for k, v := range map[string]any{"priority": 500, "concurrencyPolicy": "Forbid", "failedRunsHistoryLimit": 1, "successfulRunsHistoryLimit": 3, "startingDeadlineSeconds": 100} {
 							spec[k] = v
 						}

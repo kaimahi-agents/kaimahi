@@ -55,7 +55,7 @@ kmx cluster aks up --resource-group <your-rg> --registry <registry> --cluster <c
 
 | payload | what lands | phases |
 |---|---|---|
-| `orka` | Orka v0.2.0 chart — the same verified chart `kmx cluster orka install` puts on a local cluster | cluster, **orka**, observability, verify |
+| `orka` | Orka v0.3.0 chart — the same verified chart `kmx cluster orka install` puts on a local cluster | cluster, **orka**, observability, verify |
 
 The legacy payload is **refused as retired**, by name rather than as an unknown
 value: a script that still names it asked for a platform this command installed
@@ -77,9 +77,9 @@ cluster, do not simply remove the old release and rerun `kmx cluster aks up`: fi
 the existing controller PVC and other data volumes, resources and Secrets,
 including a snapshot key if this installation has one, **without printing key
 values**; verify your
-recovery plan, then arrange a clean new target per [Orka's v0.2.0 upgrade
-limits](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/upgrading.md)
-and [installation guide](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/installation.md).
+recovery plan, then arrange a clean new target per [Orka's v0.3.0 upgrade
+limits](https://github.com/orka-agents/orka/blob/v0.3.0/website/docs/operations/upgrading.md)
+and [installation guide](https://github.com/orka-agents/orka/blob/v0.3.0/website/docs/operations/installation.md).
 The new kmx installation generates `orka-api-agent-execution-snapshot` under
 `fullnameOverride=orka-api`; retain that key with its new volume. Neither
 `kmx cluster aks up` nor `kmx cluster aks down` migrates Orka's SQLite data, Tasks or key.
@@ -132,7 +132,7 @@ workload image pull permissions remain owner decisions.
 | Phase | Current work |
 |---|---|
 | `cluster` | create tagged resource group, private ACR and AKS; obtain kubeconfig |
-| `orka` | install the pinned v0.2.0 Helm chart in harness-v2 mode on the selected context; creates **no** Provider — that stays yours |
+| `orka` | install the pinned v0.3.0 Helm chart in harness-v2 mode on the selected context; creates **no** Provider — that stays yours |
 | `observability` | enable Azure monitoring and record the workspaces/add-on resources it creates; no plane scrape or workbook |
 | `verify` | Orka's controller is installed and ready, strictly — no model call or telemetry-arrival check is made |
 

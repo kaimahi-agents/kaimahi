@@ -163,7 +163,7 @@ func suitePublicRuntime(r *suitePassingReceipt) (runtime, harness suitecore.Evid
 		if !suiteNativePinnedRuntime(s.Runtime, s.Target.Namespace) {
 			return runtime, harness, errSuitePublicProjection
 		}
-		runtime = suitecore.EvidenceImplementation{ID: "orka", Version: "0.2.0", Digest: orkaControllerDigest}
+		runtime = suitecore.EvidenceImplementation{ID: "orka", Version: "0.3.0", Digest: orkaControllerDigest}
 		harness = suitecore.EvidenceImplementation{ID: "orka", Version: "harness-v2", Digest: orkaAIWorkerDigest}
 	case "native-kagent":
 		if !validSuiteKagentPassingProof(r.Kagent) {

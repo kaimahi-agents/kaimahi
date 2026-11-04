@@ -104,7 +104,7 @@ func TestEvalKubectlHelper(t *testing.T) {
 			fmt.Printf(`{"kind":"Namespace","metadata":{"name":"kube-system","uid":%q}}`, getenvLiftTest("KMX_EVAL_CLUSTER_UID", "cluster-uid"))
 		case "crd":
 			plural, _, _ := strings.Cut(name, ".")
-			raw, err := os.ReadFile(filepath.Join(os.Getenv("KMX_RECONCILE_FIXTURES"), "v0.1.3", plural+".yaml"))
+			raw, err := os.ReadFile(filepath.Join(os.Getenv("KMX_RECONCILE_FIXTURES"), "v0.3.0", plural+".yaml"))
 			if err != nil {
 				fail()
 			}

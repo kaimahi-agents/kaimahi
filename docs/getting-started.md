@@ -134,7 +134,7 @@ export KUBE_CTX=kind-kmx-local
 kmx cluster quickstart
 ```
 
-On a fresh cluster this creates kind, keyless Ollama, the pinned **Orka v0.2.0
+On a fresh cluster this creates kind, keyless Ollama, the pinned **Orka v0.3.0
 Helm chart**, a placeholder Provider Secret, the Task result-reader account and
 RBAC, and the tool-free `hello-world-agent` native source → full eval → publication →
 reviewed Deploy/placement Verify workflow. It then asks a separate **fresh Task** and requires a readable answer; readiness alone is not an answer.

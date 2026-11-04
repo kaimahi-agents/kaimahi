@@ -48,6 +48,47 @@ class RequiredGate(unittest.TestCase):
 
 
 class QualificationCallers(unittest.TestCase):
+    def test_stock_helm_crds_use_nonforcing_server_side_apply(self):
+        step = next(s for s in workflow('ci.yml')['jobs']['e2e-orka-helm']['steps']
+                    if s.get('name') == 'Install SHA-256 verified stock Orka harness-v2 chart')
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            binary = root / 'bin'
+            binary.mkdir()
+            calls = root / 'calls.jsonl'
+            fake = '''#!/usr/bin/env python3
+import json, os, pathlib, sys
+name, args = pathlib.Path(sys.argv[0]).name, sys.argv[1:]
+with open(os.environ['CALLS'], 'a') as stream:
+    stream.write(json.dumps([name, args]) + '\\n')
+if name == 'tar':
+    crds = pathlib.Path(args[args.index('-C') + 1]) / 'orka/crds'
+    crds.mkdir(parents=True)
+    for resource in ('agent', 'task'):
+        (crds / (resource + '-customresourcedefinition.yaml')).write_text('kind: CustomResourceDefinition\\n')
+if name == 'helm' and 'get' in args:
+    print('{"controller":{"mode":"harness-v2"}}')
+'''
+            for name in ('curl', 'sha256sum', 'tar', 'kubectl', 'helm'):
+                path = binary / name
+                path.write_text(fake)
+                path.chmod(0o700)
+            script = step['run'].replace('/tmp/orka-helm', str(root / 'orka-helm'))
+            result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', script],
+                env={**os.environ, 'PATH': str(binary) + os.pathsep + os.defpath,
+                     'CALLS': str(calls)}, capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            recorded = [json.loads(line) for line in calls.read_text().splitlines()]
+            applies = [args for name, args in recorded if name == 'kubectl' and 'apply' in args]
+            self.assertEqual(applies, [
+                ['--context', 'kind-helm-release-orka', 'apply', '--server-side',
+                 '--field-manager=kmx', '-f',
+                 str(root / 'orka-helm-chart/orka/crds/agent-customresourcedefinition.yaml')],
+                ['--context', 'kind-helm-release-orka', 'apply', '--server-side',
+                 '--field-manager=kmx', '-f',
+                 str(root / 'orka-helm-chart/orka/crds/task-customresourcedefinition.yaml')]])
+            self.assertFalse(any('--force-conflicts' in args for _, args in recorded))
+
     def test_pr_and_push_ci_never_call_the_runtime_worker(self):
         jobs = workflow('ci.yml')['jobs']
         self.assertNotIn('e2e-orka-runtime', jobs)

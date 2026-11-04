@@ -48,7 +48,7 @@ func validateSuiteNativeTask(raw []byte, desired map[string]any) error {
 	if !ok {
 		return errSuiteNativeEvaluation
 	}
-	// Closed v0.2.0 top-level schema defaults affect scheduling, not authored
+	// Closed v0.3.0 top-level schema defaults affect scheduling, not authored
 	// model behavior. Nested execution/retry/session/AI defaults are not accepted.
 	for key, value := range map[string]any{"priority": float64(500), "concurrencyPolicy": "Forbid", "failedRunsHistoryLimit": float64(1), "successfulRunsHistoryLimit": float64(3), "startingDeadlineSeconds": float64(100)} {
 		if actual, exists := frame[key]; exists {
