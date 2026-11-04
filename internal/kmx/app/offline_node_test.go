@@ -262,12 +262,10 @@ func TestOfflineClusterUp(t *testing.T) {
 							t.Fatalf("lost selected kubeconfig: %s", line)
 						}
 					}
-					provider := "unset"
-					if engine == "podman" {
-						provider = "podman"
-					}
-					if !strings.Contains(calls, "|provider="+provider) {
-						t.Fatalf("wrong kind provider: %s", calls)
+					for _, line := range strings.Split(strings.TrimSpace(calls), "\n") {
+						if strings.HasPrefix(line, "kind ") && !strings.HasSuffix(line, "|provider="+engine) {
+							t.Fatalf("wrong offline kind provider: %s", line)
+						}
 					}
 					if !strings.Contains(calls, "kubectl --context kind-test get --raw=/readyz") {
 						t.Fatalf("no explicit target readiness:\n%s", calls)

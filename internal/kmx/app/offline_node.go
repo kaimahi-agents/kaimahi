@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime/debug"
 	"slices"
@@ -48,6 +49,11 @@ func (a *App) UpWithOptions(opt UpOptions) error {
 	if err != nil {
 		return err
 	}
+	// Freeze every offline kind call to the verified engine, never auto-detect.
+	local, runner := *a, *a.Run
+	runner.Env = append(append([]string(nil), runner.Env...), "KIND_EXPERIMENTAL_PROVIDER="+a.Cfg.ContainerEngine)
+	local.Run = &runner
+	a = &local
 	if err := a.preflightLocal(depKind, depKubectl, a.engineDependency()); err != nil {
 		return err
 	}
@@ -79,14 +85,25 @@ func (a *App) offlineKindRunner() (*run.Runner, func(), error) {
 		return nil, nil, err
 	}
 	cleanup := func() { _ = os.RemoveAll(dir) }
+	absolute, err := filepath.Abs(dir)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	dir = absolute
 	script := `#!/bin/sh
 case "$1 $2" in
+"__kmx_offline_guard_probe__ ") exit 42 ;;
 "pull "*|"image pull") echo 'offline kind: image pull is disabled' >&2; exit 1 ;;
 "run "*|"create "*) command="$1"; shift; set -- "$command" --pull=never "$@" ;;
 esac
 exec ` + shellArg(executable) + ` "$@"
 `
 	if err := os.WriteFile(filepath.Join(dir, a.Cfg.ContainerEngine), []byte(script), 0700); err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	if err := a.verifyOfflineKindGuard(filepath.Join(dir, a.Cfg.ContainerEngine)); err != nil {
 		cleanup()
 		return nil, nil, err
 	}
@@ -99,6 +116,19 @@ exec ` + shellArg(executable) + ` "$@"
 	runner := *a.Run
 	runner.Env = append(append([]string(nil), runner.Env...), "PATH="+path)
 	return &runner, cleanup, nil
+}
+
+// Direct execution must work: LookPath skips a noexec shim and could otherwise
+// find the real engine later in PATH. A shell-interpreted probe would miss this.
+func (a *App) verifyOfflineKindGuard(path string) error {
+	err := a.Run.Command(path, "__kmx_offline_guard_probe__").Run()
+	if cancelled := a.operationContext().Err(); cancelled != nil {
+		return fmt.Errorf("offline kind guard execution: %w", cancelled)
+	}
+	if status, ok := err.(*exec.ExitError); ok && status.ExitCode() == 42 {
+		return nil
+	}
+	return fmt.Errorf("offline kind guard execution failed (expected probe exit 42): %v", err)
 }
 
 func runningOfflineIdentity() (offlineKMXIdentity, error) {
