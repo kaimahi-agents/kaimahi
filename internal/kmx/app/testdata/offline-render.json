@@ -117,10 +117,104 @@
                 "name": "ORKA_WORKSPACE_PUBLISHER_CAPABILITY_SECRET_FILE",
                 "value": "/var/run/orka/publisher-auth/operation-capability-secret"
               }
+            ],
+            "volumeMounts": [
+              {
+                "name": "tmp",
+                "mountPath": "/tmp"
+              },
+              {
+                "name": "store",
+                "mountPath": "/data"
+              },
+              {
+                "name": "acp-artifact-capability",
+                "mountPath": "/var/run/orka/acp-artifacts",
+                "readOnly": true
+              },
+              {
+                "name": "workspace-publisher-auth",
+                "mountPath": "/var/run/orka/publisher-auth",
+                "readOnly": true
+              },
+              {
+                "name": "agent-execution-snapshot-key",
+                "mountPath": "/var/run/orka/agent-execution-snapshot",
+                "readOnly": true
+              },
+              {
+                "name": "webhook-tls",
+                "mountPath": "/var/run/orka/webhook/tls",
+                "readOnly": false
+              }
             ]
           }
         ],
-        "initContainers": []
+        "initContainers": [],
+        "volumes": [
+          {
+            "name": "tmp",
+            "emptyDir": {}
+          },
+          {
+            "name": "acp-artifact-capability",
+            "secret": {
+              "secretName": "orka-api-acp-artifact-capability",
+              "defaultMode": 256,
+              "items": [
+                {
+                  "key": "capability-secret",
+                  "path": "capability-secret"
+                }
+              ]
+            }
+          },
+          {
+            "name": "store",
+            "persistentVolumeClaim": {
+              "claimName": "orka-api-store"
+            }
+          },
+          {
+            "name": "workspace-publisher-auth",
+            "secret": {
+              "secretName": "orka-api-workspace-publisher-auth",
+              "defaultMode": 256,
+              "items": [
+                {
+                  "key": "controller-token",
+                  "path": "controller-token"
+                },
+                {
+                  "key": "operation-capability-secret",
+                  "path": "operation-capability-secret"
+                }
+              ]
+            }
+          },
+          {
+            "name": "agent-execution-snapshot-key",
+            "secret": {
+              "secretName": "orka-api-agent-execution-snapshot",
+              "defaultMode": 256,
+              "optional": true,
+              "items": [
+                {
+                  "key": "key",
+                  "path": "key"
+                }
+              ]
+            }
+          },
+          {
+            "name": "webhook-tls",
+            "emptyDir": {
+              "medium": "Memory",
+              "sizeLimit": "1Mi"
+            }
+          }
+        ],
+        "serviceAccountName": "orka-api"
       }
     }
   }
@@ -220,10 +314,64 @@
                 "name": "ORKA_PUBLISHER_GITHUB_MAX_RESPONSE_BYTES",
                 "value": "4194304"
               }
+            ],
+            "volumeMounts": [
+              {
+                "name": "data",
+                "mountPath": "/data"
+              },
+              {
+                "name": "tmp",
+                "mountPath": "/tmp/orka-workspace-publisher"
+              },
+              {
+                "name": "publisher-auth",
+                "mountPath": "/var/run/orka/publisher-auth/controller-token",
+                "subPath": "controller-token",
+                "readOnly": true
+              },
+              {
+                "name": "publisher-auth",
+                "mountPath": "/var/run/orka/publisher-auth/operation-capability-secret",
+                "subPath": "operation-capability-secret",
+                "readOnly": true
+              }
             ]
           }
         ],
-        "initContainers": []
+        "initContainers": [],
+        "volumes": [
+          {
+            "name": "data",
+            "persistentVolumeClaim": {
+              "claimName": "orka-api-workspace-publisher"
+            }
+          },
+          {
+            "name": "tmp",
+            "emptyDir": {
+              "sizeLimit": "1Gi"
+            }
+          },
+          {
+            "name": "publisher-auth",
+            "secret": {
+              "secretName": "orka-api-workspace-publisher-auth",
+              "defaultMode": 288,
+              "items": [
+                {
+                  "key": "controller-token",
+                  "path": "controller-token"
+                },
+                {
+                  "key": "operation-capability-secret",
+                  "path": "operation-capability-secret"
+                }
+              ]
+            }
+          }
+        ],
+        "serviceAccountName": "orka-api-workspace-publisher"
       }
     }
   }
@@ -265,10 +413,34 @@
               "--forward-timeout=2m",
               "--idle-timeout=30s",
               "--tunnel-timeout=10m"
+            ],
+            "volumeMounts": [
+              {
+                "name": "auth",
+                "mountPath": "/var/run/secrets/orka/scm-egress/token",
+                "subPath": "token",
+                "readOnly": true
+              }
             ]
           }
         ],
-        "initContainers": []
+        "initContainers": [],
+        "volumes": [
+          {
+            "name": "auth",
+            "secret": {
+              "secretName": "orka-api-scm-egress-proxy-auth",
+              "defaultMode": 288,
+              "items": [
+                {
+                  "key": "token",
+                  "path": "token"
+                }
+              ]
+            }
+          }
+        ],
+        "serviceAccountName": "orka-api-scm-egress-proxy"
       }
     }
   }

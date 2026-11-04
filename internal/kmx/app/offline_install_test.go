@@ -407,7 +407,7 @@ func TestOfflineInstallRenderRefusals(t *testing.T) {
 	}
 }
 func TestOfflineInstallChangedReuse(t *testing.T) {
-	for _, field := range []string{"values", "marker", "extra-values", "image", "policy", "command", "args", "env", "envFrom", "init", "extra-workload", "missing-workload", "unhealthy", "orphan"} {
+	for _, field := range []string{"values", "marker", "extra-values", "image", "policy", "command", "args", "env", "envFrom", "storage", "mounts", "service-account", "init", "extra-workload", "missing-workload", "unhealthy", "orphan"} {
 		t.Run(field, func(t *testing.T) {
 			a, dir, _, log := offlineInstallApp(t)
 			if field != "orphan" {
@@ -451,6 +451,19 @@ func TestOfflineInstallChangedReuse(t *testing.T) {
 					c["env"] = []any{map[string]any{"name": "ORKA_ACP_CODEX_RUNTIME_IMAGE", "valueFrom": map[string]any{"secretKeyRef": map[string]any{"name": "foreign", "key": "image"}}}}
 				case "envFrom":
 					c["envFrom"] = []any{map[string]any{"secretRef": map[string]any{"name": "foreign"}}}
+				case "storage":
+					volumes := spec["volumes"].([]any)
+					for _, v := range volumes {
+						volume := v.(map[string]any)
+						if volume["name"] == "store" {
+							delete(volume, "persistentVolumeClaim")
+							volume["emptyDir"] = map[string]any{}
+						}
+					}
+				case "mounts":
+					c["volumeMounts"].([]any)[0].(map[string]any)["mountPath"] = "/foreign"
+				case "service-account":
+					spec["serviceAccountName"] = "foreign"
 				case "init":
 					spec["initContainers"] = []any{map[string]any{"name": "extra", "image": "foreign"}}
 				case "extra-workload":

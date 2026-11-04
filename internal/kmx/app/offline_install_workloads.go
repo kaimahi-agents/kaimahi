@@ -23,6 +23,9 @@ func offlineNormalizeWorkload(w offlineWorkload) offlineWorkload {
 		if len(c.EnvFrom) == 0 {
 			c.EnvFrom = nil
 		}
+		if len(c.VolumeMounts) == 0 {
+			c.VolumeMounts = nil
+		}
 	}
 	for i := range w.Containers {
 		normalize(&w.Containers[i])
@@ -32,6 +35,9 @@ func offlineNormalizeWorkload(w offlineWorkload) offlineWorkload {
 	}
 	if len(w.InitContainers) == 0 {
 		w.InitContainers = nil
+	}
+	if len(w.Volumes) == 0 {
+		w.Volumes = nil
 	}
 	return w
 }

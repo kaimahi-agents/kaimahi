@@ -523,17 +523,20 @@ func (a *App) offlineInstallGuard() error {
 // The projection excludes generated Secret bytes and compares only execution
 // inputs. Kubernetes defaults outside this projection do not change identity.
 type offlineContainer struct {
-	Name       string   `json:"name" yaml:"name"`
-	Image      string   `json:"image" yaml:"image"`
-	PullPolicy string   `json:"imagePullPolicy" yaml:"imagePullPolicy"`
-	Command    []string `json:"command,omitempty" yaml:"command,omitempty"`
-	Args       []string `json:"args,omitempty" yaml:"args,omitempty"`
-	Env        []any    `json:"env,omitempty" yaml:"env,omitempty"`
-	EnvFrom    []any    `json:"envFrom,omitempty" yaml:"envFrom,omitempty"`
+	Name         string   `json:"name" yaml:"name"`
+	Image        string   `json:"image" yaml:"image"`
+	PullPolicy   string   `json:"imagePullPolicy" yaml:"imagePullPolicy"`
+	Command      []string `json:"command,omitempty" yaml:"command,omitempty"`
+	Args         []string `json:"args,omitempty" yaml:"args,omitempty"`
+	Env          []any    `json:"env,omitempty" yaml:"env,omitempty"`
+	EnvFrom      []any    `json:"envFrom,omitempty" yaml:"envFrom,omitempty"`
+	VolumeMounts []any    `json:"volumeMounts,omitempty" yaml:"volumeMounts,omitempty"`
 }
 type offlineWorkload struct {
-	Containers     []offlineContainer `json:"containers" yaml:"containers"`
-	InitContainers []offlineContainer `json:"initContainers,omitempty" yaml:"initContainers,omitempty"`
+	Containers         []offlineContainer `json:"containers" yaml:"containers"`
+	InitContainers     []offlineContainer `json:"initContainers,omitempty" yaml:"initContainers,omitempty"`
+	Volumes            []any              `json:"volumes,omitempty" yaml:"volumes,omitempty"`
+	ServiceAccountName string             `json:"serviceAccountName" yaml:"serviceAccountName"`
 }
 
 func offlineSameValues(raw, expected []byte) bool {
