@@ -7,6 +7,7 @@ import (
 	"io"
 	"os/exec"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -82,6 +83,9 @@ func TestDiscoveryCaptureBoundsAndCancellation(t *testing.T) {
 }
 
 func TestDiscoveryChildSignalCancellation(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix kernel signal status; Windows discovery is refused")
+	}
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("Unix signal fixture")
 	}
