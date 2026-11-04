@@ -1843,8 +1843,10 @@ recorded monitoring, not agents/plane; unknown ownership is left alone. Read
   implemented machine capabilities without configuration or credential access.
   Version JSON errors use a safe single-result envelope. Other JSON formats
   remain unchanged. Both `cluster up` and `cluster orka install` accept
-  `-o jsonl` for safe provisioning events/results on Unix. File-Test JSONL is
-  not implemented. See the
+  `-o jsonl` for safe provisioning events/results on Unix. Explicit `test FILE`
+  also supports JSONL with checked provisional telemetry and final case summaries;
+  embedded remains default. Native Windows retains only the package-free fake
+  embedded boundary. See the
   [machine-output contract](machine-output.md).
 - On capable terminals, reports use rich headings and responsive tables. Wide
   tables become labelled records. Full identifiers/digests and exact numbers

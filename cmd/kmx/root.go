@@ -143,8 +143,17 @@ func execute(argv []string, deps dependencies) error {
 		}
 		machine = newProvisioningOutput(out, operation, context.Background())
 		defer machine.stop()
+	} else if fileJSONInvocation(argv) {
+		out := deps.stdout
+		if out == nil {
+			out = os.Stdout
+		}
+		machine = newFileOutput(out)
 	}
 	err := executeCommand(argv, deps, machine)
+	if machine != nil && machine.file != nil {
+		return machine.finishFile(err)
+	}
 	if machine != nil && machine.setup != nil {
 		return machine.finishSetup(err)
 	}

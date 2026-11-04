@@ -114,7 +114,7 @@ Keep these distinctions:
 | `--context` | Kubernetes context for this invocation. Global, accepted anywhere on the line. |
 | `--namespace` | Kubernetes namespace the command reads or writes. |
 | `--to` | Named destination from workspace `kmx.yaml` for eval, Deploy or destination status. Never switches a saved/current context. |
-| `-o`, `--output` | Report format: `table` or `text`, `json`, `yaml`, or command-specific `jsonl`. JSON/YAML formats print exactly one document; `cluster up` and `cluster orka install` accept `text` (default) or `jsonl`, with progress events and one terminal result. |
+| `-o`, `--output` | Report format: `table` or `text`, `json`, `yaml`, or command-specific `jsonl`. JSON/YAML formats print exactly one document; `cluster up` and `cluster orka install` accept `text` (default) or `jsonl`, with progress events and one terminal result. Explicit `test FILE` also accepts `jsonl`, with checked provisional progress, ordered final case summaries and one terminal result; text remains its default. Run and folder Test do not accept JSONL. |
 | `-i`, `--interactive` | Switch a command that has a scripted mode to its guided terminal mode. Not used on commands that are only interactive. |
 | `--out` | Path for written artifacts. Never reuse `--output` for a path. |
 | `--workspace` | Exact workspace root without discovery fallback; default create initializes it if absent, and push requires an existing workspace. |
@@ -124,7 +124,7 @@ Keep these distinctions:
 | `--platform` | Exact OS/ARCH for offline profile/build selection; v3 push may infer it only for one candidate in the explicitly selected profile. Legacy workspace push rejects it. |
 | `--plan` | Read the target and print what would change. No writes. |
 | `--show-content` | Opt into sanitized bounded failure excerpts and expected values: stderr for test/executing workspace Deploy, stdout for offline test explain. Workspace records may include retained rationale; file records do not retain judge rationale. Not evidence; never implied by --verbose; conflicts with explain --clear. |
-| `--verbose` | Where supported, add content-free diagnostics and timings on stderr. File Run/Test includes request progress, endpoints, HTTP status, timings and safe failures, without repeating the final report; never implies --show-content. |
+| `--verbose` | Where supported, add content-free diagnostics and timings on stderr. File Run/Test includes request progress, endpoints, HTTP status, timings and safe failures, without repeating the final report; never implies --show-content. File Test JSONL suppresses expanded verbose diagnostics. |
 | `--github-summary` | File Test only: with `-o json`, append the same result's bounded content-free Markdown projection to `$GITHUB_STEP_SUMMARY`. Never changes the Test exit code or grants evidence. |
 | `--no-apply` | Where supported by runtime setup, render without cluster writes; removed from workspace create. |
 | `--dry-run` | Where supported by runtime setup, check server admission without persistent writes; removed from workspace create. |
@@ -169,7 +169,10 @@ Keep these distinctions:
   JSON document. Progress, diagnostics, notices and deprecation warnings go to
   stderr. The explicit setup `-o jsonl` streams are an exception: stdout carries
   safe progress events and one terminal result; raw App/child output and command
-  echoes are suppressed. See [Machine-readable output](machine-output.md#provisioning-event-streams).
+  echoes are suppressed. Explicit `test FILE -o jsonl` also carries checked
+  provisional progress, ordered final case summaries and one terminal result on
+  stdout. See [Machine-readable output](machine-output.md#provisioning-event-streams)
+  and [File Test JSONL](machine-output.md#file-test-jsonl).
 - **Machine output is never styled.** Rich output respects `TERM=dumb` and
   `NO_COLOR`.
 - **Exit codes:**

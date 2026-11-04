@@ -35,9 +35,9 @@ func TestVersionJSON(t *testing.T) {
 					t.Fatalf("bad version projection: %+v", r)
 				}
 				caps, ok := r["capabilities"].([]any)
-				want := 3
+				want := 5
 				if goos == "windows" {
-					want = 1
+					want = 2
 				}
 				if !ok || len(caps) != want {
 					t.Fatalf("advertises unimplemented operations: %+v", r)
@@ -52,6 +52,26 @@ func TestVersionJSON(t *testing.T) {
 						if len(c) != 3 || c["operation"] != operation || c["output"] != "jsonl" || c["schemaVersion"] != float64(1) {
 							t.Fatal(c)
 						}
+					}
+				}
+				first := 3
+				if goos == "windows" {
+					first = 1
+				}
+				for i, runner := range []string{"embedded", "copilotd"} {
+					if goos == "windows" && runner == "copilotd" {
+						continue
+					}
+					c := caps[first+i].(map[string]any)
+					if c["operation"] != "file.test" || c["output"] != "jsonl" || c["runner"] != runner || c["schemaVersion"] != float64(1) {
+						t.Fatal(c)
+					}
+					if goos == "windows" {
+						if c["model"] != "fake" || len(c) != 5 {
+							t.Fatal(c)
+						}
+					} else if len(c) != 4 {
+						t.Fatal(c)
 					}
 				}
 				if diagnostics.Len() != 0 {
