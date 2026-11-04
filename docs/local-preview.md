@@ -380,10 +380,60 @@ assertions or fixed live bindings; fake alone does not disable live sources:
 kmx test example.agent.md --provider fake --model fake --no-mcp-servers -o json --github-summary
 ```
 
-Destination commands ignore only these two launch subtrees after checking YAML
+Destination commands ignore only these three launch subtrees after checking YAML
 structure, so args/lists do not break operational config. Aliases, anchors,
 duplicate keys, known credential shapes and existing size bounds still reject;
 only the tool consumer validates launch semantics.
+
+### Fixed command tools in file Run/Test
+
+The file CLI can also resolve a declared Enabled tool from `commandTools` in the
+same checked `kmx.yaml`. A command tool has no model-supplied arguments: its
+executable and argument vector are fixed host configuration, and the trusted tool
+schema accepts only an empty object. It is independent of `mcpServers`, so
+`--no-mcp-servers` does not disable commands. Use the existing `tools` state to
+disable one explicitly.
+
+```yaml
+version: 1
+tools:
+  project_check: Enabled
+commandTools:
+  project_check:
+    command: /absolute/path/to/go
+    args: [test, ./...]
+    workingDirectory: .
+    env:
+      PRIVATE_MODULE_TOKEN: MODULE_TOKEN # child name: host variable name
+```
+
+`command` must be an absolute executable. `workingDirectory` defaults to the
+physical agent folder and must remain inside it after symlink resolution. There
+is no shell, interpolation, glob expansion, executable discovery or model input.
+Executable and directory identity are rechecked around each launch; as with
+agent-file access generally, concurrent hostile filesystem mutation is outside
+the cooperative guarantee and this is not immutable byte attestation.
+The complete child environment contains frozen PATH when available plus the
+explicit named references; every explicit value is conservatively treated as
+sensitive. Unused, Disabled and fully recorded tools do not resolve environment
+or start a process. Pending recording capture uses the ordinary checked save only
+after command cleanup; populated recordings replay offline without parsing the
+launch subtree.
+
+Stdout and stderr share a 5 KiB retained bound, allowing worst-case sixfold JSON
+escaping plus 2 KiB for the complete 32 KiB trusted result envelope.
+A normal nonzero exit is a completed tool
+result with `succeeded: false`, the exit code and checked diagnostics; it is not
+reported as command success. Invalid UTF-8, overflow, credential-shaped output,
+cancellation, signals or uncertain cleanup withhold all output and completion.
+Linux, macOS and WSL use one process group per call and reap its leader after
+group cleanup. Pipe draining and leader reaping each have a one-second cleanup
+budget, including after cancellation. Unconfirmed reaping returns a cleanup
+failure; the existing waiter remains responsible for eventual reaping.
+A child that leaves the process group with `setsid` or `setpgid` remains outside
+that guarantee; this is neither sandboxing nor native Windows support. Command
+results, recordings and previews grant no package evidence, Publish or Deploy
+authority.
 
 ### Stdio host lifecycle
 

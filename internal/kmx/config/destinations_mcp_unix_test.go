@@ -48,3 +48,37 @@ func TestDestinationsMCPStructureStillChecked(t *testing.T) {
 		}
 	}
 }
+
+func TestDestinationsIgnoreCommandToolSemanticsButCheckStructure(t *testing.T) {
+	for _, suffix := range []string{
+		"commandTools:\n  check:\n    command: 4\n    args: [true, null, x]\n    workingDirectory: false\n    env: {TOKEN: [invalid]}\n",
+		"commandTools: {}\n",
+	} {
+		dir, err := filepath.EvalSymlinks(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "kmx.yaml"), []byte("version: 1\nevalTarget: dev\ntargets:\n  dev: {context: test}\n"+suffix), 0600); err != nil {
+			t.Fatal(err)
+		}
+		doc, err := LoadDestinations(dir)
+		if err != nil || doc.EvalTarget != "dev" {
+			t.Fatalf("command-only semantics blocked destinations: %+v %v", doc, err)
+		}
+	}
+	for _, suffix := range []string{
+		"commandTools: {x: {command: one, command: two}}\n",
+		"commandTools: {x: &c {command: one}, y: *c}\n",
+	} {
+		dir, err := filepath.EvalSymlinks(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "kmx.yaml"), []byte("version: 1\n"+suffix), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := LoadDestinations(dir); err == nil {
+			t.Fatalf("ambiguous command config accepted: %s", suffix)
+		}
+	}
+}

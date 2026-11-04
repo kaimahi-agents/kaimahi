@@ -330,7 +330,7 @@ func previewFileCommand(cmd *cobra.Command, state *commandState, file string, f 
 		state.machine.cancel = cancel
 	}
 	opt.PreparePairRecordingSave = kmxmcp.FilePairRecordingSaver
-	selection := localtools.ServerSelection{Names: append([]string(nil), f.MCPServers...), Override: cmd.Flags().Changed("mcp-server"), Clear: f.NoMCPServers}
+	selection := localtools.ServerSelection{Names: append([]string(nil), f.MCPServers...), Override: cmd.Flags().Changed("mcp-server"), Clear: f.NoMCPServers, Commands: true}
 	ctx = context.WithValue(ctx, fileMCPIntentKey{}, fileMCPIntent{file: file, selection: selection})
 	a := &app.App{FileRunner: state.deps.fileRunner}
 	if opt.Copilotd {
