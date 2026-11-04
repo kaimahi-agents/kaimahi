@@ -81,8 +81,9 @@ type machineCommandError struct {
 func (e *machineCommandError) Error() string { return e.safe.Error() }
 func (e *machineCommandError) Unwrap() error { return e.cause }
 
-// Recognize the opt-in before preprocessing can fail. Only known flag operands
-// are consumed; a value equal to "version" must never discover a command.
+// Recognize the opt-in before preprocessing can fail. Known flag operands
+// cannot discover a command. After version is identified, unknown flags only
+// affect Cobra's error; keep looking for the requested error format.
 func versionJSONInvocation(argv []string) bool {
 	command := false
 	output, count := "", 0
@@ -121,9 +122,6 @@ func versionJSONInvocation(argv []string) bool {
 			output, count = value, count+1
 		case strings.HasPrefix(arg, "-o") && len(arg) > 2:
 			output, count = arg[2:], count+1
-		case strings.HasPrefix(arg, "-") && !inline:
-			// Its following operand is opaque: don't search past it for flags.
-			return count == 1 && output == "json"
 		}
 	}
 	return command && count == 1 && output == "json"
