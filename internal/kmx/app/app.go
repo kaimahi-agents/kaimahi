@@ -2,6 +2,8 @@
 // context guards, runtime adapters and external tools.
 // Machine output shares payload-free envelopes and fixed error projections;
 // command adapters retain format selection, writing and exit semantics.
+// Provisioning JSONL observes existing phase boundaries with operation-local
+// cancellation and conservative mutation projections, never readiness proof.
 //
 // Offline cluster bring-up validates a closed manifest and clean binary identity
 // against an embedded catalog. Cluster bring-up reads only pinned node evidence;
