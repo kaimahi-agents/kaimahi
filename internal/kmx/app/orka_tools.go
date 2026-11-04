@@ -313,7 +313,7 @@ func (a *App) ReadOrkaTools(ctx context.Context, opt OrkaToolOptions) (OrkaToolI
 		api = o.api()
 	}
 	http := []OrkaToolRow{}
-	if api {
+	if api && len(opt.Requirements) == 0 {
 		http = o.tools(opt.Namespace)
 		sort.Slice(http, func(i, j int) bool { return http[i].Name < http[j].Name })
 	}

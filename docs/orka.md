@@ -47,8 +47,11 @@ UIDs, runtime/catalog provenance, ordered rows and `complete`. Each row includes
 kind, name, availability, fixed reason, source and observed resource identity/spec
 digest where present. It never includes URLs, headers, schemas, status errors,
 Tool inputs/results or Secret values. Destination consumers call that reader
-with explicit requirements, require complete inventory and available selected
-rows, and reobserve before execution. Disabled requirements do not resolve an
+with explicit requirements: enabled HTTP names use exact GETs, without listing
+unrelated Tools or requiring Tool LIST permission. In this mode, `complete`
+covers the declarations, not the namespace's full Tool collection. Consumers
+require complete inventory and available selected rows, and reobserve before
+execution. Disabled requirements do not resolve an
 exact resource dependency. Only an authoritative exact Tool NotFound, after the
 namespace and Tool API are observed, gives `missing`/`resource_missing`.
 A forbidden read is `unknown`/`read_denied`; unrecognized failures are
