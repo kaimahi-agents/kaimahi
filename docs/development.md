@@ -267,18 +267,21 @@ KMX's native-Windows product boundary.
   expected_autoreview_sha=043ff83ecf52a36c8fb305d1c6f32be58c073e7a04f402691eb75aa1c6839613
   : "${REVIEW_GIT:?set REVIEW_GIT to an absolute operator-owned Git executable}"
   : "${REVIEW_PYTHON:?set REVIEW_PYTHON to an absolute operator-owned Python 3.10+ executable}"
+  : "${REVIEW_CODEX:?set REVIEW_CODEX to an absolute operator-owned Codex executable}"
   : "${AUTOREVIEW:?set AUTOREVIEW to the absolute operator-owned helper path}"
   : "${AUTOREVIEW_STATUS:?set AUTOREVIEW_STATUS to a fresh path in an operator-owned private directory}"
   case "$REVIEW_GIT" in /*) ;; *) printf 'REVIEW_GIT must be absolute\n' >&2; exit 1 ;; esac
   case "$REVIEW_PYTHON" in /*) ;; *) printf 'REVIEW_PYTHON must be absolute\n' >&2; exit 1 ;; esac
+  case "$REVIEW_CODEX" in /*) ;; *) printf 'REVIEW_CODEX must be absolute\n' >&2; exit 1 ;; esac
   case "$AUTOREVIEW" in /*) ;; *) printf 'AUTOREVIEW must be absolute\n' >&2; exit 1 ;; esac
   case "$AUTOREVIEW_STATUS" in
     /*) ;;
     *) printf 'AUTOREVIEW_STATUS must be absolute\n' >&2; exit 1 ;;
   esac
   if ! test -f "$REVIEW_GIT" || ! test -f "$REVIEW_PYTHON" \
+    || ! test -f "$REVIEW_CODEX" \
     || ! test -f "$AUTOREVIEW"; then
-    printf 'review Git, Python and helper must resolve to files\n' >&2
+    printf 'review Git, Python, Codex and helper must resolve to files\n' >&2
     exit 1
   fi
   "$REVIEW_PYTHON" -I -c \
@@ -313,7 +316,7 @@ KMX's native-Windows product boundary.
 
   repo_root=$(review_git rev-parse --show-toplevel)
   "$REVIEW_PYTHON" -I - \
-    "$repo_root" "$REVIEW_GIT" "$REVIEW_PYTHON" <<'PY'
+    "$repo_root" "$REVIEW_GIT" "$REVIEW_PYTHON" "$REVIEW_CODEX" <<'PY'
 import pathlib
 import sys
 
@@ -371,6 +374,8 @@ status = pathlib.Path(status_path)
 if status.exists() or status.is_symlink():
     raise SystemExit("AUTOREVIEW_STATUS must be a fresh path")
 parent = status.parent.resolve(strict=True)
+if parent == repository or repository in parent.parents:
+    raise SystemExit("AUTOREVIEW_STATUS must be outside the candidate repository")
 info = parent.stat()
 if info.st_uid != os.geteuid() or info.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
     raise SystemExit("AUTOREVIEW_STATUS parent must be current-user owned and private")
@@ -385,7 +390,7 @@ PY
   do
     review_git show "${base}:$candidate_path" > "$review_trusted/$candidate_path"
   done
-  : > "$review_inputs/review-policy.md"
+  review_prompts=()
   for policy_path in \
     .github/copilot-instructions.md \
     AGENTS.md \
@@ -393,23 +398,26 @@ PY
     docs/development.md \
     docs/repository-map.md
   do
-    printf '\n\n# Trusted merge-base file: %s\n\n' "$policy_path" \
-      >> "$review_inputs/review-policy.md"
-    review_git show "${base}:$policy_path" >> "$review_inputs/review-policy.md"
+    prompt_path="$review_inputs/policy-${#review_prompts[@]}.md"
+    printf '# Trusted merge-base file: %s\n\n' "$policy_path" > "$prompt_path"
+    review_git show "${base}:$policy_path" >> "$prompt_path"
+    review_prompts+=(--prompt "$(<"$prompt_path")")
   done
-
-  review_git diff --binary --no-ext-diff --no-textconv --no-renames \
-    "$base" "$head" -- > "$review_inputs/candidate.patch"
-  review_git diff-tree -r --raw --no-renames -z "$base" "$head" -- \
-    > "$review_inputs/raw-diff"
+  review_git diff-tree -r --raw --no-abbrev --no-commit-id \
+    --no-renames -z "$base" "$head" -- \
+    > "$review_results/raw-diff"
   "$REVIEW_PYTHON" -I - \
-    "$review_inputs/raw-diff" "$repo_root" "$REVIEW_GIT" "$review_home" <<'PY'
+    "$review_results/raw-diff" "$repo_root" "$REVIEW_GIT" \
+    "$review_home" "$review_inputs/blobs" <<'PY'
 import subprocess
 import pathlib
+import os
 import sys
 
 records = open(sys.argv[1], "rb").read().split(b"\0")
-repository, git, home = sys.argv[2:]
+repository, git, home = sys.argv[2:5]
+blob_dir = pathlib.Path(sys.argv[5])
+blob_dir.mkdir(mode=0o700)
 index = 0
 total = 0
 while index < len(records) and records[index]:
@@ -453,9 +461,15 @@ while index < len(records) and records[index]:
             content.decode("utf-8")
         except UnicodeDecodeError:
             raise SystemExit("non-UTF-8 change requires a separately trusted review")
+        target = blob_dir / (oid.decode("ascii") + ".txt")
+        if not target.exists():
+            descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(descriptor, "wb") as stream:
+                stream.write(content)
 PY
 
-  review_git bundle create "$review_inputs/candidate.bundle" \
+  review_bundle="$review_tmp/candidate.bundle"
+  review_git bundle create "$review_bundle" \
     "$review_base" HEAD
   /usr/bin/env -i HOME="$review_home" PATH=/usr/bin:/bin LANG=C LC_ALL=C \
     GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
@@ -467,13 +481,22 @@ PY
     GIT_CONFIG_SYSTEM=/dev/null GIT_NO_LAZY_FETCH=1 \
     GIT_NO_REPLACE_OBJECTS=1 GIT_TERMINAL_PROMPT=0 \
     "$REVIEW_GIT" -C "$review_tmp/review" fetch --quiet \
-    "$review_inputs/candidate.bundle" \
+    "$review_bundle" \
     "${base}:refs/remotes/origin/main" "${head}:refs/heads/candidate"
   /usr/bin/env -i HOME="$review_home" PATH=/usr/bin:/bin LANG=C LC_ALL=C \
     GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
     GIT_CONFIG_SYSTEM=/dev/null GIT_NO_LAZY_FETCH=1 \
     GIT_NO_REPLACE_OBJECTS=1 GIT_TERMINAL_PROMPT=0 \
     "$REVIEW_GIT" -C "$review_tmp/review" checkout --quiet candidate
+  /usr/bin/env -i HOME="$review_home" PATH=/usr/bin:/bin LANG=C LC_ALL=C \
+    GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+    GIT_CONFIG_SYSTEM=/dev/null GIT_NO_LAZY_FETCH=1 \
+    GIT_NO_REPLACE_OBJECTS=1 GIT_TERMINAL_PROMPT=0 \
+    "$REVIEW_GIT" -C "$review_tmp/review" \
+    -c core.fsmonitor=false -c core.hooksPath=/dev/null \
+    -c diff.external= -c diff.renames=false -c diff.suppressBlankEmpty=false \
+    diff --binary --no-ext-diff --no-textconv --no-renames \
+    origin/main candidate -- > "$review_inputs/candidate.patch"
   test "$(review_git rev-parse HEAD)" = "$head"
   review_git status --porcelain=v1 --untracked-files=all \
     > "$review_results/status-after"
@@ -515,21 +538,26 @@ PY
     exit 1
   fi
 
-  review_policy=$(<"$review_inputs/review-policy.md")
   export TMPDIR="$review_engine_tmp"
   (
     cd "$review_tmp/review"
+    export PATH="$(dirname "$REVIEW_CODEX"):$(dirname "$REVIEW_GIT"):$(dirname "$REVIEW_PYTHON"):/usr/bin:/bin"
+    export AUTOREVIEW_GIT="$REVIEW_GIT"
+    export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+    export GIT_CONFIG_SYSTEM=/dev/null GIT_NO_LAZY_FETCH=1
+    export GIT_NO_REPLACE_OBJECTS=1
     "$REVIEW_PYTHON" -I "$review_helper" \
     --mode branch \
     --base origin/main \
     --engine codex \
+    --codex-bin "$REVIEW_CODEX" \
     --model gpt-6.1-sol \
     --thinking medium \
     --codex-speed default \
     --max-priority P2 \
     --no-web-search \
     --codex-no-fallback \
-    --prompt "$review_policy" \
+    "${review_prompts[@]}" \
     --status-output "$AUTOREVIEW_STATUS"
   )
   test -f "$AUTOREVIEW_STATUS" && test ! -L "$AUTOREVIEW_STATUS"
@@ -544,6 +572,14 @@ if status.get("status") != "scoped-clean" or status.get("exit_code") != 0:
 if status.get("head") not in {None, sys.argv[2]}:
     raise SystemExit("autoreview status does not match the frozen candidate head")
 PY
+  test "$(review_git rev-parse HEAD)" = "$head"
+  test "$(review_git merge-base "$review_base" HEAD)" = "$base"
+  review_git status --porcelain=v1 --untracked-files=all \
+    > "$review_results/status-final"
+  test ! -s "$review_results/status-final" || {
+    printf 'candidate changed while reviewer was running\n' >&2
+    exit 1
+  }
 )
 ```
 
