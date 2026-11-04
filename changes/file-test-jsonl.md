@@ -1,0 +1,1 @@
+File Test adds opt-in JSONL progress, safe native copilotd telemetry and ordered final case summaries. Existing text/JSON output, runner defaults and final acceptance remain unchanged; unavailable or ambiguous usage is not reported as zero.

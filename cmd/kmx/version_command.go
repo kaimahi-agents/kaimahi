@@ -10,6 +10,8 @@ import (
 )
 
 type versionCapability struct {
+	Runner        string `json:"runner,omitempty"`
+	Model         string `json:"model,omitempty"`
 	Operation     string `json:"operation"`
 	Output        string `json:"output"`
 	SchemaVersion int    `json:"schemaVersion"`
@@ -48,6 +50,16 @@ func newVersionCommand(state *commandState) *cobra.Command {
 				for _, operation := range []string{"cluster.up", "cluster.orka.install"} {
 					capabilities = append(capabilities, versionCapability{Operation: operation, Output: "jsonl", SchemaVersion: 1})
 				}
+			}
+			for _, runner := range []string{"embedded", "copilotd"} {
+				if state.deps.goos == "windows" && runner == "copilotd" {
+					continue
+				}
+				c := versionCapability{Operation: "file.test", Output: "jsonl", SchemaVersion: 1, Runner: runner}
+				if state.deps.goos == "windows" {
+					c.Model = "fake"
+				}
+				capabilities = append(capabilities, c)
 			}
 			err := state.machine.document(versionDocument{
 				SchemaVersion: 1, Kind: "kmx.version", KmxVersion: build.Version,

@@ -28,6 +28,9 @@ func newAgentTestCommand(state *commandState) *cobra.Command {
 		Example: "  kmx test\n  kmx test greeter.agent.md --case greeting\n  kmx test -o json --no-content --github-summary",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
+				if file.Output == "jsonl" {
+					return fileUsageError(fmt.Errorf("JSONL requires an explicit agent FILE"))
+				}
 				for _, name := range []string{"runner", "host", "tests", "case"} {
 					if cmd.Flags().Changed(name) {
 						return fileUsageError(fmt.Errorf("--%s requires an explicit agent FILE", name))

@@ -65,7 +65,11 @@ func registerFileCommandFlags(cmd *cobra.Command, f *fileCommandOptions, output 
 		cmd.Flags().BoolVar(&f.GitHubSummary, "github-summary", false, "JSON summary to $GITHUB_STEP_SUMMARY (-o json)")
 	}
 	if output {
-		cmd.Flags().StringVarP(&f.Output, "output", "o", "text", "File output: text or json")
+		help := "File output: text or json"
+		if cmd.Name() == "test" {
+			help = "File output: text, json or jsonl (explicit FILE)"
+		}
+		cmd.Flags().StringVarP(&f.Output, "output", "o", "text", help)
 	}
 }
 func validateFileCommand(cmd *cobra.Command, state *commandState, f fileCommandOptions) error {
@@ -98,7 +102,7 @@ func validateFileCommand(cmd *cobra.Command, state *commandState, f fileCommandO
 			}
 		}
 	}
-	if f.Output != "text" && f.Output != "json" {
+	if f.Output != "text" && f.Output != "json" && !(cmd.Name() == "test" && f.Output == "jsonl") {
 		return fmt.Errorf("file preview output must be text or json")
 	}
 	if f.GitHubSummary && f.Output != "json" {
@@ -116,6 +120,33 @@ func fileFlagsWithoutFile(cmd *cobra.Command) error {
 }
 
 func runFileCommand(cmd *cobra.Command, state *commandState, file string, f fileCommandOptions, prompt, promptFile string) error {
+	if f.Output == "jsonl" {
+		m := state.machine
+		outer := m != nil && m.file != nil
+		if !outer {
+			m = newFileOutput(cmd.OutOrStdout())
+			state.machine = m
+		}
+		m.file.entered = true
+		m.file.preflightStarted = true
+		runner := f.Runner
+		if runner == "" {
+			runner = "embedded"
+		}
+		m.file.observer = app.NewMachineFileObserver(runner, func(p app.MachineFileProgress) error { return m.fileProgress(p) })
+		if err := m.event("preflight", "active"); err != nil {
+			if outer {
+				return err
+			}
+			return m.finishFile(err)
+		}
+		r, err := previewFileCommand(cmd, state, file, f, prompt, promptFile, nil)
+		m.file.result = r
+		if outer {
+			return err
+		}
+		return m.finishFile(err)
+	}
 	var summary io.WriteCloser
 	result, err := previewFileCommand(cmd, state, file, f, prompt, promptFile, func() error {
 		if !f.GitHubSummary {
@@ -181,14 +212,27 @@ func previewFileCommand(cmd *cobra.Command, state *commandState, file string, f 
 		SkipAssertions:        cmd.Name() == "run",
 		IncludeAnswer:         cmd.Name() == "run" && !f.NoContent,
 		IncludeFailureDetails: !f.NoContent, ToolBindings: f.ToolBindings}
+	machine := f.Output == "jsonl" && state.machine != nil && state.machine.file != nil
+	if machine {
+		opt.Machine = state.machine.file.observer
+		opt.ShowContent = false
+		opt.ShowFailedContent = false
+		opt.IncludeAnswer = false
+		opt.IncludeFailureDetails = false
+	}
 	opt.Copilotd = f.Runner == "copilotd"
 	if opt.Copilotd {
 		if state.deps.goos == "windows" {
 			return app.FilePreviewResult{}, errWindowsOperationUnsupported
 		}
-		opt.SessionCreated = nativeSessionCreated(cmd.ErrOrStderr())
+		if !machine {
+			opt.SessionCreated = nativeSessionCreated(cmd.ErrOrStderr())
+		}
 	}
 	opt.RouteSelected = func(route app.FilePreviewRoute) error {
+		if machine {
+			return nil
+		}
 		_, err := fmt.Fprintf(cmd.ErrOrStderr(), "Route: %s / %s\n", route.Provider, route.Model)
 		return err
 	}
@@ -234,7 +278,7 @@ func previewFileCommand(cmd *cobra.Command, state *commandState, file string, f 
 	if state.deps.goos == "windows" && opt.ValidateSource(cmd.Context()) != nil {
 		return app.FilePreviewResult{}, errWindowsOperationUnsupported
 	}
-	if f.Verbose {
+	if f.Verbose && !machine {
 		opt.Progress = func(message string) error {
 			_, err := fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] %s\n", message)
 			return err
@@ -282,6 +326,9 @@ func previewFileCommand(cmd *cobra.Command, state *commandState, file string, f 
 	defer stop()
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
+	if machine {
+		state.machine.cancel = cancel
+	}
 	opt.PreparePairRecordingSave = kmxmcp.FilePairRecordingSaver
 	selection := localtools.ServerSelection{Names: append([]string(nil), f.MCPServers...), Override: cmd.Flags().Changed("mcp-server"), Clear: f.NoMCPServers}
 	ctx = context.WithValue(ctx, fileMCPIntentKey{}, fileMCPIntent{file: file, selection: selection})
@@ -306,7 +353,7 @@ func previewFileCommand(cmd *cobra.Command, state *commandState, file string, f 
 		}
 		result, err = a.PreviewAgentPairSnapshot(ctx, pair, opt)
 	}
-	if f.Verbose {
+	if f.Verbose && !machine {
 		if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] Total elapsed=%s\n",
 			time.Since(start).Round(time.Millisecond)); writeErr != nil {
 			return app.FilePreviewResult{}, fmt.Errorf("cannot write local preview diagnostics")

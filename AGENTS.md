@@ -15,7 +15,9 @@ changes in the package's Go doc comment.
   only for exit mapping, never display. Existing command JSON/text stay unchanged.
   Setup `-o jsonl` reuses phase observers with conservative effects, detached
   stdin, safe sinks and invocation cancellation; no readiness/retry authority.
-  File-Test JSONL remains unimplemented; see `docs/machine-output.md`.
+  Explicit `test FILE -o jsonl` uses checked App telemetry and final summaries;
+  preserve legacy text/JSON, post-intake signals and all final acceptance vetoes.
+  Native Windows remains embedded/model=fake only. See `docs/machine-output.md`.
 - Root help advertises exactly `create`, `run`, `test`, `chat`, `model`,
   `package`, `cluster`, `version`, in that order. MCP, completion and Help
   remain callable but are not root help entries. Keep root ordering local;

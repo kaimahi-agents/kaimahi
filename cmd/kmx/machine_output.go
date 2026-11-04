@@ -33,6 +33,7 @@ type machineOutput struct {
 	ctx       context.Context
 	stop      func()
 	setup     *provisioningOutput
+	file      *fileOutput
 }
 
 func newMachineOutput(out io.Writer, operation string) *machineOutput {

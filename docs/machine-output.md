@@ -21,9 +21,11 @@ version this binary targets, not a running controller's observed version.
 Capabilities describe implemented binary interfaces, not dependency availability,
 cluster readiness, permission, model access or qualified execution.
 
-Unix builds advertise version JSON and the two setup JSONL adapters. Native
-Windows advertises only version JSON; setup remains deferred. File-Test JSONL
-is not implemented or advertised. Existing Run, Test, list, show, deployment and other JSON
+Unix builds advertise version JSON, two setup JSONL adapters and `file.test`
+JSONL with separate `runner: embedded` and `runner: copilotd` selectors. Native
+Windows advertises version JSON and only `file.test`/`runner: embedded`/`model: fake`;
+its existing package-free/tool-free fake intake gate still applies. Setup and
+native copilotd remain deferred there. Existing Run, Test, list, show, deployment and other JSON
 formats keep their current shapes and exit meanings. This contract does not
 wrap or replace those documents.
 
@@ -167,6 +169,81 @@ process exit. Truncated/missing result, sequence gaps, malformed bytes or bytes
 after the result mean incomplete delivery, never success or permission to retry.
 Progress alone cannot establish readiness; retain possible effects for read-only
 inspection. Legacy command JSON documents are unchanged.
+
+## File Test JSONL
+
+```sh
+kmx test reader.agent.md -o jsonl
+kmx test reader.agent.md --runner copilotd --host ws://127.0.0.1:8080 -o jsonl
+```
+
+This opt-in format keeps the existing runner choice, intake, model/tool/judge
+validation and timeout budgets. Embedded remains default; format selection does
+not require copilotd. Run and folder Test still support their existing formats,
+not JSONL. `--github-summary` still requires JSON and refuses JSONL before work.
+Text and the existing single-document `-o json` remain unchanged.
+
+The operation is `file.test`. After the full `test FILE` route, the four explicit
+selectors `-o jsonl`, `-ojsonl`, `--output jsonl` and `--output=jsonl` guarantee safe
+early-error framing when exactly one output selector occurs. Known flag operands
+and `--` are respected. FILE detection is syntactic, without reading its content
+or guessing an extension; a directory operand is an attempted file intake and
+gets a framed refusal. Other Cobra-valid forms may stream at handler entry but
+do not acquire the early-error guarantee. Successful help/completion stays inert.
+
+The shared envelope and checked-write limits apply. Progress names include
+`stage.started`, `stage.finished`, `case.started`, `session.observed`,
+`tool.started`, `tool.finished` and `case.finished`. Stages are `preflight`,
+`execution`, `assertions` and `finalize`; execution includes existing interleaved
+judging, while assertions covers existing App acceptance/projection, not another
+judge call. Case/runtime progress is provisional. No raw route or Session notice,
+answer, assertion operand/reason, path, host, tool payload or expanded verbose
+content is copied into JSONL. Provider/judge credentials remain in their existing
+channels; dynamic identities are checked against both frozen credential owners.
+Unsafe or over-1024-byte identities are omitted/unavailable, never clipped.
+
+Ordered `case.summary` events immediately precede the terminal result, one per
+selected case including not-started cases (maximum128). `caseIndex` is one-based;
+`caseId` is optional. Each summary has `state`, `verdict`, nullable `durationMs`,
+`session`, `chat`, `turn`, `task`, `calls`, `usage` and separate `judgeUsage`.
+Identity fields have `availability` and an optional checked `id`; Task remains
+unavailable because native file execution uses AHP Session/chat, not Orka Tasks.
+Tool names are observed names, and call IDs are local opaque ordinals within the
+case, never raw provider IDs. Session requires create acknowledgment; turn
+requires a matching accepted server echo, not just local nonce assignment.
+
+Usage counters are nullable optional nonnegative `inputTokens`/`outputTokens`.
+Unavailable is not zero: explicit reported zero is available. Model-only reports
+are `not_reported`; more than one matching usage report is `ambiguous`, never
+summed or replaced by the last report. Tool-using hosts may report once per model
+call, so ambiguity can be common. Usage is correlated at the receive-side
+channel/turn/sequence/model boundary, not read from an overwriting final snapshot.
+Negative counters are withheld without changing execution acceptance. Judge
+usage is separately unavailable; no aggregate token total or cost is invented.
+
+Tool progress may wait until matching actual-model evidence arrives, possibly
+at turn end. At most512 payload-free observations are buffered per case; overflow
+withholds live tool observations without refusing execution or changing final
+trace acceptance. Native `calls` requested/completed counts are available only
+from an accepted final complete trace; failed/truncated traces say
+`incomplete_trace` with null counts. Embedded exposes only its checked final
+counts; private Session/journal internals and usage are not inspected.
+
+The result includes runner, selection, `evidence: diagnostic_preview`, checked
+revisions, selected/started/completed case counts, `summaryCount` and `remoteState`.
+Counts are zero before selection. No setup `effects` array is added. Existing
+exit0/1/2/130 meanings remain authoritative; assertion failure differs from an
+unknown execution/verdict. Source/judge/journal/required-close vetoes remain
+final; prior case progress or a passing summary cannot override an unknown result.
+Name-based native selection is diagnostic preview, never package identity proof.
+
+`remoteState` is `not_started`, `stopped`, `may_continue` or `unknown`. A send
+attempt is recorded before Dispatch: failed/lost acknowledgment is `may_continue`,
+never proof of not-started. Stopped requires all started turns' accepted terminal
+proof. Cooperative cancellation/disposal acknowledgment alone does not establish
+remote stop, and redaction cannot erase the attempted-send fact. Signals retain
+the existing post-intake timing; writer failure cancels the existing file context,
+wins over resulting cancellation, and exits1 when the write error returns.
 
 ## Reading the complete output
 
