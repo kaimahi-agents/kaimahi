@@ -1,0 +1,16 @@
+schemaVersion: 1
+tools:
+  go_version:
+    description: Read the version of the local Go installation
+    command: go
+    args: [version]
+    parameters: {}
+    execution:
+      timeout: 5s
+      max-output-bytes: 1024
+      approval: granted-scope
+    validation:
+      args: [version]
+      exit-code: 0
+      stdout-pattern: '^go version go1\.(2[6-9]|[3-9][0-9])\.'
+      timeout: 5s

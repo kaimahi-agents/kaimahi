@@ -30,7 +30,7 @@ func configureCommandHelp(root *cobra.Command, state *commandState) {
 	})
 	for _, child := range root.Commands() {
 		switch child.Name() {
-		case "mcp", "completion":
+		case "mcp", "completion", "import", "info", "inspect", "list", "rm", "settings", "stop", "tools", "validate":
 			child.Hidden = true
 		case "create", "run", "test", "chat", "model":
 			child.SetHelpFunc(func(cmd *cobra.Command, args []string) {

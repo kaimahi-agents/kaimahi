@@ -15,7 +15,7 @@ func TestFocusInputOwnsOneBoundedFrameAndCursor(t *testing.T) {
 			t.Fatalf("width %d invalid frame geometry: %+v", width, frame)
 		}
 		plain := ansi.Strip(strings.Join(frame.Rows, "\n"))
-		if strings.Count(plain, "╭") != 1 || strings.Count(plain, "╯") != 1 || !strings.Contains(plain, "MESSAGE") || !strings.Contains(plain, "YOU > hello") {
+		if strings.Count(plain, "▌") != len(frame.Rows) || strings.Count(plain, "╯") != 1 || !strings.Contains(plain, "MESSAGE") || !strings.Contains(plain, "YOU > hello") {
 			t.Fatalf("width %d invalid frame:\n%s", width, plain)
 		}
 		for _, row := range frame.Rows {

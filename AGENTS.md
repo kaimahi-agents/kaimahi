@@ -9,6 +9,82 @@ changes in the package's Go doc comment.
 
 ## Command consistency
 
+- Persistent MD agents use same-stem .tools.yaml and .tests.md companions. Directory
+  input selects one root agent; explicit one-level file indexes retain bounded
+  confined content and globally unique tool/case IDs. Import copies original agent
+  bytes into a new directory and supplies empty companions without execution.
+  Tool-only changes invalidate approval and pair identity; frozen grants retain
+  approved command definitions independently from the editable companion.
+  CLI string patterns enforce full-value matches including alternation. Grant
+  identity canonicalizes parent paths without accepting symlinked source leaves.
+  Obsolete grants do not block a changed tool-free definition; exact-definition
+  reviewed GitHub overlays remain supported. Tests filter mocks to approved tools.
+  Activation probes run outside the manager mutex and recheck lifecycle/source/
+  binding identity before committing. Chat UI owns its attachment display state;
+  cached execution stays separate from source/test snapshots used by edit/test.
+  Parse/validate never executes companion bindings; inline kmx-tool blocks refuse.
+  `tools approve FILE --apply` explicitly reviews PATH resolution, binary hashes,
+  fixed argv, operand constraints and optional fixed probes before saving a grant.
+  CLI granted-scope handlers use bounded direct exec/process-group cancellation,
+  not a shell or sandbox. Probes repeat on activation/update and failure preserves
+  the old running version. PATH/hash/source changes require reapproval. Unsupported
+  per-call/session approval policies refuse. Local tool bindings never qualify Deploy.
+  Completed nonzero command exits stay failed SDK tool results with bounded sanitized
+  stdout/stderr, separate from payload-free error values. Streams share one output
+  budget; credential-shape checks precede and follow terminal normalization. Invalid
+  UTF-8, overflow, cancellation and abnormal execution withhold partial content.
+  Probes still match stdout only and never expose their captured diagnostics.
+
+- Local tools suggest/review is a separate scoped capability workflow, not retired
+  gateway administration. Default inference proposes scoped CLI declarations;
+  bounded PATH name lookups provide availability only, never execute candidates or
+  probes, and expose no resolved machine paths to inference. Source acceptance
+  grants no execution. Explicit --repo selects catalog IDs and a private
+  definition/binary/repository-bound overlay. GitHub handlers
+  use fixed GET paths at api.github.com without redirects; gh auth token is captured
+  in memory only. Session handlers are per-agent, binding changes require update,
+  and mocks never fall through to live calls. Native mapping refuses local grants.
+
+- Experimental `--type md` adds persistent Copilot-native agents with YAML front
+  matter and paired tests, alongside the canonical Squad charter preview. Root
+  Run/Test dispatch canonical `# Name` charters to the upstream preview path;
+  explicit `--type md` selects the native-header instance path. Preserve shared
+  MCP/charter execution, model-access auth and the test/eval alias contracts.
+  The SDK-managed Copilot CLI route uses its own installed CLI authentication;
+  it is separate from modelaccess direct inference and does not consume its tokens.
+  Ordinary CLI Run/Test always use canonical preview, including optional companions
+  and directories; file presence never selects persistence. Companion results retain
+  file.revision and add snapshotDigest; execution journals bind composed identity.
+  Live command tools resolve approved bindings through the canonical host callback.
+  Nonzero command observations carry exitCode/succeeded/output; incomplete execution
+  remains an error. Multi-file recording writes/retained failures are unavailable
+  and disclosed; snapshot-only MCP callers do not discover sibling files implicitly.
+- Local list/status show instances (running by default, --all includes stopped),
+  short IDs, lifecycle/activity, sessions, inference and age. Inspect reads cached
+  definition/identity; source discovery is explicit with --definitions. Chat/new/
+  selected conversations share one local manager/provider, with per-session turns.
+  Run --update replaces a frozen version after consent; same-version is a no-op.
+  rm removes stopped records (force stops first), retaining cache/source and private
+  generation bookkeeping. Completion is bounded local record/lease inspection.
+- Import missing front matter defaults to one new-file confirmation with inferred
+  fields; optional field editing and original replacement are explicit. Bare kmx
+  prints help; console is explicit. Source, cache, test and runtime authority stay
+  separate. Markdown deploy/lift converts text-only definitions/cases to native
+  Orka source and uses the existing evaluated publication/Deploy pipeline; no
+  local-preview result grants deployment authority. JSON-capable reports may be
+  rendered as YAML by the bounded presentation adapter.
+- Console file-pane `n` authors a name/instructions/optional-model draft and an
+  empty test companion through the shared exclusive pair writer. Optional hosted
+  suggestions require a separate choice; per-tool selection plus confirmation
+  edits source only. Created definitions remain visible for that console session
+  without pretending they are running. Cluster `n` reviews/deploys an already
+  authored workspace. Pane widths select compact tables or multiline inventories.
+  Console Review & approve tools prepares the existing CLI approval plan offline,
+  then explicit y after full review runs probes in a cancellable worker and saves
+  the grant. Enter never grants. Results keep probe/approval/test/instance state
+  separate, preserve acknowledged publication on late cancellation, and never
+  start/update the agent implicitly. Next actions reuse test/editor/chat handlers;
+  Update releases terminal ownership for the existing confirmation before applying.
 - Root help advertises exactly `create`, `run`, `test`, `chat`, `model`,
   `package`, `cluster`, `version`, in that order. MCP, completion and Help
   remain callable but are not root help entries. Keep root ordering local;

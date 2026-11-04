@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/spf13/cobra"
 )
 
@@ -25,6 +26,14 @@ func resolveWorkspaceLiftOptions(cmd *cobra.Command, name string, destination ap
 	root, doc, err := resolveDestinations("")
 	if err != nil {
 		return opt, err
+	}
+	return workspaceLiftFromDestinations(cmd, name, root, doc, destination, evaluation)
+}
+
+func workspaceLiftFromDestinations(cmd *cobra.Command, name, root string, doc *config.Destinations, destination app.ReleaseLiftOptions, evaluation app.SuiteWorkspaceEvaluationOptions) (app.WorkspaceLiftOptions, error) {
+	var opt app.WorkspaceLiftOptions
+	if doc == nil {
+		return opt, fmt.Errorf("%s requires kmx.yaml with publishRepository and named evaluation/destination targets", cmd.Name())
 	}
 	target, err := doc.Target(name)
 	if err != nil {

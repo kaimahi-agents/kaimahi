@@ -70,7 +70,7 @@ func (m agentTUIModel) openRuns() (tea.Model, tea.Cmd) {
 	if agent == nil {
 		return m, nil
 	}
-	if agent.External {
+	if agent.External || agent.Runtime == "md" {
 		m.status = "Runs are available for native Orka agents only"
 		return m, nil
 	}

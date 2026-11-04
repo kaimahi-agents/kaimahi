@@ -412,6 +412,13 @@ func TestGuardedWindowsSupportedCommandFlagsAreExhaustivelyAllowlisted(t *testin
 		{[]string{"eval", "explain"}, nil, []string{"clear", "container-engine", "context", "file", "show-content", "tests", "workspace"}, []string{"clear", "file", "show-content", "tests"}},
 	}
 	for _, tc := range cases {
+		if len(tc.path) == 1 && (tc.path[0] == "run" || tc.path[0] == "test") {
+			tc.allFlags = append(tc.allFlags, "directory", "type")
+			if tc.path[0] == "run" {
+				tc.allFlags = append(tc.allFlags, "interactive", "update", "yes")
+			}
+			sort.Strings(tc.allFlags)
+		}
 		var out, errOut bytes.Buffer
 		deps, _ := testDependencies(&out, &errOut)
 		deps.goos = "windows"
@@ -826,6 +833,7 @@ func commandPaths(root *cobra.Command) []string {
 // Adding or removing a subcommand fails this test until the list follows.
 func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 	want := []string{
+		"import", "info", "inspect", "list", "rm", "settings", "stop", "tools", "tools suggest", "tools review", "tools approve", "validate", "package map",
 		"test", "test explain", "create", "chat", "run", "eval", "eval cleanup", "eval diff", "eval explain", "eval export", "eval from-sessions", "eval verify", "lift", "completion", "mcp",
 		"model", "model list", "model login", "model logout", "version",
 		"cluster", "cluster up", "cluster down", "cluster status", "cluster aks", "cluster aks up", "cluster aks down", "cluster context", "cluster context show", "cluster context use",
@@ -1003,8 +1011,8 @@ func TestQuickstartRoutesEachMode(t *testing.T) {
 		{[]string{"cluster", "quickstart", "--interactive"}, "kmx cluster quickstart --interactive requires an interactive terminal"},
 		{[]string{"cluster", "quickstart", "--interactive", "--task", "hi", "--verbose", "--tools", "k8s-get-resources"}, "quickstart tool shortcuts are retired"},
 		{[]string{"cluster", "quickstart", "-i"}, "kmx cluster quickstart --interactive requires an interactive terminal"},
-		{[]string{"cluster", "quickstart", "-o", "yaml"}, "unknown --output"},
-		{[]string{"cluster", "quickstart", "--task", "hi", "-o", "yaml"}, "unknown --output"},
+		{[]string{"cluster", "quickstart", "-o", "xml"}, "unknown --output"},
+		{[]string{"cluster", "quickstart", "--task", "hi", "-o", "xml"}, "unknown --output"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
 			var out, errOut bytes.Buffer

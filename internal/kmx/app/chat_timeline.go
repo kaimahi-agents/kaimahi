@@ -60,8 +60,17 @@ type chatTimelineModel struct {
 
 func newChatTimeline(agent, kubeContext, initial string, verbose bool) chatTimelineModel {
 	input := textarea.New()
-	input.Prompt = "YOU > "
+	input.Prompt = ""
 	input.Placeholder = "Message or /command"
+	styles := textarea.DefaultDarkStyles()
+	for _, state := range []*textarea.StyleState{&styles.Focused, &styles.Blurred} {
+		state.Base = lipgloss.NewStyle().Background(chatInputBackground)
+		state.Text = lipgloss.NewStyle().Foreground(lipgloss.Color("#F1F5F9")).Background(chatInputBackground)
+		state.CursorLine = state.Text
+		state.Placeholder = lipgloss.NewStyle().Foreground(lipgloss.Color("#AAB2BF")).Background(chatInputBackground)
+		state.EndOfBuffer = lipgloss.NewStyle().Background(chatInputBackground)
+	}
+	input.SetStyles(styles)
 	input.ShowLineNumbers = false
 	input.CharLimit = 64 << 10
 	input.MaxHeight = 0
@@ -103,7 +112,7 @@ func (m chatTimelineModel) Init() tea.Cmd {
 }
 
 func (m *chatTimelineModel) resize() {
-	// Header (4), input border/editor (up to 5), and footer (1) are pinned.
+	// Header (4), filled editor/agent label (up to 5), and footer (1) are pinned.
 	inputHeight := min(3, max(1, m.height-9))
 	m.editor.SetWidth(max(1, m.width-4))
 	m.editor.SetHeight(inputHeight)
@@ -361,6 +370,28 @@ func (m chatTimelineModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+var chatInputBackground = lipgloss.Color("#30343B")
+
+func (m chatTimelineModel) inputView() string {
+	width := max(1, m.width)
+	contentWidth := max(1, width-4)
+	surface := lipgloss.NewStyle().Background(chatInputBackground).Width(width)
+	row := func(text string) string {
+		return surface.Render("  " + ansi.Truncate(text, contentWidth, "") + "  ")
+	}
+	rows := []string{surface.Render("")}
+	for _, text := range strings.Split(m.editor.View(), "\n") {
+		rows = append(rows, row(text))
+	}
+	agent := ansi.Truncate(safeTerminal(m.agent), contentWidth, "…")
+	if agent == "" {
+		agent = "agent"
+	}
+	label := lipgloss.NewStyle().Foreground(lipgloss.Color("#93C5FD")).Background(chatInputBackground).Bold(true)
+	rows = append(rows, row(label.Render(agent)))
+	return strings.Join(rows, "\n")
+}
+
 func (m chatTimelineModel) View() tea.View {
 	fields := map[string]string{}
 	for _, f := range m.fields {
@@ -377,6 +408,11 @@ func (m chatTimelineModel) View() tea.View {
 	width := m.width
 	line := func(s string) string { return ansi.Truncate(s, width, "…") }
 	header := line("KMX / "+tuiField("agent", m.agent)+" · "+tuiField("location", location)) + "\n" + line(tuiField("inference", " "+inference)) + "\n" + line(tuiField("tools", " "+fields["Tools"])) + "\n" + strings.Repeat("─", width)
+	if fields["Definition"] != "" {
+		header = line("KMX / "+tuiField("agent", m.agent)+" · "+tuiField("location", location)) + "\n" +
+			line(tuiField("status", fields["Status"])+" · "+tuiField("def", fields["Definition"])+" · "+tuiField("tests", fields["Tests"])) + "\n" +
+			line(tuiField("inference", inference)+" · "+tuiField("tools", fields["Tools"])) + "\n" + strings.Repeat("─", width)
+	}
 	historyRows := strings.Split(m.history.View(), "\n")
 	// Popup overlays only the history viewport. Header/editor never move.
 	matches := slashMatchesFrom(m.commands, m.editor.Value())
@@ -385,14 +421,7 @@ func (m chatTimelineModel) View() tea.View {
 		start := max(0, len(historyRows)-len(popup))
 		historyRows = append(historyRows[:start], popup...)
 	}
-	border := lipgloss.NewStyle().Foreground(lipgloss.Blue)
-	inputRows := strings.Split(m.editor.View(), "\n")
-	input := border.Render("╭" + strings.Repeat("─", max(0, width-2)) + "╮")
-	for _, row := range inputRows {
-		row = ansi.Truncate(row, max(1, width-4), "")
-		input += "\n" + border.Render("│") + " " + row + strings.Repeat(" ", max(0, width-4-lipgloss.Width(row))) + " " + border.Render("│")
-	}
-	input += "\n" + border.Render("╰"+strings.Repeat("─", max(0, width-2))+"╯")
+	input := m.inputView()
 	footer := "PgUp/PgDn scroll · ↑ recall · Ctrl-W word · Ctrl-A/E · Enter send"
 	if m.busy {
 		state := "Responding"

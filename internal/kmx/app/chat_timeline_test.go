@@ -36,6 +36,30 @@ func TestTimelineEditorWordDeleteAndCursorJumps(t *testing.T) {
 	}
 }
 
+func TestTimelineInputKeepsAgentBelowMultilineDraft(t *testing.T) {
+	m := newChatTimeline("project-tester", "local", "", false)
+	for _, size := range [][2]int{{80, 24}, {40, 16}, {8, 10}} {
+		updated, _ := m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		m = updated.(chatTimelineModel)
+		m.editor.SetValue("first line\nsecond line")
+		view := m.inputView()
+		rows := strings.Split(ansi.Strip(view), "\n")
+		want := ansi.Truncate(m.agent, max(1, size[0]-4), "…")
+		if strings.TrimSpace(rows[len(rows)-1]) != want || strings.Contains(ansi.Strip(view), "YOU >") {
+			t.Fatalf("input label misplaced or repeated prompt retained:\n%s", view)
+		}
+		if lipgloss.Width(view) != size[0] || len(rows) != m.editor.Height()+2 {
+			t.Fatalf("input geometry changed: %dx%d", lipgloss.Width(view), len(rows))
+		}
+		if m.editor.Value() != "first line\nsecond line" {
+			t.Fatal("rendering changed draft")
+		}
+		if size[0] >= 40 && (!strings.Contains(ansi.Strip(view), "first line") || !strings.Contains(ansi.Strip(view), "second line")) {
+			t.Fatal("multiline draft missing from input")
+		}
+	}
+}
+
 func TestTimelineRecallPreservesDraftAndSkipsCommands(t *testing.T) {
 	m := newChatTimeline("agent", "kind-test", "", false)
 	m.send("first")
