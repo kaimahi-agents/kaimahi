@@ -65,6 +65,7 @@ kmx
 │   ├── orka
 │   │   ├── install
 │   │   ├── status
+│   │   ├── tools --context CONTEXT --namespace NAMESPACE [-o text|json]
 │   │   ├── show <name>
 │   │   └── list
 │   └── task
