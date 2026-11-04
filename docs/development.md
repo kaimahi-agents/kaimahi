@@ -276,10 +276,9 @@ KMX's native-Windows product boundary.
     /*) ;;
     *) printf 'AUTOREVIEW_STATUS must be absolute\n' >&2; exit 1 ;;
   esac
-  if test -L "$REVIEW_GIT" || ! test -f "$REVIEW_GIT" \
-    || test -L "$REVIEW_PYTHON" || ! test -f "$REVIEW_PYTHON" \
-    || test -L "$AUTOREVIEW" || ! test -f "$AUTOREVIEW"; then
-    printf 'review Git, Python and helper must be physical files\n' >&2
+  if ! test -f "$REVIEW_GIT" || ! test -f "$REVIEW_PYTHON" \
+    || ! test -f "$AUTOREVIEW"; then
+    printf 'review Git, Python and helper must resolve to files\n' >&2
     exit 1
   fi
   "$REVIEW_PYTHON" -I -c \
@@ -313,6 +312,17 @@ KMX's native-Windows product boundary.
   }
 
   repo_root=$(review_git rev-parse --show-toplevel)
+  "$REVIEW_PYTHON" -I - \
+    "$repo_root" "$REVIEW_GIT" "$REVIEW_PYTHON" <<'PY'
+import pathlib
+import sys
+
+repository = pathlib.Path(sys.argv[1]).resolve(strict=True)
+for raw in sys.argv[2:]:
+    resolved = pathlib.Path(raw).resolve(strict=True)
+    if resolved == repository or repository in resolved.parents or not resolved.is_file():
+        raise SystemExit("review executable resolves inside the candidate repository")
+PY
   base=$(review_git merge-base "$review_base" HEAD)
   head=$(review_git rev-parse HEAD)
   review_git status --porcelain=v1 --untracked-files=all \
