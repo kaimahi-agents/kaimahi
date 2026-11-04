@@ -589,7 +589,9 @@ signal ownership, or detach work from cancellation.
   [retry limits](kmx.md#retry-limits) before resending work.
 - A bare shell `wait` waits on long-running forwards too; collect worker PIDs.
 - Podman machines need checkout mounts for image builds; restarted machines may
-  leave kind nodes stopped. The cluster step recovers named nodes and checks API/DNS.
+  leave kind nodes stopped. The online cluster step recovers named nodes and checks API/DNS.
+  [Offline bundle reuse](kmx.md#offline-cluster-bundle-unreleased) refuses before
+  starting a stopped node if its expected kubeconfig connection settings cannot be verified.
 - Python scripts supporting macOS Python 3.9 need postponed annotations before
   PEP 604 annotations. Ignore rules such as `bin/` match at every depth; verify
   tracked membership and beware newly unignored files entering `stash -u`.
