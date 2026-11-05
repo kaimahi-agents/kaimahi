@@ -33,7 +33,7 @@ type MachineError struct {
 func NewMachineError(code, stage string) *MachineError {
 	switch stage {
 	case "preflight", "cluster", "ollama", "model", "orka", "installer", "runtime",
-		"result_reader", "provider", "execution", "assertions", "finalize", "other":
+		"result_reader", "provider", "gateway", "execution", "assertions", "finalize", "other":
 	default:
 		stage = ""
 	}

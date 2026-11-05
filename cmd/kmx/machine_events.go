@@ -33,5 +33,9 @@ func (m *machineOutput) setupResult(mode string, effects []app.MachineEffect, ou
 	if effects == nil {
 		effects = []app.MachineEffect{}
 	}
-	return m.writeLocked(app.MachineSetupResult{MachineResult: app.MachineResult{MachineEnvelope: m.envelope("kmx.result"), Outcome: outcome, Verdict: "not_applicable", ExitCode: exit, Error: safe}, Mode: mode, Effects: effects}, true)
+	var model *app.OrkaModelResult
+	if m.setup != nil {
+		model = m.setup.model
+	}
+	return m.writeLocked(app.MachineSetupResult{MachineResult: app.MachineResult{MachineEnvelope: m.envelope("kmx.result"), Outcome: outcome, Verdict: "not_applicable", ExitCode: exit, Error: safe}, Mode: mode, Effects: effects, OrkaModelResult: model}, true)
 }

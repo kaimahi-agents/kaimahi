@@ -68,6 +68,11 @@ func newVersionCommand(state *commandState) *cobra.Command {
 					capabilities = append(capabilities, versionCapability{Operation: "cluster.discover", Output: "jsonl", SchemaVersion: 1, Scope: scope})
 				}
 			}
+			if state.deps.goos == "linux" {
+				for _, verb := range []string{"connect", "disconnect"} {
+					capabilities = append(capabilities, versionCapability{Operation: "cluster.orka.model." + verb, Output: "jsonl", SchemaVersion: 1})
+				}
+			}
 			err := state.machine.document(versionDocument{
 				SchemaVersion: 1, Kind: "kmx.version", KmxVersion: build.Version,
 				OrkaVersion:  app.OrkaVersion,
