@@ -77,10 +77,20 @@ Workspace Prepared/Verify and flow readers refuse the source profile. Original
 source read-back is not authority to offer an editable/current source snapshot.
 Older native readers refuse the new profile. Existing workspace packages,
 fingerprints and receipts are unchanged; there is no migration or digest rewrite.
-Pin a tested supporting distribution's explicit build version and binary digest;
-the minimum released reader version is assigned with its first release, not
-inferred from a generic capability. New prepare/handle capabilities remain
-unadvertised until their adapters exist.
+Source-profile reading starts in development commit
+[`d4992f78`](https://github.com/kaimahi-agents/kaimahi/commit/d4992f78311c2455a2cac457c4590cd202232648).
+No released compatibility range is assigned yet. A tested Linux/amd64 development
+reader is built from
+[`173ff681`](https://github.com/kaimahi-agents/kaimahi/commit/173ff681aa3de61cbaaa17e9e64c73c76fda60b6):
+
+- Build version: `v0.9.0-rc.6.0.20261105005009-173ff681aa3d`.
+- Binary SHA-256: `82e364b810f7f82782b33e94523785993ea7b66405304f68d12567e1b6fe776c`.
+
+This identifies that exact development build, not a release or runtime
+qualification. Other development consumers pin their own tested build version
+and binary digest; never infer profile support from a generic capability.
+The minimum released reader version is assigned with its first release.
+New prepare/handle capabilities remain unadvertised until their adapters exist.
 
 ## Optional member egress policy (offline only)
 
