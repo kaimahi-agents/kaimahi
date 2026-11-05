@@ -1,3 +1,5 @@
+//go:build !windows
+
 package app
 
 import (
@@ -228,6 +230,25 @@ func TestRetainedFileRejectsUnrepresented(t *testing.T) {
 				t.Fatal("unrepresented input accepted")
 			}
 		})
+	}
+}
+
+// The shared native parser already bounds the inventory; do not truncate it
+// or introduce another parser to make a 129-case source appear representable.
+func TestRetainedFile129DistinctCases(t *testing.T) {
+	agent, tests, r := retainedFileFixture(t, 128)
+	f, err := os.OpenFile(tests, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, writeErr := f.WriteString("```yaml agent-test\nid: case-128\ninput: Ada\nassertions:\n- {id: exact, type: contains, value: Ada}\n```\n")
+	if err := errors.Join(writeErr, f.Close()); err != nil {
+		t.Fatal(err)
+	}
+	_, err = loadRetainedFile(t.Context(), agent, "", r)
+	var parseError *agentfile.Error
+	if !errors.As(err, &parseError) || parseError.Field != "Examples" {
+		t.Fatalf("129 distinct cases refusal = %v", err)
 	}
 }
 
