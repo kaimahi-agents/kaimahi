@@ -63,6 +63,7 @@ Use one verb per meaning. Do not add a synonym for an existing verb.
 | Verb | Meaning | Example |
 |---|---|---|
 | `list` | Read many resources, one summary row each. | `kmx cluster orka list` |
+| `discover` | List local kubeconfig context labels, or namespaces in an explicit context, without selecting a target. | `kmx cluster discover [--context CTX]` |
 | `show` | Read one resource and what it depends on, from live state. | `kmx cluster orka show <name>` |
 | `status` | Report readiness, health or drift. | `kmx cluster orka status` |
 | `create` (root) | Author one `NAME.agent.md` plus paired `NAME.agent.test.md` offline; no prompts, config or model calls; refuses to overwrite (exit 2). | `kmx create <name>` |
@@ -114,7 +115,7 @@ Keep these distinctions:
 | `--context` | Kubernetes context for this invocation. Global, accepted anywhere on the line. |
 | `--namespace` | Kubernetes namespace the command reads or writes. |
 | `--to` | Named destination from workspace `kmx.yaml` for eval, Deploy or destination status. Never switches a saved/current context. |
-| `-o`, `--output` | Report format: `table` or `text`, `json`, `yaml`, or command-specific `jsonl`. JSON/YAML formats print exactly one document; `cluster up` and `cluster orka install` accept `text` (default) or `jsonl`, with progress events and one terminal result. Explicit `test FILE` also accepts `jsonl`, with checked provisional progress, ordered final case summaries and one terminal result; text remains its default. Run and folder Test do not accept JSONL. |
+| `-o`, `--output` | Report format: `table` or `text`, `json`, `yaml`, or command-specific `jsonl`. JSON/YAML formats print exactly one document; `cluster up` and `cluster orka install` accept `text` (default) or `jsonl`, with progress events and one terminal result. Explicit `test FILE` also accepts `jsonl`, with checked provisional progress, ordered final case summaries and one terminal result; text remains its default. Run and folder Test do not accept JSONL. `cluster discover` accepts `text` (default) or `jsonl`, emitting one terminal result without progress events. |
 | `-i`, `--interactive` | Switch a command that has a scripted mode to its guided terminal mode. Not used on commands that are only interactive. |
 | `--out` | Path for written artifacts. Never reuse `--output` for a path. |
 | `--workspace` | Exact workspace root without discovery fallback; default create initializes it if absent, and push requires an existing workspace. |
@@ -133,7 +134,11 @@ Keep these distinctions:
 | `--prompt`, `--prompt-file` | Input text for an agent. `--prompt-file -` reads stdin. |
 
 - **Precedence:** a flag overrides its environment variable, which overrides a
-  saved selection, which overrides the default.
+  saved selection, which overrides the default. `cluster discover` is an explicit
+  exception: without `--context CTX` it lists only local kubeconfig context labels;
+  saved selectors and `KUBE_CTX` never select a context implicitly. Its
+  `--namespace` flag refuses before reads because target discovery is not implemented.
+  See [destination discovery](machine-output.md#destination-discovery).
 - **Declare flag relationships with Cobra helpers** (mutually exclusive,
   required together). Refuse invalid combinations before loading
   configuration or contacting a cluster. A flag that belongs to another mode

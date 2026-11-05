@@ -1,0 +1,44 @@
+{
+  "fixtureSchema": 1,
+  "clientVersion": {
+    "major": "1",
+    "minor": "35",
+    "gitVersion": "v1.35.1",
+    "gitCommit": "8fea90b45245ef5c8ba54e7ae044d3e777c22500",
+    "gitTreeState": "clean",
+    "buildDate": "2026-02-10T12:55:59Z",
+    "goVersion": "go1.25.6",
+    "compiler": "gc",
+    "platform": "linux/amd64"
+  },
+  "transport": "invocation-owned loopback fixture; kubeconfig=/dev/null",
+  "rows": [
+    {
+      "status": 401,
+      "reason": "Unauthorized",
+      "exitCode": 1,
+      "stdout": "",
+      "stderr": "error: You must be logged in to the server (Unauthorized)\n"
+    },
+    {
+      "status": 403,
+      "reason": "Forbidden",
+      "exitCode": 1,
+      "stdout": "",
+      "stderr": "Error from server (Forbidden): Forbidden\n"
+    },
+    {
+      "status": 404,
+      "reason": "NotFound",
+      "exitCode": 1,
+      "stdout": "",
+      "stderr": "Error from server (NotFound): NotFound\n"
+    }
+  ],
+  "network": {
+    "scenario": "HTTP EOF before response",
+    "exitCode": 1,
+    "stdout": "",
+    "stderr": "Unable to connect to the server: EOF\n"
+  }
+}

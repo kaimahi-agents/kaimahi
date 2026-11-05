@@ -12,7 +12,7 @@ kmx version -o json
 A successful invocation emits one UTF-8 JSON object and a newline:
 
 ```json
-{"schemaVersion":1,"kind":"kmx.version","kmxVersion":"v0.9.0-rc.6","orkaVersion":"v0.3.0","capabilities":[{"operation":"version","output":"json","schemaVersion":1},{"operation":"cluster.up","output":"jsonl","schemaVersion":1},{"operation":"cluster.orka.install","output":"jsonl","schemaVersion":1},{"operation":"file.test","output":"jsonl","schemaVersion":1,"runner":"embedded"},{"operation":"file.test","output":"jsonl","schemaVersion":1,"runner":"copilotd"}]}
+{"schemaVersion":1,"kind":"kmx.version","kmxVersion":"v0.9.0-rc.6","orkaVersion":"v0.3.0","capabilities":[{"operation":"version","output":"json","schemaVersion":1},{"operation":"cluster.up","output":"jsonl","schemaVersion":1},{"operation":"cluster.orka.install","output":"jsonl","schemaVersion":1},{"operation":"file.test","output":"jsonl","schemaVersion":1,"runner":"embedded"},{"operation":"file.test","output":"jsonl","schemaVersion":1,"runner":"copilotd"},{"operation":"cluster.orka.tools","output":"json","schemaVersion":1},{"operation":"cluster.discover","output":"jsonl","schemaVersion":1,"scope":"contexts"},{"operation":"cluster.discover","output":"jsonl","schemaVersion":1,"scope":"namespaces"}]}
 ```
 
 The version values above are examples. `kmxVersion` uses the build's resolved
@@ -21,10 +21,10 @@ version this binary targets, not a running controller's observed version.
 Capabilities describe implemented binary interfaces, not dependency availability,
 cluster readiness, permission, model access or qualified execution.
 
-Unix builds also advertise `cluster.orka.tools` with `output: json` and
-`schemaVersion: 1`; it is unavailable on native Windows. Other Unix capabilities
-include version JSON, two setup JSONL adapters and `file.test`
-JSONL with separate `runner: embedded` and `runner: copilotd` selectors. Native
+Unix builds advertise version JSON, two setup JSONL adapters, `file.test`
+JSONL with separate `runner: embedded` and `runner: copilotd` selectors,
+`cluster.orka.tools` JSON (schemaVersion 1), and `cluster.discover` JSONL with
+separate `scope: contexts` and `scope: namespaces`. Native
 Windows advertises version JSON and only `file.test`/`runner: embedded`/`model: fake`;
 its existing package-free/tool-free fake intake gate still applies. Setup and
 native copilotd remain deferred there. Existing Run, Test, list, show, deployment and other JSON
@@ -43,7 +43,8 @@ Match the capability's exact operation, output and schema version before using
 it. Match any operation-specific selectors as well: `file.test` entries specify
 `runner`, and native Windows additionally restricts `model` to `fake`. Matching
 only the three common fields does not establish support for another runner or
-model. An unspecified runner is not a wildcard. Do not infer a capability by
+model. `cluster.discover` additionally requires its exact `scope` selector.
+An unspecified runner or scope is not a wildcard. Do not infer a capability by
 parsing human version text or interpreting an Orka pin as runtime readiness.
 
 ## Version failures
@@ -99,7 +100,9 @@ Only `invalid_arguments` and `output_failed` are used by version. Other codes
 are shared vocabulary, not claims that additional command adapters exist.
 Recovery is guidance, never automatic retry authorization. Unknown internal
 classifications fall back to `operation_failed`; untyped causes are not
-classified by substring matching their text.
+classified by substring matching their text. The narrow discovery exception below
+classifies only fixed, version-pinned kubectl diagnostic-line prefixes; it never
+reflects diagnostic bodies or grants API evidence.
 
 ## Provisioning event streams
 
@@ -301,3 +304,49 @@ incomplete operation, not success. Never infer absence of effects or blindly
 repeat another mutating operation from a disconnected process.
 
 See the [CLI output contracts](kmx.md#output-contracts) for existing formats.
+
+## Destination discovery
+
+`kmx cluster discover [-o text|jsonl]` defaults to text. Without context it projects
+only local labels; with explicit `--context CTX` it lists namespaces using GETs.
+Version capability entries have operation `cluster.discover`, output `jsonl`,
+schemaVersion `1`, and exact scope `contexts` or `namespaces`; `target` is unavailable.
+
+JSONL emits one terminal `kmx.result` with operation `cluster.discover`, normal
+UUID/sequence/elapsed fields, verdict `not_applicable`, and a `discovery` object:
+
+```json
+{"scope":"namespaces","complete":true,"checks":[],"rows":[{"context":"dev","namespace":"demo","uid":"observed-namespace-uid"}]}
+```
+
+Context rows instead contain `context` and boolean `current` (including false).
+`checks` and `rows` are arrays even when empty. Complete means bounded reads
+finished, not runtime readiness or model proof; complete results exit 0. Incomplete
+results retain fitting safe rows, `complete:false`, and fixed checks of shape
+`{scope,state:"unknown",reason}`, with failed outcome/exit 1. Cancellation uses
+outcome/code `cancelled`; deadlines use failed outcome/code `deadline_exceeded`.
+Output failure uses `output_failed` and never retries a partial terminal write.
+Read through EOF and match the actual process exit. Abrupt termination may leave
+no terminal record and never proves a complete observation or no effects.
+
+Diagnostic hints recognize only case-sensitive line-start markers with a following
+colon, whitespace or end boundary: `Error from server (Forbidden)` → `read_denied`
+(`permission_denied`); `error: You must be logged in to the server` → `unauthorized`
+(`credential_unavailable`); `Unable to connect` → `network_unavailable`
+(`dependency_unavailable`). NotFound on these lists is `read_unknown`, never resource
+absence. Unknown tokens, conflicts, truncation and lookalikes stay unknown. Raw
+bodies never leave capture. Hints are not authenticated API status or retry
+permission; connection-refused or credential-helper wording may stay unknown or
+be a coarse network hint. Real formatting fixtures are version-labelled.
+
+Kubernetes `get --raw` is used only for fixed, context-pinned GET paths with encoded
+pagination tokens, never kubeconfig `config view --raw`. Local projection contains
+no server/user/credential fields. Rows are safe identities, not full API documents.
+Malformed data uses `malformed`; bounds and ambiguous lists use `read_unknown`,
+with existing safe `operation_failed`. Unsafe explicit context uses
+`invalid_arguments` before reads. Unsafe/secret-shaped labels are omitted with
+explicit incompleteness, never redacted into a different selectable name.
+
+The adapter begins inside RunE: valid JSONL target-scope refusals are in-band;
+Cobra operand/flag/preprocessing errors retain their ordinary contract. Successful
+help/completion is inert and emits no stream or dynamic discovery reads.

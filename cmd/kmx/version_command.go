@@ -10,6 +10,7 @@ import (
 )
 
 type versionCapability struct {
+	Scope         string `json:"scope,omitempty"`
 	Runner        string `json:"runner,omitempty"`
 	Model         string `json:"model,omitempty"`
 	Operation     string `json:"operation"`
@@ -63,6 +64,9 @@ func newVersionCommand(state *commandState) *cobra.Command {
 			}
 			if state.deps.goos != "windows" {
 				capabilities = append(capabilities, versionCapability{Operation: "cluster.orka.tools", Output: "json", SchemaVersion: 1})
+				for _, scope := range []string{"contexts", "namespaces"} {
+					capabilities = append(capabilities, versionCapability{Operation: "cluster.discover", Output: "jsonl", SchemaVersion: 1, Scope: scope})
+				}
 			}
 			err := state.machine.document(versionDocument{
 				SchemaVersion: 1, Kind: "kmx.version", KmxVersion: build.Version,
