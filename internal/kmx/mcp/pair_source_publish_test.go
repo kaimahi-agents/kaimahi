@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -14,7 +15,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 )
 
 func sourceRoot(t *testing.T) string {
@@ -746,51 +749,197 @@ func TestPublishSourcePairOwnsCallbackBytesAndNoOp(t *testing.T) {
 	}
 }
 
-// Full encoded ACK refusal (including no-op) happens before any directory,
-// stage or source mutation. The callback owns encoding, not an MCP view budget.
+// nativeBudgetRecord is a test-only future-shaped ACK, NOT a public wire
+// contract or the CLI encoder. Embed the real native projections, overriding
+// Source so raw UTF-8 is a JSON string (never []byte/base64). Role instructions
+// and ordered tests therefore occupy bytes in both raw and typed form.
+func nativeBudgetRecord(pair *agentfile.OrkaSourcePair, ack SourcePairPublishResult, intent string) ([]byte, error) {
+	record := struct {
+		app.MachineResult
+		AgentPath      string
+		TestsSelection agentfile.TestsSelection
+		TestsState     string
+		TestsPresent   bool
+		Agent          struct {
+			*agentfile.OrkaSource
+			Source string
+		}
+		Tests struct {
+			*agentfile.Tests
+			Source string
+		}
+		Writes SourcePairPublishResult
+	}{MachineResult: app.MachineResult{
+		MachineEnvelope: app.MachineEnvelope{SchemaVersion: 1, Kind: "kmx.result", Operation: "file." + intent,
+			OperationID: uuid.NewString(), Seq: ^uint64(0), ElapsedMs: 1<<63 - 1},
+		Outcome: "complete", Verdict: "not_applicable", ExitCode: 0},
+		AgentPath: pair.AgentPath, TestsSelection: pair.Tests.Selection,
+		TestsState: pair.Tests.State, TestsPresent: pair.Tests.Suite != nil, Writes: ack}
+	record.Agent.OrkaSource, record.Agent.Source = pair.Agent, string(pair.Agent.Source)
+	record.Tests.Tests = pair.Tests.Suite
+	if pair.Tests.Suite != nil {
+		record.Tests.Source = string(pair.Tests.Suite.Source)
+	}
+	raw, err := json.Marshal(record)
+	if err != nil {
+		return nil, err
+	}
+	return append(raw, '\n'), nil
+}
+
+// Catches raw-only or inbound-edit budgets, lost native projections/ACK fields,
+// newline off-by-one, and preflight moved after parent/stage/source effects.
 func TestPublishSourcePairPreflightBudget(t *testing.T) {
 	for _, mode := range []string{"create", "edit", "no-op"} {
-		t.Run(mode, func(t *testing.T) {
-			root := sourceRoot(t)
-			path := filepath.Join(root, "new", "a.agent.md")
-			large := nativePublishSource + strings.Repeat("x", 64*1024)
-			intent := "create"
-			if mode != "create" {
-				intent = "edit"
-				sourceWrite(t, path, large)
-				sourceWrite(t, filepath.Join(root, "new", "a.agent.test.md"), historyTests)
-			}
-			req := nativePublishRequest(t, intent, path)
-			req.AgentBytes = []byte(large)
-			if mode == "edit" {
-				req.AgentBytes = append(req.AgentBytes, 'y')
-			}
-			before := sourceTree(t, root)
-			veto, called := errors.New("encoded acknowledgment exceeds 64 KiB"), false
-			req.Preflight = func(tuple SourcePairTuple, ack SourcePairPublishResult) error {
-				called = true
-				raw, err := json.Marshal(struct {
-					Tuple SourcePairTuple
-					Ack   SourcePairPublishResult
-				}{tuple, ack})
-				must(t, err)
-				if len(raw)+1 > 64*1024 {
-					return veto
+		for _, size := range []int{65536, 65537} {
+			t.Run(fmt.Sprintf("%s/%d", mode, size), func(t *testing.T) {
+				root := sourceRoot(t)
+				path := filepath.Join(root, strings.Repeat("long-", 20), strings.Repeat("path-", 20), ".github", "agents", "a.agent.md")
+				intent, agentState, testsState := "create", "written", "written"
+				if mode != "create" {
+					intent, testsState = "edit", "unchanged"
 				}
-				return nil
-			}
-			got, err := PublishSourcePair(t.Context(), req)
-			if !called || !errors.Is(err, veto) || got.Revision != "" || !sameNames(before, sourceTree(t, root)) {
-				t.Fatalf("budget = %+v, %v; called = %v", got, err, called)
-			}
-			if intent == "edit" {
-				raw, err := os.ReadFile(path)
-				must(t, err)
-				if string(raw) != large {
-					t.Fatal("preflight veto replaced agent")
+				if mode == "no-op" {
+					agentState = "unchanged"
 				}
-			}
-		})
+				req := nativePublishRequest(t, "create", path) // bind checked Edit only after seeding below
+				role := "Read \"quoted\" C:\\native\\source — ✓.\n"
+				input := `Ada "quoted" C:\native\tests — ✓` + strings.Repeat("t", 4000)
+				req.AgentBytes = []byte(nativePublishSource + role)
+				req.TestsBytes = []byte(strings.Replace(historyTests, "input: Ada", "input: '"+input+"'", 1))
+				compose := func() *agentfile.OrkaSourcePair {
+					pair, err := agentfile.ComposeOrkaSourcePair(path, req.AgentBytes, req.Tests, req.TestsBytes, true)
+					must(t, err)
+					return pair
+				}
+				pair := compose()
+				prospective := SourcePairPublishResult{SourcePairWrite{agentState, pair.Agent.Revision}, SourcePairWrite{testsState, pair.Tests.Revision}, pair.SnapshotRevision}
+				raw, err := nativeBudgetRecord(pair, prospective, intent)
+				must(t, err)
+				// Role padding is duplicated; prose outside test fences is raw-only,
+				// so one extra prose byte gives the adjacent odd boundary exactly.
+				padding := size - len(raw)
+				if padding < 0 {
+					t.Fatal("base fixture already exceeds boundary")
+				}
+				req.AgentBytes = append(req.AgentBytes, strings.Repeat("r", padding/2)...)
+				req.TestsBytes = append(req.TestsBytes, strings.Repeat("p", padding%2)...)
+				pair = compose()
+				if mode != "create" {
+					baseline := bytes.Clone(req.AgentBytes)
+					if mode == "edit" {
+						baseline[len(baseline)-1] = 's' // the entire inbound change is one byte
+					}
+					sourceWrite(t, path, string(baseline))
+					sourceWrite(t, req.Tests.Path, string(req.TestsBytes))
+					checked := nativePublishRequest(t, "edit", path)
+					checked.AgentBytes, checked.TestsBytes = req.AgentBytes, req.TestsBytes
+					req = checked
+				}
+				before := sourceTree(t, root)
+				infos, originals := map[string]os.FileInfo{}, map[string][]byte{}
+				for _, p := range []string{root, filepath.Dir(path), filepath.Dir(req.Tests.Path), path, req.Tests.Path} {
+					if info, err := os.Stat(p); err == nil {
+						infos[p] = info
+						if !info.IsDir() {
+							originals[p], err = os.ReadFile(p)
+							must(t, err)
+						}
+					} else if !errors.Is(err, fs.ErrNotExist) {
+						t.Fatal(err)
+					}
+				}
+				veto, calls := errors.New("complete acknowledgment exceeds 64 KiB"), 0
+				req.Preflight = func(tuple SourcePairTuple, ack SourcePairPublishResult) error {
+					calls++
+					candidate, err := agentfile.ComposeOrkaSourcePair(tuple.AgentPath, tuple.AgentBytes, tuple.Tests, tuple.TestsBytes, tuple.TestsPresent)
+					must(t, err)
+					prospective = ack
+					raw, err := nativeBudgetRecord(candidate, ack, intent)
+					must(t, err)
+					var decoded struct {
+						SchemaVersion                                  int
+						Kind, Operation, OperationID, Outcome, Verdict string
+						Seq, ElapsedMs                                 json.Number
+						ExitCode                                       *int
+						AgentPath                                      string
+						TestsSelection                                 agentfile.TestsSelection
+						TestsState                                     string
+						TestsPresent                                   bool
+						Agent                                          struct{ Source, Instructions, Revision string }
+						Tests                                          struct {
+							Source, Revision string
+							Examples         []agentfile.Example
+						}
+						Writes SourcePairPublishResult
+					}
+					must(t, json.Unmarshal(raw, &decoded))
+					if len(raw) != size || raw[len(raw)-1] != '\n' || bytes.Count(raw, []byte{'\n'}) != 1 ||
+						decoded.SchemaVersion != 1 || decoded.Kind != "kmx.result" || decoded.Operation != "file."+intent ||
+						len(decoded.OperationID) != 36 || uuid.Validate(decoded.OperationID) != nil ||
+						decoded.Seq != "18446744073709551615" || decoded.ElapsedMs != "9223372036854775807" ||
+						decoded.Outcome != "complete" || decoded.Verdict != "not_applicable" || decoded.ExitCode == nil || *decoded.ExitCode != 0 ||
+						decoded.AgentPath != path || len(path) < 250 || decoded.TestsSelection != candidate.Tests.Selection || decoded.TestsState != "external" || !decoded.TestsPresent ||
+						decoded.Agent.Source != string(req.AgentBytes) || decoded.Agent.Instructions != "Keep whitespace.  \n"+role+strings.Repeat("r", padding/2) ||
+						decoded.Tests.Source != string(req.TestsBytes) || len(decoded.Tests.Examples) != 1 || decoded.Tests.Examples[0].Input != input ||
+						decoded.Agent.Revision != pair.Agent.Revision || decoded.Tests.Revision != pair.Tests.Revision || decoded.Writes != ack ||
+						ack.Agent != (SourcePairWrite{agentState, pair.Agent.Revision}) || ack.Tests != (SourcePairWrite{testsState, pair.Tests.Revision}) || ack.Revision != pair.SnapshotRevision {
+						t.Fatalf("incomplete native ACK fixture: bytes=%d, writes=%+v", len(raw), ack)
+					}
+					if !bytes.Contains(raw, []byte(`\"quoted\"`)) || !bytes.Contains(raw, []byte(`C:\\native\\source`)) || !bytes.Contains(raw, []byte(`C:\\native\\tests`)) || !bytes.Contains(raw, []byte("— ✓")) {
+						t.Fatal("fixture did not exercise JSON escaping and raw UTF-8")
+					}
+					if len(raw) > 65536 {
+						return veto
+					}
+					return nil
+				}
+				got, err := PublishSourcePair(t.Context(), req)
+				if calls != 1 {
+					t.Fatalf("preflight calls = %d", calls)
+				}
+				if size == 65537 {
+					facts := SourcePairPublishResult{Agent: SourcePairWrite{State: "not_written"}, Tests: SourcePairWrite{State: "not_written"}}
+					if mode != "create" {
+						facts.Tests = SourcePairWrite{"unchanged", pair.Tests.Revision}
+					}
+					if mode == "no-op" {
+						facts.Agent = SourcePairWrite{"unchanged", pair.Agent.Revision}
+					}
+					if !errors.Is(err, veto) || got != facts {
+						t.Fatalf("over-budget = %+v, %v; want intact veto and %+v", got, err, facts)
+					}
+				} else {
+					if err != nil || got != prospective {
+						t.Fatalf("at-budget = %+v, %v; want %+v", got, err, prospective)
+					}
+					loaded, err := agentfile.LoadOrkaPair(path, "")
+					must(t, err)
+					if loaded.SnapshotRevision != got.Revision || !bytes.Equal(loaded.Agent.Source, req.AgentBytes) || !bytes.Equal(loaded.Tests.Suite.Source, req.TestsBytes) {
+						t.Fatal("allowed record did not publish its exact sources")
+					}
+				}
+				if size == 65537 || mode == "no-op" {
+					if !sameNames(before, sourceTree(t, root)) {
+						t.Fatal("refusal/no-op left new parents, stages or sources")
+					}
+					for p, info := range infos {
+						after, err := os.Stat(p)
+						must(t, err)
+						if !os.SameFile(info, after) || !info.ModTime().Equal(after.ModTime()) {
+							t.Fatal("refusal/no-op created a stage or renamed a source", p)
+						}
+					}
+					for p, original := range originals {
+						raw, err := os.ReadFile(p)
+						must(t, err)
+						if !bytes.Equal(raw, original) {
+							t.Fatal("refusal/no-op changed original bytes", p)
+						}
+					}
+				}
+			})
+		}
 	}
 }
 
