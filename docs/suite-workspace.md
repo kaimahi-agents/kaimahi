@@ -84,10 +84,10 @@ Source-profile reading starts in development commit
 [`d4992f78`](https://github.com/kaimahi-agents/kaimahi/commit/d4992f78311c2455a2cac457c4590cd202232648).
 No released compatibility range is assigned yet. A tested Linux/amd64 development
 reader is built from
-[`173ff681`](https://github.com/kaimahi-agents/kaimahi/commit/173ff681aa3de61cbaaa17e9e64c73c76fda60b6):
+[`74760a19`](https://github.com/kaimahi-agents/kaimahi/commit/74760a19498836034690e8998bed5fb68980eea6):
 
-- Build version: `v0.9.0-rc.6.0.20261105005009-173ff681aa3d`.
-- Binary SHA-256: `82e364b810f7f82782b33e94523785993ea7b66405304f68d12567e1b6fe776c`.
+- Build version: `v0.9.0-rc.6.0.20261105013412-74760a194988`.
+- Binary SHA-256: `b13038113cde3d9c8abfae13b02bc5f795cf944d148c278b20ea147ae9356447`.
 
 This identifies that exact development build, not a release or runtime
 qualification. Other development consumers pin their own tested build version
