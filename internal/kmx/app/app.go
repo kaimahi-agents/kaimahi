@@ -19,6 +19,11 @@
 // values and live workload execution settings without repair. Online guards and
 // context repair remain unchanged.
 //
+// Model connection state retains nonsecret, acknowledged identities through
+// private immutable checkpoints and a process-held target lock. Partial effects
+// and publication errors never authorize replay or ownership reconstruction.
+// This state is not model readiness or execution evidence.
+//
 // App coordinates consent, side effects and runtime-specific evidence.
 // Placement observations are distinct from evaluation proof; successful
 // placement alone must not be treated as proof of agent behavior. Retained
