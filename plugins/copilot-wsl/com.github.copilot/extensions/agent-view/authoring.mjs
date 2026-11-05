@@ -424,9 +424,16 @@ export function validateExamples(examples, recordings = false) {
 // strings are valid YAML and cannot introduce YAML keys, aliases or fences.
 export function replaceExamples(source, examples) {
   const { sections, eol } = locate(source), existing = sections.get("Examples");
+  const body = "## Examples" + eol + serializeExamples(examples, eol);
+  // A free-form file may have no Examples yet; the first test only appends one.
+  return bounded(existing ? source.slice(0, existing.heading) + body : source + separator(source, eol) + body);
+}
+
+// Native adapters reuse only the test body serializer, never canonical patching.
+export function serializeExamples(examples, eol = "\n") {
   validateExamples(examples);
   // Zero tests stay an explicit empty sequence, never YAML null.
-  const lines = ["## Examples", "```yaml", examples.length ? "examples:" : "examples: []"];
+  const lines = ["```yaml", examples.length ? "examples:" : "examples: []"];
   for (const example of examples) {
     lines.push(`  - id: ${JSON.stringify(example.id)}`, `    input: ${JSON.stringify(example.input)}`, "    assertions:");
     for (const check of example.assertions) {
@@ -438,8 +445,7 @@ export function replaceExamples(source, examples) {
     }
   }
   lines.push("```", "");
-  // A free-form file may have no Examples yet; the first test only appends one.
-  return bounded(existing ? source.slice(0, existing.heading) + lines.join(eol) : source + separator(source, eol) + lines.join(eol));
+  return bounded(lines.join(eol));
 }
 
 export function uniqueIndex(items, key) {
@@ -502,6 +508,12 @@ export function convertCheck(target, type) {
 
 export const readSnapshot = (view) => {
   try {
+    if (view.authoring?.editable === true && view.authoring.profile === "squad-member") {
+      const main = { key: "Task Instructions", text: bounded(view.authoring.taskInstructions) };
+      nonblank(main.text);
+      validateExamples(view.authoring.examples);
+      return { sections: [main], main };
+    }
     if (view.authoring?.editable === true && typeof view.authoring.source === "string" && Array.isArray(view.authoring.examples)) {
       const sections = instructionSections(view.authoring.source);
       const main = sections.find((s) => s.key === "Prompt" || /accountable/i.test(s.key));

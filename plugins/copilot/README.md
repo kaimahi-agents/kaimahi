@@ -205,8 +205,11 @@ No kmx-owned durable mapping or historical pass is restored. Valid state does no
 authenticate origin. Edit touches only Preferred/Task Instructions/Examples;
 Run/Test report revision-bound local member previews, not a package or team pass.
 Partial/unknown results need inspection, not automatic re-cast or rollback.
-The native flow remains **chat-only**; the canvas below authors canonical files,
-not native v2 members. There is no new Squad canvas, queue, posting, Ralph or dispatch.
+The initial **Squad canvas** opens with `/squad-view`. It supports editable
+proposals, one native Create, shared-brief storage, team reopening and individual
+member editing/testing. See the [architecture and demo guide](SQUAD-CANVAS.md).
+The native adapter reuses the shared editor without applying canonical whole-file
+patchers. Team runtime dispatch remains separate from these local previews.
 Actual native installation/runtime qualification is platform-specific; Go tests
 or cross-compilation do not qualify Squad on Windows/macOS.
 

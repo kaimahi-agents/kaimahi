@@ -39,6 +39,9 @@ func validateSquadMember(m SquadMember) error {
 			}
 		}
 	}
+	if m.DisplayRole != squadDisplayRole(m.Role) {
+		return bad()
+	}
 	// A complete validation-only charter retains the native pre-cast rules even
 	// though ordinary minimal prompts accept arbitrary Markdown headings.
 	probe := "# " + m.Role + "\n\n## Identity\n- **ID:** " + m.ID + "\n- **Purpose:** " + m.DisplayRole +

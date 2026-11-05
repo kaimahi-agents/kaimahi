@@ -202,6 +202,39 @@ class SourceReleaseTests(unittest.TestCase):
                 finally:
                     path.write_bytes(originals[path])
 
+    def test_native_squad_provider_sites_are_derived_and_checked(self):
+        relative = "com.github.copilot/extensions/agent-view/extension.mjs"
+        path = self.root / "plugins/copilot-wsl" / relative
+        native_import = b'import { SQUAD_CANVAS_ID, createSquadViewController } from "./squad-view.mjs";\r\n'
+        controller = b'const squadController = createSquadViewController({ getSession: () => session, extensionId: "plugin:kmx-agent-builder:agent-view" });\r\n'
+        command = b'try { await session.rpc.canvas.open({ extensionId: "plugin:kmx-agent-builder:agent-view", canvasId: SQUAD_CANVAS_ID, instanceId: "kmx-squad", input: {} }); }\r\n'
+        canonical = path.read_bytes() + native_import + controller + command
+        path.write_bytes(canonical)
+        result = self.run_check("--write")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        derived = (self.root / "plugins/copilot" / relative).read_bytes()
+        self.assertEqual(derived, canonical.replace(b"plugin:kmx-agent-builder:agent-view",
+                                                   b"plugin:kmx-agent-builder-path:agent-view"))
+        for name, content in (
+                ("missing-import", canonical.replace(native_import, b"")),
+                ("missing-controller", canonical.replace(controller, b"")),
+                ("missing-command", canonical.replace(command, b"")),
+                ("duplicate-controller", canonical + controller),
+                ("duplicate-command", canonical + command),
+                ("wrong-controller", canonical.replace(controller, controller.replace(b"plugin:kmx-agent-builder:", b"plugin:wrong:"))),
+                ("wrong-command", canonical.replace(command, command.replace(b"plugin:kmx-agent-builder:", b"plugin:wrong:")))):
+            with self.subTest(name=name):
+                try:
+                    path.write_bytes(content)
+                    before = self.snapshot()
+                    for args in ((), ("--write", "--version", "v0.9.0")):
+                        result = self.run_check(*args)
+                        self.assertEqual(result.returncode, 1, result.stderr)
+                        self.assertIn("canonical provider identity is missing or mixed", result.stderr)
+                        self.assertEqual(self.snapshot(), before)
+                finally:
+                    path.write_bytes(canonical)
+
     def test_invalid_release_stamp_refuses_before_any_writes(self):
         before = self.snapshot()
         for version in ("v0.9.0-01", "v00.9.0", "v0.9.0-", "0.9.0", "v0.1.0-demo"):

@@ -766,9 +766,56 @@ roster and enriched charter on each operation/restart; never persist kmx mapping
 Failed validation shows **not set up by kmx**, never origin guessing or canonical
 fallback. Valid mapping is not authenticated origin, restored draft or prior pass.
 Edit replaces only Preferred/Task Instructions/Examples with source/parent CAS.
-Native preview is revision-bound and tool-free; fake consumes task-only directives,
-real routes retain native+task instructions excluding Examples. No package digest,
-team runtime or native Squad canvas actions. See [native authoring](docs/agent-file.md#internal-native-cast-and-enrich).
+Preserve untouched section bytes and avoid accumulating boundary blank lines.
+Native preview is revision-bound and tool-free; fake consumes shared-brief/task
+directives, while real routes retain native+task instructions excluding Examples.
+The initial Squad canvas uses a native adapter over the same operations.
+New teams start with an
+empty user-authored goal and reviewed Copilot proposals; ship no static Squad
+scenario presets or example actions. Its aggregate kmx://squad
+resource reconstructs the roster; a separate .squad/kmx-brief.md stores only shared
+context with revision-checked writes. Aggregate reads share one checked inventory
+and registry per request, never across requests; charters retain individual checked
+reads. Brief-conflict preflight is inside the creator gate, before native effects.
+Whole-proposal Create also requires an empty registry, roster and member footprint
+under that gate. Validate the qualified native role title before casting using
+its JavaScript catalog casing, preserving international literal roles; canvas
+specialists use matching literal role/display titles. Reject known credential
+patterns in shared briefs before persistence and again before preview.
+Native previews include that saved context
+and report its revision separately from member source revision. Preserve partial
+Create/brief-publication outcomes and session-only results. The canvas supplies
+both expectedRevision and expectedBriefRevision to native Run/Test; validate the
+pair before preview and use those snapshots. Omitting both retains legacy reads.
+Background observation stales changed member/brief results without dropping drafts.
+Failed native reads invalidate current-pass status in both the adapter and editor;
+valid reads restore editing, while only a fresh preview restores current results.
+Unconfirmed pure Run/Test replies allow explicit reload and a fresh preview, never
+automatic replay. Create/Edit uncertainty stays fenced, including an attempted
+edit followed by an unconfirmed preview.
+Native empty-test members remain editable; Test requires a nonempty test set.
+Retire pending suggestions after creation effects and retain acknowledged brief
+saves even when readback fails. Optional native Test
+run IDs bind progress and connection-scoped cancellation through the existing
+Test tool's squad-preview-cancel target. Cancellation starts no inference and
+does not abort the Copilot session; final Test state remains authoritative.
+The native canvas keeps newer prompt drafts when typing stops an active preview.
+This includes edits back to the original baseline while a newer save is in flight.
+Generated proposals are offered for explicit review before replacing a draft.
+Native team and test suggestions use the host's transient no-tools query, never
+an ordinary chat turn. Native Run target squad-proposal only checks and prepares
+authored inputs; it calls no model and writes no files. Scan decoded draft JSON
+strings, including nested values and keys, before encoding host-query input.
+The query follows the current chat model and context, with reviewed member
+preferences initialized from the model catalog; proposals are not execution/model
+attestation. Unsupported hosts refuse without a chat fallback. Test proposals
+bind and recheck member/brief revisions
+and remain unsaved drafts. Native member views hide the unsupported Tools section.
+Native Squad remains opt-in development packaging, not normal marketplace setup;
+never download a launcher or edit trusted startup configuration automatically.
+The experimental
+upstream SquadBackend/HarnessAdapter runtime contract is separate follow-up work,
+not a name for this authoring adapter. See [native authoring](docs/agent-file.md#internal-native-cast-and-enrich).
 
 ## Explicit native file tests
 
