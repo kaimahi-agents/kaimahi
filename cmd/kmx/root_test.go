@@ -22,6 +22,7 @@ import (
 func testDependencies(out, errOut *bytes.Buffer) (dependencies, *int) {
 	loads := 0
 	deps := productionDependencies()
+	deps.residentAgents = false
 	deps.stdout, deps.stderr = out, errOut
 	deps.executable = "kmx"
 	deps.loadConfig = func(context, engine string) (*config.Config, error) {
@@ -406,7 +407,7 @@ func TestGuardedWindowsSupportedCommandFlagsAreExhaustivelyAllowlisted(t *testin
 		allFlags   []string
 		allowFlags []string
 	}{
-		{[]string{"run"}, []string{file}, []string{"agent", "case", "container-engine", "context", "mcp-server", "model", "namespace", "no-content", "no-mcp-servers", "output", "persist", "prompt", "prompt-file", "provider", "provider-url", "result-port", "tests", "tool-bindings", "verbose", "wait"}, []string{"case", "no-content", "output", "prompt", "tests", "verbose"}},
+		{[]string{"run"}, []string{file}, []string{"agent", "case", "container-engine", "context", "mcp-server", "model", "name", "namespace", "new", "no-content", "no-mcp-servers", "once", "output", "prompt", "prompt-file", "provider", "provider-url", "result-port", "tests", "tool-bindings", "upgrade", "verbose", "wait", "yes"}, []string{"case", "no-content", "once", "output", "prompt", "tests", "verbose"}},
 		{[]string{"test"}, []string{file}, []string{"case", "check", "container-engine", "context", "github-summary", "host", "mcp-server", "model", "no-content", "no-mcp-servers", "output", "provider", "provider-url", "runner", "tests", "tool-bindings", "verbose"}, []string{"case", "check", "no-content", "output", "tests", "verbose"}},
 		{[]string{"test", "explain"}, nil, []string{"clear", "container-engine", "context", "file", "show-content", "tests", "workspace"}, []string{"clear", "file", "show-content", "tests"}},
 		{[]string{"eval", "explain"}, nil, []string{"clear", "container-engine", "context", "file", "show-content", "tests", "workspace"}, []string{"clear", "file", "show-content", "tests"}},

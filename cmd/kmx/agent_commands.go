@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -212,35 +213,103 @@ func (r createPromptReader) Read(p []byte) (int, error) {
 
 func newAgentChatCommand(state *commandState) *cobra.Command {
 	var verbose bool
-	var runtime, namespace string
+	var runtime, namespace, session, label string
+	var fresh bool
 	usage := "kmx chat [--namespace <namespace>] <name> [message]"
-	cmd := &cobra.Command{Use: "chat <name> [message...]", Short: "Chat with a live Orka Agent",
-		Long: "Open an interactive session with an existing live Orka Agent.\n" +
-			"An optional message starts the first turn. This does not run an agent file.\n" +
+	cmd := &cobra.Command{Use: "chat <name> [message...]", Short: "Chat with a resident local or live Orka Agent",
+		Long: "Open a session with a resident local or existing live Orka Agent.\n" +
+			"An optional message starts the first turn. Local sessions can be resumed.\n" +
 			"For a one-shot Task, use kmx run --agent.",
 		Example: "  kmx chat greeter\n  kmx chat greeter \"Explain your last result\"",
 		Args:    usageArgs(1, -1, usage)}
 	cmd.Flags().BoolVar(&verbose, "verbose", false, "show chat WORKING and TIMING details")
-	cmd.Flags().StringVar(&runtime, "runtime", "auto", "agent runtime: auto (detect the Orka Agent) or orka")
+	cmd.Flags().StringVar(&runtime, "runtime", "auto", "agent runtime: auto, local or orka")
 	cmd.Flags().StringVar(&namespace, "namespace", "", "Orka Agent namespace (default: "+app.OrkaNamespace+")")
-	cmd.Flags().String("session", "", "retired server-side session flag")
+	cmd.Flags().StringVar(&session, "session", "", "resume a local session ID")
+	cmd.Flags().BoolVar(&fresh, "new", false, "create a new local session")
+	cmd.Flags().StringVar(&label, "label", "", "label a new local session")
 	cmd.Flags().Bool("json", false, "retired raw A2A task flag")
-	_ = cmd.Flags().MarkHidden("session")
 	_ = cmd.Flags().MarkHidden("json")
-	_ = cmd.RegisterFlagCompletionFunc("runtime", staticCompletion([]string{"auto", "orka"}))
+	_ = cmd.RegisterFlagCompletionFunc("runtime", staticCompletion([]string{"auto", "local", "orka"}))
 	cmd.ValidArgsFunction = completeLiveAgents
 	cmd.Args = func(cmd *cobra.Command, args []string) error {
-		if cmd.Flags().Changed("session") {
-			return fmt.Errorf("--session is retired: Orka chat has no resumable server-side session; use kmx chat --namespace <ns> <name>")
+		if runtime != "auto" && runtime != "local" && runtime != "orka" {
+			return fmt.Errorf("--runtime must be auto, local or orka")
+		}
+		if fresh && session != "" {
+			return fmt.Errorf("--new and --session are mutually exclusive")
+		}
+		if runtime == "orka" && (fresh || session != "" || label != "") {
+			return fmt.Errorf("local session flags require --runtime local or auto")
 		}
 		if cmd.Flags().Changed("json") {
 			return fmt.Errorf("--json is retired: there is no raw A2A JSON equivalent for an existing Agent; use kmx chat --namespace <ns> <name> for interactive chat")
 		}
 		return usageArgs(1, -1, usage)(cmd, args)
 	}
-	cmd.RunE = appRun(state, func(a *app.App) error {
+	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		args := cmd.Flags().Args()
+		localIntent := runtime == "local" || fresh || session != "" || label != ""
+		orkaIntent := runtime == "orka" || state.contextFlag != "" || cmd.Flags().Changed("namespace")
+		if localIntent && orkaIntent {
+			return fmt.Errorf("local session flags cannot be combined with Orka context or namespace selectors")
+		}
+		if state.deps.residentAgents && runtime != "orka" && state.contextFlag == "" && !cmd.Flags().Changed("namespace") {
+			local, localErr := state.deps.readLocalAgent(args[0])
+			if localErr != nil && runtime == "auto" && !localIntent {
+				if active, err := state.deps.readLocalAgents(false); err == nil {
+					matches := 0
+					for _, row := range active {
+						match := row.Name == args[0] || row.InstanceID == args[0] || row.ID == args[0]
+						if len(args[0]) >= 8 && (strings.HasPrefix(strings.TrimPrefix(row.InstanceID, "li-"), args[0]) || strings.HasPrefix(strings.TrimPrefix(row.ID, "md-"), args[0])) {
+							match = true
+						}
+						if match {
+							matches++
+						}
+					}
+					if matches == 0 {
+						localErr = os.ErrNotExist
+					}
+					if matches > 1 {
+						return fmt.Errorf("local agent selector is ambiguous; use a runtime name or instance ID")
+					}
+				}
+			}
+			if localErr == nil && local.State == "running" {
+				if session == "" {
+					opened, err := app.SelectLocalAgentSession(cmd.Context(), local.InstanceID, label, fresh)
+					if err != nil {
+						return err
+					}
+					session = opened.ID
+					if fresh {
+						fmt.Fprintln(cmd.ErrOrStderr(), "Session:", session)
+					}
+				}
+				message := joinArgs(args[1:])
+				if message != "" {
+					answer, err := app.InvokeLocalAgent(cmd.Context(), local.InstanceID, session, message)
+					if err != nil {
+						return err
+					}
+					_, err = fmt.Fprintln(cmd.OutOrStdout(), answer)
+					return err
+				}
+				return app.ChatLocalAgent(cmd.Context(), local.InstanceID, session, state.deps.stdin, cmd.OutOrStdout())
+			}
+			if localErr != nil && !errors.Is(localErr, os.ErrNotExist) {
+				return localErr
+			}
+			if localErr == nil && local.State != "stopped" || localIntent {
+				return fmt.Errorf("local agent is not running")
+			}
+		}
+		a, err := state.operationApplication(cmd)
+		if err != nil {
+			return err
+		}
 		return a.ChatWithOptions(app.ChatOptions{Agent: args[0], Task: joinArgs(args[1:]), Verbose: verbose, Runtime: runtime, Namespace: namespace})
-	})
+	}
 	return cmd
 }

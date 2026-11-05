@@ -89,7 +89,7 @@ func shortCommandHelp(cmd *cobra.Command, _ []string) {
 				// Root-level help remains available; omit its redundant flag row.
 			case "prompt", "prompt-file":
 				sharedFlags.AddFlag(flag)
-			case "persist":
+			case "once":
 				fileFlags.AddFlag(flag)
 			case "agent", "namespace", "wait", "result-port":
 				liveFlags.AddFlag(flag)

@@ -21,6 +21,9 @@ import (
 )
 
 func main() {
+	if os.Getenv("KMX_LOCAL_AGENT_WORKER") == "1" {
+		return
+	}
 	if err := execute(os.Args[1:], productionDependencies()); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(exitCode(err))

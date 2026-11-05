@@ -76,7 +76,7 @@ func TestShortHelpInnerLoopBudgets(t *testing.T) {
 				if start < 0 {
 					t.Fatal("missing flag section")
 				}
-				if count := len(strings.Split(strings.TrimSpace(output[start:]), "\n")); count > 24 {
+				if count := len(strings.Split(strings.TrimSpace(output[start:]), "\n")); count > 29 {
 					t.Errorf("flags occupy %d lines", count)
 				}
 				if *loads != 0 || diag.Len() != 0 {

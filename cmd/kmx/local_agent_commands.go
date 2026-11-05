@@ -47,6 +47,9 @@ func newLocalAgentListCommand(state *commandState) *cobra.Command {
 				}
 				type row struct {
 					ID               string     `json:"id"`
+					AgentID          string     `json:"agentId"`
+					InstanceID       string     `json:"instanceId"`
+					Generation       uint64     `json:"generation"`
 					Name             string     `json:"name"`
 					State            string     `json:"state"`
 					Provider         string     `json:"provider,omitempty"`
@@ -54,34 +57,38 @@ func newLocalAgentListCommand(state *commandState) *cobra.Command {
 					SnapshotRevision string     `json:"snapshotRevision"`
 					Started          time.Time  `json:"started"`
 					Stopped          *time.Time `json:"stopped,omitempty"`
+					Ready            bool       `json:"ready"`
+					Sessions         int        `json:"sessions"`
+					LastActivity     *time.Time `json:"lastActivity,omitempty"`
+					LastError        string     `json:"lastError,omitempty"`
 				}
 				projected := make([]row, 0, len(rows))
 				for _, item := range rows {
-					projected = append(projected, row{ID: item.ID, Name: item.Name, State: item.State, Provider: item.Provider, Model: item.Model, SnapshotRevision: item.SnapshotRevision, Started: item.Started, Stopped: item.Stopped})
+					projected = append(projected, row{ID: item.ID, AgentID: item.ID, InstanceID: item.InstanceID, Generation: item.Sequence, Name: item.Name, State: item.State, Provider: item.Provider, Model: item.Model, SnapshotRevision: item.SnapshotRevision, Started: item.Started, Stopped: item.Stopped, Ready: item.Ready, Sessions: item.Sessions, LastActivity: item.LastActivity, LastError: item.LastError})
 				}
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(envelope{SchemaVersion: 1, Kind: "kmx.local-agent-inventory", Scope: "local", Agents: projected})
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), "LOCAL AGENTS")
-			fmt.Fprintln(cmd.OutOrStdout(), "ID            NAME                 STATE     MODEL                    AGE")
+			fmt.Fprintln(cmd.OutOrStdout(), "AGENT         INSTANCE       GEN NAME                 STATE     READY SESSIONS MODEL                    AGE")
 			for _, row := range rows {
 				age := time.Since(row.Started).Round(time.Second)
 				model := row.Model
 				if model == "" {
 					model = "default"
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "%-13s %-20s %-9s %-24s %s\n", strings.TrimPrefix(row.ID, "md-")[:12], row.Name, row.State, model, age)
+				fmt.Fprintf(cmd.OutOrStdout(), "%-13s %-14s %-3d %-20s %-9s %-5t %-8d %-24s %s\n", strings.TrimPrefix(row.ID, "md-")[:12], strings.TrimPrefix(row.InstanceID, "li-")[:12], row.Sequence, row.Name, row.State, row.Ready, row.Sessions, model, age)
 			}
 			return nil
 		},
 	}
-	cmd.Flags().BoolVarP(&all, "all", "a", false, "include stopped local registrations")
+	cmd.Flags().BoolVarP(&all, "all", "a", false, "include stopped local agents")
 	cmd.Flags().StringVarP(&output, "output", "o", "table", "output: table|json")
 	cmd.Flags().StringVar(&namespace, "namespace", "", "Orka namespace (requires explicit --context)")
 	return cmd
 }
 
 func newLocalAgentStopCommand(state *commandState) *cobra.Command {
-	return &cobra.Command{Use: "stop NAME_OR_ID", Short: "Stop a local agent registration", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "stop NAME_OR_ID", Short: "Stop a resident local agent", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		if state.contextFlag != "" || cmd.Flags().Changed("container-engine") {
 			return fmt.Errorf("stop selects a local agent; omit cluster selectors")
 		}
