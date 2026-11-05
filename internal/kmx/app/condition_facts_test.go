@@ -62,6 +62,18 @@ func TestConditionPolicies(t *testing.T) {
 	}
 }
 
+func TestConditionPoliciesRejectOversizeBeforeDecoding(t *testing.T) {
+	doc := map[string]any{
+		"metadata": map[string]any{"generation": float64(1)},
+		"status":   map[string]any{"conditions": make([]any, 65)},
+	}
+	var got destinationStatusReadiness
+	allocations := testing.AllocsPerRun(3, func() { got = statusPrimaryReadiness("orka", doc) })
+	if got.State != "unknown" || allocations != 0 {
+		t.Fatalf("oversized conditions allocated row facts: state=%s allocations=%g", got.State, allocations)
+	}
+}
+
 func TestConditionPoliciesKeepCallerLimits(t *testing.T) {
 	for _, count := range []int{64, 65} {
 		rows := []any{map[string]any{"type": "Ready", "status": "True", "observedGeneration": float64(1)}}

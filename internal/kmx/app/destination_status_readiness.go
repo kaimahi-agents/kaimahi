@@ -47,8 +47,15 @@ func statusPrimaryReadiness(runtime string, doc map[string]any) destinationStatu
 	if !ok {
 		return unknown
 	}
+	// Keep the caller's row bound ahead of allocating decoded facts.
+	if raw := status["conditions"]; raw != nil {
+		rows, ok := raw.([]any)
+		if !ok || len(rows) > 64 {
+			return unknown
+		}
+	}
 	facts := conditionfacts.ReadMap(status)
-	if facts.Shape() == conditionfacts.Invalid || facts.Len() > 64 || facts.HasDuplicateTypes() {
+	if facts.HasDuplicateTypes() {
 		return unknown
 	}
 	conditions := map[string]serverCondition{}
