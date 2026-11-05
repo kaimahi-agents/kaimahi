@@ -11,17 +11,45 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 )
 
+// Keep the assertion testable without relying on a random operation UUID.
+func discoverySelectorRendered(output, token string) bool {
+	encoded, _ := json.Marshal(token)
+	return strings.Contains(output, token) || strings.Contains(output, string(encoded[1:len(encoded)-1]))
+}
+
+func TestDiscoverySelectorRendered(t *testing.T) {
+	token := "bad\x1b[31m"
+	id := strings.Repeat("0", 5) + "bad-" + strings.Repeat("0", 4) + "-4000-8000-" + strings.Repeat("0", 12)
+	encoded, _ := json.Marshal(map[string]string{"namespace": token})
+	for _, tc := range []struct {
+		name, output string
+		want         bool
+	}{
+		{"UUID substring", `{"operationId":"` + id + `"}`, false},
+		{"prefix only", "bad", false},
+		{"raw selector", token, true},
+		{"JSON selector", string(encoded), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := discoverySelectorRendered(tc.output, token); got != tc.want {
+				t.Fatalf("selector match %v want%v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestDiscoveryRejectedSelectorOutput(t *testing.T) {
+	const token = "bad\x1b[31m"
 	for _, format := range []string{"text", "jsonl"} {
 		var out bytes.Buffer
 		c := newClusterDiscoveryCommand(&commandState{contextFlag: "chosen"})
 		c.SilenceUsage, c.SilenceErrors = true, true
 		c.SetOut(&out)
-		c.SetArgs([]string{"--namespace=bad\x1b[31m", "-o", format})
+		c.SetArgs([]string{"--namespace=" + token, "-o", format})
 		if e := c.Execute(); e == nil {
 			t.Fatal("accepted")
 		}
-		if strings.Contains(out.String(), "bad") || strings.ContainsRune(out.String(), '\x1b') {
+		if discoverySelectorRendered(out.String(), token) || strings.ContainsRune(out.String(), '\x1b') {
 			t.Fatal("rejected selector rendered")
 		}
 	}
