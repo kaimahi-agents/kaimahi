@@ -95,7 +95,10 @@ func (s *retainedStore) Close() error {
 	s.state = nil
 	return err
 }
-func openRetainedStore(ctx context.Context, create bool) (s *retainedStore, err error) {
+func openRetainedStore(ctx context.Context, create bool) (*retainedStore, error) {
+	return openRetainedStoreWithSync(ctx, create, fileaccess.SyncDirectory)
+}
+func openRetainedStoreWithSync(ctx context.Context, create bool, syncDirectory func(context.Context, *fileaccess.Directory) error) (s *retainedStore, err error) {
 	if err = retainedPlatform(); err != nil {
 		return nil, err
 	}
@@ -145,7 +148,7 @@ func openRetainedStore(ctx context.Context, create bool) (s *retainedStore, err 
 		if e != nil {
 			return nil, e
 		}
-		if err = errors.Join(fileaccess.SyncFile(ctx, lock), lock.Close(), fileaccess.SyncDirectory(ctx, s.dir)); err != nil {
+		if err = errors.Join(fileaccess.SyncFile(ctx, lock), lock.Close(), syncDirectory(ctx, s.dir), syncDirectory(ctx, s.base), syncDirectory(ctx, s.state)); err != nil {
 			return nil, err
 		}
 	}
