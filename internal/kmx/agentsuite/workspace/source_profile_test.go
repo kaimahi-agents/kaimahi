@@ -1,11 +1,16 @@
 package workspace
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -155,6 +160,76 @@ func TestSourceProfileArtifactSelection(t *testing.T) {
 		}
 	}
 }
+func TestSourceProfileTransportReaders(t *testing.T) {
+	a, p := sourceArtifact(t)
+	var outer bytes.Buffer
+	tw := tar.NewWriter(&outer)
+	err := filepath.WalkDir(p.Path, func(name string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(p.Path, name)
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(name)
+		if err != nil {
+			return err
+		}
+		if err := tw.WriteHeader(&tar.Header{Name: filepath.ToSlash(rel), Mode: 0600, Typeflag: tar.TypeReg, Size: int64(len(data))}); err != nil {
+			return err
+		}
+		_, err = tw.Write(data)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	fromArchive, err := suiteoras.ReadArtifactArchiveSelection(t.Context(), bytes.NewReader(outer.Bytes()), int64(outer.Len()), p.Descriptor.Digest.String())
+	if err != nil || !reflect.DeepEqual(fromArchive.Files(), a.Files()) {
+		t.Fatal("archive intake changed source graph", err)
+	}
+	t.Setenv("DOCKER_CONFIG", t.TempDir())
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" && r.Method != "HEAD" {
+			t.Errorf("unexpected registry mutation: %s", r.Method)
+			w.WriteHeader(405)
+			return
+		}
+		digest := filepath.Base(r.URL.Path)
+		if !strings.HasPrefix(digest, "sha256:") {
+			w.WriteHeader(404)
+			return
+		}
+		data, err := os.ReadFile(filepath.Join(p.Path, "blobs/sha256", strings.TrimPrefix(digest, "sha256:")))
+		if err != nil {
+			w.WriteHeader(404)
+			return
+		}
+		if strings.Contains(r.URL.Path, "/manifests/") {
+			w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+		} else {
+			w.Header().Set("Content-Type", "application/octet-stream")
+		}
+		w.Header().Set("Docker-Content-Digest", digest)
+		w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+		if r.Method == "GET" {
+			w.Write(data)
+		}
+	}))
+	defer server.Close()
+	registry, err := suiteoras.ReadArtifactRegistry(t.Context(), strings.TrimPrefix(server.URL, "http://")+"/sources@"+p.Descriptor.Digest.String(), true)
+	if err != nil || !reflect.DeepEqual(registry.Files(), a.Files()) {
+		t.Fatal("registry intake changed graph", err)
+	}
+}
+
 func TestSourceProfileArtifactInventory(t *testing.T) {
 	a, _ := sourceArtifact(t)
 	if _, err := LoadArtifactInventory(t.Context(), a); err != nil {
