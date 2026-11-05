@@ -1,16 +1,13 @@
 package app
 
 import (
-	"math"
 	"time"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/conditionfacts"
 )
 
 func statusInteger(value any) (int64, bool) {
-	n, ok := value.(float64)
-	if !ok || n < 0 || n > 1<<53-1 || math.Trunc(n) != n {
-		return 0, false
-	}
-	return int64(n), true
+	return conditionfacts.Integer(value)
 }
 
 func statusTerminating(meta map[string]any) (bool, bool) {
@@ -50,36 +47,16 @@ func statusPrimaryReadiness(runtime string, doc map[string]any) destinationStatu
 	if !ok {
 		return unknown
 	}
+	facts := conditionfacts.ReadMap(status)
+	if facts.Shape() == conditionfacts.Invalid || facts.Len() > 64 || facts.HasDuplicateTypes() {
+		return unknown
+	}
 	conditions := map[string]serverCondition{}
-	if raw, present := status["conditions"]; present && raw != nil {
-		rows, ok := raw.([]any)
-		if !ok || len(rows) > 64 {
+	for _, c := range facts.Entries() {
+		if !c.Object || !c.TypeValid || !c.StateValid || !c.ObservedValid || c.ObservedGeneration > generation {
 			return unknown
 		}
-		for _, value := range rows {
-			c, ok := value.(map[string]any)
-			if !ok {
-				return unknown
-			}
-			typ, typeOK := c["type"].(string)
-			state, stateOK := c["status"].(string)
-			if !typeOK || typ == "" || !stateOK || state != "True" && state != "False" && state != "Unknown" {
-				return unknown
-			}
-			if _, duplicate := conditions[typ]; duplicate {
-				return unknown
-			}
-			observed := int64(0)
-			if value, present := c["observedGeneration"]; present {
-				var valid bool
-				observed, valid = statusInteger(value)
-				if !valid || observed > generation {
-					return unknown
-				}
-			}
-			reason, _ := c["reason"].(string)
-			conditions[typ] = serverCondition{Type: typ, Status: state, ObservedGeneration: observed, Reason: reason}
-		}
+		conditions[c.Type] = serverCondition{Type: c.Type, Status: c.State, ObservedGeneration: c.ObservedGeneration, Reason: c.Reason}
 	}
 	if runtime == "kagent" {
 		observed := int64(0)

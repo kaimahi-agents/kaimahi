@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"sort"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/conditionfacts"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
@@ -21,40 +22,20 @@ func discoveryProviderCondition(m map[string]any, generation float64) (string, b
 	if _, present := status["ready"]; present && !rOK {
 		return "", false
 	}
-	if status["conditions"] == nil {
-		return "Unknown", true
-	}
-	conditions, ok := status["conditions"].([]any)
-	if !ok {
+	facts := conditionfacts.ReadMap(status)
+	if facts.Shape() == conditionfacts.Invalid || facts.HasDuplicateTypes() {
 		return "", false
 	}
-	seen := map[string]bool{}
 	answer := "Unknown"
-	for _, v := range conditions {
-		c, ok := v.(map[string]any)
-		if !ok {
+	for _, c := range facts.Entries() {
+		if !c.Object || !c.TypeValid || !c.StateValid || !c.ObservedValid {
 			return "", false
 		}
-		typ, ok := c["type"].(string)
-		if !ok || typ == "" || seen[typ] {
-			return "", false
-		}
-		seen[typ] = true
-		state, ok := c["status"].(string)
-		if !ok || (state != "True" && state != "False" && state != "Unknown") {
-			return "", false
-		}
-		if v, present := c["observedGeneration"]; present {
-			n, ok := v.(float64)
-			if !ok || n < 0 || n > 9007199254740991 || math.Trunc(n) != n {
-				return "", false
-			}
-		}
-		if typ == "Ready" && c["observedGeneration"] == generation && rOK {
-			if state == "True" && ready {
+		if c.Type == "Ready" && c.ObservedPresent && float64(c.ObservedGeneration) == generation && rOK {
+			if c.State == "True" && ready {
 				answer = "True"
 			}
-			if state == "False" && !ready {
+			if c.State == "False" && !ready {
 				answer = "False"
 			}
 		}
