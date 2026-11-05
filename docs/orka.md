@@ -63,7 +63,9 @@ unknown. Exact Tool absence additionally retains the per-name diagnostic match,
 never a generic NotFound hint. Controller lists follow bounded pagination and
 literal JSON keys cannot be overwritten by case aliases. A failed stability
 bracket marks non-disabled rows `stale_input` or the read failure, not
-`unsupported_runtime`; stable unsupported pins retain that native reason.
+`unsupported_runtime`; stable unsupported pins retain that native reason. A
+supported pin awaiting rollout instead reports `read_unknown`, including Tool
+rows, rather than claiming that runtime is unsupported.
 
 Complete inventory exits 0, even when empty or containing unavailable candidates.
 Incomplete inventory exits 1 and preserves fitting readable rows; never interpret
