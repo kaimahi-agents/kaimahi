@@ -55,7 +55,17 @@ execution. Disabled requirements do not resolve an
 exact resource dependency. Only an authoritative exact Tool NotFound, after the
 namespace and Tool API are observed, gives `missing`/`resource_missing`.
 A forbidden read is `unknown`/`read_denied`; unrecognized failures are
-`unknown`/`read_unknown`, never absence.
+`unknown`/`read_unknown`, never absence. The shared checked transport recognizes
+only exact case-sensitive line-start diagnostics with marker boundaries. The real
+`error: You must be logged in to the server` maps to `authentication_required`;
+`Error from server (Unauthorized)`, conflicts, truncation and lookalikes stay
+unknown. Exact Tool absence additionally retains the per-name diagnostic match,
+never a generic NotFound hint. Controller lists follow bounded pagination and
+literal JSON keys cannot be overwritten by case aliases. A failed stability
+bracket marks non-disabled rows `stale_input` or the read failure, not
+`unsupported_runtime`; stable unsupported pins retain that native reason. A
+supported pin awaiting rollout instead reports `read_unknown`, including Tool
+rows, rather than claiming that runtime is unsupported.
 
 Complete inventory exits 0, even when empty or containing unavailable candidates.
 Incomplete inventory exits 1 and preserves fitting readable rows; never interpret
@@ -104,6 +114,31 @@ Foreign, online, changed, partial and orphan state refuse without repair.
 Bundle `--no-apply` is local-only and leaves target checks explicitly unchecked;
 bundle `--dry-run` validates only CRDs server-side after full preflight.
 A failed phase stops subsequent phases and retains effects for private inspection.
+
+## Fixed guest credential mount
+
+```bash
+kmx cluster up --step cluster --credential-mount copilot-v1
+```
+
+This explicit Linux guest profile supports only a local Docker engine. It binds
+`/run/bridge/credentials` into each kind node at the same path, read-only with
+private propagation. The source must already be tmpfs with `nosuid,nodev,noexec`,
+owned by root with group 65532 and mode 0750; its ancestors must be root-controlled
+real directories. The guest boot process must establish it before Docker starts.
+The profile never creates the directory, mounts tmpfs or repairs permissions.
+Do not remount it while node containers are running.
+
+Existing nodes must have the exact bind and the selected kubeconfig must match
+that cluster. Running nodes must also see the current source, not a stale bind.
+Missing, changed or unreadable mounts refuse without node recreation or repair.
+A newly created node is inspected before readiness is reported.
+
+The flag can accompany `--offline-bundle DIR`; the existing bundle checks still
+apply. Without the flag, ordinary cluster setup is unchanged. This mount alone
+neither signs in nor deploys a gateway, connects a model or runs inference.
+No credential contents are read by this profile. Native guest boot and model
+integration have not been qualified by these command fixtures.
 
 ## Seeing it before doing it
 

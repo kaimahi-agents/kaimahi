@@ -17,8 +17,12 @@
 // Neither provisions tools or imports/pulls images. Offline reuse binds the
 // selected kubeconfig connection to verified nodes; install compares exact Helm
 // values and live workload execution settings without repair. Online guards and
-// context repair remain unchanged.
+// context repair remain unchanged without the fixed guest mount profile.
 //
+// A fixed opt-in guest credential mount is validated before kind creation or
+// reuse; incompatible sources and node binds refuse without repair. Model-local
+// API capture uses closed GVK paths and returns only checked execution settings;
+// it performs no sign-in, model configuration or inference.
 // Model connection state retains nonsecret, acknowledged identities through
 // private immutable checkpoints and a process-held target lock. Partial effects
 // and publication errors never authorize replay or ownership reconstruction.
@@ -83,6 +87,7 @@ type App struct {
 	kagentProfile *kagentProfile
 	// operationProgress reports real stage transitions to an owning deployment UI.
 	operationProgress func(name, status string, err error)
+	discoveryRead     *discoveryReadSession
 	Cfg               *config.Config
 	Run               *run.Runner
 	Out               io.Writer
@@ -120,7 +125,8 @@ type App struct {
 	releaseRecordPrepared func(*releaseLiftRecordWriter)
 	// offlineIdentity replaces running-binary identity only in isolated tests.
 	// Nil requires the actual clean executable metadata and SHA-256.
-	offlineIdentity func() (offlineKMXIdentity, error)
+	offlineIdentity      func() (offlineKMXIdentity, error)
+	modelCredentialMount string
 	// waitTiming overrides retry pacing and phase deadlines in tests only.
 	// Nil preserves every production interval and timeout.
 	waitTiming *waitTiming

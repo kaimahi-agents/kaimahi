@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"os/exec"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -14,9 +15,13 @@ import (
 
 type discoveryReadReason string
 
+var errDiscoveryLimit = errors.New("bounded discovery capture overflow")
+
 type discoveryReadFailure struct {
-	reason discoveryReadReason
-	cause  error
+	reason                discoveryReadReason
+	cause                 error
+	exactToolMissing      string
+	exactNamespaceMissing string
 }
 
 func (e *discoveryReadFailure) Error() string { return "Destination discovery is incomplete." }
@@ -106,8 +111,16 @@ func (b *discoveryBuffer) Write(p []byte) (int, error) {
 }
 
 func (a *App) discoveryCapture(ctx context.Context, selectedContext string, args ...string) ([]byte, *discoveryReadFailure) {
+	raw, failure, _ := a.discoveryCaptureBudget(ctx, selectedContext, 4<<20, args...)
+	return raw, failure
+}
+
+func (a *App) discoveryCaptureBudget(ctx context.Context, selectedContext string, maxStdout int, args ...string) (raw []byte, failure *discoveryReadFailure, captured int) {
 	if err := ctx.Err(); err != nil {
-		return nil, &discoveryReadFailure{"read_unknown", err}
+		return nil, &discoveryReadFailure{reason: "read_unknown", cause: err}, 0
+	}
+	if maxStdout <= 0 {
+		return nil, &discoveryReadFailure{reason: "read_unknown"}, 0
 	}
 	child, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
@@ -130,14 +143,15 @@ func (a *App) discoveryCapture(ctx context.Context, selectedContext string, args
 	argv = append(argv, args...)
 	cmd := runner.Command("kubectl", argv...)
 	cmd.WaitDelay = time.Second
-	out, diagnostics := &discoveryBuffer{remaining: 4 << 20}, &discoveryBuffer{remaining: 4 << 10}
+	out, diagnostics := &discoveryBuffer{remaining: min(maxStdout, 4<<20)}, &discoveryBuffer{remaining: 4 << 10}
+	defer func() { captured = out.Len() }()
 	cmd.Stdout, cmd.Stderr = out, diagnostics
 	err := a.executeCapture(child, cmd)
 	if child.Err() != nil {
-		return nil, &discoveryReadFailure{"read_unknown", child.Err()}
+		return nil, &discoveryReadFailure{reason: "read_unknown", cause: child.Err()}, 0
 	}
 	if out.overflow || diagnostics.overflow {
-		return nil, &discoveryReadFailure{"read_unknown", errors.New("bounded capture overflow")}
+		return nil, &discoveryReadFailure{reason: "read_unknown", cause: errDiscoveryLimit}, 0
 	}
 	if err != nil {
 		// A foreground-group interrupt can reap kubectl before NotifyContext's
@@ -146,13 +160,30 @@ func (a *App) discoveryCapture(ctx context.Context, selectedContext string, args
 		var exited *exec.ExitError
 		if errors.As(err, &exited) {
 			if status, ok := exited.Sys().(syscall.WaitStatus); ok && status.Signaled() && (status.Signal() == syscall.SIGINT || status.Signal() == syscall.SIGTERM) {
-				return nil, &discoveryReadFailure{"read_unknown", context.Canceled}
+				return nil, &discoveryReadFailure{reason: "read_unknown", cause: context.Canceled}, 0
 			}
 		}
-		return out.Bytes(), &discoveryReadFailure{classifyDiscoveryRead(diagnostics.Bytes(), false), err}
+		failure = &discoveryReadFailure{reason: classifyDiscoveryRead(diagnostics.Bytes(), false), cause: err}
+		if failure.reason == "resource_missing" && len(args) == 3 && args[0] == "get" && args[1] == "--raw" {
+			const namespaces = "/api/v1/namespaces/"
+			if strings.HasPrefix(args[2], namespaces) {
+				name := strings.TrimPrefix(args[2], namespaces)
+				if name != "" && !strings.Contains(name, "/") && strings.TrimSpace(string(diagnostics.Bytes())) == "Error from server (NotFound): namespaces "+strconv.Quote(name)+" not found" {
+					failure.exactNamespaceMissing = name
+				}
+			}
+			const prefix = "/apis/core.orka.ai/v1alpha1/namespaces/"
+			if strings.HasPrefix(args[2], prefix) {
+				parts := strings.Split(strings.TrimPrefix(args[2], prefix), "/")
+				if len(parts) == 3 && parts[1] == "tools" && strings.TrimSpace(string(diagnostics.Bytes())) == "Error from server (NotFound): tools.core.orka.ai "+strconv.Quote(parts[2])+" not found" {
+					failure.exactToolMissing = parts[2]
+				}
+			}
+		}
+		return out.Bytes(), failure, 0
 	}
 	if diagnostics.Len() != 0 {
-		return out.Bytes(), &discoveryReadFailure{"read_unknown", errors.New("unexpected diagnostics")}
+		return out.Bytes(), &discoveryReadFailure{reason: "read_unknown", cause: errors.New("unexpected diagnostics")}, 0
 	}
-	return out.Bytes(), nil
+	return out.Bytes(), nil, 0
 }

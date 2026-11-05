@@ -14,8 +14,9 @@ import (
 var errCompiledUnavailable = errors.New("compiled package unavailable")
 
 // CompiledPackage owns invocation-local verified bytes, not a retained handle.
-// Publication destinations must be children of the owned staging subtree so
-// sibling ORAS staging and exclusion directories remain inside that ownership.
+// Publication destinations are caller-owned, create-only outputs. Place them
+// below an owned parent to contain sibling ORAS staging and exclusion directories;
+// Close removes only this compiler's staging, never an external copied layout.
 // Close consumes the object even on error. Source content is non-confidential;
 // separately bounded ORAS OS-temp copies may survive abrupt termination.
 type CompiledPackage struct {
@@ -141,7 +142,7 @@ func (p *CompiledPackage) current(ctx context.Context) (*suiteoras.Artifact, err
 	if _, err = LoadArtifact(ctx, artifact); err != nil {
 		return nil, err
 	}
-	fingerprint, err := mappedFingerprint(artifact.Files())
+	fingerprint, err := MappedArtifactFingerprint(ctx, artifact)
 	if err != nil || fingerprint != p.fingerprint {
 		return nil, errCompiledUnavailable
 	}

@@ -673,9 +673,8 @@ evidence-based reason, not another run for a more favorable verdict. Missing
 status, incomplete scope, invalid output and reviewer unavailability are never a
 clean result.
 
-Record only the scope, P0-P2 range, pinned upstream commit, actual host/model,
-outcome, material finding disposition, relevant verification and limitations in
-the pull request. Keep prompts, raw model output and source-bearing reports private
+Record review findings in the PR template's Review section.
+Keep prompts, raw model output and source-bearing reports private
 and outside the repository. This review is advisory: it is not human approval, a
 required CI check, AgentSuite evidence, runtime qualification, publication
 authority or Deploy authority. It performs no automatic GitHub writes.

@@ -29,15 +29,17 @@ var modelCheckpointPattern = regexp.MustCompile(`^[0-9]{6}\.json$`)
 // modelOwnedResource contains a verified nonsecret execution projection from
 // the producer, never a raw API response, credential material or inference body.
 type modelOwnedResource struct {
-	APIVersion      string         `json:"apiVersion"`
-	Kind            string         `json:"kind"`
-	Name            string         `json:"name"`
-	UID             string         `json:"uid,omitempty"`
-	ResourceVersion string         `json:"resourceVersion,omitempty"`
-	Marker          string         `json:"marker"`
-	Purpose         string         `json:"purpose"`
-	Generation      int64          `json:"generation,omitempty"`
-	Spec            map[string]any `json:"spec,omitempty"`
+	APIVersion      string `json:"apiVersion"`
+	Kind            string `json:"kind"`
+	Name            string `json:"name"`
+	UID             string `json:"uid,omitempty"`
+	ResourceVersion string `json:"resourceVersion,omitempty"`
+	Marker          string `json:"marker"`
+	Purpose         string `json:"purpose"`
+	Generation      int64  `json:"generation,omitempty"`
+	// Terminating is a live observation, never persisted as ownership authority.
+	Terminating bool           `json:"-"`
+	Spec        map[string]any `json:"spec,omitempty"`
 }
 type modelPendingAction struct {
 	OperationID string             `json:"operationID"`
