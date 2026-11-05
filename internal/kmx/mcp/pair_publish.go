@@ -68,7 +68,12 @@ func (b *pairBinding) checkPublishing(ctx context.Context) error {
 // Create only components absent in the checked binding, or components this same
 // operation already created. Never adopt a concurrently appearing parent.
 func (b *pairBinding) prepareAbsentParent(a *absentSource, created map[string]os.FileInfo) error {
-	target := b.files.physicalSource(a.path)
+	return prepareParents(a, b.files.physicalSource(a.path), created, nil)
+}
+
+// prepareParents creates the directories between a's held parent and target's
+// directory. before, when set, runs ahead of each step, e.g. to recheck ancestors.
+func prepareParents(a *absentSource, target string, created map[string]os.FileInfo, before func() error) error {
 	rel, err := filepath.Rel(filepath.Clean(a.parent.Name()), filepath.Dir(target))
 	if err != nil || rel != "." && !filepath.IsLocal(rel) {
 		return refusal("unsafe_path")
@@ -81,6 +86,11 @@ func (b *pairBinding) prepareAbsentParent(a *absentSource, created map[string]os
 	}()
 	if rel != "." {
 		for _, part := range strings.Split(rel, string(filepath.Separator)) {
+			if before != nil {
+				if e := before(); e != nil {
+					return e
+				}
+			}
 			key := filepath.Join(parent.Name(), part)
 			info, e := parent.Lstat(part)
 			if os.IsNotExist(e) {
