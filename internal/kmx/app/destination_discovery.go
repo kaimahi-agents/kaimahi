@@ -31,7 +31,7 @@ type DiscoveryReport struct {
 	Complete bool             `json:"complete"`
 	Checks   []DiscoveryCheck `json:"checks"`
 	Rows     []DiscoveryRow   `json:"rows"`
- Target *DiscoveryTarget `json:"target,omitempty"`
+	Target   *DiscoveryTarget `json:"target,omitempty"`
 }
 
 // Go quoting is decoded as Go quoting, not incorrectly treated as JSON. Names
@@ -92,7 +92,9 @@ func (a *App) Discover(parent context.Context, opt DiscoveryOptions) (DiscoveryR
 	}
 	ctx, cancel := context.WithTimeout(parent, 30*time.Second)
 	defer cancel()
- if opt.Namespace!="" {return a.discoverTarget(ctx,opt)}
+	if opt.Namespace != "" {
+		return a.discoverTarget(ctx, opt)
+	}
 	var failure *discoveryReadFailure
 	if opt.Context == "" {
 		raw, readErr := a.discoveryCapture(ctx, "", "config", "view", "-o", "go-template="+discoveryContextTemplate)

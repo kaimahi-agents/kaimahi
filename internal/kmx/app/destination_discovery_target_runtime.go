@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 )
 
 func (a *App) discoveryTargetRuntime(ctx context.Context, s *discoveryReadSession, namespace string) (*DiscoveryRuntime, error) {
@@ -18,6 +19,9 @@ func (a *App) discoveryTargetRuntime(ctx context.Context, s *discoveryReadSessio
 	}
 	controller, _, e := selectOrkaController(items)
 	if e != nil {
+		if errors.Is(e, errOrkaControllerAbsent) {
+			r.State, r.Reason = "missing", "resource_missing"
+		}
 		return r, e
 	}
 	profile, e := suiteNativeControllerProfile(controller, namespace)

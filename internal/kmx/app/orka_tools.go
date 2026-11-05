@@ -129,6 +129,10 @@ func (o *toolObserver) runtime(namespace string) (suiteNativeRuntime, bool) {
 		if err == nil && statusOpaque(r.ControllerUID) {
 			return r, true
 		}
+		if _, pe := suiteNativeControllerProfile(d, namespace); pe == nil {
+			o.problem("read_unknown")
+			return suiteNativeRuntime{}, false
+		}
 	}
 	o.problem("unsupported_runtime")
 	return suiteNativeRuntime{}, false
@@ -373,7 +377,7 @@ func (a *App) ReadOrkaTools(ctx context.Context, opt OrkaToolOptions) (OrkaToolI
 	}
 	if !stable || !pinned {
 		why := "unsupported_runtime"
-		if !stable {
+		if !stable || (o.reason != "" && o.reason != "unsupported_runtime") {
 			why = o.reason
 			if why == "" || why == "unsupported_runtime" {
 				why = "stale_input"

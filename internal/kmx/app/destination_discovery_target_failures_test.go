@@ -41,6 +41,55 @@ func TestDiscoveryTargetMalformedProviderMetadata(t *testing.T) {
 		})
 	}
 }
+func TestDiscoveryReviewRuntimeReasons(t *testing.T) {
+	for _, mode := range []string{"unready", "login", "unrelated"} {
+		t.Run(mode, func(t *testing.T) {
+			a, p := targetFixture(t)
+			path := "/apis/apps/v1/namespaces/orka-system/deployments?limit=64"
+			list := p[path].(map[string]any)
+			switch mode {
+			case "unready":
+				list["items"].([]any)[0].(map[string]any)["status"].(map[string]any)["readyReplicas"] = 0
+			case "login":
+				p[path] = func(c *exec.Cmd) error {
+					fmt.Fprint(c.Stderr, "error: You must be logged in to the server")
+					return fmt.Errorf("fail")
+				}
+			case "unrelated":
+				d := list["items"].([]any)[0].(map[string]any)
+				d["metadata"].(map[string]any)["name"] = "unrelated"
+				d["metadata"].(map[string]any)["labels"] = map[string]any{}
+				d["spec"].(map[string]any)["template"].(map[string]any)["spec"].(map[string]any)["containers"].([]any)[0].(map[string]any)["image"] = "unrelated"
+			}
+			r, e := a.Discover(t.Context(), DiscoveryOptions{Context: "kind-test", Namespace: "orka-system"})
+			if e == nil || r.Complete {
+				t.Fatal(r)
+			}
+			switch mode {
+			case "unready":
+				for _, c := range r.Checks {
+					if c.Reason == "unsupported_runtime" {
+						t.Fatal(r.Checks)
+					}
+				}
+				for _, row := range r.Target.Tools.Tools {
+					if row.Reason == "unsupported_runtime" {
+						t.Fatal(row)
+					}
+				}
+			case "login":
+				if r.Target.Runtime.Reason != "unauthorized" {
+					t.Fatal(r.Target.Runtime)
+				}
+			case "unrelated":
+				if r.Target.Runtime.State != "missing" {
+					t.Fatal(r.Target.Runtime)
+				}
+			}
+		})
+	}
+}
+
 func TestDiscoveryTargetRuntimeBracketSpansComposition(t *testing.T) {
 	a, p := targetFixture(t)
 	path := "/api/v1/namespaces/orka-system/serviceaccounts/orka-ai-worker"

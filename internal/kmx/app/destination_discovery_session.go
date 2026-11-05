@@ -16,6 +16,9 @@ type discoveryReadSession struct {
 }
 
 func (s *discoveryReadSession) capture(ctx context.Context, a *App, args ...string) ([]byte, *discoveryReadFailure) {
+	if s.failure != nil && (errors.Is(s.failure.cause, context.Canceled) || errors.Is(s.failure.cause, context.DeadlineExceeded)) {
+		return nil, s.failure
+	}
 	page := len(args) == 3 && args[0] == "get" && args[1] == "--raw" && strings.Contains(args[2], "?")
 	if s.exhausted || s.bytes >= 8<<20 || (page && s.pages >= 32) {
 		s.exhausted = true
@@ -31,7 +34,7 @@ func (s *discoveryReadSession) capture(ctx context.Context, a *App, args ...stri
 	raw, f, n := a.discoveryCaptureBudget(ctx, s.context, min(4<<20, (8<<20)-s.bytes), args...)
 	s.bytes += n
 	if f != nil {
-		if s.failure == nil {
+		if s.failure == nil || errors.Is(f.cause, context.Canceled) || errors.Is(f.cause, context.DeadlineExceeded) {
 			s.failure = f
 		}
 		if errors.Is(f.cause, errDiscoveryLimit) {

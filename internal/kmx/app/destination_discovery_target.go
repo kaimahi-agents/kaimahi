@@ -70,6 +70,9 @@ func targetReadReason(err error) string {
 		if f.reason == "resource_missing" || f.reason == "inventory_limit" || f.reason == "cancelled" {
 			return "read_unknown"
 		}
+		if f.reason == "authentication_required" {
+			return "unauthorized"
+		}
 		return string(f.reason)
 	}
 	return "read_unknown"
