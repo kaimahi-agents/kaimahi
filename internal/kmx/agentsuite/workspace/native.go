@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	suitecore "github.com/agent-primitives/suite/core"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/localartifact"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 	godigest "github.com/opencontainers/go-digest"
@@ -360,6 +361,13 @@ func nativeProfile(files map[string][]byte) (nativeRecord, RuntimeProfile, error
 // validateNative regenerates the supported graph and requires exact, full
 // allowlist coverage, so public-format extensions cannot silently disappear.
 func validateNative(files map[string][]byte) (string, error) {
+	if _, source := files[localartifact.SourceIndexPath]; source {
+		return validateSourceNative(files)
+	}
+	return validateNativeBase(files)
+}
+
+func validateNativeBase(files map[string][]byte) (string, error) {
 	if err := nativeBounds(files); err != nil {
 		return "", err
 	}
