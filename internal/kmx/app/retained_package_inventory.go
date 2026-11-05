@@ -50,7 +50,11 @@ func retainedInventory(ctx context.Context, path string, expected *fileaccess.Di
 				if err != nil {
 					return err
 				}
-				err = errors.Join(fileaccess.CheckPrivate(ctx, child, true), walk(child, depth+1), child.Close())
+				err = fileaccess.CheckPrivate(ctx, child, true)
+				if err == nil {
+					err = walk(child, depth+1)
+				}
+				err = errors.Join(err, child.Close())
 				if err != nil {
 					return err
 				}

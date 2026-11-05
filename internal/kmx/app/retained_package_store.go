@@ -87,7 +87,12 @@ func (s *retainedStore) Close() error {
 	if s == nil {
 		return nil
 	}
-	err := errors.Join(s.dir.Close(), s.base.Close(), s.state.Close())
+	var err error
+	for _, d := range []*fileaccess.Directory{s.dir, s.base, s.state} {
+		if d != nil {
+			err = errors.Join(err, d.Close())
+		}
+	}
 	s.dir = nil
 	s.base = nil
 	s.state = nil
@@ -316,7 +321,13 @@ func (e *retainedEntry) Close() error {
 	if e == nil {
 		return nil
 	}
-	err := errors.Join(e.lock.Close(), e.dir.Close())
+	var err error
+	if e.lock != nil {
+		err = e.lock.Close()
+	}
+	if e.dir != nil {
+		err = errors.Join(err, e.dir.Close())
+	}
 	e.lock = nil
 	e.dir = nil
 	return err
@@ -335,8 +346,8 @@ func (e *retainedEntry) check(ctx context.Context) error {
 	if err = errors.Join(retainedSame(ctx, e.dir, current), current.Close()); err != nil {
 		return err
 	}
-	var c retainedControl
-	if err = retainedRead(ctx, e.dir, "control.json", &c); err != nil || c != e.control {
+	c, controlErr := e.store.control(ctx, e.dir, e.handle)
+	if controlErr != nil || c != e.control {
 		return errRetainedUnavailable
 	}
 	lock, err := fileaccess.OpenPrivateFileAt(ctx, e.dir, "use.lock")
