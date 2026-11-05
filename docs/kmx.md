@@ -1845,7 +1845,9 @@ recorded monitoring, not agents/plane; unknown ownership is left alone. Read
   remain unchanged. Both `cluster up` and `cluster orka install` accept
   `-o jsonl` for safe provisioning events/results on Unix. Explicit `test FILE`
   also supports JSONL with checked provisional telemetry and final case summaries;
-  embedded remains default. Native Windows retains only the package-free fake
+  embedded remains default. Unix `cluster discover -o jsonl` reports only its
+  advertised context or namespace scope, without provisioning or target selection.
+  Native Windows retains only the package-free fake
   embedded boundary. See the
   [machine-output contract](machine-output.md).
 - On capable terminals, reports use rich headings and responsive tables. Wide
@@ -2024,3 +2026,30 @@ resubmits: connection or forward loss ends the wait rather than repeating the
 model call. A missing or whitespace-only result remains unavailable and is
 polled on that same Task; once a nonblank result arrives, output with no printable
 content is refused. Neither case resubmits the Task.
+
+## Progressive destination discovery
+
+`kmx cluster discover` lists only local kubeconfig context labels and the observed
+current marker. Supply `--context CTX` for namespace names and UIDs in that exact
+context; saved kmx selectors and `KUBE_CTX` never select it implicitly. Kubectl's
+inherited `KUBECONFIG` or default location is honored. Linux, macOS and WSL support
+this operation; native Windows refuses before reads.
+
+```bash
+kmx cluster discover
+kmx cluster discover --context dev -o jsonl
+```
+
+Version capabilities advertise only the implemented `contexts` and `namespaces`
+scopes. Target discovery (`--namespace`), Tool/Provider/runtime inventory,
+destination configuration and Send are not implemented here. No runtime/model/Tool
+invocation, Secret API read, TokenRequest, installation, preference change or KMX
+state write occurs. Existing kubectl credential helpers may run; stdin is detached,
+so no implicit credential prompt is supported. Command preferences are disabled
+on a copied child environment, never by editing the user's preference file.
+
+Complete empty lists exit 0. Denied, unknown, malformed or bounded/incomplete reads
+exit 1, retaining safe readable rows; a failed list never proves absence. Bounds:
+30s overall, 15s subprocess, 10s request, 32 pages, 128 rows, 8 MiB aggregate stdout,
+4 MiB stdout/4 KiB stderr per read. Reports fit 60 KiB before the existing 64 KiB
+machine envelope. See [machine output](machine-output.md#destination-discovery).

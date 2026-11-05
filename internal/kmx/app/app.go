@@ -5,6 +5,8 @@
 // never credentials, execution proof or provisioning.
 // Machine output shares payload-free envelopes and fixed error projections;
 // command adapters retain format selection, writing and exit semantics.
+// Progressive destination discovery projects local context labels or bounded,
+// context-pinned namespace inventories without config/state acquisition.
 // Provisioning JSONL observes existing phase boundaries with operation-local
 // cancellation and conservative mutation projections, never readiness proof.
 //
