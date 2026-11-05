@@ -90,7 +90,11 @@ func (o *toolObserver) get(path string, out any) bool {
 		o.problem("inventory_limit")
 		return false
 	}
-	if !statusDecode(raw, out) {
+	shape := ""
+	if path == "/apis/core.orka.ai/v1alpha1" {
+		shape = "api"
+	}
+	if !discoveryDecode(raw, out, shape) {
 		o.problem("malformed")
 		return false
 	}
@@ -114,24 +118,11 @@ func (o *toolObserver) namespace(name string) string {
 	return ns.Metadata.UID
 }
 func (o *toolObserver) runtime(namespace string) (suiteNativeRuntime, bool) {
-	var list struct {
-		APIVersion, Kind string
-		Metadata         struct{ Continue string }
-		Items            []orkaDeployment
-	}
-	if !o.get("/apis/apps/v1/namespaces/orka-system/deployments?limit=64", &list) {
+	items, ok := o.deployments()
+	if !ok {
 		return suiteNativeRuntime{}, false
 	}
-	if list.APIVersion != "apps/v1" || list.Kind != "DeploymentList" || list.Items == nil || list.Metadata.Continue != "" {
-		o.problem("malformed")
-		return suiteNativeRuntime{}, false
-	}
-	for i := range list.Items {
-		if list.Items[i].Kind == "" {
-			list.Items[i].Kind = "Deployment"
-		}
-	}
-	d, _, err := selectOrkaController(list.Items)
+	d, _, err := selectOrkaController(items)
 	if err == nil {
 		var r suiteNativeRuntime
 		r, err = suiteNativeControllerRuntime(d, namespace)
@@ -186,7 +177,7 @@ func toolRow(raw json.RawMessage, namespace string) (OrkaToolRow, bool) {
 		Spec   map[string]any
 		Status struct{ Available bool }
 	}
-	if !statusDecode(raw, &obj) || (obj.Kind != "" && obj.Kind != "Tool") || (obj.APIVersion != "" && obj.APIVersion != "core.orka.ai/v1alpha1") || !toolName("http", obj.Metadata.Name) || obj.Metadata.Namespace != namespace || !statusOpaque(obj.Metadata.UID) || !statusOpaque(obj.Metadata.ResourceVersion) || obj.Metadata.Generation < 1 || obj.Spec == nil {
+	if !discoveryDecode(raw, &obj, "") || (obj.Kind != "" && obj.Kind != "Tool") || (obj.APIVersion != "" && obj.APIVersion != "core.orka.ai/v1alpha1") || !toolName("http", obj.Metadata.Name) || obj.Metadata.Namespace != namespace || !statusOpaque(obj.Metadata.UID) || !statusOpaque(obj.Metadata.ResourceVersion) || obj.Metadata.Generation < 1 || obj.Spec == nil {
 		return row, false
 	}
 	row.Name, row.Namespace, row.UID, row.ResourceVersion, row.Generation = obj.Metadata.Name, namespace, obj.Metadata.UID, obj.Metadata.ResourceVersion, obj.Metadata.Generation
@@ -349,7 +340,7 @@ func (a *App) ReadOrkaTools(ctx context.Context, opt OrkaToolOptions) (OrkaToolI
 					o.problem(reason)
 				} else {
 					var identity struct{ APIVersion, Kind string }
-					identityOK := statusDecode(raw, &identity) && identity.APIVersion == "core.orka.ai/v1alpha1" && identity.Kind == "Tool"
+					identityOK := discoveryDecode(raw, &identity, "") && identity.APIVersion == "core.orka.ai/v1alpha1" && identity.Kind == "Tool"
 					var valid bool
 					row, valid = toolRow(raw, opt.Namespace)
 					if !identityOK || !valid || row.Name != r.Name {
@@ -375,13 +366,18 @@ func (a *App) ReadOrkaTools(ctx context.Context, opt OrkaToolOptions) (OrkaToolI
 			stable = false
 		}
 	}
-	if !stable {
-		o.problem("stale_input")
-	}
-	if !pinned || !stable {
+	if !stable || !pinned {
+		why := "unsupported_runtime"
+		if !stable {
+			why = o.reason
+			if why == "" || why == "unsupported_runtime" {
+				why = "stale_input"
+			}
+			o.reason = why
+		}
 		for i := range result.Tools {
 			if result.Tools[i].Availability != "disabled" {
-				result.Tools[i].Availability, result.Tools[i].Reason = "unknown", "unsupported_runtime"
+				result.Tools[i].Availability, result.Tools[i].Reason = "unknown", why
 			}
 		}
 	}

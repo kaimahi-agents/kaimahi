@@ -228,7 +228,7 @@ func (a *App) Discover(parent context.Context, opt DiscoveryOptions) (DiscoveryR
 	// Decoding and projection also consume the operation budget. Cancellation
 	// after a successful subprocess must still veto a complete observation.
 	if err := ctx.Err(); err != nil {
-		failure = &discoveryReadFailure{"read_unknown", err}
+		failure = &discoveryReadFailure{reason: "read_unknown", cause: err}
 		r.Complete = false
 		r.Checks = []DiscoveryCheck{{r.Scope, "unknown", "read_unknown"}}
 	}
@@ -236,7 +236,7 @@ func (a *App) Discover(parent context.Context, opt DiscoveryOptions) (DiscoveryR
 		// Only an exact, prerequisite-qualified read can claim missing. This PR
 		// never performs such reads; even API/namespace NotFound is unknown.
 		if failure.reason == "resource_missing" {
-			failure = &discoveryReadFailure{"read_unknown", failure.cause}
+			failure = &discoveryReadFailure{reason: "read_unknown", cause: failure.cause}
 		}
 		r.problem(failure.reason)
 	}
@@ -248,7 +248,7 @@ func (a *App) Discover(parent context.Context, opt DiscoveryOptions) (DiscoveryR
 	})
 	if !r.Complete {
 		if failure == nil {
-			failure = &discoveryReadFailure{discoveryReadReason(r.Checks[0].Reason), nil}
+			failure = &discoveryReadFailure{reason: discoveryReadReason(r.Checks[0].Reason)}
 		}
 		return r, failure
 	}
