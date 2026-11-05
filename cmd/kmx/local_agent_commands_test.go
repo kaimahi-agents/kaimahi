@@ -51,20 +51,21 @@ func TestLocalAgentStopUsesLocalLifecycleOnly(t *testing.T) {
 	}
 }
 
-func TestPersistentRunActivatesCheckedPairAndOrdinaryRunDoesNot(t *testing.T) {
+func TestResidentRunActivatesCheckedPairAndOnceDoesNot(t *testing.T) {
 	file := cliPreviewFile(t)
-	for _, persistent := range []bool{false, true} {
-		t.Run(map[bool]string{false: "ordinary", true: "persistent"}[persistent], func(t *testing.T) {
+	for _, once := range []bool{false, true} {
+		t.Run(map[bool]string{false: "resident", true: "once"}[once], func(t *testing.T) {
 			var out, diagnostics bytes.Buffer
 			deps, loads := testDependencies(&out, &diagnostics)
+			deps.residentAgents = true
 			calls := 0
 			var activated app.LocalAgentInstance
-			deps.activateLocalAgent = func(_ context.Context, executable string, pair *agentfile.Pair, provider, endpoint, model string) (app.LocalAgentInstance, bool, error) {
+			deps.activateLocalAgent = func(_ context.Context, executable string, pair *agentfile.Pair, provider, endpoint, model string, options app.LocalAgentActivationOptions) (app.LocalAgentInstance, bool, error) {
 				calls++
 				if pair.AgentPath != file || pair.SnapshotRevision == "" || provider != "fake" || model != "fake" {
 					t.Fatalf("pair=%+v provider=%q model=%q", pair, provider, model)
 				}
-				activated = app.LocalAgentInstance{ID: "md-123", Name: pair.Agent.Identity.ID, AgentRevision: pair.Agent.Revision, SnapshotRevision: pair.SnapshotRevision, TestsState: pair.Tests.State, TestsRevision: pair.Tests.Revision, CachedAgent: pair.AgentPath, Provider: provider, Model: model}
+				activated = app.LocalAgentInstance{ID: "md-123", InstanceID: "li-123", Name: pair.Agent.Identity.ID, AgentRevision: pair.Agent.Revision, SnapshotRevision: pair.SnapshotRevision, TestsState: pair.Tests.State, TestsRevision: pair.Tests.Revision, CachedAgent: pair.AgentPath, Provider: provider, Model: model}
 				return activated, true, nil
 			}
 			deps.readLocalAgent = func(string) (app.LocalAgentInstance, error) {
@@ -85,29 +86,30 @@ func TestPersistentRunActivatesCheckedPairAndOrdinaryRunDoesNot(t *testing.T) {
 				return run(pair)
 			}
 			deps.fileRunner = &cliPreviewFake{}
-			args := []string{"run", file, "Ada", "--model", "fake"}
-			if persistent {
-				args = append(args, "--persist")
+			args := []string{"run", file, "--model", "fake"}
+			if once {
+				args = append(args, "Ada", "--once")
 			}
 			if err := execute(args, deps); err != nil {
 				t.Fatal(err)
 			}
-			if calls != map[bool]int{false: 0, true: 1}[persistent] || *loads != 0 {
-				t.Fatalf("persistent=%v calls=%d loads=%d", persistent, calls, *loads)
+			if calls != map[bool]int{false: 1, true: 0}[once] || *loads != 0 {
+				t.Fatalf("once=%v calls=%d loads=%d", once, calls, *loads)
 			}
 		})
 	}
 }
 
-func TestPersistentRunWithoutInputStartsWithoutModelExecution(t *testing.T) {
+func TestResidentRunWithoutInputStartsWithoutSendingTurn(t *testing.T) {
 	file := cliPreviewFile(t)
 	var out, diagnostics bytes.Buffer
 	deps, _ := testDependencies(&out, &diagnostics)
-	deps.activateLocalAgent = func(_ context.Context, _ string, pair *agentfile.Pair, _, _, _ string) (app.LocalAgentInstance, bool, error) {
-		return app.LocalAgentInstance{ID: "md-123", Name: pair.Agent.Identity.ID, SnapshotRevision: pair.SnapshotRevision}, true, nil
+	deps.residentAgents = true
+	deps.activateLocalAgent = func(_ context.Context, _ string, pair *agentfile.Pair, _, _, _ string, _ app.LocalAgentActivationOptions) (app.LocalAgentInstance, bool, error) {
+		return app.LocalAgentInstance{ID: "md-123", InstanceID: "li-123", Name: pair.Agent.Identity.ID, SnapshotRevision: pair.SnapshotRevision}, true, nil
 	}
 	deps.fileRunner = &cliPreviewFake{cause: errors.New("must not execute")}
-	if err := execute([]string{"run", file, "--persist", "--model", "fake"}, deps); err != nil {
+	if err := execute([]string{"run", file, "--model", "fake"}, deps); err != nil {
 		t.Fatal(err)
 	}
 	if out.Len() != 0 || !strings.Contains(diagnostics.String(), "Started") {
@@ -117,9 +119,10 @@ func TestPersistentRunWithoutInputStartsWithoutModelExecution(t *testing.T) {
 
 func TestLocalLifecycleRejectsNativeWindowsBeforeEffects(t *testing.T) {
 	file := cliPreviewFile(t)
-	for _, args := range [][]string{{"run", file, "--persist", "--model", "fake"}, {"list"}, {"stop", "greeter"}} {
+	for _, args := range [][]string{{"run", file, "--model", "fake"}, {"list"}, {"stop", "greeter"}} {
 		var out, diagnostics bytes.Buffer
 		deps, loads := testDependencies(&out, &diagnostics)
+		deps.residentAgents = true
 		deps.goos = "windows"
 		if err := execute(args, deps); !errors.Is(err, errWindowsOperationUnsupported) || *loads != 0 || out.Len() != 0 {
 			t.Fatalf("args=%v err=%v loads=%d out=%q", args, err, *loads, out.String())
@@ -138,6 +141,57 @@ func TestFileTestCheckValidatesWithoutExecution(t *testing.T) {
 		}
 		if *loads != 0 || !strings.Contains(out.String(), "sha256:") {
 			t.Fatalf("output=%q loads=%d", out.String(), *loads)
+		}
+	}
+}
+
+func TestResidentRunLifecycleFlagValidation(t *testing.T) {
+	file := cliPreviewFile(t)
+	for _, test := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"run", file, "--upgrade", "--new"}, "conflicts"},
+		{[]string{"run", file, "--name", "other"}, "requires --new"},
+		{[]string{"run", file, "--yes"}, "requires --upgrade"},
+		{[]string{"run", file, "--upgrade", "--once"}, "conflicts"},
+	} {
+		var out, diagnostics bytes.Buffer
+		deps, _ := testDependencies(&out, &diagnostics)
+		deps.residentAgents = true
+		if err := execute(test.args, deps); err == nil || !strings.Contains(err.Error(), test.want) {
+			t.Fatalf("args=%v err=%v", test.args, err)
+		}
+	}
+}
+
+func TestResidentRunNonterminalDriftRefusesWithGuidance(t *testing.T) {
+	file := cliPreviewFile(t)
+	var out, diagnostics bytes.Buffer
+	deps, _ := testDependencies(&out, &diagnostics)
+	deps.residentAgents = true
+	deps.activateLocalAgent = func(_ context.Context, _ string, pair *agentfile.Pair, _, _, _ string, options app.LocalAgentActivationOptions) (app.LocalAgentInstance, bool, error) {
+		return app.LocalAgentInstance{}, false, &app.LocalAgentDriftError{Active: app.LocalAgentInstance{ID: app.LocalAgentID(pair.AgentPath), InstanceID: "li-123", Name: "greeter"}, RequestedSnapshot: pair.SnapshotRevision}
+	}
+	if err := execute([]string{"run", file, "--model", "fake"}, deps); err == nil || !strings.Contains(err.Error(), "--upgrade --yes") || !strings.Contains(err.Error(), "--new --name") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestResidentRunNonterminalNewRequiresName(t *testing.T) {
+	file := cliPreviewFile(t)
+	var out, diagnostics bytes.Buffer
+	deps, _ := testDependencies(&out, &diagnostics)
+	deps.residentAgents = true
+	if err := execute([]string{"run", file, "--model", "fake", "--new"}, deps); err == nil || !strings.Contains(err.Error(), "--new requires --name") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestResidentRunInteractiveDriftChoiceDefaultsToCancel(t *testing.T) {
+	for input, want := range map[string]string{"": "c", " ": "c", "c": "c", "U": "u", "n": "n", "other": "c"} {
+		if got := localAgentDriftChoice(input); got != want {
+			t.Fatalf("choice %q = %q, want %q", input, got, want)
 		}
 	}
 }

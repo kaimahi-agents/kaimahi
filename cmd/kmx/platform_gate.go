@@ -81,16 +81,13 @@ func windowsCommandAllowed(cmd *cobra.Command, args []string, state *commandStat
 	}
 	switch path {
 	case "run":
-		if persist := cmd.Flag("persist"); persist != nil && persist.Changed {
-			return false
-		}
 		// No explicit route, host input, live-Agent selector, or other operational
 		// flag may turn the default package-free fake preview into external work.
 		// Positional input has the same authority as the allowed inline prompt.
 		if len(args) == 2 {
 			args = args[:1]
 		}
-		return windowsFlagsAllowed(cmd, "case", "tests", "output", "prompt", "no-content", "verbose") && windowsPackageFreeFakePair(cmd, args, state)
+		return windowsFlagsAllowed(cmd, "case", "tests", "output", "prompt", "no-content", "verbose", "once") && windowsPackageFreeFakePair(cmd, args, state)
 	case "test":
 		return windowsFlagsAllowed(cmd, "case", "tests", "output", "no-content", "verbose", "check") && windowsPackageFreeFakePair(cmd, args, state)
 	case "test explain", "eval explain", "package test explain":

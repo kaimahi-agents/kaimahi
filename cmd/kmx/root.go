@@ -25,6 +25,7 @@ import (
 
 type dependencies struct {
 	fileRunner         agentpreview.Runner
+	residentAgents     bool
 	stdin              *os.File
 	stdout             io.Writer
 	stderr             io.Writer
@@ -36,7 +37,7 @@ type dependencies struct {
 	discoverModels     func(context.Context) []modelaccess.Report
 	newCopilot         func() copilotAccess
 	openGitHubSummary  func() (io.WriteCloser, error)
-	activateLocalAgent func(context.Context, string, *agentfile.Pair, string, string, string) (app.LocalAgentInstance, bool, error)
+	activateLocalAgent func(context.Context, string, *agentfile.Pair, string, string, string, app.LocalAgentActivationOptions) (app.LocalAgentInstance, bool, error)
 	readLocalAgents    func(bool) ([]app.LocalAgentInstance, error)
 	readLocalAgent     func(string) (app.LocalAgentInstance, error)
 	loadLocalAgentPair func(context.Context, app.LocalAgentInstance) (*agentfile.Pair, error)
@@ -49,13 +50,14 @@ type dependencies struct {
 
 func productionDependencies() dependencies {
 	return dependencies{
-		fileRunner: newFileMCPRunner(app.NewLocalFileRunner()),
-		stdin:      os.Stdin, stdout: os.Stdout, stderr: os.Stderr,
+		fileRunner:     newFileMCPRunner(app.NewLocalFileRunner()),
+		residentAgents: true,
+		stdin:          os.Stdin, stdout: os.Stdout, stderr: os.Stderr,
 		executable:         invocationExecutable(os.Args[0]),
 		goos:               runtime.GOOS,
 		goarch:             runtime.GOARCH,
 		openGitHubSummary:  func() (io.WriteCloser, error) { return openGitHubSummary() },
-		activateLocalAgent: app.ActivateLocalAgent, readLocalAgents: app.ReadLocalAgentInstances, readLocalAgent: app.ReadLocalAgentRecord, loadLocalAgentPair: app.LoadLocalAgentPair, withLocalAgentRun: app.WithLocalAgentRun, pingLocalAgent: app.PingLocalAgent, stopLocalAgent: app.StopLocalAgent,
+		activateLocalAgent: app.ActivateLocalAgentWithOptions, readLocalAgents: app.ReadLocalAgentInstances, readLocalAgent: app.ReadLocalAgentRecord, loadLocalAgentPair: app.LoadLocalAgentPair, withLocalAgentRun: app.WithLocalAgentRun, pingLocalAgent: app.PingLocalAgent, stopLocalAgent: app.StopLocalAgent,
 		loadConfig: config.LoadWithOverrides, newApp: app.New, buildInfo: debug.ReadBuildInfo,
 		newAgentKitBuilder: func(options agentkitbuilder.Options) kmxsuite.SandboxBuilder {
 			return agentkitbuilder.New(options)

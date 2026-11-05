@@ -1,7 +1,11 @@
 ### Added
 
-- Add explicit lifecycle registration for local Markdown agents with
-  `run FILE --persist`, local `list`, and `stop`. Run/Test continue through the
-  canonical invocation-owned file path. Lifecycle records store no credentials
-  or tool processes; owner-only
-  snapshot cache retains exact authored agent/test bytes for local Run.
+- Add resident local Markdown agents: `run FILE` starts or reuses a process,
+  local `chat` serves multiple sessions, `list` reports readiness/session state,
+  and `stop` ends the worker. `run FILE --once` retains one-shot preview, while
+  Test stays current-source based. Owner-only snapshot state stores no credentials;
+  each Copilot turn acquires fresh bounded access.
+- Add Helm-style snapshot lifecycle: immutable `li-...` worker generations can
+  run in parallel with unique names, while confirmed upgrade readies and promotes
+  a replacement before gracefully stopping old sessions. Stable `md-...` source
+  IDs remain unchanged and refuse ambiguous selection.

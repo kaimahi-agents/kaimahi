@@ -64,15 +64,24 @@ invalid review as clean.
   privacy and evidence caveats. Retain native/package safety disclosures and
   legacy Eval/Lift help/errors. Canonical flag-parse errors include a safely
   quoted executable/topic `--help` hint; runtime and argument errors do not.
-- Explicit `run FILE --persist` registers or reuses a local lifecycle instance
-  bound to the canonical agent/test snapshot; ordinary Run/Test remain
-  invocation-owned and use current checked source, including `kmx.yaml`
-  commandTools. Root `list` is local and config-free unless an explicit context
-  selects the existing Orka inventory. Hidden `stop` ends a local instance.
+- `run FILE` starts or reuses a resident local agent process bound to the
+  canonical snapshot and inference route; `--once` retains invocation-owned
+  preview. Resident agents serve multiple sessions through local Chat. Test stays
+  current-source based, including `kmx.yaml` commandTools. Root `list` is local
+  and config-free unless an explicit context selects existing Orka inventory.
+  Hidden `stop` ends the worker and all sessions.
   Owner-only snapshot cache retains the exact authored agent/tests bytes and has
   the same cleartext privacy boundary as preview journals. Lifecycle records
-  retain no credentials or tool processes. Native
+  retain no credentials or tool processes; each turn acquires fresh inference
+  access. Native
   Windows persistence/list/stop remain deferred.
+  Stable `md-...` identity follows the canonical source; each worker generation
+  has an explicit random `li-...` instance identity, unique active runtime name,
+  event socket and process-held lock. Exact snapshots reuse. Drift requires an
+  explicit or terminal-confirmed upgrade, which starts/readies/promotes before
+  canceling and closing old sessions (no drain guarantee), or `--new` for a parallel named generation. Stable IDs
+  refuse ambiguous routing; Chat/stop/session routing accepts runtime names and
+  instance IDs. Never silently replace an active generation.
 
 - Infrastructure and Orka commands live under `kmx cluster`; native workspace
   Test, publication, Deploy, destination inventory and artifact operations live

@@ -203,21 +203,27 @@ workspace evaluation (`kmx package test`).
 
 `kmx run FILE` and `kmx test FILE` select one canonical markdown agent file,
 without workspace discovery, cluster configuration or Docker. Ordinary Run/Test
-use no daemon. Explicit `run FILE --persist` registers a local lifecycle instance
-for the checked snapshot; prompted execution remains invocation-owned. `kmx list`
-shows active local instances, while an explicit global `--context` selects the
-existing Orka inventory; `kmx stop NAME_OR_ID` ends a local instance. The
+use no cluster or Docker. By default Run starts/reuses a resident local process;
+its stable source ID is `md-...` and each worker generation has a random
+`li-...` instance ID and unique runtime name. Exact snapshots reuse without a
+prompt. Drift requires `--upgrade` (and `--yes` for noninteractive confirmation)
+or `--new --name NAME`; upgrade readies and promotes the replacement before
+closing old sessions. `list` reports agent ID, instance ID, generation and name.
+`--once` performs invocation-owned preview. Local Chat creates/resumes sessions,
+`kmx list` shows process/readiness/session state, an explicit global `--context`
+selects Orka inventory, and `kmx stop NAME_OR_ID` ends a resident worker. The
 shared [tests-file rule](agent-file.md#tests-in-a-separate-file-reader-only) selects
 the companion by default; `--tests FILE` overrides it for one agent. Missing or
 empty tests do not pass Test, and bare `--tests`/`--case` require an agent FILE.
 `kmx test FILE --check` validates the selected pair and emits metadata without
 provider, model, tool, journal or history access. Test never targets an instance;
 it always evaluates current checked source.
-Without input, Run prints each saved example's answer in authored order;
-`kmx run FILE "input"` previews only that input. Test checks the file's saved
-examples in authored order and accepts no ad-hoc input. Legacy Run flags
-`--prompt TEXT` and `--prompt-file FILE|-` still run a separately attributed
-ad-hoc input followed by the saved examples.
+Without input, resident Run starts/reuses the agent and sends no turn;
+`kmx run FILE "input"` creates a resident session and sends that input. Test checks
+the file's saved examples in authored order and accepts no ad-hoc input. Use
+`kmx run FILE --once` for the previous one-shot behavior: no input runs saved
+examples, positional input runs only that input, and legacy `--prompt`/
+`--prompt-file` run their ad-hoc input plus saved examples.
 Input is bounded to 16 KiB. The five-minute preview execution deadline starts
 after prompt collection. Ctrl-C/SIGTERM retain their default behavior during
 intake, including when a pipe's writer stays open without EOF; no background
@@ -369,8 +375,8 @@ Strict workspace assertions and exported run profiles still require a model pin.
 
 Text `run FILE "input"` writes only the answer to stdout; the selected route/model
 and preview diagnostics go to stderr. Positional input runs only that input unless `--case ID` also explicitly selects
-a saved example to run. Without positional input, Run prints each saved example answer;
-legacy `--prompt`/`--prompt-file` still run their ad-hoc input plus saved examples.
+a saved example to run. These one-shot selection rules require `--once`; resident
+Run starts an agent without input or sends one positional/`--prompt` turn.
 CLI Run does not evaluate checks or select/authenticate a judge. Completed example rows say ANSWERED and retain an unknown verdict with
 `fullPass: false`, never a test pass. Per-example tool modes, journal finalization
 and completion attribution still apply. Use `kmx test FILE` to evaluate checks;
@@ -1931,7 +1937,8 @@ recorded monitoring, not agents/plane; unknown ownership is left alone. Read
   answer-only Task output bypass styling.
 - Chat is a session and has no one-shot form: a message after the Agent name
   is the first turn of that session, and there is no `--json` chat output.
-  `--json` and `--session` are refused before configuration loads. Use
+  `--json` is refused before configuration loads. Local resident Chat supports
+  `--session`; Orka Chat still has no resumable server-side session. Use
   `kmx run` for answer-only stdout.
 - Quickstart JSON has keys `ok`, `context`, `cluster`, `agent`, `manifest`,
   `question`, `answer`, `governed`, `tools`, `elapsed_seconds`, `next`. `tools` is

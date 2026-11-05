@@ -96,7 +96,29 @@ func (fakeTransport) RoundTrip(request *http.Request) (*http.Response, error) {
 			Function toolWireFunction `json:"function"`
 		} `json:"tools"`
 	}
-	if json.Unmarshal(raw, &chat) != nil || (len(chat.Messages) != 2 && len(chat.Messages) != 4) || chat.Messages[0].Role != "system" || chat.Messages[1].Role != "user" {
+	validRoles := func() bool {
+		if len(chat.Messages) < 2 || chat.Messages[0].Role != "system" {
+			return false
+		}
+		for i := 1; i < len(chat.Messages); {
+			if chat.Messages[i].Role != "user" {
+				return false
+			}
+			i++
+			if i >= len(chat.Messages) {
+				return true
+			}
+			if chat.Messages[i].Role != "assistant" {
+				return false
+			}
+			i++
+			if i < len(chat.Messages) && chat.Messages[i].Role == "tool" {
+				i++
+			}
+		}
+		return true
+	}
+	if json.Unmarshal(raw, &chat) != nil || !validRoles() {
 		return respond(http.StatusBadRequest, map[string]any{"error": map[string]string{"message": "fake: expected one system and one user message"}})
 	}
 	message := map[string]any{"role": "assistant"}
@@ -117,7 +139,8 @@ func (fakeTransport) RoundTrip(request *http.Request) (*http.Response, error) {
 			return respond(http.StatusNotFound, map[string]any{"error": map[string]string{"message": "fake: unknown model"}})
 		}
 		instructions := chat.Messages[0].Content
-		answer, toolCall := FakeAnswer(instructions, chat.Messages[1].Content)
+		input := chat.Messages[len(chat.Messages)-1].Content
+		answer, toolCall := FakeAnswer(instructions, input)
 		name := ""
 		if toolCall {
 			name = fakeTool.FindStringSubmatch(instructions)[1]
@@ -128,11 +151,12 @@ func (fakeTransport) RoundTrip(request *http.Request) (*http.Response, error) {
 				offered = true
 			}
 		}
-		if len(chat.Messages) == 4 || toolCall && !offered {
+		toolContinuation := len(chat.Messages) > 2 && chat.Messages[len(chat.Messages)-1].Role != "user"
+		if toolContinuation || toolCall && !offered {
 			toolCall = false
 			answer = "fake model: tool completed"
 			if reply := fakeReply.FindStringIndex(instructions); reply != nil {
-				answer, _ = FakeAnswer(instructions[reply[0]:], chat.Messages[1].Content)
+				answer, _ = FakeAnswer(instructions[reply[0]:], input)
 			}
 		}
 		message["content"] = answer
