@@ -119,18 +119,27 @@ func TestRetainedReleaseKeepsObservedVisibility(t *testing.T) {
 }
 
 func TestRetainedListWithholdsDamagedMetadata(t *testing.T) {
-	_, p := retainedPrepared(t)
+	opt, p := retainedPrepared(t)
 	s := retainedStoreForTest(t)
+	healthy, err := (&App{}).PrepareRetainedFile(t.Context(), opt)
+	if err != nil {
+		t.Fatal(err)
+	}
 	root := filepath.Join(s.path, retainedComponent(p.Handle))
 	if err := os.WriteFile(filepath.Join(root, "control.json"), []byte("corrupt private source canary"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	page, err := s.List(t.Context(), "")
-	if err != nil || page.Count != 1 || len(page.Packages) != 1 {
+	if err != nil || page.Count != 2 || len(page.Packages) != 2 {
 		t.Fatal("damaged entry broke bounded list", err)
 	}
-	entry := page.Packages[0]
-	if entry.Handle != p.Handle || entry.Available || entry.Digest != "" || entry.State != "incomplete" {
-		t.Fatal("untrusted metadata escaped", entry)
+	for _, entry := range page.Packages {
+		if entry.Handle == p.Handle {
+			if entry != (RetainedEntrySummary{Handle: p.Handle, State: "incomplete"}) {
+				t.Fatal("untrusted metadata escaped", entry)
+			}
+		} else if entry.Handle != healthy.Handle || !entry.Available || entry.State != "ready" || entry.Digest != healthy.Digest {
+			t.Fatal("damaged entry poisoned healthy neighbor", entry)
+		}
 	}
 }
