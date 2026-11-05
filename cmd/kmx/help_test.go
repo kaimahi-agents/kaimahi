@@ -21,7 +21,7 @@ func helpEntries(output string) []string {
 }
 
 func TestShortHelpRootDiscovery(t *testing.T) {
-	want := []string{"create", "run", "test", "chat", "model", "package", "cluster", "version"}
+	want := []string{"create", "run", "test", "list", "chat", "model", "package", "cluster", "version"}
 	sorting := cobra.EnableCommandSorting
 	for _, args := range [][]string{nil, {"--help"}, {"help"}} {
 		var out, diag bytes.Buffer

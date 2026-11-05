@@ -22,7 +22,7 @@ func configureCommandHelp(root *cobra.Command, state *commandState) {
 		}
 		out := cmd.OutOrStdout()
 		fmt.Fprintf(out, "%s\n\nUsage:\n  %s [command]\n\nAvailable Commands:\n", cmd.Short, cmd.Name())
-		for _, name := range []string{"create", "run", "test", "chat", "model", "package", "cluster", "version"} {
+		for _, name := range []string{"create", "run", "test", "list", "chat", "model", "package", "cluster", "version"} {
 			child, _, _ := cmd.Find([]string{name})
 			fmt.Fprintf(out, "  %-10s %s\n", child.Name(), child.Short)
 		}
@@ -30,7 +30,7 @@ func configureCommandHelp(root *cobra.Command, state *commandState) {
 	})
 	for _, child := range root.Commands() {
 		switch child.Name() {
-		case "mcp", "completion":
+		case "mcp", "completion", "stop":
 			child.Hidden = true
 		case "create", "run", "test", "chat", "model":
 			child.SetHelpFunc(func(cmd *cobra.Command, args []string) {
@@ -85,8 +85,12 @@ func shortCommandHelp(cmd *cobra.Command, _ []string) {
 		liveFlags := pflag.NewFlagSet("live", pflag.ContinueOnError)
 		local.VisitAll(func(flag *pflag.Flag) {
 			switch flag.Name {
+			case "help":
+				// Root-level help remains available; omit its redundant flag row.
 			case "prompt", "prompt-file":
 				sharedFlags.AddFlag(flag)
+			case "persist":
+				fileFlags.AddFlag(flag)
 			case "agent", "namespace", "wait", "result-port":
 				liveFlags.AddFlag(flag)
 			default:

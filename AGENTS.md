@@ -51,7 +51,7 @@ invalid review as clean.
   Explicit `test FILE -o jsonl` uses checked App telemetry and final summaries;
   preserve legacy text/JSON, post-intake signals and all final acceptance vetoes.
   Native Windows remains embedded/model=fake only. See `docs/machine-output.md`.
-- Root help advertises exactly `create`, `run`, `test`, `chat`, `model`,
+- Root help advertises exactly `create`, `run`, `test`, `list`, `chat`, `model`,
   `package`, `cluster`, `version`, in that order. MCP, completion and Help
   remain callable but are not root help entries. Keep root ordering local;
   do not change Cobra's package-wide sorting switch.
@@ -64,6 +64,15 @@ invalid review as clean.
   privacy and evidence caveats. Retain native/package safety disclosures and
   legacy Eval/Lift help/errors. Canonical flag-parse errors include a safely
   quoted executable/topic `--help` hint; runtime and argument errors do not.
+- Explicit `run FILE --persist` registers or reuses a local lifecycle instance
+  bound to the canonical agent/test snapshot; ordinary Run/Test remain
+  invocation-owned and use current checked source, including `kmx.yaml`
+  commandTools. Root `list` is local and config-free unless an explicit context
+  selects the existing Orka inventory. Hidden `stop` ends a local instance.
+  Owner-only snapshot cache retains the exact authored agent/tests bytes and has
+  the same cleartext privacy boundary as preview journals. Lifecycle records
+  retain no credentials or tool processes. Native
+  Windows persistence/list/stop remain deferred.
 
 - Infrastructure and Orka commands live under `kmx cluster`; native workspace
   Test, publication, Deploy, destination inventory and artifact operations live

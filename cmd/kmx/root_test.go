@@ -406,8 +406,8 @@ func TestGuardedWindowsSupportedCommandFlagsAreExhaustivelyAllowlisted(t *testin
 		allFlags   []string
 		allowFlags []string
 	}{
-		{[]string{"run"}, []string{file}, []string{"agent", "case", "container-engine", "context", "mcp-server", "model", "namespace", "no-content", "no-mcp-servers", "output", "prompt", "prompt-file", "provider", "provider-url", "result-port", "tests", "tool-bindings", "verbose", "wait"}, []string{"case", "no-content", "output", "prompt", "tests", "verbose"}},
-		{[]string{"test"}, []string{file}, []string{"case", "container-engine", "context", "github-summary", "host", "mcp-server", "model", "no-content", "no-mcp-servers", "output", "provider", "provider-url", "runner", "tests", "tool-bindings", "verbose"}, []string{"case", "no-content", "output", "tests", "verbose"}},
+		{[]string{"run"}, []string{file}, []string{"agent", "case", "container-engine", "context", "mcp-server", "model", "namespace", "no-content", "no-mcp-servers", "output", "persist", "prompt", "prompt-file", "provider", "provider-url", "result-port", "tests", "tool-bindings", "verbose", "wait"}, []string{"case", "no-content", "output", "prompt", "tests", "verbose"}},
+		{[]string{"test"}, []string{file}, []string{"case", "check", "container-engine", "context", "github-summary", "host", "mcp-server", "model", "no-content", "no-mcp-servers", "output", "provider", "provider-url", "runner", "tests", "tool-bindings", "verbose"}, []string{"case", "check", "no-content", "output", "tests", "verbose"}},
 		{[]string{"test", "explain"}, nil, []string{"clear", "container-engine", "context", "file", "show-content", "tests", "workspace"}, []string{"clear", "file", "show-content", "tests"}},
 		{[]string{"eval", "explain"}, nil, []string{"clear", "container-engine", "context", "file", "show-content", "tests", "workspace"}, []string{"clear", "file", "show-content", "tests"}},
 	}
@@ -826,7 +826,7 @@ func commandPaths(root *cobra.Command) []string {
 // Adding or removing a subcommand fails this test until the list follows.
 func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 	want := []string{
-		"test", "test explain", "create", "chat", "run", "eval", "eval cleanup", "eval diff", "eval explain", "eval export", "eval from-sessions", "eval verify", "lift", "completion", "mcp",
+		"test", "test explain", "create", "chat", "run", "list", "stop", "eval", "eval cleanup", "eval diff", "eval explain", "eval export", "eval from-sessions", "eval verify", "lift", "completion", "mcp",
 		"model", "model list", "model login", "model logout", "version",
 		"cluster", "cluster discover", "cluster up", "cluster down", "cluster status", "cluster aks", "cluster aks up", "cluster aks down", "cluster context", "cluster context show", "cluster context use",
 		"cluster orka", "cluster orka model", "cluster orka model connect", "cluster orka model disconnect", "cluster orka install", "cluster orka status", "cluster orka tools", "cluster orka show", "cluster orka list", "cluster quickstart", "cluster quickstart-wizard", "cluster console", "cluster targets", "cluster task", "cluster task result",

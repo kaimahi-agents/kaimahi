@@ -154,7 +154,7 @@ cluster, so a silent switch can target the wrong one.
 
 ## Commands
 
-Root help leads with `create`, `run`, `test`, `chat`, `model`, then `package`,
+Root help leads with `create`, `run`, `test`, `list`, `chat`, `model`, then `package`,
 `cluster` and `version`. `kmx mcp`, `kmx completion` and `kmx help` still work;
 they are not root help entries. Command help uses concise descriptions and
 examples; file Run/Test/Explain link to the single
@@ -201,10 +201,17 @@ Failures exit 1; unknown or incomplete sets exit 2. It never falls back to nativ
 workspace evaluation (`kmx package test`).
 
 `kmx run FILE` and `kmx test FILE` select one canonical markdown agent file,
-without workspace discovery, cluster configuration, Docker or a daemon. The
+without workspace discovery, cluster configuration or Docker. Ordinary Run/Test
+use no daemon. Explicit `run FILE --persist` registers a local lifecycle instance
+for the checked snapshot; prompted execution remains invocation-owned. `kmx list`
+shows active local instances, while an explicit global `--context` selects the
+existing Orka inventory; `kmx stop NAME_OR_ID` ends a local instance. The
 shared [tests-file rule](agent-file.md#tests-in-a-separate-file-reader-only) selects
 the companion by default; `--tests FILE` overrides it for one agent. Missing or
 empty tests do not pass Test, and bare `--tests`/`--case` require an agent FILE.
+`kmx test FILE --check` validates the selected pair and emits metadata without
+provider, model, tool, journal or history access. Test never targets an instance;
+it always evaluates current checked source.
 Without input, Run prints each saved example's answer in authored order;
 `kmx run FILE "input"` previews only that input. Test checks the file's saved
 examples in authored order and accepts no ad-hoc input. Legacy Run flags
