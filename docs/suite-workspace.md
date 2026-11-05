@@ -47,8 +47,13 @@ Orka input from a trusted source adapter. It shares the workspace resolver and
 OCI packager without generating an editable YAML workspace. The adapter owns
 parsing and checked source freshness; a caller-built projection alone proves
 neither. Soul, Skills, tools, policy and other runtimes remain unsupported at
-this mapped boundary. No file Prepare command, retained handle, qualification
-store or handle-mode Test/Push capability is provided.
+this mapped boundary. Internal retained native-package storage checks the expected
+source revision, keeps compiled bytes in private owned entries and records
+completion only after verification and flushing. Interrupted ownership publication
+uses recoverable named stages. Native Windows retained packages are unsupported.
+No file Prepare command, qualification store or handle-mode Test/Push capability
+is provided; retained storage grants no passing-test evidence or publication
+capability.
 
 The closed `orka-source/v1` package profile retains exact non-confidential
 originals under `metadata/kmx/source/`: `index.json`, `<member>.agent.md` and
