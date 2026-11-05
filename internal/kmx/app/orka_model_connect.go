@@ -85,6 +85,10 @@ func modelConnectionResult(r *modelRecord, state string) OrkaModelResult {
 		return OrkaModelResult{}
 	}
 	c := r.state.Connection
+	if c.ID == "" {
+		// Anchor visibility can precede a failed checkpoint-zero publication.
+		c = r.initial.Connection
+	}
 	c.State = state
 	return OrkaModelResult{Connection: &c, RemoteState: "unknown"}
 }
@@ -106,10 +110,10 @@ func (a *App) modelAbsent(ctx context.Context, r modelOwnedResource) error {
 	}
 	raw, err := a.orkaCapture(ctx, nil, "-n", OrkaNamespace, "get", resource, r.Name, "--ignore-not-found=true", "-o", "jsonpath={.metadata.uid}")
 	if err != nil {
-		return err
+		return modelFailure("dependency_unavailable", err)
 	}
 	if len(raw) != 0 {
-		return fmt.Errorf("model resource name is occupied")
+		return modelFailure("permission_denied", fmt.Errorf("model resource name is occupied"))
 	}
 	return nil
 }
@@ -122,16 +126,16 @@ func (a *App) modelPodAdmission(ctx context.Context, dep map[string]any) error {
 	raw, _ := json.Marshal(pod)
 	reply, err := a.orkaCapture(ctx, raw, "-n", OrkaNamespace, "create", "--dry-run=server", "-f", "-", "-o", "json")
 	if err != nil {
-		return err
+		return modelFailure("dependency_unavailable", err)
 	}
 	var admitted map[string]any
 	if modelJSON(reply, &admitted) != nil || admitted["kind"] != "Pod" || admitted["apiVersion"] != "v1" || modelMap(admitted["metadata"])["namespace"] != OrkaNamespace {
-		return fmt.Errorf("model Pod admission unavailable")
+		return modelFailure("dependency_unavailable", fmt.Errorf("model Pod admission unavailable"))
 	}
 	var normalized map[string]any
 	modelJSON(raw, &normalized)
 	if !modelSpecMatches(normalized["spec"], admitted["spec"], ".template.spec", "Deployment") {
-		return fmt.Errorf("model Pod admission changed execution")
+		return modelFailure("permission_denied", fmt.Errorf("model Pod admission changed execution"))
 	}
 	return nil
 }
@@ -187,7 +191,7 @@ func (a *App) ConnectOrkaModel(opt OrkaModelConnectOptions) (result OrkaModelRes
 		return result, modelFailure("unsupported", nil)
 	}
 	if err = a.checkModelNodeMounts(); err != nil {
-		return result, err
+		return result, modelFailure("dependency_unavailable", err)
 	}
 	target, err := a.modelTarget(ctx, true)
 	if err != nil {

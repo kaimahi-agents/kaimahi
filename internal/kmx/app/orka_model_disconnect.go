@@ -64,13 +64,18 @@ func (a *App) DisconnectOrkaModel(opt OrkaModelDisconnectOptions) (result OrkaMo
 	defer record.close()
 	stage := "preflight"
 	gatewayStopped := false
+	matched := false
 	defer func() {
 		if err != nil {
 			if ctx.Err() != nil {
 				err = modelFailure("cancelled", ctx.Err())
 			}
 			a.modelProgress(stage, "failed", err)
-			result = modelConnectionResult(record, "unknown")
+			if matched {
+				result = modelConnectionResult(record, "unknown")
+			} else {
+				result = OrkaModelResult{RemoteState: "unknown"}
+			}
 			if gatewayStopped {
 				result.RemoteState = "stopped"
 			}
@@ -81,6 +86,7 @@ func (a *App) DisconnectOrkaModel(opt OrkaModelDisconnectOptions) (result OrkaMo
 	if state.Connection.ID != opt.Connection || state.Connection.Provider != opt.Provider || state.ClusterUID != target.cluster || state.NamespaceUID != target.namespace {
 		return result, fmt.Errorf("retained model connection mismatch")
 	}
+	matched = true
 	if state.Complete {
 		a.modelProgress("preflight", "done", nil)
 		stage = "finalize"

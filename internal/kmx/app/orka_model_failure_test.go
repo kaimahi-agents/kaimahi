@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -55,6 +56,11 @@ func TestOrkaModelPreflightFailures(t *testing.T) {
 				return capture(ctx, cmd)
 			}
 			result, err := a.ConnectOrkaModel(modelConnectOptions())
+			expected := map[string]string{"credential": "credential_unavailable", "admission": "dependency_unavailable", "admitted-spec": "permission_denied", "occupied": "permission_denied"}[damage]
+			var safe *OrkaModelError
+			if !errors.As(err, &safe) || safe.Code() != expected {
+				t.Errorf("preflight classification %s: %v", damage, err)
+			}
 			if err == nil || result.Connection != nil || creates != 0 || strings.Contains(err.Error(), "private") {
 				t.Fatalf("unsafe preflight %s: %+v %v creates%d", damage, result, err, creates)
 			}
@@ -248,6 +254,29 @@ func TestOrkaModelAmbiguousDisconnect(t *testing.T) {
 				t.Fatalf("recovery failed: %+v %v depDELETEs%d", r, err, depDeletes)
 			}
 		})
+	}
+}
+
+func TestOrkaModelDisconnectIdentityMismatch(t *testing.T) {
+	a, objects, calls := modelConfigureFixture(t)
+	c, err := a.ConnectOrkaModel(modelConnectOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	opt := modelDisconnectOptions(c.Connection.ID)
+	opt.Connection = "55555555-5555-4555-8555-555555555555"
+	before := len(*calls)
+	r, err := a.DisconnectOrkaModel(opt)
+	if err == nil || r.Connection != nil {
+		t.Fatalf("mismatched request attributed another connection: %+v %v", r, err)
+	}
+	if len(objects) != 4 {
+		t.Fatal("mismatch changed owned roots")
+	}
+	for _, call := range (*calls)[before:] {
+		if strings.Contains(call, " create ") || strings.Contains(call, " delete ") {
+			t.Fatal("mismatch mutated", call)
+		}
 	}
 }
 
