@@ -3,7 +3,9 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -33,6 +35,35 @@ func compileFixture(t *testing.T, input MappedInput) *CompiledPackage {
 		}
 	})
 	return p
+}
+
+func TestCompiledPackageEmptyUseRefused(t *testing.T) {
+	for name, p := range map[string]*CompiledPackage{"nil": nil, "zero": {}} {
+		t.Run(name, func(t *testing.T) {
+			destination := filepath.Join(t.TempDir(), "unused")
+			if p.Descriptor().Digest != "" || p.Fingerprint() != "" {
+				t.Fatal("empty object exposed metadata")
+			}
+			if _, err := p.Load(t.Context()); !errors.Is(err, errCompiledUnavailable) {
+				t.Fatalf("Load: %v", err)
+			}
+			if _, err := p.Sources(t.Context()); !errors.Is(err, errCompiledUnavailable) {
+				t.Fatalf("Sources: %v", err)
+			}
+			if _, err := p.CopyToLayout(t.Context(), destination); !errors.Is(err, errCompiledUnavailable) {
+				t.Fatalf("Copy: %v", err)
+			}
+			if _, err := os.Lstat(destination); !errors.Is(err, fs.ErrNotExist) {
+				t.Fatalf("empty use created destination: %v", err)
+			}
+			if err := p.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := p.Close(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
 }
 
 func TestCompileMappedDeterministicAndExact(t *testing.T) {
