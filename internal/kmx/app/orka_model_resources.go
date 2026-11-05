@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"strings"
 )
 
 const modelOperationAnnotation = "kaimahi.dev/orka-model-operation"
@@ -171,7 +172,19 @@ func modelDesired(doc map[string]any) (modelOwnedResource, error) {
 	if !ok || doc["apiVersion"] != api.version || meta["namespace"] != OrkaNamespace || !modelResourceName(r.Name) || !modelUUID(r.Marker) || r.Spec == nil || modelStateHasCredentialShape(r.Spec) {
 		return r, fmt.Errorf("invalid desired model resource")
 	}
+	if kind == "Agent" || kind == "Task" {
+		r.Purpose = "proof"
+	}
 	if kind == "Secret" {
+		// The unchanged document is sent, so reject write fields omitted by the
+		// retained projection: stringData would override even a checked data value.
+		for key := range doc {
+			switch key {
+			case "apiVersion", "kind", "metadata", "type", "data", "immutable":
+			default:
+				return r, fmt.Errorf("model Secret contains an unsupported field")
+			}
+		}
 		data := modelMap(r.Spec["data"])
 		if r.Spec["type"] != "Opaque" || len(data) != 1 || data["api-key"] != "bm90LXVzZWQtYnktdGhpcy1lbmRwb2ludA==" {
 			return r, fmt.Errorf("model Secret must be the fixed noncredential placeholder")
@@ -224,7 +237,11 @@ func (a *App) readModelObject(ctx context.Context, ns string, want modelOwnedRes
 	}
 	// A successful explicit presence query distinguishes absence from read failure.
 	api, _ := modelAPIFor(want.Kind)
-	raw, err := a.orkaCapture(ctx, nil, "-n", ns, "get", api.plural, want.Name, "--ignore-not-found=true", "-o", "jsonpath={.metadata.uid}")
+	resource := api.plural
+	if group, _, grouped := strings.Cut(api.version, "/"); grouped {
+		resource += "." + group
+	}
+	raw, err := a.orkaCapture(ctx, nil, "-n", ns, "get", resource, want.Name, "--ignore-not-found=true", "-o", "jsonpath={.metadata.uid}")
 	if err != nil {
 		return want, false, err
 	}

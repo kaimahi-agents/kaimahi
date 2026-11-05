@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -33,6 +34,49 @@ func TestOrkaModelReadRequiresAcknowledgment(t *testing.T) {
 	}
 }
 
+func TestOrkaModelSecretRejectsWriteOverrides(t *testing.T) {
+	for _, field := range []string{"stringData", "unexpected"} {
+		a := New(&config.Config{})
+		calls := 0
+		a.captureCommand = func(context.Context, *exec.Cmd) error { calls++; return fmt.Errorf("must not send Secret override") }
+		doc := map[string]any{"apiVersion": "v1", "kind": "Secret", "metadata": map[string]any{"name": "model", "namespace": OrkaNamespace, "annotations": map[string]any{modelOperationAnnotation: "11111111-1111-4111-8111-111111111111"}}, "type": "Opaque", "data": map[string]any{"api-key": "bm90LXVzZWQtYnktdGhpcy1lbmRwb2ludA=="}, field: map[string]any{"api-key": "synthetic-override"}}
+		if _, err := a.createModelObjectObserved(context.Background(), OrkaNamespace, doc); err == nil || calls != 0 {
+			t.Fatalf("field%s sends%d error%v", field, calls, err)
+		}
+	}
+}
+
+func TestOrkaModelReadQualifiedResource(t *testing.T) {
+	for kind, qualified := range map[string]string{"Deployment": "deployments.apps", "Provider": "providers.core.orka.ai", "Agent": "agents.core.orka.ai", "Task": "tasks.core.orka.ai"} {
+		t.Run(kind, func(t *testing.T) {
+			api, _ := modelAPIFor(kind)
+			purpose := "connection"
+			if kind == "Agent" || kind == "Task" {
+				purpose = "proof"
+			}
+			want := modelOwnedResource{APIVersion: api.version, Kind: kind, Name: "model", UID: "owned-uid", ResourceVersion: "7", Marker: "11111111-1111-4111-8111-111111111111", Purpose: purpose, Generation: 1, Spec: map[string]any{}}
+			a := New(&config.Config{})
+			calls := 0
+			a.captureCommand = func(_ context.Context, cmd *exec.Cmd) error {
+				calls++
+				if calls == 1 {
+					for _, arg := range cmd.Args {
+						if arg == qualified {
+							fmt.Fprint(cmd.Stdout, "owned-uid")
+							return nil
+						}
+					}
+					return nil
+				}
+				return json.NewEncoder(cmd.Stdout).Encode(map[string]any{"apiVersion": api.version, "kind": kind, "metadata": map[string]any{"name": "model", "namespace": OrkaNamespace, "uid": "owned-uid", "resourceVersion": "8", "generation": 1, "annotations": map[string]any{modelOperationAnnotation: want.Marker}}, "spec": map[string]any{}})
+			}
+			if _, exists, err := a.readModelObject(context.Background(), OrkaNamespace, want); err != nil || !exists || calls != 2 {
+				t.Fatalf("qualified%s calls%d exists%v err%v", qualified, calls, exists, err)
+			}
+		})
+	}
+}
+
 func TestOrkaModelRead(t *testing.T) {
 	expected := modelOwnedResource{APIVersion: "v1", Kind: "Service", Name: "model", UID: "owned-uid", ResourceVersion: "7", Marker: "11111111-1111-4111-8111-111111111111", Purpose: "connection", Spec: map[string]any{}}
 	for _, absent := range []bool{false, true} {
@@ -62,9 +106,9 @@ func TestOrkaModelRead(t *testing.T) {
 }
 
 func TestOrkaModelCapture(t *testing.T) {
-	for _, kind := range []string{"Service", "Secret", "Deployment", "Provider"} {
+	for _, kind := range []string{"Service", "Secret", "Deployment", "Provider", "Agent", "Task"} {
 		t.Run(kind, func(t *testing.T) {
-			desired := map[string]any{"apiVersion": map[string]string{"Service": "v1", "Secret": "v1", "Deployment": "apps/v1", "Provider": "core.orka.ai/v1alpha1"}[kind], "kind": kind, "metadata": map[string]any{"name": "model", "namespace": OrkaNamespace, "annotations": map[string]any{modelOperationAnnotation: "11111111-1111-4111-8111-111111111111"}}, "spec": map[string]any{}}
+			desired := map[string]any{"apiVersion": map[string]string{"Service": "v1", "Secret": "v1", "Deployment": "apps/v1", "Provider": "core.orka.ai/v1alpha1", "Agent": "core.orka.ai/v1alpha1", "Task": "core.orka.ai/v1alpha1"}[kind], "kind": kind, "metadata": map[string]any{"name": "model", "namespace": OrkaNamespace, "annotations": map[string]any{modelOperationAnnotation: "11111111-1111-4111-8111-111111111111"}}, "spec": map[string]any{}}
 			if kind == "Secret" {
 				delete(desired, "spec")
 				desired["type"] = "Opaque"
@@ -84,7 +128,7 @@ func TestOrkaModelCapture(t *testing.T) {
 						meta := obj["metadata"].(map[string]any)
 						meta["uid"] = "owned-uid"
 						meta["resourceVersion"] = "7"
-						if kind == "Deployment" || kind == "Provider" {
+						if kind == "Deployment" || kind == "Provider" || kind == "Agent" || kind == "Task" {
 							meta["generation"] = float64(1)
 						}
 						switch damage {
@@ -120,6 +164,27 @@ func TestOrkaModelCapture(t *testing.T) {
 						}
 						if got.UID != "owned-uid" {
 							t.Fatal(got)
+						}
+						if err := validateModelResource(got, true); err != nil {
+							t.Fatal(err)
+						}
+						if kind == "Agent" || kind == "Task" {
+							cp := modelTestCheckpoint()
+							cp.Resources = []modelOwnedResource{got}
+							if err := validateModelCheckpoint(cp); err != nil {
+								t.Fatal(err)
+							}
+							raw, err := encodeModelState(cp)
+							if err != nil {
+								t.Fatal(err)
+							}
+							var reopened modelCheckpoint
+							if err := decodeModelState(bytes.NewReader(raw), &reopened); err != nil {
+								t.Fatal(err)
+							}
+							if err := validateModelCheckpoint(reopened); err != nil {
+								t.Fatal(err)
+							}
 						}
 					} else if err == nil {
 						t.Fatalf("accepted changed %s", damage)
