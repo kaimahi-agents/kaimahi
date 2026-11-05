@@ -186,6 +186,13 @@ if name == 'helm' and 'get' in args:
         self.assertIn("DriveType.ToString() -cne 'Fixed'", windows_body)
         self.assertIn('Get-Partition -DriveLetter', windows_body)
         self.assertIn('windows-cli-day-zero.ps1', windows_body)
+        self.assertIn('windows-orka-inspection.ps1', windows_body)
+        self.assertIn('kubectl.exe.sha256', windows_body)
+        self.assertIn('ProtocolFixtureMode:$false', windows_body)
+        remote_step = next(step for step in windows['steps']
+                           if 'windows-orka-inspection.ps1' in step.get('run', ''))
+        self.assertEqual(remote_step['env']['KUBECTL_SHA256'],
+                         '4721b614a67bb4932a0369e61f4a323d8c6ca00943d3a2ff14837c124da06f0e')
         self.assertIn("$ErrorActionPreference = 'Stop'", windows_body)
         helper_step = next(step for step in windows['steps']
                            if 'windows-cli-day-zero.ps1' in step.get('run', ''))

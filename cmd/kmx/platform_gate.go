@@ -4,11 +4,15 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
 var errWindowsOperationUnsupported = errors.New("this operation is not available in the guarded native Windows day-zero path")
@@ -61,6 +65,17 @@ func windowsCommandAllowed(cmd *cobra.Command, args []string, state *commandStat
 	case "version", "completion", "help":
 		return true
 	}
+	if state.deps.goarch == "amd64" {
+		switch path {
+		case "cluster orka list":
+			return len(args) == 0 && windowsRemoteInspectionSelection(cmd, state, "table", "json", "yaml") &&
+				windowsFlagsAllowed(cmd, "namespace", "output")
+		case "cluster orka show":
+			return len(args) == 1 && scaffold.ValidateObjectName(args[0]) == nil &&
+				windowsRemoteInspectionSelection(cmd, state, "table", "json") &&
+				windowsFlagsAllowed(cmd, "namespace", "output", "tasks")
+		}
+	}
 	if state.contextFlag != "" {
 		return false
 	}
@@ -79,6 +94,30 @@ func windowsCommandAllowed(cmd *cobra.Command, args []string, state *commandStat
 		file := cmd.Flag("file")
 		return len(args) <= 1 && file != nil && file.Changed && strings.TrimSpace(file.Value.String()) != "" &&
 			windowsFlagsAllowed(cmd, "clear", "file", "tests", "show-content")
+	}
+	return false
+}
+
+func windowsRemoteInspectionSelection(cmd *cobra.Command, state *commandState, formats ...string) bool {
+	contextName := strings.TrimSpace(state.contextFlag)
+	if contextName == "" || len(contextName) > 256 || !utf8.ValidString(contextName) ||
+		strings.IndexFunc(contextName, func(r rune) bool { return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) }) >= 0 ||
+		secretshapes.Match(contextName) != nil {
+		return false
+	}
+	namespace := cmd.Flag("namespace")
+	if namespace == nil || !namespace.Changed || scaffold.ValidateNamespace(strings.TrimSpace(namespace.Value.String())) != nil {
+		return false
+	}
+	output := cmd.Flag("output")
+	if output == nil {
+		return false
+	}
+	selected := strings.ToLower(strings.TrimSpace(output.Value.String()))
+	for _, format := range formats {
+		if selected == format {
+			return true
+		}
 	}
 	return false
 }

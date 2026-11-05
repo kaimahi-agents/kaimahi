@@ -1,9 +1,11 @@
 # Native Windows
 
-Native Windows support is a **prerelease-only, narrow day-zero CLI** available on
-`main` and in published v0.9.0 release candidates beginning with
-`v0.9.0-rc.4`. It is not the Kubernetes agent lifecycle on Windows. Stable
-v0.8.1, including the version selected by `@latest`, has no Windows `.exe`.
+Native Windows support is **prerelease-only and operation-specific**. Current
+`main` adds read-only remote Orka inspection on amd64 to the narrow day-zero CLI.
+Published v0.9.0 release candidates beginning with `v0.9.0-rc.4` retain only the
+day-zero commands until a later release contains this exception. This is not the
+Kubernetes agent lifecycle on Windows. Stable v0.8.1, including the version
+selected by `@latest`, has no Windows `.exe`.
 
 Use [WSL](#use-wsl-for-broader-workflows) for every broader workflow. In
 particular, the existing Windows Copilot integration remains the
@@ -21,6 +23,7 @@ Windows assets described below.
 | Package-free fake Run | `kmx run FILE ["input"]`, optionally with `--tests FILE`, legacy inline `--prompt TEXT` or `--no-content`, for a Markdown agent whose effective model is `fake`. Run loads the selected agent-and-tests pair: the default companion tests, or the `--tests FILE` override. KMX opens no workspace, package, cluster, provider, network or tool-binding route. |
 | Package-free fake Test | `kmx test FILE [--tests FILE]` for the same offline fake route and the same selected agent-and-tests pair. A completed pass or failure is a local preview only. |
 | Offline file diagnostics | `kmx test explain [failure-id] --file FILE [--tests FILE]`, including its file-scoped content and clear options. Explain compares retained failures with the current agent-and-tests selection. Hidden `kmx eval explain ... --file FILE` may remain callable only as the deprecated compatibility spelling. |
+| Read-only remote Orka inspection (current main, amd64) | `kmx --context CONTEXT cluster orka list --namespace NAMESPACE [-o table\|json\|yaml]` and `kmx --context CONTEXT cluster orka show NAME --namespace NAMESPACE [-o table\|json] [--tasks N]`. Both selectors are mandatory on native Windows. These commands perform bounded reads only and create no KMX state. |
 
 Flag-parsing errors label their help hint **PowerShell** on native Windows.
 The hint uses PowerShell's `&` call operator and quotes the executable path,
@@ -37,6 +40,9 @@ For example, after downloading a qualified amd64 artifact:
 .\kmx-windows-amd64.exe run .\greeter.agent.md --prompt Ada
 .\kmx-windows-amd64.exe test .\greeter.agent.md
 .\kmx-windows-amd64.exe test explain --file .\greeter.agent.md
+# Current-main amd64 build only; not present in the published rc.4-rc.6 contract:
+.\kmx-windows-amd64.exe --context existing-orka cluster orka list --namespace orka-system
+.\kmx-windows-amd64.exe --context existing-orka cluster orka show greeter --namespace orka-system
 ```
 
 The file must satisfy the [agent file contract](agent-file.md), including its
@@ -51,13 +57,33 @@ deployment authority. Offline Explain reads or clears only the selected file's
 retained local diagnostics. It does not contact a model or turn those diagnostics
 into evidence.
 
+### Remote inspection prerequisites
+
+Put an operator-installed native `kubectl.exe` on `PATH`. KMX does not download,
+install or update it on Windows. The selected kubeconfig and its exec-auth
+programs are trusted exactly as they are by direct kubectl use. A kubeconfig that
+uses `kubelogin -l azurecli` therefore requires an existing Azure CLI sign-in;
+KMX never runs `az login`, opens a browser/device flow, converts credentials or
+falls back to WSL. Missing, expired or refused credentials produce a bounded safe
+error. KMX freezes the resolved kubectl path and file identity and refuses a
+changed file between calls. This is a cooperative replacement check, not byte
+attestation or a sandbox. Cancellation owns ordinary kubectl descendants through
+a Windows Job Object; an arbitrary exec plugin may still perform side effects or
+use brokered process creation outside that cleanup boundary.
+
+Human table output removes terminal control and bidirectional-formatting
+characters and bounds cluster-controlled fields. Existing JSON/YAML output keeps
+the cluster values for machine consumers. List/show read Secret presence only;
+they never fetch Secret values. Kubeconfig exec plugins are local operator-trusted
+code, not sandboxed extensions.
+
 ## Everything else is deferred
 
 Every command or mode not listed above refuses before operational configuration,
 subprocess, network, cluster or ordinary output effects. Native Windows does not
 currently support:
 
-- Docker, Podman, kind, Kubernetes, AKS or any other cluster operation;
+- Docker, Podman, kind, local Kubernetes setup, AKS or any cluster mutation;
 - workspace or OCI storage, AgentSuite build/load/test/push/pull, suite evidence,
   registry access, publication, Deploy or retirement;
 - local or hosted model discovery, provider routes, credentials, model network
@@ -65,8 +91,8 @@ currently support:
 - `kmx mcp`, a native Copilot plugin, AgentKit, Buildx or native Squad setup;
 - managed tools, tool downloads, cluster records, remembered cluster preferences
   or context operations; or
-- live Agent Run/chat, runtime setup/status, package export, publication or
-  deployment.
+- live Agent Run/chat and Task result, runtime setup/status, package export,
+  publication or deployment.
 
 This refusal boundary is operation-specific, not a claim that the underlying Go
 packages have no Windows tests. Package tests for files, models or adapters do not
@@ -212,28 +238,30 @@ approval process or use WSL if that route is approved.
 ## What CI and release qualification prove
 
 Windows amd64 is natively executed on hosted `windows-latest`. The native job
-builds and vets the CLI, verifies version/help/completion, and executes a real
+builds and vets the CLI, verifies version/help/completion, executes a real
 Markdown file through package-free fake Run, a failing fake Test and offline
-file Explain. Release qualification repeats the supported journey against the
-exact staged `kmx-windows-amd64.exe` after artifact/checksum validation. This is
-native execution evidence for that narrow surface, not for deferred commands.
+file Explain, and executes list/show against a compiled native kubectl protocol
+fixture. Release qualification repeats the day-zero journey and reaches the
+read-only inspection boundary with a checksum-verified real `kubectl.exe` using
+the exact staged `kmx-windows-amd64.exe`. It does not claim a live remote cluster
+or real Azure authentication; those remain separate runtime qualification.
 
 Windows arm64 is cross-built, vetted and included in the checksum inventory. It
 is not executed on native arm64 hardware. Do not describe the arm64 asset as
 natively executed, and do not infer behavior beyond cross-build, vet and checksum
 evidence.
 
-Neither lane proves a real model or provider route, Docker/Kubernetes behavior,
-native Copilot/MCP integration, power-loss recovery, or organization policy
-acceptance. Hosted CI also cannot establish the clean-machine Authenticode,
+Neither lane proves a live Kubernetes cluster, real exec-auth account, model or
+provider route, native Copilot/MCP integration, power-loss recovery, or
+organization policy acceptance. Hosted CI also cannot establish the clean-machine Authenticode,
 `Zone.Identifier` and SmartScreen observation above; record that separately for
 the exact release.
 
 ## Use WSL for broader workflows
 
-Use the Linux build inside WSL for quickstart, Docker/kind/Kubernetes, workspace
-and OCI operations, model/provider access, MCP/Copilot integration, publication,
-Deploy and every other deferred native operation. Follow the ordinary
+Use the Linux build inside WSL for quickstart, Docker/kind/local Kubernetes,
+workspace and OCI operations, model/provider access, MCP/Copilot integration,
+publication, Deploy and every other deferred native operation. Follow the ordinary
 [getting started](getting-started.md) and [release](releases.md) instructions
 inside the Linux distribution, and keep its writable state in the distro's Linux
 filesystem.

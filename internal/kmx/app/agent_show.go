@@ -20,13 +20,20 @@ package app
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
+
+var errUnsafeOrkaReference = errors.New("unsafe Orka resource reference")
 
 // ShowOptions are `kmx cluster orka show`'s knobs.
 type ShowOptions struct {
@@ -145,7 +152,7 @@ func (a *App) ShowAgent(name string, opt ShowOptions) error {
 	if opt.Tasks <= 0 {
 		opt.Tasks = 5
 	}
-	if err := a.preflight(depKubectl); err != nil {
+	if err := a.preflightOrkaInspection(); err != nil {
 		return err
 	}
 
@@ -154,6 +161,9 @@ func (a *App) ShowAgent(name string, opt ShowOptions) error {
 		return err
 	}
 	provider, providerErr := a.readOrkaProvider(opt.Namespace, agent.Spec.ProviderRef.Name)
+	if errors.Is(providerErr, errUnsafeOrkaReference) {
+		return providerErr
+	}
 	secretPresent, secretErr := a.secretPresence(opt.Namespace, provider)
 	tasks := a.recentOrkaTasks(opt.Namespace, name, opt.Tasks)
 
@@ -165,8 +175,11 @@ func (a *App) ShowAgent(name string, opt ShowOptions) error {
 }
 
 func (a *App) readOrkaAgent(namespace, name string) (*orkaAgentSpec, error) {
-	raw, err := a.kubectlCapture("-n", namespace, "get", "agents.core.orka.ai", name, "-o", "json")
+	raw, err := a.orkaCapture(a.operationContext(), nil, "-n", namespace, "get", "agents.core.orka.ai", name, "-o", "json")
 	if err != nil {
+		if noSuchResourceType(err) {
+			return nil, a.missingOrkaInspectionKind()
+		}
 		if isNotFound(err) {
 			return nil, fmt.Errorf("no Orka Agent %q in namespace %s.\n"+
 				"  `%s` shows what is there. Author workspace source with `%s`, prove it with eval, then Lift its immutable digest",
@@ -177,8 +190,12 @@ func (a *App) readOrkaAgent(namespace, name string) (*orkaAgentSpec, error) {
 		return nil, fmt.Errorf("cannot read Orka Agent %q in namespace %s: %w", name, namespace, err)
 	}
 	var agent orkaAgentSpec
-	if err := json.Unmarshal([]byte(raw), &agent); err != nil {
+	if err := json.Unmarshal(raw, &agent); err != nil {
 		return nil, fmt.Errorf("Orka Agent %q returned invalid JSON: %w", name, err)
+	}
+	if agent.Metadata.Name != name || agent.Metadata.Namespace != namespace ||
+		agent.Spec.ProviderRef.Name != "" && scaffold.ValidateObjectName(agent.Spec.ProviderRef.Name) != nil {
+		return nil, fmt.Errorf("%w: Orka Agent %q returned invalid identity or Provider reference", errUnsafeOrkaReference, name)
 	}
 	return &agent, nil
 }
@@ -191,16 +208,22 @@ func (a *App) readOrkaProvider(namespace, name string) (*orkaProviderSpec, error
 	if strings.TrimSpace(name) == "" {
 		return nil, fmt.Errorf("the Agent names no Provider")
 	}
-	raw, err := a.kubectlCapture("-n", namespace, "get", "providers.core.orka.ai", name, "-o", "json")
+	raw, err := a.orkaCapture(a.operationContext(), nil, "-n", namespace, "get", "providers.core.orka.ai", name, "-o", "json")
 	if err != nil {
+		if noSuchResourceType(err) {
+			return nil, fmt.Errorf("the Orka Provider resource type is unavailable")
+		}
 		if isNotFound(err) {
 			return nil, fmt.Errorf("Provider %q does not exist, so every model call is refused", name)
 		}
 		return nil, fmt.Errorf("could not be read: %w", err)
 	}
 	var provider orkaProviderSpec
-	if err := json.Unmarshal([]byte(raw), &provider); err != nil {
+	if err := json.Unmarshal(raw, &provider); err != nil {
 		return nil, fmt.Errorf("returned invalid JSON: %w", err)
+	}
+	if provider.Spec.SecretRef.Name != "" && scaffold.ValidateObjectName(provider.Spec.SecretRef.Name) != nil {
+		return nil, fmt.Errorf("%w: Provider returned an invalid Secret reference", errUnsafeOrkaReference)
 	}
 	return &provider, nil
 }
@@ -215,7 +238,7 @@ func (a *App) secretPresence(namespace string, provider *orkaProviderSpec) (bool
 	if provider == nil || strings.TrimSpace(provider.Spec.SecretRef.Name) == "" {
 		return false, fmt.Errorf("no Secret named")
 	}
-	_, err := a.kubectlCapture("-n", namespace, "get", "secret", provider.Spec.SecretRef.Name, "-o", "name")
+	_, err := a.orkaCapture(a.operationContext(), nil, "-n", namespace, "get", "secret", provider.Spec.SecretRef.Name, "-o", "name")
 	switch {
 	case err == nil:
 		return true, nil
@@ -233,18 +256,57 @@ func (a *App) secretPresence(namespace string, provider *orkaProviderSpec) (bool
 // that answers whether the agent is wired correctly. The absence is shown as
 // "unread" rather than as "none".
 func (a *App) recentOrkaTasks(namespace, agent string, limit int) []orkaTaskSummary {
-	raw, err := a.kubectlCapture("-n", namespace, "get", "tasks.core.orka.ai", "-o", "json")
-	if err != nil {
-		return nil
-	}
-	var list objectList[orkaTaskSummary]
-	if err := json.Unmarshal([]byte(raw), &list); err != nil {
-		return nil
-	}
-	mine := make([]orkaTaskSummary, 0, len(list.Items))
-	for _, task := range list.Items {
-		if task.Spec.AgentRef.Name == agent {
-			mine = append(mine, task)
+	// The Task CRD has no selectable Agent field, so retain the complete scan
+	// semantics within fixed page, byte and continuation-token bounds.
+	const pageLimit, pageCountLimit = 128, 32
+	const historyLimit = 4 << 20
+	ctx := a.operationContext()
+	mine := make([]orkaTaskSummary, 0, min(limit, pageLimit))
+	cursor := ""
+	seen := map[string]bool{}
+	total := 0
+	for pageCount := 0; pageCount < pageCountLimit; pageCount++ {
+		path := fmt.Sprintf("/apis/core.orka.ai/v1alpha1/namespaces/%s/tasks?limit=%d", url.PathEscape(namespace), pageLimit)
+		if cursor != "" {
+			path += "&continue=" + url.QueryEscape(cursor)
+		}
+		raw, err := a.orkaCapture(ctx, nil, "get", "--raw", path)
+		if err != nil || len(raw) > historyLimit-total {
+			return nil
+		}
+		total += len(raw)
+		var page struct {
+			Metadata json.RawMessage   `json:"metadata"`
+			Items    []orkaTaskSummary `json:"items"`
+		}
+		if json.Unmarshal(raw, &page) != nil || len(page.Items) > pageLimit {
+			return nil
+		}
+		for _, task := range page.Items {
+			if task.Spec.AgentRef.Name == agent {
+				mine = append(mine, task)
+			}
+		}
+		var metadata map[string]json.RawMessage
+		if len(page.Metadata) != 0 && (json.Unmarshal(page.Metadata, &metadata) != nil || metadata == nil) {
+			return nil
+		}
+		next := ""
+		if value, ok := metadata["continue"]; ok {
+			if len(value) > 4096 || strings.TrimSpace(string(value)) == "null" || json.Unmarshal(value, &next) != nil {
+				return nil
+			}
+		}
+		if next == "" {
+			break
+		}
+		if len(next) > 4096 || !utf8.ValidString(next) || strings.IndexFunc(next, unicode.IsControl) >= 0 || seen[next] || next == cursor {
+			return nil
+		}
+		seen[next] = true
+		cursor = next
+		if pageCount == pageCountLimit-1 {
+			return nil
 		}
 	}
 	sort.Slice(mine, func(i, j int) bool {
@@ -260,13 +322,13 @@ func (a *App) showAgentTable(agent *orkaAgentSpec, provider *orkaProviderSpec, p
 	secretPresent bool, secretErr error, tasks []orkaTaskSummary) {
 	ui := cliui.New(a.Out)
 
-	fmt.Fprintf(a.Out, "\n%s\n%s\n", ui.Heading(agent.Metadata.Name),
+	fmt.Fprintf(a.Out, "\n%s\n%s\n", ui.Heading(orkaHumanField(agent.Metadata.Name)),
 		ui.Fields([]cliui.Field{
-			{Label: "namespace", Value: agent.Metadata.Namespace},
+			{Label: "namespace", Value: orkaHumanField(agent.Metadata.Namespace)},
 			{Label: "ready", Value: readyWord(agent.Status.Ready)},
-			{Label: "model", Value: agentModelName(agent, provider)},
+			{Label: "model", Value: orkaHumanField(agentModelName(agent, provider))},
 			{Label: "active tasks", Value: fmt.Sprintf("%d", agent.Status.ActiveTasks)},
-			{Label: "last used", Value: orDash(agent.Status.LastUsed)},
+			{Label: "last used", Value: orDash(orkaHumanField(agent.Status.LastUsed))},
 		}))
 
 	// The chain, as a chain. Each hop carries the one fact that decides
@@ -275,18 +337,18 @@ func (a *App) showAgentTable(agent *orkaAgentSpec, provider *orkaProviderSpec, p
 	switch {
 	case providerErr != nil:
 		chain.Children = append(chain.Children, cliui.Action{
-			Label:  "provider " + orDash(agent.Spec.ProviderRef.Name),
-			Detail: "UNREADY — " + providerErr.Error(),
+			Label:  "provider " + orDash(orkaHumanField(agent.Spec.ProviderRef.Name)),
+			Detail: "UNREADY — " + orkaHumanField(providerErr.Error()),
 		})
 	default:
-		detail := fmt.Sprintf("%s → %s", orDash(provider.Spec.Type), orDash(provider.Spec.BaseURL))
+		detail := orkaHumanField(fmt.Sprintf("%s → %s", orDash(provider.Spec.Type), orDash(provider.Spec.BaseURL)))
 		if !provider.Status.Ready {
-			detail = "NOT READY — " + strings.TrimSpace(provider.Status.Message+" "+detail)
+			detail = orkaHumanField("NOT READY — " + provider.Status.Message + " " + detail)
 		}
-		providerNode := cliui.Action{Label: "provider " + agent.Spec.ProviderRef.Name, Detail: detail}
+		providerNode := cliui.Action{Label: "provider " + orkaHumanField(agent.Spec.ProviderRef.Name), Detail: detail}
 		providerNode.Children = append(providerNode.Children, cliui.Action{
-			Label:  "secret " + orDash(provider.Spec.SecretRef.Name),
-			Detail: secretWord(secretPresent, secretErr),
+			Label:  "secret " + orDash(orkaHumanField(provider.Spec.SecretRef.Name)),
+			Detail: orkaHumanField(secretWord(secretPresent, secretErr)),
 		})
 		chain.Children = append(chain.Children, providerNode)
 	}
@@ -294,8 +356,8 @@ func (a *App) showAgentTable(agent *orkaAgentSpec, provider *orkaProviderSpec, p
 
 	if len(agent.Spec.Tools) > 0 || len(agent.Spec.Skills) > 0 {
 		fmt.Fprintf(a.Out, "%s\n", ui.Fields([]cliui.Field{
-			{Label: "tools", Value: orNone(strings.Join(agentToolNames(agent), ", "))},
-			{Label: "skills", Value: orNone(strings.Join(agentSkillNames(agent), ", "))},
+			{Label: "tools", Value: orNone(orkaHumanField(strings.Join(agentToolNames(agent), ", ")))},
+			{Label: "skills", Value: orNone(orkaHumanField(strings.Join(agentSkillNames(agent), ", ")))},
 		}))
 	}
 
@@ -306,7 +368,11 @@ func (a *App) showAgentTable(agent *orkaAgentSpec, provider *orkaProviderSpec, p
 	}
 	rows := make([][]string, 0, len(tasks))
 	for _, task := range tasks {
-		rows = append(rows, []string{task.Metadata.Name, orDash(task.Status.Phase), truncate(task.Status.Message, 48)})
+		rows = append(rows, []string{
+			orkaHumanField(task.Metadata.Name),
+			orDash(orkaHumanField(task.Status.Phase)),
+			orkaHumanText(task.Status.Message, 48),
+		})
 	}
 	fmt.Fprintf(a.Out, "\n%s\n", ui.Report("Recent tasks",
 		[]string{"NAME", "PHASE", "MESSAGE"}, rows, cliui.ColumnText, cliui.ColumnState))
@@ -422,12 +488,4 @@ func orNone(value string) string {
 		return "none"
 	}
 	return value
-}
-
-func truncate(value string, width int) string {
-	value = strings.TrimSpace(strings.ReplaceAll(value, "\n", " "))
-	if len(value) <= width {
-		return value
-	}
-	return value[:width-1] + "…"
 }

@@ -929,23 +929,32 @@ authority.
 ## Native Windows boundary
 
 Native Windows support is prerelease-only and operation-specific. Current `main`
-and published v0.9.0 release candidates beginning with `v0.9.0-rc.4` permit only
-inert version/help/completion, package-free fake `run FILE` / `test FILE`, and
-offline `test explain ... --file FILE`; hidden `eval explain` may remain only as
-the deprecated compatibility spelling. File Run/Test may use inline `--prompt`,
-but provider, endpoint, tool-binding, prompt-file and GitHub-summary modes stay
-deferred. These previews create no suite evidence, publication or Deploy authority.
+on amd64 permits inert version/help/completion, package-free fake `run FILE` /
+`test FILE`, offline `test explain ... --file FILE`, and read-only remote
+`cluster orka list/show` with explicit `--context` and `--namespace`. Hidden
+`eval explain` may remain only as the deprecated compatibility spelling. File
+Run/Test may use inline `--prompt`, but provider, endpoint, tool-binding,
+prompt-file and GitHub-summary modes stay deferred. Orka inspection requires an
+operator-installed native `kubectl.exe`, trusts the selected kubeconfig and its
+exec-auth programs as kubectl does, never downloads a tool or starts login, and
+creates no KMX state. Human cluster fields are bounded/sanitized; JSON/YAML retain
+their existing bytes. Published v0.9.0 release candidates beginning with
+`v0.9.0-rc.4` retain the older day-zero-only boundary until a later release
+contains this exception.
 
 Every other native Windows route refuses before configuration, state,
-subprocess, network, cluster or ordinary output effects: Docker/kind/Kubernetes,
-OCI/workspace/suite operations, model/provider/network routes, native MCP/Copilot,
-tool bindings, AgentKit/Buildx, cluster records/preferences, managed tools,
-publication and deployment. Never add WSL or shell fallback. WSL remains the
-explicit route for broader workflows and the existing WSL Copilot plugin.
+subprocess, network, cluster or ordinary output effects: Docker/kind and local
+Kubernetes setup, cluster mutations, OCI/workspace/suite operations,
+model/provider routes, native MCP/Copilot, tool bindings, AgentKit/Buildx, cluster
+records/preferences, managed tools, publication and deployment. Never add WSL or
+shell fallback. WSL remains the explicit route for broader workflows and the
+existing WSL Copilot plugin.
 
-Hosted Windows amd64 must build/vet all packages and execute both the checkout
-CLI and exact staged release `.exe` through version/help/completion plus the
-package-free fake Run/failing Test/offline Explain journey with no skips. Windows
+Hosted Windows amd64 must build/vet all packages and execute the checkout CLI
+through version/help/completion, package-free fake Run/failing Test/offline
+Explain and compiled-kubectl list/show journeys with no skips. The exact staged
+release `.exe` must additionally reach the checksum-verified native kubectl
+inspection boundary without state. Windows
 arm64 is cross-built, vetted, metadata-checked and checksummed only; make no
 native-execution claim. Stable v0.8.1 and `@latest` have no Windows `.exe`.
 `install.sh`, Homebrew and generic Go `@latest` remain Unix/WSL routes where

@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 
@@ -34,13 +35,27 @@ func (a *App) listOrkaAgents(output, namespace string) error {
 	if err != nil {
 		return err
 	}
-	if err := a.preflight(depKubectl); err != nil {
+	if err := a.preflightOrkaInspection(); err != nil {
 		return err
 	}
 	if format != "table" {
-		return a.kubectlRun("-n", namespace, "get", "agents.core.orka.ai", "-o", format)
+		raw, err := a.orkaCapture(a.operationContext(), nil, "-n", namespace, "get", "agents.core.orka.ai", "-o", format)
+		if err != nil {
+			return a.agentListReadError(err)
+		}
+		var out io.Writer = io.Discard
+		if a.Run.Stdout != nil {
+			out = a.Run.Stdout
+		} else if a.Out != nil {
+			out = a.Out
+		}
+		n, err := out.Write(raw)
+		if err == nil && n != len(raw) {
+			err = io.ErrShortWrite
+		}
+		return err
 	}
-	raw, err := a.kubectlCapture("-n", namespace, "get", "agents.core.orka.ai", "-o", "json")
+	raw, err := a.orkaCapture(a.operationContext(), nil, "-n", namespace, "get", "agents.core.orka.ai", "-o", "json")
 	if err != nil {
 		// Only one failure needs translating here, and it is not the obvious
 		// one. A cluster that does not serve the kind has no Orka on it at
@@ -54,19 +69,14 @@ func (a *App) listOrkaAgents(output, namespace string) error {
 		// implying an error that cannot arrive.
 		//
 		// Anything else is unread, and is returned as it arrived.
-		if noSuchResourceType(err) {
-			return fmt.Errorf("no Orka Agent kind on this cluster, so nothing here is an Orka agent.\n"+
-				"  Install Orka with `%s`",
-				a.operationCommand("cluster", "orka", "install"))
-		}
-		return err
+		return a.agentListReadError(err)
 	}
 	var agents objectList[orkaAgentSpec]
-	if err := json.Unmarshal([]byte(raw), &agents); err != nil {
+	if err := json.Unmarshal(raw, &agents); err != nil {
 		return fmt.Errorf("Orka Agents returned invalid JSON: %w", err)
 	}
 	rows := orkaAgentListRows(agents.Items)
-	heading := "Orka Agents in " + namespace
+	heading := "Orka Agents in " + orkaHumanField(namespace)
 	ui := cliui.New(a.Out)
 	if ui.Rich() {
 		fmt.Fprintln(a.Out, ui.Report(heading, orkaAgentColumns, rows, cliui.ColumnText, cliui.ColumnState))
@@ -75,12 +85,19 @@ func (a *App) listOrkaAgents(output, namespace string) error {
 	fmt.Fprintln(a.Out, ui.Heading(heading))
 	if len(rows) == 0 {
 		fmt.Fprintln(a.Out, "  none")
-		a.notef("  Nothing in %s. Author workspace source with `%s`, prove it with eval, then Lift its immutable digest.", namespace,
+		a.notef("  Nothing in %s. Author workspace source with `%s`, prove it with eval, then Lift its immutable digest.", orkaHumanField(namespace),
 			a.operationCommand("create", "<name>", "--workspace", "<directory>", "--model", "<exact-model>", "--instructions", "<file>"))
 		return nil
 	}
 	humanTable(a.Out, orkaAgentColumns, rows)
 	return nil
+}
+
+func (a *App) agentListReadError(err error) error {
+	if noSuchResourceType(err) {
+		return a.missingOrkaInspectionKind()
+	}
+	return err
 }
 
 var orkaAgentColumns = []string{"NAME", "READY", "PROVIDER", "MODEL"}
@@ -95,10 +112,10 @@ func orkaAgentListRows(agents []orkaAgentSpec) [][]string {
 			model = "(the Provider's default)"
 		}
 		rows = append(rows, []string{
-			agent.Metadata.Name,
+			orkaHumanField(agent.Metadata.Name),
 			boolState(agent.Status.Ready),
-			valueOr(agent.Spec.ProviderRef.Name, "none"),
-			model,
+			valueOr(orkaHumanField(agent.Spec.ProviderRef.Name), "none"),
+			orkaHumanField(model),
 		})
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i][0] < rows[j][0] })

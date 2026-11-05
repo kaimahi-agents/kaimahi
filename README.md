@@ -37,12 +37,13 @@ These docs follow main. `kmx package test` and `kmx package deploy` are unreleas
 
 Have Docker running and Homebrew installed. For Podman, [select it explicitly](docs/getting-started.md#using-podman-instead-of-docker).
 This cluster quickstart runs on macOS, Linux or Windows Subsystem for Linux (WSL),
-not native Windows. Current `main` and published v0.9.0 release candidates
-beginning with `v0.9.0-rc.4` have a separate
-[native Windows day-zero CLI](docs/windows.md) limited to version/help/completion,
-package-free fake `run FILE` / `test FILE`, and offline
-`test explain --file FILE`. Stable v0.8.1 and `@latest` have no Windows `.exe`;
-use WSL for quickstart and every broader workflow.
+not native Windows. Current `main` has a separate
+[native Windows CLI](docs/windows.md): the day-zero commands plus amd64 read-only
+`cluster orka list/show` against an existing, explicitly selected cluster.
+Published v0.9.0 release candidates beginning with `v0.9.0-rc.4` retain the
+day-zero-only boundary until a later containing release. Stable v0.8.1 and
+`@latest` have no Windows `.exe`; use WSL for quickstart and every
+mutation/workspace workflow.
 
 For stable v0.8.1:
 
@@ -97,8 +98,8 @@ update kmx. See [direct-install migration and paired upgrades](docs/copilot-app.
 - [Workflow and runtime details](docs/workflow-overview.md): individual stages, version limits, safety and the workspace/live distinction.
 - [Workspace lifecycle](docs/suite-workspace.md) and [runtime support](docs/runtime-adapters.md): exact package identities, evaluation evidence and supported operations.
 - [Command reference](docs/kmx.md) and [models](docs/models.md).
-- [Native Windows boundary](docs/windows.md): prerelease-only local fake previews,
-  release availability, private state and WSL separation.
+- [Native Windows boundary](docs/windows.md): prerelease-only fake previews and
+  explicit-target read-only Orka inspection, release availability and WSL separation.
 - [Azure walkthrough](docs/aks-demo.md): take a local proof to a remote cluster.
 - [All guides](docs/README.md), [development](docs/development.md) and [contributing](CONTRIBUTING.md).
 

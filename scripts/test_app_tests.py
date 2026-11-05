@@ -166,16 +166,23 @@ class AppShardWorkflowTests(unittest.TestCase):
         self.assertIn("go build -trimpath -o \"$env:RUNNER_TEMP\\kmx.exe\" ./cmd/kmx", windows_body)
         self.assertIn('$metadataLines -join "`n"', windows_body)
         self.assertIn("windows-cli-day-zero.ps1", windows_body)
+        self.assertIn("windows-orka-inspection.ps1", windows_body)
         self.assertNotIn("kmx-windows-tests.exe\" powershell", windows_body)
         self.assertIn("TestGuardedWindowsDeferredOperationsRefuseBeforeEffects", windows_body)
+        self.assertIn("TestGuardedWindowsAmd64AdmitsOnlyExplicitOrkaInspection", windows_body)
+        self.assertIn("TestGuardedWindowsRemoteInspectionRefusesIncompleteOrBroaderModesBeforeEffects", windows_body)
         self.assertIn("TestGuardedWindowsFileCommandsRefuseEveryExternalRouteBeforeEffects", windows_body)
         self.assertIn("TestGuardedWindowsExplainRequiresExplicitFileAndAllowsFileScopedClear", windows_body)
         self.assertIn("TestGuardedWindowsVersionHelpAndCompletionRemainInert", windows_body)
         self.assertIn("TestGuardedWindowsSupportedCommandFlagsAreExhaustivelyAllowlisted", windows_body)
         self.assertIn("$previewTests", windows_body)
+        self.assertIn("$runTests", windows_body)
         self.assertIn("$appTests", windows_body)
+        self.assertIn("TestWindowsRunnerCancellationReapsDescendantTree", windows_body)
+        self.assertIn("TestOrkaAgentListCancelsActiveCompiledKubectl", windows_body)
+        self.assertIn("TestAgentShowHumanFieldsAreTerminalSafeAndBounded", windows_body)
         self.assertIn("--- SKIP:", windows_body)
-        self.assertEqual(windows_body.count("did not pass"), 5)
+        self.assertEqual(windows_body.count("did not pass"), 6)
         cross = self.jobs["windows-arm64-cross"]
         cross_body = "\n".join(step.get("run", "") for step in cross["steps"])
         self.assertEqual(cross["runs-on"], "windows-latest")
@@ -233,6 +240,24 @@ class AppShardWorkflowTests(unittest.TestCase):
             self.assertIn(contract, helper)
         self.assertNotIn("$runJSON.verdict -ceq 'pass'", helper)
         self.assertIn("$failedJSON.verdict -ceq 'fail'", helper)
+
+    def test_windows_remote_inspection_helper_is_native_read_only_and_explicit(self):
+        helper = (ROOT / "scripts/ci/windows-orka-inspection.ps1").read_text()
+        for contract in (
+                "[Parameter(Mandatory = $true)][string]$Binary",
+                "[Parameter(Mandatory = $true)][string]$Kubectl",
+                "[bool]$ProtocolFixtureMode",
+                "[Diagnostics.ProcessStartInfo]::new()",
+                "$start.ArgumentList.Add($argument)",
+                "'KMX_HOME'", "'KMX_TOOLCHAIN'", "'off'", "'PATH'",
+                "'KMX_KUBECTL_FIXTURE_MODE'", "'inspect'",
+                "@('--context', 'kind-test', 'cluster', 'orka', 'list'",
+                "@('--context', 'kind-test', 'cluster', 'orka', 'show'",
+                "Native Windows amd64 remote Orka inspection qualification passed."):
+            self.assertIn(contract, helper)
+        self.assertIn("if (Test-Path -LiteralPath $state)", helper)
+        for forbidden in ("wsl", "docker", "kind create", "helm", "az login", "kubelogin convert"):
+            self.assertNotIn(forbidden.lower(), helper.lower())
 
     def test_final_gate_rejects_every_non_success_and_wrong_dependency_set(self):
         steps = self.jobs["hygiene"]["steps"]

@@ -85,11 +85,12 @@ tests do not enable these model/provider routes in the narrow Windows CLI.
 ## Install
 
 On Windows, the install methods in this section are WSL routes for the full CLI;
-run them inside the Linux distribution. Current `main` and published v0.9.0
-release candidates beginning with `v0.9.0-rc.4` separately support a
-**prerelease-only, narrow** [native Windows day-zero CLI](windows.md):
-version/help/completion, package-free fake file Run/Test and offline file Explain.
-Stable v0.8.1 and `@latest` have no Windows `.exe`. Do not use Homebrew,
+run them inside the Linux distribution. Current `main` separately supports a
+**prerelease-only, narrow** [native Windows CLI](windows.md): the day-zero
+commands plus amd64 read-only Orka list/show with explicit context and namespace.
+Published v0.9.0 release candidates beginning with `v0.9.0-rc.4` retain the
+day-zero-only boundary until a later containing release. Stable v0.8.1 and
+`@latest` have no Windows `.exe`. Do not use Homebrew,
 `install.sh` or generic Go `@latest` guidance as a native Windows installer;
 verify an exact containing Windows tag with the page's manual procedure.
 
@@ -455,7 +456,7 @@ Do not mix FILE with `--agent`, workspace, destination, evidence, native judge o
 cluster flags, including explicitly supplied defaults. Existing live
 `run --agent` and full-workspace Test contracts remain separate and unchanged.
 Those live/workspace modes are deferred on native Windows and refuse before
-effects.
+effects; only separate read-only Orka list/show is admitted on Windows amd64.
 
 ### Frozen run-profile export (unreleased)
 
@@ -1775,6 +1776,8 @@ qualify cluster execution.
 Lists live Orka Agents in one namespace, including readiness, Provider and
 resolved model. `--namespace <ns>` defaults to `orka-system`; output is table,
 JSON or YAML. This is runtime inventory, not workspace listing.
+On native Windows amd64, both `--context` and `--namespace` must be explicit;
+KMX uses an operator-installed native kubectl and creates no local state.
 
 <a id="kmx-orka-show"></a>
 
@@ -1785,6 +1788,8 @@ Secret it names (**presence only — the value is never read**), resolved model,
 Tools including disabled ones, and recent Tasks. `--namespace` is required
 because Orka watches namespaces explicitly. An unread hop is `unknown`, never
 absent. Root `show/list` are not implemented.
+Native Windows amd64 additionally requires explicit `--context`; human fields
+are bounded and terminal-sanitized while JSON retains the existing shape.
 
 ## Settings
 

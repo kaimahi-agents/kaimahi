@@ -3,24 +3,68 @@ package run
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
 
 func TestRunnerContextCancelsActiveCommand(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	r := &Runner{Context: ctx}
+	marker := filepath.Join(t.TempDir(), "started")
 	done := make(chan error, 1)
-	go func() { done <- r.Run("sleep", "30") }()
-	time.Sleep(30 * time.Millisecond)
+	go func() {
+		done <- r.Run(os.Args[0], "-test.run=^TestRunnerBlockingHelper$", "--", "block", marker)
+	}()
+	deadline := time.Now().Add(10 * time.Second)
+	var earlyErr error
+	earlyDone := false
+	for {
+		if _, err := os.Stat(marker); err == nil {
+			break
+		} else if !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("inspect helper marker: %v", err)
+		}
+		select {
+		case earlyErr = <-done:
+			earlyDone = true
+			break
+		default:
+		}
+		if earlyDone {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("helper command did not start: %v", earlyErr)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if earlyDone {
+		t.Fatalf("helper command did not start: %v", earlyErr)
+	}
 	cancel()
 	select {
 	case err := <-done:
 		if err == nil || !errors.Is(err, context.Canceled) {
 			t.Fatalf("cancelled command error=%v", err)
 		}
-	case <-time.After(time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("cancelled command remained active")
+	}
+}
+
+func TestRunnerBlockingHelper(t *testing.T) {
+	for i, arg := range os.Args {
+		if arg == "--" && i+2 < len(os.Args) && os.Args[i+1] == "block" {
+			if err := os.WriteFile(os.Args[i+2], nil, 0600); err != nil {
+				t.Fatal(err)
+			}
+			for {
+				time.Sleep(time.Hour)
+			}
+		}
 	}
 }
 

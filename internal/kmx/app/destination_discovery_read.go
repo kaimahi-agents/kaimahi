@@ -132,7 +132,7 @@ func (a *App) discoveryCapture(ctx context.Context, selectedContext string, args
 	cmd.WaitDelay = time.Second
 	out, diagnostics := &discoveryBuffer{remaining: 4 << 20}, &discoveryBuffer{remaining: 4 << 10}
 	cmd.Stdout, cmd.Stderr = out, diagnostics
-	err := a.executeCapture(child, cmd)
+	err := a.executeOwnedCapture(child, cmd)
 	if child.Err() != nil {
 		return nil, &discoveryReadFailure{"read_unknown", child.Err()}
 	}

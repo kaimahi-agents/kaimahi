@@ -99,6 +99,89 @@ func TestGuardedWindowsDeferredOperationsRefuseBeforeEffects(t *testing.T) {
 	}
 }
 
+func TestGuardedWindowsAmd64AdmitsOnlyExplicitOrkaInspection(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"list table", []string{"--context", "remote", "cluster", "orka", "list", "--namespace", "team"}},
+		{"list json", []string{"cluster", "orka", "list", "--namespace", "team", "--output", "json", "--context", "remote"}},
+		{"list yaml", []string{"cluster", "orka", "list", "--context", "remote", "--namespace", "team", "-o", "yaml"}},
+		{"show table", []string{"--context", "remote", "cluster", "orka", "show", "assistant", "--namespace", "team"}},
+		{"show json", []string{"cluster", "orka", "show", "assistant", "--namespace", "team", "--tasks", "3", "-o", "json", "--context", "remote"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			deps, loads := testDependencies(&out, &errOut)
+			deps.goos, deps.goarch = "windows", "amd64"
+			state := &commandState{deps: deps}
+			root := newRootCommand(state)
+			args, contextName, err := extractContext(tc.args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			state.contextFlag = contextName
+			cmd, remaining, err := root.Find(args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := cmd.ParseFlags(remaining); err != nil {
+				t.Fatal(err)
+			}
+			if err := cmd.Args(cmd, cmd.Flags().Args()); errors.Is(err, errWindowsOperationUnsupported) || err != nil {
+				t.Fatalf("%v was not admitted: %v", tc.args, err)
+			}
+			if *loads != 0 || out.Len() != 0 || errOut.Len() != 0 {
+				t.Fatalf("classification had effects: loads=%d stdout=%q stderr=%q", *loads, out.String(), errOut.String())
+			}
+		})
+	}
+}
+
+func TestGuardedWindowsRemoteInspectionRefusesIncompleteOrBroaderModesBeforeEffects(t *testing.T) {
+	cases := []struct {
+		name   string
+		goarch string
+		args   []string
+	}{
+		{"arm64 remains closed", "arm64", []string{"--context", "remote", "cluster", "orka", "list", "--namespace", "team"}},
+		{"missing context", "amd64", []string{"cluster", "orka", "list", "--namespace", "team"}},
+		{"missing namespace", "amd64", []string{"--context", "remote", "cluster", "orka", "list"}},
+		{"blank namespace", "amd64", []string{"--context", "remote", "cluster", "orka", "list", "--namespace", ""}},
+		{"invalid namespace", "amd64", []string{"--context", "remote", "cluster", "orka", "list", "--namespace", "Team A"}},
+		{"credential context", "amd64", []string{"--context", "ghp_" + strings.Repeat("x", 36), "cluster", "orka", "list", "--namespace", "team"}},
+		{"control context", "amd64", []string{"--context", "remote\nforged", "cluster", "orka", "list", "--namespace", "team"}},
+		{"invalid list output", "amd64", []string{"--context", "remote", "cluster", "orka", "list", "--namespace", "team", "-o", "toml"}},
+		{"list container engine", "amd64", []string{"--context", "remote", "cluster", "orka", "list", "--namespace", "team", "--container-engine", "docker"}},
+		{"show missing name", "amd64", []string{"--context", "remote", "cluster", "orka", "show", "--namespace", "team"}},
+		{"show extra name", "amd64", []string{"--context", "remote", "cluster", "orka", "show", "one", "two", "--namespace", "team"}},
+		{"show invalid name", "amd64", []string{"--context", "remote", "cluster", "orka", "show", "Not Valid", "--namespace", "team"}},
+		{"show invalid output", "amd64", []string{"--context", "remote", "cluster", "orka", "show", "one", "--namespace", "team", "-o", "yaml"}},
+		{"orka status stays closed", "amd64", []string{"--context", "remote", "cluster", "orka", "status"}},
+		{"orka install stays closed", "amd64", []string{"--context", "remote", "cluster", "orka", "install"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			deps, loads := testDependencies(&out, &errOut)
+			deps.goos, deps.goarch = "windows", tc.goarch
+			home := filepath.Join(t.TempDir(), "state-must-not-exist")
+			t.Setenv("KMX_HOME", home)
+			err := execute(tc.args, deps)
+			if !errors.Is(err, errWindowsOperationUnsupported) {
+				t.Fatalf("%v = %v", tc.args, err)
+			}
+			if *loads != 0 || out.Len() != 0 || errOut.Len() != 0 {
+				t.Fatalf("%v had effects: loads=%d stdout=%q stderr=%q", tc.args, *loads, out.String(), errOut.String())
+			}
+			if _, statErr := os.Lstat(home); !errors.Is(statErr, os.ErrNotExist) {
+				t.Fatalf("%v created state: %v", tc.args, statErr)
+			}
+		})
+	}
+}
+
 func TestGuardedWindowsAllowsPackageFreeFileCommands(t *testing.T) {
 	cases := []struct {
 		name string
@@ -410,11 +493,13 @@ func TestGuardedWindowsSupportedCommandFlagsAreExhaustivelyAllowlisted(t *testin
 		{[]string{"test"}, []string{file}, []string{"case", "container-engine", "context", "github-summary", "host", "mcp-server", "model", "no-content", "no-mcp-servers", "output", "provider", "provider-url", "runner", "tests", "tool-bindings", "verbose"}, []string{"case", "no-content", "output", "tests", "verbose"}},
 		{[]string{"test", "explain"}, nil, []string{"clear", "container-engine", "context", "file", "show-content", "tests", "workspace"}, []string{"clear", "file", "show-content", "tests"}},
 		{[]string{"eval", "explain"}, nil, []string{"clear", "container-engine", "context", "file", "show-content", "tests", "workspace"}, []string{"clear", "file", "show-content", "tests"}},
+		{[]string{"cluster", "orka", "list"}, nil, []string{"container-engine", "context", "namespace", "output"}, []string{"namespace", "output"}},
+		{[]string{"cluster", "orka", "show"}, []string{"assistant"}, []string{"container-engine", "context", "namespace", "output", "tasks"}, []string{"namespace", "output", "tasks"}},
 	}
 	for _, tc := range cases {
 		var out, errOut bytes.Buffer
 		deps, _ := testDependencies(&out, &errOut)
-		deps.goos = "windows"
+		deps.goos, deps.goarch = "windows", "amd64"
 		root := newRootCommand(&commandState{deps: deps})
 		cmd, _, err := root.Find(tc.path)
 		if err != nil {
@@ -435,6 +520,7 @@ func TestGuardedWindowsSupportedCommandFlagsAreExhaustivelyAllowlisted(t *testin
 				var out, errOut bytes.Buffer
 				deps, _ := testDependencies(&out, &errOut)
 				deps.goos = "windows"
+				deps.goarch = "amd64"
 				state := &commandState{deps: deps}
 				root := newRootCommand(state)
 				cmd, _, err := root.Find(tc.path)
@@ -442,6 +528,12 @@ func TestGuardedWindowsSupportedCommandFlagsAreExhaustivelyAllowlisted(t *testin
 					t.Fatal(err)
 				}
 				_ = cmd.InheritedFlags()
+				if strings.HasPrefix(strings.Join(tc.path, " "), "cluster orka") {
+					state.contextFlag = "remote"
+					if err := cmd.Flags().Set("namespace", "team"); err != nil {
+						t.Fatal(err)
+					}
+				}
 				if strings.HasSuffix(strings.Join(tc.path, " "), "explain") {
 					if err := cmd.Flags().Set("file", file); err != nil {
 						t.Fatal(err)
@@ -451,6 +543,8 @@ func TestGuardedWindowsSupportedCommandFlagsAreExhaustivelyAllowlisted(t *testin
 				value := flag.DefValue
 				if name == "file" {
 					value = file
+				} else if name == "namespace" {
+					value = "team"
 				}
 				if err := cmd.Flags().Set(name, value); err != nil {
 					t.Fatal(err)
@@ -511,7 +605,7 @@ func TestGuardedWindowsHelpAndCompatibilityNotices(t *testing.T) {
 func TestGuardedWindowsCommandTreeIsExhaustivelyClassified(t *testing.T) {
 	var out, errOut bytes.Buffer
 	deps, loads := testDependencies(&out, &errOut)
-	deps.goos = "windows"
+	deps.goos, deps.goarch = "windows", "amd64"
 	root := newRootCommand(&commandState{deps: deps})
 	allowed := map[string]bool{"version": true, "completion": true}
 	var walk func(*cobra.Command)
