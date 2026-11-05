@@ -62,6 +62,11 @@ func validateSourceNative(files map[string][]byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	for _, original := range index.Sources {
+		if err := safeText(string(files[original.Path])); err != nil {
+			return "", errMappedInput
+		}
+	}
 	if hasRuntimeProfiles(base) {
 		return "", errMappedInput
 	}

@@ -95,9 +95,12 @@ func TestSourceFingerprintCompleteMap(t *testing.T) {
 	}
 }
 
-func sourceArtifact(t *testing.T) (*suiteoras.Artifact, *Prepared) {
+func sourceArtifact(t *testing.T, mutations ...func(map[string][]byte)) (*suiteoras.Artifact, *Prepared) {
 	t.Helper()
 	s := sourceSnapshot(t)
+	for _, mutate := range mutations {
+		mutate(s.files)
+	}
 	root := t.TempDir()
 	graph := filepath.Join(root, "graph")
 	layout := filepath.Join(root, "layout")
@@ -116,6 +119,59 @@ func sourceArtifact(t *testing.T) (*suiteoras.Artifact, *Prepared) {
 		t.Fatal(err)
 	}
 	return artifact, &Prepared{Path: layout, Fingerprint: s.fingerprint, Descriptor: result.Descriptor, Name: s.name}
+}
+
+func TestSourceProfileCredentialComments(t *testing.T) {
+	token := "ghp_" + strings.Repeat("x", 36)
+	original := []byte("# original\n<!-- " + token + " -->\n")
+	for n, role := range []string{"agent", "tests"} {
+		t.Run(role+"/compile", func(t *testing.T) {
+			input := mappedFixture()
+			if n == 0 {
+				input.Sources.Agent = original
+			} else {
+				input.Sources.Tests = original
+			}
+			parent := mappedParent(t)
+			p, err := CompileMapped(t.Context(), input, parent)
+			if err == nil {
+				p.Close()
+				t.Fatal("credential-bearing original compiled")
+			}
+			if strings.Contains(err.Error(), token) {
+				t.Fatal("refusal disclosed original")
+			}
+			entries, err := os.ReadDir(parent)
+			if err != nil || len(entries) != 0 {
+				t.Fatal("refusal staged source data")
+			}
+		})
+		t.Run(role+"/load", func(t *testing.T) {
+			a, _ := sourceArtifact(t, func(files map[string][]byte) {
+				index, _, err := localartifact.SourceProfileBase(files)
+				if err != nil {
+					t.Fatal(err)
+				}
+				record := &index.Sources[n]
+				files[record.Path] = original
+				record.Digest = godigest.FromBytes(original).String()
+				record.Size = int64(len(original))
+				files[localartifact.SourceIndexPath], err = suitecore.Marshal(index)
+				if err != nil {
+					t.Fatal(err)
+				}
+			})
+			for _, read := range []func() error{func() error { _, err := LoadArtifact(t.Context(), a); return err }, func() error { _, err := ReadSources(t.Context(), a); return err }} {
+				err := read()
+				if err == nil {
+					t.Fatal("credential-bearing original loaded")
+				}
+				if strings.Contains(err.Error(), token) {
+					t.Fatal("reader disclosed original")
+				}
+			}
+		})
+	}
 }
 
 func TestSourceProfilePreparedReadersRefuse(t *testing.T) {

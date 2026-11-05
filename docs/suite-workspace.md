@@ -67,7 +67,10 @@ Existing ordinary layout transfer retains its merge behavior. Close consumes
 the compiled object and removes only its checked owned subtree. Normal cleanup
 does not certify total disk peak or reclaim every OS-temp copy after a crash;
 packaging and verification may leave bounded copies containing originals.
-Instructions and source files must never contain secrets.
+Instructions and source files must never contain secrets. Compilation refuses
+known credential-shaped content in either original before allocating staging;
+native profile loading applies the same guard. This is a known-shape backstop,
+not a guarantee that arbitrary content is secret-free.
 
 Supporting artifact readers accept this profile for native load, unprofiled
 member selection, inventory and exact source read-back. Existing pull/projection
