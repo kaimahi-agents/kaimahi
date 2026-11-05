@@ -100,7 +100,7 @@ func (a *App) orkaCaptureInto(ctx context.Context, stdin []byte, out orkaCapture
 			strings.Contains(reason, "request timed out"), strings.Contains(reason, "connection timed out"),
 			strings.Contains(reason, "tls handshake timeout"):
 			return fmt.Errorf("kubectl request cancelled or timed out")
-		case strings.Contains(reason, "notfound") || strings.Contains(reason, "not found"):
+		case strings.HasPrefix(strings.TrimSpace(reason), "error from server (notfound):"):
 			if strings.Contains(reason, "namespaces") && strings.Contains(reason, OrkaNamespace) {
 				return fmt.Errorf("kubectl request failed: namespace %s not found", OrkaNamespace)
 			}

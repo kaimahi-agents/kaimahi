@@ -938,9 +938,11 @@ prompt-file and GitHub-summary modes stay deferred. Orka inspection requires an
 operator-installed native `kubectl.exe`, trusts the selected kubeconfig and its
 exec-auth programs as kubectl does, never downloads a tool or starts login, and
 creates no KMX state. Human cluster fields are bounded/sanitized; JSON/YAML retain
-their existing values after bounded pagination and re-encoding. Show resolves
+their existing Unix kubectl-native contract, while native Windows list is
+table-only. Show resolves
 cross-namespace references exactly and withholds credential-bearing Provider
-diagnostics from every output. Published v0.9.0 release candidates beginning with
+diagnostics from every output; it names Secret references but fetches no Secret
+object and reports presence unknown. Published v0.9.0 release candidates beginning with
 `v0.9.0-rc.4` retain the older day-zero-only boundary until a later release
 contains this exception.
 

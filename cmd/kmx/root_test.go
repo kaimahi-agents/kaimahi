@@ -105,8 +105,6 @@ func TestGuardedWindowsAmd64AdmitsOnlyExplicitOrkaInspection(t *testing.T) {
 		args []string
 	}{
 		{"list table", []string{"--context", "remote", "cluster", "orka", "list", "--namespace", "team"}},
-		{"list json", []string{"cluster", "orka", "list", "--namespace", "team", "--output", "json", "--context", "remote"}},
-		{"list yaml", []string{"cluster", "orka", "list", "--context", "remote", "--namespace", "team", "-o", "yaml"}},
 		{"show table", []string{"--context", "remote", "cluster", "orka", "show", "assistant", "--namespace", "team"}},
 		{"show json", []string{"cluster", "orka", "show", "assistant", "--namespace", "team", "--tasks", "3", "-o", "json", "--context", "remote"}},
 	}
@@ -152,6 +150,8 @@ func TestGuardedWindowsRemoteInspectionRefusesIncompleteOrBroaderModesBeforeEffe
 		{"invalid namespace", "amd64", []string{"--context", "remote", "cluster", "orka", "list", "--namespace", "Team A"}},
 		{"credential context", "amd64", []string{"--context", "ghp_" + strings.Repeat("x", 36), "cluster", "orka", "list", "--namespace", "team"}},
 		{"control context", "amd64", []string{"--context", "remote\nforged", "cluster", "orka", "list", "--namespace", "team"}},
+		{"list json stays closed", "amd64", []string{"--context", "remote", "cluster", "orka", "list", "--namespace", "team", "-o", "json"}},
+		{"list yaml stays closed", "amd64", []string{"--context", "remote", "cluster", "orka", "list", "--namespace", "team", "-o", "yaml"}},
 		{"invalid list output", "amd64", []string{"--context", "remote", "cluster", "orka", "list", "--namespace", "team", "-o", "toml"}},
 		{"list container engine", "amd64", []string{"--context", "remote", "cluster", "orka", "list", "--namespace", "team", "--container-engine", "docker"}},
 		{"show missing name", "amd64", []string{"--context", "remote", "cluster", "orka", "show", "--namespace", "team"}},

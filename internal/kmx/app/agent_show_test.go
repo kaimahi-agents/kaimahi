@@ -22,12 +22,12 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
-const healthyAgent = `{"metadata":{"name":"concierge","namespace":"demo"},
+const healthyAgent = `{"apiVersion":"core.orka.ai/v1alpha1","kind":"Agent","metadata":{"name":"concierge","namespace":"demo"},
 "spec":{"providerRef":{"name":"local"},"model":{"name":"qwen2.5:3b"},
         "tools":[{"name":"menu_lookup"},{"name":"refund_issue","enabled":false}]},
-"status":{"ready":true,"activeTasks":0}}`
+	"status":{"ready":true,"activeTasks":0}}`
 
-const healthyProvider = `{"metadata":{"name":"local","namespace":"demo"},
+const healthyProvider = `{"apiVersion":"core.orka.ai/v1alpha1","kind":"Provider","metadata":{"name":"local","namespace":"demo"},
 "spec":{"type":"openai","baseURL":"http://ollama.ollama:11434/v1",
 "defaultModel":"qwen2.5:3b","secretRef":{"name":"local-provider-key","key":"api-key"}},
 "status":{"ready":true}}`
@@ -46,7 +46,6 @@ func newShowFixture(t *testing.T) *showFixture {
 	t.Setenv("KMX_INSPECT_CALLS", filepath.Join(dir, "args"))
 	t.Setenv("KMX_INSPECT_AGENT", healthyAgent)
 	t.Setenv("KMX_INSPECT_PROVIDER", healthyProvider)
-	t.Setenv("KMX_INSPECT_SECRET", "secret/local-provider-key\n")
 	t.Setenv("KMX_INSPECT_TASKS", `{"items":[]}`)
 	t.Setenv("GORACE", "atexit_sleep_ms=0")
 	r := run.Default()
@@ -77,7 +76,7 @@ func TestAgentShowRendersTheWholeChainWhenHealthy(t *testing.T) {
 	if err := f.app.ShowAgent("concierge", showOpts()); err != nil {
 		t.Fatalf("show: %v", err)
 	}
-	for _, want := range []string{"concierge", "provider local", "secret local-provider-key", "present", "qwen2.5:3b"} {
+	for _, want := range []string{"concierge", "provider local", "secret local-provider-key", unknownHop, "qwen2.5:3b"} {
 		if !strings.Contains(f.out.String(), want) {
 			t.Errorf("the view omits %q:\n%s", want, f.out.String())
 		}
@@ -98,28 +97,20 @@ func TestAgentShowNamesAProviderThatDoesNotExist(t *testing.T) {
 	}
 }
 
-// A missing Secret and an unreadable one have opposite fixes — create it, or
-// go fix your permissions — so they must not print the same word.
-func TestAgentShowSeparatesAMissingSecretFromAnUnreadableOne(t *testing.T) {
+func TestAgentShowNeverFetchesSecretObjects(t *testing.T) {
 	f := newShowFixture(t)
-	t.Setenv("KMX_INSPECT_SECRET", `ERROR:Error from server (NotFound): secrets "k" not found`)
 	if err := f.app.ShowAgent("concierge", showOpts()); err != nil {
 		t.Fatalf("show: %v", err)
 	}
-	if !strings.Contains(f.out.String(), "MISSING") {
-		t.Errorf("a missing Secret is not reported as missing:\n%s", f.out.String())
+	if !strings.Contains(f.out.String(), unknownHop) {
+		t.Errorf("Secret presence was not reported unknown:\n%s", f.out.String())
 	}
-
-	g := newShowFixture(t)
-	t.Setenv("KMX_INSPECT_SECRET", `ERROR:Error from server (Forbidden): secrets is forbidden`)
-	if err := g.app.ShowAgent("concierge", showOpts()); err != nil {
-		t.Fatalf("show: %v", err)
+	calls, err := os.ReadFile(os.Getenv("KMX_INSPECT_CALLS"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(g.out.String(), unknownHop) {
-		t.Errorf("an unreadable Secret is not reported as unknown:\n%s", g.out.String())
-	}
-	if strings.Contains(g.out.String(), "MISSING") {
-		t.Error("an unreadable Secret was reported as missing, which sends an operator to create one that may exist")
+	if strings.Contains(string(calls), "get secret") {
+		t.Fatalf("show fetched a Secret object:\n%s", calls)
 	}
 }
 
@@ -140,7 +131,7 @@ func TestAgentShowDoesNotReportAnUnreadProviderAsAbsent(t *testing.T) {
 // empty cell would hide the answer rather than report it.
 func TestAgentShowResolvesTheModelThroughTheProviderDefault(t *testing.T) {
 	f := newShowFixture(t)
-	t.Setenv("KMX_INSPECT_AGENT", `{"metadata":{"name":"concierge","namespace":"demo"},
+	t.Setenv("KMX_INSPECT_AGENT", `{"apiVersion":"core.orka.ai/v1alpha1","kind":"Agent","metadata":{"name":"concierge","namespace":"demo"},
 	"spec":{"providerRef":{"name":"local"}},"status":{"ready":true}}`)
 	if err := f.app.ShowAgent("concierge", showOpts()); err != nil {
 		t.Fatalf("show: %v", err)
@@ -152,8 +143,8 @@ func TestAgentShowResolvesTheModelThroughTheProviderDefault(t *testing.T) {
 
 func TestAgentShowUsesCrossNamespaceProviderAndSecret(t *testing.T) {
 	f := newShowFixture(t)
-	t.Setenv("KMX_INSPECT_AGENT", `{"metadata":{"name":"concierge","namespace":"demo"},"spec":{"providerRef":{"name":"local","namespace":"inference"}},"status":{"ready":true}}`)
-	t.Setenv("KMX_INSPECT_PROVIDER", `{"metadata":{"name":"local","namespace":"inference"},"spec":{"type":"openai","baseURL":"https://model.invalid/v1","defaultModel":"qualified-model","secretRef":{"name":"model-key"}},"status":{"ready":true}}`)
+	t.Setenv("KMX_INSPECT_AGENT", `{"apiVersion":"core.orka.ai/v1alpha1","kind":"Agent","metadata":{"name":"concierge","namespace":"demo"},"spec":{"providerRef":{"name":"local","namespace":"inference"}},"status":{"ready":true}}`)
+	t.Setenv("KMX_INSPECT_PROVIDER", `{"apiVersion":"core.orka.ai/v1alpha1","kind":"Provider","metadata":{"name":"local","namespace":"inference"},"spec":{"type":"openai","baseURL":"https://model.invalid/v1","defaultModel":"qualified-model","secretRef":{"name":"model-key"}},"status":{"ready":true}}`)
 	if err := f.app.ShowAgent("concierge", showOpts()); err != nil {
 		t.Fatal(err)
 	}
@@ -165,14 +156,14 @@ func TestAgentShowUsesCrossNamespaceProviderAndSecret(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if text := string(calls); !strings.Contains(text, "-n inference get providers.core.orka.ai local") || !strings.Contains(text, "-n inference get secret model-key") {
+	if text := string(calls); !strings.Contains(text, "-n inference get providers.core.orka.ai local") || strings.Contains(text, "get secret") {
 		t.Fatalf("cross-namespace dependency was read from the wrong target:\n%s", text)
 	}
 }
 
 func TestAgentShowRefusesInvalidReferenceNamespaceBeforeFollowup(t *testing.T) {
 	f := newShowFixture(t)
-	t.Setenv("KMX_INSPECT_AGENT", `{"metadata":{"name":"concierge","namespace":"demo"},"spec":{"providerRef":{"name":"local","namespace":"--server=attacker"}}}`)
+	t.Setenv("KMX_INSPECT_AGENT", `{"apiVersion":"core.orka.ai/v1alpha1","kind":"Agent","metadata":{"name":"concierge","namespace":"demo"},"spec":{"providerRef":{"name":"local","namespace":"--server=attacker"}}}`)
 	err := f.app.ShowAgent("concierge", showOpts())
 	if err == nil || !strings.Contains(err.Error(), "invalid identity or Provider reference") {
 		t.Fatalf("invalid Provider namespace was accepted: %v", err)
@@ -245,7 +236,9 @@ func TestAgentShowHumanFieldsAreTerminalSafeAndBounded(t *testing.T) {
 	f := newShowFixture(t)
 	injected := "safe\nforged\t" + "\x1b]52;c;OSC-CANARY\a" + "\x1b[2J" + "\u009b31m" + "\u009dC1-CANARY\u009c" + "\u202e\u200b" + strings.Repeat("x", 600)
 	agent := map[string]any{
-		"metadata": map[string]any{"name": "concierge", "namespace": "demo"},
+		"apiVersion": "core.orka.ai/v1alpha1",
+		"kind":       "Agent",
+		"metadata":   map[string]any{"name": "concierge", "namespace": "demo"},
 		"spec": map[string]any{
 			"providerRef": map[string]any{"name": "local"},
 			"model":       map[string]any{"name": injected},
@@ -255,9 +248,11 @@ func TestAgentShowHumanFieldsAreTerminalSafeAndBounded(t *testing.T) {
 		"status": map[string]any{"ready": true, "lastUsed": injected},
 	}
 	provider := map[string]any{
-		"metadata": map[string]any{"name": "local", "namespace": "demo"},
-		"spec":     map[string]any{"type": injected, "baseURL": injected, "secretRef": map[string]any{"name": "model-key"}},
-		"status":   map[string]any{"ready": false, "message": injected},
+		"apiVersion": "core.orka.ai/v1alpha1",
+		"kind":       "Provider",
+		"metadata":   map[string]any{"name": "local", "namespace": "demo"},
+		"spec":       map[string]any{"type": injected, "baseURL": injected, "secretRef": map[string]any{"name": "model-key"}},
+		"status":     map[string]any{"ready": false, "message": injected},
 	}
 	tasks := map[string]any{"items": []any{map[string]any{
 		"metadata": map[string]any{"name": injected, "namespace": "demo", "creationTimestamp": "2026-01-02T03:04:05Z"},
@@ -287,9 +282,11 @@ func TestAgentShowJSONPreservesClusterValues(t *testing.T) {
 	f := newShowFixture(t)
 	value := "raw\n\x1b[31m\u202e"
 	raw, err := json.Marshal(map[string]any{
-		"metadata": map[string]any{"name": "concierge", "namespace": "demo"},
-		"spec":     map[string]any{"providerRef": map[string]any{"name": "local"}, "model": map[string]any{"name": value}},
-		"status":   map[string]any{"ready": true},
+		"apiVersion": "core.orka.ai/v1alpha1",
+		"kind":       "Agent",
+		"metadata":   map[string]any{"name": "concierge", "namespace": "demo"},
+		"spec":       map[string]any{"providerRef": map[string]any{"name": "local"}, "model": map[string]any{"name": value}},
+		"status":     map[string]any{"ready": true},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -322,7 +319,9 @@ func TestAgentShowWithholdsCredentialBearingProviderDiagnostics(t *testing.T) {
 			for _, format := range []string{"table", "json"} {
 				f := newShowFixture(t)
 				provider := map[string]any{
-					"metadata": map[string]any{"name": "local", "namespace": "demo"},
+					"apiVersion": "core.orka.ai/v1alpha1",
+					"kind":       "Provider",
+					"metadata":   map[string]any{"name": "local", "namespace": "demo"},
 					"spec": map[string]any{"type": "openai", "baseURL": tc.endpoint,
 						"secretRef": map[string]any{"name": "model-key"}},
 					"status": map[string]any{"ready": tc.message == "", "message": tc.message},
@@ -439,12 +438,11 @@ func TestAgentShowRefusesClusterControlledKubectlArgumentsBeforeFollowup(t *test
 	}
 }
 
-func TestAgentShowBoundsProviderSecretAndTaskReads(t *testing.T) {
+func TestAgentShowBoundsProviderAndTaskReads(t *testing.T) {
 	for _, tc := range []struct {
 		name, key, want string
 	}{
 		{"provider", "KMX_INSPECT_PROVIDER", "UNREADY"},
-		{"secret", "KMX_INSPECT_SECRET", unknownHop},
 		{"tasks", "KMX_INSPECT_TASKS", "none read"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

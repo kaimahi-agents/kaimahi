@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,9 +11,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
-	"go.yaml.in/yaml/v3"
 )
 
 // ListAgents prints the Orka Agents in one namespace.
@@ -46,21 +47,10 @@ func (a *App) listOrkaAgents(output, namespace string) error {
 	if err := a.preflightOrkaInspection(); err != nil {
 		return err
 	}
-	raw, err := a.readOrkaAgentList(namespace)
-	if err != nil {
-		return a.agentListReadError(err)
-	}
 	if format != "table" {
-		body := raw
-		if format == "yaml" {
-			var document yaml.Node
-			if err := yaml.Unmarshal(raw, &document); err != nil {
-				return fmt.Errorf("Orka Agents returned invalid JSON")
-			}
-			body, err = yaml.Marshal(&document)
-			if err != nil {
-				return fmt.Errorf("cannot render Orka Agents as YAML")
-			}
+		raw, err := a.readOrkaAgentMachineList(format, namespace)
+		if err != nil {
+			return a.agentListReadError(err)
 		}
 		var out io.Writer = io.Discard
 		if a.Run.Stdout != nil {
@@ -68,17 +58,21 @@ func (a *App) listOrkaAgents(output, namespace string) error {
 		} else if a.Out != nil {
 			out = a.Out
 		}
-		n, err := out.Write(body)
-		if err == nil && n != len(body) {
+		n, err := out.Write(raw)
+		if err == nil && n != len(raw) {
 			err = io.ErrShortWrite
 		}
 		return err
 	}
-	var agents objectList[orkaAgentSpec]
-	if err := json.Unmarshal(raw, &agents); err != nil {
-		return fmt.Errorf("Orka Agents returned invalid JSON: %w", err)
+	raw, err := a.readOrkaAgentTableList(namespace)
+	if err != nil {
+		return a.agentListReadError(err)
 	}
-	rows := orkaAgentListRows(agents.Items)
+	agents, err := decodeOrkaAgentList(raw, namespace)
+	if err != nil {
+		return err
+	}
+	rows := orkaAgentListRows(agents)
 	heading := "Orka Agents in " + orkaHumanField(namespace)
 	ui := cliui.New(a.Out)
 	if ui.Rich() {
@@ -119,12 +113,11 @@ func (a *App) readOrkaAgentList(namespace string) ([]byte, error) {
 			return nil, fmt.Errorf("Orka Agent list exceeded safe response limits")
 		}
 		totalBytes += len(raw)
-		var envelope map[string]json.RawMessage
-		if json.Unmarshal(raw, &envelope) != nil || envelope == nil {
-			return nil, fmt.Errorf("Orka Agents returned invalid JSON")
+		envelope, pageItems, err := decodeOrkaAgentListPage(raw, namespace)
+		if err != nil {
+			return nil, err
 		}
-		var pageItems []json.RawMessage
-		if value, ok := envelope["items"]; !ok || json.Unmarshal(value, &pageItems) != nil || len(pageItems) > pageLimit || len(items)+len(pageItems) > itemLimit {
+		if len(pageItems) > pageLimit || len(items)+len(pageItems) > itemLimit {
 			return nil, fmt.Errorf("Orka Agent list exceeded safe item limits")
 		}
 		items = append(items, pageItems...)
@@ -174,6 +167,52 @@ func (a *App) readOrkaAgentList(namespace string) ([]byte, error) {
 		cursor = next
 	}
 	return nil, fmt.Errorf("Orka Agent list exceeded safe pagination limits")
+}
+
+func decodeOrkaAgentList(raw []byte, namespace string) ([]orkaAgentSpec, error) {
+	_, items, err := decodeOrkaAgentListPage(raw, namespace)
+	if err != nil {
+		return nil, err
+	}
+	agents := make([]orkaAgentSpec, 0, len(items))
+	for _, item := range items {
+		var agent orkaAgentSpec
+		if json.Unmarshal(item, &agent) != nil {
+			return nil, fmt.Errorf("Orka Agents returned invalid Agent data")
+		}
+		agents = append(agents, agent)
+	}
+	return agents, nil
+}
+
+func decodeOrkaAgentListPage(raw []byte, namespace string) (map[string]json.RawMessage, []json.RawMessage, error) {
+	var envelope map[string]json.RawMessage
+	if suitecore.Unmarshal(raw, &envelope) != nil || envelope == nil {
+		return nil, nil, fmt.Errorf("Orka Agents returned invalid JSON")
+	}
+	var identity struct {
+		APIVersion string `json:"apiVersion"`
+		Kind       string `json:"kind"`
+	}
+	if json.Unmarshal(raw, &identity) != nil || identity.APIVersion != "core.orka.ai/v1alpha1" || identity.Kind != "AgentList" {
+		return nil, nil, fmt.Errorf("Orka Agents returned an invalid list identity")
+	}
+	itemsRaw, ok := envelope["items"]
+	if !ok || !bytes.HasPrefix(bytes.TrimSpace(itemsRaw), []byte("[")) {
+		return nil, nil, fmt.Errorf("Orka Agents returned an invalid item list")
+	}
+	var items []json.RawMessage
+	if json.Unmarshal(itemsRaw, &items) != nil {
+		return nil, nil, fmt.Errorf("Orka Agents returned an invalid item list")
+	}
+	for _, item := range items {
+		var agent orkaAgentSpec
+		if json.Unmarshal(item, &agent) != nil || agent.APIVersion != "core.orka.ai/v1alpha1" || agent.Kind != "Agent" ||
+			scaffold.ValidateObjectName(agent.Metadata.Name) != nil || agent.Metadata.Namespace != namespace {
+			return nil, nil, fmt.Errorf("Orka Agents returned invalid Agent identity")
+		}
+	}
+	return envelope, items, nil
 }
 
 func (a *App) agentListReadError(err error) error {

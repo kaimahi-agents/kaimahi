@@ -23,7 +23,7 @@ Windows assets described below.
 | Package-free fake Run | `kmx run FILE ["input"]`, optionally with `--tests FILE`, legacy inline `--prompt TEXT` or `--no-content`, for a Markdown agent whose effective model is `fake`. Run loads the selected agent-and-tests pair: the default companion tests, or the `--tests FILE` override. KMX opens no workspace, package, cluster, provider, network or tool-binding route. |
 | Package-free fake Test | `kmx test FILE [--tests FILE]` for the same offline fake route and the same selected agent-and-tests pair. A completed pass or failure is a local preview only. |
 | Offline file diagnostics | `kmx test explain [failure-id] --file FILE [--tests FILE]`, including its file-scoped content and clear options. Explain compares retained failures with the current agent-and-tests selection. Hidden `kmx eval explain ... --file FILE` may remain callable only as the deprecated compatibility spelling. |
-| Read-only remote Orka inspection (current main, amd64) | `kmx --context CONTEXT cluster orka list --namespace NAMESPACE [-o table\|json\|yaml]` and `kmx --context CONTEXT cluster orka show NAME --namespace NAMESPACE [-o table\|json] [--tasks N]`. Both selectors are mandatory on native Windows. These commands perform bounded reads only and create no KMX state. |
+| Read-only remote Orka inspection (current main, amd64) | `kmx --context CONTEXT cluster orka list --namespace NAMESPACE` and `kmx --context CONTEXT cluster orka show NAME --namespace NAMESPACE [-o table\|json] [--tasks N]`. Both selectors are mandatory on native Windows. List is table-only on native Windows; these commands perform bounded reads only and create no KMX state. |
 
 Flag-parsing errors label their help hint **PowerShell** on native Windows.
 The hint uses PowerShell's `&` call operator and quotes the executable path,
@@ -72,13 +72,13 @@ a Windows Job Object; an arbitrary exec plugin may still perform side effects or
 use brokered process creation outside that cleanup boundary.
 
 Human table output removes terminal control and bidirectional-formatting
-characters and bounds cluster-controlled fields. JSON/YAML keeps the cluster
-values for machine consumers after KMX completes its own bounded pagination and
-re-encodes the document; byte-for-byte formatting is not preserved. Show resolves
+characters and bounds cluster-controlled fields. Native Windows list is
+table-only; Show JSON is a bounded KMX summary, not a raw resource. Show resolves
 cross-namespace Provider references exactly, but withholds invalid or
 credential-bearing Provider endpoints and status diagnostics from every output.
-List/show read Secret presence only; they never fetch Secret values. Kubeconfig
-exec plugins are local operator-trusted code, not sandboxed extensions.
+Show names the referenced Secret but reports presence as unknown rather than
+fetching a Secret object or value. Kubeconfig exec plugins are local
+operator-trusted code, not sandboxed extensions.
 
 ## Everything else is deferred
 

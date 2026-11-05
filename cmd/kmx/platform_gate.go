@@ -68,7 +68,7 @@ func windowsCommandAllowed(cmd *cobra.Command, args []string, state *commandStat
 	if state.deps.goarch == "amd64" {
 		switch path {
 		case "cluster orka list":
-			return len(args) == 0 && windowsRemoteInspectionSelection(cmd, state, "table", "json", "yaml") &&
+			return len(args) == 0 && windowsRemoteInspectionSelection(cmd, state, "table") &&
 				windowsFlagsAllowed(cmd, "namespace", "output")
 		case "cluster orka show":
 			return len(args) == 1 && scaffold.ValidateObjectName(args[0]) == nil &&

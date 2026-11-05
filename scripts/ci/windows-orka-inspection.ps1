@@ -20,7 +20,7 @@ $saved = @{}
 foreach ($name in @('PATH', 'KMX_HOME', 'KMX_TOOLCHAIN', 'KMX_KUBECTL_FIXTURE_MODE',
         'KUBECONFIG',
         'KMX_INSPECT_CALLS', 'KMX_INSPECT_AGENTS', 'KMX_INSPECT_AGENT',
-        'KMX_INSPECT_PROVIDER', 'KMX_INSPECT_SECRET', 'KMX_INSPECT_TASKS')) {
+        'KMX_INSPECT_PROVIDER', 'KMX_INSPECT_TASKS')) {
     $saved[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
 }
 
@@ -69,10 +69,9 @@ try {
     if ($ProtocolFixtureMode) {
         [Environment]::SetEnvironmentVariable('KMX_KUBECTL_FIXTURE_MODE', 'inspect', 'Process')
         [Environment]::SetEnvironmentVariable('KMX_INSPECT_CALLS', $calls, 'Process')
-        [Environment]::SetEnvironmentVariable('KMX_INSPECT_AGENTS', '{"items":[{"metadata":{"name":"concierge","namespace":"demo"},"spec":{"providerRef":{"name":"local"},"model":{"name":"fixture-model"}},"status":{"ready":true}}]}', 'Process')
-        [Environment]::SetEnvironmentVariable('KMX_INSPECT_AGENT', '{"metadata":{"name":"concierge","namespace":"demo"},"spec":{"providerRef":{"name":"local"},"model":{"name":"fixture-model"}},"status":{"ready":true,"activeTasks":0}}', 'Process')
-        [Environment]::SetEnvironmentVariable('KMX_INSPECT_PROVIDER', '{"metadata":{"name":"local","namespace":"demo"},"spec":{"type":"openai","baseURL":"https://model.invalid/v1","defaultModel":"fixture-model","secretRef":{"name":"model-key","key":"api-key"}},"status":{"ready":true}}', 'Process')
-        [Environment]::SetEnvironmentVariable('KMX_INSPECT_SECRET', 'secret/model-key', 'Process')
+        [Environment]::SetEnvironmentVariable('KMX_INSPECT_AGENTS', '{"apiVersion":"core.orka.ai/v1alpha1","kind":"AgentList","metadata":{},"items":[{"apiVersion":"core.orka.ai/v1alpha1","kind":"Agent","metadata":{"name":"concierge","namespace":"demo"},"spec":{"providerRef":{"name":"local"},"model":{"name":"fixture-model"}},"status":{"ready":true}}]}', 'Process')
+        [Environment]::SetEnvironmentVariable('KMX_INSPECT_AGENT', '{"apiVersion":"core.orka.ai/v1alpha1","kind":"Agent","metadata":{"name":"concierge","namespace":"demo"},"spec":{"providerRef":{"name":"local"},"model":{"name":"fixture-model"}},"status":{"ready":true,"activeTasks":0}}', 'Process')
+        [Environment]::SetEnvironmentVariable('KMX_INSPECT_PROVIDER', '{"apiVersion":"core.orka.ai/v1alpha1","kind":"Provider","metadata":{"name":"local","namespace":"demo"},"spec":{"type":"openai","baseURL":"https://model.invalid/v1","defaultModel":"fixture-model","secretRef":{"name":"model-key","key":"api-key"}},"status":{"ready":true}}', 'Process')
         [Environment]::SetEnvironmentVariable('KMX_INSPECT_TASKS', '{"items":[]}', 'Process')
     } else {
         # A real kubectl proves the exact staged kmx binary accepts only native
@@ -103,12 +102,12 @@ try {
         return
     }
 
-    $listed = Invoke-Kmx -CommandArgs @('--context', 'kind-test', 'cluster', 'orka', 'list', '--namespace', 'demo', '--output', 'json') | ConvertFrom-Json -Depth 20
-    if (@($listed.items).Count -ne 1 -or $listed.items[0].metadata.name -cne 'concierge') {
-        throw 'Native list JSON contract changed.'
+    $listed = Invoke-Kmx -CommandArgs @('--context', 'kind-test', 'cluster', 'orka', 'list', '--namespace', 'demo')
+    if ($listed -notmatch 'concierge' -or $listed -notmatch 'fixture-model') {
+        throw 'Native list table contract changed.'
     }
     $shown = Invoke-Kmx -CommandArgs @('--context', 'kind-test', 'cluster', 'orka', 'show', 'concierge', '--namespace', 'demo', '--output', 'json') | ConvertFrom-Json -Depth 20
-    if ($shown.agent.name -cne 'concierge' -or $shown.agent.ready -cne 'yes' -or $shown.provider.name -cne 'local' -or $shown.secret.ready -cne 'present' -or $shown.model -cne 'fixture-model') {
+    if ($shown.agent.name -cne 'concierge' -or $shown.agent.ready -cne 'yes' -or $shown.provider.name -cne 'local' -or $shown.secret.ready -cne 'unknown' -or $shown.model -cne 'fixture-model') {
         throw 'Native show JSON contract changed.'
     }
     if (Test-Path -LiteralPath $state) { throw 'Read-only inspection created KMX state.' }

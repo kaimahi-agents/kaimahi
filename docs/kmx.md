@@ -1777,14 +1777,16 @@ Lists live Orka Agents in one namespace, including readiness, Provider and
 resolved model. `--namespace <ns>` defaults to `orka-system`; output is table,
 JSON or YAML. This is runtime inventory, not workspace listing.
 On native Windows amd64, both `--context` and `--namespace` must be explicit;
-KMX uses an operator-installed native kubectl and creates no local state.
+KMX uses an operator-installed native kubectl, creates no local state, and
+supports table output only. Unix structured modes retain kubectl-native output.
 
 <a id="kmx-orka-show"></a>
 
 ### `kmx cluster orka show`
 
 Reads one live Orka Agent and its dependency chain: Provider readiness, the
-Secret it names (**presence only — the value is never read**), resolved model,
+Secret it names (**the Secret object and value are never fetched; presence is
+reported unknown**), resolved model,
 Tools including disabled ones, and recent Tasks. `--namespace` is required
 because Orka watches namespaces explicitly. An unread hop is `unknown`, never
 absent. Root `show/list` are not implemented.

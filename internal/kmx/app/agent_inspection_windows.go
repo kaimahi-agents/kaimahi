@@ -43,6 +43,14 @@ func recheckOrkaInspectionKubectl(ctx context.Context, path, expected string) er
 	return nil
 }
 
+func (*App) readOrkaAgentMachineList(string, string) ([]byte, error) {
+	return nil, fmt.Errorf("native Windows Orka list supports table output only")
+}
+
+func (a *App) readOrkaAgentTableList(namespace string) ([]byte, error) {
+	return a.readOrkaAgentList(namespace)
+}
+
 func (*App) missingOrkaInspectionKind() error {
 	return fmt.Errorf("no Orka Agent kind on this cluster; install Orka from a supported administration environment before using native Windows inspection")
 }

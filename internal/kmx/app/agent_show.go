@@ -34,7 +34,10 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
-var errUnsafeOrkaReference = errors.New("unsafe Orka resource reference")
+var (
+	errUnsafeOrkaReference       = errors.New("unsafe Orka resource reference")
+	errOrkaSecretPresenceNotRead = errors.New("presence not read; Secret values stay outside inspection")
+)
 
 // ShowOptions are `kmx cluster orka show`'s knobs.
 type ShowOptions struct {
@@ -52,7 +55,9 @@ type ShowOptions struct {
 // named exactly as their CRD names them, so a reader can check this against
 // `kubectl explain` rather than against our vocabulary.
 type orkaAgentSpec struct {
-	Metadata struct {
+	APIVersion string `json:"apiVersion"`
+	Kind       string `json:"kind"`
+	Metadata   struct {
 		Name      string `json:"name"`
 		Namespace string `json:"namespace"`
 		// UID is decoded, not displayed: it is the one identity that does
@@ -95,7 +100,9 @@ type orkaAgentSpec struct {
 }
 
 type orkaProviderSpec struct {
-	Metadata struct {
+	APIVersion string `json:"apiVersion"`
+	Kind       string `json:"kind"`
+	Metadata   struct {
 		Name      string `json:"name"`
 		Namespace string `json:"namespace"`
 	} `json:"metadata"`
@@ -179,7 +186,7 @@ func (a *App) ShowAgent(name string, opt ShowOptions) error {
 	if errors.Is(providerErr, errUnsafeOrkaReference) {
 		return providerErr
 	}
-	secretPresent, secretErr := a.secretPresence(providerNamespace, provider)
+	secretPresent, secretErr := false, errOrkaSecretPresenceNotRead
 	tasks := a.recentOrkaTasks(opt.Namespace, name, opt.Tasks)
 
 	if format == "json" {
@@ -208,7 +215,8 @@ func (a *App) readOrkaAgent(namespace, name string) (*orkaAgentSpec, error) {
 	if err := json.Unmarshal(raw, &agent); err != nil {
 		return nil, fmt.Errorf("Orka Agent %q returned invalid JSON: %w", name, err)
 	}
-	if agent.Metadata.Name != name || agent.Metadata.Namespace != namespace ||
+	if agent.APIVersion != "core.orka.ai/v1alpha1" || agent.Kind != "Agent" ||
+		agent.Metadata.Name != name || agent.Metadata.Namespace != namespace ||
 		agent.Spec.ProviderRef.Name != "" && scaffold.ValidateObjectName(agent.Spec.ProviderRef.Name) != nil ||
 		agent.Spec.ProviderRef.Namespace != "" && scaffold.ValidateNamespace(agent.Spec.ProviderRef.Namespace) != nil {
 		return nil, fmt.Errorf("%w: Orka Agent %q returned invalid identity or Provider reference", errUnsafeOrkaReference, name)
@@ -238,32 +246,12 @@ func (a *App) readOrkaProvider(namespace, name string) (*orkaProviderSpec, error
 	if err := json.Unmarshal(raw, &provider); err != nil {
 		return nil, fmt.Errorf("returned invalid JSON: %w", err)
 	}
-	if provider.Metadata.Name != name || provider.Metadata.Namespace != namespace ||
+	if provider.APIVersion != "core.orka.ai/v1alpha1" || provider.Kind != "Provider" ||
+		provider.Metadata.Name != name || provider.Metadata.Namespace != namespace ||
 		provider.Spec.SecretRef.Name != "" && scaffold.ValidateObjectName(provider.Spec.SecretRef.Name) != nil {
 		return nil, fmt.Errorf("%w: Provider returned an invalid Secret reference", errUnsafeOrkaReference)
 	}
 	return &provider, nil
-}
-
-// secretPresence reports whether the Provider's credential Secret exists.
-//
-// Presence only. The value is never read, never printed and never held: what
-// this view needs to answer is "is the thing the Provider names there", and
-// reading a credential to answer a question about its existence would be a
-// worse trade than leaving the question unanswered.
-func (a *App) secretPresence(namespace string, provider *orkaProviderSpec) (bool, error) {
-	if provider == nil || strings.TrimSpace(provider.Spec.SecretRef.Name) == "" {
-		return false, fmt.Errorf("no Secret named")
-	}
-	_, err := a.orkaCapture(a.operationContext(), nil, "-n", namespace, "get", "secret", provider.Spec.SecretRef.Name, "-o", "name")
-	switch {
-	case err == nil:
-		return true, nil
-	case isNotFound(err):
-		return false, nil
-	default:
-		return false, err
-	}
 }
 
 // recentOrkaTasks reads the Tasks that name this Agent, newest first.
