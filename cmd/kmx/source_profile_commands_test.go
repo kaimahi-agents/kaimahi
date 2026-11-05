@@ -19,6 +19,9 @@ func cliSourcePackage(t *testing.T) (string, workspace.SourceBundle) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chmod(parent, 0700); err != nil {
+		t.Fatal(err)
+	}
 	p, err := workspace.CompileMapped(t.Context(), input, parent)
 	if err != nil {
 		t.Fatal(err)

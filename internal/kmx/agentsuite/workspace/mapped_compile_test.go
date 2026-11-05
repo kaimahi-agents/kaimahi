@@ -21,6 +21,9 @@ func mappedParent(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chmod(p, 0700); err != nil {
+		t.Fatal(err)
+	}
 	return p
 }
 func compileFixture(t *testing.T, input MappedInput) *CompiledPackage {

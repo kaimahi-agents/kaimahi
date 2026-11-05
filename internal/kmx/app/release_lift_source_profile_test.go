@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -16,6 +17,9 @@ func TestSourceProfileDeployReadKeepsEvidenceGate(t *testing.T) {
 	input := workspace.MappedInput{SuiteName: "greeter", MemberID: "greeter", Model: "qwen-3.5-2b", Protocol: "openai-compatible", Runtime: workspace.RuntimeProfile{ID: "orka"}, Instructions: []byte("Answer briefly.\n"), Cases: []runtime.EvaluationCase{{ID: "greeting", Input: "Ada", ExpectContains: []string{"Ada"}}}, Sources: workspace.SourceBundle{Format: "kmx.orka-agent-markdown", SchemaVersion: 1, Agent: []byte("# original agent\n"), Tests: []byte("# original tests\n")}}
 	parent, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(parent, 0700); err != nil {
 		t.Fatal(err)
 	}
 	p, err := workspace.CompileMapped(t.Context(), input, parent)
