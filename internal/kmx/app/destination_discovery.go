@@ -31,6 +31,7 @@ type DiscoveryReport struct {
 	Complete bool             `json:"complete"`
 	Checks   []DiscoveryCheck `json:"checks"`
 	Rows     []DiscoveryRow   `json:"rows"`
+	Target   *DiscoveryTarget `json:"target,omitempty"`
 }
 
 // Go quoting is decoded as Go quoting, not incorrectly treated as JSON. Names
@@ -89,13 +90,11 @@ func (a *App) Discover(parent context.Context, opt DiscoveryOptions) (DiscoveryR
 		r.problem("malformed")
 		return r, NewMachineError("invalid_arguments", "preflight")
 	}
-	if opt.Namespace != "" {
-		r.Scope = "target"
-		r.problem("read_unknown")
-		return r, NewMachineError("unsupported", "preflight")
-	}
 	ctx, cancel := context.WithTimeout(parent, 30*time.Second)
 	defer cancel()
+	if opt.Namespace != "" {
+		return a.discoverTarget(ctx, opt)
+	}
 	var failure *discoveryReadFailure
 	if opt.Context == "" {
 		raw, readErr := a.discoveryCapture(ctx, "", "config", "view", "-o", "go-template="+discoveryContextTemplate)
@@ -228,7 +227,7 @@ func (a *App) Discover(parent context.Context, opt DiscoveryOptions) (DiscoveryR
 	// Decoding and projection also consume the operation budget. Cancellation
 	// after a successful subprocess must still veto a complete observation.
 	if err := ctx.Err(); err != nil {
-		failure = &discoveryReadFailure{"read_unknown", err}
+		failure = &discoveryReadFailure{reason: "read_unknown", cause: err}
 		r.Complete = false
 		r.Checks = []DiscoveryCheck{{r.Scope, "unknown", "read_unknown"}}
 	}
@@ -236,7 +235,7 @@ func (a *App) Discover(parent context.Context, opt DiscoveryOptions) (DiscoveryR
 		// Only an exact, prerequisite-qualified read can claim missing. This PR
 		// never performs such reads; even API/namespace NotFound is unknown.
 		if failure.reason == "resource_missing" {
-			failure = &discoveryReadFailure{"read_unknown", failure.cause}
+			failure = &discoveryReadFailure{reason: "read_unknown", cause: failure.cause}
 		}
 		r.problem(failure.reason)
 	}
@@ -248,7 +247,7 @@ func (a *App) Discover(parent context.Context, opt DiscoveryOptions) (DiscoveryR
 	})
 	if !r.Complete {
 		if failure == nil {
-			failure = &discoveryReadFailure{discoveryReadReason(r.Checks[0].Reason), nil}
+			failure = &discoveryReadFailure{reason: discoveryReadReason(r.Checks[0].Reason)}
 		}
 		return r, failure
 	}

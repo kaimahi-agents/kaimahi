@@ -83,6 +83,7 @@ type App struct {
 	kagentProfile *kagentProfile
 	// operationProgress reports real stage transitions to an owning deployment UI.
 	operationProgress func(name, status string, err error)
+	discoveryRead     *discoveryReadSession
 	Cfg               *config.Config
 	Run               *run.Runner
 	Out               io.Writer

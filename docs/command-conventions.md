@@ -137,7 +137,8 @@ Keep these distinctions:
   saved selection, which overrides the default. `cluster discover` is an explicit
   exception: without `--context CTX` it lists only local kubeconfig context labels;
   saved selectors and `KUBE_CTX` never select a context implicitly. Its
-  `--namespace` flag refuses before reads because target discovery is not implemented.
+  `--namespace` flag requires an explicit context and observes only that target;
+  it never selects or configures it.
   See [destination discovery](machine-output.md#destination-discovery).
 - **Declare flag relationships with Cobra helpers** (mutually exclusive,
   required together). Refuse invalid combinations before loading

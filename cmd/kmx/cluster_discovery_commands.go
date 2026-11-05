@@ -26,11 +26,11 @@ func (m *machineOutput) discoveryResult(report app.DiscoveryReport, exit int, sa
 
 func newClusterDiscoveryCommand(state *commandState) *cobra.Command {
 	output, namespace := "text", ""
-	cmd := &cobra.Command{Use: "discover", Short: "List context labels or namespaces without changing the target",
-		Long:    "Without --context, read only local kubeconfig context labels. With an explicit\ncontext, list namespace names and UIDs using bounded GETs. No runtime, model, Tool,\ncredentials or preferences are created. Target discovery (--namespace) is not yet\navailable. Partial or unreadable lists exit 1, never prove absence. Existing\nkubectl credential helpers may run; input is detached and no prompt is supported.",
+	cmd := &cobra.Command{Use: "discover", Short: "Discover context labels, namespaces or an explicit target without changing it",
+		Long:    "Without --context, read only local kubeconfig context labels. With an explicit\ncontext, list namespace names and UIDs using bounded GETs. Add --namespace to\nobserve target identity, native runtime readiness, declared Providers/models and\nTool inventory. No runtime, credentials, preferences or other resources are created.\nPartial reads exit 1, never prove absence or execution permission. Existing kubectl\ncredential helpers may run; input is detached and no prompt is supported.",
 		Example: "  kmx cluster discover\n  kmx cluster discover --context dev -o jsonl", Args: cobra.NoArgs}
 	cmd.Flags().StringVarP(&output, "output", "o", "text", "Output: text or jsonl")
-	cmd.Flags().StringVar(&namespace, "namespace", "", "Target scope (not implemented; refuses without reads)")
+	cmd.Flags().StringVar(&namespace, "namespace", "", "Observe this target namespace (requires explicit --context)")
 	_ = cmd.RegisterFlagCompletionFunc("output", staticCompletion([]string{"text", "jsonl"}))
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		if output != "text" && output != "jsonl" {
@@ -76,6 +76,26 @@ func newClusterDiscoveryCommand(state *commandState) *cobra.Command {
 					_, writeErr = fmt.Fprintf(cmd.OutOrStdout(), "%s\tcurrent=%t\n", row.Context, *row.Current)
 				} else {
 					_, writeErr = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\n", row.Context, row.Namespace, row.UID)
+				}
+			}
+			if t := report.Target; t != nil && writeErr == nil {
+				_, writeErr = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\tcluster=%s\tnamespace=%s\n", t.Context, t.Namespace, t.ClusterUID, t.NamespaceUID)
+				if t.Runtime != nil && writeErr == nil {
+					_, writeErr = fmt.Fprintf(cmd.OutOrStdout(), "Runtime\t%s\t%s\t%s\n", t.Runtime.Version, t.Runtime.State, t.Runtime.Reason)
+				}
+				for _, p := range t.Providers {
+					if writeErr != nil {
+						break
+					}
+					_, writeErr = fmt.Fprintf(cmd.OutOrStdout(), "Provider\t%s\t%s\tmodel=%s\tReady=%s\n", p.Name, p.Type, p.Model, p.ConditionState)
+				}
+				if t.Tools != nil {
+					for _, tool := range t.Tools.Tools {
+						if writeErr != nil {
+							break
+						}
+						_, writeErr = fmt.Fprintf(cmd.OutOrStdout(), "Tool\t%s\t%s\t%s\n", tool.Name, tool.Availability, tool.Reason)
+					}
 				}
 			}
 		}

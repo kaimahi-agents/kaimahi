@@ -55,7 +55,17 @@ execution. Disabled requirements do not resolve an
 exact resource dependency. Only an authoritative exact Tool NotFound, after the
 namespace and Tool API are observed, gives `missing`/`resource_missing`.
 A forbidden read is `unknown`/`read_denied`; unrecognized failures are
-`unknown`/`read_unknown`, never absence.
+`unknown`/`read_unknown`, never absence. The shared checked transport recognizes
+only exact case-sensitive line-start diagnostics with marker boundaries. The real
+`error: You must be logged in to the server` maps to `authentication_required`;
+`Error from server (Unauthorized)`, conflicts, truncation and lookalikes stay
+unknown. Exact Tool absence additionally retains the per-name diagnostic match,
+never a generic NotFound hint. Controller lists follow bounded pagination and
+literal JSON keys cannot be overwritten by case aliases. A failed stability
+bracket marks non-disabled rows `stale_input` or the read failure, not
+`unsupported_runtime`; stable unsupported pins retain that native reason. A
+supported pin awaiting rollout instead reports `read_unknown`, including Tool
+rows, rather than claiming that runtime is unsupported.
 
 Complete inventory exits 0, even when empty or containing unavailable candidates.
 Incomplete inventory exits 1 and preserves fitting readable rows; never interpret

@@ -152,11 +152,11 @@ func TestDiscoveryUnsafeNamesAndDocuments(t *testing.T) {
 		t.Fatal(string(b))
 	}
 }
-func TestDiscoveryTargetScopeUnavailable(t *testing.T) {
+func TestDiscoveryTargetNamespaceRequiresContext(t *testing.T) {
 	a := captureTestApp()
 	a.captureCommand = func(context.Context, *exec.Cmd) error { t.Fatal("unsupported dispatched"); return nil }
 	_, err := a.Discover(t.Context(), DiscoveryOptions{Namespace: "dev"})
-	if err == nil || DiscoveryError(err).Error() != "The requested operation is unsupported." {
+	if err == nil || DiscoveryError(err).Error() != "The command arguments are invalid." {
 		t.Fatal(err)
 	}
 }
