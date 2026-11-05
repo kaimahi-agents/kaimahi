@@ -82,6 +82,11 @@ func TestDiscoveryReviewRuntimeReasons(t *testing.T) {
 					t.Fatal(r.Target.Runtime)
 				}
 			case "unrelated":
+				for _, c := range r.Checks {
+					if c.Scope == "tools" && c.Reason == "unsupported_runtime" {
+						t.Fatal(r.Checks)
+					}
+				}
 				if r.Target.Runtime.State != "missing" {
 					t.Fatal(r.Target.Runtime)
 				}

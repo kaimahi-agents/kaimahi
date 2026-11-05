@@ -123,6 +123,10 @@ func (o *toolObserver) runtime(namespace string) (suiteNativeRuntime, bool) {
 		return suiteNativeRuntime{}, false
 	}
 	d, _, err := selectOrkaController(items)
+	if err != nil {
+		o.problem("read_unknown")
+		return suiteNativeRuntime{}, false
+	}
 	if err == nil {
 		var r suiteNativeRuntime
 		r, err = suiteNativeControllerRuntime(d, namespace)
