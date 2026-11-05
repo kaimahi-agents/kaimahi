@@ -45,6 +45,18 @@ func TestOrkaModelHelpInert(t *testing.T) {
 	if *loads != 0 || !strings.Contains(out.String(), "connect") || !strings.Contains(out.String(), "disconnect") || strings.Contains(out.String(), "prove") {
 		t.Fatal("help accessed config or advertised proof")
 	}
+	for _, verb := range []string{"connect", "disconnect"} {
+		out.Reset()
+		if err := execute([]string{"cluster", "orka", "model", verb, "--help"}, deps); err != nil {
+			t.Fatal(err)
+		}
+		if *loads != 0 {
+			t.Fatal("verb help loaded config")
+		}
+		if verb == "disconnect" && (!strings.Contains(out.String(), "No credential reads") || strings.Contains(out.String(), "Use the fixed guest-memory Copilot credential profile")) {
+			t.Fatal("disconnect help claims credential reads", out.String())
+		}
+	}
 }
 func TestOrkaModelSetupFields(t *testing.T) {
 	var out bytes.Buffer

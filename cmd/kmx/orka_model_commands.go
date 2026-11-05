@@ -20,7 +20,11 @@ func newOrkaModelLeaf(state *commandState, verb string) *cobra.Command {
 	var connect app.OrkaModelConnectOptions
 	var connection string
 	var result app.OrkaModelResult
-	cmd := &cobra.Command{Use: verb, Short: map[string]string{"connect": "Configure Copilot through the owned gateway without inference", "disconnect": "Stop only the retained model connection and owned resources"}[verb], Long: "Use the fixed guest-memory Copilot credential profile in the owned Linux VM.\nNo runtime installation, sign-in flow, model inference or resource adoption.\nAn uncertain operation retains its connection ID for explicit recovery.", Args: func(_ *cobra.Command, args []string) error {
+	long := "Use the fixed guest-memory Copilot credential profile in the owned Linux VM.\nNo runtime installation, sign-in flow, model inference or resource adoption.\nAn uncertain operation retains its connection ID for explicit recovery."
+	if verb == "disconnect" {
+		long = "Stop only the retained model connection and owned resources in the Linux VM.\nNo credential reads, runtime removal, sign-in flow, model inference or resource adoption.\nAn uncertain operation retains its connection ID for explicit recovery."
+	}
+	cmd := &cobra.Command{Use: verb, Short: map[string]string{"connect": "Configure Copilot through the owned gateway without inference", "disconnect": "Stop only the retained model connection and owned resources"}[verb], Long: long, Args: func(_ *cobra.Command, args []string) error {
 		if len(args) != 0 {
 			return fmt.Errorf("model %s accepts no positional arguments", verb)
 		}

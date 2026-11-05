@@ -161,7 +161,7 @@ KIND_CLUSTER=local-offline kmx --context kind-local-offline --container-engine d
 The UUIDs above are examples. The owning guest endpoint supplies the credential
 generation after private delivery and retains the connection ID returned by
 Connect. Do not copy a credential or derive a generation from its contents.
-The fixed credential file is root:65532, mode0640, under the memory mount above.
+The fixed credential file is root:65532, mode 0640, under the memory mount above.
 KMX checks its metadata; the gateway launcher validates the bytes in memory.
 The Kubernetes Secret is a fixed noncredential placeholder. No credential flag,
 file-path flag, login fallback or keyed route is supported.

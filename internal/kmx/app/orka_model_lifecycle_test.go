@@ -30,11 +30,17 @@ func TestOrkaModelServingOwnership(t *testing.T) {
 	for _, damage := range []string{"no-pod", "foreign-pod", "not-ready"} {
 		t.Run(damage, func(t *testing.T) {
 			a, objects, _ := modelLifecycleFixture(t)
-			ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
-			defer cancel()
-			a.Run.Context = ctx
+			waits := 0
+			a.waitTiming = &waitTiming{timeout: func(ctx context.Context, stage string, d time.Duration) (context.Context, context.CancelFunc) {
+				if stage == "orka-model-serving-gateway" {
+					waits++
+					d = 25 * time.Millisecond
+				}
+				return context.WithTimeout(ctx, d)
+			}}
 			capture := a.captureCommand
 			health := 0
+			sawPods := false
 			a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
 				args := strings.Join(cmd.Args, " ")
 				if strings.Contains(args, "/proxy/") {
@@ -49,6 +55,7 @@ func TestOrkaModelServingOwnership(t *testing.T) {
 					}
 				}
 				if strings.Contains(args, "/pods?limit=64") {
+					sawPods = true
 					items := []any{}
 					for _, p := range modelFixtureChildren(objects) {
 						if p["kind"] != "Pod" {
@@ -69,8 +76,8 @@ func TestOrkaModelServingOwnership(t *testing.T) {
 				return capture(ctx, cmd)
 			}
 			result, err := a.ConnectOrkaModel(modelConnectOptions())
-			if err == nil || result.Connection == nil || result.Connection.State != "unknown" || health != 0 {
-				t.Fatalf("unsafe ready: %+v err%v probes%d", result, err, health)
+			if err == nil || result.Connection == nil || result.Connection.State != "unknown" || health != 0 || !sawPods || waits != 1 {
+				t.Fatalf("unsafe ready: %+v err%v probes%d pods%t waits%d", result, err, health, sawPods, waits)
 			}
 		})
 	}

@@ -105,7 +105,8 @@ func (m *machineOutput) markEffect(stage, status string) {
 	e := &m.setup.effects[index]
 	if status == "active" {
 		e.Attempt = "started"
-		if m.setup.mode == "apply" && stage != "installer" && !(strings.HasPrefix(m.operation, "cluster.orka.model.") && (stage == "model" || stage == "finalize")) {
+		if m.setup.mode == "apply" && stage != "installer" &&
+			(!strings.HasPrefix(m.operation, "cluster.orka.model.") || (stage != "model" && stage != "finalize")) {
 			e.Mutation = "possible"
 		}
 	} else if status == "done" {
