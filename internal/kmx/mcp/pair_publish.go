@@ -148,13 +148,46 @@ func (b *pairBinding) retainPairHistory(ctx context.Context) (*historyStore, *Fi
 	return s, &FileHistoryStatus{"retained", "history_retained", "Saved; the previous version is retained in local history."}
 }
 
+type sourcePairChanges struct {
+	agentBytes, testsBytes []byte
+	testsPresent           bool
+}
+
+type sourcePairPublicationResult struct {
+	Agent, Tests SourcePairWrite
+}
+
+type sourcePairPublishHooks struct {
+	check               func(context.Context) error
+	checkPublishing     func(context.Context) error
+	prepareAbsentParent func(*absentSource, map[string]os.FileInfo) error
+	prepare             func(context.Context, sourcePairPublicationResult) error
+	beforePublication   func(context.Context)
+}
+
+// facts starts changed roles at not_written, never claiming a current revision
+// for a write that has not been acknowledged. Unchanged roles retain raw hashes.
+func (c sourcePairChanges) facts(b *sourcePairBinding) sourcePairPublicationResult {
+	role := func(h *historySource, source []byte, present bool) SourcePairWrite {
+		if h == nil && present || h != nil && (!present || !bytes.Equal(h.source, source)) {
+			return SourcePairWrite{State: "not_written"}
+		}
+		result := SourcePairWrite{State: "unchanged"}
+		if h != nil {
+			result.Revision = revision(h.source)
+		}
+		return result
+	}
+	return sourcePairPublicationResult{role(b.agent, c.agentBytes, true), role(b.tests, c.testsBytes, c.testsPresent)}
+}
+
 type pairPublication struct {
 	role    string
 	current **historySource
 	absent  **absentSource
 	source  []byte
 	present bool
-	ack     *pairSourceAck
+	ack     *SourcePairWrite
 	parent  *os.Root
 	stage   string
 }
@@ -162,27 +195,42 @@ type pairPublication struct {
 // Publication consumes the operation's checked descriptors, never an inbound
 // arbitrary destination. Two renames/removals are not a transaction.
 func (b *pairBinding) publish(ctx context.Context, desired *agentfile.Pair, agentBytes, testsBytes []byte) pairSaveResult {
-	result := pairSaveResult{SchemaVersion: 3, Kind: "kmx.agent-pair-save", State: "not_saved", Agent: pairSourceAck{Status: "unchanged"}, Tests: pairSourceAck{Status: "unchanged"}}
-	fail := func(err error) pairSaveResult {
-		result.ReasonCode = errorResult(err).StructuredContent.(map[string]any)["reasonCode"].(string)
-		if result.Agent.Status == "saved" || result.Tests.Status == "saved" {
-			result.State = "partial"
+	changes := sourcePairChanges{agentBytes, testsBytes, desired.Tests.State == "external"}
+	initial := changes.facts(&b.sourcePairBinding)
+	result := pairSaveResult{SchemaVersion: 3, Kind: "kmx.agent-pair-save", State: "not_saved"}
+	legacyAck := func(write SourcePairWrite) pairSourceAck {
+		switch write.State {
+		case "written":
+			return pairSourceAck{"saved", write.Revision}
+		case "unknown":
+			return pairSourceAck{Status: "uncertain"}
+		case "not_written":
+			return pairSourceAck{Status: "not_saved"}
+		default:
+			return pairSourceAck{Status: "unchanged"}
 		}
-		if result.Agent.Status == "uncertain" || result.Tests.Status == "uncertain" {
-			result.State = "uncertain"
-		}
-		if result.State == "not_saved" {
-			result.History = nil
-		}
-		return result
 	}
-	mutations := []pairPublication{{"agent", &b.agent, &b.agentAbsent, agentBytes, true, &result.Agent, nil, ""}, {"tests", &b.tests, &b.absent, testsBytes, desired.Tests.State == "external", &result.Tests, nil, ""}}
-	for i := range mutations {
-		m := &mutations[i]
-		h := *m.current
-		if h == nil && m.present || h != nil && (!m.present || !bytes.Equal(h.source, m.source)) {
-			m.ack.Status = "not_saved"
+	finish := func(facts sourcePairPublicationResult, err error) pairSaveResult {
+		result.Agent, result.Tests = legacyAck(facts.Agent), legacyAck(facts.Tests)
+		if err != nil {
+			result.ReasonCode = errorResult(err).StructuredContent.(map[string]any)["reasonCode"].(string)
+			if result.Agent.Status == "saved" || result.Tests.Status == "saved" {
+				result.State = "partial"
+			}
+			if result.Agent.Status == "uncertain" || result.Tests.Status == "uncertain" {
+				result.State = "uncertain"
+			}
+			if result.State == "not_saved" {
+				result.History = nil
+			}
+			return result
 		}
+		b.pair, b.sources = desired, sourcesFor(desired)
+		result.State = "complete"
+		result.File = File{Path: b.agent.path, Revision: desired.Agent.Revision}
+		result.SnapshotRevision = desired.SnapshotRevision
+		result.SourceVersion = b.sourceVersion()
+		return result
 	}
 	// A small inbound encoding must not bypass the complete source-view budget.
 	view := pairDocument(desired, agentBytes)
@@ -191,8 +239,32 @@ func (b *pairBinding) publish(ctx context.Context, desired *agentfile.Pair, agen
 	view.History = &AgentHistory{Status: "unavailable", Versions: []AgentVersion{}}
 	view.PairOperations = &pairOperationsCapability{SchemaVersion: 1, ToolSchemaVersion: 3, Execute: true, Create: true, Edit: true, Capture: true, Restore: true}
 	if _, err := sourceResourceResult(ctx, "", view); err != nil {
-		return fail(err)
+		return finish(initial, err)
 	}
+	var history *historyStore
+	defer func() {
+		if history != nil {
+			history.close()
+		}
+	}()
+	facts, err := publishHeldSourcePair(ctx, &b.sourcePairBinding, changes, sourcePairPublishHooks{
+		check: b.check, checkPublishing: b.checkPublishing, prepareAbsentParent: b.prepareAbsentParent,
+		beforePublication: func(ctx context.Context) {
+			if b.agent != nil && (initial.Agent.State == "not_written" || initial.Tests.State == "not_written") {
+				history, result.History = b.retainPairHistory(ctx)
+			}
+		},
+	})
+	return finish(facts, err)
+}
+
+// publishHeldSourcePair is the single descriptor publication engine. Policy is
+// delegated to the holder's adapter; raw facts survive every partial failure.
+func publishHeldSourcePair(ctx context.Context, b *sourcePairBinding, changes sourcePairChanges, hooks sourcePairPublishHooks) (sourcePairPublicationResult, error) {
+	changes.agentBytes = bytes.Clone(changes.agentBytes)
+	changes.testsBytes = bytes.Clone(changes.testsBytes)
+	result := changes.facts(b)
+	mutations := []pairPublication{{"agent", &b.agent, &b.agentAbsent, changes.agentBytes, true, &result.Agent, nil, ""}, {"tests", &b.tests, &b.absent, changes.testsBytes, changes.testsPresent, &result.Tests, nil, ""}}
 	var locked []*historySource
 	for _, h := range []*historySource{b.agent, b.tests} {
 		if h != nil {
@@ -203,14 +275,30 @@ func (b *pairBinding) publish(ctx context.Context, desired *agentfile.Pair, agen
 	for _, h := range locked {
 		unlock, err := lockTarget(h.file)
 		if err != nil {
-			return fail(lockFailure(err))
+			return result, lockFailure(err)
 		}
 		defer unlock()
 	}
-	if err := b.check(ctx); err != nil {
-		return fail(err)
+	if err := hooks.check(ctx); err != nil {
+		return result, err
 	}
-	changed := false
+	if hooks.prepare != nil {
+		prospective := result
+		for i, ack := range []*SourcePairWrite{&prospective.Agent, &prospective.Tests} {
+			if ack.State == "not_written" {
+				ack.State = "written"
+				if mutations[i].present {
+					ack.Revision = revision(mutations[i].source)
+				}
+			}
+		}
+		if err := hooks.prepare(ctx, prospective); err != nil {
+			return result, err
+		}
+	}
+	if err := hooks.check(ctx); err != nil {
+		return result, err
+	}
 	created := map[string]os.FileInfo{}
 	for i := range mutations {
 		m := &mutations[i]
@@ -218,24 +306,23 @@ func (b *pairBinding) publish(ctx context.Context, desired *agentfile.Pair, agen
 		if h == nil && !m.present || h != nil && m.present && bytes.Equal(h.source, m.source) {
 			continue
 		}
-		changed = true
-		m.ack.Status = "not_saved"
+		m.ack.State = "not_written"
 		if h != nil {
 			m.parent = h.parent
 		} else {
-			if err := b.prepareAbsentParent(*m.absent, created); err != nil {
-				return fail(err)
+			if err := hooks.prepareAbsentParent(*m.absent, created); err != nil {
+				return result, err
 			}
 			m.parent = (*m.absent).parent
 		}
 	}
 	for i := range mutations {
 		m := &mutations[i]
-		if m.ack.Status == "unchanged" || !m.present {
+		if m.ack.State == "unchanged" || !m.present {
 			continue
 		}
-		if err := b.checkPublishing(ctx); err != nil {
-			return fail(err)
+		if err := hooks.checkPublishing(ctx); err != nil {
+			return result, err
 		}
 		mode, preserve := os.FileMode(0666), false
 		if h := *m.current; h != nil {
@@ -243,25 +330,21 @@ func (b *pairBinding) publish(ctx context.Context, desired *agentfile.Pair, agen
 		}
 		name, err := stage(m.parent, m.source, mode, preserve)
 		if err != nil {
-			return fail(err)
+			return result, err
 		}
 		m.stage = name
 		defer m.parent.Remove(name)
 	}
-	if changed && b.agent != nil {
-		s, status := b.retainPairHistory(ctx)
-		if s != nil {
-			defer s.close()
-		}
-		result.History = status
+	if hooks.beforePublication != nil {
+		hooks.beforePublication(ctx)
 	}
 	for i := range mutations {
 		m := &mutations[i]
-		if m.ack.Status == "unchanged" {
+		if m.ack.State == "unchanged" {
 			continue
 		}
-		if err := b.checkPublishing(ctx); err != nil {
-			return fail(err)
+		if err := hooks.checkPublishing(ctx); err != nil {
+			return result, err
 		}
 		h := *m.current
 		var path string
@@ -286,15 +369,15 @@ func (b *pairBinding) publish(ctx context.Context, desired *agentfile.Pair, agen
 		}
 		if err != nil {
 			if !os.IsExist(err) {
-				m.ack.Status = "uncertain"
+				m.ack.State = "unknown"
 			}
-			return fail(refusal("publication_failed"))
+			return result, refusal("publication_failed")
 		}
-		m.ack.Status = "saved"
+		m.ack.State = "written"
 		info, err := m.parent.Stat(".")
 		if err != nil {
-			m.ack.Status = "uncertain"
-			return fail(refusal("io_failed"))
+			m.ack.State = "unknown"
+			return result, refusal("io_failed")
 		}
 		if h != nil {
 			defer h.file.Close()
@@ -308,24 +391,22 @@ func (b *pairBinding) publish(ctx context.Context, desired *agentfile.Pair, agen
 				if file != nil {
 					file.Close()
 				}
-				m.ack.Status = "uncertain"
-				return fail(refusal("stale_revision"))
+				m.ack.State = "unknown"
+				return result, refusal("stale_revision")
 			}
 			*m.current = &historySource{path, m.parent, file, observed, info, m.source, m.role == "tests"}
 			*m.absent = nil
 			m.ack.Revision = revision(m.source)
 		}
 	}
-	b.pair = desired
-	b.sources = sourcesFor(desired)
-	if err := b.checkPublishing(ctx); err != nil {
-		return fail(err)
+	if err := hooks.checkPublishing(ctx); err != nil {
+		return result, err
 	}
 	for _, h := range []*historySource{b.agent, b.tests} {
 		if h != nil {
 			info, err := h.parent.Stat(".")
 			if err != nil {
-				return fail(refusal("io_failed"))
+				return result, refusal("io_failed")
 			}
 			h.parentInfo = info
 		}
@@ -333,13 +414,9 @@ func (b *pairBinding) publish(ctx context.Context, desired *agentfile.Pair, agen
 	if b.absent != nil {
 		info, err := b.absent.parent.Stat(".")
 		if err != nil {
-			return fail(refusal("io_failed"))
+			return result, refusal("io_failed")
 		}
 		b.absent.info = info
 	}
-	result.State = "complete"
-	result.File = File{Path: b.agent.path, Revision: desired.Agent.Revision}
-	result.SnapshotRevision = desired.SnapshotRevision
-	result.SourceVersion = b.sourceVersion()
-	return result
+	return result, nil
 }
