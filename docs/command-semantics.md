@@ -98,6 +98,19 @@ inference retries or fallback. Existing live `run --agent`, full-workspace Test,
 workspace Explain and hidden legacy Eval remain unchanged. See
 [agent-file preview](kmx.md#agent-file-local-preview-unreleased-integration).
 
+`kmx run FILE --persist` registers or reuses an immutable local agent/test
+snapshot. Without input it only registers; with input it executes the cached pair
+in the invoking process, retaining no daemon, model session, credential or tool
+process. Persistent registrations are tool-free and use fake or Copilot routes
+without custom endpoints. `kmx list` shows active local registrations; `--all`
+includes stopped ones. Only an explicit global `--context` selects existing Orka
+inventory. Hidden `kmx stop NAME_OR_ID` ends a local registration, not an
+in-flight preview. Test remains current-source based, never instance-targeted.
+`kmx test FILE --check [-o text|json]` validates the selected pair without
+provider, model, tool, journal or history access; validation is not a test pass.
+Native Windows defers persistence, local List and Stop; use WSL. See
+[local preview](local-preview.md) for snapshot privacy and lifecycle limits.
+
 `kmx test FILE --runner copilotd --host ws://127.0.0.1:PORT` explicitly selects
 an already-running local native host instead of embedded Sessions. Each case uses
 a fresh private Git working-tree copy and observed native model/tool evidence;
@@ -311,8 +324,10 @@ promotion, creation or partial-outcome path. See [suite workspace](suite-workspa
 
 ## Vocabulary
 
-**Decided: Run / Test / Publish.** Run invokes an existing live Orka Agent;
-Test checks workspace cases; Publish transfers the OCI graph with `kmx package push`.
+**Decided: Run / Test / Publish.** `run --agent` invokes an existing live Orka
+Agent; `run FILE` previews a local agent file, optionally registering its snapshot
+with `--persist`. Test checks file or workspace cases; Publish transfers the OCI
+graph with `kmx package push`.
 This does not add local workspace Run, numbered versions, a plugin or a new
 Publish command. Deploy remains real-target placement.
 

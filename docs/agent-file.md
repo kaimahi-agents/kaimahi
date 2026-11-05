@@ -199,6 +199,21 @@ reader. Run returns answers without checks; Test evaluates the checks. Add
 input. No source migration is automatic. A missing or empty test source is not
 a passing Test.
 
+`kmx test FILE --check [--tests FILE] [-o text|json]` validates the current
+selected pair and reports identity metadata without provider, model, tool,
+journal or history access. It does not execute checks or establish a test pass.
+Ordinary Test also uses current checked source, never a persistent instance.
+
+`kmx run FILE --persist` registers or reuses an immutable snapshot of the
+selected agent/test pair. Without input it only registers; with input it runs
+the cached pair in the invoking process. Persistent registrations are tool-free;
+ordinary Run/Test tool support is unchanged. Exact authored bytes are retained
+in an owner-only cleartext cache. Source edits do not update an active snapshot:
+stop it before persisting changed source. `kmx list` shows active registrations,
+`kmx list --all` includes stopped ones, and `kmx stop NAME_OR_ID` ends one.
+Persistence, local List and Stop are deferred on native Windows; use WSL.
+See [local preview](local-preview.md) for lifecycle privacy and history limits.
+
 MCP has separate read-only source/history resources and paired offline export.
 The existing Run/Test tools also accept version 3 with a checked `sourceVersion`
 from the source resource: Run answers without checks; Test evaluates selected
