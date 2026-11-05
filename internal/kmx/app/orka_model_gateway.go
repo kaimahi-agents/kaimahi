@@ -10,6 +10,7 @@ import (
 
 // The guest runtime must contain exactly the kind nodes whose binds we inspect.
 func (a *App) modelGatewayNodes(ctx context.Context) ([]string, error) {
+	a = a.withRunContext(ctx)
 	raw, err := a.offlineCapture("kind", "get", "nodes", "--name", a.Cfg.KindCluster)
 	if err != nil {
 		return nil, err
@@ -94,6 +95,9 @@ func (a *App) modelServingGateway(ctx context.Context, root modelOwnedResource) 
 			if modelJSON(raw, &pod) != nil || pod["kind"] != "Pod" || pod["apiVersion"] != "v1" || modelMap(pod["metadata"])["uid"] != child.UID || modelMap(pod["metadata"])["deletionTimestamp"] != nil {
 				return nil, fmt.Errorf("model serving Pod changed")
 			}
+			if modelText(modelMap(pod["spec"])["nodeName"]) == "" {
+				continue
+			}
 			status := modelMap(pod["status"])
 			conditions, _ := status["conditions"].([]any)
 			for _, c := range conditions {
@@ -119,6 +123,7 @@ func (a *App) modelServingGateway(ctx context.Context, root modelOwnedResource) 
 // API disappearance is not process death after node loss or a forced deletion.
 // CRI ListContainers is read-only and contains no container environment; never inspect.
 func (a *App) modelGatewayStopped(ctx context.Context, root modelOwnedResource, children []modelChild) error {
+	a = a.withRunContext(ctx)
 	if err := a.checkModelNodeMounts(); err != nil {
 		return err
 	}

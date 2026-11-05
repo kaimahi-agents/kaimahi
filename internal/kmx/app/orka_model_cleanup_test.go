@@ -78,8 +78,8 @@ func TestOrkaModelDelete(t *testing.T) {
 }
 
 func TestOrkaModelChildren(t *testing.T) {
-	root := modelOwnedResource{APIVersion: "apps/v1", Kind: "Deployment", Name: "gateway", UID: "gateway-uid", Spec: map[string]any{"selector": map[string]any{"matchLabels": map[string]any{"app": "gateway"}}, "template": map[string]any{"spec": map[string]any{"serviceAccountName": "default", "containers": []any{map[string]any{"name": "gateway", "image": "pinned"}}}}}}
-	rs := map[string]any{"apiVersion": "apps/v1", "kind": "ReplicaSet", "metadata": map[string]any{"name": "gateway-rs", "namespace": OrkaNamespace, "uid": "rs-uid", "ownerReferences": []any{map[string]any{"apiVersion": "apps/v1", "kind": "Deployment", "name": "gateway", "uid": "gateway-uid", "controller": true}}, "labels": map[string]any{"app": "gateway"}}, "spec": map[string]any{"template": root.Spec["template"]}}
+	root := modelOwnedResource{APIVersion: "apps/v1", Kind: "Deployment", Name: "gateway", UID: "gateway-uid", Marker: "11111111-1111-4111-8111-111111111111", Spec: map[string]any{"selector": map[string]any{"matchLabels": map[string]any{"app": "gateway", modelOperationLabel: "11111111-1111-4111-8111-111111111111"}}, "template": map[string]any{"spec": map[string]any{"serviceAccountName": "default", "containers": []any{map[string]any{"name": "gateway", "image": "pinned"}}}}}}
+	rs := map[string]any{"apiVersion": "apps/v1", "kind": "ReplicaSet", "metadata": map[string]any{"name": "gateway-rs", "namespace": OrkaNamespace, "uid": "rs-uid", "ownerReferences": []any{map[string]any{"apiVersion": "apps/v1", "kind": "Deployment", "name": "gateway", "uid": "gateway-uid", "controller": true}}, "labels": modelMap(root.Spec["selector"])["matchLabels"]}, "spec": map[string]any{"template": root.Spec["template"]}}
 	for _, damage := range []string{"", "foreign-owner", "spec", "incomplete"} {
 		t.Run(damage, func(t *testing.T) {
 			raw, _ := json.Marshal(rs)

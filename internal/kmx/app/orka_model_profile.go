@@ -7,6 +7,7 @@ import (
 )
 
 const modelCredentialFile = modelCredentialDir + "/copilot-github-token"
+const modelOperationLabel = "kaimahi.dev/model-operation"
 
 // The endpoint owns bytes and serializes delivery; kmx only checks metadata.
 func (a *App) modelCredentialInput() error {
@@ -56,7 +57,8 @@ func modelDocuments(provider, model, operation, arch string) ([]map[string]any, 
 	}
 	name := provider + "-vekil"
 	secret := provider + "-model-key"
-	labels := map[string]any{"app.kubernetes.io/name": name}
+	// Scope controller adoption and service selection; owner UIDs remain authority.
+	labels := map[string]any{"app.kubernetes.io/name": name, modelOperationLabel: operation}
 	makeDoc := func(kind, version, name string, spec map[string]any) map[string]any {
 		return map[string]any{"apiVersion": version, "kind": kind, "metadata": map[string]any{"name": name, "namespace": OrkaNamespace, "annotations": map[string]any{modelOperationAnnotation: operation}}, "spec": spec}
 	}

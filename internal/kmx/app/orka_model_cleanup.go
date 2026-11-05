@@ -29,7 +29,7 @@ func (a *App) modelChildren(ctx context.Context, ns string, root modelOwnedResou
 	}
 	labels := modelMap(modelMap(root.Spec["selector"])["matchLabels"])
 	template := modelMap(modelMap(root.Spec["template"])["spec"])
-	if len(labels) == 0 || template == nil {
+	if !modelUUID(root.Marker) || labels[modelOperationLabel] != root.Marker || template == nil {
 		return nil, fmt.Errorf("invalid model cleanup projection")
 	}
 	parents := map[string]modelChild{root.UID: {APIVersion: root.APIVersion, Kind: root.Kind, Name: root.Name, UID: root.UID}}
@@ -94,7 +94,7 @@ func (a *App) modelChildren(ctx context.Context, ns string, root modelOwnedResou
 					return nil, e
 				}
 				node := modelText(spec["nodeName"])
-				if !slices.Contains(nodes, node) {
+				if node != "" && !slices.Contains(nodes, node) {
 					return nil, fmt.Errorf("model Pod placement changed")
 				}
 				copy := map[string]any{}
