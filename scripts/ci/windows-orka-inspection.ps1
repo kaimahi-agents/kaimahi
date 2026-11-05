@@ -9,6 +9,7 @@ $ErrorActionPreference = 'Stop'
 
 $exe = (Resolve-Path -LiteralPath $Binary).ProviderPath
 $kubectlExe = (Resolve-Path -LiteralPath $Kubectl).ProviderPath
+$powershellExe = (Get-Process -Id $PID).Path
 if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Binary must be a regular file.' }
 if (-not (Test-Path -LiteralPath $kubectlExe -PathType Leaf)) { throw 'Kubectl fixture must be a regular file.' }
 
@@ -17,6 +18,7 @@ $root = Join-Path ([IO.Path]::GetTempPath()) ("kmx remote inspect $nonAscii " + 
 if (Test-Path -LiteralPath $root) { throw 'Remote-inspection qualification requires a fresh root.' }
 
 $saved = @{}
+$serverProcess = $null
 foreach ($name in @('PATH', 'KMX_HOME', 'KMX_TOOLCHAIN', 'KMX_KUBECTL_FIXTURE_MODE',
         'KUBECONFIG',
         'KMX_INSPECT_CALLS', 'KMX_INSPECT_AGENTS', 'KMX_INSPECT_AGENT',
@@ -57,6 +59,7 @@ try {
     New-Item -ItemType Directory -Path $fixtureDir | Out-Null
     $fixture = Join-Path $fixtureDir 'kubectl.exe'
     Copy-Item -LiteralPath $kubectlExe -Destination $fixture
+    $fixtureHash = (Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash.ToLowerInvariant()
     $state = Join-Path $root "state must not exist $nonAscii"
     $calls = Join-Path $root 'calls.txt'
     $kubeconfig = Join-Path $root 'empty kubeconfig.yaml'
@@ -74,31 +77,122 @@ try {
         [Environment]::SetEnvironmentVariable('KMX_INSPECT_PROVIDER', '{"apiVersion":"core.orka.ai/v1alpha1","kind":"Provider","metadata":{"name":"local","namespace":"demo"},"spec":{"type":"openai","baseURL":"https://model.invalid/v1","defaultModel":"fixture-model","secretRef":{"name":"model-key","key":"api-key"}},"status":{"ready":true}}', 'Process')
         [Environment]::SetEnvironmentVariable('KMX_INSPECT_TASKS', '{"items":[]}', 'Process')
     } else {
-        # A real kubectl proves the exact staged kmx binary accepts only native
-        # kubectl and reaches its bounded preflight. There is deliberately no
-        # kubeconfig or cluster in the release job, so operational reads refuse.
-        $start = [Diagnostics.ProcessStartInfo]::new()
-        $start.FileName = $exe
-        $start.UseShellExecute = $false
-        $start.CreateNoWindow = $true
-        $start.RedirectStandardOutput = $true
-        $start.RedirectStandardError = $true
-        foreach ($argument in @('--context', 'release-unconfigured', 'cluster', 'orka', 'list', '--namespace', 'demo')) {
-            [void]$start.ArgumentList.Add($argument)
+        foreach ($name in @('KMX_KUBECTL_FIXTURE_MODE', 'KMX_INSPECT_CALLS', 'KMX_INSPECT_AGENTS',
+                'KMX_INSPECT_AGENT', 'KMX_INSPECT_PROVIDER', 'KMX_INSPECT_TASKS')) {
+            [Environment]::SetEnvironmentVariable($name, $null, 'Process')
         }
-        $process = [Diagnostics.Process]::new()
-        $process.StartInfo = $start
-        if (-not $process.Start()) { throw 'Could not start kmx release inspection refusal.' }
-        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
-        $stderrTask = $process.StandardError.ReadToEndAsync()
-        if (-not $process.WaitForExit(180000)) { $process.Kill($true); $process.WaitForExit(); throw 'Release inspection refusal timed out.' }
-        $stdout, $stderr, $status = $stdoutTask.Result, $stderrTask.Result, $process.ExitCode
-        $process.Dispose()
-        if ($status -eq 0 -or -not [string]::IsNullOrWhiteSpace($stdout) -or $stderr -notmatch '(?i)(context|cluster|kubectl|prerequisite|unavailable)') {
-            throw "Exact staged executable did not safely reach the native kubectl boundary: status=$status stdout=$stdout stderr=$stderr"
+
+        # Serve one checked Kubernetes raw-list response. Success proves the
+        # exact staged kmx binary started the checksum-verified real kubectl,
+        # retained the explicit context and consumed the bounded API result.
+        $ready = Join-Path $root 'api-ready.txt'
+        $observed = Join-Path $root 'api-request.txt'
+        $serverScript = Join-Path $root 'api-server.ps1'
+        $serverSource = @'
+param([string]$Ready, [string]$Observed, [string]$ExpectedKubectl, [string]$ExpectedSHA256)
+$ErrorActionPreference = 'Stop'
+$listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
+try {
+    $listener.Start()
+    $port = ([Net.IPEndPoint]$listener.LocalEndpoint).Port
+    [IO.File]::WriteAllText($Ready, [string]$port, [Text.UTF8Encoding]::new($false))
+    $client = $listener.AcceptTcpClient()
+    try {
+        $client.ReceiveTimeout = 10000
+        $client.SendTimeout = 10000
+        $serverEndpoint = [Net.IPEndPoint]$client.Client.LocalEndPoint
+        $clientEndpoint = [Net.IPEndPoint]$client.Client.RemoteEndPoint
+        $connections = @(Get-NetTCPConnection -State Established `
+            -LocalAddress $clientEndpoint.Address.ToString() -LocalPort $clientEndpoint.Port `
+            -RemoteAddress $serverEndpoint.Address.ToString() -RemotePort $serverEndpoint.Port)
+        if ($connections.Count -ne 1 -or $connections[0].OwningProcess -le 0) {
+            throw 'request owner could not be identified'
         }
-        if (Test-Path -LiteralPath $state) { throw 'Release inspection refusal created KMX state.' }
-        Write-Output 'Exact staged Windows amd64 remote Orka inspection boundary passed.'
+        $owner = Get-Process -Id $connections[0].OwningProcess -ErrorAction Stop
+        $ownerPath = $owner.Path
+        if ([string]::IsNullOrWhiteSpace($ownerPath) -or
+                -not [string]::Equals([IO.Path]::GetFullPath($ownerPath), [IO.Path]::GetFullPath($ExpectedKubectl), [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'request owner was not the selected kubectl executable'
+        }
+        $ownerHash = (Get-FileHash -LiteralPath $ownerPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($ExpectedSHA256 -cnotmatch '^[0-9a-f]{64}$' -or $ownerHash -cne $ExpectedSHA256) {
+            throw 'request owner did not match the selected kubectl digest'
+        }
+        $stream = $client.GetStream()
+        $reader = [IO.StreamReader]::new($stream, [Text.Encoding]::ASCII, $false, 1024, $true)
+        $request = $reader.ReadLine()
+        while (($line = $reader.ReadLine()) -ne '') {
+            if ($null -eq $line) { throw 'request headers ended unexpectedly' }
+        }
+        $expected = 'GET /apis/core.orka.ai/v1alpha1/namespaces/demo/agents?limit=128 HTTP/1.1'
+        if ($request -cne $expected) { throw 'request did not match the bounded Agent-list path' }
+        $body = '{"apiVersion":"core.orka.ai/v1alpha1","kind":"AgentList","metadata":{},"items":[{"apiVersion":"core.orka.ai/v1alpha1","kind":"Agent","metadata":{"name":"release-agent","namespace":"demo"},"spec":{"providerRef":{"name":"release-provider"},"model":{"name":"release-model"}},"status":{"ready":true}}]}'
+        $bytes = [Text.Encoding]::UTF8.GetBytes($body)
+        $headers = [Text.Encoding]::ASCII.GetBytes("HTTP/1.1 200 OK`r`nContent-Type: application/json`r`nContent-Length: $($bytes.Length)`r`nConnection: close`r`n`r`n")
+        $stream.Write($headers, 0, $headers.Length)
+        $stream.Write($bytes, 0, $bytes.Length)
+        $stream.Flush()
+        [IO.File]::WriteAllText($Observed, $request, [Text.UTF8Encoding]::new($false))
+    } finally {
+        $client.Dispose()
+    }
+} finally {
+    $listener.Stop()
+}
+'@
+        [IO.File]::WriteAllText($serverScript, $serverSource, [Text.UTF8Encoding]::new($false))
+        $serverStart = [Diagnostics.ProcessStartInfo]::new()
+        $serverStart.FileName = $powershellExe
+        $serverStart.UseShellExecute = $false
+        $serverStart.CreateNoWindow = $true
+        $serverStart.RedirectStandardOutput = $true
+        $serverStart.RedirectStandardError = $true
+        foreach ($argument in @('-NoProfile', '-NonInteractive', '-File', $serverScript,
+                '-Ready', $ready, '-Observed', $observed,
+                '-ExpectedKubectl', $fixture, '-ExpectedSHA256', $fixtureHash)) {
+            [void]$serverStart.ArgumentList.Add($argument)
+        }
+        $serverProcess = [Diagnostics.Process]::new()
+        $serverProcess.StartInfo = $serverStart
+        if (-not $serverProcess.Start()) { throw 'Could not start the local API fixture.' }
+        $deadline = [DateTime]::UtcNow.AddSeconds(15)
+        while (-not (Test-Path -LiteralPath $ready)) {
+            if ($serverProcess.HasExited) { throw "Local API fixture exited early: $($serverProcess.StandardError.ReadToEnd())" }
+            if ([DateTime]::UtcNow -gt $deadline) { throw 'Local API fixture did not publish its port.' }
+            Start-Sleep -Milliseconds 25
+        }
+        $port = (Get-Content -LiteralPath $ready -Raw).Trim()
+        if ($port -cnotmatch '^[1-9][0-9]{0,4}$' -or [int]$port -gt 65535) { throw 'Local API fixture published an invalid port.' }
+        $config = @"
+apiVersion: v1
+kind: Config
+clusters:
+- name: release-fixture
+  cluster:
+    server: http://127.0.0.1:$port
+contexts:
+- name: release-fixture
+  context:
+    cluster: release-fixture
+    user: release-fixture
+current-context: release-fixture
+users:
+- name: release-fixture
+  user: {}
+"@
+        [IO.File]::WriteAllText($kubeconfig, $config, [Text.UTF8Encoding]::new($false))
+        $listed = Invoke-Kmx -CommandArgs @('--context', 'release-fixture', 'cluster', 'orka', 'list', '--namespace', 'demo')
+        if ($listed -notmatch 'release-agent' -or $listed -notmatch 'release-model') {
+            throw 'Exact staged executable did not render the checked local API response.'
+        }
+        if (-not $serverProcess.WaitForExit(15000)) { throw 'Local API fixture did not finish.' }
+        if ($serverProcess.ExitCode -ne 0) { throw "Local API fixture failed: $($serverProcess.StandardError.ReadToEnd())" }
+        $request = (Get-Content -LiteralPath $observed -Raw).Trim()
+        if ($request -cne 'GET /apis/core.orka.ai/v1alpha1/namespaces/demo/agents?limit=128 HTTP/1.1') {
+            throw 'Exact staged executable did not make the expected bounded kubectl request.'
+        }
+        if (Test-Path -LiteralPath $state) { throw 'Release inspection qualification created KMX state.' }
+        Write-Output 'Exact staged Windows amd64 remote Orka inspection qualification passed.'
         return
     }
 
@@ -107,7 +201,7 @@ try {
         throw 'Native list table contract changed.'
     }
     $shown = Invoke-Kmx -CommandArgs @('--context', 'kind-test', 'cluster', 'orka', 'show', 'concierge', '--namespace', 'demo', '--output', 'json') | ConvertFrom-Json -Depth 20
-    if ($shown.agent.name -cne 'concierge' -or $shown.agent.ready -cne 'yes' -or $shown.provider.name -cne 'local' -or $shown.secret.ready -cne 'unknown' -or $shown.model -cne 'fixture-model') {
+    if ($shown.agent.name -cne 'concierge' -or $shown.agent.ready -cne 'yes' -or $shown.provider.name -cne 'local' -or $shown.secret.ready -notlike 'unknown*' -or $shown.model -cne 'fixture-model') {
         throw 'Native show JSON contract changed.'
     }
     if (Test-Path -LiteralPath $state) { throw 'Read-only inspection created KMX state.' }
@@ -117,6 +211,10 @@ try {
     }
     Write-Output 'Native Windows amd64 remote Orka inspection qualification passed.'
 } finally {
+    if ($null -ne $serverProcess) {
+        if (-not $serverProcess.HasExited) { $serverProcess.Kill($true); $serverProcess.WaitForExit() }
+        $serverProcess.Dispose()
+    }
     foreach ($name in $saved.Keys) {
         [Environment]::SetEnvironmentVariable($name, $saved[$name], 'Process')
     }

@@ -30,7 +30,6 @@ func TestRunnerContextCancelsActiveCommand(t *testing.T) {
 		select {
 		case earlyErr = <-done:
 			earlyDone = true
-			break
 		default:
 		}
 		if earlyDone {
