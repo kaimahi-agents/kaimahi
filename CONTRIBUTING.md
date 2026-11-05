@@ -406,9 +406,7 @@ accepted fixes materially change reviewed code, rerun focused tests and review t
 current candidate. A declined finding gets a concise evidence-based reason. An
 unavailable, incomplete or invalid review is reported that way, never as clean.
 
-In the pull request, record the selected scope and priority range, pinned upstream
-commit, actual host/model when observable, outcome, material findings or accepted/declined
-disposition, relevant verification and limitations. Do not attach prompts, raw
+Record review findings in the PR template's Review section. Do not attach prompts, raw
 model output or source-bearing reports. A clean autoreview is advisory and does not
 replace human approval, required CI, runtime qualification or product evidence.
 See the [development guide](docs/development.md#independent-agent-review) for the
