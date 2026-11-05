@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"slices"
 	"strings"
@@ -17,10 +18,26 @@ import (
 
 // UpOptions selects the existing journey or a local node-only bundle. An absent
 // OfflineBundle preserves Up's online behavior and callers.
-type UpOptions struct{ Step, OfflineBundle string }
+type UpOptions struct{ Step, OfflineBundle, CredentialMount string }
 
 // UpWithOptions never provisions tools or runs model/runtime phases for a bundle.
 func (a *App) UpWithOptions(opt UpOptions) error {
+	if opt.CredentialMount != "" {
+		if opt.CredentialMount != "copilot-v1" || opt.Step != "cluster" || runtime.GOOS != "linux" || a.Cfg.ContainerEngine != "docker" {
+			return fmt.Errorf("credential mount requires copilot-v1, Linux Docker and --step cluster")
+		}
+		local := *a
+		local.modelCredentialMount = opt.CredentialMount
+		a = &local
+		if _, err := a.modelMountSource(); err != nil {
+			return err
+		}
+		var err error
+		a, err = a.offlineTarget()
+		if err != nil {
+			return err
+		}
+	}
 	if opt.OfflineBundle == "" {
 		return a.Up(opt.Step)
 	}

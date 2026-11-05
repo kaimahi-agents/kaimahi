@@ -151,6 +151,9 @@ func newUpCommand(state *commandState) *cobra.Command {
 			if err := cobra.NoArgs(cmd, args); err != nil {
 				return err
 			}
+			if cmd.Flags().Changed("credential-mount") && (opt.CredentialMount != "copilot-v1" || opt.Step != "cluster") {
+				return fmt.Errorf("--credential-mount requires copilot-v1 and --step cluster")
+			}
 			if cmd.Flags().Changed("offline-bundle") {
 				if strings.TrimSpace(opt.OfflineBundle) == "" {
 					return fmt.Errorf("--offline-bundle requires a non-empty directory")
@@ -162,6 +165,7 @@ func newUpCommand(state *commandState) *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&opt.CredentialMount, "credential-mount", "", "fixed guest mount profile: copilot-v1 (requires --step cluster)")
 	cmd.Flags().StringVar(&opt.Step, "step", "", "run one step only: "+strings.Join(app.UpSteps, ", "))
 	cmd.Flags().StringVar(&opt.OfflineBundle, "offline-bundle", "", "local node bundle DIR (requires --step cluster)")
 	_ = cmd.MarkFlagDirname("offline-bundle")

@@ -281,7 +281,7 @@ func provisioningJSONInvocation(argv []string) string {
 			continue
 		}
 		switch {
-		case name == "--step" || name == "--offline-bundle" || name == "--provider" || name == "--model" || name == "--model-url":
+		case name == "--credential-mount" || name == "--step" || name == "--offline-bundle" || name == "--provider" || name == "--model" || name == "--model-url":
 			if !inline {
 				i++
 			}
