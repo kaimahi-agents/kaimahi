@@ -220,8 +220,8 @@ func toolRow(raw json.RawMessage, namespace string) (OrkaToolRow, bool) {
 }
 func (o *toolObserver) tools(namespace string) []OrkaToolRow {
 	rows := []OrkaToolRow{}
-	seen, cursors := map[string]bool{}, map[string]bool{}
-	cursor := ""
+	seen, cursors, ids := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	cursor, version := "", ""
 	for page := 0; page < 32; page++ {
 		path := "/apis/core.orka.ai/v1alpha1/namespaces/" + namespace + "/tools?limit=64"
 		if cursor != "" {
@@ -229,7 +229,7 @@ func (o *toolObserver) tools(namespace string) []OrkaToolRow {
 		}
 		var list struct {
 			APIVersion, Kind string
-			Metadata         struct{ Continue string }
+			Metadata         struct{ Continue, ResourceVersion string }
 			Items            []json.RawMessage
 		}
 		if !o.get(path, &list) {
@@ -239,13 +239,18 @@ func (o *toolObserver) tools(namespace string) []OrkaToolRow {
 			o.problem("malformed")
 			break
 		}
+		if page > 0 && (version == "" || list.Metadata.ResourceVersion != version) {
+			o.problem("read_unknown")
+			return rows
+		}
+		version = list.Metadata.ResourceVersion
 		for _, item := range list.Items {
 			row, ok := toolRow(item, namespace)
-			if !ok || seen[row.Name] {
+			if !ok || seen[row.Name] || ids[row.UID] {
 				o.problem("malformed")
 				continue
 			}
-			seen[row.Name] = true
+			seen[row.Name], ids[row.UID] = true, true
 			if len(rows) >= 128 {
 				o.problem("inventory_limit")
 				return rows
@@ -256,7 +261,7 @@ func (o *toolObserver) tools(namespace string) []OrkaToolRow {
 		if cursor == "" {
 			return rows
 		}
-		if len(cursor) > 4096 || cursors[cursor] {
+		if len(cursor) > 4096 || cursors[cursor] || version == "" {
 			o.problem("inventory_limit")
 			return rows
 		}

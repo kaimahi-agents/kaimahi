@@ -12,7 +12,7 @@ kmx version -o json
 A successful invocation emits one UTF-8 JSON object and a newline:
 
 ```json
-{"schemaVersion":1,"kind":"kmx.version","kmxVersion":"v0.9.0-rc.6","orkaVersion":"v0.3.0","capabilities":[{"operation":"version","output":"json","schemaVersion":1},{"operation":"cluster.up","output":"jsonl","schemaVersion":1},{"operation":"cluster.orka.install","output":"jsonl","schemaVersion":1},{"operation":"file.test","output":"jsonl","schemaVersion":1,"runner":"embedded"},{"operation":"file.test","output":"jsonl","schemaVersion":1,"runner":"copilotd"},{"operation":"cluster.orka.tools","output":"json","schemaVersion":1},{"operation":"cluster.discover","output":"jsonl","schemaVersion":1,"scope":"contexts"},{"operation":"cluster.discover","output":"jsonl","schemaVersion":1,"scope":"namespaces"}]}
+{"schemaVersion":1,"kind":"kmx.version","kmxVersion":"v0.9.0-rc.6","orkaVersion":"v0.3.0","capabilities":[{"operation":"version","output":"json","schemaVersion":1},{"operation":"cluster.up","output":"jsonl","schemaVersion":1},{"operation":"cluster.orka.install","output":"jsonl","schemaVersion":1},{"operation":"file.test","output":"jsonl","schemaVersion":1,"runner":"embedded"},{"operation":"file.test","output":"jsonl","schemaVersion":1,"runner":"copilotd"},{"operation":"cluster.orka.tools","output":"json","schemaVersion":1},{"operation":"cluster.discover","output":"jsonl","schemaVersion":1,"scope":"contexts"},{"operation":"cluster.discover","output":"jsonl","schemaVersion":1,"scope":"namespaces"},{"operation":"cluster.discover","output":"jsonl","schemaVersion":1,"scope":"target"}]}
 ```
 
 The version values above are examples. `kmxVersion` uses the build's resolved
@@ -24,7 +24,7 @@ cluster readiness, permission, model access or qualified execution.
 Unix builds advertise version JSON, two setup JSONL adapters, `file.test`
 JSONL with separate `runner: embedded` and `runner: copilotd` selectors,
 `cluster.orka.tools` JSON (schemaVersion 1), and `cluster.discover` JSONL with
-separate `scope: contexts` and `scope: namespaces`. Native
+separate `scope: contexts`, `scope: namespaces` and `scope: target`. Native
 Windows advertises version JSON and only `file.test`/`runner: embedded`/`model: fake`;
 its existing package-free/tool-free fake intake gate still applies. Setup and
 native copilotd remain deferred there. Existing Run, Test, list, show, deployment and other JSON
@@ -310,7 +310,8 @@ See the [CLI output contracts](kmx.md#output-contracts) for existing formats.
 `kmx cluster discover [-o text|jsonl]` defaults to text. Without context it projects
 only local labels; with explicit `--context CTX` it lists namespaces using GETs.
 Version capability entries have operation `cluster.discover`, output `jsonl`,
-schemaVersion `1`, and exact scope `contexts` or `namespaces`; `target` is unavailable.
+schemaVersion `1`, and exact scope `contexts`, `namespaces` or `target`. Explicit
+`--context CTX --namespace NS` observes one target; it never requires Namespace LIST.
 
 JSONL emits one terminal `kmx.result` with operation `cluster.discover`, normal
 UUID/sequence/elapsed fields, verdict `not_applicable`, and a `discovery` object:
@@ -318,6 +319,22 @@ UUID/sequence/elapsed fields, verdict `not_applicable`, and a `discovery` object
 ```json
 {"scope":"namespaces","complete":true,"checks":[],"rows":[{"context":"dev","namespace":"demo","uid":"observed-namespace-uid"}]}
 ```
+
+Target results add `target` with context, namespace, checked clusterUid and
+namespaceUid (omitted if unknown), runtime, Providers and native Tool inventory.
+Providers expose only name, namespace, uid, type, optional declared model and
+conditionState (`True`, `False`, `Unknown`). No endpoint, Secret reference or
+condition message is emitted. Providers and top-level rows/checks remain arrays.
+The embedded Tool object retains its own complete flag and native reason strings.
+Runtime state is available, missing, unsupported or unknown, with a fixed reason.
+A supported pin not yet Ready is unknown/read_unknown, not unsupported. A complete
+target requires a Ready pinned runtime, installed Agent/Provider/Task schemas,
+worker trust metadata, conclusive reads and a complete Tool inventory. Provider
+Ready=False/Unknown is still a valid declaration, not an inference result.
+Identity replacement invalidates namespace-bound payloads; bounds preserve safe
+fitting rows but never claim completeness. The composed report shares 8 MiB stdout,
+32 list pages, 128 Provider plus Tool rows and 60 KiB JSON projection, under one
+30s operation. No model or Tool is called and no destination is configured.
 
 Context rows instead contain `context` and boolean `current` (including false).
 `checks` and `rows` are arrays even when empty. Complete means bounded reads

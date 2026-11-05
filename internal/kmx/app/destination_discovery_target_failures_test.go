@@ -41,6 +41,27 @@ func TestDiscoveryTargetMalformedProviderMetadata(t *testing.T) {
 		})
 	}
 }
+func TestDiscoveryTargetRuntimeBracketSpansComposition(t *testing.T) {
+	a, p := targetFixture(t)
+	path := "/api/v1/namespaces/orka-system/serviceaccounts/orka-ai-worker"
+	old := p[path]
+	n := 0
+	p[path] = func(c *exec.Cmd) error {
+		n++
+		b, _ := json.Marshal(old)
+		if n >= 3 {
+			fmt.Fprint(c.Stdout, strings.ReplaceAll(string(b), "worker-uid", "changed"))
+		} else {
+			c.Stdout.Write(b)
+		}
+		return nil
+	}
+	r, e := a.Discover(t.Context(), DiscoveryOptions{Context: "kind-test", Namespace: "orka-system"})
+	if e == nil || r.Complete || r.Target.Runtime.State == "available" {
+		t.Fatal(r.Target, e, n)
+	}
+}
+
 func TestDiscoveryTargetPartialProviderSort(t *testing.T) {
 	a, p := targetFixture(t)
 	path := "/apis/core.orka.ai/v1alpha1/namespaces/orka-system/providers?limit=64"

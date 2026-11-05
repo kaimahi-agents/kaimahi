@@ -128,6 +128,12 @@ func (a *App) discoverTarget(ctx context.Context, opt DiscoveryOptions) (Discove
 			}
 			r.targetProblem("tools", "unknown", reason)
 		}
+		if s.verifyRuntime != nil {
+			if e := s.verifyRuntime(); e != nil {
+				t.Runtime.State, t.Runtime.Reason = "unknown", targetReadReason(e)
+				r.targetProblem("runtime", "unknown", t.Runtime.Reason)
+			}
+		}
 		cu, ce := worker.targetNamespace(ctx, s, "kube-system")
 		nu, ne := worker.targetNamespace(ctx, s, opt.Namespace)
 		if ce != nil || ne != nil {

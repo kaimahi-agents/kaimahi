@@ -65,25 +65,33 @@ func (a *App) discoveryTargetRuntime(ctx context.Context, s *discoveryReadSessio
 	if e != nil {
 		return r, e
 	}
-	again, ok := o.deployments()
-	if !ok {
-		return r, &discoveryReadFailure{reason: discoveryReadReason(o.reason)}
+	s.verifyRuntime = func() error {
+		again, ok := o.deployments()
+		if !ok {
+			return &discoveryReadFailure{reason: discoveryReadReason(o.reason)}
+		}
+		current, _, e := selectOrkaController(again)
+		if e != nil {
+			return e
+		}
+		observed, e := suiteNativeControllerRuntime(current, namespace)
+		if e != nil {
+			return e
+		}
+		if observed != profile {
+			return &discoveryReadFailure{reason: "stale_input"}
+		}
+		after, e := readWorker()
+		if e != nil {
+			return e
+		}
+		if after != uid {
+			return &discoveryReadFailure{reason: "stale_input"}
+		}
+		return nil
 	}
-	current, _, e := selectOrkaController(again)
-	if e != nil {
+	if e := s.verifyRuntime(); e != nil {
 		return r, e
-	}
-	observed, e := suiteNativeControllerRuntime(current, namespace)
-	if e != nil {
-		return r, e
-	}
-	if observed != profile {
-		r.Reason = "stale_input"
-		return r, &discoveryReadFailure{reason: "stale_input"}
-	}
-	if after, e := readWorker(); e != nil || after != uid {
-		r.Reason = "stale_input"
-		return r, &discoveryReadFailure{reason: "stale_input"}
 	}
 	r.State, r.Reason = "available", "observed"
 	return r, nil

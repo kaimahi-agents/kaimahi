@@ -8,10 +8,11 @@ import (
 
 // One invocation budget spans native Tool reads and the other target observers.
 type discoveryReadSession struct {
-	context      string
-	bytes, pages int
-	failure      *discoveryReadFailure
-	exhausted    bool
+	context       string
+	bytes, pages  int
+	failure       *discoveryReadFailure
+	verifyRuntime func() error
+	exhausted     bool
 }
 
 func (s *discoveryReadSession) capture(ctx context.Context, a *App, args ...string) ([]byte, *discoveryReadFailure) {

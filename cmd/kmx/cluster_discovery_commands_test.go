@@ -115,7 +115,7 @@ func TestVersionJSONDiscoveryScopes(t *testing.T) {
 				scopes = append(scopes, c["scope"].(string))
 			}
 		}
-		want := "contexts,namespaces"
+		want := "contexts,namespaces,target"
 		if platform == "windows" {
 			want = ""
 		}

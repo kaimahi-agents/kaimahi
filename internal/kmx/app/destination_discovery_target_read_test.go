@@ -70,6 +70,28 @@ func TestOrkaToolsRuntimePagination(t *testing.T) {
 		t.Fatal(got, err)
 	}
 }
+func TestOrkaToolsStableListIdentity(t *testing.T) {
+	for _, mode := range []string{"version", "uid"} {
+		t.Run(mode, func(t *testing.T) {
+			a, p, _ := toolFixture(t)
+			path := "/apis/core.orka.ai/v1alpha1/namespaces/orka-system/tools?limit=64"
+			first := toolPage(toolObject("one", "GET"))
+			second := toolPage(toolObject("two", "GET"))
+			first["metadata"] = map[string]any{"continue": "next", "resourceVersion": "1"}
+			second["metadata"] = map[string]any{"resourceVersion": "2"}
+			if mode == "uid" {
+				second["metadata"] = map[string]any{"resourceVersion": "1"}
+				second["items"].([]map[string]any)[0]["metadata"].(map[string]any)["uid"] = "uid-one"
+			}
+			p[path], p[path+"&continue=next"] = first, second
+			got, e := a.ReadOrkaTools(t.Context(), OrkaToolOptions{Namespace: "orka-system"})
+			if e == nil || got.Complete {
+				t.Fatal(mode, got)
+			}
+		})
+	}
+}
+
 func TestOrkaToolsStabilityReason(t *testing.T) {
 	for _, mode := range []string{"replacement", "denied", "controller"} {
 		t.Run(mode, func(t *testing.T) {

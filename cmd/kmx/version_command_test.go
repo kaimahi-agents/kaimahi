@@ -35,7 +35,7 @@ func TestVersionJSON(t *testing.T) {
 					t.Fatalf("bad version projection: %+v", r)
 				}
 				caps, ok := r["capabilities"].([]any)
-				want := 8
+				want := 9
 				if goos == "windows" {
 					want = 2
 				}

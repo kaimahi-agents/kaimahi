@@ -38,9 +38,12 @@ func TestOrkaToolsPagesAndOutputBound(t *testing.T) {
 	path := "/apis/core.orka.ai/v1alpha1/namespaces/orka-system/tools?limit=64"
 	first := toolPage(toolObject("one", "POST"))
 	first["metadata"].(map[string]any)["continue"] = "next /+"
+	first["metadata"].(map[string]any)["resourceVersion"] = "1"
 	p[path] = first
 	name := strings.Repeat("a", 63) + ".tool"
-	p[path+"&continue=next+%2F%2B"] = toolPage(toolObject(name, "GET"))
+	last := toolPage(toolObject(name, "GET"))
+	last["metadata"].(map[string]any)["resourceVersion"] = "1"
+	p[path+"&continue=next+%2F%2B"] = last
 	got, err := a.ReadOrkaTools(t.Context(), OrkaToolOptions{Namespace: "orka-system"})
 	if err != nil || !got.Complete || len(got.Tools) != 9 {
 		t.Fatalf("pages %+v %v", got, err)
