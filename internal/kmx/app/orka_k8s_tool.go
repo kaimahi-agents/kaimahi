@@ -116,23 +116,30 @@ func (a *App) orkaAIWorkerAccount(ctx context.Context) (string, error) {
 	if matches == 0 {
 		return "", fmt.Errorf("Orka worker ServiceAccount %s not found in %s", worker, OrkaNamespace)
 	}
-	switch {
-	case identity.Namespace != OrkaNamespace:
-		return "", fmt.Errorf("Orka worker ServiceAccount %s has wrong namespace", worker)
-	case identity.Labels["orka.ai/worker"] != "true":
-		return "", fmt.Errorf("Orka worker ServiceAccount %s lacks worker=true label", worker)
-	case identity.Labels["orka.ai/worker-trust"] != "ai":
-		return "", fmt.Errorf("Orka worker ServiceAccount %s lacks worker-trust=ai label", worker)
-	case identity.Labels["helm.sh/chart"] != labels["helm.sh/chart"]:
-		return "", fmt.Errorf("Orka worker ServiceAccount %s has wrong chart label", worker)
-	case identity.Labels["app.kubernetes.io/instance"] != labels["app.kubernetes.io/instance"]:
-		return "", fmt.Errorf("Orka worker ServiceAccount %s has wrong instance label", worker)
-	case identity.Labels["app.kubernetes.io/name"] != labels["app.kubernetes.io/name"]:
-		return "", fmt.Errorf("Orka worker ServiceAccount %s has wrong app name label", worker)
-	case identity.Labels["app.kubernetes.io/managed-by"] != labels["app.kubernetes.io/managed-by"]:
-		return "", fmt.Errorf("Orka worker ServiceAccount %s has wrong managed-by label", worker)
+	if err := validateOrkaWorkerTrust(worker, identity.Namespace, identity.Labels, labels); err != nil {
+		return "", err
 	}
 	return worker, nil
+}
+
+func validateOrkaWorkerTrust(worker, namespace string, accountLabels, controllerLabels map[string]string) error {
+	switch {
+	case namespace != OrkaNamespace:
+		return fmt.Errorf("Orka worker ServiceAccount %s has wrong namespace", worker)
+	case accountLabels["orka.ai/worker"] != "true":
+		return fmt.Errorf("Orka worker ServiceAccount %s lacks worker=true label", worker)
+	case accountLabels["orka.ai/worker-trust"] != "ai":
+		return fmt.Errorf("Orka worker ServiceAccount %s lacks worker-trust=ai label", worker)
+	case accountLabels["helm.sh/chart"] != controllerLabels["helm.sh/chart"]:
+		return fmt.Errorf("Orka worker ServiceAccount %s has wrong chart label", worker)
+	case accountLabels["app.kubernetes.io/instance"] != controllerLabels["app.kubernetes.io/instance"]:
+		return fmt.Errorf("Orka worker ServiceAccount %s has wrong instance label", worker)
+	case accountLabels["app.kubernetes.io/name"] != controllerLabels["app.kubernetes.io/name"]:
+		return fmt.Errorf("Orka worker ServiceAccount %s has wrong app name label", worker)
+	case accountLabels["app.kubernetes.io/managed-by"] != controllerLabels["app.kubernetes.io/managed-by"]:
+		return fmt.Errorf("Orka worker ServiceAccount %s has wrong managed-by label", worker)
+	}
+	return nil
 }
 
 const quickstartWorkerPlaceholder = "kmx-ai-worker-service-account-placeholder"

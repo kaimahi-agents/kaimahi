@@ -356,6 +356,18 @@ func suiteNativeControllerFlag(args []string, name string) (string, error) {
 }
 
 func suiteNativeControllerRuntime(controller orkaDeployment, namespace string) (suiteNativeRuntime, error) {
+	out, err := suiteNativeControllerProfile(controller, namespace)
+	if err != nil {
+		return out, err
+	}
+	status, replicas := controller.Status, controller.Spec.Replicas
+	if replicas < 1 || status.ObservedGeneration != controller.Metadata.Generation || status.Replicas != replicas || status.UpdatedReplicas != replicas || status.ReadyReplicas != replicas || status.AvailableReplicas != replicas || status.UnavailableReplicas != 0 {
+		return out, fmt.Errorf("Orka controller is not Ready for its current generation")
+	}
+	return out, nil
+}
+
+func suiteNativeControllerProfile(controller orkaDeployment, namespace string) (suiteNativeRuntime, error) {
 	var out suiteNativeRuntime
 	if controller.Kind != "Deployment" || controller.Metadata.Namespace != OrkaNamespace || controller.Metadata.UID == "" || controller.Metadata.Generation < 1 || controller.Metadata.DeletionTimestamp != nil {
 		return out, fmt.Errorf("native suite requires a live chart controller identity")
@@ -364,10 +376,7 @@ func suiteNativeControllerRuntime(controller orkaDeployment, namespace string) (
 	if !suiteNativePinnedHelm(out.Helm) || controller.Metadata.Labels["app.kubernetes.io/component"] != "controller" {
 		return out, fmt.Errorf("native suite requires the pinned Orka chart identity")
 	}
-	status, replicas := controller.Status, controller.Spec.Replicas
-	if replicas < 1 || status.ObservedGeneration != controller.Metadata.Generation || status.Replicas != replicas || status.UpdatedReplicas != replicas || status.ReadyReplicas != replicas || status.AvailableReplicas != replicas || status.UnavailableReplicas != 0 {
-		return out, fmt.Errorf("Orka controller is not Ready for its current generation")
-	}
+	replicas := controller.Spec.Replicas
 	controllers := 0
 	for _, container := range controller.Spec.Template.Spec.Containers {
 		if container.Name != "controller" {
