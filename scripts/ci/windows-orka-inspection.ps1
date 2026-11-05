@@ -71,7 +71,7 @@ try {
         [Environment]::SetEnvironmentVariable('KMX_INSPECT_CALLS', $calls, 'Process')
         [Environment]::SetEnvironmentVariable('KMX_INSPECT_AGENTS', '{"items":[{"metadata":{"name":"concierge","namespace":"demo"},"spec":{"providerRef":{"name":"local"},"model":{"name":"fixture-model"}},"status":{"ready":true}}]}', 'Process')
         [Environment]::SetEnvironmentVariable('KMX_INSPECT_AGENT', '{"metadata":{"name":"concierge","namespace":"demo"},"spec":{"providerRef":{"name":"local"},"model":{"name":"fixture-model"}},"status":{"ready":true,"activeTasks":0}}', 'Process')
-        [Environment]::SetEnvironmentVariable('KMX_INSPECT_PROVIDER', '{"spec":{"type":"openai","baseURL":"https://model.invalid/v1","defaultModel":"fixture-model","secretRef":{"name":"model-key","key":"api-key"}},"status":{"ready":true}}', 'Process')
+        [Environment]::SetEnvironmentVariable('KMX_INSPECT_PROVIDER', '{"metadata":{"name":"local","namespace":"demo"},"spec":{"type":"openai","baseURL":"https://model.invalid/v1","defaultModel":"fixture-model","secretRef":{"name":"model-key","key":"api-key"}},"status":{"ready":true}}', 'Process')
         [Environment]::SetEnvironmentVariable('KMX_INSPECT_SECRET', 'secret/model-key', 'Process')
         [Environment]::SetEnvironmentVariable('KMX_INSPECT_TASKS', '{"items":[]}', 'Process')
     } else {
@@ -113,7 +113,7 @@ try {
     }
     if (Test-Path -LiteralPath $state) { throw 'Read-only inspection created KMX state.' }
     $callsText = Get-Content -LiteralPath $calls -Raw
-    if ($callsText -notmatch '--context kind-test' -or $callsText -notmatch 'get agents\.core\.orka\.ai' -or $callsText -notmatch 'get providers\.core\.orka\.ai') {
+    if ($callsText -notmatch '--context kind-test' -or $callsText -notmatch '/agents\?limit=128' -or $callsText -notmatch 'get providers\.core\.orka\.ai') {
         throw 'Inspection did not retain the explicit context and expected reads.'
     }
     Write-Output 'Native Windows amd64 remote Orka inspection qualification passed.'

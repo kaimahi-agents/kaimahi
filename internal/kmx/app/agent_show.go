@@ -31,6 +31,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
 var errUnsafeOrkaReference = errors.New("unsafe Orka resource reference")
@@ -62,7 +63,8 @@ type orkaAgentSpec struct {
 	} `json:"metadata"`
 	Spec struct {
 		ProviderRef struct {
-			Name string `json:"name"`
+			Name      string `json:"name"`
+			Namespace string `json:"namespace"`
 		} `json:"providerRef"`
 		Model struct {
 			Name      string `json:"name"`
@@ -93,6 +95,10 @@ type orkaAgentSpec struct {
 }
 
 type orkaProviderSpec struct {
+	Metadata struct {
+		Name      string `json:"name"`
+		Namespace string `json:"namespace"`
+	} `json:"metadata"`
 	Spec struct {
 		Type         string `json:"type"`
 		BaseURL      string `json:"baseURL"`
@@ -116,11 +122,13 @@ type orkaProviderSpec struct {
 type orkaTaskSummary struct {
 	Metadata struct {
 		Name              string    `json:"name"`
+		Namespace         string    `json:"namespace"`
 		CreationTimestamp time.Time `json:"creationTimestamp"`
 	} `json:"metadata"`
 	Spec struct {
 		AgentRef struct {
-			Name string `json:"name"`
+			Name      string `json:"name"`
+			Namespace string `json:"namespace"`
 		} `json:"agentRef"`
 	} `json:"spec"`
 	Status struct {
@@ -149,6 +157,9 @@ func (a *App) ShowAgent(name string, opt ShowOptions) error {
 	if format != "table" && format != "json" {
 		return fmt.Errorf("orka show output %q is not supported — use table or json", opt.Output)
 	}
+	if scaffold.ValidateObjectName(name) != nil || scaffold.ValidateNamespace(opt.Namespace) != nil {
+		return fmt.Errorf("kmx cluster orka show requires a valid Agent name and namespace")
+	}
 	if opt.Tasks <= 0 {
 		opt.Tasks = 5
 	}
@@ -160,11 +171,15 @@ func (a *App) ShowAgent(name string, opt ShowOptions) error {
 	if err != nil {
 		return err
 	}
-	provider, providerErr := a.readOrkaProvider(opt.Namespace, agent.Spec.ProviderRef.Name)
+	providerNamespace := agent.Spec.ProviderRef.Namespace
+	if providerNamespace == "" {
+		providerNamespace = agent.Metadata.Namespace
+	}
+	provider, providerErr := a.readOrkaProvider(providerNamespace, agent.Spec.ProviderRef.Name)
 	if errors.Is(providerErr, errUnsafeOrkaReference) {
 		return providerErr
 	}
-	secretPresent, secretErr := a.secretPresence(opt.Namespace, provider)
+	secretPresent, secretErr := a.secretPresence(providerNamespace, provider)
 	tasks := a.recentOrkaTasks(opt.Namespace, name, opt.Tasks)
 
 	if format == "json" {
@@ -194,7 +209,8 @@ func (a *App) readOrkaAgent(namespace, name string) (*orkaAgentSpec, error) {
 		return nil, fmt.Errorf("Orka Agent %q returned invalid JSON: %w", name, err)
 	}
 	if agent.Metadata.Name != name || agent.Metadata.Namespace != namespace ||
-		agent.Spec.ProviderRef.Name != "" && scaffold.ValidateObjectName(agent.Spec.ProviderRef.Name) != nil {
+		agent.Spec.ProviderRef.Name != "" && scaffold.ValidateObjectName(agent.Spec.ProviderRef.Name) != nil ||
+		agent.Spec.ProviderRef.Namespace != "" && scaffold.ValidateNamespace(agent.Spec.ProviderRef.Namespace) != nil {
 		return nil, fmt.Errorf("%w: Orka Agent %q returned invalid identity or Provider reference", errUnsafeOrkaReference, name)
 	}
 	return &agent, nil
@@ -222,7 +238,8 @@ func (a *App) readOrkaProvider(namespace, name string) (*orkaProviderSpec, error
 	if err := json.Unmarshal(raw, &provider); err != nil {
 		return nil, fmt.Errorf("returned invalid JSON: %w", err)
 	}
-	if provider.Spec.SecretRef.Name != "" && scaffold.ValidateObjectName(provider.Spec.SecretRef.Name) != nil {
+	if provider.Metadata.Name != name || provider.Metadata.Namespace != namespace ||
+		provider.Spec.SecretRef.Name != "" && scaffold.ValidateObjectName(provider.Spec.SecretRef.Name) != nil {
 		return nil, fmt.Errorf("%w: Provider returned an invalid Secret reference", errUnsafeOrkaReference)
 	}
 	return &provider, nil
@@ -283,7 +300,11 @@ func (a *App) recentOrkaTasks(namespace, agent string, limit int) []orkaTaskSumm
 			return nil
 		}
 		for _, task := range page.Items {
-			if task.Spec.AgentRef.Name == agent {
+			refNamespace := task.Spec.AgentRef.Namespace
+			if refNamespace == "" {
+				refNamespace = task.Metadata.Namespace
+			}
+			if task.Metadata.Namespace == namespace && task.Spec.AgentRef.Name == agent && refNamespace == namespace {
 				mine = append(mine, task)
 			}
 		}
@@ -321,6 +342,8 @@ func (a *App) recentOrkaTasks(namespace, agent string, limit int) []orkaTaskSumm
 func (a *App) showAgentTable(agent *orkaAgentSpec, provider *orkaProviderSpec, providerErr error,
 	secretPresent bool, secretErr error, tasks []orkaTaskSummary) {
 	ui := cliui.New(a.Out)
+	providerNamespace := valueOr(agent.Spec.ProviderRef.Namespace, agent.Metadata.Namespace)
+	providerName := qualifiedOrkaName(providerNamespace, agent.Metadata.Namespace, agent.Spec.ProviderRef.Name)
 
 	fmt.Fprintf(a.Out, "\n%s\n%s\n", ui.Heading(orkaHumanField(agent.Metadata.Name)),
 		ui.Fields([]cliui.Field{
@@ -337,17 +360,17 @@ func (a *App) showAgentTable(agent *orkaAgentSpec, provider *orkaProviderSpec, p
 	switch {
 	case providerErr != nil:
 		chain.Children = append(chain.Children, cliui.Action{
-			Label:  "provider " + orDash(orkaHumanField(agent.Spec.ProviderRef.Name)),
+			Label:  "provider " + orDash(orkaHumanField(providerName)),
 			Detail: "UNREADY — " + orkaHumanField(providerErr.Error()),
 		})
 	default:
-		detail := orkaHumanField(fmt.Sprintf("%s → %s", orDash(provider.Spec.Type), orDash(provider.Spec.BaseURL)))
+		detail := orkaHumanField(fmt.Sprintf("%s → %s", orDash(provider.Spec.Type), safeOrkaProviderEndpoint(provider.Spec.BaseURL)))
 		if !provider.Status.Ready {
-			detail = orkaHumanField("NOT READY — " + provider.Status.Message + " " + detail)
+			detail = orkaHumanField("NOT READY — " + detail)
 		}
-		providerNode := cliui.Action{Label: "provider " + orkaHumanField(agent.Spec.ProviderRef.Name), Detail: detail}
+		providerNode := cliui.Action{Label: "provider " + orkaHumanField(providerName), Detail: detail}
 		providerNode.Children = append(providerNode.Children, cliui.Action{
-			Label:  "secret " + orDash(orkaHumanField(provider.Spec.SecretRef.Name)),
+			Label:  "secret " + orDash(orkaHumanField(qualifiedOrkaName(providerNamespace, agent.Metadata.Namespace, provider.Spec.SecretRef.Name))),
 			Detail: orkaHumanField(secretWord(secretPresent, secretErr)),
 		})
 		chain.Children = append(chain.Children, providerNode)
@@ -397,13 +420,15 @@ func (a *App) showAgentJSON(agent *orkaAgentSpec, provider *orkaProviderSpec, pr
 		Model: agentModelName(agent, provider),
 		Tools: agentToolNames(agent),
 	}
+	providerNamespace := valueOr(agent.Spec.ProviderRef.Namespace, agent.Metadata.Namespace)
+	providerName := qualifiedOrkaName(providerNamespace, agent.Metadata.Namespace, agent.Spec.ProviderRef.Name)
 	if providerErr != nil {
-		out.Provider = hop{Name: agent.Spec.ProviderRef.Name, Ready: unknownHop, Detail: providerErr.Error()}
+		out.Provider = hop{Name: providerName, Ready: unknownHop, Detail: providerErr.Error()}
 		out.Secret = hop{Ready: unknownHop, Detail: "not reached: the Provider was not read"}
 	} else {
-		out.Provider = hop{Name: agent.Spec.ProviderRef.Name, Ready: readyWord(provider.Status.Ready),
-			Detail: provider.Spec.BaseURL}
-		out.Secret = hop{Name: provider.Spec.SecretRef.Name, Ready: secretWord(secretPresent, secretErr)}
+		out.Provider = hop{Name: providerName, Ready: readyWord(provider.Status.Ready),
+			Detail: safeOrkaProviderEndpoint(provider.Spec.BaseURL)}
+		out.Secret = hop{Name: qualifiedOrkaName(providerNamespace, agent.Metadata.Namespace, provider.Spec.SecretRef.Name), Ready: secretWord(secretPresent, secretErr)}
 	}
 	for _, task := range tasks {
 		out.Tasks = append(out.Tasks, map[string]string{"name": task.Metadata.Name, "phase": task.Status.Phase})
@@ -414,6 +439,36 @@ func (a *App) showAgentJSON(agent *orkaAgentSpec, provider *orkaProviderSpec, pr
 	}
 	_, err = fmt.Fprintln(a.Out, string(body))
 	return err
+}
+
+func qualifiedOrkaName(namespace, ownerNamespace, name string) string {
+	if name != "" && namespace != "" && namespace != ownerNamespace {
+		return namespace + "/" + name
+	}
+	return name
+}
+
+func safeOrkaProviderEndpoint(value string) string {
+	if value == "" {
+		return "-"
+	}
+	if len(value) > 2048 || !utf8.ValidString(value) || secretshapes.Match(value) != nil ||
+		strings.IndexFunc(value, func(r rune) bool { return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) }) >= 0 {
+		return "endpoint withheld: invalid or credential-bearing"
+	}
+	u, err := url.Parse(value)
+	if err != nil || u.Opaque != "" || u.Scheme != "http" && u.Scheme != "https" || u.Hostname() == "" ||
+		u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.RawFragment != "" {
+		return "endpoint withheld: invalid or credential-bearing"
+	}
+	if secretshapes.Match(u.Path) != nil {
+		return "endpoint withheld: invalid or credential-bearing"
+	}
+	safe := u.Scheme + "://" + u.Host + u.EscapedPath()
+	if secretshapes.Match(safe) != nil {
+		return "endpoint withheld: invalid or credential-bearing"
+	}
+	return safe
 }
 
 // agentModelName resolves what the agent will actually ask for. An Agent may

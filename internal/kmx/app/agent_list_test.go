@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
+	"go.yaml.in/yaml/v3"
 )
 
 func TestAgentListOutputValidation(t *testing.T) {
@@ -108,24 +110,88 @@ func TestOrkaAgentListHumanFieldsAreTerminalSafeAndBounded(t *testing.T) {
 }
 
 func TestOrkaAgentListMachineOutputPreservesValuesAndBoundsCapture(t *testing.T) {
-	for _, format := range []string{"json", "yaml"} {
-		t.Run(format, func(t *testing.T) {
-			a, _ := agentListFixture(t)
-			value := "raw\n\x1b[31m\u202e"
-			t.Setenv("KMX_INSPECT_AGENTS", value)
-			if err := a.ListAgents(format, "team-a"); err != nil {
-				t.Fatal(err)
-			}
-			if got := a.Out.(*bytes.Buffer).String(); got != value {
-				t.Fatalf("machine %s changed: %q", format, got)
-			}
-		})
+	value := "raw\n\x1b[31m\u202e"
+	raw, err := json.Marshal(map[string]any{"items": []any{map[string]any{"metadata": map[string]any{"name": value}}}})
+	if err != nil {
+		t.Fatal(err)
 	}
 	a, _ := agentListFixture(t)
+	t.Setenv("KMX_INSPECT_AGENTS", string(raw))
+	if err := a.ListAgents("json", "team-a"); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.Out.(*bytes.Buffer).String(); got != string(raw) {
+		t.Fatalf("machine JSON changed: %q", got)
+	}
+
+	a, _ = agentListFixture(t)
+	t.Setenv("KMX_INSPECT_AGENTS", string(raw))
+	if err := a.ListAgents("yaml", "team-a"); err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Items []struct {
+			Metadata struct {
+				Name string `yaml:"name"`
+			} `yaml:"metadata"`
+		} `yaml:"items"`
+	}
+	if err := yaml.Unmarshal(a.Out.(*bytes.Buffer).Bytes(), &got); err != nil || len(got.Items) != 1 || got.Items[0].Metadata.Name != value {
+		t.Fatalf("machine YAML changed values: %+v, %v", got, err)
+	}
+
+	a, _ = agentListFixture(t)
 	t.Setenv("KMX_INSPECT_AGENTS", "REPEAT:4194305:x")
-	err := a.ListAgents("json", "team-a")
+	err = a.ListAgents("json", "team-a")
 	if err == nil || !strings.Contains(err.Error(), "safe size limit") || strings.Contains(err.Error(), strings.Repeat("x", 100)) {
 		t.Fatalf("oversized machine output was not safely refused: %v", err)
+	}
+}
+
+func TestOrkaAgentListUsesExplicitBoundedPagination(t *testing.T) {
+	a, _ := agentListFixture(t)
+	calls := 0
+	a.captureCommand = func(_ context.Context, cmd *exec.Cmd) error {
+		calls++
+		if calls > 32 {
+			t.Fatal("Agent pagination exceeded its request bound")
+		}
+		_, err := fmt.Fprintf(cmd.Stdout, `{"metadata":{"continue":"cursor-%d"},"items":[]}`, calls)
+		return err
+	}
+	err := a.ListAgents("json", "team-a")
+	if err == nil || !strings.Contains(err.Error(), "pagination limits") || calls != 32 {
+		t.Fatalf("pagination bound = calls %d, error %v", calls, err)
+	}
+	if a.Out.(*bytes.Buffer).Len() != 0 {
+		t.Fatalf("partial list reached machine output: %q", a.Out.(*bytes.Buffer).String())
+	}
+}
+
+func TestOrkaAgentListCombinesCompletePagesOnly(t *testing.T) {
+	a, _ := agentListFixture(t)
+	calls := 0
+	a.captureCommand = func(_ context.Context, cmd *exec.Cmd) error {
+		calls++
+		page := `{"apiVersion":"core.orka.ai/v1alpha1","kind":"AgentList","metadata":{"resourceVersion":"7"},"items":[{"metadata":{"name":"two"}}]}`
+		if calls == 1 {
+			page = `{"apiVersion":"core.orka.ai/v1alpha1","kind":"AgentList","metadata":{"resourceVersion":"7","continue":"next"},"items":[{"metadata":{"name":"one"}}]}`
+		}
+		_, err := io.WriteString(cmd.Stdout, page)
+		return err
+	}
+	if err := a.ListAgents("json", "team-a"); err != nil {
+		t.Fatal(err)
+	}
+	var list struct {
+		Metadata map[string]json.RawMessage `json:"metadata"`
+		Items    []json.RawMessage          `json:"items"`
+	}
+	if err := json.Unmarshal(a.Out.(*bytes.Buffer).Bytes(), &list); err != nil || calls != 2 || len(list.Items) != 2 {
+		t.Fatalf("combined list = calls %d, items %d, error %v", calls, len(list.Items), err)
+	}
+	if _, continued := list.Metadata["continue"]; continued {
+		t.Fatal("completed list retained a continuation token")
 	}
 }
 
@@ -193,7 +259,7 @@ func TestOrkaAgentListUsesBoundedCaptureAndCancellation(t *testing.T) {
 	if err := a.ListAgents("table", "team-a"); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"--context", "kind-test", "--request-timeout=10s", "-n", "team-a", "get", "agents.core.orka.ai", "-o", "json"}
+	want := []string{"--context", "kind-test", "--request-timeout=10s", "get", "--raw", "/apis/core.orka.ai/v1alpha1/namespaces/team-a/agents?limit=128"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("capture args = %v, want %v", got, want)
 	}
@@ -218,7 +284,7 @@ func TestOrkaAgentListCancelsActiveCompiledKubectl(t *testing.T) {
 	calls := filepath.Join(dir, "calls")
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		if raw, err := os.ReadFile(calls); err == nil && strings.Contains(string(raw), "get agents.core.orka.ai") {
+		if raw, err := os.ReadFile(calls); err == nil && strings.Contains(string(raw), "/agents?limit=128") {
 			break
 		} else if err != nil && !os.IsNotExist(err) {
 			t.Fatal(err)

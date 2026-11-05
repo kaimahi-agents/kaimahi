@@ -116,9 +116,16 @@ func inspect(r protocol.Request) error {
 	case "secret":
 		key = "KMX_INSPECT_SECRET"
 	case "--raw":
-		key = "KMX_INSPECT_TASKS"
-		if strings.Contains(name, "continue=") && r.Getenv("KMX_INSPECT_TASKS_CONTINUED") != "" {
-			key = "KMX_INSPECT_TASKS_CONTINUED"
+		if strings.Contains(name, "/agents?") {
+			key = "KMX_INSPECT_AGENTS"
+			if strings.Contains(name, "continue=") && r.Getenv("KMX_INSPECT_AGENTS_CONTINUED") != "" {
+				key = "KMX_INSPECT_AGENTS_CONTINUED"
+			}
+		} else {
+			key = "KMX_INSPECT_TASKS"
+			if strings.Contains(name, "continue=") && r.Getenv("KMX_INSPECT_TASKS_CONTINUED") != "" {
+				key = "KMX_INSPECT_TASKS_CONTINUED"
+			}
 		}
 	}
 	value := r.Getenv(key)

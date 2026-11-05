@@ -27,7 +27,8 @@ const healthyAgent = `{"metadata":{"name":"concierge","namespace":"demo"},
         "tools":[{"name":"menu_lookup"},{"name":"refund_issue","enabled":false}]},
 "status":{"ready":true,"activeTasks":0}}`
 
-const healthyProvider = `{"spec":{"type":"openai","baseURL":"http://ollama.ollama:11434/v1",
+const healthyProvider = `{"metadata":{"name":"local","namespace":"demo"},
+"spec":{"type":"openai","baseURL":"http://ollama.ollama:11434/v1",
 "defaultModel":"qwen2.5:3b","secretRef":{"name":"local-provider-key","key":"api-key"}},
 "status":{"ready":true}}`
 
@@ -149,6 +150,42 @@ func TestAgentShowResolvesTheModelThroughTheProviderDefault(t *testing.T) {
 	}
 }
 
+func TestAgentShowUsesCrossNamespaceProviderAndSecret(t *testing.T) {
+	f := newShowFixture(t)
+	t.Setenv("KMX_INSPECT_AGENT", `{"metadata":{"name":"concierge","namespace":"demo"},"spec":{"providerRef":{"name":"local","namespace":"inference"}},"status":{"ready":true}}`)
+	t.Setenv("KMX_INSPECT_PROVIDER", `{"metadata":{"name":"local","namespace":"inference"},"spec":{"type":"openai","baseURL":"https://model.invalid/v1","defaultModel":"qualified-model","secretRef":{"name":"model-key"}},"status":{"ready":true}}`)
+	if err := f.app.ShowAgent("concierge", showOpts()); err != nil {
+		t.Fatal(err)
+	}
+	out := f.out.String()
+	if !strings.Contains(out, "provider inference/local") || !strings.Contains(out, "secret inference/model-key") || !strings.Contains(out, "qualified-model") {
+		t.Fatalf("cross-namespace dependency was not rendered exactly:\n%s", out)
+	}
+	calls, err := os.ReadFile(os.Getenv("KMX_INSPECT_CALLS"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := string(calls); !strings.Contains(text, "-n inference get providers.core.orka.ai local") || !strings.Contains(text, "-n inference get secret model-key") {
+		t.Fatalf("cross-namespace dependency was read from the wrong target:\n%s", text)
+	}
+}
+
+func TestAgentShowRefusesInvalidReferenceNamespaceBeforeFollowup(t *testing.T) {
+	f := newShowFixture(t)
+	t.Setenv("KMX_INSPECT_AGENT", `{"metadata":{"name":"concierge","namespace":"demo"},"spec":{"providerRef":{"name":"local","namespace":"--server=attacker"}}}`)
+	err := f.app.ShowAgent("concierge", showOpts())
+	if err == nil || !strings.Contains(err.Error(), "invalid identity or Provider reference") {
+		t.Fatalf("invalid Provider namespace was accepted: %v", err)
+	}
+	calls, readErr := os.ReadFile(os.Getenv("KMX_INSPECT_CALLS"))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if strings.Contains(string(calls), "get providers.core.orka.ai") || strings.Contains(string(calls), "get secret") {
+		t.Fatalf("invalid namespace reached follow-up kubectl:\n%s", calls)
+	}
+}
+
 // A listed-but-disabled tool is a different state from one that was never
 // wired, and only one of them is somebody's mistake.
 func TestAgentShowKeepsADisabledToolVisible(t *testing.T) {
@@ -218,11 +255,12 @@ func TestAgentShowHumanFieldsAreTerminalSafeAndBounded(t *testing.T) {
 		"status": map[string]any{"ready": true, "lastUsed": injected},
 	}
 	provider := map[string]any{
-		"spec":   map[string]any{"type": injected, "baseURL": injected, "secretRef": map[string]any{"name": "model-key"}},
-		"status": map[string]any{"ready": false, "message": injected},
+		"metadata": map[string]any{"name": "local", "namespace": "demo"},
+		"spec":     map[string]any{"type": injected, "baseURL": injected, "secretRef": map[string]any{"name": "model-key"}},
+		"status":   map[string]any{"ready": false, "message": injected},
 	}
 	tasks := map[string]any{"items": []any{map[string]any{
-		"metadata": map[string]any{"name": injected, "creationTimestamp": "2026-01-02T03:04:05Z"},
+		"metadata": map[string]any{"name": injected, "namespace": "demo", "creationTimestamp": "2026-01-02T03:04:05Z"},
 		"spec":     map[string]any{"agentRef": map[string]any{"name": "concierge"}},
 		"status":   map[string]any{"phase": injected, "message": injected},
 	}}}
@@ -270,10 +308,66 @@ func TestAgentShowJSONPreservesClusterValues(t *testing.T) {
 	}
 }
 
+func TestAgentShowWithholdsCredentialBearingProviderDiagnostics(t *testing.T) {
+	canary := "kmh_" + "OBVIOUSLYFAKE000000"
+	for _, tc := range []struct {
+		name, endpoint, message string
+	}{
+		{"userinfo", "https://user:" + canary + "@model.invalid/v1", ""},
+		{"query", "https://model.invalid/v1?api_key=" + canary, ""},
+		{"path", "https://model.invalid/" + canary, ""},
+		{"message", "https://model.invalid/v1", "authentication failed for " + canary},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, format := range []string{"table", "json"} {
+				f := newShowFixture(t)
+				provider := map[string]any{
+					"metadata": map[string]any{"name": "local", "namespace": "demo"},
+					"spec": map[string]any{"type": "openai", "baseURL": tc.endpoint,
+						"secretRef": map[string]any{"name": "model-key"}},
+					"status": map[string]any{"ready": tc.message == "", "message": tc.message},
+				}
+				raw, err := json.Marshal(provider)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Setenv("KMX_INSPECT_PROVIDER", string(raw))
+				opt := showOpts()
+				opt.Output = format
+				if err := f.app.ShowAgent("concierge", opt); err != nil {
+					t.Fatal(err)
+				}
+				out := f.out.String()
+				if strings.Contains(out, canary) || tc.message != "" && strings.Contains(out, tc.message) {
+					t.Fatalf("%s output disclosed Provider diagnostics: %q", format, out)
+				}
+				if tc.endpoint != "https://model.invalid/v1" && !strings.Contains(out, "endpoint withheld") {
+					t.Fatalf("%s output did not disclose endpoint withholding: %q", format, out)
+				}
+			}
+		})
+	}
+}
+
+func TestAgentShowTaskAttributionIncludesReferenceNamespace(t *testing.T) {
+	f := newShowFixture(t)
+	t.Setenv("KMX_INSPECT_TASKS", `{"items":[
+{"metadata":{"name":"right","namespace":"demo","creationTimestamp":"2026-01-02T00:00:00Z"},"spec":{"agentRef":{"name":"concierge"}}},
+{"metadata":{"name":"wrong","namespace":"demo","creationTimestamp":"2026-01-03T00:00:00Z"},"spec":{"agentRef":{"name":"concierge","namespace":"other"}}},
+{"metadata":{"name":"foreign","namespace":"other","creationTimestamp":"2026-01-04T00:00:00Z"},"spec":{"agentRef":{"name":"concierge","namespace":"demo"}}}
+]}`)
+	if err := f.app.ShowAgent("concierge", showOpts()); err != nil {
+		t.Fatal(err)
+	}
+	if out := f.out.String(); !strings.Contains(out, "right") || strings.Contains(out, "wrong") || strings.Contains(out, "foreign") {
+		t.Fatalf("Task attribution ignored namespace identity:\n%s", out)
+	}
+}
+
 func TestAgentShowReadsBoundedTaskPages(t *testing.T) {
 	f := newShowFixture(t)
-	t.Setenv("KMX_INSPECT_TASKS", `{"metadata":{"continue":"next"},"items":[{"metadata":{"name":"one","creationTimestamp":"2026-01-01T00:00:00Z"},"spec":{"agentRef":{"name":"concierge"}},"status":{"phase":"Succeeded"}}]}`)
-	t.Setenv("KMX_INSPECT_TASKS_CONTINUED", `{"items":[{"metadata":{"name":"two","creationTimestamp":"2026-01-02T00:00:00Z"},"spec":{"agentRef":{"name":"concierge"}},"status":{"phase":"Running"}}]}`)
+	t.Setenv("KMX_INSPECT_TASKS", `{"metadata":{"continue":"next"},"items":[{"metadata":{"name":"one","namespace":"demo","creationTimestamp":"2026-01-01T00:00:00Z"},"spec":{"agentRef":{"name":"concierge"}},"status":{"phase":"Succeeded"}}]}`)
+	t.Setenv("KMX_INSPECT_TASKS_CONTINUED", `{"items":[{"metadata":{"name":"two","namespace":"demo","creationTimestamp":"2026-01-02T00:00:00Z"},"spec":{"agentRef":{"name":"concierge"}},"status":{"phase":"Running"}}]}`)
 	if err := f.app.ShowAgent("concierge", showOpts()); err != nil {
 		t.Fatal(err)
 	}

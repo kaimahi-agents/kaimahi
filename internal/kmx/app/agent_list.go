@@ -4,10 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
+	"go.yaml.in/yaml/v3"
 )
 
 // ListAgents prints the Orka Agents in one namespace.
@@ -19,6 +24,9 @@ func (a *App) ListAgents(output, namespace string) error {
 	namespace = strings.TrimSpace(namespace)
 	if namespace == "" {
 		namespace = OrkaNamespace
+	}
+	if scaffold.ValidateNamespace(namespace) != nil {
+		return fmt.Errorf("Orka Agent list requires a valid namespace")
 	}
 	return a.listOrkaAgents(output, namespace)
 }
@@ -38,10 +46,21 @@ func (a *App) listOrkaAgents(output, namespace string) error {
 	if err := a.preflightOrkaInspection(); err != nil {
 		return err
 	}
+	raw, err := a.readOrkaAgentList(namespace)
+	if err != nil {
+		return a.agentListReadError(err)
+	}
 	if format != "table" {
-		raw, err := a.orkaCapture(a.operationContext(), nil, "-n", namespace, "get", "agents.core.orka.ai", "-o", format)
-		if err != nil {
-			return a.agentListReadError(err)
+		body := raw
+		if format == "yaml" {
+			var document yaml.Node
+			if err := yaml.Unmarshal(raw, &document); err != nil {
+				return fmt.Errorf("Orka Agents returned invalid JSON")
+			}
+			body, err = yaml.Marshal(&document)
+			if err != nil {
+				return fmt.Errorf("cannot render Orka Agents as YAML")
+			}
 		}
 		var out io.Writer = io.Discard
 		if a.Run.Stdout != nil {
@@ -49,27 +68,11 @@ func (a *App) listOrkaAgents(output, namespace string) error {
 		} else if a.Out != nil {
 			out = a.Out
 		}
-		n, err := out.Write(raw)
-		if err == nil && n != len(raw) {
+		n, err := out.Write(body)
+		if err == nil && n != len(body) {
 			err = io.ErrShortWrite
 		}
 		return err
-	}
-	raw, err := a.orkaCapture(a.operationContext(), nil, "-n", namespace, "get", "agents.core.orka.ai", "-o", "json")
-	if err != nil {
-		// Only one failure needs translating here, and it is not the obvious
-		// one. A cluster that does not serve the kind has no Orka on it at
-		// all; kubectl says "doesn't have a resource type" for that, which
-		// isNotFound does not match — hence noSuchResourceType.
-		//
-		// A NAMESPACE that does not exist is deliberately not handled, because
-		// kubectl does not report it here: listing a namespaced kind in an
-		// absent namespace returns an empty list and exit 0, not NotFound.
-		// Verified against a live cluster. A branch for it would be dead code
-		// implying an error that cannot arrive.
-		//
-		// Anything else is unread, and is returned as it arrived.
-		return a.agentListReadError(err)
 	}
 	var agents objectList[orkaAgentSpec]
 	if err := json.Unmarshal(raw, &agents); err != nil {
@@ -91,6 +94,86 @@ func (a *App) listOrkaAgents(output, namespace string) error {
 	}
 	humanTable(a.Out, orkaAgentColumns, rows)
 	return nil
+}
+
+func (a *App) readOrkaAgentList(namespace string) ([]byte, error) {
+	const pageLimit, pageCountLimit, itemLimit = 128, 32, 4096
+	const responseLimit = 4 << 20
+	ctx := a.operationContext()
+	seen := map[string]bool{}
+	cursor := ""
+	totalBytes := 0
+	items := make([]json.RawMessage, 0, pageLimit)
+	var first, firstMetadata map[string]json.RawMessage
+	var firstRaw []byte
+	for pageCount := 0; pageCount < pageCountLimit; pageCount++ {
+		path := fmt.Sprintf("/apis/core.orka.ai/v1alpha1/namespaces/%s/agents?limit=%d", url.PathEscape(namespace), pageLimit)
+		if cursor != "" {
+			path += "&continue=" + url.QueryEscape(cursor)
+		}
+		raw, err := a.orkaCapture(ctx, nil, "get", "--raw", path)
+		if err != nil {
+			return nil, err
+		}
+		if len(raw) > responseLimit-totalBytes {
+			return nil, fmt.Errorf("Orka Agent list exceeded safe response limits")
+		}
+		totalBytes += len(raw)
+		var envelope map[string]json.RawMessage
+		if json.Unmarshal(raw, &envelope) != nil || envelope == nil {
+			return nil, fmt.Errorf("Orka Agents returned invalid JSON")
+		}
+		var pageItems []json.RawMessage
+		if value, ok := envelope["items"]; !ok || json.Unmarshal(value, &pageItems) != nil || len(pageItems) > pageLimit || len(items)+len(pageItems) > itemLimit {
+			return nil, fmt.Errorf("Orka Agent list exceeded safe item limits")
+		}
+		items = append(items, pageItems...)
+		var metadata map[string]json.RawMessage
+		if value, ok := envelope["metadata"]; ok && (json.Unmarshal(value, &metadata) != nil || metadata == nil) {
+			return nil, fmt.Errorf("Orka Agents returned invalid metadata")
+		}
+		if first == nil {
+			first = envelope
+			firstMetadata = metadata
+			firstRaw = append([]byte(nil), raw...)
+		}
+		next := ""
+		if value, ok := metadata["continue"]; ok {
+			if len(value) > 4096 || strings.TrimSpace(string(value)) == "null" || json.Unmarshal(value, &next) != nil {
+				return nil, fmt.Errorf("Orka Agent list returned an invalid continuation token")
+			}
+		}
+		if next == "" {
+			if pageCount == 0 {
+				return firstRaw, nil
+			}
+			if firstMetadata != nil {
+				delete(firstMetadata, "continue")
+				delete(firstMetadata, "remainingItemCount")
+				metadataRaw, marshalErr := json.Marshal(firstMetadata)
+				if marshalErr != nil {
+					return nil, fmt.Errorf("cannot render Orka Agent list metadata")
+				}
+				first["metadata"] = metadataRaw
+			}
+			itemsRaw, marshalErr := json.Marshal(items)
+			if marshalErr != nil {
+				return nil, fmt.Errorf("cannot render Orka Agent list")
+			}
+			first["items"] = itemsRaw
+			complete, marshalErr := json.Marshal(first)
+			if marshalErr != nil || len(complete) > responseLimit {
+				return nil, fmt.Errorf("Orka Agent list exceeded safe response limits")
+			}
+			return complete, nil
+		}
+		if len(next) > 4096 || !utf8.ValidString(next) || strings.IndexFunc(next, unicode.IsControl) >= 0 || seen[next] || next == cursor || pageCount == pageCountLimit-1 {
+			return nil, fmt.Errorf("Orka Agent list exceeded safe pagination limits")
+		}
+		seen[next] = true
+		cursor = next
+	}
+	return nil, fmt.Errorf("Orka Agent list exceeded safe pagination limits")
 }
 
 func (a *App) agentListReadError(err error) error {

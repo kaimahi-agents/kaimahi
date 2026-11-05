@@ -72,10 +72,13 @@ a Windows Job Object; an arbitrary exec plugin may still perform side effects or
 use brokered process creation outside that cleanup boundary.
 
 Human table output removes terminal control and bidirectional-formatting
-characters and bounds cluster-controlled fields. Existing JSON/YAML output keeps
-the cluster values for machine consumers. List/show read Secret presence only;
-they never fetch Secret values. Kubeconfig exec plugins are local operator-trusted
-code, not sandboxed extensions.
+characters and bounds cluster-controlled fields. JSON/YAML keeps the cluster
+values for machine consumers after KMX completes its own bounded pagination and
+re-encodes the document; byte-for-byte formatting is not preserved. Show resolves
+cross-namespace Provider references exactly, but withholds invalid or
+credential-bearing Provider endpoints and status diagnostics from every output.
+List/show read Secret presence only; they never fetch Secret values. Kubeconfig
+exec plugins are local operator-trusted code, not sandboxed extensions.
 
 ## Everything else is deferred
 
