@@ -299,6 +299,9 @@ func TestSourcePairAcquireCancellationClosesDescriptors(t *testing.T) {
 	cancel()
 	b, err := acquireSourcePair(ctx, sourceRequest("edit", agent))
 	wantRefusal(t, err, "cancelled")
+	if b != nil || openDescriptors() != fds {
+		t.Fatalf("initial cancellation leaked: binding=%v fds %d->%d", b, fds, openDescriptors())
+	}
 	ctx, cancel = context.WithCancel(t.Context())
 	window(t, root, "after_hold", cancel)
 	b, err = acquireSourcePair(ctx, sourceRequest("edit", agent))
