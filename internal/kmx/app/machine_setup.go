@@ -17,6 +17,7 @@ type MachineEffect struct {
 
 type MachineSetupResult struct {
 	MachineResult
+	*OrkaModelResult
 	Mode    string          `json:"mode"`
 	Effects []MachineEffect `json:"effects"`
 }
@@ -36,6 +37,19 @@ func MachineProvisioningStage(operation, label string) string {
 			if label == upPhaseName(stage) {
 				return stage
 			}
+		}
+	} else if operation == "cluster.orka.model.connect" || operation == "cluster.orka.model.disconnect" {
+		switch label {
+		case "Model preflight":
+			return "preflight"
+		case "Model gateway":
+			return "gateway"
+		case "Model provider":
+			return "provider"
+		case "Model model":
+			return "model"
+		case "Model finalize":
+			return "finalize"
 		}
 	} else if operation == "cluster.orka.install" {
 		switch label {

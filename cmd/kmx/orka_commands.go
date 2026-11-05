@@ -33,7 +33,7 @@ func newOrkaCommand(state *commandState) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE:  func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
-	group.AddCommand(newOrkaInstallCommand(state), newOrkaStatusCommand(state), newOrkaToolsCommand(state), newAgentShowCommand(state), newAgentListCommand(state))
+	group.AddCommand(newOrkaModelCommand(state), newOrkaInstallCommand(state), newOrkaStatusCommand(state), newOrkaToolsCommand(state), newAgentShowCommand(state), newAgentListCommand(state))
 	return group
 }
 
