@@ -13,8 +13,13 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 )
 
-// SourcePairPublishRequest is the trusted adapter's native pair request, never
-// an inbound JSON shape. Task-sequenced: the publisher entry point arrives later.
+// SourcePairPublishRequest is a trusted Go adapter binding, never inbound JSON.
+// Validate binds ComposeOrkaSourcePair for complete native tuples; Current binds
+// Edit to a checked native load of the same selection and SameSourceVersion.
+// Preflight must encode the complete prospective ACK, including its newline and
+// conservative envelope widths, within 64 KiB without output or advancing state.
+// Callbacks perform no source writes, model, config or cluster work. Each receives
+// isolated bytes; callback errors are returned intact.
 type SourcePairPublishRequest struct {
 	Intent                 string // "create" or "edit"
 	AgentPath              string
@@ -38,6 +43,101 @@ type SourcePairWrite struct{ State, Revision string }
 type SourcePairPublishResult struct {
 	Agent, Tests SourcePairWrite
 	Revision     string // only a complete, finally checked pair; empty on error/uncertainty
+}
+
+// PublishSourcePair validates and preflights a native pair under held source
+// locks, then delegates publication to the shared descriptor engine. Create
+// requires both default targets absent. Edit never deletes a source; only trusted
+// CreateDefaultTests may materialize an absent, non-explicit default companion.
+// Per-source facts survive errors; Revision is set only after complete checked
+// publication, including a validated, preflighted no-op. No history or cache is
+// retained, and this entry point registers no MCP operation.
+func PublishSourcePair(ctx context.Context, req SourcePairPublishRequest) (SourcePairPublishResult, error) {
+	result := SourcePairPublishResult{Agent: SourcePairWrite{State: "not_written"}, Tests: SourcePairWrite{State: "not_written"}}
+	if err := cancelled(ctx); err != nil {
+		return result, err
+	}
+	create := req.Intent == "create"
+	if req.Validate == nil || req.Preflight == nil || !create && (req.Intent != "edit" || req.Current == nil || req.ExpectedRevision == "") ||
+		create && (req.ExpectedRevision != "" || !req.TestsPresent || req.CreateDefaultTests || req.Tests.Explicit) ||
+		!req.TestsPresent && len(req.TestsBytes) != 0 || req.CreateDefaultTests && (!req.TestsPresent || req.Tests.Explicit) {
+		return result, refusal("invalid_options")
+	}
+	// Own inbound bytes before acquisition or any trusted callback can change them.
+	req.AgentBytes, req.TestsBytes = bytes.Clone(req.AgentBytes), bytes.Clone(req.TestsBytes)
+	b, err := acquireSourcePair(ctx, req)
+	if err != nil {
+		return result, err
+	}
+	defer b.close()
+	changes := sourcePairChanges{req.AgentBytes, req.TestsBytes, req.TestsPresent}
+	candidate := b.tuple(req.Tests, changes.agentBytes, changes.testsBytes, changes.testsPresent)
+	facts, err := publishHeldSourcePair(ctx, b, changes, sourcePairPublishHooks{
+		check: b.check, checkPublishing: b.checkPublishing, prepareAbsentParent: b.prepareAbsentParent,
+		prepare: func(ctx context.Context, prospective sourcePairPublicationResult) error {
+			if !create {
+				if err := req.Current(ctx); err != nil {
+					return err
+				}
+			}
+			// Bind Current's checked load to these held names before validating bytes.
+			// Do not rerun Current after our own stages have dirtied directory times.
+			if err := b.check(ctx); err != nil {
+				return err
+			}
+			defaultTests, _ := agentfile.DefaultTestsPath(b.agentPath)
+			if !req.Tests.Explicit && b.testsPath != defaultTests {
+				return refusal("invalid_options")
+			}
+			if !create {
+				baseline := b.heldTuple(req.Tests)
+				if err := req.Validate(baseline.copy()); err != nil {
+					return err
+				}
+				if baseline.Revision != req.ExpectedRevision {
+					return refusal("stale_revision")
+				}
+				if b.tests != nil && (!req.TestsPresent || req.CreateDefaultTests) || b.tests == nil && req.TestsPresent && !req.CreateDefaultTests {
+					return refusal("invalid_options")
+				}
+			}
+			if err := req.Validate(candidate.copy()); err != nil {
+				return err
+			}
+			return req.Preflight(candidate.copy(), SourcePairPublishResult{prospective.Agent, prospective.Tests, candidate.Revision})
+		},
+	})
+	result.Agent, result.Tests = facts.Agent, facts.Tests
+	if err == nil {
+		// The engine's final held-object check established these bytes and names.
+		// Logical native identity belongs here, never in the raw writer.
+		result.Revision = b.heldTuple(req.Tests).Revision
+	}
+	return result, err
+}
+
+func (b *sourcePairBinding) tuple(selection agentfile.TestsSelection, agentBytes, testsBytes []byte, present bool) SourcePairTuple {
+	tuple := SourcePairTuple{AgentPath: b.agentPath, Tests: agentfile.TestsSelection{Path: b.testsPath, Explicit: selection.Explicit},
+		AgentBytes: bytes.Clone(agentBytes), TestsBytes: bytes.Clone(testsBytes), TestsPresent: present, AgentRevision: revision(agentBytes)}
+	state := "absent"
+	if present {
+		state, tuple.TestsRevision = "external", revision(testsBytes)
+	}
+	tuple.Tests.Key, tuple.Revision = agentfile.SourceRevisions(b.agentPath, tuple.AgentRevision, b.testsPath, state, tuple.TestsRevision)
+	return tuple
+}
+
+func (b *sourcePairBinding) heldTuple(selection agentfile.TestsSelection) SourcePairTuple {
+	var tests []byte
+	if b.tests != nil {
+		tests = b.tests.source
+	}
+	return b.tuple(selection, b.agent.source, tests, b.tests != nil)
+}
+
+func (tuple SourcePairTuple) copy() SourcePairTuple {
+	tuple.AgentBytes, tuple.TestsBytes = bytes.Clone(tuple.AgentBytes), bytes.Clone(tuple.TestsBytes)
+	return tuple
 }
 
 // sourcePairAcquireWindow lets tests swap the filesystem at exact observation

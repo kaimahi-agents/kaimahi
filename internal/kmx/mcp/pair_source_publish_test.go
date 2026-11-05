@@ -3,7 +3,9 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
@@ -467,6 +469,374 @@ func TestSourcePairAcquirePrepareRefusesForeignDirectoriesBeforeMkdir(t *testing
 				t.Fatalf("refused preparation created %v", sourceTree(t, root))
 			}
 		})
+	}
+}
+
+const nativePublishSource = "---\nname: reader\nmodel: model/v1\nkmx:\n  schemaVersion: 1\n  runtime: orka\n  tools: []\n  skills: []\n---\nKeep whitespace.  \n"
+
+func nativePublishValidate(tuple SourcePairTuple) error {
+	_, err := agentfile.ComposeOrkaSourcePair(tuple.AgentPath, tuple.AgentBytes, tuple.Tests, tuple.TestsBytes, tuple.TestsPresent)
+	return err
+}
+
+func nativePublishRequest(t *testing.T, intent, path string) SourcePairPublishRequest {
+	t.Helper()
+	req := sourceRequest(intent, path)
+	req.AgentBytes, req.TestsBytes, req.TestsPresent = []byte(nativePublishSource), []byte(historyTests), true
+	req.Validate = nativePublishValidate
+	req.Preflight = func(SourcePairTuple, SourcePairPublishResult) error { return nil }
+	if intent == "edit" {
+		baseline, err := agentfile.LoadOrkaPair(path, "")
+		must(t, err)
+		req.ExpectedRevision = baseline.SnapshotRevision
+		req.TestsPresent = baseline.Tests.State == "external"
+		if !req.TestsPresent {
+			req.TestsBytes = nil
+		}
+		req.Current = func(ctx context.Context) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			now, err := agentfile.LoadOrkaPair(path, "")
+			if err != nil {
+				return err
+			}
+			if !baseline.SameSourceVersion(now) {
+				return refusal("stale_revision")
+			}
+			return nil
+		}
+	}
+	return req
+}
+
+// Catches fabricated identities, skipped preflight and Current rerun after our
+// own staging. The validator uses the actual native composer.
+func TestPublishSourcePairNativeBinding(t *testing.T) {
+	root := sourceRoot(t)
+	req := nativePublishRequest(t, "create", filepath.Join(root, ".github", "agents", "a.agent.md"))
+	req.Tests.Key = "forged"
+	before := sourceTree(t, root)
+	validated := false
+	req.Validate = func(tuple SourcePairTuple) error { validated = true; return nativePublishValidate(tuple) }
+	var prospective SourcePairPublishResult
+	req.Preflight = func(tuple SourcePairTuple, ack SourcePairPublishResult) error {
+		if !validated || !sameNames(before, sourceTree(t, root)) || tuple.Tests.Key == "forged" || tuple.AgentPath != req.AgentPath || tuple.Tests.Path != req.Tests.Path {
+			t.Fatal("preflight not bound before parent/stage effects", tuple)
+		}
+		prospective = ack
+		return nil
+	}
+	got, err := PublishSourcePair(t.Context(), req)
+	if err != nil || got.Agent.State != "written" || got.Tests.State != "written" || got.Revision == "" || got != prospective {
+		t.Fatalf("create = %+v, %v; prospective = %+v", got, err, prospective)
+	}
+	loaded, err := agentfile.LoadOrkaPair(req.AgentPath, "")
+	must(t, err)
+	if got.Revision != loaded.SnapshotRevision || got.Agent.Revision != loaded.Agent.Revision || got.Tests.Revision != loaded.Tests.Revision || !bytes.Equal(loaded.Agent.Source, req.AgentBytes) || !bytes.Equal(loaded.Tests.Suite.Source, req.TestsBytes) {
+		t.Fatal("ack did not bind exact native sources", got)
+	}
+	req = nativePublishRequest(t, "edit", req.AgentPath)
+	req.AgentBytes = append(req.AgentBytes, []byte("More instructions.\n")...)
+	got, err = PublishSourcePair(t.Context(), req)
+	if err != nil || got.Agent.State != "written" || got.Tests.State != "unchanged" || got.Revision == "" {
+		t.Fatalf("checked edit = %+v, %v", got, err)
+	}
+}
+
+// Catches permission inferred from candidate presence or a caller's selection key.
+func TestPublishSourcePairPresenceAndIntent(t *testing.T) {
+	for _, tc := range []struct {
+		name, intent, code string
+		agent, tests       bool
+		change             func(*SourcePairPublishRequest)
+	}{
+		{"create lacks tests", "create", "invalid_options", false, false, func(q *SourcePairPublishRequest) { q.TestsPresent, q.TestsBytes = false, nil }},
+		{"create expected revision", "create", "invalid_options", false, false, func(q *SourcePairPublishRequest) { q.ExpectedRevision = "stale" }},
+		{"create sparse permission", "create", "invalid_options", false, false, func(q *SourcePairPublishRequest) { q.CreateDefaultTests = true }},
+		{"create occupied agent", "create", "already_exists", true, false, nil},
+		{"create occupied tests", "create", "already_exists", false, true, nil},
+		{"edit missing revision", "edit", "invalid_options", true, true, func(q *SourcePairPublishRequest) { q.ExpectedRevision = "" }},
+		{"edit keeps absent tests", "edit", "", true, false, nil},
+		{"raw replacement cannot create tests", "edit", "invalid_options", true, false, func(q *SourcePairPublishRequest) { q.TestsPresent, q.TestsBytes = true, []byte(historyTests) }},
+		{"sparse first default tests", "edit", "", true, false, func(q *SourcePairPublishRequest) {
+			q.TestsPresent, q.TestsBytes, q.CreateDefaultTests = true, []byte(historyTests), true
+		}},
+		{"explicit missing default", "edit", "not_found", true, false, func(q *SourcePairPublishRequest) { q.Tests.Explicit = true }},
+		{"explicit missing with permission", "edit", "invalid_options", true, false, func(q *SourcePairPublishRequest) {
+			q.Tests.Explicit, q.TestsPresent, q.CreateDefaultTests = true, true, true
+			q.TestsBytes = []byte(historyTests)
+		}},
+		{"implicit nondefault", "edit", "invalid_options", true, false, func(q *SourcePairPublishRequest) { q.Tests.Path += ".other" }},
+		{"edit never deletes tests", "edit", "invalid_options", true, true, func(q *SourcePairPublishRequest) { q.TestsPresent, q.TestsBytes = false, nil }},
+		{"absent with bytes", "edit", "invalid_options", true, false, func(q *SourcePairPublishRequest) { q.TestsBytes = []byte(historyTests) }},
+		{"permission without creation", "edit", "invalid_options", true, false, func(q *SourcePairPublishRequest) { q.CreateDefaultTests = true }},
+		{"permission on present tests", "edit", "invalid_options", true, true, func(q *SourcePairPublishRequest) { q.CreateDefaultTests = true }},
+		{"explicit present default", "edit", "", true, true, func(q *SourcePairPublishRequest) { q.Tests.Explicit = true }},
+		{"agent cannot become absent", "edit", "native", true, true, func(q *SourcePairPublishRequest) { q.AgentBytes = nil }},
+		{"nil validator", "create", "invalid_options", false, false, func(q *SourcePairPublishRequest) { q.Validate = nil }},
+		{"nil preflight", "create", "invalid_options", false, false, func(q *SourcePairPublishRequest) { q.Preflight = nil }},
+		{"nil current", "edit", "invalid_options", true, true, func(q *SourcePairPublishRequest) { q.Current = nil }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := sourceRoot(t)
+			path := filepath.Join(root, "a.agent.md")
+			if tc.agent {
+				sourceWrite(t, path, nativePublishSource)
+			}
+			if tc.tests {
+				sourceWrite(t, filepath.Join(root, "a.agent.test.md"), historyTests)
+			}
+			req := nativePublishRequest(t, tc.intent, path)
+			if tc.change != nil {
+				tc.change(&req)
+			}
+			before := sourceTree(t, root)
+			got, err := PublishSourcePair(t.Context(), req)
+			if tc.code == "" {
+				if err != nil || got.Revision == "" {
+					t.Fatalf("result = %+v, %v", got, err)
+				}
+				loaded, err := agentfile.LoadOrkaPair(path, "")
+				must(t, err)
+				if got.Revision != loaded.SnapshotRevision || (loaded.Tests.State == "external") != req.TestsPresent || !bytes.Equal(loaded.Agent.Source, req.AgentBytes) {
+					t.Fatal("presence or complete revision does not match publication", got)
+				}
+				if req.TestsPresent && !bytes.Equal(loaded.Tests.Suite.Source, req.TestsBytes) {
+					t.Fatal("authorized first tests not published")
+				}
+				return
+			}
+			if tc.code == "native" {
+				var diagnostic *agentfile.Error
+				if !errors.As(err, &diagnostic) {
+					t.Fatalf("native validation = %v", err)
+				}
+			} else {
+				wantRefusal(t, err, tc.code)
+			}
+			if got.Revision != "" || !sameNames(before, sourceTree(t, root)) {
+				t.Fatal("refusal mutated tree or returned complete revision", got)
+			}
+			for path, body := range map[string]string{path: nativePublishSource, filepath.Join(root, "a.agent.test.md"): historyTests} {
+				if raw, err := os.ReadFile(path); err == nil && string(raw) != body {
+					t.Fatal("occupied half replaced", path)
+				}
+			}
+		})
+	}
+}
+
+// Invalid baseline policy must veto a valid candidate; stale revisions must be
+// compared only after full baseline validation, before candidate validation.
+func TestPublishSourcePairPrepareOrder(t *testing.T) {
+	for _, mode := range []string{"baseline-veto", "invalid-native-baseline", "stale-revision", "invalid-candidate"} {
+		t.Run(mode, func(t *testing.T) {
+			root := sourceRoot(t)
+			path := filepath.Join(root, "a.agent.md")
+			sourceWrite(t, path, nativePublishSource)
+			sourceWrite(t, filepath.Join(root, "a.agent.test.md"), historyTests)
+			req := nativePublishRequest(t, "edit", path)
+			req.AgentBytes = append(req.AgentBytes, []byte("Candidate.\n")...)
+			req.TestsBytes = append(req.TestsBytes, []byte("Candidate prose.\n")...)
+			if mode == "invalid-native-baseline" {
+				sourceWrite(t, req.Tests.Path, "not a tests source")
+			}
+			if mode == "stale-revision" {
+				req.ExpectedRevision = "sha256:stale"
+			}
+			if mode == "invalid-candidate" {
+				req.AgentBytes = []byte("not a native source")
+			}
+			veto := errors.New("baseline is not valid for this adapter")
+			var events []string
+			current := req.Current
+			req.Current = func(ctx context.Context) error { events = append(events, "current"); return current(ctx) }
+			req.Validate = func(tuple SourcePairTuple) error {
+				events = append(events, "validate")
+				if err := nativePublishValidate(tuple); err != nil {
+					return err
+				}
+				if mode == "baseline-veto" && string(tuple.TestsBytes) == historyTests {
+					return veto
+				}
+				return nil
+			}
+			req.Preflight = func(SourcePairTuple, SourcePairPublishResult) error {
+				t.Fatal("preflight ran after refusal")
+				return nil
+			}
+			got, err := PublishSourcePair(t.Context(), req)
+			wantEvents := "current,validate"
+			if mode == "invalid-native-baseline" {
+				wantEvents = "current" // the real checked loader already refuses invalid native content
+			}
+			if mode == "invalid-candidate" {
+				wantEvents += ",validate"
+			}
+			if err == nil || got.Revision != "" || strings.Join(events, ",") != wantEvents {
+				t.Fatalf("events = %v, result = %+v, %v", events, got, err)
+			}
+			if mode == "baseline-veto" && !errors.Is(err, veto) {
+				t.Fatal("callback error changed", err)
+			}
+			if mode == "stale-revision" {
+				wantRefusal(t, err, "stale_revision")
+			}
+			raw, readErr := os.ReadFile(path)
+			must(t, readErr)
+			if string(raw) != nativePublishSource || len(sourceTree(t, root)) != 3 {
+				t.Fatal("validation wrote or staged sources")
+			}
+			if mode == "invalid-native-baseline" {
+				var diagnostic *agentfile.Error
+				if !errors.As(err, &diagnostic) {
+					t.Fatal("invalid native baseline not diagnosed", err)
+				}
+			}
+		})
+	}
+}
+
+// Each callback gets an independent byte copy. Mutating inbound/visible bytes
+// cannot alter held baselines, later callbacks, publication bytes or no-op facts.
+func TestPublishSourcePairOwnsCallbackBytesAndNoOp(t *testing.T) {
+	root := sourceRoot(t)
+	path := filepath.Join(root, "a.agent.md")
+	sourceWrite(t, path, nativePublishSource)
+	sourceWrite(t, filepath.Join(root, "a.agent.test.md"), historyTests)
+	req := nativePublishRequest(t, "edit", path)
+	before, err := os.Stat(path)
+	must(t, err)
+	current, events := req.Current, []string{}
+	req.Current = func(ctx context.Context) error {
+		events = append(events, "current")
+		req.AgentBytes[0], req.TestsBytes[0] = 'X', 'X'
+		return current(ctx)
+	}
+	check := func(tuple SourcePairTuple) {
+		t.Helper()
+		if string(tuple.AgentBytes) != nativePublishSource || string(tuple.TestsBytes) != historyTests {
+			t.Fatal("callback bytes not isolated")
+		}
+		pair, err := agentfile.ComposeOrkaSourcePair(tuple.AgentPath, tuple.AgentBytes, tuple.Tests, tuple.TestsBytes, tuple.TestsPresent)
+		must(t, err)
+		if tuple.Revision != pair.SnapshotRevision || tuple.AgentRevision != pair.Agent.Revision || tuple.TestsRevision != pair.Tests.Revision || tuple.Tests.Key != pair.Tests.Selection.Key {
+			t.Fatal("tuple identities not recomputed", tuple)
+		}
+		tuple.AgentBytes[0], tuple.TestsBytes[0] = 'Y', 'Y'
+	}
+	req.Validate = func(tuple SourcePairTuple) error { events = append(events, "validate"); check(tuple); return nil }
+	req.Preflight = func(tuple SourcePairTuple, ack SourcePairPublishResult) error {
+		events = append(events, "preflight")
+		check(tuple)
+		if ack.Revision != req.ExpectedRevision || ack.Agent.State != "unchanged" || ack.Tests.State != "unchanged" {
+			t.Fatal("incorrect prospective no-op", ack)
+		}
+		return nil
+	}
+	got, err := PublishSourcePair(t.Context(), req)
+	if err != nil || got.Revision != req.ExpectedRevision || got.Agent.State != "unchanged" || got.Tests.State != "unchanged" || strings.Join(events, ",") != "current,validate,validate,preflight" {
+		t.Fatalf("no-op = %+v, %v; events = %v", got, err, events)
+	}
+	after, err := os.Stat(path)
+	must(t, err)
+	if !os.SameFile(before, after) || !before.ModTime().Equal(after.ModTime()) {
+		t.Fatal("no-op rewrote agent")
+	}
+}
+
+// Full encoded ACK refusal (including no-op) happens before any directory,
+// stage or source mutation. The callback owns encoding, not an MCP view budget.
+func TestPublishSourcePairPreflightBudget(t *testing.T) {
+	for _, mode := range []string{"create", "edit", "no-op"} {
+		t.Run(mode, func(t *testing.T) {
+			root := sourceRoot(t)
+			path := filepath.Join(root, "new", "a.agent.md")
+			large := nativePublishSource + strings.Repeat("x", 64*1024)
+			intent := "create"
+			if mode != "create" {
+				intent = "edit"
+				sourceWrite(t, path, large)
+				sourceWrite(t, filepath.Join(root, "new", "a.agent.test.md"), historyTests)
+			}
+			req := nativePublishRequest(t, intent, path)
+			req.AgentBytes = []byte(large)
+			if mode == "edit" {
+				req.AgentBytes = append(req.AgentBytes, 'y')
+			}
+			before := sourceTree(t, root)
+			veto, called := errors.New("encoded acknowledgment exceeds 64 KiB"), false
+			req.Preflight = func(tuple SourcePairTuple, ack SourcePairPublishResult) error {
+				called = true
+				raw, err := json.Marshal(struct {
+					Tuple SourcePairTuple
+					Ack   SourcePairPublishResult
+				}{tuple, ack})
+				must(t, err)
+				if len(raw)+1 > 64*1024 {
+					return veto
+				}
+				return nil
+			}
+			got, err := PublishSourcePair(t.Context(), req)
+			if !called || !errors.Is(err, veto) || got.Revision != "" || !sameNames(before, sourceTree(t, root)) {
+				t.Fatalf("budget = %+v, %v; called = %v", got, err, called)
+			}
+			if intent == "edit" {
+				raw, err := os.ReadFile(path)
+				must(t, err)
+				if string(raw) != large {
+					t.Fatal("preflight veto replaced agent")
+				}
+			}
+		})
+	}
+}
+
+// Equal bytes do not prove checked currentness. Test-only swaps in callbacks
+// also pin the held-name check after Current and core's second check after Prepare.
+func TestPublishSourcePairCurrentnessBeforeStaging(t *testing.T) {
+	for _, mode := range []string{"before-acquire", "in-current", "in-preflight"} {
+		t.Run(mode, func(t *testing.T) {
+			root := sourceRoot(t)
+			path := filepath.Join(root, "a.agent.md")
+			sourceWrite(t, path, nativePublishSource)
+			foreign := filepath.Join(root, "foreign")
+			sourceWrite(t, foreign, nativePublishSource)
+			req := nativePublishRequest(t, "edit", path)
+			req.AgentBytes = append(req.AgentBytes, []byte("Candidate.\n")...)
+			swap := func() { must(t, os.Rename(foreign, path)) }
+			current := req.Current
+			if mode == "before-acquire" {
+				swap()
+			}
+			if mode == "in-current" {
+				req.Current = func(ctx context.Context) error { err := current(ctx); swap(); return err }
+			}
+			if mode == "in-preflight" {
+				req.Preflight = func(SourcePairTuple, SourcePairPublishResult) error { swap(); return nil }
+			}
+			got, err := PublishSourcePair(t.Context(), req)
+			wantRefusal(t, err, "stale_revision")
+			raw, readErr := os.ReadFile(path)
+			must(t, readErr)
+			if got.Revision != "" || got.Agent.State != "not_written" || string(raw) != nativePublishSource || len(sourceTree(t, root)) != 2 {
+				t.Fatal("stale publication changed sources or left stages", got)
+			}
+		})
+	}
+}
+
+func TestPublishSourcePairCancelled(t *testing.T) {
+	root := sourceRoot(t)
+	req := nativePublishRequest(t, "create", filepath.Join(root, "new", "a.agent.md"))
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	got, err := PublishSourcePair(ctx, req)
+	wantRefusal(t, err, "cancelled")
+	if got.Revision != "" || len(sourceTree(t, root)) != 1 {
+		t.Fatal("cancelled call made effects", got)
 	}
 }
 
