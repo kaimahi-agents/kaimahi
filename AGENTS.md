@@ -7,6 +7,10 @@ Edit the map only when adding, removing or moving a top-level directory (a root
 area or an immediate child of `cmd/`, `internal/` or `pkg/`); put behavior
 changes in the package's Go doc comment.
 
+## Package ownership
+
+New operations belong in an operation-owned package with explicit dependencies, not as new methods on `*app.App`. Keep CLI, MCP and UI parsing, presentation and invocation wiring in their adapters. Reuse an existing focused package when it owns the behavior; otherwise add one below `internal/kmx/`. Operation packages must not import `app`, `mcp` or command packages. Pass the capabilities the operation needs, not `*app.App` or a copy of it. Existing App methods may delegate during migration; do not move unrelated code to satisfy this rule.
+
 ## Independent review
 
 For non-trivial code, workflow, checker, dependency, security, storage or
