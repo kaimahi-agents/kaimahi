@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
+	"path/filepath"
 	"testing"
 )
 
 func TestOrkaModelVisibleAnchorResult(t *testing.T) {
 	for _, failure := range []string{"anchor", "checkpoint"} {
 		t.Run(failure, func(t *testing.T) {
-			t.Setenv("KMX_HOME", t.TempDir())
+			t.Setenv("KMX_HOME", filepath.Join(t.TempDir(), "state"))
 			ctx := context.Background()
 			r, err := openModelRecord(ctx, modelTestTarget, true)
 			if err != nil {

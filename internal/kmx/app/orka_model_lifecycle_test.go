@@ -29,7 +29,7 @@ func modelDeleteFixture(a *App, objects map[string]map[string]any) {
 func TestOrkaModelServingOwnership(t *testing.T) {
 	for _, damage := range []string{"no-pod", "foreign-pod", "not-ready"} {
 		t.Run(damage, func(t *testing.T) {
-			a, objects, _ := modelConfigureFixture(t)
+			a, objects, _ := modelLifecycleFixture(t)
 			ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 			defer cancel()
 			a.Run.Context = ctx
@@ -78,7 +78,7 @@ func TestOrkaModelServingOwnership(t *testing.T) {
 func TestOrkaModelAbsentGatewayIsNotStop(t *testing.T) {
 	for _, retained := range []bool{false, true} {
 		t.Run(fmt.Sprint(retained), func(t *testing.T) {
-			a, objects, _ := modelConfigureFixture(t)
+			a, objects, _ := modelLifecycleFixture(t)
 			capture := a.captureCommand
 			if !retained {
 				a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
@@ -111,7 +111,7 @@ func TestOrkaModelAbsentGatewayIsNotStop(t *testing.T) {
 func TestOrkaModelAuthAndCatalog(t *testing.T) {
 	for _, damage := range []string{"auth", "catalog"} {
 		t.Run(damage, func(t *testing.T) {
-			a, _, _ := modelConfigureFixture(t)
+			a, _, _ := modelLifecycleFixture(t)
 			capture := a.captureCommand
 			a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
 				args := strings.Join(cmd.Args, " ")

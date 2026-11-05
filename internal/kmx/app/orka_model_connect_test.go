@@ -12,7 +12,7 @@ import (
 )
 
 func TestOrkaModelDisconnect(t *testing.T) {
-	a, objects, calls := modelConfigureFixture(t)
+	a, objects, calls := modelLifecycleFixture(t)
 	connected, err := a.ConnectOrkaModel(OrkaModelConnectOptions{OperationID: "11111111-1111-4111-8111-111111111111", Namespace: OrkaNamespace, Route: "copilot", Provider: "copilot", Model: "gpt-4.1", CredentialGeneration: "22222222-2222-4222-8222-222222222222"})
 	if err != nil {
 		t.Fatal(err)
@@ -56,7 +56,7 @@ func TestOrkaModelConnect(t *testing.T) {
 	opt := OrkaModelConnectOptions{OperationID: "11111111-1111-4111-8111-111111111111", Namespace: OrkaNamespace, Route: "copilot", Provider: "copilot", Model: "gpt-4.1", CredentialGeneration: "22222222-2222-4222-8222-222222222222"}
 	t.Run("explicit selectors zero effects", func(t *testing.T) {
 		for _, field := range []string{"operation", "namespace", "route", "provider", "model", "automatic model", "generation"} {
-			a, _, calls := modelConfigureFixture(t)
+			a, _, calls := modelLifecycleFixture(t)
 			bad := opt
 			switch field {
 			case "operation":
@@ -83,7 +83,7 @@ func TestOrkaModelConnect(t *testing.T) {
 		}
 	})
 	t.Run("configure then identical reconnect no mutations", func(t *testing.T) {
-		a, objects, calls := modelConfigureFixture(t)
+		a, objects, calls := modelLifecycleFixture(t)
 		result, err := a.ConnectOrkaModel(opt)
 		if err != nil {
 			t.Fatal(err)
@@ -110,7 +110,7 @@ func TestOrkaModelConnect(t *testing.T) {
 		}
 	})
 	t.Run("lost create retains ID and no replay", func(t *testing.T) {
-		a, _, calls := modelConfigureFixture(t)
+		a, _, calls := modelLifecycleFixture(t)
 		capture := a.captureCommand
 		a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
 			if slices.Contains(cmd.Args, "create") && !slices.Contains(cmd.Args, "--dry-run=server") {

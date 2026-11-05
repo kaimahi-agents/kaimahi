@@ -25,7 +25,7 @@ func persistentModelCreate(cmd *exec.Cmd) bool {
 func TestOrkaModelPreflightFailures(t *testing.T) {
 	for _, damage := range []string{"credential", "admission", "admitted-spec", "occupied"} {
 		t.Run(damage, func(t *testing.T) {
-			a, _, _ := modelConfigureFixture(t)
+			a, _, _ := modelLifecycleFixture(t)
 			capture := a.captureCommand
 			creates := 0
 			if damage == "credential" {
@@ -69,7 +69,7 @@ func TestOrkaModelPreflightFailures(t *testing.T) {
 }
 
 func TestOrkaModelPodAdmissionLabels(t *testing.T) {
-	a, _, _ := modelConfigureFixture(t)
+	a, _, _ := modelLifecycleFixture(t)
 	capture := a.captureCommand
 	seen := false
 	a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
@@ -93,7 +93,7 @@ func TestOrkaModelPodAdmissionLabels(t *testing.T) {
 func TestOrkaModelChangedConnection(t *testing.T) {
 	for _, damage := range []string{"generation", "uid", "image", "storage", "service-account"} {
 		t.Run(damage, func(t *testing.T) {
-			a, objects, calls := modelConfigureFixture(t)
+			a, objects, calls := modelLifecycleFixture(t)
 			opt := modelConnectOptions()
 			first, err := a.ConnectOrkaModel(opt)
 			if err != nil {
@@ -132,7 +132,7 @@ func TestOrkaModelChangedConnection(t *testing.T) {
 }
 
 func TestOrkaModelAuthFailureRecovery(t *testing.T) {
-	a, objects, _ := modelConfigureFixture(t)
+	a, objects, _ := modelLifecycleFixture(t)
 	capture := a.captureCommand
 	a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
 		if strings.HasSuffix(cmd.Args[len(cmd.Args)-1], "/readyz") {
@@ -161,7 +161,7 @@ func TestOrkaModelAuthFailureRecovery(t *testing.T) {
 func TestOrkaModelAmbiguousDisconnect(t *testing.T) {
 	for _, damage := range []string{"intact", "absent", "replaced", "terminating", "old-request-race"} {
 		t.Run(damage, func(t *testing.T) {
-			a, objects, _ := modelConfigureFixture(t)
+			a, objects, _ := modelLifecycleFixture(t)
 			a.waitTiming = &waitTiming{pollInterval: time.Millisecond, timeout: func(ctx context.Context, phase string, duration time.Duration) (context.Context, context.CancelFunc) {
 				if phase == "orka-model-delete" {
 					duration = 40 * time.Millisecond
@@ -258,7 +258,7 @@ func TestOrkaModelAmbiguousDisconnect(t *testing.T) {
 }
 
 func TestOrkaModelDisconnectIdentityMismatch(t *testing.T) {
-	a, objects, calls := modelConfigureFixture(t)
+	a, objects, calls := modelLifecycleFixture(t)
 	c, err := a.ConnectOrkaModel(modelConnectOptions())
 	if err != nil {
 		t.Fatal(err)
@@ -283,7 +283,7 @@ func TestOrkaModelDisconnectIdentityMismatch(t *testing.T) {
 func TestOrkaModelPreflightNeverAssumesStopped(t *testing.T) {
 	for _, damage := range []string{"secret-owner", "read-denied"} {
 		t.Run(damage, func(t *testing.T) {
-			a, objects, _ := modelConfigureFixture(t)
+			a, objects, _ := modelLifecycleFixture(t)
 			connected, err := a.ConnectOrkaModel(modelConnectOptions())
 			if err != nil {
 				t.Fatal(err)
@@ -319,7 +319,7 @@ func TestOrkaModelPreflightNeverAssumesStopped(t *testing.T) {
 func TestOrkaModelCancellationBoundaries(t *testing.T) {
 	for _, when := range []string{"before", "gateway", "after-create"} {
 		t.Run(when, func(t *testing.T) {
-			a, _, _ := modelConfigureFixture(t)
+			a, _, _ := modelLifecycleFixture(t)
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			a.Run.Context = ctx
