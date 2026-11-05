@@ -27,10 +27,10 @@
 // Installing or reusing Orka never trusts Deployment status alone: it can be the
 // controller manager's record from before a node restart. Offline install and
 // both install-reuse paths wait, bounded, until each workload's pods report
-// kubelet readiness no older than their kind node container's current start.
-// Online reuse on a context other than kind-<KIND_CLUSTER> requires current pod
-// readiness only. Every read in the wait is bounded and nothing is written or
-// repaired.
+// kubelet readiness no older than their kind node container's current start
+// and Orka's typed /readyz answers through its API Service. Online reuse on a
+// context other than kind-<KIND_CLUSTER> uses no restart reference. Every read
+// in the wait is bounded and nothing is written or repaired.
 //
 // Model connection state retains nonsecret, acknowledged identities through
 // private immutable checkpoints and a process-held target lock. Partial effects

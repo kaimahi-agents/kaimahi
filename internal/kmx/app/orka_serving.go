@@ -40,6 +40,8 @@ type orkaServingWorkload struct {
 // nodeStart is nil when the target has no node container to consult.
 type orkaServingReader struct {
 	pods      func(selector string) ([]byte, error)
+	services  func() ([]byte, error)
+	get       func(path string) ([]byte, error)
 	decode    func([]byte, any) error
 	nodeStart func(node string) (time.Time, error)
 }
@@ -154,6 +156,10 @@ func (r orkaServingReader) check(w orkaServingWorkload) (string, error) {
 		if pod.Metadata.DeletionTimestamp != nil || pod.Status.Phase == "Succeeded" || pod.Status.Phase == "Failed" {
 			continue
 		}
+		// A foreign pod will not go away by waiting.
+		if !orkaServingOwned(w.name, pod) {
+			return "", fmt.Errorf("a pod selected by %s is not controlled by its ReplicaSet; refusing to verify a foreign workload", w.name)
+		}
 		live = append(live, pod)
 	}
 	if len(live) != w.replicas {
@@ -161,9 +167,6 @@ func (r orkaServingReader) check(w orkaServingWorkload) (string, error) {
 	}
 	starts := map[string]time.Time{}
 	for _, pod := range live {
-		if !orkaServingOwned(w.name, pod) {
-			return "", fmt.Errorf("a pod selected by %s is not controlled by its ReplicaSet; refusing to verify a foreign workload", w.name)
-		}
 		if pod.Status.Phase != "Running" {
 			return fmt.Sprintf("%s pod is not running", w.name), nil
 		}
@@ -289,6 +292,51 @@ func orkaLabelPart(s string, key bool) bool {
 	}) < 0
 }
 
+// apiServing returns "" when Orka's API answers its own typed /readyz through
+// its Service, the route clients use. A Ready controller pod shows only that
+// its health port answered, and Service endpoints can still name a previous
+// run's pod address, where another workload may answer.
+func (r orkaServingReader) apiServing() (string, error) {
+	raw, err := r.services()
+	if errors.As(err, new(orkaRefusal)) {
+		return "", err
+	}
+	if err != nil {
+		return fmt.Sprintf("Orka Services in %s could not be read", OrkaNamespace), nil
+	}
+	var list orkaServiceList
+	if r.decode(raw, &list) != nil {
+		return "", fmt.Errorf("Orka Service list in %s is malformed; refusing to guess readiness", OrkaNamespace)
+	}
+	name, port, err := selectOrkaAPIService(list, OrkaNamespace)
+	if err != nil {
+		return "", fmt.Errorf("cannot identify Orka's API Service: %w", err)
+	}
+	if !orkaDNSName(name) || !orkaDNSName(port) {
+		return "", fmt.Errorf("Orka's API Service in %s has an unsupported name or port name", OrkaNamespace)
+	}
+	answer, err := r.get(fmt.Sprintf("/api/v1/namespaces/%s/services/http:%s:%s/proxy/readyz", OrkaNamespace, name, port))
+	if errors.As(err, new(orkaRefusal)) {
+		return "", err
+	}
+	if err != nil {
+		return fmt.Sprintf("Orka's API did not answer /readyz through Service %s/%s", OrkaNamespace, name), nil
+	}
+	if !orkaReadyzAnswer(answer) {
+		return fmt.Sprintf("Orka's API /readyz through Service %s/%s did not report status ok", OrkaNamespace, name), nil
+	}
+	return "", nil
+}
+
+// orkaReadyzAnswer accepts only Orka's typed readiness document. A plain "ok",
+// a 404 page or any other workload's answer is not Orka's API reporting ready.
+func orkaReadyzAnswer(raw []byte) bool {
+	var answer struct {
+		Status *string `json:"status"`
+	}
+	return offlineJSON(raw, &answer, false) == nil && answer.Status != nil && *answer.Status == "ok"
+}
+
 // offlineCaptureWithin is offlineCapture for reads made while waiting: bounded
 // by ctx and a per-call deadline, so a wedged engine or API server cannot hold
 // the wait past its bound.
@@ -343,12 +391,13 @@ func (a *App) kindNodeStartedAt(ctx context.Context, node string) (time.Time, er
 	return started, nil
 }
 
-// orkaServingObserver is the online install-reuse view: the controller set
-// that OrkaReady verifies, still the pinned controller kmx accepted, with
-// current pod readiness. On the selected kind cluster that readiness must
-// also postdate the node container's current start.
+// orkaServingObserver is the online install-reuse view: the same controller
+// set that was first observed, still the pinned controller kmx accepted, with
+// current pod readiness and Orka's typed /readyz through its API Service. On
+// the selected kind cluster pod readiness must also postdate the node
+// container's current start.
 func (a *App) orkaServingObserver() func(context.Context) (string, error) {
-	uids := map[string]string{}
+	var first [][2]string
 	return func(ctx context.Context) (string, error) {
 		deployments, err := a.orkaDeployments(ctx)
 		if err != nil {
@@ -364,11 +413,18 @@ func (a *App) orkaServingObserver() func(context.Context) (string, error) {
 		if err := a.orkaPinnedController(required[0]); err != nil {
 			return "", err
 		}
+		// Selection is by role, so a replacement under another name would be
+		// selected too; only the first observed names and UIDs are accepted.
+		seen := make([][2]string, len(required))
+		for i, d := range required {
+			seen[i] = [2]string{d.Metadata.Name, d.Metadata.UID}
+		}
+		if first == nil {
+			first = seen
+		} else if !slices.Equal(first, seen) {
+			return "", fmt.Errorf("Orka's %s was replaced while kmx waited for it; refusing to adopt the replacement. %s", first[0][0], a.orkaInstallRecovery())
+		}
 		for _, d := range required {
-			if seen, ok := uids[d.Metadata.Name]; ok && seen != d.Metadata.UID {
-				return "", fmt.Errorf("Orka's %s was replaced while kmx waited for it; refusing to adopt the replacement. %s", d.Metadata.Name, a.orkaInstallRecovery())
-			}
-			uids[d.Metadata.Name] = d.Metadata.UID
 			if d.Spec.Replicas <= 0 {
 				return "", a.orkaDeploymentReady(d)
 			}
@@ -376,11 +432,27 @@ func (a *App) orkaServingObserver() func(context.Context) (string, error) {
 				return err.Error(), nil
 			}
 		}
+		forbidden := func(what string, raw []byte, err error) ([]byte, error) {
+			if err != nil && strings.Contains(err.Error(), "access forbidden") {
+				return nil, orkaRefusal{fmt.Errorf("cannot read Orka %s in %s: access forbidden", what, OrkaNamespace)}
+			}
+			return raw, err
+		}
 		reader := orkaServingReader{
 			pods: func(selector string) ([]byte, error) {
 				raw, err := a.orkaCapture(ctx, nil, "-n", OrkaNamespace, "get", "pods", "--selector="+selector, "-o", "json")
-				if err != nil && strings.Contains(err.Error(), "access forbidden") {
-					return nil, orkaRefusal{fmt.Errorf("cannot read Orka pods in %s: access forbidden", OrkaNamespace)}
+				return forbidden("pods", raw, err)
+			},
+			services: func() ([]byte, error) {
+				raw, err := a.orkaCapture(ctx, nil, "-n", OrkaNamespace, "get", "services", "-o", "json")
+				return forbidden("Services", raw, err)
+			},
+			get: func(path string) ([]byte, error) {
+				// A workload behind a stale endpoint can answer 401 or 403
+				// itself; only the API server's services/proxy denial refuses.
+				raw, err := a.orkaCapture(ctx, nil, "get", "--raw", path)
+				if err != nil && strings.Contains(err.Error(), "access to services/proxy forbidden") {
+					return nil, orkaRefusal{fmt.Errorf("cannot read Orka's API readiness through its Service in %s: access to services/proxy forbidden", OrkaNamespace)}
 				}
 				return raw, err
 			},
@@ -405,6 +477,6 @@ func (a *App) orkaServingObserver() func(context.Context) (string, error) {
 				return pending, err
 			}
 		}
-		return "", nil
+		return reader.apiServing()
 	}
 }

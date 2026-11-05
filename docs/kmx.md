@@ -1688,10 +1688,14 @@ to 10 minutes until every Deployment's status is a completed rollout and each of
 its pods is Running, Ready and on the pinned images, with its Ready transition
 and container starts no older than the kind node container's current start (read
 from the selected container engine). A pod Ready since then was probed by its
-kubelet after the restart. Foreign pods, unsupported selectors, scaled-to-zero
-workloads, a node container that is not the selected cluster's and execution
-settings that change while waiting refuse immediately; other gaps are retried
-and named if the bound expires. The wait only reads.
+kubelet after the restart. Orka's API must then answer `/readyz` through its
+controller-selected API Service (the API server's Service proxy) with a JSON
+object whose `status` is `ok`; a 404 or another workload's plain `ok` from a
+stale endpoint does not count. Foreign pods, unsupported selectors,
+scaled-to-zero workloads, a missing or ambiguous API Service, a node container
+that is not the selected cluster's and execution settings that change while
+waiting refuse immediately; other gaps are retried and named if the bound
+expires. The wait only reads.
 Online, foreign, changed, partial or orphan installs refuse; no adoption,
 upgrade, repair, retry or automatic cleanup occurs. Failures stop later phases;
 inspect retained effects privately. Cache checks are invocation-time evidence,

@@ -575,6 +575,8 @@ func offlineInstallApp(t *testing.T) (*App, string, *offlineNodeBundle, string) 
 		writeOfflinePods(t, pods, name, offlineServingPod(name, obj, offlineNodeStart().Add(10*time.Second), offlineNodeStart().Add(20*time.Second)))
 	}
 	t.Setenv("OFFLINE_PODS", pods)
+	t.Setenv("OFFLINE_SERVICES", `{"items":[{"metadata":{"name":"orka-api","labels":{"app.kubernetes.io/name":"orka"}},"spec":{"selector":{"app.kubernetes.io/name":"orka","app.kubernetes.io/component":"controller"},"ports":[{"name":"api","port":8080},{"name":"metrics","port":8081}]}}]}`)
+	t.Setenv("OFFLINE_READYZ", `{"checks":{"kubernetes":"ok","store":"ok"},"status":"ok"}`)
 	t.Setenv("OFFLINE_NODE_STARTED", offlineNodeStartedText)
 	a.waitTiming = offlineServingTiming()
 	live := filepath.Join(tools, "live")
@@ -604,6 +606,10 @@ func offlineInstallApp(t *testing.T) (*App, string, *offlineNodeBundle, string) 
  "--context kind-test get crd -o jsonpath="*) if [ -n "$OFFLINE_ORPHAN" ];then printf '%s' "$OFFLINE_ORPHAN";fi;;
  "--context kind-test -n orka-system get deploy -o json") n=$(($(/bin/cat "$OFFLINE_LOG.deploy-reads" 2>/dev/null || echo 0) + 1)); echo "$n" > "$OFFLINE_LOG.deploy-reads"
   if [ -f "$OFFLINE_LIVE.$n" ]; then /bin/cat "$OFFLINE_LIVE.$n"; else /bin/cat "$OFFLINE_LIVE"; fi;;
+ "--context kind-test -n orka-system get services -o json") printf '%s' "$OFFLINE_SERVICES";;
+ "--context kind-test get --raw /api/v1/namespaces/orka-system/services/http:orka-api:api/proxy/readyz") n=$(($(/bin/cat "$OFFLINE_LOG.readyz-reads" 2>/dev/null || echo 0) + 1)); echo "$n" > "$OFFLINE_LOG.readyz-reads"
+  answer=$OFFLINE_READYZ; if [ -f "$OFFLINE_LOG.readyz.$n" ]; then answer=$(/bin/cat "$OFFLINE_LOG.readyz.$n"); fi
+  [ "$answer" != missing ] || exit 1; printf '%s' "$answer";;
  "--context kind-test -n orka-system get pods --selector=kmx.test/workload="*" -o json") w=${7#--selector=kmx.test/workload=}
   n=$(($(/bin/cat "$OFFLINE_LOG.reads.$w" 2>/dev/null || echo 0) + 1)); echo "$n" > "$OFFLINE_LOG.reads.$w"
   if [ -f "$OFFLINE_PODS/$w.$n" ]; then /bin/cat "$OFFLINE_PODS/$w.$n"; else /bin/cat "$OFFLINE_PODS/$w"; fi;;

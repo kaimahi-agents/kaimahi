@@ -162,12 +162,17 @@ func TestOfflineInstallReuseWaitsForReadinessAfterNodeStart(t *testing.T) {
 	writeOfflinePods(t, pods, "orka-api-controller.1", stalePods(t, "orka-api-controller"))
 	writeOfflinePods(t, pods, "orka-api-controller.2", crashingPods(t, "orka-api-controller"))
 	writeOfflinePods(t, pods, "orka-api-controller.3", crashingPods(t, "orka-api-controller"))
+	// The Service then reaches a missing endpoint, then another workload's
+	// plain "ok" on the controller's previous address, then Orka itself.
+	os.WriteFile(log+".readyz.1", []byte("missing"), 0o600)
+	os.WriteFile(log+".readyz.2", []byte("ok"), 0o600)
 	if err := a.OrkaInstall(OrkaOptions{OfflineBundle: dir, Provider: "-"}); err != nil {
 		t.Fatalf("reuse did not finish once current readiness was shown: %v", err)
 	}
 	reads, _ := os.ReadFile(log + ".reads.orka-api-controller")
-	if strings.TrimSpace(string(reads)) != "4" {
-		t.Fatalf("reuse accepted readiness before the fresh Ready pod: %s controller reads", reads)
+	readyz, _ := os.ReadFile(log + ".readyz-reads")
+	if strings.TrimSpace(string(reads)) != "6" || strings.TrimSpace(string(readyz)) != "3" {
+		t.Fatalf("reuse accepted readiness before the fresh Ready pod and Orka's typed answer: %s controller reads, %s API reads", reads, readyz)
 	}
 	out := a.Err.(interface{ String() string }).String()
 	if !strings.Contains(out, "Waiting up to 10m0s for offline Orka workloads to show current readiness.") || !strings.Contains(out, "COMPLETE") {
@@ -200,6 +205,25 @@ func TestOfflineInstallReuseRefusesUnprovenReadiness(t *testing.T) {
 			d := offlineLiveDeploy(t, "orka-api-controller")
 			d["status"].(map[string]any)["unavailableReplicas"] = 1
 			writeOfflineLive(t, "", d)
+		}},
+		{"another workload answers through the Service", "/readyz through Service orka-system/orka-api did not report status ok", true, func(t *testing.T, _ string) {
+			t.Setenv("OFFLINE_READYZ", "ok")
+		}},
+		{"API Service does not answer", "did not answer /readyz through Service orka-system/orka-api", true, func(t *testing.T, _ string) {
+			t.Setenv("OFFLINE_READYZ", "missing")
+		}},
+		{"no API Service", "no Orka API Service in orka-system", false, func(t *testing.T, _ string) {
+			t.Setenv("OFFLINE_SERVICES", `{"items":[]}`)
+		}},
+		{"extra foreign pod", "not controlled by its ReplicaSet", false, func(t *testing.T, pods string) {
+			// One correct pod and one foreign pod: refuse at once rather than
+			// waiting on the replica count.
+			p := offlineServingPod("orka-api-controller", offlineLiveDeploy(t, "orka-api-controller"), offlineNodeStart().Add(time.Second), offlineNodeStart().Add(2*time.Second))
+			foreign := servingItem(offlineServingPod("orka-api-controller", offlineLiveDeploy(t, "orka-api-controller"), offlineNodeStart().Add(time.Second), offlineNodeStart().Add(2*time.Second)))
+			foreign["metadata"].(map[string]any)["name"] = "intruder"
+			foreign["metadata"].(map[string]any)["ownerReferences"] = []any{}
+			p["items"] = append(p["items"].([]any), foreign)
+			writeOfflinePods(t, pods, "orka-api-controller", p)
 		}},
 		{"selected pod is foreign", "not controlled by its ReplicaSet", false, func(t *testing.T, pods string) {
 			p := offlineServingPod("orka-api-controller", offlineLiveDeploy(t, "orka-api-controller"), offlineNodeStart().Add(time.Second), offlineNodeStart().Add(2*time.Second))
@@ -284,6 +308,11 @@ func TestOrkaServingCheck(t *testing.T) {
 			return []orkaServingPod{old, controller(), failed}
 		}},
 		{name: "second live pod", pods: func() []orkaServingPod { return []orkaServingPod{controller(), controller()} }, want: outcome{pending: "2 current pods for 1 replicas"}},
+		{name: "extra foreign pod refuses before the count", pods: func() []orkaServingPod {
+			foreign := controller()
+			foreign.Metadata.OwnerReferences = nil
+			return []orkaServingPod{controller(), foreign}
+		}, want: outcome{refused: "not controlled by its ReplicaSet"}},
 		{name: "no pod", pods: func() []orkaServingPod { return nil }, want: outcome{pending: "0 current pods"}},
 		{name: "old image", pods: func() []orkaServingPod {
 			p := controller()
@@ -405,6 +434,89 @@ func TestOrkaServingCheck(t *testing.T) {
 			}
 			if tc.name == "current" && nodeReads != 1 {
 				t.Fatalf("node start read %d times for one pod", nodeReads)
+			}
+		})
+	}
+}
+
+// Only Orka's typed readiness document counts; a plain "ok" from another
+// workload on a stale endpoint, a 404 page or a near miss does not.
+func TestOrkaReadyzAnswer(t *testing.T) {
+	for raw, want := range map[string]bool{
+		`{"checks":{"kubernetes":"ok","store":"ok"},"status":"ok"}`: true,
+		`{"status":"ok"}`: true,
+		`{"status":"not ready","checks":{"store":"unhealthy"}}`: false,
+		"ok":                                   false,
+		"ok\n":                                 false,
+		`"ok"`:                                 false,
+		`["ok"]`:                               false,
+		`{}`:                                   false,
+		`null`:                                 false,
+		`{"status":true}`:                      false,
+		`{"status":"not ready","status":"ok"}`: false,
+		`{"Status":"no","status":"ok"}`:        false,
+		`{"status":"ok"} {"status":"ok"}`:      false,
+		`404 page not found`:                   false,
+		``:                                     false,
+	} {
+		if got := orkaReadyzAnswer([]byte(raw)); got != want {
+			t.Errorf("orkaReadyzAnswer(%q) = %v, want %v", raw, got, want)
+		}
+	}
+}
+
+func TestOrkaServingAPIServing(t *testing.T) {
+	service := func(name string, selector map[string]any, port string) map[string]any {
+		return map[string]any{"metadata": map[string]any{"name": name, "labels": map[string]any{"app.kubernetes.io/name": "orka"}}, "spec": map[string]any{"selector": selector, "ports": []any{map[string]any{"name": port, "port": 8080}}}}
+	}
+	controller := map[string]any{"app.kubernetes.io/name": "orka", "app.kubernetes.io/component": "controller"}
+	typed := `{"status":"ok"}`
+	for _, tc := range []struct {
+		name     string
+		services []any
+		read     error
+		answer   string
+		get      error
+		pending  string
+		refused  string
+	}{
+		{name: "typed answer through the API Service", services: []any{service("orka-api", controller, "api")}, answer: typed},
+		{name: "stale endpoint answers plain ok", services: []any{service("orka-api", controller, "api")}, answer: "ok", pending: "did not report status ok"},
+		{name: "Service proxy fails", services: []any{service("orka-api", controller, "api")}, get: errors.New("503"), pending: "did not answer /readyz through Service orka-system/orka-api"},
+		{name: "Service proxy forbidden", services: []any{service("orka-api", controller, "api")}, get: orkaRefusal{errors.New("access forbidden")}, refused: "access forbidden"},
+		{name: "Services unreadable", read: errors.New("timeout"), pending: "Orka Services in orka-system could not be read"},
+		{name: "no API Service", services: []any{service("orka-api-metrics", controller, "metrics")}, refused: "no Orka API Service"},
+		{name: "two API Services", services: []any{service("orka-api", controller, "api"), service("orka", controller, "api")}, refused: "multiple Orka API Services"},
+		{name: "unsafe Service name", services: []any{service("orka-api/../x", controller, "api")}, refused: "unsupported name"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var paths []string
+			r := orkaServingReader{
+				services: func() ([]byte, error) {
+					if tc.read != nil {
+						return nil, tc.read
+					}
+					return json.Marshal(map[string]any{"items": tc.services})
+				},
+				get: func(path string) ([]byte, error) {
+					paths = append(paths, path)
+					return []byte(tc.answer), tc.get
+				},
+				decode: func(raw []byte, out any) error { return offlineJSON(raw, out, false) },
+			}
+			pending, err := r.apiServing()
+			switch {
+			case tc.refused != "":
+				if err == nil || !strings.Contains(err.Error(), tc.refused) {
+					t.Fatalf("refusal = %v, %q; want %q", err, pending, tc.refused)
+				}
+			case err != nil:
+				t.Fatalf("unexpected refusal: %v", err)
+			case !strings.Contains(pending, tc.pending) || (tc.pending == "") != (pending == ""):
+				t.Fatalf("pending = %q, want %q", pending, tc.pending)
+			}
+			if tc.answer == typed && (len(paths) != 1 || paths[0] != "/api/v1/namespaces/orka-system/services/http:orka-api:api/proxy/readyz") {
+				t.Fatalf("readiness requested at %v", paths)
 			}
 		})
 	}

@@ -80,8 +80,9 @@ func offlineNormalizeWorkload(w offlineWorkload) offlineWorkload {
 
 // verifyOfflineWorkloads checks the live Deployments' execution identity. With
 // rollout it also waits until every workload's pods report readiness no older
-// than their kind node container's current start. Deployment status alone can
-// be the controller manager's record from before a node restart.
+// than their kind node container's current start and Orka's API answers its
+// typed /readyz through its Service. Deployment status alone can be the
+// controller manager's record from before a node restart.
 func (a *App) verifyOfflineWorkloads(b *offlineInstallBundle, rollout bool) error {
 	if !rollout {
 		_, err := a.observeOfflineWorkloads(a.operationContext(), b, false)
@@ -93,8 +94,8 @@ func (a *App) verifyOfflineWorkloads(b *offlineInstallBundle, rollout bool) erro
 }
 
 // observeOfflineWorkloads compares execution identity on every look. While
-// waiting, reads are bounded by ctx, a failed read is a readiness gap and the
-// pods' current readiness is required too.
+// waiting, reads are bounded by ctx, a failed read is a readiness gap, and the
+// pods' current readiness and the API Service's answer are required too.
 func (a *App) observeOfflineWorkloads(ctx context.Context, b *offlineInstallBundle, waiting bool) (string, error) {
 	args := a.kubectl("-n", OrkaNamespace, "get", "deploy", "-o", "json")
 	var raw []byte
@@ -143,6 +144,12 @@ func (a *App) observeOfflineWorkloads(ctx context.Context, b *offlineInstallBund
 		pods: func(selector string) ([]byte, error) {
 			return a.offlineCaptureWithin(ctx, "kubectl", a.kubectl("-n", OrkaNamespace, "get", "pods", "--selector="+selector, "-o", "json")...)
 		},
+		services: func() ([]byte, error) {
+			return a.offlineCaptureWithin(ctx, "kubectl", a.kubectl("-n", OrkaNamespace, "get", "services", "-o", "json")...)
+		},
+		get: func(path string) ([]byte, error) {
+			return a.offlineCaptureWithin(ctx, "kubectl", a.kubectl("get", "--raw", path)...)
+		},
 		decode:    func(raw []byte, out any) error { return offlineJSON(raw, out, false) },
 		nodeStart: func(node string) (time.Time, error) { return a.kindNodeStartedAt(ctx, node) },
 	}
@@ -159,5 +166,5 @@ func (a *App) observeOfflineWorkloads(ctx context.Context, b *offlineInstallBund
 			return pending, err
 		}
 	}
-	return "", nil
+	return reader.apiServing()
 }

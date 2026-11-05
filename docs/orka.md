@@ -112,7 +112,8 @@ Exact healthy reuse compares all custom values and live workload execution
 settings, preserves chart data/keys and reconciles only the result reader.
 Install and reuse then wait, up to 10 minutes, for readiness observed after the
 kind node's current start: every workload's pods Ready, with their Ready
-transition and container starts no older than the node container's start. A
+transition and container starts no older than the node container's start, and
+Orka's typed `/readyz` answering `status: ok` through its API Service. A
 Deployment status left over from before a restart does not count.
 Foreign, online, changed, partial and orphan state refuse without repair.
 Bundle `--no-apply` is local-only and leaves target checks explicitly unchecked;
@@ -298,12 +299,14 @@ traffic. Configure its runtime and model access through the upstream interfaces.
   `orka-system`, fullname `orka-api`. A recognized matching kmx installation
   keeps its chart, key and data on rerun only when its image overrides match
   the pin and its controller is Ready. On rerun, Ready means the pinned
-  controller's pod is Running and Ready now and, when the context is
-  `kind-<KIND_CLUSTER>`, became Ready after that node container's current
-  start; kmx waits up to 10 minutes for that, because a Deployment status can
-  survive a node restart unchanged. On any other context, including a kind
-  cluster that does not match `KIND_CLUSTER`, the pod's current readiness is
-  required but no restart reference is used.
+  controller's pod is Running and Ready now, Orka's typed `/readyz` answers
+  `status: ok` through its API Service and, when the context is
+  `kind-<KIND_CLUSTER>`, the pod became Ready after that node container's
+  current start; kmx waits up to 10 minutes for that, because a Deployment
+  status can survive a node restart unchanged. On any other context, including
+  a kind cluster that does not match `KIND_CLUSTER`, no restart reference is
+  used. The Service check needs `get` on `services/proxy` in `orka-system` and
+  an API server that can reach the controller's pods.
   `kmx cluster orka install` also ensures the
   read-only Task result account. An existing namespace alone is not an Orka
   installation; kmx refuses a legacy controller/CRD or foreign Helm release,

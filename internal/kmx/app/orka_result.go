@@ -111,51 +111,60 @@ func (a *App) orkaAPIService(ctx context.Context, namespace string) (string, err
 	if err != nil {
 		return "", fmt.Errorf("cannot list Orka API Services in %s: %w", namespace, err)
 	}
-	var list struct {
-		Items []struct {
-			Metadata struct {
-				Name   string            `json:"name"`
-				Labels map[string]string `json:"labels"`
-			} `json:"metadata"`
-			Spec struct {
-				Selector map[string]string `json:"selector"`
-				Ports    []struct {
-					Name string `json:"name"`
-					Port int    `json:"port"`
-				} `json:"ports"`
-			} `json:"spec"`
-		} `json:"items"`
-	}
+	var list orkaServiceList
 	if err := json.Unmarshal(raw, &list); err != nil {
 		return "", fmt.Errorf("invalid Orka API Service list in %s", namespace)
 	}
-	var match string
+	name, _, err := selectOrkaAPIService(list, namespace)
+	return name, err
+}
+
+type orkaServiceList struct {
+	Items []struct {
+		Metadata struct {
+			Name   string            `json:"name"`
+			Labels map[string]string `json:"labels"`
+		} `json:"metadata"`
+		Spec struct {
+			Selector map[string]string `json:"selector"`
+			Ports    []struct {
+				Name string `json:"name"`
+				Port int    `json:"port"`
+			} `json:"ports"`
+		} `json:"spec"`
+	} `json:"items"`
+}
+
+// selectOrkaAPIService returns the one controller-selected API Service and the
+// name of its API port.
+func selectOrkaAPIService(list orkaServiceList, namespace string) (string, string, error) {
+	var match, matchPort string
 	for _, service := range list.Items {
 		if service.Metadata.Labels["app.kubernetes.io/name"] != "orka" || service.Spec.Selector["app.kubernetes.io/name"] != "orka" {
 			continue
 		}
 		role := service.Spec.Selector
-		apiPort := false
+		apiPort := ""
 		for _, port := range service.Spec.Ports {
 			if port.Port == 8080 && ((role["app.kubernetes.io/component"] == "controller" && port.Name == "api") || (role["control-plane"] == "controller-manager" && port.Name == "http")) {
-				apiPort = true
+				apiPort = port.Name
 			}
 		}
-		if !apiPort {
+		if apiPort == "" {
 			continue
 		}
 		if match != "" {
-			return "", fmt.Errorf("multiple Orka API Services in %s; refusing ambiguous result authority", namespace)
+			return "", "", fmt.Errorf("multiple Orka API Services in %s; refusing ambiguous result authority", namespace)
 		}
 		if service.Metadata.Name == "" {
-			return "", fmt.Errorf("Orka API Service in %s has no name", namespace)
+			return "", "", fmt.Errorf("Orka API Service in %s has no name", namespace)
 		}
-		match = service.Metadata.Name
+		match, matchPort = service.Metadata.Name, apiPort
 	}
 	if match == "" {
-		return "", fmt.Errorf("no Orka API Service in %s (expected a controller-selected Service on port 8080)", namespace)
+		return "", "", fmt.Errorf("no Orka API Service in %s (expected a controller-selected Service on port 8080)", namespace)
 	}
-	return match, nil
+	return match, matchPort, nil
 }
 
 func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*orkaResultSession, error) {
