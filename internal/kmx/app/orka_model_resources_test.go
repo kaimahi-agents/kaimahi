@@ -12,6 +12,27 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 )
 
+func TestOrkaModelReadRequiresAcknowledgment(t *testing.T) {
+	expected := modelOwnedResource{APIVersion: "v1", Kind: "Service", Name: "model", Marker: "11111111-1111-4111-8111-111111111111", Purpose: "connection", Spec: map[string]any{}}
+	for _, missing := range []string{"uid", "rv"} {
+		want := expected
+		if missing == "uid" {
+			want.ResourceVersion = "7"
+		} else {
+			want.UID = "owned-uid"
+		}
+		a := New(&config.Config{})
+		calls := 0
+		a.captureCommand = func(context.Context, *exec.Cmd) error {
+			calls++
+			return fmt.Errorf("must not inspect unacknowledged resource")
+		}
+		if _, _, err := a.readModelObject(context.Background(), OrkaNamespace, want); err == nil || calls != 0 {
+			t.Fatalf("missing %s sent%d calls: %v", missing, calls, err)
+		}
+	}
+}
+
 func TestOrkaModelRead(t *testing.T) {
 	expected := modelOwnedResource{APIVersion: "v1", Kind: "Service", Name: "model", UID: "owned-uid", ResourceVersion: "7", Marker: "11111111-1111-4111-8111-111111111111", Purpose: "connection", Spec: map[string]any{}}
 	for _, absent := range []bool{false, true} {

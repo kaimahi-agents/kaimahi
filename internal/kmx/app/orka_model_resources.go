@@ -214,6 +214,10 @@ func (a *App) createModelObjectObserved(ctx context.Context, ns string, doc map[
 	return modelObserved(ns, want, observed)
 }
 func (a *App) readModelObject(ctx context.Context, ns string, want modelOwnedResource) (modelOwnedResource, bool, error) {
+	// Observation cannot promote a pending CREATE into acknowledged ownership.
+	if !verificationIdentity(want.UID) || !verificationIdentity(want.ResourceVersion) {
+		return want, false, fmt.Errorf("model read requires retained acknowledgment")
+	}
 	path, err := modelPath(ns, want)
 	if err != nil {
 		return want, false, err
