@@ -21,7 +21,7 @@ version this binary targets, not a running controller's observed version.
 Capabilities describe implemented binary interfaces, not dependency availability,
 cluster readiness, permission, model access or qualified execution.
 
-Unix builds advertise version JSON, two setup JSONL adapters, `file.test`
+Unix builds advertise version JSON, the existing two setup JSONL adapters, `file.test`
 JSONL with separate `runner: embedded` and `runner: copilotd` selectors,
 `cluster.orka.tools` JSON (schemaVersion 1), and `cluster.discover` JSONL with
 separate `scope: contexts`, `scope: namespaces` and `scope: target`. Native
@@ -29,7 +29,10 @@ Windows advertises version JSON and only `file.test`/`runner: embedded`/`model: 
 its existing package-free/tool-free fake intake gate still applies. Setup and
 native copilotd remain deferred there. Existing Run, Test, list, show, deployment and other JSON
 formats keep their current shapes and exit meanings. This contract does not
-wrap or replace those documents.
+wrap or replace those documents. Linux additionally advertises
+`cluster.orka.model.connect` and `cluster.orka.model.disconnect` JSONL, schemaVersion1.
+These configure-only guest interfaces do not imply credential delivery, native
+execution qualification or a `prove`/keyed-route capability.
 
 ## Schema compatibility
 
@@ -117,7 +120,8 @@ not added. Missing consent uses the existing nonterminal refusal.
 
 Every record has `schemaVersion`, `kind`, `operation`, fresh UUID `operationId`,
 contiguous one-based `seq` and monotonic nonnegative `elapsedMs`. Operations are
-`cluster.up` and `cluster.orka.install`; kinds are `kmx.event` and `kmx.result`.
+`cluster.up`, `cluster.orka.install`, `cluster.orka.model.connect` and
+`cluster.orka.model.disconnect`; kinds are `kmx.event` and `kmx.result`.
 Events are `stage.started` and `stage.finished`; finished status is `complete`,
 `failed`, `cancelled` or an actually observed `skipped`. A result may close an
 interrupted stage without a finish event. Preflight covers argument/configuration
@@ -175,6 +179,34 @@ process exit. Truncated/missing result, sequence gaps, malformed bytes or bytes
 after the result mean incomplete delivery, never success or permission to retry.
 Progress alone cannot establish readiness; retain possible effects for read-only
 inspection. Legacy command JSON documents are unchanged.
+
+### Guest model setup
+
+Linux guest `cluster orka model connect|disconnect -o jsonl` reuses the setup
+stream above with `mode: apply`, exit0 for complete or exit1 for failed/cancelled,
+and `verdict: not_applicable`. Unlike the older setup adapters, its single
+preflight pair covers the real credential/mount, target and ownership checks;
+a failed check cannot emit preflight success. Connect stages are `gateway`,
+`provider`, `model`; Disconnect stages are `gateway`, `provider`, `finalize`.
+The model/catalog observation and local finalization never mark model installation
+as a possible remote mutation. Other setup adapters are unchanged.
+
+The terminal result can add `connection` (`id`, `route`, `provider`, `model`,
+`credentialGeneration`, `state`) and `remoteState`. An anchored failure retains
+its connection ID with `state: unknown`; early preflight failure has no connection.
+Success states are `model_ready` for Connect and `gateway_stopped` for complete
+Disconnect. `remoteState` is `may_continue` for a connected gateway, `unknown`
+when process state is uncertain, and `stopped` only after observed gateway/cache
+stop (even if later binding cleanup fails). It is not model-answer evidence.
+The optional proof field remains absent: no proof action is implemented here.
+
+Errors use the existing closed safe vocabulary, including `credential_unavailable`,
+`dependency_unavailable`, `permission_denied` and `execution_unknown`; raw causes,
+credentials, paths and response bodies are not emitted. A cancelled or broken
+writer stops later sends and does not retry output. Missing/truncated output is
+incomplete delivery, never authority to replay a CREATE or old DELETE. Keep
+partial IDs and effects for explicit recovery; automatic sign-in or inference
+retry is not supported. [Guest model lifecycle](orka.md#connect-a-guest-model-route).
 
 ## File Test JSONL
 

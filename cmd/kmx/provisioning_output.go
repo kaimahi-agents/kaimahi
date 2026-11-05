@@ -10,20 +10,25 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/google/uuid"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/spf13/cobra"
 )
 
 type provisioningSelection struct {
-	mode   string
-	stages []string
-	coarse bool
+	mode           string
+	stages         []string
+	coarse         bool
+	deferPreflight bool
+	operationID    *string
+	model          *app.OrkaModelResult
 }
 type provisioningOutput struct {
 	mode                         string
 	effects                      []app.MachineEffect
 	entered, preflight, prepared bool
 	stage                        string
+	model                        *app.OrkaModelResult
 }
 
 func upSelection(opt app.UpOptions) provisioningSelection {
@@ -64,6 +69,7 @@ func newProvisioningOutput(out io.Writer, operation string, parent context.Conte
 }
 func (m *machineOutput) selectSetup(s provisioningSelection) {
 	m.setup.mode = s.mode
+	m.setup.model = s.model
 	for _, stage := range s.stages {
 		m.setup.effects = append(m.setup.effects, app.MachineEffect{Stage: stage, Attempt: "not_started", Mutation: "none"})
 	}
@@ -99,7 +105,7 @@ func (m *machineOutput) markEffect(stage, status string) {
 	e := &m.setup.effects[index]
 	if status == "active" {
 		e.Attempt = "started"
-		if m.setup.mode == "apply" && stage != "installer" {
+		if m.setup.mode == "apply" && stage != "installer" && !(strings.HasPrefix(m.operation, "cluster.orka.model.") && (stage == "model" || stage == "finalize")) {
 			e.Mutation = "possible"
 		}
 	} else if status == "done" {
@@ -111,6 +117,17 @@ func (m *machineOutput) observe(label, status string, cause error) {
 		return
 	}
 	stage := app.MachineProvisioningStage(m.operation, label)
+	if stage == "preflight" && strings.HasPrefix(m.operation, "cluster.orka.model.") {
+		if status == "active" {
+			_ = m.beginPreflight()
+		} else if !m.setup.prepared {
+			if m.ctx.Err() != nil || errors.Is(cause, context.Canceled) {
+				status = "cancelled"
+			}
+			_ = m.endPreflight(status)
+		}
+		return
+	}
 	m.setup.stage = stage
 	m.markEffect(stage, status)
 	if status != "active" && (m.ctx.Err() != nil || errors.Is(cause, context.Canceled)) {
@@ -135,6 +152,10 @@ func (m *machineOutput) finishSetup(err error) error {
 	code, outcome := "operation_failed", "failed"
 	if !m.setup.entered {
 		code = "invalid_arguments"
+	}
+	var modelError *app.OrkaModelError
+	if errors.As(err, &modelError) {
+		code = modelError.Code()
 	}
 	var reported *machineCommandError
 	if errors.As(err, &reported) && reported.code != "" {
@@ -198,6 +219,9 @@ func bindProvisioningOutput(cmd *cobra.Command, state *commandState, operation s
 	}
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		if output != "jsonl" {
+			if id := selection().operationID; id != nil {
+				*id = uuid.NewString()
+			}
 			return appRun(state, handler)(cmd, nil)
 		}
 		m := state.machine
@@ -209,7 +233,11 @@ func bindProvisioningOutput(cmd *cobra.Command, state *commandState, operation s
 		}
 		run := func() error {
 			m.setup.entered = true
-			m.selectSetup(selection())
+			selected := selection()
+			m.selectSetup(selected)
+			if selected.operationID != nil {
+				*selected.operationID = m.id
+			}
 			if err := m.beginPreflight(); err != nil {
 				return err
 			}
@@ -225,8 +253,10 @@ func bindProvisioningOutput(cmd *cobra.Command, state *commandState, operation s
 			if err := m.ctx.Err(); err != nil {
 				return err
 			}
-			if err := m.endPreflight("done"); err != nil {
-				return err
+			if !selected.deferPreflight {
+				if err := m.endPreflight("done"); err != nil {
+					return err
+				}
 			}
 			s := selection()
 			if s.coarse {
@@ -246,7 +276,7 @@ func bindProvisioningOutput(cmd *cobra.Command, state *commandState, operation s
 	}
 }
 
-// Only the two supported leaf routes can select setup framing. Known operands
+// Only the supported leaf routes can select setup framing. Known operands
 // stay opaque even when they look like selectors or command names.
 func provisioningJSONInvocation(argv []string) string {
 	route := []string{}
@@ -269,10 +299,14 @@ func provisioningJSONInvocation(argv []string) string {
 		if operation == "" {
 			route = append(route, arg)
 			switch strings.Join(route, " ") {
-			case "cluster", "cluster orka":
+			case "cluster", "cluster orka", "cluster orka model":
 				continue
 			case "cluster up":
 				operation = "cluster.up"
+			case "cluster orka model connect":
+				operation = "cluster.orka.model.connect"
+			case "cluster orka model disconnect":
+				operation = "cluster.orka.model.disconnect"
 			case "cluster orka install":
 				operation = "cluster.orka.install"
 			default:
@@ -281,7 +315,7 @@ func provisioningJSONInvocation(argv []string) string {
 			continue
 		}
 		switch {
-		case name == "--credential-mount" || name == "--step" || name == "--offline-bundle" || name == "--provider" || name == "--model" || name == "--model-url":
+		case name == "--namespace" || name == "-n" || name == "--connection" || name == "--credential-generation" || name == "--route" || name == "--credential-mount" || name == "--step" || name == "--offline-bundle" || name == "--provider" || name == "--model" || name == "--model-url":
 			if !inline {
 				i++
 			}
