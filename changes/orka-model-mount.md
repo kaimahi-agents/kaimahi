@@ -1,1 +1,3 @@
-Add an opt-in fixed, read-only credential mount for Linux guest kind creation, refusing incompatible existing node mounts without repair. Add kind-aware bounded resource capture for the later owned Orka model setup; model connection and inference are not enabled here.
+### Added
+
+- Add an opt-in fixed, read-only credential mount for Linux guest kind creation, refusing incompatible existing node mounts without repair. Add kind-aware bounded resource capture for the later owned Orka model setup; model connection and inference are not enabled here.
