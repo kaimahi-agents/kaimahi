@@ -100,9 +100,12 @@ func (s *retainedStore) List(ctx context.Context, after string) (result Retained
 			result.NextCursor = &last
 			break
 		}
-		inspected, err := s.Inspect(ctx, h, "")
-		if err != nil {
-			return result, err
+		inspected, inspectErr := s.Inspect(ctx, h, "")
+		if ctx.Err() != nil {
+			return result, ctx.Err()
+		}
+		if inspectErr != nil {
+			inspected = RetainedInspectResult{Package: RetainedEntrySummary{Handle: h, State: "incomplete"}}
 		}
 		result.Packages = append(result.Packages, inspected.Package)
 	}

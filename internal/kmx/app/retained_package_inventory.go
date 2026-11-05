@@ -10,14 +10,15 @@ import (
 
 func retainedRootName(name string) bool {
 	switch name {
-	case "control.json", "use.lock", "ready.json", "released.json", "build", "layout":
+	case "control.json", "control.stage", "use.lock", "ready.json", "ready.stage", "released.json", "released.stage", "build", "layout":
 		return true
 	}
 	return strings.HasPrefix(name, ".kmx-layout-") && strings.HasSuffix(name, ".lock")
 }
 
 // Each scan opens a fresh anchored tree; directory offsets never become a
-// purported complete inventory. Bounds include directories and all owned bytes.
+// purported complete inventory. Directories count toward the entry bound;
+// regular files count toward the logical owned-byte bound.
 func retainedInventory(ctx context.Context, path string, expected *fileaccess.Directory, flush bool) (size int64, err error) {
 	root, err := fileaccess.OpenDirectory(ctx, path)
 	if err != nil {
@@ -75,9 +76,14 @@ func retainedInventory(ctx context.Context, path string, expected *fileaccess.Di
 				return errRetainedCapacity
 			}
 			links, linkErr := fileaccess.LinkCount(ctx, f)
-			if linkErr != nil || links != 1 {
+			if linkErr == nil && links != 1 && depth == 0 {
+				linkErr = retainedMetadataLinks(ctx, dir, entry.Name(), f)
+			} else if links != 1 {
+				linkErr = errRetainedUnavailable
+			}
+			if linkErr != nil {
 				f.Close()
-				return errRetainedUnavailable
+				return linkErr
 			}
 			privateErr := fileaccess.CheckPrivate(ctx, f, false)
 			if privateErr == nil && flush {

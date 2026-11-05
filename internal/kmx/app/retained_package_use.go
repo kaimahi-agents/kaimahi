@@ -22,26 +22,6 @@ type VerifiedPackageUse struct {
 	closed   bool
 }
 
-func (s *retainedStore) control(ctx context.Context, dir *fileaccess.Directory, h string) (c retainedControl, err error) {
-	err = retainedRead(ctx, dir, "control.json", &c)
-	// The revocation is also the terminal ownership record: if reclamation was
-	// interrupted after removing control, it still binds this exact root/entry.
-	if errors.Is(err, fileaccess.ErrMissing) {
-		err = retainedRead(ctx, dir, "released.json", &c)
-	}
-	if err != nil {
-		return c, err
-	}
-	root, err := fileaccess.PhysicalIdentity(ctx, s.dir)
-	if err != nil {
-		return c, err
-	}
-	entry, err := fileaccess.PhysicalIdentity(ctx, dir)
-	if err != nil || c.Domain != retainedDomain || c.Version != 1 || c.Handle != h || c.Root != root || c.Entry != entry {
-		return c, errRetainedUnavailable
-	}
-	return c, nil
-}
 func (s *retainedStore) openEntry(ctx context.Context, h string) (entry *retainedEntry, err error) {
 	if !retainedHandlePattern.MatchString(h) {
 		return nil, errRetainedUnavailable

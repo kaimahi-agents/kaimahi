@@ -66,9 +66,21 @@ func (s *retainedStore) reclaim(ctx context.Context, h string, release bool, fau
 	if _, err = retainedEncode(result); err != nil {
 		return result, err
 	}
-	if !revoked {
-		if err = retainedPublish(ctx, e.dir, "released.json", e.control); err != nil {
+	for _, name := range []string{"control.json", "ready.json", "released.json"} {
+		if err = retainedRetireStage(ctx, e.dir, name); err != nil {
 			return result, err
+		}
+	}
+	if !revoked {
+		publication, publishErr := s.publishMetadata(ctx, e.dir, "released.json", e.control)
+		if publication.Visible {
+			result.Released = true
+			result.LocalState = "partial"
+		} else if !publication.VisibilityKnown {
+			result.LocalState = "unknown"
+		}
+		if publishErr != nil {
+			return result, publishErr
 		}
 	}
 	result.Released = true
@@ -195,6 +207,15 @@ func retainedRemoveTree(ctx context.Context, parent *fileaccess.Directory, name 
 
 func (s *retainedStore) cleanupTerminal(ctx context.Context, h string) (result RetainedReclaimResult, err error) {
 	result = RetainedReclaimResult{Handle: h, LocalState: "unchanged"}
+	if removed, recoveryErr := s.recoverInitialization(ctx, h); recoveryErr != nil || removed {
+		if removed {
+			zero := 0
+			result.RemainingEntries = &zero
+			result.LocalState = "removed"
+			result.RemovedDirectories = 1
+		}
+		return result, recoveryErr
+	}
 	family, err := s.familyLock(ctx)
 	if err != nil {
 		return result, err

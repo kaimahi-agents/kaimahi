@@ -1,21 +1,17 @@
 package app
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
 	"time"
 
-	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/localartifact"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
@@ -72,6 +68,7 @@ type retainedReady struct {
 type retainedStore struct {
 	path             string
 	state, base, dir *fileaccess.Directory
+	publish          func(context.Context, *fileaccess.Directory, string, []byte, string) (fileaccess.PublicationResult, error)
 }
 type retainedEntry struct {
 	store   *retainedStore
@@ -114,7 +111,7 @@ func openRetainedStore(ctx context.Context, create bool) (s *retainedStore, err 
 	if err != nil {
 		return nil, err
 	}
-	s = &retainedStore{path: filepath.Join(root, "retained-packages", "v1")}
+	s = &retainedStore{path: filepath.Join(root, "retained-packages", "v1"), publish: fileaccess.PublishPrivateNamed}
 	owned := s
 	defer func() {
 		if err != nil {
@@ -266,57 +263,6 @@ func (s *retainedStore) handles(ctx context.Context) ([]string, error) {
 	slices.Sort(names)
 	return names, nil
 }
-func retainedEncode(value any) ([]byte, error) {
-	data, err := suitecore.Marshal(value)
-	if err != nil || len(data) > retainedMetadataBytes {
-		return nil, errRetainedUnavailable
-	}
-	return data, nil
-}
-func retainedRead(ctx context.Context, dir *fileaccess.Directory, name string, value any) error {
-	f, err := fileaccess.OpenPrivateFileAt(ctx, dir, name)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	before, err := f.Stat()
-	if err != nil || before.Size() > retainedMetadataBytes {
-		return errRetainedUnavailable
-	}
-	n, err := fileaccess.LinkCount(ctx, f)
-	if err != nil || n != 1 {
-		return errRetainedUnavailable
-	}
-	data, err := io.ReadAll(io.LimitReader(f, retainedMetadataBytes+1))
-	if err != nil || len(data) > retainedMetadataBytes || !unambiguousSessionsReceiptJSON(data) {
-		return errRetainedUnavailable
-	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err = decoder.Decode(value); err != nil {
-		return errRetainedUnavailable
-	}
-	if err = decoder.Decode(new(any)); err != io.EOF {
-		return errRetainedUnavailable
-	}
-	canonical, err := retainedEncode(value)
-	if err != nil || !bytes.Equal(data, canonical) {
-		return errRetainedUnavailable
-	}
-	current, err := fileaccess.OpenPrivateFileAt(ctx, dir, name)
-	if err != nil {
-		return err
-	}
-	return errors.Join(retainedSame(ctx, f, current), current.Close(), f.Close())
-}
-func retainedPublish(ctx context.Context, dir *fileaccess.Directory, name string, value any) error {
-	data, err := retainedEncode(value)
-	if err != nil {
-		return err
-	}
-	_, err = fileaccess.PublishPrivate(ctx, dir, name, data)
-	return err
-}
 func (e *retainedEntry) Close() error {
 	if e == nil {
 		return nil
@@ -384,14 +330,6 @@ func (s *retainedStore) allocate(ctx context.Context) (e *retainedEntry, err err
 			err = errors.Join(err, owned.Close())
 		}
 	}()
-	e.lock, err = fileaccess.CreatePrivateFileAt(ctx, e.dir, "use.lock")
-	if err != nil {
-		return nil, err
-	}
-	locked, err := fileaccess.TryLockOutcome(ctx, e.lock)
-	if err != nil || !locked {
-		return nil, errRetainedUnavailable
-	}
 	root, err := fileaccess.PhysicalIdentity(ctx, s.dir)
 	if err != nil {
 		return nil, err
@@ -401,7 +339,23 @@ func (s *retainedStore) allocate(ctx context.Context) (e *retainedEntry, err err
 		return nil, err
 	}
 	e.control = retainedControl{Domain: retainedDomain, Version: 1, Handle: e.handle, Root: root, Entry: entry}
-	if err = errors.Join(fileaccess.SyncFile(ctx, e.lock), retainedPublish(ctx, e.dir, "control.json", e.control), fileaccess.SyncDirectory(ctx, e.dir), fileaccess.SyncDirectory(ctx, s.dir)); err != nil {
+	// The family lock excludes allocation/recovery until durable ownership is
+	// visible. No use.lock-only unmarked crash state is produced.
+	if _, err = s.publishMetadata(ctx, e.dir, "control.json", e.control); err != nil {
+		return nil, err
+	}
+	if err = errors.Join(fileaccess.SyncDirectory(ctx, e.dir), fileaccess.SyncDirectory(ctx, s.dir)); err != nil {
+		return nil, err
+	}
+	e.lock, err = fileaccess.CreatePrivateFileAt(ctx, e.dir, "use.lock")
+	if err != nil {
+		return nil, err
+	}
+	locked, err := fileaccess.TryLockOutcome(ctx, e.lock)
+	if err != nil || !locked {
+		return nil, errRetainedUnavailable
+	}
+	if err = errors.Join(fileaccess.SyncFile(ctx, e.lock), fileaccess.SyncDirectory(ctx, e.dir)); err != nil {
 		return nil, err
 	}
 	return e, nil
@@ -508,7 +462,7 @@ func prepareRetainedFile(ctx context.Context, opt RetainedPrepareOptions, fault 
 	if err = errors.Join(e.check(ctx), snapshot.recheck(ctx)); err != nil {
 		return RetainedPackageSummary{}, err
 	}
-	if err = retainedPublish(ctx, e.dir, "ready.json", ready); err != nil {
+	if _, err = s.publishMetadata(ctx, e.dir, "ready.json", ready); err != nil {
 		return RetainedPackageSummary{}, err
 	}
 	if err = point("ready"); err != nil {
