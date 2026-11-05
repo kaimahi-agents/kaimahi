@@ -96,6 +96,22 @@ func TestPairAuthoringRepairHasNoCorruptHistory(t *testing.T) {
 		t.Fatal("repair retained corrupt preimage", view)
 	}
 }
+func TestPairAuthoringCreateSharedAbsentDirectory(t *testing.T) {
+	base, root := historyPaths(t)
+	f := historyFiles(t, "", base)
+	cs := historyClient(t, f)
+	ack := pairSaveCall(t, cs, "create", map[string]any{"path": filepath.Join(root, "b", "a.agent.md"), "content": "Prompt\n", "testsContent": historyTests})
+	if ack.Agent.Status != "saved" || ack.Tests.Status != "saved" || ack.History != nil {
+		t.Fatalf("shared parent create: %+v", ack)
+	}
+	for name, want := range map[string]string{"a.agent.md": "Prompt\n", "a.agent.test.md": historyTests} {
+		got, err := os.ReadFile(filepath.Join(root, "b", name))
+		if err != nil || string(got) != want {
+			t.Fatalf("%s = %q, %v", name, got, err)
+		}
+	}
+}
+
 func TestPairAuthoringRootlessRepositoryCreate(t *testing.T) {
 	base, root := historyPaths(t)
 	f := historyFiles(t, "", base)

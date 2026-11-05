@@ -209,9 +209,11 @@ or deploy a runtime.
 
 `kmx cluster discover` is separate progressive discovery: no context means only
 local labels/current marker; an explicit context lists namespace names and UIDs.
-The Unix JSONL adapter advertises exact `contexts`/`namespaces` scopes. It does
-not implement target inspection or Send, select a context, write config/state,
-provision resources or invoke models/Tools. Incomplete lists retain safe partial
+The Unix JSONL adapter advertises exact `contexts`, `namespaces` and `target`
+scopes. Target inspection requires explicit context and namespace and observes
+native readiness, declared Providers/models and the shared Tool inventory. It
+never implements Send, selects a context, writes config/state, provisions
+resources or invokes models/Tools. Incomplete lists retain safe partial
 rows and exit 1, never prove absence. See [machine output](machine-output.md#destination-discovery).
 
 ## Runtime boundaries

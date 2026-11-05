@@ -1,4 +1,9 @@
 // Package workspace resolves closed, tool-free native authoring profiles.
+// It also compiles copied mapped inputs into a closed source-bearing OCI profile,
+// returning invocation-owned verified access rather than a mutable Prepared or
+// retained/evaluation authority. A verified source-bearing artifact can reconstruct
+// its complete mapped-input fingerprint after transient compiler access closes.
+// Source parsing and freshness belong to its adapter.
 // It performs no inference, image building, or cluster operations.
 package workspace
 

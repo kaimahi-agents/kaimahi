@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -60,6 +61,8 @@ func (a *App) orkaDeployments(ctx context.Context) ([]orkaDeployment, error) {
 	return list.Items, nil
 }
 
+var errOrkaControllerAbsent = errors.New("no Orka controller")
+
 // selectOrkaController fails closed on zero or ambiguous role matches. A
 // matching image or familiar Deployment name is not evidence of ownership.
 func selectOrkaController(deployments []orkaDeployment) (orkaDeployment, bool, error) {
@@ -78,7 +81,7 @@ func selectOrkaController(deployments []orkaDeployment) (orkaDeployment, bool, e
 	}
 	switch matches {
 	case 0:
-		return orkaDeployment{}, false, fmt.Errorf("no Orka controller Deployment in %s (expected Orka identity plus chart component=controller or legacy control-plane=controller-manager labels)", OrkaNamespace)
+		return orkaDeployment{}, false, fmt.Errorf("%w Deployment in %s (expected Orka identity plus chart component=controller or legacy control-plane=controller-manager labels)", errOrkaControllerAbsent, OrkaNamespace)
 	case 1:
 		if selected.Metadata.Name == "" {
 			return orkaDeployment{}, false, fmt.Errorf("Orka controller Deployment in %s has no name", OrkaNamespace)

@@ -2,17 +2,18 @@
 
 `internal/kmx/agentfile` parses Copilot custom agents, minimal Markdown prompts and existing kmx charters offline, with optional model, host-tool and test declarations.
 This is a **format and parser**, not an execution command. Existing native suite
-loaders, `create`, `run --agent`, and workspace `test` are unchanged. There is no
-model call, workspace discovery, source write or implicit conversion.
+loaders, `create`, `run --agent`, and workspace `test` are unchanged. Parsing makes
+no model call, workspace discovery, source write or implicit conversion.
 
 ## Native Orka source reader (unreleased, library only)
 
 `agentfile.ParseOrkaSource` validates an explicit native profile in a
 `NAME.agent.md` file. `agentfile.LoadOrkaPair` reads that source and its selected
-companion through the existing checked, bounded file reader. These APIs are a
-source-only foundation: native file Create/Edit, compilation, native Test,
-publication and deployment are not implemented by this reader. No new CLI
-command or machine-output capability is advertised.
+companion through the existing checked, bounded file reader.
+`agentfile.ComposeOrkaSourcePair` applies the same complete native tuple validation
+to caller-held bytes without filesystem observations. These APIs are source-only;
+the separate library publisher below does not add a native file editor, CLI
+command, machine-output adapter or execution capability.
 
 ```markdown
 ---
@@ -62,8 +63,8 @@ both source paths, selection, presence and raw test revision. It is not an OCI
 package digest or a write token. `SameSourceVersion` requires checked file and
 parent observations, so equal bytes after an in-operation replacement are not
 current. Pure parsed or manually constructed values cannot establish checked
-currentness. No source is written and no locking, hostile-filesystem isolation
-or cross-process edit authority is promised.
+currentness. These reader/composer APIs do not write sources, acquire write locks
+or grant cross-process edit authority.
 
 A decoded top-level `kmx` key reserves native semantics, including unsupported
 marker forms, aliased/binary keys and root merges that expose it. Preview keeps
@@ -75,6 +76,62 @@ ignoring native fields. `errors.Is(err, agentfile.ErrOrkaSourceUnsupported)`
 distinguishes unsupported profiles/filenames; `errors.As` still obtains the
 existing safe field/location error. Invalid YAML/known fields remain validation
 errors. Ordinary unmarked Copilot and charter behavior is unchanged.
+
+### Native source-pair publication (library only)
+
+`mcp.PublishSourcePair` is a trusted internal Go entry point for publishing a
+complete native source pair. It reuses the descriptor-held sequential writer,
+not the legacy preview parser. It registers no MCP tool and retains no source
+history, preview state or cache. This is not a lossless editor or a native file
+Create/Edit CLI, and it does not qualify compilation, runtime execution, Test,
+package publication or deployment.
+
+Native targets must be absolute physical paths without parent traversal. Every
+existing ancestor must be a real directory, not a symlink or reparse point;
+replaced ancestors and foreign parents appearing after an absence observation
+refuse rather than being adopted. Present sources must satisfy the existing
+single-link, regular, writable-file checks. Replacements preserve mode; new
+stages use the existing `0666`/umask policy. Ownership, ACL and xattr preservation,
+hostile-filesystem isolation and power-loss durability are not promised.
+
+Create requires both default targets absent and both complete candidates present.
+Edit requires an existing agent and its expected full native revision. It never
+deletes a source or repairs an invalid baseline. Missing tests may be created only
+at the non-explicit default path with trusted `CreateDefaultTests` permission for
+a sparse first-test change; raw replacement or an explicit missing selector does
+not grant that permission.
+
+Callbacks are trusted Go bindings, never choices in user JSON. `Validate` binds
+the actual `ComposeOrkaSourcePair` for the held Edit baseline and full candidate.
+Edit's required `Current` callback reloads the same selection with `LoadOrkaPair`
+and checks `SameSourceVersion`; hashes alone cannot establish currentness. It
+runs under the source locks before any own filesystem effects, alongside held
+name/descriptor checks, not again after staging changes directory timestamps.
+Inbound, held and callback-visible source bytes are independently copied, so a
+callback cannot change publication bytes by mutating its slices.
+
+`Preflight` is mandatory even for a no-op. It receives the complete candidate and
+prospective per-source ACK before any parent creation, staging or source writes.
+The trusted adapter must budget the **complete encoded record**, including raw
+UTF-8 sources, typed projection duplication, resolved paths, every ACK field,
+conservative sequence/elapsed widths, JSON escaping and the trailing newline:
+65,536 bytes is allowed, 65,537 refuses. A tiny edit does not reduce that budget
+to the inbound change size. Refusal preserves the callback error and leaves no
+new parent, stage or source effects. There is no truncation, chunking, handle or
+alternate transport. Tests use a future-shaped native ACK fixture with
+`json.Marshal` plus newline; a real CLI encoder binding and its public wire
+contract remain deferred, not delivered by this library.
+
+Always retain the result alongside an error. Each source reports `unchanged`,
+`written`, `not_written` or `unknown`; an acknowledged `written` revision survives
+a later failure. `not_written` and `unknown` carry no purported current raw
+revision, and an absent `unchanged` source has none. The full pair revision is
+returned only after complete, finally checked success, including no-op. Sequential
+publication is not pair-atomic: cancellation, a later write or output failure can
+leave partial or uncertain effects. Re-read and reconcile the selected pair;
+uncertainty is never permission to retry, roll back or discard acknowledged facts.
+Legacy preview/MCP behavior, schemas, history and view budgets remain separate
+and unchanged.
 
 ## Copilot custom agents and minimal prompts
 

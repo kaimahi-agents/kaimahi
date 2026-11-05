@@ -40,6 +40,61 @@ fresh-target creation/occupied refusal. Standalone registry-package evaluation
 remains unavailable. Legacy user `agent.yaml` creation, evaluation, lift and
 receipts are removed; no conversion or migration is provided.
 
+## Frozen mapped compilation (internal library)
+
+The internal native compiler accepts one copied, fully represented tool-free
+Orka input from a trusted source adapter. It shares the workspace resolver and
+OCI packager without generating an editable YAML workspace. The adapter owns
+parsing and checked source freshness; a caller-built projection alone proves
+neither. Soul, Skills, tools, policy and other runtimes remain unsupported at
+this mapped boundary. No file Prepare command, retained handle, qualification
+store or handle-mode Test/Push capability is provided.
+
+The closed `orka-source/v1` package profile retains exact non-confidential
+originals under `metadata/kmx/source/`: `index.json`, `<member>.agent.md` and
+`<member>.agent.test.md`. The JCS index binds their roles, paths, byte sizes,
+SHA-256 digests, source format/schema and fixed packager version. Companion
+source is never added to role instructions. Formatting and comments affect the
+OCI manifest digest S. Fingerprint F hashes a domain-separated canonical map of
+**all packaged regular-file bytes**, including the three source files. Host
+paths, source-selection mode, timestamps and build version are excluded. Equal
+inputs and packager version yield equal S and F across staging locations.
+
+Compiled packages own a private invocation-local staging child. They read and
+transfer only their verified descriptor-addressed bytes; local copy is
+create-only, even if another publisher creates the target concurrently.
+Existing ordinary layout transfer retains its merge behavior. Close consumes
+the compiled object and removes only its checked owned subtree. Normal cleanup
+does not certify total disk peak or reclaim every OS-temp copy after a crash;
+packaging and verification may leave bounded copies containing originals.
+Instructions and source files must never contain secrets. Compilation refuses
+known credential-shaped content in either original before allocating staging;
+native profile loading applies the same guard. This is a known-shape backstop,
+not a guarantee that arbitrary content is secret-free.
+
+Supporting artifact readers accept this profile for native load, unprofiled
+member selection, inventory and exact source read-back. Existing pull/projection
+and explicit-digest Deploy retain their usual contracts; source attachments
+supply no passing evidence, ownership, freshness or execution permission.
+Workspace Prepared/Verify and flow readers refuse the source profile. Original
+source read-back is not authority to offer an editable/current source snapshot.
+Older native readers refuse the new profile. Existing workspace packages,
+fingerprints and receipts are unchanged; there is no migration or digest rewrite.
+Source-profile reading starts in development commit
+[`d4992f78`](https://github.com/kaimahi-agents/kaimahi/commit/d4992f78311c2455a2cac457c4590cd202232648).
+No released compatibility range is assigned yet. A tested Linux/amd64 development
+reader is built from
+[`74760a19`](https://github.com/kaimahi-agents/kaimahi/commit/74760a19498836034690e8998bed5fb68980eea6):
+
+- Build version: `v0.9.0-rc.6.0.20261105013412-74760a194988`.
+- Binary SHA-256: `b13038113cde3d9c8abfae13b02bc5f795cf944d148c278b20ea147ae9356447`.
+
+This identifies that exact development build, not a release or runtime
+qualification. Other development consumers pin their own tested build version
+and binary digest; never infer profile support from a generic capability.
+The minimum released reader version is assigned with its first release.
+New prepare/handle capabilities remain unadvertised until their adapters exist.
+
 ## Optional member egress policy (offline only)
 
 Orka members may declare `policy: policy.json` in `agents/<id>/member.yaml`.

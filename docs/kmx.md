@@ -2047,9 +2047,14 @@ kmx cluster discover
 kmx cluster discover --context dev -o jsonl
 ```
 
-Version capabilities advertise only the implemented `contexts` and `namespaces`
-scopes. Target discovery (`--namespace`), Tool/Provider/runtime inventory,
-destination configuration and Send are not implemented here. No runtime/model/Tool
+Add `--namespace NS` with an explicit context to observe one target, without a
+Namespace LIST prerequisite. Version capabilities advertise `contexts`, `namespaces`
+and `target`. Target output includes checked namespace identities, pinned native
+runtime readiness, declared Providers/models and the shared native Tool inventory.
+A supported pin not yet Ready is unknown (`read_unknown`), not unsupported; complete
+targets require a Ready runtime. Unready Providers remain declarations. Nothing
+proves model serving, worker authorization, future execution or Send eligibility.
+Destination configuration and Send remain separate. No runtime/model/Tool
 invocation, Secret API read, TokenRequest, installation, preference change or KMX
 state write occurs. Existing kubectl credential helpers may run; stdin is detached,
 so no implicit credential prompt is supported. Command preferences are disabled

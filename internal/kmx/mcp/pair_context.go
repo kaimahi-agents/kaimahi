@@ -13,29 +13,14 @@ import (
 // A binding owns checked MCP descriptors, not CLI observations or filename-based
 // write permission. Its runner validator never reopens source contents.
 type pairBinding struct {
+	sourcePairBinding
 	files               *Files
 	pair                *agentfile.Pair
 	sources             pairSources
-	agentAbsent         *absentSource
-	agent, tests        *historySource
-	absent              *absentSource
 	requested, override string
 }
 
-func (b *pairBinding) close() {
-	if b.agent != nil {
-		b.agent.close()
-	}
-	if b.tests != nil {
-		b.tests.close()
-	}
-	if b.absent != nil {
-		b.absent.parent.Close()
-	}
-	if b.agentAbsent != nil {
-		b.agentAbsent.parent.Close()
-	}
-}
+func (b *pairBinding) close() { b.sourcePairBinding.close() }
 func (b *pairBinding) check(ctx context.Context) error {
 	if err := cancelled(ctx); err != nil {
 		return err

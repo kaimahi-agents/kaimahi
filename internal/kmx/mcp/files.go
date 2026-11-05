@@ -3,6 +3,11 @@
 // Separate source/history resources expose checked agent/tests pairs and observed
 // contexts for v3 operations. Checked sequential pair publication retains source
 // history and explicit per-source effects; legacy/native branches stay separate.
+// PublishSourcePair is a library-only native publisher: trusted callbacks validate
+// complete tuples, bind checked Edit currentness and preflight the full ACK before
+// effects, with independently copied bytes and strict ancestor checks.
+// Per-source facts survive partial failures; it adds no CLI/machine adapter,
+// MCP registration, history or preview path.
 // WSL resolves Windows drive-absolute inputs through existing /mnt drives before
 // ordinary absolute-path handling; responses retain the requested path identity.
 // Unbound non-fake previews default to Copilot's fixed endpoint and the authored
