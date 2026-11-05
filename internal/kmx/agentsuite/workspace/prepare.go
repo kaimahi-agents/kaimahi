@@ -319,6 +319,9 @@ func verify(ctx context.Context, p *Prepared) (map[string][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if _, source := files["metadata/kmx/source/index.json"]; source {
+		return nil, errors.New("source profile cannot be used as a prepared workspace")
+	}
 	name, err := validateNative(files)
 	if err != nil {
 		return nil, err

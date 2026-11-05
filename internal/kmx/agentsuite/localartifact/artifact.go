@@ -164,7 +164,7 @@ func read(ctx context.Context, source Fetcher, root ocispec.Descriptor, expected
 	if err != nil {
 		return nil, err
 	}
-	layer, err := manifest.Layers[0].descriptor(compressedBytes)
+	layer, err := manifest.Layers[0].descriptor(transportCompressedBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +255,7 @@ func filesWithEntries(ctx context.Context, compressed []byte, metadata map[strin
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if len(compressed) > compressedBytes {
+	if len(compressed) > transportCompressedBytes {
 		return nil, ErrArtifactLimit
 	}
 	input := bytes.NewReader(compressed)
@@ -264,11 +264,11 @@ func filesWithEntries(ctx context.Context, compressed []byte, metadata map[strin
 		return nil, ErrArtifact
 	}
 	gzipReader.Multistream(false)
-	raw, readErr := io.ReadAll(io.LimitReader(&contextReader{ctx: ctx, reader: gzipReader}, tarBytes+1))
+	raw, readErr := io.ReadAll(io.LimitReader(&contextReader{ctx: ctx, reader: gzipReader}, transportTarBytes+1))
 	if err := errors.Join(readErr, gzipReader.Close()); err != nil {
 		return nil, err
 	}
-	if len(raw) > tarBytes {
+	if len(raw) > transportTarBytes {
 		return nil, ErrArtifactLimit
 	}
 	if input.Len() != 0 {
@@ -301,7 +301,7 @@ func filesWithEntries(ctx context.Context, compressed []byte, metadata map[strin
 		if err != nil {
 			return nil, ErrArtifact
 		}
-		if entries >= entriesLimit || len(header.Name) > 1024 {
+		if entries >= transportEntries || len(header.Name) > 1024 {
 			return nil, ErrArtifactLimit
 		}
 		name, err := contentPath(header)
@@ -327,7 +327,7 @@ func filesWithEntries(ctx context.Context, compressed []byte, metadata map[strin
 			if flowMode && name == suiteflow.FlowPathV1Alpha1 {
 				limit = 4 << 20
 			}
-			if len(files) >= MaxFiles || header.Size > limit || header.Size > contentBytes-total {
+			if len(files) >= MaxTransportFiles || header.Size > limit || header.Size > contentBytes+sourceSupplementBytes-total {
 				return nil, ErrArtifactLimit
 			}
 			if header.Size < 0 {
@@ -355,6 +355,9 @@ func filesWithEntries(ctx context.Context, compressed []byte, metadata map[strin
 	}
 	if stream.Len() != 0 && len(bytes.Trim(raw[len(raw)-1024-stream.Len():len(raw)-1024], "\x00")) != 0 {
 		return nil, ErrArtifact
+	}
+	if err := checkInventoryPolicy(files, len(compressed), len(raw), len(types), flowMode); err != nil {
+		return nil, err
 	}
 	return files, nil
 }
@@ -599,7 +602,7 @@ func (s layoutSource) open(name string) (fs.File, error) {
 		}
 		before = info
 	}
-	limit := int64(compressedBytes)
+	limit := int64(transportCompressedBytes)
 	if name == "index.json" {
 		limit = manifestBytes
 	}

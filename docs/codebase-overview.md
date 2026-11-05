@@ -44,7 +44,7 @@ can still be torn down conservatively.
 | `cmd/kmx/` | Cobra command tree, argument and flag validation, help/completion, stream contracts and lazy dependency construction |
 | `internal/kmx/app/` | Production orchestration and composition root: setup, runtime operations, AgentSuite workflows, receipts, terminal UI and external tools |
 | `github.com/agent-primitives/suite` (external) | Public AgentSuite object model, canonical JSON, schemas, OCI/content safety, validation and semantic diff; imported as `agentsuite` |
-| `internal/kmx/agentsuite/workspace/` | Closed one-member native workspace authoring, discovery, source snapshotting, preparation and packaged loading |
+| `internal/kmx/agentsuite/workspace/` | Closed one-member native workspace authoring, discovery, source snapshotting, preparation and packaged loading; internal frozen mapped-input compilation |
 | `internal/kmx/agentsuite/localartifact/` | Bounded local-only OCI layout/archive ingestion with strict envelope, special-file, link and limit handling; no registry/auth dependencies |
 | `internal/kmx/agentsuite/oras/` | Deterministic OCI packing, layouts, registry transfer, provenance and bounded exact-digest artifact reads |
 | `internal/kmx/agentsuite/agentkit/` | Experimental AgentKit/buildx adapter; not yet a conformant full-suite builder |
@@ -135,6 +135,17 @@ kmx package deploy REF@sha256:DIGEST --to-context CTX \
 The public graph digest, authored-source fingerprint and OCI manifest digest are
 different identities. Publication uses the OCI manifest digest because it also
 binds supplemental native metadata; cases are bound by both. Push never deploys.
+
+Internal `workspace.CompileMapped` accepts one frozen, tool-free Orka projection
+from a trusted source adapter and reuses the native resolver and OCI packager
+without creating an editable workspace. Its closed `orka-source/v1` profile
+retains exact agent and companion source bytes; those bytes affect both the OCI
+manifest digest and the full-file fingerprint. The compiled object supports
+verified loading, source read-back and create-only local layout copy, with
+invocation-local staging cleaned by `Close`. This is a library path, not a file
+Prepare command or retained-handle Test/Push capability. See
+[frozen mapped compilation](suite-workspace.md#frozen-mapped-compilation-internal-library)
+for reader compatibility, source confidentiality and cleanup boundaries.
 
 Native Orka workspace evaluation continuously qualifies one fixed two-case
 scenario. Exact-v0.10.3 Go kagent workspace evaluation, runtime-specific passing

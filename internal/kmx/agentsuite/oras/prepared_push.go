@@ -18,7 +18,17 @@ import (
 
 // PushLayout copies a prepared suite's exact OCI graph without re-archiving its
 // extracted content. Existing destination layouts retain unrelated references.
-func PushLayout(ctx context.Context, source, destination, reference string, expected ocispec.Descriptor) (result PushResult, err error) {
+func PushLayout(ctx context.Context, source, destination, reference string, expected ocispec.Descriptor) (PushResult, error) {
+	return pushLayoutWithMode(ctx, source, destination, reference, expected, false, nil)
+}
+
+// PushLayoutCreateOnly copies exact bytes into an absent destination. Existing
+// paths are never merged or replaced, including a concurrent publication.
+func PushLayoutCreateOnly(ctx context.Context, source, destination, reference string, expected ocispec.Descriptor) (PushResult, error) {
+	return pushLayoutWithMode(ctx, source, destination, reference, expected, true, nil)
+}
+
+func pushLayoutWithMode(ctx context.Context, source, destination, reference string, expected ocispec.Descriptor, createOnly bool, beforePublish func() error) (result PushResult, err error) {
 	if reference == "" {
 		return PushResult{}, errors.New("AgentSuite push reference is required")
 	}
@@ -61,6 +71,8 @@ func PushLayout(ctx context.Context, source, destination, reference string, expe
 		defer os.RemoveAll(targetPath)
 	} else if err != nil {
 		return PushResult{}, err
+	} else if createOnly {
+		return PushResult{}, os.ErrExist
 	} else if !info.IsDir() {
 		return PushResult{}, errors.New("AgentSuite target must be a directory, not a symlink or file")
 	} else {
@@ -77,7 +89,19 @@ func PushLayout(ctx context.Context, source, destination, reference string, expe
 		return PushResult{}, err
 	}
 	if !updated {
-		if err := os.Rename(targetPath, destinationPath); err != nil {
+		if beforePublish != nil {
+			if err := beforePublish(); err != nil {
+				return PushResult{}, err
+			}
+		}
+		if err := ctx.Err(); err != nil {
+			return PushResult{}, err
+		}
+		publish := os.Rename
+		if createOnly {
+			publish = publishLayoutNoReplace
+		}
+		if err := publish(targetPath, destinationPath); err != nil {
 			return PushResult{}, fmt.Errorf("publish AgentSuite target: %w", err)
 		}
 	}
