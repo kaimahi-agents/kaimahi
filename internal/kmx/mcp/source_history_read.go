@@ -124,7 +124,8 @@ func (f *Files) bindPairMode(ctx context.Context, p, override string, authoring 
 	if err != nil {
 		return nil, err
 	}
-	bound := &pairBinding{files: f, agent: a, requested: p, override: override}
+	bound := &pairBinding{files: f, requested: p, override: override}
+	bound.agent = a
 	defer func() {
 		if err != nil {
 			bound.close()
@@ -170,6 +171,7 @@ func (f *Files) bindPairMode(ctx context.Context, p, override string, authoring 
 		bound.pair = pair
 		bound.sources = sourcesFor(pair)
 	}
+	bound.agentPath, bound.testsPath = bound.sources.AgentPath, bound.sources.Tests.Selection.Path
 	if target != "" && tests == nil {
 		bound.absent, err = f.holdAbsentSource(selection.Path)
 		if err != nil {
