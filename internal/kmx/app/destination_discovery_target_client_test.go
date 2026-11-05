@@ -57,6 +57,13 @@ func TestDiscoveryTargetPinnedKubectl(t *testing.T) {
 			}
 			return
 		}
+		mode := denied.Load()
+		if mode == 2 && strings.Contains(path, "/providers?") {
+			value = map[string]any{"apiVersion": "core.orka.ai/v1alpha1", "kind": "ProviderList", "metadata": map[string]any{"resourceVersion": "1"}, "items": []any{}}
+		}
+		if mode == 3 && path == "/apis/core.orka.ai/v1alpha1" {
+			value = map[string]any{"apiVersion": "v1", "kind": "APIResourceList", "groupVersion": "core.orka.ai/v1alpha1", "resources": []any{map[string]any{"name": "tools", "kind": "Tool", "namespaced": true, "verbs": []string{"get", "list"}}}}
+		}
 		if e := json.NewEncoder(w).Encode(value); e != nil {
 			t.Error(e)
 		}
@@ -83,30 +90,41 @@ func TestDiscoveryTargetPinnedKubectl(t *testing.T) {
 	home := filepath.Join(dir, "no-state")
 	t.Setenv("KMX_HOME", home)
 	a := captureTestApp()
-	for _, mode := range []int32{0, 1} {
+	for _, mode := range []int32{0, 1, 2, 3} {
 		denied.Store(mode)
 		r, e := a.Discover(t.Context(), DiscoveryOptions{Context: "kind-test", Namespace: "orka-system"})
-		if mode == 0 && (e != nil || !r.Complete) {
+		complete := mode == 0 || mode == 2
+		exit := 0
+		if !complete {
+			exit = 1
+		}
+		if complete && (e != nil || !r.Complete) {
 			t.Fatal(r, e)
 		}
 		if mode == 1 && (e == nil || r.Complete || r.Target.Tools == nil || r.Target.Tools.Complete) {
 			t.Fatal(r, e)
 		}
+		if mode == 2 && len(r.Target.Providers) != 0 {
+			t.Fatal(r.Target.Providers)
+		}
+		if mode == 3 && (e == nil || r.Complete) {
+			t.Fatal("API refusal is not empty", r)
+		}
 		if cli := os.Getenv("KMX_TEST_BINARY"); cli != "" {
 			cmd := exec.Command(cli, "cluster", "discover", "--context=kind-test", "--namespace=orka-system", "-ojsonl")
 			out, ce := cmd.Output()
-			if (ce == nil) != (mode == 0) {
+			if (ce == nil) != complete {
 				t.Fatal(ce)
 			}
 			d := json.NewDecoder(strings.NewReader(string(out)))
 			var frame map[string]any
-			if d.Decode(&frame) != nil || frame["operation"] != "cluster.discover" || frame["exitCode"] != float64(mode) {
+			if d.Decode(&frame) != nil || frame["operation"] != "cluster.discover" || frame["exitCode"] != float64(exit) {
 				t.Fatal(string(out))
 			}
 			if e := d.Decode(&frame); e != io.EOF {
 				t.Fatal("extra frame", e)
 			}
-			t.Logf("compiled CLI mode=%d exit=%d, one terminal", mode, mode)
+			t.Logf("compiled CLI mode=%d exit=%d, one terminal", mode, exit)
 		}
 	}
 	if _, e := os.Stat(home); !os.IsNotExist(e) {
