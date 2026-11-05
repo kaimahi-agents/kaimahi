@@ -35,6 +35,11 @@ func (s *retainedStore) Inspect(ctx context.Context, h, after string) (result Re
 	if !retainedHandlePattern.MatchString(h) || after != "" && !retainedHandlePattern.MatchString(after) {
 		return result, errRetainedUnavailable
 	}
+	defer func() {
+		if err != nil {
+			result = RetainedInspectResult{Package: RetainedEntrySummary{Handle: h, State: "incomplete"}, Runs: []RetainedRunSummary{}}
+		}
+	}()
 	if err = s.check(ctx); err != nil {
 		return result, err
 	}
@@ -72,6 +77,20 @@ func (s *retainedStore) Inspect(ctx context.Context, h, after string) (result Re
 		return result, s.check(ctx)
 	}
 	if err != nil {
+		return result, err
+	}
+	// Keep a passive lock-file observation: inspecting must not compete with
+	// a live borrower or require its original source files.
+	lock, err := fileaccess.OpenPrivateFileAt(ctx, dir, "use.lock")
+	if err != nil {
+		return result, err
+	}
+	defer func() { err = errors.Join(err, lock.Close()) }()
+	e.lock = lock
+	if _, err = retainedArtifact(ctx, e, ready); err != nil {
+		return result, err
+	}
+	if err = e.check(ctx); err != nil {
 		return result, err
 	}
 	result.Package.State = "ready"

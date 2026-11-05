@@ -146,40 +146,53 @@ func (u *VerifiedPackageUse) check(ctx context.Context) error {
 	if string(before) != string(after) {
 		return errRetainedUnavailable
 	}
-	path := filepath.Join(e.store.path, retainedComponent(e.handle))
-	if _, err = retainedInventory(ctx, path, e.dir, false); err != nil {
-		return err
-	}
-	artifact, err := localartifact.ReadLayout(ctx, filepath.Join(path, "layout"), ready.Package.Digest)
+	artifact, err := retainedArtifact(ctx, e, ready)
 	if err != nil {
 		return err
-	}
-	f, err := workspace.MappedArtifactFingerprint(ctx, artifact)
-	if err != nil || f != ready.Package.Fingerprint {
-		return errRetainedUnavailable
-	}
-	native, err := workspace.LoadArtifact(ctx, artifact)
-	if err != nil {
-		return err
-	}
-	p := ready.Package
-	if native.MemberID != p.MemberID || native.Name != p.MemberID || native.Model != p.Model || native.Runtime.ID != p.Runtime {
-		return errRetainedUnavailable
-	}
-	source, err := workspace.ReadSources(ctx, artifact)
-	if err != nil || godigest.FromBytes(source.Agent).String() != ready.Source.AgentRevision || godigest.FromBytes(source.Tests).String() != ready.Source.TestsRevision {
-		return errRetainedUnavailable
-	}
-	original, _ := suitecore.Marshal(p.Descriptor)
-	actual, _ := suitecore.Marshal(artifact.Descriptor())
-	if string(original) != string(actual) {
-		return errRetainedUnavailable
 	}
 	if err = errors.Join(e.check(ctx), u.snapshot.recheck(ctx)); err != nil {
 		return err
 	}
 	u.artifact = artifact
 	return nil
+}
+
+// This byte/profile check is shared by exclusive use and passive offline
+// inspection. It never consults live source paths or takes the use lock.
+func retainedArtifact(ctx context.Context, e *retainedEntry, ready retainedReady) (*localartifact.Artifact, error) {
+	path := filepath.Join(e.store.path, retainedComponent(e.handle))
+	if _, err := retainedInventory(ctx, path, e.dir, false); err != nil {
+		return nil, err
+	}
+	artifact, err := localartifact.ReadLayout(ctx, filepath.Join(path, "layout"), ready.Package.Digest)
+	if err != nil {
+		return nil, err
+	}
+	f, err := workspace.MappedArtifactFingerprint(ctx, artifact)
+	if err != nil || f != ready.Package.Fingerprint {
+		return nil, errRetainedUnavailable
+	}
+	native, err := workspace.LoadArtifact(ctx, artifact)
+	if err != nil {
+		return nil, err
+	}
+	p := ready.Package
+	if native.MemberID != p.MemberID || native.Name != p.MemberID || native.Model != p.Model || native.Runtime.ID != p.Runtime {
+		return nil, errRetainedUnavailable
+	}
+	source, err := workspace.ReadSources(ctx, artifact)
+	if err != nil || godigest.FromBytes(source.Agent).String() != ready.Source.AgentRevision || godigest.FromBytes(source.Tests).String() != ready.Source.TestsRevision {
+		return nil, errRetainedUnavailable
+	}
+	original, err := suitecore.Marshal(p.Descriptor)
+	if err != nil {
+		return nil, errRetainedUnavailable
+	}
+	actual, err := suitecore.Marshal(artifact.Descriptor())
+	if err != nil || string(original) != string(actual) {
+		return nil, errRetainedUnavailable
+	}
+	return artifact, nil
 }
 func (u *VerifiedPackageUse) Close() error {
 	if u == nil || u.closed {

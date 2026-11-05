@@ -52,6 +52,10 @@ func (s *retainedStore) reclaim(ctx context.Context, h string, release bool, fau
 	if err != nil {
 		return result, err
 	}
+	if revoked {
+		result.Released = true
+		result.LocalState = "partial"
+	}
 	if !release && !revoked {
 		_, readyErr := retainedCompletion(ctx, e)
 		if readyErr == nil {
@@ -240,6 +244,7 @@ func (s *retainedStore) cleanupTerminal(ctx context.Context, h string) (result R
 			return result, err
 		}
 		result.Released = true
+		result.LocalState = "partial"
 		if err = retainedRemoveTree(ctx, dir, "released.json", false, &result, 0); err != nil {
 			return result, err
 		}
