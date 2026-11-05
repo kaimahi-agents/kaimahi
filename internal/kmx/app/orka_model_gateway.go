@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
 // The guest runtime must contain exactly the kind nodes whose binds we inspect.
@@ -71,11 +73,17 @@ func sameModelChildren(a, b []modelChild) bool {
 }
 
 // Wait only for controller/process availability. No inference or CREATE retry.
-func (a *App) modelServingGateway(ctx context.Context, root modelOwnedResource) ([]modelChild, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+func (a *App) modelServingGateway(ctx context.Context, root modelOwnedResource) (children []modelChild, err error) {
+	ctx, cancel := a.waitContext(ctx, "orka-model-serving-gateway", 30*time.Second)
 	defer cancel()
+	defer func() {
+		if ctx.Err() != nil {
+			children = nil
+			err = ctx.Err()
+		}
+	}()
 	for {
-		if _, exists, err := a.readModelObject(ctx, OrkaNamespace, root); err != nil || !exists {
+		if current, exists, err := a.readModelObject(ctx, OrkaNamespace, root); err != nil || !exists || current.Terminating {
 			return nil, fmt.Errorf("model gateway ownership unavailable")
 		}
 		kids, err := a.modelChildren(ctx, OrkaNamespace, root)
@@ -110,12 +118,8 @@ func (a *App) modelServingGateway(ctx context.Context, root modelOwnedResource) 
 		if ready {
 			return kids, nil
 		}
-		timer := time.NewTimer(100 * time.Millisecond)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return nil, ctx.Err()
-		case <-timer.C:
+		if err := a.pause(ctx, 100*time.Millisecond); err != nil {
+			return nil, err
 		}
 	}
 }
@@ -159,7 +163,7 @@ func (a *App) modelGatewayStopped(ctx context.Context, root modelOwnedResource, 
 			c := modelMap(value)
 			labels := modelMap(c["labels"])
 			uid := modelText(labels["io.kubernetes.pod.uid"])
-			if !verificationIdentity(uid) || !modelResourceName(modelText(labels["io.kubernetes.pod.namespace"])) || !modelResourceName(modelText(labels["io.kubernetes.pod.name"])) {
+			if !verificationIdentity(uid) || !modelResourceName(modelText(labels["io.kubernetes.pod.namespace"])) || scaffold.ValidateObjectName(modelText(labels["io.kubernetes.pod.name"])) != nil {
 				return fmt.Errorf("model process identity unavailable")
 			}
 			switch c["state"] {
@@ -197,7 +201,7 @@ func (a *App) modelCheckGateway(ctx context.Context, connection OrkaModelConnect
 		return nil, err
 	}
 	for _, r := range roots {
-		if _, present, e := a.readModelObject(ctx, OrkaNamespace, r); e != nil || !present {
+		if current, present, e := a.readModelObject(ctx, OrkaNamespace, r); e != nil || !present || current.Terminating {
 			return nil, fmt.Errorf("model ownership changed during readiness")
 		}
 	}

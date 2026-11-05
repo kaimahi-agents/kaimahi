@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
 type modelChild struct{ APIVersion, Kind, Name, UID, OwnerUID string }
@@ -55,7 +57,7 @@ func (a *App) modelChildren(ctx context.Context, ns string, root modelOwnedResou
 		for _, obj := range list.Items {
 			meta := modelMap(obj["metadata"])
 			name, uid := modelText(meta["name"]), modelText(meta["uid"])
-			if !modelResourceName(name) || !verificationIdentity(uid) || meta["namespace"] != ns {
+			if scaffold.ValidateObjectName(name) != nil || !verificationIdentity(uid) || meta["namespace"] != ns {
 				return nil, fmt.Errorf("model child metadata is invalid")
 			}
 			matches := true
@@ -66,13 +68,19 @@ func (a *App) modelChildren(ctx context.Context, ns string, root modelOwnedResou
 			}
 			owners, _ := meta["ownerReferences"].([]any)
 			owner := ""
-			if len(owners) == 1 {
-				ref := modelMap(owners[0])
+			for _, value := range owners {
+				ref := modelMap(value)
 				parent, ok := parents[modelText(ref["uid"])]
+				if ok && (len(owners) != 1 || ref["controller"] != true || ref["apiVersion"] != parent.APIVersion || ref["kind"] != parent.Kind || ref["name"] != parent.Name) {
+					return nil, fmt.Errorf("unsupported model child owner references")
+				}
 				if ok && ref["controller"] == true && ref["apiVersion"] == parent.APIVersion && ref["kind"] == parent.Kind && ref["name"] == parent.Name {
 					if kind == "ReplicaSet" && parent.Kind == "Deployment" || kind == "Pod" && parent.Kind == "ReplicaSet" {
 						owner = parent.UID
+					} else {
+						return nil, fmt.Errorf("unsupported model child relationship")
 					}
+
 				}
 			}
 			if owner == "" {
@@ -171,7 +179,7 @@ func (a *App) modelChildrenGone(ctx context.Context, ns string, children []model
 	gone := true
 	for _, c := range children {
 		version, prefix, ok := modelChildAPI(c.Kind)
-		if !ok || version != c.APIVersion || !modelResourceName(c.Name) || !verificationIdentity(c.UID) {
+		if !ok || version != c.APIVersion || scaffold.ValidateObjectName(c.Name) != nil || !verificationIdentity(c.UID) {
 			return false, fmt.Errorf("invalid retained child identity")
 		}
 		plural := "pods"

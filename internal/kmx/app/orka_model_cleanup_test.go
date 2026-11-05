@@ -100,6 +100,9 @@ func TestOrkaModelChildren(t *testing.T) {
 					kind, api = "ReplicaSetList", "apps/v1"
 					items = append(items, child)
 				}
+				if damage == "" {
+					items = append(items, map[string]any{"apiVersion": api, "kind": strings.TrimSuffix(kind, "List"), "metadata": map[string]any{"name": "other.worker", "namespace": OrkaNamespace, "uid": "other-" + kind}})
+				}
 				meta := map[string]any{}
 				if damage == "incomplete" {
 					meta["continue"] = "next"

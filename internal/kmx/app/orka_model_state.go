@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
@@ -365,7 +366,7 @@ func validateModelCheckpoint(s modelCheckpoint) error {
 	}
 	for _, child := range s.GatewayChildren {
 		version, _, ok := modelChildAPI(child.Kind)
-		if !ok || version != child.APIVersion || !modelResourceName(child.Name) || !verificationIdentity(child.UID) || !verificationIdentity(child.OwnerUID) {
+		if !ok || version != child.APIVersion || scaffold.ValidateObjectName(child.Name) != nil || !verificationIdentity(child.UID) || !verificationIdentity(child.OwnerUID) {
 			return errors.New("invalid retained gateway child")
 		}
 	}
@@ -386,7 +387,7 @@ func validateModelCheckpoint(s modelCheckpoint) error {
 		}
 		for _, child := range p.Children {
 			version, _, ok := modelChildAPI(child.Kind)
-			if !ok || version != child.APIVersion || !modelResourceName(child.Name) || !verificationIdentity(child.UID) || !verificationIdentity(child.OwnerUID) || p.Verb != "delete" {
+			if !ok || version != child.APIVersion || scaffold.ValidateObjectName(child.Name) != nil || !verificationIdentity(child.UID) || !verificationIdentity(child.OwnerUID) || p.Verb != "delete" {
 				return errors.New("invalid pending model child")
 			}
 		}

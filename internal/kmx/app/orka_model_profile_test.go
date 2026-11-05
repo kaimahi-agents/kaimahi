@@ -51,6 +51,10 @@ func TestOrkaModelProfile(t *testing.T) {
 		if pod["serviceAccountName"] != "default" || pod["automountServiceAccountToken"] != false {
 			t.Fatal("gateway account changed")
 		}
+		probe := modelMap(modelMap(pod["containers"].([]any)[0])["readinessProbe"])
+		if modelMap(probe["tcpSocket"])["port"] != 1337 || probe["httpGet"] != nil {
+			t.Fatal("listener readiness must not retry authentication")
+		}
 		root, _ := json.Marshal(pod)
 		for _, s := range []string{"\"medium\":\"Memory\"", "\"readOnly\":true", "\"runAsUser\":65532", "\"runAsGroup\":65532", "\"readOnlyRootFilesystem\":true", "/run/vekil/bin/busybox", "/run/bridge/credentials"} {
 			if !strings.Contains(string(root), s) {

@@ -48,6 +48,38 @@ func TestOrkaModelLegacyAdoptionRefused(t *testing.T) {
 	}
 }
 
+// Any reference to a known parent must be inspected, even with missing labels.
+func TestOrkaModelAmbiguousChildOwners(t *testing.T) {
+	a, objects, roots := modelGatewayFixture(t)
+	root, _ := modelGatewayRoot(roots)
+	raw, _ := json.Marshal(modelFixtureChildren(objects)[0])
+	var child map[string]any
+	json.Unmarshal(raw, &child)
+	meta := modelMap(child["metadata"])
+	meta["labels"] = map[string]any{}
+	meta["ownerReferences"] = append(meta["ownerReferences"].([]any), map[string]any{"apiVersion": "apps/v1", "kind": "Deployment", "name": "gone", "uid": "dangling"})
+	capture := a.captureCommand
+	deletes := 0
+	a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
+		args := strings.Join(cmd.Args, " ")
+		switch {
+		case slices.Contains(cmd.Args, "delete"):
+			deletes++
+			fmt.Fprint(cmd.Stdout, `{"kind":"Status","apiVersion":"v1","status":"Success"}`)
+			return nil
+		case strings.Contains(args, "replicasets?limit=64"):
+			return json.NewEncoder(cmd.Stdout).Encode(map[string]any{"kind": "ReplicaSetList", "apiVersion": "apps/v1", "metadata": map[string]any{}, "items": []any{child}})
+		case strings.Contains(args, "pods?limit=64"):
+			fmt.Fprint(cmd.Stdout, `{"kind":"PodList","apiVersion":"v1","metadata":{},"items":[]}`)
+			return nil
+		}
+		return capture(ctx, cmd)
+	}
+	if err := a.modelDeleteOwned(context.Background(), OrkaNamespace, root); err == nil || deletes != 0 {
+		t.Fatalf("unsupported ownership skipped execution check: %v DELETEs%d", err, deletes)
+	}
+}
+
 func TestOrkaModelOperationSelector(t *testing.T) {
 	first, _ := modelDocuments("copilot", "gpt-4.1", "11111111-1111-4111-8111-111111111111", "amd64")
 	second, _ := modelDocuments("copilot", "gpt-4.1", "33333333-3333-4333-8333-333333333333", "amd64")

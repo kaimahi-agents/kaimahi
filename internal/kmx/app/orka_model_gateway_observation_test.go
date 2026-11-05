@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -31,9 +32,16 @@ func modelGatewayFixture(t *testing.T) (*App, map[string]map[string]any, []model
 }
 
 func TestOrkaModelGatewayObservation(t *testing.T) {
-	for _, damage := range []string{"", "no-pod", "foreign-pod", "auth", "catalog"} {
+	for _, damage := range []string{"", "no-pod", "foreign-pod", "auth", "catalog", "terminating-Deployment", "terminating-Service", "terminating-Provider", "terminating-Secret"} {
 		t.Run(damage, func(t *testing.T) {
 			a, objects, roots := modelGatewayFixture(t)
+			if strings.HasPrefix(damage, "terminating-") {
+				for _, obj := range objects {
+					if obj["kind"] == strings.TrimPrefix(damage, "terminating-") {
+						modelMap(obj["metadata"])["deletionTimestamp"] = "2026-11-05T05:30:00Z"
+					}
+				}
+			}
 			capture := a.captureCommand
 			health := 0
 			a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
@@ -75,6 +83,9 @@ func TestOrkaModelGatewayObservation(t *testing.T) {
 				if err == nil || strings.Contains(err.Error(), "private") {
 					t.Fatalf("unsafe observation %s: %v", damage, err)
 				}
+				if damage == "no-pod" && !errors.Is(err, context.DeadlineExceeded) {
+					t.Fatalf("no Pod did not reach wait deadline: %v", err)
+				}
 				if (damage == "no-pod" || damage == "foreign-pod") && health != 0 {
 					t.Fatal("health without owned serving Pod")
 				}
@@ -84,7 +95,7 @@ func TestOrkaModelGatewayObservation(t *testing.T) {
 }
 
 func TestOrkaModelGatewayStopObservation(t *testing.T) {
-	for _, state := range []string{"absent", "CONTAINER_EXITED", "CONTAINER_RUNNING", "CONTAINER_UNKNOWN"} {
+	for _, state := range []string{"absent", "unrelated", "CONTAINER_EXITED", "CONTAINER_RUNNING", "CONTAINER_UNKNOWN"} {
 		t.Run(state, func(t *testing.T) {
 			a, objects, roots := modelGatewayFixture(t)
 			root, err := modelGatewayRoot(roots)
@@ -108,12 +119,20 @@ func TestOrkaModelGatewayStopObservation(t *testing.T) {
 				if e != nil {
 					t.Fatal(e)
 				}
-				if e = os.WriteFile(tool, []byte(strings.ReplaceAll(string(raw), "CONTAINER_RUNNING", state)), 0700); e != nil {
+				actual := state
+				script := string(raw)
+				if state == "unrelated" {
+					actual = "CONTAINER_RUNNING"
+					script = strings.ReplaceAll(script, "copilot-vekil-pod", "other.worker")
+					script = strings.ReplaceAll(script, "owned-pod", "other-uid")
+					script = strings.ReplaceAll(script, "orka-system", "other-system")
+				}
+				if e = os.WriteFile(tool, []byte(strings.ReplaceAll(script, "CONTAINER_RUNNING", actual)), 0700); e != nil {
 					t.Fatal(e)
 				}
 			}
 			err = a.modelGatewayStopped(context.Background(), root, kids)
-			if (err == nil) != (state == "absent" || state == "CONTAINER_EXITED") {
+			if (err == nil) != (state == "absent" || state == "unrelated" || state == "CONTAINER_EXITED") {
 				t.Fatalf("false process stop %s: %v", state, err)
 			}
 		})

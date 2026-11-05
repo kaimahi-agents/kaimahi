@@ -9,7 +9,7 @@ import (
 )
 
 func TestOrkaModelGatewayCheckpoint(t *testing.T) {
-	child := modelChild{"v1", "Pod", "gateway-pod", "pod-uid", "rs-uid"}
+	child := modelChild{"v1", "Pod", "gateway.pod", "pod-uid", "rs-uid"}
 	for _, damage := range []string{"", "kind", "owner", "complete", "bound", "digest"} {
 		t.Run(damage, func(t *testing.T) {
 			cp := modelTestCheckpoint()
