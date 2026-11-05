@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
 const modelStagePrefix = ".model-stage-"
@@ -399,7 +400,32 @@ func encodeModelState(value any) ([]byte, error) {
 	if err := decodeModelState(bytes.NewReader(data), &decoded); err != nil {
 		return nil, fmt.Errorf("%w: %w", errModelStateEncoding, err)
 	}
+	if modelStateHasCredentialShape(decoded) {
+		return nil, errModelStateEncoding
+	}
 	return data, nil
+}
+
+// This bounded-tree check is a known-shape backstop, not permission to supply
+// arbitrary payloads. Producers must still select verified nonsecret fields.
+func modelStateHasCredentialShape(value any) bool {
+	switch value := value.(type) {
+	case string:
+		return secretshapes.Match(value) != nil
+	case map[string]any:
+		for key, item := range value {
+			if secretshapes.Match(key) != nil || modelStateHasCredentialShape(item) {
+				return true
+			}
+		}
+	case []any:
+		for _, item := range value {
+			if modelStateHasCredentialShape(item) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func decodeModelState(reader io.Reader, out any) error {

@@ -547,6 +547,63 @@ func TestOrkaModelState(t *testing.T) {
 			t.Fatal("conflicting checkpoint accepted")
 		}
 	})
+	t.Run("credential_shapes_never_reach_snapshot_files", func(t *testing.T) {
+		for _, slot := range []string{"name", "secret_value", "pod_environment", "map_key"} {
+			t.Run(slot, func(t *testing.T) {
+				home := filepath.Join(t.TempDir(), "state")
+				t.Setenv("KMX_HOME", home)
+				ctx := context.Background()
+				r, err := openModelRecord(ctx, modelTestTarget, true)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer r.close()
+				canary := "ghp_" + strings.Repeat("b", 36)
+				cp := modelTestCheckpoint()
+				resource := modelOwnedResource{APIVersion: "v1", Kind: "Secret", Name: "gateway-key", Marker: cp.Connection.ID, Purpose: "connection"}
+				switch slot {
+				case "name":
+					resource.Name = canary
+				case "secret_value":
+					resource.Spec = map[string]any{"stringData": map[string]any{"token": canary}}
+				case "map_key":
+					resource.Spec = map[string]any{canary: "nonsecret"}
+				case "pod_environment":
+					resource.APIVersion = "apps/v1"
+					resource.Kind = "Deployment"
+					resource.Spec = map[string]any{"template": map[string]any{"spec": map[string]any{"containers": []any{map[string]any{"env": []any{map[string]any{"name": "ACCESS_TOKEN", "value": canary}}}}}}}
+				}
+				cp.Pending = &modelPendingAction{OperationID: cp.Connection.ID, Verb: "create", Resource: resource}
+				err = r.checkpoint(ctx, cp)
+				if !errors.Is(err, errModelStateEncoding) {
+					t.Fatalf("wrong refusal: %v", err)
+				}
+				if strings.Contains(err.Error(), canary) {
+					t.Fatal("credential reflected by error")
+				}
+				if err := filepath.WalkDir(home, func(path string, entry os.DirEntry, err error) error {
+					if err != nil {
+						return err
+					}
+					if entry.Type().IsRegular() {
+						data, err := os.ReadFile(path)
+						if err != nil {
+							return err
+						}
+						if strings.Contains(string(data), canary) {
+							t.Fatal("credential persisted")
+						}
+					}
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := os.Stat(filepath.Join(home, "orka-models", modelTestTarget, "connection.json")); !os.IsNotExist(err) {
+					t.Fatal("credential-bearing anchor published")
+				}
+			})
+		}
+	})
 	t.Run("replaced_anchor_not_removed", func(t *testing.T) {
 		home := filepath.Join(t.TempDir(), "state")
 		t.Setenv("KMX_HOME", home)
