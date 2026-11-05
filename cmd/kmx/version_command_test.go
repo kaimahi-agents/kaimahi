@@ -36,6 +36,9 @@ func TestVersionJSON(t *testing.T) {
 				}
 				caps, ok := r["capabilities"].([]any)
 				want := 9
+				if goos == "linux" {
+					want = 11
+				}
 				if goos == "windows" {
 					want = 2
 				}

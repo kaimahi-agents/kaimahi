@@ -35,7 +35,10 @@
 // Model connection state retains nonsecret, acknowledged identities through
 // private immutable checkpoints and a process-held target lock. Partial effects
 // and publication errors never authorize replay or ownership reconstruction.
-// This state is not model readiness or execution evidence.
+// Connect/Disconnect configure only the owned Linux guest gateway and Provider,
+// with exact reuse, no inference and UID/RV-conditioned cleanup. Active health
+// plus catalog membership is operational readiness, never model-answer proof.
+// Host credential delivery and VM-stop recovery remain outside these methods.
 //
 // App coordinates consent, side effects and runtime-specific evidence.
 // Placement observations are distinct from evaluation proof; successful

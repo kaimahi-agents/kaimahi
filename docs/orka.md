@@ -145,6 +145,54 @@ neither signs in nor deploys a gateway, connects a model or runs inference.
 No credential contents are read by this profile. Native guest boot and model
 integration have not been qualified by these command fixtures.
 
+## Connect a guest model route
+
+In the owned Linux guest, `model connect` configures the existing Orka to use a
+fixed Vekil Copilot gateway. It never installs a runtime, starts a sign-in flow,
+downloads weights or runs an Agent, Task or inference request. Native macOS and
+Windows callers use their owning host integration instead; these commands run
+only in the Linux guest with local Docker and a checked kubeconfig.
+
+```bash
+KIND_CLUSTER=local-offline kmx --context kind-local-offline --container-engine docker cluster orka model connect \
+  --namespace orka-system --route copilot --provider copilot --model gpt-4.1 \
+  --credential-generation 22222222-2222-4222-8222-222222222222 -o jsonl
+
+KIND_CLUSTER=local-offline kmx --context kind-local-offline --container-engine docker cluster orka model disconnect \
+  --namespace orka-system --provider copilot \
+  --connection 11111111-1111-4111-8111-111111111111 -o jsonl
+```
+
+The UUIDs above are examples. The owning guest endpoint supplies the credential
+generation after private delivery and retains the connection ID returned by
+Connect. Do not copy a credential or derive a generation from its contents.
+The fixed credential file is root:65532, mode 0640, under the memory mount above.
+KMX checks its metadata; the gateway launcher validates the bytes in memory.
+The Kubernetes Secret is a fixed noncredential placeholder. No credential flag,
+file-path flag, login fallback or keyed route is supported.
+
+`model_ready` requires acknowledged resources, exact admitted execution settings,
+an owned serving Pod, authenticated `/readyz` and exact advertised catalog
+membership. Catalog data can be cached: this is operational readiness, not proof
+of fresh selected-model authorization or a successful model answer. Reconnecting
+the same configuration and generation checks health without inference or remote
+writes. A changed generation requires explicit Disconnect before clearing and
+redelivering credentials. Connect never hot-reloads or substitutes a model.
+
+Disconnect requires the retained ID and deletes only acknowledged resources with
+UID/resourceVersion conditions. Missing API objects alone do not prove a stopped
+process. Unknown ownership, a lost CREATE acknowledgment or uncertain process
+state stays `execution_unknown`; never retry an old operation automatically.
+A new explicit Disconnect may inspect a retained ambiguous DELETE and make one
+fresh conditional request. If ownership cannot be established, the owning host
+must use its explicit VM-stop recovery; KMX never removes a VM or adopts resources.
+A failed result may retain an ID with state `unknown`: keep it for recovery.
+
+Both commands accept text or existing setup JSONL; Disconnect accepts no generation.
+Existing target consent applies, without a new prompt. Native guest credential
+delivery and live account/model execution remain unqualified by these fixtures.
+There is no `model prove` capability yet. See [machine output](machine-output.md).
+
 ## Seeing it before doing it
 
 Both flags the other writing commands carry, for the same reasons:
