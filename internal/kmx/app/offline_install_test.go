@@ -115,7 +115,7 @@ func TestOfflineInstallDryRunDoesNotCheckReadiness(t *testing.T) {
 		t.Fatal(err)
 	}
 	commands, _ := os.ReadFile(log)
-	if strings.Contains(string(commands), "rollout status") || strings.Contains(string(commands), "condition=Established") || strings.Contains(string(commands), "apply -f -") {
+	if strings.Contains(string(commands), "get pods") || strings.Contains(string(commands), "condition=Established") || strings.Contains(string(commands), "apply -f -") {
 		t.Fatalf("dry run readiness/mutation: %s", commands)
 	}
 }
@@ -293,7 +293,7 @@ func TestOfflineInstallEverySchedulableNode(t *testing.T) {
 	script = strings.Replace(string(raw), "\"ps -a\") echo test-control-plane;;", "\"ps -a\") printf 'test-control-plane\\ntest-worker\\n';;", 1)
 	script = strings.Replace(script, "\"exec test-control-plane\")", "\"exec test-control-plane\"|\"exec test-worker\")", 1)
 	script = strings.Replace(script, `"Name":"/test-control-plane"`, `"Name":"/%s"`, 1)
-	script = strings.Replace(script, `"$OFFLINE_NODE_IMAGE";;`, `"$OFFLINE_NODE_IMAGE" "$3";;`, 1)
+	script = strings.Replace(script, `"$OFFLINE_NODE_IMAGE" "${OFFLINE_NODE_STATE:-true}"`, `"$OFFLINE_NODE_IMAGE" "$3" "${OFFLINE_NODE_STATE:-true}"`, 1)
 	for _, r := range b.install.images {
 		old := shellArg("exec test-control-plane crictl --runtime-endpoint unix:///run/containerd/containerd.sock --image-endpoint unix:///run/containerd/containerd.sock inspecti -o json " + r.Repository + "@" + r.ManifestDigest)
 		script = strings.Replace(script, old+")", old+"|"+strings.Replace(old, "test-control-plane", "test-worker", 1)+")", 1)
@@ -347,7 +347,7 @@ func TestOfflineInstallValuesCancellation(t *testing.T) {
 		t.Fatalf("values read lost typed cancellation: %v", err)
 	}
 	commands, _ := os.ReadFile(log)
-	for _, forbidden := range []string{"--server-side", "helm install", "rollout status", "apply -f -"} {
+	for _, forbidden := range []string{"--server-side", "helm install", "get pods", "apply -f -"} {
 		if strings.Contains(string(commands), forbidden) {
 			t.Fatalf("cancelled values read reached %q", forbidden)
 		}
@@ -556,6 +556,10 @@ func offlineInstallApp(t *testing.T) (*App, string, *offlineNodeBundle, string) 
 	t.Setenv("OFFLINE_VALUES", values)
 	dec := yaml.NewDecoder(bytes.NewReader(raw))
 	items := []any{}
+	pods := filepath.Join(tools, "pods")
+	if err := os.Mkdir(pods, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	for {
 		var obj map[string]any
 		if dec.Decode(&obj) != nil {
@@ -565,15 +569,21 @@ func offlineInstallApp(t *testing.T) (*App, string, *offlineNodeBundle, string) 
 		meta["uid"] = "owned"
 		meta["generation"] = 1
 		obj["status"] = map[string]any{"observedGeneration": 1, "updatedReplicas": 1, "readyReplicas": 1, "availableReplicas": 1}
+		name := meta["name"].(string)
+		obj["spec"].(map[string]any)["selector"] = map[string]any{"matchLabels": map[string]any{"kmx.test/workload": name}}
 		items = append(items, obj)
+		writeOfflinePods(t, pods, name, offlineServingPod(name, obj, offlineNodeStart().Add(10*time.Second), offlineNodeStart().Add(20*time.Second)))
 	}
+	t.Setenv("OFFLINE_PODS", pods)
+	t.Setenv("OFFLINE_NODE_STARTED", offlineNodeStartedText)
+	a.waitTiming = offlineServingTiming()
 	live := filepath.Join(tools, "live")
 	raw, _ = json.Marshal(map[string]any{"items": items})
 	os.WriteFile(live, raw, 0600)
 	t.Setenv("OFFLINE_LIVE", live)
 	nodes := fmt.Sprintf(`{"items":[{"metadata":{"name":"test-control-plane"},"spec":{},"status":{"nodeInfo":{"operatingSystem":"linux","architecture":%q}}}]}`, runtime.GOARCH)
 	t.Setenv("OFFLINE_KUBE_NODES", nodes)
-	for _, key := range []string{"OFFLINE_PHASE_FAIL", "OFFLINE_RELEASE", "OFFLINE_ORPHAN"} {
+	for _, key := range []string{"OFFLINE_PHASE_FAIL", "OFFLINE_RELEASE", "OFFLINE_ORPHAN", "OFFLINE_NODE_STATE"} {
 		t.Setenv(key, "")
 	}
 	fakeTool(t, tools, "helm", `printf 'helm %s\\n' "$*" >> "$OFFLINE_LOG"
@@ -592,10 +602,13 @@ func offlineInstallApp(t *testing.T) (*App, string, *offlineNodeBundle, string) 
  "--context kind-test get nodes -o json") printf '%s' "$OFFLINE_KUBE_NODES";;
  "--context kind-test -n orka-system get deployment --ignore-not-found=true -o name") ;;
  "--context kind-test get crd -o jsonpath="*) if [ -n "$OFFLINE_ORPHAN" ];then printf '%s' "$OFFLINE_ORPHAN";fi;;
- "--context kind-test -n orka-system get deploy -o json") /bin/cat "$OFFLINE_LIVE";;
+ "--context kind-test -n orka-system get deploy -o json") n=$(($(/bin/cat "$OFFLINE_LOG.deploy-reads" 2>/dev/null || echo 0) + 1)); echo "$n" > "$OFFLINE_LOG.deploy-reads"
+  if [ -f "$OFFLINE_LIVE.$n" ]; then /bin/cat "$OFFLINE_LIVE.$n"; else /bin/cat "$OFFLINE_LIVE"; fi;;
+ "--context kind-test -n orka-system get pods --selector=kmx.test/workload="*" -o json") w=${7#--selector=kmx.test/workload=}
+  n=$(($(/bin/cat "$OFFLINE_LOG.reads.$w" 2>/dev/null || echo 0) + 1)); echo "$n" > "$OFFLINE_LOG.reads.$w"
+  if [ -f "$OFFLINE_PODS/$w.$n" ]; then /bin/cat "$OFFLINE_PODS/$w.$n"; else /bin/cat "$OFFLINE_PODS/$w"; fi;;
  "--context kind-test apply --server-side --field-manager=kmx "*) /bin/cat >/dev/null;[ "$OFFLINE_PHASE_FAIL" != crd ];;
  "--context kind-test wait --for=condition=Established --timeout=120s -f -") /bin/cat >/dev/null;[ "$OFFLINE_PHASE_FAIL" != established ];;
- "--context kind-test -n orka-system rollout status deployment/"*) [ "$OFFLINE_PHASE_FAIL" != rollout ];;
  "--context kind-test apply -f -") /bin/cat > "$OFFLINE_LOG.reader";[ "$OFFLINE_PHASE_FAIL" != reader ];;
  *) echo command-denied >&2;exit 98;;esac`)
 	script := `printf 'engine %s\\n' "$*" >> "$OFFLINE_LOG"
@@ -603,7 +616,7 @@ func offlineInstallApp(t *testing.T) (*App, string, *offlineNodeBundle, string) 
  "context inspect") printf '%s' "$OFFLINE_DOCKER_CONTEXT_JSON";;
  "info ") ;;
  "image inspect") /bin/cat "$OFFLINE_IMAGE_JSON";;
- "container inspect") printf '[{"Image":"%s","Name":"/test-control-plane","Config":{"Labels":{"io.x-k8s.kind.cluster":"test"}}}]' "$OFFLINE_NODE_IMAGE";;
+ "container inspect") printf '[{"Image":"%s","Name":"/test-control-plane","Config":{"Labels":{"io.x-k8s.kind.cluster":"test"}},"State":{"Running":%s,"StartedAt":"%s"}}]' "$OFFLINE_NODE_IMAGE" "${OFFLINE_NODE_STATE:-true}" "$OFFLINE_NODE_STARTED";;
  "ps -a") echo test-control-plane;;
  "exec test-control-plane") case "$*" in
 `
@@ -619,7 +632,7 @@ func offlineInstallApp(t *testing.T) (*App, string, *offlineNodeBundle, string) 
 	return a, dir, b, log
 }
 func TestOfflineInstallTransaction(t *testing.T) {
-	for _, mode := range []string{"install", "dry-run", "reuse", "foreign", "partial", "crd", "established", "helm", "rollout", "reader"} {
+	for _, mode := range []string{"install", "dry-run", "reuse", "foreign", "partial", "crd", "established", "helm", "serving", "reader"} {
 		t.Run(mode, func(t *testing.T) {
 			a, dir, b, log := offlineInstallApp(t)
 			if mode == "reuse" || mode == "partial" {
@@ -632,8 +645,12 @@ func TestOfflineInstallTransaction(t *testing.T) {
 			if mode == "foreign" {
 				t.Setenv("OFFLINE_RELEASE", `[{"name":"orka","chart":"orka-0.3.0","app_version":"v0.3.0","status":"deployed"}]`)
 			}
-			if slices.Contains([]string{"crd", "established", "helm", "rollout", "reader"}, mode) {
+			if slices.Contains([]string{"crd", "established", "helm", "reader"}, mode) {
 				t.Setenv("OFFLINE_PHASE_FAIL", mode)
+			}
+			if mode == "serving" {
+				// Every pod was last Ready before the node's current start.
+				t.Setenv("OFFLINE_NODE_STARTED", offlineNodeStart().Add(time.Hour).Format(time.RFC3339Nano))
 			}
 			err := a.OrkaInstall(OrkaOptions{OfflineBundle: dir, Provider: "-", DryRun: mode == "dry-run", Model: "ignored", ModelURL: "https://unused.invalid"})
 			success := slices.Contains([]string{"install", "dry-run", "reuse"}, mode)
@@ -641,7 +658,7 @@ func TestOfflineInstallTransaction(t *testing.T) {
 				t.Fatalf("%s: %v", mode, err)
 			}
 			if !success {
-				want := map[string]string{"foreign": "identity/status", "partial": "identity/status", "crd": "applying Orka CRD", "established": "waiting for Orka CRDs", "helm": "installing pinned Orka chart", "rollout": "rollout failed", "reader": "provisioning the Task result account"}[mode]
+				want := map[string]string{"foreign": "identity/status", "partial": "identity/status", "crd": "applying Orka CRD", "established": "waiting for Orka CRDs", "helm": "installing pinned Orka chart", "serving": "predates the current start of node test-control-plane", "reader": "provisioning the Task result account"}[mode]
 				if want == "" || !strings.Contains(err.Error(), want) {
 					t.Fatalf("failure phase %s: want %q got %v", mode, want, err)
 				}
@@ -652,7 +669,7 @@ func TestOfflineInstallTransaction(t *testing.T) {
 				if !strings.Contains(commands, "--dry-run=server") {
 					t.Fatal(commands)
 				}
-				for _, bad := range []string{"helm install", "condition=Established", "rollout status", "apply -f -"} {
+				for _, bad := range []string{"helm install", "condition=Established", "get pods", "apply -f -"} {
 					if strings.Contains(commands, bad) {
 						t.Fatalf("dry run %s", commands)
 					}
@@ -663,13 +680,20 @@ func TestOfflineInstallTransaction(t *testing.T) {
 					t.Fatalf("release overwritten: %s", commands)
 				}
 			}
-			if mode == "install" {
-				values, _ := os.ReadFile(log + ".helm-values")
-				if !offlineSameValues(values, b.install.values) {
-					t.Fatal("installed values differ from generated typed document")
+			if mode == "install" || mode == "reuse" {
+				if mode == "install" {
+					values, _ := os.ReadFile(log + ".helm-values")
+					if !offlineSameValues(values, b.install.values) {
+						t.Fatal("installed values differ from generated typed document")
+					}
 				}
-				if strings.Count(commands, "rollout status deployment/") != 3 {
-					t.Fatal("not all three deployments checked")
+				for _, name := range []string{"orka-api-controller", "orka-api-scm-egress-proxy", "orka-api-workspace-publisher"} {
+					if !strings.Contains(commands, "get pods --selector=kmx.test/workload="+name+" -o json") {
+						t.Fatalf("%s: %s pods not checked: %s", mode, name, commands)
+					}
+				}
+				if !strings.Contains(commands, "engine container inspect test-control-plane") {
+					t.Fatalf("%s: node start not compared: %s", mode, commands)
 				}
 			}
 			if !success && mode != "reader" {

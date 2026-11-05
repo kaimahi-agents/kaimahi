@@ -1677,10 +1677,21 @@ non-forcing CRD server-side dry run; no Helm install/dry run, Established wait,
 rollouts or result-reader reconciliation. The flags are mutually exclusive.
 
 Normal install uses non-forcing CRD SSA, Established wait, Helm `--wait`,
-exact live execution-setting comparison and explicit rollouts of all three
-Deployments, then result-reader reconciliation. The full profile hash is a
+exact live execution-setting comparison and a current-readiness wait for all
+three Deployments, then result-reader reconciliation. The full profile hash is a
 Helm value, not a label. Exact healthy reuse requires the complete custom values
 and live workload set, skips CRD/Helm writes and preserves chart keys/data.
+
+Deployment status alone is not readiness: after a node restart it can still be
+the controller manager's record from the previous run. Install and reuse wait up
+to 10 minutes until every Deployment's status is a completed rollout and each of
+its pods is Running, Ready and on the pinned images, with its Ready transition
+and container starts no older than the kind node container's current start (read
+from the selected container engine). A pod Ready since then was probed by its
+kubelet after the restart. Foreign pods, unsupported selectors, scaled-to-zero
+workloads, a node container that is not the selected cluster's and execution
+settings that change while waiting refuse immediately; other gaps are retried
+and named if the bound expires. The wait only reads.
 Online, foreign, changed, partial or orphan installs refuse; no adoption,
 upgrade, repair, retry or automatic cleanup occurs. Failures stop later phases;
 inspect retained effects privately. Cache checks are invocation-time evidence,
