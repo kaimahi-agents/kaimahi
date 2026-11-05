@@ -269,6 +269,8 @@ func (a *App) stepClusterWithNode(bundle *offlineNodeBundle) (err error) {
 				return err
 			}
 		}
+	}
+	if bundle != nil || a.modelCredentialMount != "" {
 		exists, err := a.verifyOfflineKubeconfig(listed)
 		if err != nil {
 			return err
@@ -278,6 +280,12 @@ func (a *App) stepClusterWithNode(bundle *offlineNodeBundle) (err error) {
 				return nil
 			}
 			return a.Run.Run("kind", "export", "kubeconfig", "--name", a.Cfg.KindCluster)
+		}
+	}
+
+	if listed && a.modelCredentialMount != "" {
+		if err := a.checkModelNodeMounts(); err != nil {
+			return err
 		}
 	}
 
@@ -332,14 +340,10 @@ func (a *App) createKindCluster() error { return a.createKindClusterWithImage(""
 func (a *App) createKindClusterWithImage(image string) error {
 	// A shorter kubelet sync is intended to limit Orka's webhook Secret
 	// projection jitter on new small local clusters; existing nodes stay untouched.
-	cfg := []byte(`apiVersion: kind.x-k8s.io/v1alpha4
-kind: Cluster
-kubeadmConfigPatches:
-- |
-  apiVersion: kubelet.config.k8s.io/v1beta1
-  kind: KubeletConfiguration
-  syncFrequency: 5s
-`)
+	cfg, err := modelKindConfig(a.modelCredentialMount)
+	if err != nil {
+		return err
+	}
 	args := []string{"create", "cluster", "--name", a.Cfg.KindCluster, "--config", "-"}
 	if image != "" {
 		args = append(args, "--image", image)
@@ -353,9 +357,12 @@ kubeadmConfigPatches:
 		defer cleanup()
 		runner = local
 	}
-	err := runner.RunStdin(cfg, "kind", args...)
+	err = runner.RunStdin(cfg, "kind", args...)
 	if err != nil && image != "" {
 		return fmt.Errorf("kind create failed for %q; any node/kubeconfig effects are retained for inspection (kind may have cleaned partial nodes); kmx performs no cleanup: %w", a.Cfg.KindCluster, err)
+	}
+	if err == nil && a.modelCredentialMount != "" {
+		return a.checkModelNodeMounts()
 	}
 	return err
 }

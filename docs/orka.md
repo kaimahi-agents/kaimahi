@@ -115,6 +115,31 @@ Bundle `--no-apply` is local-only and leaves target checks explicitly unchecked;
 bundle `--dry-run` validates only CRDs server-side after full preflight.
 A failed phase stops subsequent phases and retains effects for private inspection.
 
+## Fixed guest credential mount
+
+```bash
+kmx cluster up --step cluster --credential-mount copilot-v1
+```
+
+This explicit Linux guest profile supports only a local Docker engine. It binds
+`/run/bridge/credentials` into each kind node at the same path, read-only with
+private propagation. The source must already be tmpfs with `nosuid,nodev,noexec`,
+owned by root with group 65532 and mode 0750; its ancestors must be root-controlled
+real directories. The guest boot process must establish it before Docker starts.
+The profile never creates the directory, mounts tmpfs or repairs permissions.
+Do not remount it while node containers are running.
+
+Existing nodes must have the exact bind and the selected kubeconfig must match
+that cluster. Running nodes must also see the current source, not a stale bind.
+Missing, changed or unreadable mounts refuse without node recreation or repair.
+A newly created node is inspected before readiness is reported.
+
+The flag can accompany `--offline-bundle DIR`; the existing bundle checks still
+apply. Without the flag, ordinary cluster setup is unchanged. This mount alone
+neither signs in nor deploys a gateway, connects a model or runs inference.
+No credential contents are read by this profile. Native guest boot and model
+integration have not been qualified by these command fixtures.
+
 ## Seeing it before doing it
 
 Both flags the other writing commands carry, for the same reasons:

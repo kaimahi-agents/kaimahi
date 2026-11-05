@@ -66,6 +66,7 @@ func (f *Files) createPairBinding(ctx context.Context, p string, agentBytes, tes
 		return nil, refusal("invalid_file")
 	}
 	b := &pairBinding{files: f, pair: pair, sources: sourcesFor(pair), requested: p}
+	b.agentPath, b.testsPath = b.sources.AgentPath, b.sources.Tests.Selection.Path
 	b.agentAbsent, err = f.holdAbsentSource(physical)
 	if err != nil {
 		return nil, err
