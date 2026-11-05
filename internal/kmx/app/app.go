@@ -26,7 +26,9 @@
 // Model connection state retains nonsecret, acknowledged identities through
 // private immutable checkpoints and a process-held target lock. Partial effects
 // and publication errors never authorize replay or ownership reconstruction.
-// This state is not model readiness or execution evidence.
+// This state is not model readiness or execution evidence. Private gateway
+// profiles, descendant observations and conditional cleanup prepare a later
+// connection lifecycle; no model command or capability is enabled here.
 //
 // App coordinates consent, side effects and runtime-specific evidence.
 // Placement observations are distinct from evaluation proof; successful

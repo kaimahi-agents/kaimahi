@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -45,15 +46,18 @@ type modelPendingAction struct {
 	OperationID string             `json:"operationID"`
 	Verb        string             `json:"verb"`
 	Resource    modelOwnedResource `json:"resource"`
+	Children    []modelChild       `json:"children,omitempty"`
 }
 type modelCheckpoint struct {
-	Version      int                  `json:"version"`
-	ClusterUID   string               `json:"clusterUID"`
-	NamespaceUID string               `json:"namespaceUID"`
-	Connection   OrkaModelConnection  `json:"connection"`
-	Pending      *modelPendingAction  `json:"pending,omitempty"`
-	Resources    []modelOwnedResource `json:"resources,omitempty"`
-	Complete     bool                 `json:"complete"`
+	Version         int                  `json:"version"`
+	ClusterUID      string               `json:"clusterUID"`
+	NamespaceUID    string               `json:"namespaceUID"`
+	RuntimeDigest   string               `json:"runtimeDigest,omitempty"`
+	Connection      OrkaModelConnection  `json:"connection"`
+	Pending         *modelPendingAction  `json:"pending,omitempty"`
+	Resources       []modelOwnedResource `json:"resources,omitempty"`
+	GatewayChildren []modelChild         `json:"gatewayChildren,omitempty"`
+	Complete        bool                 `json:"complete"`
 }
 type modelAnchor struct {
 	Version int             `json:"version"`
@@ -331,7 +335,7 @@ func (r *modelRecord) validate(state modelCheckpoint) error {
 		a, b := r.initial, state
 		a.Connection.State = ""
 		b.Connection.State = ""
-		if a.ClusterUID != b.ClusterUID || a.NamespaceUID != b.NamespaceUID || a.Connection != b.Connection {
+		if a.ClusterUID != b.ClusterUID || a.NamespaceUID != b.NamespaceUID || a.RuntimeDigest != b.RuntimeDigest || a.Connection != b.Connection {
 			return errors.New("model connection identity changed")
 		}
 		if r.state.Complete {
@@ -341,6 +345,14 @@ func (r *modelRecord) validate(state modelCheckpoint) error {
 	return nil
 }
 func validateModelCheckpoint(s modelCheckpoint) error {
+	if s.RuntimeDigest != "" {
+		if len(s.RuntimeDigest) != 64 {
+			return errors.New("invalid model runtime identity")
+		}
+		if _, err := hex.DecodeString(s.RuntimeDigest); err != nil {
+			return errors.New("invalid model runtime identity")
+		}
+	}
 	c := s.Connection
 	if s.Version != 1 || !verificationIdentity(s.ClusterUID) || !verificationIdentity(s.NamespaceUID) || !modelUUID(c.ID) || !modelUUID(c.CredentialGeneration) || c.Route != "copilot" || !verificationIdentity(c.Provider) || !verificationIdentity(c.Model) {
 		return errors.New("invalid model connection")
@@ -348,7 +360,16 @@ func validateModelCheckpoint(s modelCheckpoint) error {
 	if c.State != "unknown" && c.State != "model_ready" && c.State != "gateway_stopped" {
 		return errors.New("invalid model observation")
 	}
-	if s.Complete && (s.Pending != nil || len(s.Resources) != 0) {
+	if len(s.GatewayChildren) > 128 {
+		return errors.New("model child closure exceeds bound")
+	}
+	for _, child := range s.GatewayChildren {
+		version, _, ok := modelChildAPI(child.Kind)
+		if !ok || version != child.APIVersion || !modelResourceName(child.Name) || !verificationIdentity(child.UID) || !verificationIdentity(child.OwnerUID) {
+			return errors.New("invalid retained gateway child")
+		}
+	}
+	if s.Complete && (s.Pending != nil || len(s.Resources) != 0 || len(s.GatewayChildren) != 0) {
 		return errors.New("model effects remain unresolved")
 	}
 	for _, resource := range s.Resources {
@@ -362,6 +383,12 @@ func validateModelCheckpoint(s modelCheckpoint) error {
 		}
 		if p.Verb == "create" && p.Resource.Marker != p.OperationID {
 			return errors.New("model create marker does not bind its operation")
+		}
+		for _, child := range p.Children {
+			version, _, ok := modelChildAPI(child.Kind)
+			if !ok || version != child.APIVersion || !modelResourceName(child.Name) || !verificationIdentity(child.UID) || !verificationIdentity(child.OwnerUID) || p.Verb != "delete" {
+				return errors.New("invalid pending model child")
+			}
 		}
 		if err := validateModelResource(p.Resource, p.Verb == "delete"); err != nil {
 			return err
