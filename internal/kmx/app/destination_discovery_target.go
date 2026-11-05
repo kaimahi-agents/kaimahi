@@ -78,12 +78,13 @@ func targetReadReason(err error) string {
 	return "read_unknown"
 }
 func (a *App) discoverTarget(ctx context.Context, opt DiscoveryOptions) (DiscoveryReport, error) {
-	r := DiscoveryReport{Scope: "target", Complete: true, Checks: []DiscoveryCheck{}, Rows: []DiscoveryRow{}, Target: &DiscoveryTarget{Context: opt.Context, Namespace: opt.Namespace, Providers: []DiscoveryProvider{}}}
-	t := r.Target
+	r := DiscoveryReport{Scope: "target", Complete: true, Checks: []DiscoveryCheck{}, Rows: []DiscoveryRow{}}
 	if opt.Context == "" || !statusSafeText(opt.Context) || len(opt.Namespace) > 63 || !discoveryNamespaceName.MatchString(opt.Namespace) || !statusSafeText(opt.Namespace) {
 		r.targetProblem("target", "unknown", "malformed")
 		return r, NewMachineError("invalid_arguments", "preflight")
 	}
+	r.Target = &DiscoveryTarget{Context: opt.Context, Namespace: opt.Namespace, Providers: []DiscoveryProvider{}}
+	t := r.Target
 	worker, runner := *a, *a.Run
 	worker.Cfg = &config.Config{KubeContext: opt.Context}
 	worker.Run = &runner
@@ -99,7 +100,7 @@ func (a *App) discoverTarget(ctx context.Context, opt DiscoveryOptions) (Discove
 	if e != nil {
 		state, reason := "unknown", targetReadReason(e)
 		var f *discoveryReadFailure
-		if errors.As(e, &f) && f.reason == "resource_missing" {
+		if errors.As(e, &f) && f.reason == "resource_missing" && f.exactNamespaceMissing == opt.Namespace {
 			api, ae := worker.targetGet(ctx, s, "/api/v1")
 			if ae == nil && discoveryAPIHas(api, "v1", "namespaces", "Namespace", false) {
 				state, reason = "missing", "resource_missing"

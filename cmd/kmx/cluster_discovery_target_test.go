@@ -11,6 +11,22 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 )
 
+func TestDiscoveryRejectedSelectorOutput(t *testing.T) {
+	for _, format := range []string{"text", "jsonl"} {
+		var out bytes.Buffer
+		c := newClusterDiscoveryCommand(&commandState{contextFlag: "chosen"})
+		c.SilenceUsage, c.SilenceErrors = true, true
+		c.SetOut(&out)
+		c.SetArgs([]string{"--namespace=bad\x1b[31m", "-o", format})
+		if e := c.Execute(); e == nil {
+			t.Fatal("accepted")
+		}
+		if strings.Contains(out.String(), "bad") || strings.ContainsRune(out.String(), '\x1b') {
+			t.Fatal("rejected selector rendered")
+		}
+	}
+}
+
 func TestVersionJSONDiscoveryTarget(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	deps := versionTestDependencies(&out, &diagnostics)

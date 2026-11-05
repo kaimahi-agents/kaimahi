@@ -18,9 +18,10 @@ type discoveryReadReason string
 var errDiscoveryLimit = errors.New("bounded discovery capture overflow")
 
 type discoveryReadFailure struct {
-	reason           discoveryReadReason
-	cause            error
-	exactToolMissing string
+	reason                discoveryReadReason
+	cause                 error
+	exactToolMissing      string
+	exactNamespaceMissing string
 }
 
 func (e *discoveryReadFailure) Error() string { return "Destination discovery is incomplete." }
@@ -164,6 +165,13 @@ func (a *App) discoveryCaptureBudget(ctx context.Context, selectedContext string
 		}
 		failure = &discoveryReadFailure{reason: classifyDiscoveryRead(diagnostics.Bytes(), false), cause: err}
 		if failure.reason == "resource_missing" && len(args) == 3 && args[0] == "get" && args[1] == "--raw" {
+			const namespaces = "/api/v1/namespaces/"
+			if strings.HasPrefix(args[2], namespaces) {
+				name := strings.TrimPrefix(args[2], namespaces)
+				if name != "" && !strings.Contains(name, "/") && strings.TrimSpace(string(diagnostics.Bytes())) == "Error from server (NotFound): namespaces "+strconv.Quote(name)+" not found" {
+					failure.exactNamespaceMissing = name
+				}
+			}
 			const prefix = "/apis/core.orka.ai/v1alpha1/namespaces/"
 			if strings.HasPrefix(args[2], prefix) {
 				parts := strings.Split(strings.TrimPrefix(args[2], prefix), "/")
