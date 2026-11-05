@@ -9,26 +9,24 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// TryLock takes a nonblocking process-held exclusive lock on file. The lock is
-// released when the private file handle closes or the process exits.
-func TryLock(ctx context.Context, file *PrivateFile) error {
+func tryLock(ctx context.Context, file *PrivateFile) (bool, error) {
 	if err := checkContext(ctx); err != nil {
-		return wrapAccess("lock private file", err)
+		return false, err
 	}
 	raw := rawObject(file)
 	if raw == nil {
-		return wrapAccess("lock private file", unsafeCause("private file handle is absent"))
+		return false, unsafeCause("private file handle is absent")
 	}
 	conn, err := raw.SyscallConn()
 	if err != nil {
-		return wrapAccess("lock private file", err)
+		return false, err
 	}
 	var lockErr error
 	if err := conn.Control(func(fd uintptr) { lockErr = unix.Flock(int(fd), unix.LOCK_EX|unix.LOCK_NB) }); err != nil {
-		return wrapAccess("lock private file", err)
+		return false, err
 	}
 	if errors.Is(lockErr, unix.EWOULDBLOCK) || errors.Is(lockErr, unix.EAGAIN) {
-		lockErr = unsafeCause("private file is already locked")
+		return false, nil
 	}
-	return wrapAccess("lock private file", lockErr)
+	return lockErr == nil, lockErr
 }

@@ -57,6 +57,30 @@ func mappedFingerprint(files map[string][]byte) (string, error) {
 	return suitecore.Digest(frame)
 }
 
+// MappedArtifactFingerprint reconstructs the complete mapped-input fingerprint
+// from a verified artifact with the supported closed source profile. It grants
+// no source freshness, retained-handle ownership or native execution evidence.
+func MappedArtifactFingerprint(ctx context.Context, artifact *suiteoras.Artifact) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if artifact == nil {
+		return "", verificationFailed(errMappedInput)
+	}
+	files := artifact.Files()
+	if _, err := validateSourceNative(files); err != nil {
+		return "", verificationFailed(err)
+	}
+	fingerprint, err := mappedFingerprint(files)
+	if err != nil {
+		return "", verificationFailed(err)
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return fingerprint, nil
+}
+
 func validateSourceNative(files map[string][]byte) (string, error) {
 	index, base, err := localartifact.SourceProfileBase(files)
 	if err != nil {
