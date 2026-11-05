@@ -7,12 +7,16 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
 func newAgentRunCommand(state *commandState) *cobra.Command {
 	var opt app.RunAgentOptions
 	var file fileCommandOptions
+	var persist bool
 	cmd := &cobra.Command{
 		Use: "run [FILE [input]]", Short: "Run an agent file or an existing Orka Agent",
 		Long: "Run FILE answers without checks; FILE \"input\" answers only that input.\n" +
@@ -30,6 +34,7 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 	cmd.Flags().DurationVar(&opt.Wait, "wait", 5*time.Minute, "Wait for answer (10s to 9m)")
 	cmd.Flags().StringVar(&opt.ResultPort, "result-port", "", "Loopback forward port (chosen automatically)")
 	registerFileCommandFlags(cmd, &file, true)
+	cmd.Flags().BoolVar(&persist, "persist", false, "Persist FILE locally")
 	cmd.Args = func(cmd *cobra.Command, args []string) error {
 		if len(args) == 1 || len(args) == 2 {
 			if err := validateFileCommand(cmd, state, file); err != nil {
@@ -42,6 +47,9 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 				return fileUsageError(fmt.Errorf("only one of --prompt or --prompt-file is allowed"))
 			}
 			return nil
+		}
+		if persist {
+			return fileUsageError(fmt.Errorf("--persist requires an explicit agent FILE"))
 		}
 		if err := fileFlagsWithoutFile(cmd); err != nil {
 			if cmd.Flags().Changed("tests") || cmd.Flags().Changed("case") {
@@ -75,6 +83,63 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 			if len(args) == 2 {
 				opt.Prompt = args[1]
 				file.PositionalInput = true
+			}
+			var persisted app.LocalAgentInstance
+			persistVerb := ""
+			if persist {
+				if file.ToolBindings != "" || len(file.MCPServers) > 0 || file.NoMCPServers {
+					return fileUsageError(fmt.Errorf("persistent local agents currently use only folder kmx.yaml tools; omit explicit tool or MCP overrides"))
+				}
+				pair, err := agentfile.LoadPair(args[0], file.TestsFile)
+				if err != nil {
+					return err
+				}
+				provider := file.Provider
+				if provider == "" {
+					provider = "copilot"
+					if file.Model == "fake" || file.Model == "" && pair.Agent.Model == "fake" {
+						provider = "fake"
+					}
+				}
+				model := file.Model
+				if model == "" {
+					model = pair.Agent.Model
+				}
+				if model == "" && provider == "copilot" {
+					model = modelaccess.CopilotDefaultModel
+				}
+				route := fileModelRoute(provider, file.Endpoint)
+				route.Model = model
+				if file.Endpoint != "" || provider != "copilot" && provider != "fake" || !agentfile.ValidModel(model) || secretshapes.Match(model) != nil || route.Validate() != nil || (provider == "fake") != (model == "fake") || len(pair.Agent.Tools) != 0 {
+					return fileUsageError(fmt.Errorf("persistent local agents currently require a tool-free fake or Copilot route without a custom endpoint"))
+				}
+				instance, created, err := state.deps.activateLocalAgent(cmd.Context(), state.executable(), pair, provider, file.Endpoint, model)
+				if err != nil {
+					return err
+				}
+				verb := "Reused"
+				if created {
+					verb = "Started"
+				}
+				persistVerb = verb
+				persisted = instance
+				if len(args) == 1 && !cmd.Flags().Changed("prompt") && !cmd.Flags().Changed("prompt-file") {
+					_, err := fmt.Fprintf(cmd.ErrOrStderr(), "%s %s (%s) · snapshot %s\n", verb, instance.Name, instance.ID, instance.SnapshotRevision)
+					return err
+				}
+			}
+			if persist {
+				instance := persisted
+				err := state.deps.withLocalAgentRun(cmd.Context(), instance, func(pair *agentfile.Pair) error {
+					file.TestsFile, file.Provider, file.Model = instance.CachedTests, instance.Provider, instance.Model
+					return runFilePairCommand(cmd, state, pair, file, opt.Prompt, opt.PromptFile)
+				})
+				if err != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "%s %s (%s) remains active · snapshot %s\n", persistVerb, instance.Name, instance.ID, instance.SnapshotRevision)
+					return err
+				}
+				_, err = fmt.Fprintf(cmd.ErrOrStderr(), "%s %s (%s) · snapshot %s\n", persistVerb, instance.Name, instance.ID, instance.SnapshotRevision)
+				return err
 			}
 			return runFileCommand(cmd, state, args[0], file, opt.Prompt, opt.PromptFile)
 		}

@@ -15,7 +15,7 @@ version, with one stderr notice and unchanged legacy output/exit contracts. See
 
 ## Installed command tree
 
-Root help shows `create`, `run`, `test`, `chat`, `model`, `package`, `cluster`,
+Root help shows `create`, `run`, `test`, `list`, `chat`, `model`, `package`, `cluster`,
 then `version`, with the tagline “Write, run and test agent files.” The tree below
 expands those visible product commands:
 
@@ -25,6 +25,7 @@ kmx
 ├── run [FILE [input]] [--tests FILE] | --agent <name>
 ├── test [FILE] [--tests FILE]
 │   └── explain [failure-id] --file FILE [--tests FILE]
+├── list [-a] [-o table|json]     (local registrations; --context selects Orka)
 ├── chat <name> [message...]
 ├── model
 │   ├── list [--provider local|copilot] [-o table|json]

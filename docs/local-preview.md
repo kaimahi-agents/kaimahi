@@ -187,7 +187,25 @@ assertions or setting up a judge. Explicit positional input runs that input; sav
 inputs explicitly selected alongside it keep their own fixtures. Completed Run
 rows are **ANSWERED**, not passing tests; JSON keeps an unknown verdict and
 `fullPass: false`. No judge is selected or authenticated for CLI Run. Test and the
-existing single-source MCP Run/Test behavior continue to evaluate checks. MCP
+existing single-source MCP Run/Test behavior continue to evaluate checks.
+
+Run with `--persist` additionally registers or reuses a local lifecycle instance
+bound to that checked agent/test snapshot. Owner-only snapshot cache retains the
+exact authored agent/test bytes in cleartext, like preview journals. Lifecycle
+state keeps no credentials or tool processes; a
+prompted Run still executes in the invoking kmx process through this same preview
+path. Persistent instances are tool-free in this first slice; ordinary Run/Test
+retain fixed command tools. `kmx list` shows active local instances, and `kmx stop
+NAME_OR_ID` ends one. Editing source does not update an active instance: stop it
+before persisting the new snapshot. Test always evaluates the current checked
+source pair, independently of any active instance; `test FILE
+--check` validates that pair and reports identity metadata without model or tool
+execution. Lifecycle history is append-only and bounded to 1,024 private entries
+per source; reaching the bound refuses further lifecycle operations without
+automatic deletion. Native Windows refuses persistence, local List and Stop; use
+WSL.
+
+MCP
 Run/Test also accept schema version 3 with a checked `sourceVersion` from the
 source resource, running the selected agent/tests pairs: Run answers without
 checks, and Test evaluates the selected checks. Version-3 Create/Edit and
