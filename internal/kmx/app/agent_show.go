@@ -152,7 +152,8 @@ const unknownHop = "unknown"
 
 // ShowAgent renders one Orka Agent and the chain it depends on.
 func (a *App) ShowAgent(name string, opt ShowOptions) error {
-	if strings.TrimSpace(opt.Namespace) == "" {
+	opt.Namespace = strings.TrimSpace(opt.Namespace)
+	if opt.Namespace == "" {
 		return fmt.Errorf("kmx cluster orka show %s: --namespace is required.\n"+
 			"  Orka watches namespaces explicitly, so there is no safe default to guess:\n"+
 			"  a wrong one would report \"not found\" about a namespace you never meant", name)

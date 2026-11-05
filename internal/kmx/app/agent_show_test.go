@@ -69,6 +69,20 @@ func TestAgentShowRequiresANamespace(t *testing.T) {
 	}
 }
 
+func TestAgentShowTrimsNamespaceBeforeReading(t *testing.T) {
+	f := newShowFixture(t)
+	if err := f.app.ShowAgent("concierge", ShowOptions{Namespace: " demo "}); err != nil {
+		t.Fatal(err)
+	}
+	calls, err := os.ReadFile(os.Getenv("KMX_INSPECT_CALLS"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(calls), "  demo  ") || !strings.Contains(string(calls), "-n demo get agents.core.orka.ai concierge") {
+		t.Fatalf("show did not use the normalized namespace:\n%s", calls)
+	}
+}
+
 // The healthy case still has to render every hop: a chain that only appears
 // when it is broken is a chain nobody trusts when it says nothing.
 func TestAgentShowRendersTheWholeChainWhenHealthy(t *testing.T) {
