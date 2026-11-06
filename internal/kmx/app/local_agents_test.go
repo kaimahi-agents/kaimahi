@@ -34,6 +34,22 @@ func localRegistrationPair(t *testing.T) *agentfile.Pair {
 	return pair
 }
 
+func trailingHyphenPair(t *testing.T, source, instructions string) *agentfile.Pair {
+	t.Helper()
+	raw := []byte(fmt.Sprintf("# Agent\n\n## Identity\n- **ID:** agent-\n- **Purpose:** Test upgrades.\n\n## Accountable Responsibilities\n%s\n\n## Non-Responsibilities\nDo not call tools.\n\n## Collaboration and Review Authority\nReturn directly.\n\n## Model\n- **Preferred:** fake\n", instructions))
+	if err := os.WriteFile(source, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	pair, err := agentfile.LoadPair(source, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pair.Agent.Identity.ID != "agent-" {
+		t.Fatalf("authored identity=%q", pair.Agent.Identity.ID)
+	}
+	return pair
+}
+
 func TestLocalRegistrationActivateListStop(t *testing.T) {
 	pair := localRegistrationPair(t)
 	record, created, err := ActivateLocalAgent(t.Context(), "", pair, "fake", "", "fake")
@@ -497,6 +513,40 @@ func TestProjectedRecoveryNameFallsBackAfterPrefixNamesExhausted(t *testing.T) {
 	}
 }
 
+func TestProjectedRecoveryNameSurvivesPrimaryStop(t *testing.T) {
+	event := "1234567890abcdef12345678"
+	rows := func(primaryState string) []LocalAgentInstance {
+		return []LocalAgentInstance{
+			{EventID: event, Name: "greeter", AuthoredName: "greeter", State: "running"},
+			{EventID: "abcdefabcdefabcdefabcdef", Name: "greeter", AuthoredName: "greeter", State: primaryState, Primary: true},
+		}
+	}
+	before := rows("running")
+	projectLocalAgentRecoveryNames(before)
+	after := rows("stopped")
+	projectLocalAgentRecoveryNames(after)
+	if before[0].Name == "greeter" || after[0].Name != before[0].Name {
+		t.Fatalf("recovery name changed after primary stop: before=%q after=%q", before[0].Name, after[0].Name)
+	}
+}
+
+func TestProjectedRecoveryNameBoundsLongAuthoredID(t *testing.T) {
+	event := "1234567890abcdef12345678"
+	name := strings.Repeat("a", 63)
+	rows := []LocalAgentInstance{
+		{EventID: event, Name: name, AuthoredName: name, State: "running"},
+		{EventID: "abcdefabcdefabcdefabcdef", Name: name, AuthoredName: name, State: "running", Primary: true},
+	}
+	base := name[:46]
+	for _, width := range []int{8, 12, 16} {
+		rows = append(rows, LocalAgentInstance{EventID: fmt.Sprintf("%024x", width), Name: base + "-" + event[:width], AuthoredName: name, State: "running"})
+	}
+	projectLocalAgentRecoveryNames(rows)
+	if rows[0].Name == name || !validLocalAgentName(rows[0].Name) {
+		t.Fatalf("long recovery name is invalid: %q", rows[0].Name)
+	}
+}
+
 func TestUpgradePreservesSoleValidRuntimeNameForAuthoredTrailingHyphen(t *testing.T) {
 	home := t.TempDir()
 	if err := os.Chmod(home, 0700); err != nil {
@@ -504,21 +554,7 @@ func TestUpgradePreservesSoleValidRuntimeNameForAuthoredTrailingHyphen(t *testin
 	}
 	t.Setenv("KMX_HOME", home)
 	source := filepath.Join(t.TempDir(), "agent.agent.md")
-	write := func(instructions string) *agentfile.Pair {
-		raw := []byte(fmt.Sprintf("# Agent\n\n## Identity\n- **ID:** agent-\n- **Purpose:** Test upgrades.\n\n## Accountable Responsibilities\n%s\n\n## Non-Responsibilities\nDo not call tools.\n\n## Collaboration and Review Authority\nReturn directly.\n\n## Model\n- **Preferred:** fake\n", instructions))
-		if err := os.WriteFile(source, raw, 0600); err != nil {
-			t.Fatal(err)
-		}
-		pair, err := agentfile.LoadPair(source, "")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if pair.Agent.Identity.ID != "agent-" {
-			t.Fatalf("authored identity=%q", pair.Agent.Identity.ID)
-		}
-		return pair
-	}
-	first, _, err := ActivateLocalAgentWithOptions(t.Context(), "", write("First."), "fake", "", "fake", LocalAgentActivationOptions{Mode: LocalAgentActivationNew, Name: "worker"})
+	first, _, err := ActivateLocalAgentWithOptions(t.Context(), "", trailingHyphenPair(t, source, "First."), "fake", "", "fake", LocalAgentActivationOptions{Mode: LocalAgentActivationNew, Name: "worker"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -526,7 +562,7 @@ func TestUpgradePreservesSoleValidRuntimeNameForAuthoredTrailingHyphen(t *testin
 		_, _ = probeLocalAgent(context.Background(), first, "shutdown", localAgentIPCRequest{})
 		_ = waitLocalAgentStopped(context.Background(), first)
 	}()
-	upgraded, created, err := ActivateLocalAgentWithOptions(t.Context(), "", write("Second."), "fake", "", "fake", LocalAgentActivationOptions{Mode: LocalAgentActivationUpgrade})
+	upgraded, created, err := ActivateLocalAgentWithOptions(t.Context(), "", trailingHyphenPair(t, source, "Second."), "fake", "", "fake", LocalAgentActivationOptions{Mode: LocalAgentActivationUpgrade})
 	if err != nil || !created {
 		t.Fatalf("upgrade=%+v created=%v err=%v", upgraded, created, err)
 	}
@@ -558,6 +594,116 @@ func TestReadLocalAgentInstancesDoesNotCreateAbsentState(t *testing.T) {
 	if _, err := os.Stat(state); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("absent state was created: %v", err)
 	}
+}
+
+func TestReadLocalAgentInstancesAcceptsEmptyUninitializedInventory(t *testing.T) {
+	home := t.TempDir()
+	if err := os.Chmod(home, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KMX_HOME", home)
+	instances := filepath.Join(home, "local-agents", "instances")
+	if err := os.MkdirAll(instances, 0700); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := ReadLocalAgentInstances(false)
+	if err != nil || len(rows) != 0 {
+		t.Fatalf("rows=%+v err=%v", rows, err)
+	}
+	if _, err := os.Stat(filepath.Join(instances, "inventory.lock")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("read initialized inventory lock: %v", err)
+	}
+}
+
+func TestReadLocalAgentInstancesDoesNotHideLocklessRecords(t *testing.T) {
+	home := t.TempDir()
+	if err := os.Chmod(home, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KMX_HOME", home)
+	instances := filepath.Join(home, "local-agents", "instances")
+	if err := os.MkdirAll(instances, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(instances, "unexpected"), []byte("state"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadLocalAgentInstances(false); err == nil {
+		t.Fatal("lockless inventory records were hidden as empty")
+	}
+}
+
+func TestCrashedNamedInstanceRestartPreservesRuntimeName(t *testing.T) {
+	home := t.TempDir()
+	if err := os.Chmod(home, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KMX_HOME", home)
+	source := filepath.Join(t.TempDir(), "agent.agent.md")
+	pair := trailingHyphenPair(t, source, "First.")
+	first, _, err := ActivateLocalAgentWithOptions(t.Context(), "", pair, "fake", "", "fake", LocalAgentActivationOptions{Mode: LocalAgentActivationNew, Name: "worker"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := probeLocalAgent(t.Context(), first, "shutdown", localAgentIPCRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := waitLocalAgentStopped(t.Context(), first); err != nil {
+		t.Fatal(err)
+	}
+	restarted, created, err := ActivateLocalAgent(t.Context(), "", pair, "fake", "", "fake")
+	if err != nil || !created || restarted.Name != "worker" {
+		t.Fatalf("restart=%+v created=%v err=%v", restarted, created, err)
+	}
+	defer func() { _ = StopLocalAgent(context.Background(), restarted.InstanceID) }()
+}
+
+func TestInterruptedUpgradeRetryPreservesSelectedRuntimeName(t *testing.T) {
+	home := t.TempDir()
+	if err := os.Chmod(home, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KMX_HOME", home)
+	source := filepath.Join(t.TempDir(), "agent.agent.md")
+	first, _, err := ActivateLocalAgentWithOptions(t.Context(), "", trailingHyphenPair(t, source, "First."), "fake", "", "fake", LocalAgentActivationOptions{Mode: LocalAgentActivationNew, Name: "worker"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_, _ = probeLocalAgent(context.Background(), first, "shutdown", localAgentIPCRequest{})
+		_ = waitLocalAgentStopped(context.Background(), first)
+	}()
+	changed := trailingHyphenPair(t, source, "Second.")
+	event, err := randomEventID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, path, err := localAgentInstanceDirectory(t.Context(), first.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent, tests, err := cachePair(t.Context(), dir, path, changed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	interrupted := LocalAgentInstance{SchemaVersion: localAgentSchema, EventID: event, InstanceID: "li-" + event, Sequence: first.Sequence + 1, ID: first.ID, Name: "agent-" + event[:8], AuthoredName: "agent-", Source: changed.AgentPath, AgentRevision: changed.Agent.Revision, SnapshotRevision: changed.SnapshotRevision, TestsState: changed.Tests.State, TestsPath: changed.Tests.Selection.Path, CachedAgent: agent, CachedTests: tests, Provider: "fake", Model: "fake", Started: time.Now().UTC(), State: "active"}
+	raw, _ := json.Marshal(interrupted)
+	if err := publishPrivateBytes(t.Context(), dir, "start-"+event+".json", raw); err != nil {
+		t.Fatal(err)
+	}
+	_ = dir.Close()
+	if err := startLocalAgentWorker(t.Context(), "", interrupted); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_, _ = probeLocalAgent(context.Background(), interrupted, "shutdown", localAgentIPCRequest{})
+		_ = waitLocalAgentStopped(context.Background(), interrupted)
+	}()
+	upgraded, created, err := ActivateLocalAgentWithOptions(t.Context(), "", changed, "fake", "", "fake", LocalAgentActivationOptions{Mode: LocalAgentActivationUpgrade})
+	if err != nil || !created || upgraded.Name != "worker" {
+		t.Fatalf("upgrade=%+v created=%v err=%v", upgraded, created, err)
+	}
+	defer func() { _ = StopLocalAgent(context.Background(), upgraded.InstanceID) }()
 }
 
 func TestPromotionRefusesNameOwnedByAnotherSource(t *testing.T) {
