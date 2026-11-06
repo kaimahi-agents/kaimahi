@@ -545,6 +545,29 @@ func TestProjectedRecoveryNameBoundsLongAuthoredID(t *testing.T) {
 	if rows[0].Name == name || !validLocalAgentName(rows[0].Name) {
 		t.Fatalf("long recovery name is invalid: %q", rows[0].Name)
 	}
+	for i := 1; i < len(rows); i++ {
+		if rows[0].Name == rows[i].Name {
+			t.Fatalf("long recovery name collides with row %d: %q", i, rows[0].Name)
+		}
+	}
+}
+
+func TestTrailingHyphenAuthoredIDGetsValidDefaultRuntimeName(t *testing.T) {
+	for _, mode := range []LocalAgentActivationMode{LocalAgentActivationNormal, LocalAgentActivationUpgrade} {
+		t.Run(string(mode), func(t *testing.T) {
+			home := t.TempDir()
+			if err := os.Chmod(home, 0700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("KMX_HOME", home)
+			pair := trailingHyphenPair(t, filepath.Join(t.TempDir(), "agent.agent.md"), "First.")
+			record, created, err := ActivateLocalAgentWithOptions(t.Context(), "", pair, "fake", "", "fake", LocalAgentActivationOptions{Mode: mode})
+			if err != nil || !created || record.Name != "agent" || record.AuthoredName != "agent-" {
+				t.Fatalf("record=%+v created=%v err=%v", record, created, err)
+			}
+			defer func() { _ = StopLocalAgent(context.Background(), record.InstanceID) }()
+		})
+	}
 }
 
 func TestUpgradePreservesSoleValidRuntimeNameForAuthoredTrailingHyphen(t *testing.T) {
@@ -651,6 +674,65 @@ func TestCrashedNamedInstanceRestartPreservesRuntimeName(t *testing.T) {
 	if err := waitLocalAgentStopped(t.Context(), first); err != nil {
 		t.Fatal(err)
 	}
+	restarted, created, err := ActivateLocalAgent(t.Context(), "", pair, "fake", "", "fake")
+	if err != nil || !created || restarted.Name != "worker" {
+		t.Fatalf("restart=%+v created=%v err=%v", restarted, created, err)
+	}
+	defer func() { _ = StopLocalAgent(context.Background(), restarted.InstanceID) }()
+}
+
+func TestNormalActivationPrefersRunningMatchOverCrashedMatch(t *testing.T) {
+	pair := localRegistrationPair(t)
+	crashed, _, err := ActivateLocalAgentWithOptions(t.Context(), "", pair, "fake", "", "fake", LocalAgentActivationOptions{Mode: LocalAgentActivationNew, Name: "a-crashed"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	running, _, err := ActivateLocalAgentWithOptions(t.Context(), "", pair, "fake", "", "fake", LocalAgentActivationOptions{Mode: LocalAgentActivationNew, Name: "z-running"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = StopLocalAgent(context.Background(), running.InstanceID) }()
+	if _, err := probeLocalAgent(t.Context(), crashed, "shutdown", localAgentIPCRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := waitLocalAgentStopped(t.Context(), crashed); err != nil {
+		t.Fatal(err)
+	}
+	selected, created, err := ActivateLocalAgent(t.Context(), "", pair, "fake", "", "fake")
+	if err != nil || created || selected.InstanceID != running.InstanceID {
+		t.Fatalf("selected=%+v created=%v err=%v", selected, created, err)
+	}
+}
+
+func TestFailedCrashRecoveryKeepsOriginalRuntimeName(t *testing.T) {
+	home := t.TempDir()
+	if err := os.Chmod(home, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KMX_HOME", home)
+	source := filepath.Join(t.TempDir(), "agent.agent.md")
+	pair := trailingHyphenPair(t, source, "First.")
+	crashed, _, err := ActivateLocalAgentWithOptions(t.Context(), "", pair, "fake", "", "fake", LocalAgentActivationOptions{Mode: LocalAgentActivationNew, Name: "worker"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := probeLocalAgent(t.Context(), crashed, "shutdown", localAgentIPCRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := waitLocalAgentStopped(t.Context(), crashed); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(source); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ActivateLocalAgent(t.Context(), "", pair, "fake", "", "fake"); err == nil {
+		t.Fatal("crash recovery unexpectedly succeeded without source")
+	}
+	rows, err := ReadLocalAgentInstances(false)
+	if err != nil || len(rows) != 1 || rows[0].InstanceID != crashed.InstanceID || rows[0].Name != "worker" || rows[0].State != "crashed" {
+		t.Fatalf("crashed instance was not recoverable: rows=%+v err=%v", rows, err)
+	}
+	pair = trailingHyphenPair(t, source, "First.")
 	restarted, created, err := ActivateLocalAgent(t.Context(), "", pair, "fake", "", "fake")
 	if err != nil || !created || restarted.Name != "worker" {
 		t.Fatalf("restart=%+v created=%v err=%v", restarted, created, err)

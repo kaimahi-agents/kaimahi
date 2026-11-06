@@ -139,6 +139,13 @@ func validLocalAgentName(name string) bool {
 	}
 	return true
 }
+
+func defaultLocalAgentName(authored string) string {
+	if validLocalAgentName(authored) {
+		return authored
+	}
+	return strings.TrimRight(authored, "-")
+}
 func validLocalAgentStageName(name string) bool {
 	return strings.HasPrefix(name, ".kmx-stage-") && validHexValue(strings.TrimPrefix(name, ".kmx-stage-"), 32)
 }
@@ -472,6 +479,7 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 	var created bool
 	err = withLocalAgentTransition(ctx, dir, func() error {
 		var active []LocalAgentInstance
+		var restart *LocalAgentInstance
 		var event string
 		var promotedName string
 		admitted := false
@@ -487,8 +495,9 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 					active = append(active, current)
 				}
 			}
-			promotedName = pair.Agent.Identity.ID
+			promotedName = defaultLocalAgentName(pair.Agent.Identity.ID)
 			if options.Mode == LocalAgentActivationNormal {
+				var crashed *LocalAgentInstance
 				for _, current := range active {
 					if current.SnapshotRevision == pair.SnapshotRevision && current.Provider == provider && current.Model == model {
 						if current.State == "running" {
@@ -496,23 +505,24 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 							return nil
 						}
 						if current.State == "crashed" {
-							promotedName = current.Name
-							if !validLocalAgentName(promotedName) {
-								return errors.New("local agent runtime name must use lowercase letters, digits and internal hyphens")
-							}
-							for _, row := range rows {
-								if row.EventID != current.EventID && row.Name == promotedName {
-									return errors.New("local agent runtime name is already active")
-								}
-							}
-							if err := writeLocalAgentStopLocked(ctx, dir, current.EventID, current.Started); err != nil {
-								return err
-							}
-							stoppedForRestart = current.EventID
-							active = nil
-							break
+							candidate := current
+							crashed = &candidate
 						}
 					}
+				}
+				if crashed != nil {
+					promotedName = crashed.Name
+					if !validLocalAgentName(promotedName) {
+						return errors.New("local agent runtime name must use lowercase letters, digits and internal hyphens")
+					}
+					for _, row := range rows {
+						if row.EventID != crashed.EventID && row.Name == promotedName {
+							return errors.New("local agent runtime name is already active")
+						}
+					}
+					restart = crashed
+					stoppedForRestart = crashed.EventID
+					active = nil
 				}
 				if len(active) > 0 {
 					return &LocalAgentDriftError{Active: active[0], RequestedSnapshot: pair.SnapshotRevision}
@@ -585,8 +595,8 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 			}
 			instanceID := "li-" + event
 			name := promotedName
-			if options.Mode == LocalAgentActivationUpgrade {
-				base := strings.TrimRight(pair.Agent.Identity.ID, "-")
+			if options.Mode == LocalAgentActivationUpgrade || restart != nil {
+				base := strings.TrimRight(promotedName, "-")
 				if len(base) > 54 {
 					base = strings.TrimRight(base[:54], "-")
 				}
@@ -650,6 +660,15 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 		}
 		result.State, result.Ready = "running", true
 		created = true
+		if restart != nil {
+			if err := writeLocalAgentStop(ctx, dir, restart.EventID, restart.Started); err != nil {
+				result.LastError = "restart active; crashed generation cleanup incomplete"
+				raw, _ := json.Marshal(localAgentWarning{SchemaVersion: localAgentSchema, EventID: result.EventID, Warning: result.LastError, Observed: time.Now().UTC()})
+				_ = withLocalAgentInventoryTransition(context.Background(), func() error {
+					return publishPrivateBytes(context.Background(), dir, "warning-"+result.EventID+".json", raw)
+				})
+			}
+		}
 		if options.Mode == LocalAgentActivationUpgrade {
 			cleanupErrors := []error{}
 			for _, old := range active {
