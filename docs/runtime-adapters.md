@@ -81,6 +81,18 @@ version or optional operation. Native readiness alone is not semantic proof.
 | kagent | Exact v0.10.3 Go/linux-amd64 native workspace create/test/evaluated push/create-only digest Deploy. Eval sends fresh blocking A2A Tasks, unsecure only; trusted-proxy refused. Deploy sends no Tasks and refuses occupied targets. GET-only destination status observes placement without qualifying images/auth. No Python/RemoteMCP execution, standalone run/chat, installer/discovery, retirement or rollback. | [v0.10.3 source](https://github.com/kagent-dev/kagent/tree/8878c39ac64421cb665c8e62ecc6411dd12f2fc2), controller index `b2572a59386b6bac1f5e652e135fdad54c0ee603d3f9ee60eb7c80bbaedf9b76`. [Qualifier](../scripts/ci/kagent-lift.sh): raw upstream Tool smoke/direct A2A MCP proof, separately tool-free two-case packaged eval/evaluated push/source-withheld digest Deploy and occupied-repeat refusal. Final retirement Go build/live run are required before claiming qualification. | Operator supplies exact runtime, namespace and model Secret; CI bootstrap is external. |
 | orka | Native workspace create/test/evaluated push/digest Deploy, runtime setup/status and live run/chat, including suite-owned Agents. Invocation is not workspace-local execution or suite evaluation and grants no adoption/copy/retirement authority; GET-only destination status is available, not retirement. | [v0.3.0 source](https://github.com/orka-agents/orka/tree/a533c3491d350263c0fa39bb7887dabd0d055c4e); chart SHA-256 `a83e374c76e223ae6a96d598d62fd0af3b081ea1c01787783a3b7294f3418bce`; controller `ghcr.io/orka-agents/orka@sha256:84cdbd635c61169f46acef1b7b4003e253c4f7cd920519577634e834776535c5`. Required Orka CI proves a native result, not every optional capability. | Operator or an explicit KMX Orka environment command; targets does neither. |
 
+Connect, destination discovery and native suite receipts also recognize the
+[restricted source-bound offline Orka profile](orka.md#native-installation-from-a-local-bundle).
+Recognition requires the matching chart identity and exact same-architecture
+controller/AI-worker image pair for amd64 or arm64, with the existing readiness
+and configuration checks. It does not accept mixed online/offline pins or the
+older offline profile, renew bundle verification or attest live RBAC. Tool
+inventory reports the source commit as both runtime version and catalog commit;
+destination discovery reports it as the runtime version. Exported native
+evaluation evidence identifies that source commit and the actual controller and
+worker image digests rather than substituting online release pins. This
+recognition does not qualify live guest Connect or model execution.
+
 The [offline workspace path](suite-workspace.md) also authors, packages, loads
 and publishes a one-member, tool-free kagent v0.10.3 Go/linux-amd64 declaration.
 Runtime is KMX-private metadata bound to the OCI manifest, not a public format
