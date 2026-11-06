@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -122,7 +123,11 @@ func localAgentSocket(record LocalAgentInstance) (string, error) {
 	}
 	runtimeDir := filepath.Join(base, "kmx")
 	if len(filepath.Join(runtimeDir, record.InstanceID+".sock")) > 103 {
-		base = filepath.Join("/tmp", "kmx-runtime-"+strconv.Itoa(os.Getuid()))
+		shortRoot := "/tmp"
+		if runtime.GOOS == "darwin" {
+			shortRoot = "/private/tmp"
+		}
+		base = filepath.Join(shortRoot, "kmx-runtime-"+strconv.Itoa(os.Getuid()))
 		runtimeDir = filepath.Join(base, "kmx")
 		managedBase = true
 	}
@@ -317,7 +322,7 @@ func runLocalAgentWorker(ctx context.Context, id, event string, credential local
 }
 
 func localAgentWorkerEnvironment(record LocalAgentInstance) []string {
-	allowed := map[string]bool{"HOME": true, "PATH": true, "XDG_CONFIG_HOME": true, "XDG_RUNTIME_DIR": true, "TMPDIR": true, "KMX_HOME": true, "LANG": true, "LC_ALL": true}
+	allowed := map[string]bool{"HOME": true, "PATH": true, "XDG_CONFIG_HOME": true, "XDG_RUNTIME_DIR": true, "TMPDIR": true, "KMX_HOME": true, "GH_CONFIG_DIR": true, "LANG": true, "LC_ALL": true}
 	env := []string{}
 	for _, value := range os.Environ() {
 		name, _, ok := strings.Cut(value, "=")

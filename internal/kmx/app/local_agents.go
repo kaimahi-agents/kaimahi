@@ -82,6 +82,7 @@ type localAgentPromotion struct {
 	SchemaVersion int       `json:"schemaVersion"`
 	EventID       string    `json:"eventId"`
 	InstanceID    string    `json:"instanceId"`
+	RuntimeName   string    `json:"runtimeName"`
 	Promoted      time.Time `json:"promoted"`
 }
 
@@ -135,6 +136,9 @@ func validLocalAgentName(name string) bool {
 		}
 	}
 	return true
+}
+func validLocalAgentStageName(name string) bool {
+	return strings.HasPrefix(name, ".kmx-stage-") && validHexValue(strings.TrimPrefix(name, ".kmx-stage-"), 32)
 }
 func validDigest(value string) bool {
 	return strings.HasPrefix(value, "sha256:") && validHexValue(value[7:], 64)
@@ -434,9 +438,10 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 	err = withLocalAgentTransition(ctx, dir, func() error {
 		var active []LocalAgentInstance
 		var event string
+		var promotedName string
 		admitted := false
 		err := withLocalAgentInventoryTransition(ctx, func() error {
-			rows, err := ReadLocalAgentInstances(false)
+			rows, err := readLocalAgentInstances(false, false)
 			if err != nil {
 				return err
 			}
@@ -455,7 +460,7 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 							return nil
 						}
 						if current.State == "crashed" {
-							if err := writeLocalAgentStop(ctx, dir, current.EventID, current.Started); err != nil {
+							if err := writeLocalAgentStopLocked(ctx, dir, current.EventID, current.Started); err != nil {
 								return err
 							}
 							stoppedForRestart = current.EventID
@@ -513,6 +518,14 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 			}
 			instanceID := "li-" + event
 			name := pair.Agent.Identity.ID
+			promotedName = name
+			if options.Mode == LocalAgentActivationUpgrade {
+				base := strings.TrimRight(name, "-")
+				if len(base) > 54 {
+					base = strings.TrimRight(base[:54], "-")
+				}
+				name = base + "-" + event[:8]
+			}
 			if options.Mode == LocalAgentActivationNew {
 				name = options.Name
 				if name == "" {
@@ -561,11 +574,12 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 			return err
 		}
 		if options.Mode != LocalAgentActivationNew {
-			if err := writeLocalAgentPromotion(ctx, dir, result); err != nil {
+			if err := writeLocalAgentPromotion(ctx, dir, result, promotedName); err != nil {
 				_, _ = probeLocalAgent(context.Background(), result, "shutdown", localAgentIPCRequest{})
 				_ = writeLocalAgentStop(context.Background(), dir, event, result.Started)
 				return err
 			}
+			result.Name = promotedName
 			result.Primary = true
 		}
 		result.State, result.Ready = "running", true
@@ -596,15 +610,10 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 			}
 			if len(cleanupErrors) > 0 {
 				result.LastError = "upgrade active; old generation cleanup incomplete"
-				if result.Name == pair.Agent.Identity.ID {
-					base := pair.Agent.Identity.ID
-					if len(base) > 54 {
-						base = strings.TrimRight(base[:54], "-")
-					}
-					result.Name = base + "-" + event[:8]
-				}
-				raw, _ := json.Marshal(localAgentWarning{SchemaVersion: localAgentSchema, EventID: result.EventID, Warning: result.LastError, RuntimeName: result.Name, Observed: time.Now().UTC()})
-				_ = publishPrivateBytes(context.Background(), dir, "warning-"+result.EventID+".json", raw)
+				raw, _ := json.Marshal(localAgentWarning{SchemaVersion: localAgentSchema, EventID: result.EventID, Warning: result.LastError, Observed: time.Now().UTC()})
+				_ = withLocalAgentInventoryTransition(context.Background(), func() error {
+					return publishPrivateBytes(context.Background(), dir, "warning-"+result.EventID+".json", raw)
+				})
 			}
 		}
 		return nil
@@ -612,15 +621,27 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 	return result, created, err
 }
 
-func readInstanceEvents(ctx context.Context, dir *fileaccess.Directory, dirPath string) ([]LocalAgentInstance, map[string]time.Time, map[string]time.Time, error) {
+func readInstanceEvents(ctx context.Context, dir *fileaccess.Directory, dirPath string) ([]LocalAgentInstance, map[string]time.Time, map[string]localAgentPromotion, error) {
 	entries, err := dir.ReadDir(-1)
 	if err != nil || len(entries) > 2048 {
 		return nil, nil, nil, errors.New("local agent instance state is unavailable")
 	}
-	starts, stops, promotions := []LocalAgentInstance{}, map[string]time.Time{}, map[string]time.Time{}
+	starts, stops, promotions := []LocalAgentInstance{}, map[string]time.Time{}, map[string]localAgentPromotion{}
 	warnings := map[string]localAgentWarning{}
 	for _, entry := range entries {
 		name := entry.Name()
+		if validLocalAgentStageName(name) {
+			file, openErr := fileaccess.OpenPrivateFileAt(ctx, dir, name)
+			if openErr != nil {
+				return nil, nil, nil, errors.New("local agent interrupted publication could not be retired")
+			}
+			removeErr := fileaccess.RemovePrivateFileAt(ctx, dir, name, file)
+			closeErr := file.Close()
+			if removeErr != nil || closeErr != nil {
+				return nil, nil, nil, errors.New("local agent interrupted publication could not be retired")
+			}
+			continue
+		}
 		if strings.HasPrefix(name, "snapshot-") || name == "transition.lock" || validLocalAgentLockName(name) || validLocalAgentSocketName(name) {
 			continue
 		}
@@ -628,10 +649,10 @@ func readInstanceEvents(ctx context.Context, dir *fileaccess.Directory, dirPath 
 			raw, err := readPrivateBytes(ctx, dir, name, 4<<10)
 			var promotion localAgentPromotion
 			fileEvent := strings.TrimSuffix(strings.TrimPrefix(name, "primary-"), ".json")
-			if err != nil || strictLocalAgentJSON(raw, &promotion) != nil || promotion.SchemaVersion != localAgentSchema || promotion.EventID != fileEvent || !validHexValue(fileEvent, 24) || promotion.InstanceID != "li-"+fileEvent || promotion.Promoted.IsZero() {
+			if err != nil || strictLocalAgentJSON(raw, &promotion) != nil || promotion.SchemaVersion != localAgentSchema || promotion.EventID != fileEvent || !validHexValue(fileEvent, 24) || promotion.InstanceID != "li-"+fileEvent || promotion.RuntimeName != "" && !validLocalAgentName(promotion.RuntimeName) || promotion.Promoted.IsZero() {
 				return nil, nil, nil, errors.New("local agent promotion record is invalid")
 			}
-			promotions[fileEvent] = promotion.Promoted
+			promotions[fileEvent] = promotion
 			continue
 		}
 		if strings.HasPrefix(name, "stop-") && strings.HasSuffix(name, ".json") {
@@ -679,6 +700,11 @@ func readInstanceEvents(ctx context.Context, dir *fileaccess.Directory, dirPath 
 		starts = append(starts, record)
 	}
 	for i := range starts {
+		if promotion, primary := promotions[starts[i].EventID]; primary {
+			if promotion.RuntimeName != "" {
+				starts[i].Name = promotion.RuntimeName
+			}
+		}
 		if warning, ok := warnings[starts[i].EventID]; ok {
 			starts[i].LastError = warning.Warning
 			if warning.RuntimeName != "" {
@@ -733,9 +759,58 @@ func validLocalAgentRecord(record LocalAgentInstance, dir string) bool {
 		(record.TestsRevision == "" || validDigest(record.TestsRevision)) && (record.Provider == "fake" || record.Provider == "copilot") && agentfile.ValidModel(record.Model) && (record.Provider == "fake") == (record.Model == "fake") && record.State == "active"
 }
 
+func projectLocalAgentRecoveryNames(rows []LocalAgentInstance) {
+	used := map[string]bool{}
+	for i := range rows {
+		if rows[i].State != "stopped" {
+			used[rows[i].Name] = true
+		}
+	}
+	for i := range rows {
+		if rows[i].State == "stopped" || rows[i].Primary {
+			continue
+		}
+		primaryName := ""
+		for j := range rows {
+			if rows[j].State != "stopped" && rows[j].Primary && rows[j].ID == rows[i].ID {
+				primaryName = rows[j].Name
+				break
+			}
+		}
+		if primaryName == "" || rows[i].Name != primaryName {
+			continue
+		}
+		base := strings.TrimRight(rows[i].AuthoredName, "-")
+		if len(base) > 46 {
+			base = strings.TrimRight(base[:46], "-")
+		}
+		for width := 8; width <= len(rows[i].EventID); width += 4 {
+			candidate := base + "-" + rows[i].EventID[:width]
+			if !used[candidate] {
+				rows[i].Name = candidate
+				used[candidate] = true
+				break
+			}
+		}
+	}
+}
+
 func ReadLocalAgentInstances(all bool) ([]LocalAgentInstance, error) {
+	return readLocalAgentInstances(all, true)
+}
+
+func readLocalAgentInstances(all, lockInventory bool) ([]LocalAgentInstance, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	if lockInventory {
+		var rows []LocalAgentInstance
+		err := withLocalAgentInventoryTransition(ctx, func() error {
+			var err error
+			rows, err = readLocalAgentInstances(all, false)
+			return err
+		})
+		return rows, err
+	}
 	instances, err := localAgentDirectories(ctx, false)
 	if errors.Is(err, os.ErrNotExist) {
 		return []LocalAgentInstance{}, nil
@@ -781,18 +856,17 @@ func ReadLocalAgentInstances(all bool) ([]LocalAgentInstance, error) {
 				row.Stopped = &stopped
 			}
 			var newest time.Time
-			for event, promoted := range promotions {
-				if promoted.After(newest) || promoted.Equal(newest) && event > row.EventID {
-					newest = promoted
+			newestEvent := ""
+			for event, promotion := range promotions {
+				if promotion.Promoted.After(newest) || promotion.Promoted.Equal(newest) && event > newestEvent {
+					newest, newestEvent = promotion.Promoted, event
 				}
 			}
-			_, row.Primary = promotions[row.EventID]
-			if row.Primary && !promotions[row.EventID].Equal(newest) {
-				row.Primary = false
-			}
+			row.Primary = row.EventID == newestEvent
 			rows = append(rows, row)
 		}
 	}
+	projectLocalAgentRecoveryNames(rows)
 	jobs := make(chan int)
 	errCh := make(chan error, 1)
 	var workers sync.WaitGroup
@@ -996,6 +1070,12 @@ func StopLocalAgent(ctx context.Context, selector string) error {
 }
 
 func writeLocalAgentStop(ctx context.Context, dir *fileaccess.Directory, event string, started time.Time) error {
+	return withLocalAgentInventoryTransition(ctx, func() error {
+		return writeLocalAgentStopLocked(ctx, dir, event, started)
+	})
+}
+
+func writeLocalAgentStopLocked(ctx context.Context, dir *fileaccess.Directory, event string, started time.Time) error {
 	name := "stop-" + event + ".json"
 	if err := ensureLocalAgentCapacity(dir, name); err != nil {
 		return err
@@ -1008,13 +1088,24 @@ func writeLocalAgentStop(ctx context.Context, dir *fileaccess.Directory, event s
 	return publishPrivateBytes(ctx, dir, name, raw)
 }
 
-func writeLocalAgentPromotion(ctx context.Context, dir *fileaccess.Directory, record LocalAgentInstance) error {
+func writeLocalAgentPromotion(ctx context.Context, dir *fileaccess.Directory, record LocalAgentInstance, runtimeName string) error {
 	name := "primary-" + record.EventID + ".json"
 	if err := ensureLocalAgentCapacity(dir, name); err != nil {
 		return err
 	}
-	raw, _ := json.Marshal(localAgentPromotion{SchemaVersion: localAgentSchema, EventID: record.EventID, InstanceID: record.InstanceID, Promoted: time.Now().UTC()})
-	return publishPrivateBytes(ctx, dir, name, raw)
+	raw, _ := json.Marshal(localAgentPromotion{SchemaVersion: localAgentSchema, EventID: record.EventID, InstanceID: record.InstanceID, RuntimeName: runtimeName, Promoted: time.Now().UTC()})
+	return withLocalAgentInventoryTransition(ctx, func() error {
+		rows, err := readLocalAgentInstances(false, false)
+		if err != nil {
+			return err
+		}
+		for _, row := range rows {
+			if row.ID != record.ID && row.Name == runtimeName {
+				return errors.New("local agent runtime name is already active")
+			}
+		}
+		return publishPrivateBytes(ctx, dir, name, raw)
+	})
 }
 
 func ObserveLocalAgent(ctx context.Context, selector string) (LocalAgentObservation, error) {

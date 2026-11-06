@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -45,8 +46,23 @@ func TestLocalAgentSocketFallsBackFromLongTemporaryPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(socket) > 103 || !strings.HasPrefix(socket, "/tmp/kmx-runtime-") {
+	wantRoot := "/tmp/kmx-runtime-"
+	if runtime.GOOS == "darwin" {
+		wantRoot = "/private/tmp/kmx-runtime-"
+	}
+	if len(socket) > 103 || !strings.HasPrefix(socket, wantRoot) {
 		t.Fatalf("socket=%q", socket)
+	}
+}
+
+func TestLocalAgentWorkerEnvironmentPreservesSelectedGHConfigOnly(t *testing.T) {
+	t.Setenv("GH_CONFIG_DIR", "/private/gh-profile")
+	t.Setenv("GH_TOKEN", "secret")
+	t.Setenv("GITHUB_TOKEN", "secret")
+	env := localAgentWorkerEnvironment(LocalAgentInstance{ID: "md-123", EventID: strings.Repeat("a", 24)})
+	joined := strings.Join(env, "\n")
+	if !strings.Contains(joined, "GH_CONFIG_DIR=/private/gh-profile") || strings.Contains(joined, "GH_TOKEN=") || strings.Contains(joined, "GITHUB_TOKEN=") {
+		t.Fatalf("worker environment=%q", env)
 	}
 }
 
