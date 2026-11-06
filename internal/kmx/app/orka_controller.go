@@ -23,6 +23,10 @@ type orkaDeployment struct {
 	} `json:"metadata"`
 	Spec struct {
 		Replicas int32 `json:"replicas"`
+		Selector struct {
+			MatchLabels      map[string]string `json:"matchLabels"`
+			MatchExpressions []any             `json:"matchExpressions"`
+		} `json:"selector"`
 		Template struct {
 			Spec struct {
 				ServiceAccountName string `json:"serviceAccountName"`

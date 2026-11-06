@@ -661,9 +661,24 @@ func (a *App) OrkaReady() error {
 	if err != nil {
 		return fmt.Errorf("cannot read Orka in namespace %s, so it has NOT been shown to be ready: %w", OrkaNamespace, err)
 	}
+	required, err := orkaRequiredDeployments(deployments)
+	if err != nil {
+		return err
+	}
+	for _, d := range required {
+		if err := a.orkaDeploymentReady(d); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// orkaRequiredDeployments is the selected controller, plus the wrapper that a
+// legacy installation also requires.
+func orkaRequiredDeployments(deployments []orkaDeployment) ([]orkaDeployment, error) {
 	controller, legacy, err := selectOrkaController(deployments)
 	if err != nil {
-		return fmt.Errorf("nothing was verified: %w", err)
+		return nil, fmt.Errorf("nothing was verified: %w", err)
 	}
 	required := []orkaDeployment{controller}
 	if legacy {
@@ -676,40 +691,44 @@ func (a *App) OrkaReady() error {
 			}
 		}
 		if !found {
-			return fmt.Errorf("Orka's %s is not on this cluster in namespace %s: nothing was verified", orkaWrapper, OrkaNamespace)
+			return nil, fmt.Errorf("Orka's %s is not on this cluster in namespace %s: nothing was verified", orkaWrapper, OrkaNamespace)
 		}
 	}
-	for _, d := range required {
-		name := d.Metadata.Name
-		// Ready replicas alone are not a finished rollout. A Deployment whose
-		// new pod is in ImagePullBackOff still reports the OLD pod as ready,
-		// so `1/1` would pass a rollout that never landed. The generation and
-		// the updated/available counts are what distinguish "this spec is
-		// running" from "some spec is running".
-		switch {
-		case d.Spec.Replicas <= 0:
-			return fmt.Errorf("Orka's %s is scaled to %d in namespace %s, so nothing is running to verify.\n"+
-				"  Scale it up, or reinstall with `%s`",
-				name, d.Spec.Replicas, OrkaNamespace, a.operationCommand("cluster", "orka", "install"))
-		case d.Status.ObservedGeneration < d.Metadata.Generation:
-			return fmt.Errorf("Orka's %s has a spec its controller has not observed yet in namespace %s "+
-				"(generation %d, observed %d), so this lift is not complete.\n"+
-				"  Watch it finish:  kubectl --context %s -n %s rollout status deploy/%s",
-				name, OrkaNamespace, d.Metadata.Generation, d.Status.ObservedGeneration, shellArg(a.Cfg.KubeContext), OrkaNamespace, name)
-		case d.Status.UpdatedReplicas != d.Spec.Replicas,
-			d.Status.AvailableReplicas != d.Spec.Replicas,
-			d.Status.ReadyReplicas != d.Spec.Replicas,
-			d.Status.UnavailableReplicas != 0:
-			// List the namespace without guessing a deployment-specific label:
-			// Orka labels every pod `app.kubernetes.io/name=orka`.
-			return fmt.Errorf("Orka's %s has not finished rolling out in namespace %s: "+
-				"%d/%d updated, %d ready, %d available, %d unavailable.\n"+
-				"  A ready count alone can be the OLD pod while its replacement fails to start.\n"+
-				"  Its rollout says why:  kubectl --context %s -n %s rollout status deploy/%s\n"+
-				"  And the pods:          kubectl --context %s -n %s get pods",
-				name, OrkaNamespace, d.Status.UpdatedReplicas, d.Spec.Replicas, d.Status.ReadyReplicas,
-				d.Status.AvailableReplicas, d.Status.UnavailableReplicas, shellArg(a.Cfg.KubeContext), OrkaNamespace, name, shellArg(a.Cfg.KubeContext), OrkaNamespace)
-		}
+	return required, nil
+}
+
+// orkaDeploymentReady checks one Deployment's rollout as its status reports
+// it. That status can predate a node restart; see orkaServingReader.check.
+func (a *App) orkaDeploymentReady(d orkaDeployment) error {
+	name := d.Metadata.Name
+	// Ready replicas alone are not a finished rollout. A Deployment whose
+	// new pod is in ImagePullBackOff still reports the OLD pod as ready,
+	// so `1/1` would pass a rollout that never landed. The generation and
+	// the updated/available counts are what distinguish "this spec is
+	// running" from "some spec is running".
+	switch {
+	case d.Spec.Replicas <= 0:
+		return fmt.Errorf("Orka's %s is scaled to %d in namespace %s, so nothing is running to verify.\n"+
+			"  Scale it up, or reinstall with `%s`",
+			name, d.Spec.Replicas, OrkaNamespace, a.operationCommand("cluster", "orka", "install"))
+	case d.Status.ObservedGeneration < d.Metadata.Generation:
+		return fmt.Errorf("Orka's %s has a spec its controller has not observed yet in namespace %s "+
+			"(generation %d, observed %d), so this lift is not complete.\n"+
+			"  Watch it finish:  kubectl --context %s -n %s rollout status deploy/%s",
+			name, OrkaNamespace, d.Metadata.Generation, d.Status.ObservedGeneration, shellArg(a.Cfg.KubeContext), OrkaNamespace, name)
+	case d.Status.UpdatedReplicas != d.Spec.Replicas,
+		d.Status.AvailableReplicas != d.Spec.Replicas,
+		d.Status.ReadyReplicas != d.Spec.Replicas,
+		d.Status.UnavailableReplicas != 0:
+		// List the namespace without guessing a deployment-specific label:
+		// Orka labels every pod `app.kubernetes.io/name=orka`.
+		return fmt.Errorf("Orka's %s has not finished rolling out in namespace %s: "+
+			"%d/%d updated, %d ready, %d available, %d unavailable.\n"+
+			"  A ready count alone can be the OLD pod while its replacement fails to start.\n"+
+			"  Its rollout says why:  kubectl --context %s -n %s rollout status deploy/%s\n"+
+			"  And the pods:          kubectl --context %s -n %s get pods",
+			name, OrkaNamespace, d.Status.UpdatedReplicas, d.Spec.Replicas, d.Status.ReadyReplicas,
+			d.Status.AvailableReplicas, d.Status.UnavailableReplicas, shellArg(a.Cfg.KubeContext), OrkaNamespace, name, shellArg(a.Cfg.KubeContext), OrkaNamespace)
 	}
 	return nil
 }

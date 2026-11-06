@@ -46,6 +46,10 @@ func (a *App) orkaCapture(ctx context.Context, stdin []byte, args ...string) ([]
 				return nil, fmt.Errorf("kubectl request failed: namespace %s not found", OrkaNamespace)
 			}
 			return nil, fmt.Errorf("kubectl request failed: requested Kubernetes resource not found")
+		case strings.Contains(reason, `cannot get resource "services/proxy"`):
+			// Only the API server's own RBAC denial names the subresource;
+			// a workload answering 403 through a Service proxy does not.
+			return nil, fmt.Errorf("kubectl request failed: access to services/proxy forbidden")
 		case strings.Contains(reason, "forbidden"), strings.Contains(reason, "unauthorized"):
 			return nil, fmt.Errorf("kubectl request failed: access forbidden")
 		default:
