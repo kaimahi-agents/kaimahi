@@ -9,3 +9,6 @@
   run in parallel with unique names, while confirmed upgrade readies and promotes
   a replacement before gracefully stopping old sessions. Stable `md-...` source
   IDs remain unchanged and refuse ambiguous selection.
+- Standardize Run input on `-p, --prompt TEXT` and `--prompt-file FILE|-`; remove
+  the second positional input and make either flag input-only unless `--case`
+  explicitly selects a saved example too.

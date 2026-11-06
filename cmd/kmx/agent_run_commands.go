@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -26,18 +27,18 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 	var upgrade, parallel, yes bool
 	var runtimeName string
 	cmd := &cobra.Command{
-		Use: "run [FILE [input]]", Short: "Run an agent file or an existing Orka Agent",
-		Long: "Run FILE answers without checks; FILE \"input\" answers only that input.\n" +
-			"Answers: stdout. Route/diagnostics: stderr. Not evidence; checks: kmx test FILE.\n" +
-			"Live --agent: exit code 2 is pending; Tasks are never retried or deleted.\n" +
+		Use: "run [FILE]", Short: "Run an agent file or an existing Orka Agent",
+		Long: "Run FILE starts or reuses a resident agent and answers without checks.\n" +
+			"--prompt sends only that input. Answers: stdout; diagnostics: stderr.\n" +
+			"Use kmx test FILE for checks. Live --agent exit code 2 is pending; no retries.\n" +
 			"Read pending Tasks: kmx cluster task result. File retention and privacy:\n" +
 			previewCaveatsURL,
-		Example: "  kmx run greeter.agent.md\n  kmx run greeter.agent.md \"Say hello\"\n  kmx run --agent greeter --prompt \"Say hello\"",
+		Example: "  kmx run greeter.agent.md\n  kmx run greeter.agent.md --prompt \"Say hello\"\n  kmx run --agent greeter --prompt \"Say hello\"",
 		Args:    usageArgs(0, 0, "kmx run --agent <name> --prompt <text>"),
 	}
 	cmd.Flags().StringVar(&opt.Agent, "agent", "", "Live Orka Agent (required without FILE)")
 	cmd.Flags().StringVar(&opt.Namespace, "namespace", "", "Agent namespace (default: "+app.OrkaNamespace+")")
-	cmd.Flags().StringVar(&opt.Prompt, "prompt", "", "Input text (FILE or live Agent)")
+	cmd.Flags().StringVarP(&opt.Prompt, "prompt", "p", "", "Input text (FILE or live Agent)")
 	cmd.Flags().StringVar(&opt.PromptFile, "prompt-file", "", "Input file, or - for stdin (FILE/live Agent)")
 	cmd.Flags().DurationVar(&opt.Wait, "wait", 5*time.Minute, "Wait for answer (10s to 9m)")
 	cmd.Flags().StringVar(&opt.ResultPort, "result-port", "", "Loopback forward port (chosen automatically)")
@@ -58,12 +59,18 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 			return fileUsageError(fmt.Errorf("--yes requires --upgrade"))
 		}
 		effectiveOnce := once || state.deps.goos == "windows" || !state.deps.residentAgents
-		if len(args) == 1 || len(args) == 2 {
+		if len(args) == 2 {
+			return fileUsageError(fmt.Errorf("run accepts one agent FILE; use --prompt TEXT to send input"))
+		}
+		if len(args) == 1 {
+			if cmd.Flags().Changed("prompt") && (len(opt.Prompt) > agentfile.MaxInputBytes || !utf8.ValidString(opt.Prompt)) {
+				return fileUsageError(fmt.Errorf("--prompt requires UTF-8 input of at most 16 KiB"))
+			}
 			if !effectiveOnce {
 				if cmd.Flags().Changed("wait") && (opt.Wait < 10*time.Second || opt.Wait > 9*time.Minute) {
 					return fileUsageError(fmt.Errorf("--wait must be between 10s and 9m"))
 				}
-				for _, name := range []string{"case", "output", "no-content", "verbose", "prompt-file"} {
+				for _, name := range []string{"case", "output", "no-content", "verbose"} {
 					if cmd.Flags().Changed(name) {
 						return fileUsageError(fmt.Errorf("resident Run does not use --%s; add --once for file preview", name))
 					}
@@ -71,9 +78,6 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 			}
 			if err := validateFileCommand(cmd, state, file); err != nil {
 				return fileUsageError(err)
-			}
-			if len(args) == 2 && (cmd.Flags().Changed("prompt") || cmd.Flags().Changed("prompt-file")) {
-				return fileUsageError(fmt.Errorf("positional input cannot be combined with --prompt or --prompt-file"))
 			}
 			if cmd.Flags().Changed("prompt") && cmd.Flags().Changed("prompt-file") {
 				return fileUsageError(fmt.Errorf("only one of --prompt or --prompt-file is allowed"))
@@ -115,12 +119,16 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 	liveRun := appRun(state, func(a *app.App) error { return a.RunAgent(opt) })
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		effectiveOnce := once || state.deps.goos == "windows" || !state.deps.residentAgents
-		if len(args) == 1 || len(args) == 2 {
-			if len(args) == 2 {
-				opt.Prompt = args[1]
-				file.PositionalInput = true
-			}
+		if len(args) == 1 {
+			file.InputOnly = cmd.Flags().Changed("prompt") || cmd.Flags().Changed("prompt-file")
 			if !effectiveOnce {
+				if cmd.Flags().Changed("prompt-file") {
+					input, err := readPromptInput(state, opt.PromptFile)
+					if err != nil {
+						return err
+					}
+					opt.Prompt = input
+				}
 				if file.ToolBindings != "" || len(file.MCPServers) > 0 || file.NoMCPServers {
 					return fileUsageError(fmt.Errorf("resident local agents currently refuse explicit tool or MCP overrides"))
 				}

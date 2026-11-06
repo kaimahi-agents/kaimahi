@@ -104,7 +104,7 @@ func TestResidentRunActivatesCheckedPairAndOnceDoesNot(t *testing.T) {
 			deps.fileRunner = &cliPreviewFake{}
 			args := []string{"run", file, "--model", "fake"}
 			if once {
-				args = append(args, "Ada", "--once")
+				args = append(args, "--once", "-p", "Ada")
 			}
 			if err := execute(args, deps); err != nil {
 				t.Fatal(err)

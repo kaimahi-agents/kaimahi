@@ -23,6 +23,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
@@ -433,7 +434,7 @@ func (w *residentWorker) handle(ctx context.Context, request localAgentIPCReques
 }
 
 func (w *residentWorker) serveInvoke(conn net.Conn, request localAgentIPCRequest) {
-	if request.Input == "" || len(request.Input) > agentfile.MaxInputBytes || !validHexValue(request.InvocationID, 24) {
+	if request.Input == "" || len(request.Input) > agentfile.MaxInputBytes || !utf8.ValidString(request.Input) || !validHexValue(request.InvocationID, 24) {
 		_ = writeLocalAgentJSON(conn, localAgentIPCResponse{Error: "invalid invocation input"})
 		return
 	}

@@ -106,7 +106,7 @@ func TestGuardedWindowsAllowsPackageFreeFileCommands(t *testing.T) {
 		args func(string) []string
 	}{
 		{"run", func(file string) []string { return []string{"run", file} }},
-		{"run positional input", func(file string) []string { return []string{"run", file, "Grace"} }},
+		{"run prompt input", func(file string) []string { return []string{"run", file, "-p", "Grace"} }},
 		{"run presentation", func(file string) []string {
 			return []string{"run", file, "--case", "greeting", "--output", "json", "--prompt", "hello", "--no-content", "--verbose"}
 		}},

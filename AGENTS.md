@@ -82,6 +82,10 @@ invalid review as clean.
   canceling and closing old sessions (no drain guarantee), or `--new` for a parallel named generation. Stable IDs
   refuse ambiguous routing; Chat/stop/session routing accepts runtime names and
   instance IDs. Never silently replace an active generation.
+  Run input is flag-only: `-p, --prompt TEXT` or `--prompt-file FILE|-`; a second
+  positional argument is removed. Either input flag selects only that ad-hoc input
+  unless `--case` explicitly adds a saved example. Native Windows keeps
+  `--prompt-file` deferred.
 
 - Infrastructure and Orka commands live under `kmx cluster`; native workspace
   Test, publication, Deploy, destination inventory and artifact operations live
