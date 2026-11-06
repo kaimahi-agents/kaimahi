@@ -6,8 +6,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"syscall"
@@ -174,15 +176,53 @@ func createWindowsJob() (windows.Handle, error) {
 }
 
 func createWindowsJobParent(job windows.Handle) (windows.ProcessInformation, error) {
-	currentExecutable, err := os.Executable()
+	system32, err := windows.GetSystemDirectory()
 	if err != nil {
 		return windows.ProcessInformation{}, err
 	}
-	executable, err := windows.UTF16PtrFromString(currentExecutable)
+	ping := filepath.Join(system32, "ping.exe")
+	executable, err := windows.UTF16PtrFromString(ping)
 	if err != nil {
 		return windows.ProcessInformation{}, err
 	}
-	attributes, err := windows.NewProcThreadAttributeList(1)
+	commandLine, err := windows.UTF16PtrFromString(windows.ComposeCommandLine([]string{ping, "-t", "127.0.0.1"}))
+	if err != nil {
+		return windows.ProcessInformation{}, err
+	}
+	security := windows.SecurityAttributes{
+		Length:        uint32(unsafe.Sizeof(windows.SecurityAttributes{})),
+		InheritHandle: 1,
+	}
+	var stdinRead, stdinWrite, stdoutRead, stdoutWrite windows.Handle
+	if err := windows.CreatePipe(&stdinRead, &stdinWrite, &security, 0); err != nil {
+		return windows.ProcessInformation{}, err
+	}
+	defer func() {
+		if stdinRead != 0 {
+			_ = windows.CloseHandle(stdinRead)
+		}
+		if stdinWrite != 0 {
+			_ = windows.CloseHandle(stdinWrite)
+		}
+	}()
+	if err := windows.SetHandleInformation(stdinWrite, windows.HANDLE_FLAG_INHERIT, 0); err != nil {
+		return windows.ProcessInformation{}, err
+	}
+	if err := windows.CreatePipe(&stdoutRead, &stdoutWrite, &security, 0); err != nil {
+		return windows.ProcessInformation{}, err
+	}
+	defer func() {
+		if stdoutRead != 0 {
+			_ = windows.CloseHandle(stdoutRead)
+		}
+		if stdoutWrite != 0 {
+			_ = windows.CloseHandle(stdoutWrite)
+		}
+	}()
+	if err := windows.SetHandleInformation(stdoutRead, windows.HANDLE_FLAG_INHERIT, 0); err != nil {
+		return windows.ProcessInformation{}, err
+	}
+	attributes, err := windows.NewProcThreadAttributeList(2)
 	if err != nil {
 		return windows.ProcessInformation{}, err
 	}
@@ -191,19 +231,60 @@ func createWindowsJobParent(job windows.Handle) (windows.ProcessInformation, err
 	if err := attributes.Update(procThreadAttributeJobList, unsafe.Pointer(&jobs[0]), unsafe.Sizeof(jobs)); err != nil {
 		return windows.ProcessInformation{}, err
 	}
+	inherited := [...]windows.Handle{stdinRead, stdoutWrite}
+	if err := attributes.Update(windows.PROC_THREAD_ATTRIBUTE_HANDLE_LIST, unsafe.Pointer(&inherited[0]), unsafe.Sizeof(inherited)); err != nil {
+		return windows.ProcessInformation{}, err
+	}
 	startup := windows.StartupInfoEx{
-		StartupInfo:             windows.StartupInfo{Cb: uint32(unsafe.Sizeof(windows.StartupInfoEx{}))},
+		StartupInfo: windows.StartupInfo{
+			Cb:        uint32(unsafe.Sizeof(windows.StartupInfoEx{})),
+			Flags:     windows.STARTF_USESTDHANDLES,
+			StdInput:  stdinRead,
+			StdOutput: stdoutWrite,
+			StdErr:    stdoutWrite,
+		},
 		ProcThreadAttributeList: attributes.List(),
 	}
 	var process windows.ProcessInformation
 	err = windows.CreateProcess(
-		executable, nil, nil, nil, false,
-		windows.CREATE_SUSPENDED|windows.CREATE_NO_WINDOW|windows.EXTENDED_STARTUPINFO_PRESENT,
+		executable, commandLine, nil, nil, true,
+		windows.CREATE_NO_WINDOW|windows.EXTENDED_STARTUPINFO_PRESENT,
 		nil, nil, &startup.StartupInfo, &process,
 	)
 	runtime.KeepAlive(jobs)
+	runtime.KeepAlive(inherited)
 	if err != nil {
 		return windows.ProcessInformation{}, err
+	}
+	_ = windows.CloseHandle(stdinRead)
+	stdinRead = 0
+	_ = windows.CloseHandle(stdoutWrite)
+	stdoutWrite = 0
+	ready := os.NewFile(uintptr(stdoutRead), "subprocess job parent output")
+	if ready == nil {
+		_ = releaseWindowsJobParent(process)
+		return windows.ProcessInformation{}, errors.New("retain subprocess job parent output")
+	}
+	stdoutRead = 0
+	readyResult := make(chan error, 1)
+	go func() {
+		var first [1]byte
+		_, err := io.ReadFull(ready, first[:])
+		readyResult <- err
+	}()
+	select {
+	case err := <-readyResult:
+		closeErr := ready.Close()
+		if err != nil || closeErr != nil {
+			_ = releaseWindowsJobParent(process)
+			return windows.ProcessInformation{}, errors.Join(err, closeErr)
+		}
+	case <-time.After(windowsTreeWait):
+		_ = windows.TerminateProcess(process.Process, 1)
+		_ = ready.Close()
+		<-readyResult
+		_ = releaseWindowsJobParent(process)
+		return windows.ProcessInformation{}, errors.New("subprocess job parent did not initialize")
 	}
 	return process, nil
 }
