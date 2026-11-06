@@ -239,7 +239,9 @@ class AppShardWorkflowTests(unittest.TestCase):
         for contract in ("$runJSON.verdict -ceq 'unknown'",
                          "$runJSON.fullPass -eq $false",
                          "$runJSON.reasonCode -ceq 'completion_ready'",
-                         "@($runJSON.examples[0].assertions).Count -eq 0"):
+                         "$runJSON.selection.scope -ceq 'subset'",
+                         "@($runJSON.selection.caseIds).Count -eq 0",
+                         "@($runJSON.examples).Count -eq 0"):
             self.assertIn(contract, helper)
         self.assertNotIn("$runJSON.verdict -ceq 'pass'", helper)
         self.assertIn("$failedJSON.verdict -ceq 'fail'", helper)
