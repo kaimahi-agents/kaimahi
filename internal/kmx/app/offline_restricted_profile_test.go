@@ -34,6 +34,7 @@ func TestOfflineRestrictedValuesPreserved(t *testing.T) {
 	}
 }
 
+// Reject aliases before Go's case-insensitive decoder could overwrite a value.
 func TestOfflineRestrictedValueAliasesRefused(t *testing.T) {
 	var v offlineValues
 	if err := offlineJSON([]byte(`{"workers":{"ai":{"image":{"digest":"first"},"Image":{"digest":"second"}}}}`), &v, false); err == nil {
@@ -41,6 +42,7 @@ func TestOfflineRestrictedValueAliasesRefused(t *testing.T) {
 	}
 }
 
+// Read the shipped bytes, whose exact hash is the catalog authority.
 func restrictedProfileFixture(t *testing.T) ([]byte, offlineProfile) {
 	t.Helper()
 	raw, err := os.ReadFile("offline_profiles/orka-7916cd1c-native-v1.json")
@@ -54,6 +56,7 @@ func restrictedProfileFixture(t *testing.T) ([]byte, offlineProfile) {
 	return raw, p
 }
 
+// Source metadata describes the package; the compiled bytes authorize its hash.
 func TestOfflineRestrictedProfilePins(t *testing.T) {
 	raw, p := restrictedProfileFixture(t)
 	if p.Profile != restrictedProfileID || p.Orka.Mode != "source" || p.Orka.Identity != restrictedSourceSHA || p.Install == nil {

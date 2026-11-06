@@ -1714,9 +1714,28 @@ or building images. `install.chart.source` records the commit, directory and Git
 tree; `install.chart.sha256` authorizes the exact archive bytes. These fields are
 source-binding metadata, not upstream release signatures or runtime Git checks.
 Helm packaging can change archive timestamps: a fresh package is not assumed to
-have the recorded checksum. Keep the original package as an image-preparation
-input. The controller and worker manifests/configs are native children of the
-unchanged published image indexes; kind and the session loader are not repinned.
+have the recorded checksum. The original archive is retained, base64-encoded,
+in the [install fixture](../internal/kmx/app/testdata/offline-7916-install.json),
+alongside the published descriptor and both architectures' OCI metadata. From a
+checkout containing this profile, extract the exact bytes without rebuilding:
+
+```bash
+python3 - <<'PY'
+import base64, hashlib, json
+from pathlib import Path
+fixture = json.loads(Path('internal/kmx/app/testdata/offline-7916-install.json').read_text())
+chart = b''.join(base64.b64decode(chunk, validate=True) for chunk in fixture['chartChunks'])
+assert hashlib.sha256(chart).hexdigest() == '19c50cff36855b8792b4777c89c598cf33ea70180e677e1a4758fc0211f069ed'
+Path('bundle').mkdir(exist_ok=True)
+with Path('bundle/chart.tgz').open('xb') as output:
+    output.write(chart)
+PY
+```
+
+This only restores the retained chart, refusing to overwrite an existing file;
+it does not create a complete bundle or fetch/import images. The controller and
+worker manifests/configs are native children of the unchanged published image
+indexes; kind and the session loader are not repinned.
 
 This profile enables `workers.ai.rbacProfile: restricted`, including the chart's
 controller-wide context-token enforcement. It does not configure issuer grants
