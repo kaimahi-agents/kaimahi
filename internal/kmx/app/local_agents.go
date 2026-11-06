@@ -284,6 +284,23 @@ func withLocalAgentInventoryTransition(ctx context.Context, work func() error) e
 	return work()
 }
 
+func withExistingLocalAgentInventoryTransition(ctx context.Context, work func() error) error {
+	instances, err := localAgentDirectories(ctx, false)
+	if err != nil {
+		return err
+	}
+	defer instances.Close()
+	lock, err := fileaccess.OpenPrivateFileAt(ctx, instances, "inventory.lock")
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	if err := waitLocalAgentLock(ctx, lock); err != nil {
+		return err
+	}
+	return work()
+}
+
 func waitLocalAgentLock(ctx context.Context, lock *fileaccess.PrivateFile) error {
 	deadline := time.NewTimer(30 * time.Second)
 	defer deadline.Stop()
@@ -473,6 +490,21 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 					return &LocalAgentDriftError{Active: active[0], RequestedSnapshot: pair.SnapshotRevision}
 				}
 			}
+			promotedName = pair.Agent.Identity.ID
+			if options.Mode == LocalAgentActivationUpgrade {
+				for _, current := range active {
+					if current.Primary {
+						promotedName = current.Name
+						break
+					}
+				}
+				if len(active) == 1 && !active[0].Primary {
+					promotedName = active[0].Name
+				}
+			}
+			if options.Mode != LocalAgentActivationNew && !validLocalAgentName(promotedName) {
+				return errors.New("local agent runtime name must use lowercase letters, digits and internal hyphens")
+			}
 			event, err = randomEventID()
 			if err != nil {
 				return err
@@ -518,7 +550,6 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 			}
 			instanceID := "li-" + event
 			name := pair.Agent.Identity.ID
-			promotedName = name
 			if options.Mode == LocalAgentActivationUpgrade {
 				base := strings.TrimRight(name, "-")
 				if len(base) > 54 {
@@ -762,9 +793,7 @@ func validLocalAgentRecord(record LocalAgentInstance, dir string) bool {
 func projectLocalAgentRecoveryNames(rows []LocalAgentInstance) {
 	used := map[string]bool{}
 	for i := range rows {
-		if rows[i].State != "stopped" {
-			used[rows[i].Name] = true
-		}
+		used[rows[i].Name] = true
 	}
 	for i := range rows {
 		if rows[i].State == "stopped" || rows[i].Primary {
@@ -792,6 +821,25 @@ func projectLocalAgentRecoveryNames(rows []LocalAgentInstance) {
 				break
 			}
 		}
+		if rows[i].Name != primaryName {
+			continue
+		}
+		for attempt := 0; attempt <= len(rows); attempt++ {
+			suffix := fmt.Sprintf("%s-r%x", rows[i].EventID, attempt)
+			candidateBase := base
+			if limit := 63 - len(suffix) - 1; len(candidateBase) > limit {
+				candidateBase = strings.TrimRight(candidateBase[:limit], "-")
+			}
+			if candidateBase == "" {
+				candidateBase = "agent"
+			}
+			candidate := candidateBase + "-" + suffix
+			if !used[candidate] {
+				rows[i].Name = candidate
+				used[candidate] = true
+				break
+			}
+		}
 	}
 }
 
@@ -803,8 +851,17 @@ func readLocalAgentInstances(all, lockInventory bool) ([]LocalAgentInstance, err
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if lockInventory {
+		root, err := config.StateDir()
+		if err != nil {
+			return nil, err
+		}
+		if _, err := os.Lstat(filepath.Join(root, "local-agents", "instances")); errors.Is(err, os.ErrNotExist) {
+			return []LocalAgentInstance{}, nil
+		} else if err != nil {
+			return nil, errors.New("local agent inventory is unavailable")
+		}
 		var rows []LocalAgentInstance
-		err := withLocalAgentInventoryTransition(ctx, func() error {
+		err = withExistingLocalAgentInventoryTransition(ctx, func() error {
 			var err error
 			rows, err = readLocalAgentInstances(all, false)
 			return err
@@ -1089,6 +1146,9 @@ func writeLocalAgentStopLocked(ctx context.Context, dir *fileaccess.Directory, e
 }
 
 func writeLocalAgentPromotion(ctx context.Context, dir *fileaccess.Directory, record LocalAgentInstance, runtimeName string) error {
+	if !validLocalAgentName(runtimeName) {
+		return errors.New("local agent runtime name must use lowercase letters, digits and internal hyphens")
+	}
 	name := "primary-" + record.EventID + ".json"
 	if err := ensureLocalAgentCapacity(dir, name); err != nil {
 		return err

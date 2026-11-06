@@ -455,6 +455,111 @@ func TestPromotedUpgradeRecoveryNameAvoidsParallelInstance(t *testing.T) {
 	}
 }
 
+func TestProjectedRecoveryNameRemainsReservedAfterBlockerStops(t *testing.T) {
+	event := "1234567890abcdef12345678"
+	rows := func(blockerState string) []LocalAgentInstance {
+		return []LocalAgentInstance{
+			{EventID: event, Name: "greeter", AuthoredName: "greeter", State: "running"},
+			{EventID: "abcdefabcdefabcdefabcdef", Name: "greeter", AuthoredName: "greeter", State: "running", Primary: true},
+			{EventID: "fedcbafedcbafedcbafedcba", Name: "greeter-" + event[:8], AuthoredName: "greeter", State: blockerState},
+		}
+	}
+	active := rows("running")
+	projectLocalAgentRecoveryNames(active)
+	want := active[0].Name
+	if want != "greeter-"+event[:12] {
+		t.Fatalf("initial recovery name=%q", want)
+	}
+	afterStop := rows("stopped")
+	projectLocalAgentRecoveryNames(afterStop)
+	if afterStop[0].Name != want {
+		t.Fatalf("recovery name changed after blocker stopped: got %q want %q", afterStop[0].Name, want)
+	}
+}
+
+func TestProjectedRecoveryNameFallsBackAfterPrefixNamesExhausted(t *testing.T) {
+	event := "1234567890abcdef12345678"
+	rows := []LocalAgentInstance{
+		{EventID: event, Name: "greeter", AuthoredName: "greeter", State: "running"},
+		{EventID: "abcdefabcdefabcdefabcdef", Name: "greeter", AuthoredName: "greeter", State: "running", Primary: true},
+	}
+	for width := 8; width <= len(event); width += 4 {
+		rows = append(rows, LocalAgentInstance{EventID: fmt.Sprintf("%024x", width), Name: "greeter-" + event[:width], AuthoredName: "greeter", State: "running"})
+	}
+	projectLocalAgentRecoveryNames(rows)
+	if rows[0].Name == "greeter" || !validLocalAgentName(rows[0].Name) {
+		t.Fatalf("no valid fallback recovery name: %q", rows[0].Name)
+	}
+	for i := 1; i < len(rows); i++ {
+		if rows[0].Name == rows[i].Name {
+			t.Fatalf("fallback recovery name collides with row %d: %q", i, rows[0].Name)
+		}
+	}
+}
+
+func TestUpgradePreservesSoleValidRuntimeNameForAuthoredTrailingHyphen(t *testing.T) {
+	home := t.TempDir()
+	if err := os.Chmod(home, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KMX_HOME", home)
+	source := filepath.Join(t.TempDir(), "agent.agent.md")
+	write := func(instructions string) *agentfile.Pair {
+		raw := []byte(fmt.Sprintf("# Agent\n\n## Identity\n- **ID:** agent-\n- **Purpose:** Test upgrades.\n\n## Accountable Responsibilities\n%s\n\n## Non-Responsibilities\nDo not call tools.\n\n## Collaboration and Review Authority\nReturn directly.\n\n## Model\n- **Preferred:** fake\n", instructions))
+		if err := os.WriteFile(source, raw, 0600); err != nil {
+			t.Fatal(err)
+		}
+		pair, err := agentfile.LoadPair(source, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if pair.Agent.Identity.ID != "agent-" {
+			t.Fatalf("authored identity=%q", pair.Agent.Identity.ID)
+		}
+		return pair
+	}
+	first, _, err := ActivateLocalAgentWithOptions(t.Context(), "", write("First."), "fake", "", "fake", LocalAgentActivationOptions{Mode: LocalAgentActivationNew, Name: "worker"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_, _ = probeLocalAgent(context.Background(), first, "shutdown", localAgentIPCRequest{})
+		_ = waitLocalAgentStopped(context.Background(), first)
+	}()
+	upgraded, created, err := ActivateLocalAgentWithOptions(t.Context(), "", write("Second."), "fake", "", "fake", LocalAgentActivationOptions{Mode: LocalAgentActivationUpgrade})
+	if err != nil || !created {
+		t.Fatalf("upgrade=%+v created=%v err=%v", upgraded, created, err)
+	}
+	defer func() {
+		_, _ = probeLocalAgent(context.Background(), upgraded, "shutdown", localAgentIPCRequest{})
+		_ = waitLocalAgentStopped(context.Background(), upgraded)
+	}()
+	if upgraded.Name != "worker" {
+		t.Fatalf("upgraded runtime name=%q", upgraded.Name)
+	}
+	rows, err := ReadLocalAgentInstances(false)
+	if err != nil || len(rows) != 1 || rows[0].Name != "worker" {
+		t.Fatalf("rows=%+v err=%v", rows, err)
+	}
+}
+
+func TestReadLocalAgentInstancesDoesNotCreateAbsentState(t *testing.T) {
+	parent := t.TempDir()
+	state := filepath.Join(parent, "missing-state")
+	t.Setenv("KMX_HOME", state)
+	if err := os.Chmod(parent, 0500); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(parent, 0700)
+	rows, err := ReadLocalAgentInstances(false)
+	if err != nil || len(rows) != 0 {
+		t.Fatalf("rows=%+v err=%v", rows, err)
+	}
+	if _, err := os.Stat(state); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("absent state was created: %v", err)
+	}
+}
+
 func TestPromotionRefusesNameOwnedByAnotherSource(t *testing.T) {
 	home := t.TempDir()
 	if err := os.Chmod(home, 0700); err != nil {
@@ -491,6 +596,9 @@ func TestPromotionRefusesNameOwnedByAnotherSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer dir.Close()
+	if err := writeLocalAgentPromotion(t.Context(), dir, record, "invalid-"); err == nil || !strings.Contains(err.Error(), "runtime name") {
+		t.Fatalf("invalid promotion name err=%v", err)
+	}
 	if err := writeLocalAgentPromotion(t.Context(), dir, record, "taken"); err == nil || !strings.Contains(err.Error(), "already active") {
 		t.Fatalf("promotion err=%v", err)
 	}
