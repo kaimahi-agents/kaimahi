@@ -117,7 +117,8 @@ does not provision an issuer or narrow existing grants. The older `orka-59703d6e
 profile remains unchanged. This is not a released Orka version or a live guest
 qualification: controller startup and native calls under enforcement without an
 issuer have not been tested here. Native denied-read and leakage checks remain
-separate. See the [source-package binding](kmx.md#source-packaged-restricted-profile).
+separate. Reuse compares values and workload settings, not live RBAC drift.
+See the [source-package binding](kmx.md#source-packaged-restricted-profile).
 
 Exact healthy reuse compares all custom values and live workload execution
 settings, preserves chart data/keys and reconciles only the result reader.

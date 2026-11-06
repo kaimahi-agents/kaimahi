@@ -77,7 +77,9 @@ func TestOfflineRestrictedProfilePins(t *testing.T) {
 			t.Fatal(err)
 		}
 		var v map[string]any
-		json.Unmarshal(b, &v)
+		if err = json.Unmarshal(b, &v); err != nil {
+			t.Fatal(err)
+		}
 		if v["workers"].(map[string]any)["ai"].(map[string]any)["rbacProfile"] != "restricted" {
 			t.Fatal("restricted not enabled", arch)
 		}
@@ -119,9 +121,14 @@ func TestOfflineRestrictedProfilePins(t *testing.T) {
 	if p.Node.IndexDigest != old.Node.IndexDigest || p.Install.Images["session-loader"].IndexDigest != old.Install.Images["session-loader"].IndexDigest {
 		t.Fatal("unrelated kind/session loader repinned")
 	}
-	oldValues, _ := json.Marshal(old.Install.Values["amd64"])
+	oldValues, err := json.Marshal(old.Install.Values["amd64"])
+	if err != nil {
+		t.Fatal(err)
+	}
 	var oldMap map[string]any
-	json.Unmarshal(oldValues, &oldMap)
+	if err = json.Unmarshal(oldValues, &oldMap); err != nil {
+		t.Fatal(err)
+	}
 	if _, ok := oldMap["workers"].(map[string]any)["ai"].(map[string]any)["rbacProfile"]; ok {
 		t.Fatal("old profile values changed")
 	}
