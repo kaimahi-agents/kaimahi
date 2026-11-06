@@ -106,7 +106,7 @@ func TestWindowsRunnerCancellationReapsDescendantTree(t *testing.T) {
 				done <- test.run(&Runner{Context: ctx, Stdout: io.Discard, Stderr: io.Discard}, os.Args[0], args)
 			}()
 
-			processes := readWindowsHelperProcesses(t, pidFile)
+			processes := readWindowsHelperProcessesWhileRunning(t, pidFile, done)
 			parent := openWindowsProcess(t, processes.Parent)
 			child := openWindowsProcess(t, processes.Child)
 			cancel()
@@ -346,6 +346,10 @@ func helperArguments(args []string) []string {
 }
 
 func readWindowsHelperProcesses(t *testing.T, path string) windowsHelperProcesses {
+	return readWindowsHelperProcessesWhileRunning(t, path, nil)
+}
+
+func readWindowsHelperProcessesWhileRunning(t *testing.T, path string, done <-chan error) windowsHelperProcesses {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
@@ -357,6 +361,13 @@ func readWindowsHelperProcesses(t *testing.T, path string) windowsHelperProcesse
 			}
 		} else if !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("read helper process IDs: %v", err)
+		}
+		if done != nil {
+			select {
+			case err := <-done:
+				t.Fatalf("helper exited before publishing process IDs: %v", err)
+			default:
+			}
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
