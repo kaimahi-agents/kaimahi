@@ -25,6 +25,8 @@ import (
 
 const localAgentSchema = 2
 
+var errLocalAgentInventoryUninitialized = errors.New("local agent inventory is uninitialized")
+
 type LocalAgentInstance struct {
 	SchemaVersion    int        `json:"schemaVersion"`
 	EventID          string     `json:"eventId"`
@@ -291,6 +293,22 @@ func withExistingLocalAgentInventoryTransition(ctx context.Context, work func() 
 	}
 	defer instances.Close()
 	lock, err := fileaccess.OpenPrivateFileAt(ctx, instances, "inventory.lock")
+	if errors.Is(err, os.ErrNotExist) {
+		// Activation publishes the lock before any source entry. Recheck the lock
+		// after observing entries so a concurrent initializer is either joined or
+		// the empty read linearizes before its lock publication.
+		entries, readErr := instances.ReadDir(-1)
+		if readErr != nil {
+			return readErr
+		}
+		lock, err = fileaccess.OpenPrivateFileAt(ctx, instances, "inventory.lock")
+		if errors.Is(err, os.ErrNotExist) {
+			if len(entries) != 0 {
+				return errors.New("local agent inventory is unavailable")
+			}
+			return errLocalAgentInventoryUninitialized
+		}
+	}
 	if err != nil {
 		return err
 	}
@@ -469,6 +487,7 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 					active = append(active, current)
 				}
 			}
+			promotedName = pair.Agent.Identity.ID
 			if options.Mode == LocalAgentActivationNormal {
 				for _, current := range active {
 					if current.SnapshotRevision == pair.SnapshotRevision && current.Provider == provider && current.Model == model {
@@ -477,6 +496,15 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 							return nil
 						}
 						if current.State == "crashed" {
+							promotedName = current.Name
+							if !validLocalAgentName(promotedName) {
+								return errors.New("local agent runtime name must use lowercase letters, digits and internal hyphens")
+							}
+							for _, row := range rows {
+								if row.EventID != current.EventID && row.Name == promotedName {
+									return errors.New("local agent runtime name is already active")
+								}
+							}
 							if err := writeLocalAgentStopLocked(ctx, dir, current.EventID, current.Started); err != nil {
 								return err
 							}
@@ -490,16 +518,23 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 					return &LocalAgentDriftError{Active: active[0], RequestedSnapshot: pair.SnapshotRevision}
 				}
 			}
-			promotedName = pair.Agent.Identity.ID
 			if options.Mode == LocalAgentActivationUpgrade {
+				selected := false
 				for _, current := range active {
 					if current.Primary {
 						promotedName = current.Name
+						selected = true
 						break
 					}
 				}
-				if len(active) == 1 && !active[0].Primary {
-					promotedName = active[0].Name
+				if !selected && len(active) > 0 {
+					oldest := active[0]
+					for _, current := range active[1:] {
+						if current.Sequence < oldest.Sequence {
+							oldest = current
+						}
+					}
+					promotedName = oldest.Name
 				}
 			}
 			if options.Mode != LocalAgentActivationNew && !validLocalAgentName(promotedName) {
@@ -549,9 +584,9 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 				return errors.New("local agent registration sequence exhausted")
 			}
 			instanceID := "li-" + event
-			name := pair.Agent.Identity.ID
+			name := promotedName
 			if options.Mode == LocalAgentActivationUpgrade {
-				base := strings.TrimRight(name, "-")
+				base := strings.TrimRight(pair.Agent.Identity.ID, "-")
 				if len(base) > 54 {
 					base = strings.TrimRight(base[:54], "-")
 				}
@@ -801,7 +836,7 @@ func projectLocalAgentRecoveryNames(rows []LocalAgentInstance) {
 		}
 		primaryName := ""
 		for j := range rows {
-			if rows[j].State != "stopped" && rows[j].Primary && rows[j].ID == rows[i].ID {
+			if rows[j].Primary && rows[j].ID == rows[i].ID {
 				primaryName = rows[j].Name
 				break
 			}
@@ -815,7 +850,7 @@ func projectLocalAgentRecoveryNames(rows []LocalAgentInstance) {
 		}
 		for width := 8; width <= len(rows[i].EventID); width += 4 {
 			candidate := base + "-" + rows[i].EventID[:width]
-			if !used[candidate] {
+			if validLocalAgentName(candidate) && !used[candidate] {
 				rows[i].Name = candidate
 				used[candidate] = true
 				break
@@ -834,7 +869,7 @@ func projectLocalAgentRecoveryNames(rows []LocalAgentInstance) {
 				candidateBase = "agent"
 			}
 			candidate := candidateBase + "-" + suffix
-			if !used[candidate] {
+			if validLocalAgentName(candidate) && !used[candidate] {
 				rows[i].Name = candidate
 				used[candidate] = true
 				break
@@ -866,6 +901,9 @@ func readLocalAgentInstances(all, lockInventory bool) ([]LocalAgentInstance, err
 			rows, err = readLocalAgentInstances(all, false)
 			return err
 		})
+		if errors.Is(err, errLocalAgentInventoryUninitialized) {
+			return []LocalAgentInstance{}, nil
+		}
 		return rows, err
 	}
 	instances, err := localAgentDirectories(ctx, false)
