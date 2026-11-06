@@ -257,7 +257,10 @@ func TestLocalRegistrationRejectsOrphanWarning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = StopLocalAgent(t.Context(), record.InstanceID) }()
+	defer func() {
+		_, _ = probeLocalAgent(context.Background(), record, "shutdown", localAgentIPCRequest{})
+		_ = waitLocalAgentStopped(context.Background(), record)
+	}()
 	dir, _, err := localAgentInstanceDirectory(t.Context(), record.ID, false)
 	if err != nil {
 		t.Fatal(err)
