@@ -183,14 +183,14 @@ deployment qualification, suite evidence, a passing receipt, or authority to
 publish or deploy. `kmx run FILE`, `kmx test FILE` and MCP Run/Test use it for
 fake/local and default or explicit Copilot routes through the `agentpreview.Runner` interface.
 CLI `kmx run FILE --once` executes the saved inputs and returns answers without evaluating
-assertions or setting up a judge. Explicit positional input runs that input; saved
-inputs explicitly selected alongside it keep their own fixtures. Completed Run
+assertions or setting up a judge. Explicit `-p, --prompt` or `--prompt-file` input
+runs only that input unless `--case` also selects a saved example. Completed Run
 rows are **ANSWERED**, not passing tests; JSON keeps an unknown verdict and
 `fullPass: false`. No judge is selected or authenticated for CLI Run. Test and the
 existing single-source MCP Run/Test behavior continue to evaluate checks.
 
 By default, `kmx run FILE` starts or reuses a resident local process bound to the
-checked snapshot and inference route; it sends a positional/prompt input through
+checked snapshot and inference route; it sends `--prompt` or `--prompt-file` input through
 a new resident session when supplied. `--once` retains this invocation-owned
 preview path. Owner-only snapshot cache retains exact authored bytes in cleartext,
 like preview journals. The resident worker retains session history in memory. An

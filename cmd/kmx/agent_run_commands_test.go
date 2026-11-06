@@ -18,6 +18,7 @@ func TestRunAndResultCommandValidation(t *testing.T) {
 	}{
 		{[]string{"run", "agents/sample", "--agent", "sample", "--prompt", "hello"}, "--agent"},
 		{[]string{"run", "agents/sample", "--prompt", "hello", "--prompt-file", "-"}, "--prompt"},
+		{[]string{"run", "agents/sample", "hello"}, "use --prompt"},
 		{[]string{"run", "agents/sample"}, "Invalid agent file"},
 		{[]string{"run", "agents/sample", "--prompt", "hello", "--context", "kind-test"}, "usage"},
 		{[]string{"run", "--agent", "sample", "--prompt", "hello", "--to-context", "kind-test"}, "--to-context"},
@@ -44,7 +45,7 @@ func TestRunAndResultHelpShowTimeoutContract(t *testing.T) {
 		args []string
 		want []string
 	}{
-		{[]string{"run", "--help"}, []string{"--prompt-file", "--wait", "exit code 2", "automatically"}},
+		{[]string{"run", "--help"}, []string{"-p, --prompt", "--prompt-file", "--wait", "exit code 2", "automatically"}},
 		{[]string{"cluster", "task", "result", "--help"}, []string{"--wait", "exit code 2", "automatically"}},
 		{[]string{"eval", "--help"}, []string{"--result-port", "automatically"}},
 		{[]string{"lift", "--help"}, []string{"--result-port", "automatically"}},

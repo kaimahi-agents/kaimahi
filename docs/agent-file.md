@@ -195,7 +195,7 @@ inline authoring keeps this rule; paired CLI recording writes only the tests fil
 
 `kmx run FILE` and `kmx test FILE` read the selected tests file with the shared
 reader. Run returns answers without checks; Test evaluates the checks. Add
-`--tests FILE` to select an override, or use `run FILE "input"` for only that
+`--tests FILE` to select an override, or use `run FILE --prompt "input"` for only that
 input. No source migration is automatic. A missing or empty test source is not
 a passing Test.
 
