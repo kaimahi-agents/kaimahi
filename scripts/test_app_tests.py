@@ -179,6 +179,7 @@ class AppShardWorkflowTests(unittest.TestCase):
         self.assertIn("$runTests", windows_body)
         self.assertIn("$appTests", windows_body)
         self.assertIn("TestWindowsRunnerCancellationReapsDescendantTree", windows_body)
+        self.assertIn("TestWindowsCommandOwnerDeathAfterCreateReapsChild", windows_body)
         self.assertIn("TestOrkaAgentListCancelsActiveCompiledKubectl", windows_body)
         self.assertIn("TestAgentShowHumanFieldsAreTerminalSafeAndBounded", windows_body)
         self.assertIn("--- SKIP:", windows_body)

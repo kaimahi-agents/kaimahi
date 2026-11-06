@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -20,6 +21,33 @@ import (
 type windowsHelperProcesses struct {
 	Parent int `json:"parent"`
 	Child  int `json:"child"`
+}
+
+func TestWindowsCommandOwnerDeathAfterCreateReapsChild(t *testing.T) {
+	pidFile := filepath.Join(t.TempDir(), "child.pid")
+	owner := exec.Command(os.Args[0], windowsHelperArgs("owner-window", pidFile)...)
+	owner.Stdout, owner.Stderr = io.Discard, io.Discard
+	if err := owner.Start(); err != nil {
+		t.Fatalf("start owner: %v", err)
+	}
+	ownerDone := false
+	t.Cleanup(func() {
+		if !ownerDone {
+			_ = owner.Process.Kill()
+			_ = owner.Wait()
+		}
+	})
+
+	childPID := readWindowsHelperPID(t, pidFile)
+	child := openWindowsProcessForTermination(t, childPID)
+	if err := owner.Process.Kill(); err != nil {
+		t.Fatalf("kill owner: %v", err)
+	}
+	if err := owner.Wait(); err == nil {
+		t.Fatal("killed owner exited successfully")
+	}
+	ownerDone = true
+	waitWindowsProcess(t, "creation-window child", child)
 }
 
 func TestWindowsRunnerCancellationReapsDescendantTree(t *testing.T) {
@@ -283,6 +311,22 @@ func TestWindowsRunHelper(t *testing.T) {
 			t.Fatalf("release child: %v", err)
 		}
 		return
+	case "owner-window":
+		if len(args) != 2 {
+			t.Fatalf("owner-window arguments = %q", args)
+		}
+		cmd := (&Runner{}).Command(os.Args[0], windowsHelperArgs("leaf")...)
+		cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
+		cmd.platform.afterCreate = func(pid int) {
+			if err := os.WriteFile(args[1], []byte(strconv.Itoa(pid)), 0600); err != nil {
+				os.Exit(3)
+			}
+			select {}
+		}
+		if err := cmd.Start(); err != nil {
+			t.Fatalf("start creation-window child: %v", err)
+		}
+		t.Fatal("creation-window hook returned")
 	default:
 		t.Fatalf("unknown helper mode %q", args[0])
 	}
@@ -320,6 +364,25 @@ func readWindowsHelperProcesses(t *testing.T, path string) windowsHelperProcesse
 	return windowsHelperProcesses{}
 }
 
+func readWindowsHelperPID(t *testing.T, path string) int {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		raw, err := os.ReadFile(path)
+		if err == nil {
+			pid, parseErr := strconv.Atoi(string(raw))
+			if parseErr == nil && pid > 0 {
+				return pid
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("read helper process ID: %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("helper did not publish process ID at %s", path)
+	return 0
+}
+
 func openWindowsProcess(t *testing.T, pid int) windows.Handle {
 	t.Helper()
 	if pid <= 0 || uint64(pid) > uint64(^uint32(0)) {
@@ -330,6 +393,26 @@ func openWindowsProcess(t *testing.T, pid int) windows.Handle {
 		t.Fatalf("open process %d: %v", pid, err)
 	}
 	t.Cleanup(func() {
+		if err := windows.CloseHandle(handle); err != nil {
+			t.Errorf("close process %d handle: %v", pid, err)
+		}
+	})
+	return handle
+}
+
+func openWindowsProcessForTermination(t *testing.T, pid int) windows.Handle {
+	t.Helper()
+	if pid <= 0 || uint64(pid) > uint64(^uint32(0)) {
+		t.Fatalf("invalid process ID %d", pid)
+	}
+	handle, err := windows.OpenProcess(windows.SYNCHRONIZE|windows.PROCESS_TERMINATE, false, uint32(pid))
+	if err != nil {
+		t.Fatalf("open process %d: %v", pid, err)
+	}
+	t.Cleanup(func() {
+		if event, _ := windows.WaitForSingleObject(handle, 0); event != windows.WAIT_OBJECT_0 {
+			_ = windows.TerminateProcess(handle, 1)
+		}
 		if err := windows.CloseHandle(handle); err != nil {
 			t.Errorf("close process %d handle: %v", pid, err)
 		}

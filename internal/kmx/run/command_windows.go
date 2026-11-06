@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -16,7 +17,14 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-const windowsTreeWait = 5 * time.Second
+const (
+	windowsTreeWait = 5 * time.Second
+	// PROC_THREAD_ATTRIBUTE_JOB_LIST is available on the supported Windows
+	// boundary but is not exported by x/sys/windows v0.48.0.
+	procThreadAttributeJobList = 0x0002000d
+)
+
+var procIsProcessInJob = windows.NewLazySystemDLL("kernel32.dll").NewProc("IsProcessInJob")
 
 type platformCommand struct {
 	mu          sync.Mutex
@@ -30,7 +38,7 @@ type platformCommand struct {
 	terminated  bool
 	cancelled   bool
 	closed      bool
-	resume      bool
+	afterCreate func(int)
 }
 
 func (c *Command) initPlatform() {
@@ -42,8 +50,6 @@ func (c *Command) initPlatform() {
 }
 
 func (c *Command) startPlatform() error {
-	c.configureWindowsCommand()
-
 	job, err := createWindowsJob()
 	if err != nil {
 		err = fmt.Errorf("create subprocess job: %w", err)
@@ -54,21 +60,39 @@ func (c *Command) startPlatform() error {
 	c.platform.job = job
 	c.platform.mu.Unlock()
 
-	if err := c.Cmd.Start(); err != nil {
+	parent, err := createWindowsJobParent(job)
+	if err != nil {
+		err = fmt.Errorf("create subprocess job parent: %w", err)
 		c.platform.finishSetup(err)
 		return joinPlatformError(err, c.platform.release())
 	}
+	if err := c.configureWindowsCommand(parent.Process); err != nil {
+		c.platform.finishSetup(err)
+		return joinPlatformError(err, errors.Join(releaseWindowsJobParent(parent), c.platform.release()))
+	}
+	if err := c.Cmd.Start(); err != nil {
+		c.platform.finishSetup(err)
+		return joinPlatformError(err, errors.Join(releaseWindowsJobParent(parent), c.platform.release()))
+	}
+	if c.platform.afterCreate != nil {
+		c.platform.afterCreate(c.Process.Pid)
+	}
 
-	assigned := false
 	var root windows.Handle
-	var assignErr, duplicateErr error
+	jobMember := false
+	var membershipErr, duplicateErr error
 	handleErr := c.Process.WithHandle(func(raw uintptr) {
 		process := windows.Handle(raw)
-		assignErr = windows.AssignProcessToJobObject(job, process)
-		if assignErr != nil {
+		member, err := processInWindowsJob(process, job)
+		if err != nil {
+			membershipErr = err
 			return
 		}
-		assigned = true
+		if !member {
+			membershipErr = errors.New("subprocess did not inherit its ownership job")
+			return
+		}
+		jobMember = true
 		duplicateErr = windows.DuplicateHandle(
 			windows.CurrentProcess(), process,
 			windows.CurrentProcess(), &root,
@@ -76,13 +100,16 @@ func (c *Command) startPlatform() error {
 		)
 	})
 	if handleErr != nil {
-		return c.failWindowsStart(fmt.Errorf("access subprocess handle: %w", handleErr), assigned, root)
+		return c.failWindowsStart(fmt.Errorf("access subprocess handle: %w", handleErr), jobMember, root, parent)
 	}
-	if assignErr != nil {
-		return c.failWindowsStart(fmt.Errorf("assign subprocess to job: %w", assignErr), assigned, root)
+	if membershipErr != nil {
+		return c.failWindowsStart(fmt.Errorf("verify subprocess job: %w", membershipErr), jobMember, root, parent)
 	}
 	if duplicateErr != nil {
-		return c.failWindowsStart(fmt.Errorf("retain subprocess handle: %w", duplicateErr), assigned, root)
+		return c.failWindowsStart(fmt.Errorf("retain subprocess handle: %w", duplicateErr), jobMember, root, parent)
+	}
+	if err := releaseWindowsJobParent(parent); err != nil {
+		return c.failWindowsStart(fmt.Errorf("release subprocess job parent: %w", err), true, root, windows.ProcessInformation{})
 	}
 
 	done := make(chan struct{})
@@ -92,32 +119,31 @@ func (c *Command) startPlatform() error {
 	go c.platform.monitorRoot(root, done)
 
 	if err := c.ctx.Err(); err != nil {
-		return c.failWindowsStart(err, true, 0)
-	}
-	if c.platform.resume {
-		if err := resumeInitialThread(c.Process.Pid); err != nil {
-			return c.failWindowsStart(fmt.Errorf("resume subprocess: %w", err), true, 0)
-		}
+		return c.failWindowsStart(err, true, 0, windows.ProcessInformation{})
 	}
 	c.platform.finishSetup(nil)
 	return nil
 }
 
-func (c *Command) configureWindowsCommand() {
+func (c *Command) configureWindowsCommand(parent windows.Handle) error {
 	if c.SysProcAttr == nil {
 		c.SysProcAttr = &syscall.SysProcAttr{}
 	} else {
 		attributes := *c.SysProcAttr
 		c.SysProcAttr = &attributes
 	}
-	// os/exec does not expose PROC_THREAD_ATTRIBUTE_JOB_LIST. Starting the
-	// primary thread suspended is therefore the narrow documented route that
-	// prevents the child from spawning an unowned descendant before assignment.
-	if c.SysProcAttr.CreationFlags&windows.CREATE_SUSPENDED == 0 {
-		c.SysProcAttr.CreationFlags |= windows.CREATE_SUSPENDED
-		c.platform.resume = true
+	if c.SysProcAttr.ParentProcess != 0 {
+		return errors.New("custom Windows parent process is incompatible with subprocess ownership")
 	}
+	if len(c.SysProcAttr.AdditionalInheritedHandles) != 0 {
+		return errors.New("additional inherited Windows handles are incompatible with subprocess ownership")
+	}
+	if c.SysProcAttr.CreationFlags&windows.CREATE_BREAKAWAY_FROM_JOB != 0 {
+		return errors.New("Windows job breakaway is incompatible with subprocess ownership")
+	}
+	c.SysProcAttr.ParentProcess = syscall.Handle(parent)
 	c.Cancel = c.cancelWindows
+	return nil
 }
 
 func commandContextError(ctx context.Context) error {
@@ -146,71 +172,74 @@ func createWindowsJob() (windows.Handle, error) {
 	return job, nil
 }
 
-func resumeInitialThread(pid int) (returnErr error) {
-	if pid <= 0 || uint64(pid) > uint64(^uint32(0)) {
-		return fmt.Errorf("invalid process ID %d", pid)
-	}
-	processID := uint32(pid)
-	// CREATE_SUSPENDED creates one suspended primary thread, but os/exec closes
-	// its thread handle before Start returns. Enumerate while the child cannot
-	// run and fail closed if an external process with sufficient rights has made
-	// that documented one-thread assumption ambiguous. No child-controlled code
-	// can run in the assignment-to-enumeration interval.
-	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPTHREAD, 0)
+func createWindowsJobParent(job windows.Handle) (windows.ProcessInformation, error) {
+	currentExecutable, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("snapshot initial thread: %w", err)
+		return windows.ProcessInformation{}, err
 	}
-	defer func() {
-		if err := windows.CloseHandle(snapshot); err != nil {
-			returnErr = joinPlatformError(returnErr, fmt.Errorf("close thread snapshot: %w", err))
-		}
-	}()
-
-	entry := windows.ThreadEntry32{Size: uint32(unsafe.Sizeof(windows.ThreadEntry32{}))}
-	if err := windows.Thread32First(snapshot, &entry); err != nil {
-		return fmt.Errorf("read initial thread snapshot: %w", err)
-	}
-	var threadID uint32
-	for {
-		if entry.OwnerProcessID == processID {
-			if threadID != 0 {
-				return fmt.Errorf("multiple initial threads found for process %d", pid)
-			}
-			threadID = entry.ThreadID
-		}
-		err = windows.Thread32Next(snapshot, &entry)
-		if errors.Is(err, windows.ERROR_NO_MORE_FILES) {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("read initial thread snapshot: %w", err)
-		}
-	}
-	if threadID == 0 {
-		return fmt.Errorf("initial thread not found for process %d", pid)
-	}
-
-	thread, err := windows.OpenThread(windows.THREAD_SUSPEND_RESUME, false, threadID)
+	executable, err := windows.UTF16PtrFromString(currentExecutable)
 	if err != nil {
-		return fmt.Errorf("open initial thread: %w", err)
+		return windows.ProcessInformation{}, err
 	}
-	defer func() {
-		if err := windows.CloseHandle(thread); err != nil {
-			returnErr = joinPlatformError(returnErr, fmt.Errorf("close initial thread: %w", err))
-		}
-	}()
-	previous, err := windows.ResumeThread(thread)
+	attributes, err := windows.NewProcThreadAttributeList(1)
 	if err != nil {
-		return err
+		return windows.ProcessInformation{}, err
 	}
-	if previous != 1 {
-		return fmt.Errorf("initial thread had unexpected suspend count %d", previous)
+	defer attributes.Delete()
+	jobs := [...]windows.Handle{job}
+	if err := attributes.Update(procThreadAttributeJobList, unsafe.Pointer(&jobs[0]), unsafe.Sizeof(jobs)); err != nil {
+		return windows.ProcessInformation{}, err
 	}
-	return nil
+	startup := windows.StartupInfoEx{
+		StartupInfo:             windows.StartupInfo{Cb: uint32(unsafe.Sizeof(windows.StartupInfoEx{}))},
+		ProcThreadAttributeList: attributes.List(),
+	}
+	var process windows.ProcessInformation
+	err = windows.CreateProcess(
+		executable, nil, nil, nil, false,
+		windows.CREATE_SUSPENDED|windows.CREATE_NO_WINDOW|windows.EXTENDED_STARTUPINFO_PRESENT,
+		nil, nil, &startup.StartupInfo, &process,
+	)
+	runtime.KeepAlive(jobs)
+	if err != nil {
+		return windows.ProcessInformation{}, err
+	}
+	return process, nil
 }
 
-func (c *Command) failWindowsStart(primary error, assigned bool, root windows.Handle) error {
+func processInWindowsJob(process, job windows.Handle) (bool, error) {
+	var member uint32
+	ok, _, callErr := procIsProcessInJob.Call(uintptr(process), uintptr(job), uintptr(unsafe.Pointer(&member)))
+	if ok == 0 {
+		return false, callErr
+	}
+	return member != 0, nil
+}
+
+func releaseWindowsJobParent(parent windows.ProcessInformation) error {
 	var cleanupErr error
+	if parent.Process != 0 {
+		if err := windows.TerminateProcess(parent.Process, 1); err != nil {
+			cleanupErr = errors.Join(cleanupErr, err)
+		}
+		if event, err := windows.WaitForSingleObject(parent.Process, uint32(windowsTreeWait.Milliseconds())); err != nil {
+			cleanupErr = errors.Join(cleanupErr, err)
+		} else if event != windows.WAIT_OBJECT_0 {
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("wait for subprocess job parent returned status %d", event))
+		}
+	}
+	if parent.Thread != 0 {
+		cleanupErr = errors.Join(cleanupErr, windows.CloseHandle(parent.Thread))
+	}
+	if parent.Process != 0 {
+		cleanupErr = errors.Join(cleanupErr, windows.CloseHandle(parent.Process))
+	}
+	return cleanupErr
+}
+
+func (c *Command) failWindowsStart(primary error, assigned bool, root windows.Handle, parent windows.ProcessInformation) error {
+	var cleanupErr error
+	cleanupErr = errors.Join(cleanupErr, releaseWindowsJobParent(parent))
 	c.platform.mu.Lock()
 	monitorOwnsRoot := c.platform.monitorDone != nil
 	monitorDone := c.platform.monitorDone

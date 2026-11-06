@@ -170,7 +170,7 @@ func (a *App) readOrkaAgentList(namespace string) ([]byte, error) {
 }
 
 func decodeOrkaAgentList(raw []byte, namespace string) ([]orkaAgentSpec, error) {
-	_, items, err := decodeOrkaAgentListPage(raw, namespace)
+	_, items, err := decodeOrkaAgentListEnvelope(raw, namespace, true)
 	if err != nil {
 		return nil, err
 	}
@@ -186,6 +186,10 @@ func decodeOrkaAgentList(raw []byte, namespace string) ([]orkaAgentSpec, error) 
 }
 
 func decodeOrkaAgentListPage(raw []byte, namespace string) (map[string]json.RawMessage, []json.RawMessage, error) {
+	return decodeOrkaAgentListEnvelope(raw, namespace, false)
+}
+
+func decodeOrkaAgentListEnvelope(raw []byte, namespace string, allowKubectlList bool) (map[string]json.RawMessage, []json.RawMessage, error) {
 	var envelope map[string]json.RawMessage
 	if suitecore.Unmarshal(raw, &envelope) != nil || envelope == nil {
 		return nil, nil, fmt.Errorf("Orka Agents returned invalid JSON")
@@ -194,7 +198,12 @@ func decodeOrkaAgentListPage(raw []byte, namespace string) (map[string]json.RawM
 		APIVersion string `json:"apiVersion"`
 		Kind       string `json:"kind"`
 	}
-	if json.Unmarshal(raw, &identity) != nil || identity.APIVersion != "core.orka.ai/v1alpha1" || identity.Kind != "AgentList" {
+	if json.Unmarshal(raw, &identity) != nil {
+		return nil, nil, fmt.Errorf("Orka Agents returned an invalid list identity")
+	}
+	typedList := identity.APIVersion == "core.orka.ai/v1alpha1" && identity.Kind == "AgentList"
+	kubectlList := allowKubectlList && identity.APIVersion == "v1" && identity.Kind == "List"
+	if !typedList && !kubectlList {
 		return nil, nil, fmt.Errorf("Orka Agents returned an invalid list identity")
 	}
 	itemsRaw, ok := envelope["items"]

@@ -1,7 +1,8 @@
 // Package run executes external tools for kmx.
 // It owns subprocess setup, environment overrides, output and cancellation.
-// On Windows, each started command and its descendants are contained in a
-// kill-on-close Job Object; other platforms retain the native os/exec behavior.
+// On Windows, each command enters a kill-on-close Job Object during process
+// creation and its descendants stay contained; other platforms retain native
+// os/exec behavior.
 package run
 
 import (
