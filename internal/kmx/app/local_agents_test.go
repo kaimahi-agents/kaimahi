@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -269,6 +270,226 @@ func TestLocalRegistrationRejectsOrphanWarning(t *testing.T) {
 	_ = dir.Close()
 	if _, err := ReadLocalAgentInstances(true); err == nil || !strings.Contains(err.Error(), "no matching start") {
 		t.Fatalf("orphan warning err=%v", err)
+	}
+}
+
+func TestLocalInventoryRetiresInterruptedPublicationStage(t *testing.T) {
+	pair := localRegistrationPair(t)
+	record, _, err := ActivateLocalAgent(t.Context(), "", pair, "fake", "", "fake")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = StopLocalAgent(t.Context(), record.InstanceID) }()
+	dir, _, err := localAgentInstanceDirectory(t.Context(), record.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stage, err := fileaccess.CreatePrivateFileAt(t.Context(), dir, ".kmx-stage-"+strings.Repeat("a", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stage.Close(); err != nil {
+		t.Fatal(err)
+	}
+	_ = dir.Close()
+	if rows, err := ReadLocalAgentInstances(false); err != nil || len(rows) != 1 {
+		t.Fatalf("rows=%+v err=%v", rows, err)
+	}
+	dir, _, err = localAgentInstanceDirectory(t.Context(), record.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dir.Close()
+	for _, entry := range mustReadLocalAgentEntries(t, dir) {
+		if strings.HasPrefix(entry.Name(), ".kmx-stage-") {
+			t.Fatalf("stage remained: %s", entry.Name())
+		}
+	}
+}
+
+func mustReadLocalAgentEntries(t *testing.T, dir *fileaccess.Directory) []os.DirEntry {
+	t.Helper()
+	entries, err := dir.ReadDir(-1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return entries
+}
+
+func TestInterruptedUpgradeKeepsInstancesUniquelyRoutable(t *testing.T) {
+	pair := localRegistrationPair(t)
+	first, _, err := ActivateLocalAgent(t.Context(), "", pair, "fake", "", "fake")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = StopLocalAgent(t.Context(), first.InstanceID) }()
+	if err := os.WriteFile(pair.AgentPath, []byte("---\nname: greeter\ndescription: greet\nmodel: fake\ntools: []\n---\nChanged.\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := agentfile.LoadPair(pair.AgentPath, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	event, err := randomEventID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, path, err := localAgentInstanceDirectory(t.Context(), first.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent, tests, err := cachePair(t.Context(), dir, path, changed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provisional := "greeter-" + event[:8]
+	replacement := LocalAgentInstance{SchemaVersion: localAgentSchema, EventID: event, InstanceID: "li-" + event, Sequence: first.Sequence + 1, ID: first.ID, Name: provisional, AuthoredName: "greeter", Source: changed.AgentPath, AgentRevision: changed.Agent.Revision, SnapshotRevision: changed.SnapshotRevision, TestsState: changed.Tests.State, TestsPath: changed.Tests.Selection.Path, CachedAgent: agent, CachedTests: tests, Provider: "fake", Model: "fake", Started: time.Now().UTC(), State: "active"}
+	raw, _ := json.Marshal(replacement)
+	if err := publishPrivateBytes(t.Context(), dir, "start-"+event+".json", raw); err != nil {
+		t.Fatal(err)
+	}
+	_ = dir.Close()
+	if err := startLocalAgentWorker(t.Context(), "", replacement); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = StopLocalAgent(t.Context(), replacement.InstanceID) }()
+	rows, err := ReadLocalAgentInstances(false)
+	if err != nil || len(rows) != 2 || rows[0].Name == rows[1].Name {
+		t.Fatalf("rows=%+v err=%v", rows, err)
+	}
+	if _, err := ReadLocalAgentRecord("greeter"); err != nil {
+		t.Fatalf("old primary name not routable: %v", err)
+	}
+	if _, err := ReadLocalAgentRecord(provisional); err != nil {
+		t.Fatalf("replacement provisional name not routable: %v", err)
+	}
+}
+
+func TestLegacyPromotionRecordKeepsSchemaTwoInventoryReadable(t *testing.T) {
+	pair := localRegistrationPair(t)
+	record, _, err := ActivateLocalAgent(t.Context(), "", pair, "fake", "", "fake")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = StopLocalAgent(t.Context(), record.InstanceID) }()
+	dir, _, err := localAgentInstanceDirectory(t.Context(), record.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := []byte(fmt.Sprintf(`{"schemaVersion":2,"eventId":%q,"instanceId":%q,"promoted":"2026-11-06T01:02:03Z"}`, record.EventID, record.InstanceID))
+	name := "primary-" + record.EventID + ".json"
+	existing, err := fileaccess.OpenPrivateFileAt(t.Context(), dir, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fileaccess.RemovePrivateFileAt(t.Context(), dir, name, existing); err != nil {
+		t.Fatal(err)
+	}
+	_ = existing.Close()
+	if err := publishPrivateBytes(t.Context(), dir, name, legacy); err != nil {
+		t.Fatal(err)
+	}
+	_ = dir.Close()
+	rows, err := ReadLocalAgentInstances(false)
+	if err != nil || len(rows) != 1 || rows[0].Name != record.Name || !rows[0].Primary {
+		t.Fatalf("rows=%+v err=%v", rows, err)
+	}
+}
+
+func TestPromotedUpgradeRecoveryNameAvoidsParallelInstance(t *testing.T) {
+	pair := localRegistrationPair(t)
+	first, _, err := ActivateLocalAgent(t.Context(), "", pair, "fake", "", "fake")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = StopLocalAgent(t.Context(), first.InstanceID) }()
+	recoveryName := "greeter-" + first.EventID[:8]
+	parallel, _, err := ActivateLocalAgentWithOptions(t.Context(), "", pair, "fake", "", "fake", LocalAgentActivationOptions{Mode: LocalAgentActivationNew, Name: recoveryName})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = StopLocalAgent(t.Context(), parallel.InstanceID) }()
+	event, err := randomEventID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, path, err := localAgentInstanceDirectory(t.Context(), first.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent, tests, err := cachePair(t.Context(), dir, path, pair)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement := LocalAgentInstance{SchemaVersion: localAgentSchema, EventID: event, InstanceID: "li-" + event, Sequence: parallel.Sequence + 1, ID: first.ID, Name: "greeter-" + event[:8], AuthoredName: "greeter", Source: pair.AgentPath, AgentRevision: pair.Agent.Revision, SnapshotRevision: pair.SnapshotRevision, TestsState: pair.Tests.State, TestsPath: pair.Tests.Selection.Path, CachedAgent: agent, CachedTests: tests, Provider: "fake", Model: "fake", Started: time.Now().UTC(), State: "active"}
+	raw, _ := json.Marshal(replacement)
+	if err := publishPrivateBytes(t.Context(), dir, "start-"+event+".json", raw); err != nil {
+		t.Fatal(err)
+	}
+	_ = dir.Close()
+	if err := startLocalAgentWorker(t.Context(), "", replacement); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = StopLocalAgent(t.Context(), replacement.InstanceID) }()
+	dir, _, err = localAgentInstanceDirectory(t.Context(), first.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeLocalAgentPromotion(t.Context(), dir, replacement, "greeter"); err != nil {
+		t.Fatal(err)
+	}
+	_ = dir.Close()
+	rows, err := ReadLocalAgentInstances(false)
+	if err != nil || len(rows) != 3 {
+		t.Fatalf("rows=%+v err=%v", rows, err)
+	}
+	names := map[string]bool{}
+	for _, row := range rows {
+		if names[row.Name] {
+			t.Fatalf("duplicate projected name %q: %+v", row.Name, rows)
+		}
+		names[row.Name] = true
+	}
+}
+
+func TestPromotionRefusesNameOwnedByAnotherSource(t *testing.T) {
+	home := t.TempDir()
+	if err := os.Chmod(home, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KMX_HOME", home)
+	makePair := func(dir, name string) *agentfile.Pair {
+		t.Helper()
+		path := filepath.Join(dir, name+".agent.md")
+		raw := []byte(fmt.Sprintf("---\nname: %s\ndescription: test\nmodel: fake\ntools: []\n---\nTest.\n", name))
+		if err := os.WriteFile(path, raw, 0600); err != nil {
+			t.Fatal(err)
+		}
+		pair, err := agentfile.LoadPair(path, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return pair
+	}
+	owner := makePair(t.TempDir(), "taken")
+	owned, _, err := ActivateLocalAgent(t.Context(), "", owner, "fake", "", "fake")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = StopLocalAgent(t.Context(), owned.InstanceID) }()
+	pair := makePair(t.TempDir(), "other")
+	record, _, err := ActivateLocalAgent(t.Context(), "", pair, "fake", "", "fake")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = StopLocalAgent(t.Context(), record.InstanceID) }()
+	dir, _, err := localAgentInstanceDirectory(t.Context(), record.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dir.Close()
+	if err := writeLocalAgentPromotion(t.Context(), dir, record, "taken"); err == nil || !strings.Contains(err.Error(), "already active") {
+		t.Fatalf("promotion err=%v", err)
 	}
 }
 
