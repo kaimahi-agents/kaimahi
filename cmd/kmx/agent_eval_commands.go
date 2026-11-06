@@ -77,7 +77,7 @@ func newAgentTestCommand(state *commandState) *cobra.Command {
 			if check {
 				pair, err := agentfile.LoadPair(args[0], file.TestsFile)
 				if err != nil {
-					return err
+					return fileUsageError(err)
 				}
 				examples := pair.Agent.Examples
 				if pair.Tests.Suite != nil {

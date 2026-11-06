@@ -392,7 +392,7 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 						return nil
 					}
 					if current.State == "crashed" {
-						if err := writeLocalAgentStop(ctx, dir, current.EventID); err != nil {
+						if err := writeLocalAgentStop(ctx, dir, current.EventID, current.Started); err != nil {
 							return err
 						}
 						stoppedForRestart = current.EventID
@@ -485,13 +485,13 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 			return err
 		}
 		if err := startLocalAgentWorker(ctx, executable, result); err != nil {
-			_ = writeLocalAgentStop(context.Background(), dir, event)
+			_ = writeLocalAgentStop(context.Background(), dir, event, result.Started)
 			return err
 		}
 		if options.Mode != LocalAgentActivationNew {
 			if err := writeLocalAgentPromotion(ctx, dir, result); err != nil {
 				_, _ = probeLocalAgent(context.Background(), result, "shutdown", localAgentIPCRequest{})
-				_ = writeLocalAgentStop(context.Background(), dir, event)
+				_ = writeLocalAgentStop(context.Background(), dir, event, result.Started)
 				return err
 			}
 			result.Primary = true
@@ -518,7 +518,7 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 					}
 					continue
 				}
-				if err := writeLocalAgentStop(ctx, dir, old.EventID); err != nil {
+				if err := writeLocalAgentStop(ctx, dir, old.EventID, old.Started); err != nil {
 					cleanupErrors = append(cleanupErrors, err)
 				}
 			}
@@ -874,16 +874,20 @@ func StopLocalAgent(ctx context.Context, selector string) error {
 				return err
 			}
 		}
-		return writeLocalAgentStop(ctx, dir, record.EventID)
+		return writeLocalAgentStop(ctx, dir, record.EventID, current.Started)
 	})
 }
 
-func writeLocalAgentStop(ctx context.Context, dir *fileaccess.Directory, event string) error {
+func writeLocalAgentStop(ctx context.Context, dir *fileaccess.Directory, event string, started time.Time) error {
 	name := "stop-" + event + ".json"
 	if err := ensureLocalAgentCapacity(dir, name); err != nil {
 		return err
 	}
-	raw, _ := json.Marshal(localAgentStop{SchemaVersion: localAgentSchema, EventID: event, Stopped: time.Now().UTC()})
+	stopped := time.Now().UTC()
+	if stopped.Before(started) {
+		stopped = started
+	}
+	raw, _ := json.Marshal(localAgentStop{SchemaVersion: localAgentSchema, EventID: event, Stopped: stopped})
 	return publishPrivateBytes(ctx, dir, name, raw)
 }
 
