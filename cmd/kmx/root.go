@@ -25,6 +25,7 @@ import (
 
 type dependencies struct {
 	fileRunner         agentpreview.Runner
+	residentAgents     bool
 	stdin              *os.File
 	stdout             io.Writer
 	stderr             io.Writer
@@ -36,17 +37,26 @@ type dependencies struct {
 	discoverModels     func(context.Context) []modelaccess.Report
 	newCopilot         func() copilotAccess
 	openGitHubSummary  func() (io.WriteCloser, error)
+	activateLocalAgent func(context.Context, string, *agentfile.Pair, string, string, string, app.LocalAgentActivationOptions) (app.LocalAgentInstance, bool, error)
+	readLocalAgents    func(bool) ([]app.LocalAgentInstance, error)
+	readLocalAgent     func(string) (app.LocalAgentInstance, error)
+	loadLocalAgentPair func(context.Context, app.LocalAgentInstance) (*agentfile.Pair, error)
+	withLocalAgentRun  func(context.Context, app.LocalAgentInstance, func(*agentfile.Pair) error) error
+	pingLocalAgent     func(context.Context, app.LocalAgentInstance) error
+	stopLocalAgent     func(context.Context, string) error
 	goos               string
 }
 
 func productionDependencies() dependencies {
 	return dependencies{
-		fileRunner: newFileMCPRunner(app.NewLocalFileRunner()),
-		stdin:      os.Stdin, stdout: os.Stdout, stderr: os.Stderr,
-		executable:        invocationExecutable(os.Args[0]),
-		goos:              runtime.GOOS,
-		openGitHubSummary: func() (io.WriteCloser, error) { return openGitHubSummary() },
-		loadConfig:        config.LoadWithOverrides, newApp: app.New, buildInfo: debug.ReadBuildInfo,
+		fileRunner:     newFileMCPRunner(app.NewLocalFileRunner()),
+		residentAgents: true,
+		stdin:          os.Stdin, stdout: os.Stdout, stderr: os.Stderr,
+		executable:         invocationExecutable(os.Args[0]),
+		goos:               runtime.GOOS,
+		openGitHubSummary:  func() (io.WriteCloser, error) { return openGitHubSummary() },
+		activateLocalAgent: app.ActivateLocalAgentWithOptions, readLocalAgents: app.ReadLocalAgentInstances, readLocalAgent: app.ReadLocalAgentRecord, loadLocalAgentPair: app.LoadLocalAgentPair, withLocalAgentRun: app.WithLocalAgentRun, pingLocalAgent: app.PingLocalAgent, stopLocalAgent: app.StopLocalAgent,
+		loadConfig: config.LoadWithOverrides, newApp: app.New, buildInfo: debug.ReadBuildInfo,
 		newAgentKitBuilder: func(options agentkitbuilder.Options) kmxsuite.SandboxBuilder {
 			return agentkitbuilder.New(options)
 		},
@@ -284,7 +294,7 @@ func newRootCommand(state *commandState) *cobra.Command {
 	root.AddCommand(
 		newVersionCommand(state), newMCPCommand(state), newCompletionCommand(root), newModelCommand(state),
 		newFileCreateCommand(state), newAgentChatCommand(state), newAgentRunCommand(state),
-		newAgentTestCommand(state), newAgentEvalCommand(state), newReleaseLiftCommand(state),
+		newAgentTestCommand(state), newLocalAgentListCommand(state), newLocalAgentStopCommand(state), newAgentEvalCommand(state), newReleaseLiftCommand(state),
 		newClusterCommand(state), newPackageCommand(state),
 	)
 	configureCommandHelp(root, state)

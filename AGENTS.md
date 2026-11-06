@@ -51,7 +51,7 @@ invalid review as clean.
   Explicit `test FILE -o jsonl` uses checked App telemetry and final summaries;
   preserve legacy text/JSON, post-intake signals and all final acceptance vetoes.
   Native Windows remains embedded/model=fake only. See `docs/machine-output.md`.
-- Root help advertises exactly `create`, `run`, `test`, `chat`, `model`,
+- Root help advertises exactly `create`, `run`, `test`, `list`, `chat`, `model`,
   `package`, `cluster`, `version`, in that order. MCP, completion and Help
   remain callable but are not root help entries. Keep root ordering local;
   do not change Cobra's package-wide sorting switch.
@@ -64,6 +64,28 @@ invalid review as clean.
   privacy and evidence caveats. Retain native/package safety disclosures and
   legacy Eval/Lift help/errors. Canonical flag-parse errors include a safely
   quoted executable/topic `--help` hint; runtime and argument errors do not.
+- `run FILE` starts or reuses a resident local agent process bound to the
+  canonical snapshot and inference route; `--once` retains invocation-owned
+  preview. Resident agents serve multiple sessions through local Chat. Test stays
+  current-source based, including `kmx.yaml` commandTools. Root `list` is local
+  and config-free unless an explicit context selects existing Orka inventory.
+  Hidden `stop` ends the worker and all sessions.
+  Owner-only snapshot cache retains the exact authored agent/tests bytes and has
+  the same cleartext privacy boundary as preview journals. Lifecycle records
+  retain no credentials or tool processes; each turn acquires fresh inference
+  access. Native
+  Windows persistence/list/stop remain deferred.
+  Stable `md-...` identity follows the canonical source; each worker generation
+  has an explicit random `li-...` instance identity, unique active runtime name,
+  event socket and process-held lock. Exact snapshots reuse. Drift requires an
+  explicit or terminal-confirmed upgrade, which starts/readies/promotes before
+  canceling and closing old sessions (no drain guarantee), or `--new` for a parallel named generation. Stable IDs
+  refuse ambiguous routing; Chat/stop/session routing accepts runtime names and
+  instance IDs. Never silently replace an active generation.
+  Run input is flag-only: `-p, --prompt TEXT` or `--prompt-file FILE|-`; a second
+  positional argument is removed. Either input flag selects only that ad-hoc input
+  unless `--case` explicitly adds a saved example. Native Windows keeps
+  `--prompt-file` deferred.
 
 - Infrastructure and Orka commands live under `kmx cluster`; native workspace
   Test, publication, Deploy, destination inventory and artifact operations live

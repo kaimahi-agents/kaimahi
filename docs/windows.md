@@ -18,7 +18,7 @@ Windows assets described below.
 | Operation | Native Windows contract |
 |---|---|
 | Identity and documentation | `kmx version`, root or command help, and existing `completion bash\|zsh\|fish` generation. Help and completion are inert; seeing another command in their output does not enable it. There is no PowerShell completion claim. |
-| Package-free fake Run | `kmx run FILE ["input"]`, optionally with `--tests FILE`, legacy inline `--prompt TEXT` or `--no-content`, for a Markdown agent whose effective model is `fake`. Run loads the selected agent-and-tests pair: the default companion tests, or the `--tests FILE` override. KMX opens no workspace, package, cluster, provider, network or tool-binding route. |
+| Package-free fake Run | `kmx run FILE [-p|--prompt TEXT]`, optionally with `--tests FILE` or `--no-content`, for a Markdown agent whose effective model is `fake`. Run loads the selected agent-and-tests pair: the default companion tests, or the `--tests FILE` override. KMX opens no workspace, package, cluster, provider, network or tool-binding route. |
 | Package-free fake Test | `kmx test FILE [--tests FILE]` for the same offline fake route and the same selected agent-and-tests pair. A completed pass or failure is a local preview only. |
 | Offline file diagnostics | `kmx test explain [failure-id] --file FILE [--tests FILE]`, including its file-scoped content and clear options. Explain compares retained failures with the current agent-and-tests selection. Hidden `kmx eval explain ... --file FILE` may remain callable only as the deprecated compatibility spelling. |
 
