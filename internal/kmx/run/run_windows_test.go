@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -206,6 +207,27 @@ func TestWindowsCommandStartWaitCompletes(t *testing.T) {
 	}
 }
 
+func TestWindowsCommandRunStdinCompletes(t *testing.T) {
+	output := &strings.Builder{}
+	runner := &Runner{Stdout: output, Stderr: io.Discard}
+	if err := runner.RunStdin([]byte("input"), os.Args[0], windowsHelperArgs("stdin")...); err != nil {
+		t.Fatalf("RunStdin: %v", err)
+	}
+	if got := output.String(); got != "input" {
+		t.Fatalf("RunStdin output = %q, want input", got)
+	}
+}
+
+func TestWindowsCommandDetachesStartupGuard(t *testing.T) {
+	output, err := (&Runner{}).Command(os.Args[0], windowsHelperArgs("debugger")...).Output()
+	if err != nil {
+		t.Fatalf("Output: %v", err)
+	}
+	if string(output) != "false" {
+		t.Fatalf("debugger state = %q, want false", output)
+	}
+}
+
 func TestWindowsCommandPreservesPreCancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -267,6 +289,20 @@ func TestWindowsRunHelper(t *testing.T) {
 	case "print":
 		_, _ = os.Stdout.WriteString("out")
 		_, _ = os.Stderr.WriteString("err")
+		os.Exit(0)
+	case "stdin":
+		input, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			t.Fatalf("read stdin: %v", err)
+		}
+		_, _ = os.Stdout.Write(input)
+		os.Exit(0)
+	case "debugger":
+		present, err := checkRemoteDebuggerPresent(windows.CurrentProcess())
+		if err != nil {
+			t.Fatalf("check debugger: %v", err)
+		}
+		_, _ = os.Stdout.WriteString(strconv.FormatBool(present))
 		os.Exit(0)
 	case "leaf":
 		for {

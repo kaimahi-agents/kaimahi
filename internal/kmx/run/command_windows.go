@@ -6,10 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"sync"
 	"syscall"
@@ -21,19 +19,60 @@ import (
 
 const (
 	windowsTreeWait = 5 * time.Second
-	// PROC_THREAD_ATTRIBUTE_JOB_LIST is available on the supported Windows
-	// boundary but is not exported by x/sys/windows v0.48.0.
-	procThreadAttributeJobList = 0x0002000d
+
+	windowsCreateProcessDebugEvent = 3
+	windowsDebugContinue           = 0x00010002
 )
 
-var procIsProcessInJob = windows.NewLazySystemDLL("kernel32.dll").NewProc("IsProcessInJob")
+var (
+	windowsKernel32                = windows.NewLazySystemDLL("kernel32.dll")
+	procCheckRemoteDebuggerPresent = windowsKernel32.NewProc("CheckRemoteDebuggerPresent")
+	procContinueDebugEvent         = windowsKernel32.NewProc("ContinueDebugEvent")
+	procDebugActiveProcessStop     = windowsKernel32.NewProc("DebugActiveProcessStop")
+	procDebugSetProcessKillOnExit  = windowsKernel32.NewProc("DebugSetProcessKillOnExit")
+	procIsProcessInJob             = windowsKernel32.NewProc("IsProcessInJob")
+	procWaitForDebugEvent          = windowsKernel32.NewProc("WaitForDebugEvent")
+)
+
+// The uintptr array gives the DEBUG_EVENT union its native pointer alignment.
+// Twenty-one words cover its largest member on both 32- and 64-bit Windows.
+type windowsDebugEvent struct {
+	code      uint32
+	processID uint32
+	threadID  uint32
+	data      [21]uintptr
+}
+
+type windowsCreateProcessDebugInfo struct {
+	file                windows.Handle
+	process             windows.Handle
+	thread              windows.Handle
+	baseOfImage         uintptr
+	debugInfoFileOffset uint32
+	debugInfoSize       uint32
+	threadLocalBase     uintptr
+	startAddress        uintptr
+	imageName           uintptr
+	unicode             uint16
+}
+
+type windowsStartState struct {
+	root           windows.Handle
+	initialThread  windows.Handle
+	processID      uint32
+	eventProcessID uint32
+	eventThreadID  uint32
+	started        bool
+	assigned       bool
+	eventPending   bool
+	debugAttached  bool
+}
 
 type platformCommand struct {
 	mu          sync.Mutex
 	ready       chan struct{}
 	readyOnce   sync.Once
 	job         windows.Handle
-	jobParent   windows.ProcessInformation
 	monitorDone chan struct{}
 	setupErr    error
 	cleanupErr  error
@@ -41,6 +80,7 @@ type platformCommand struct {
 	terminated  bool
 	cancelled   bool
 	closed      bool
+	resume      bool
 	afterCreate func(int)
 }
 
@@ -53,6 +93,10 @@ func (c *Command) initPlatform() {
 }
 
 func (c *Command) startPlatform() error {
+	if err := c.configureWindowsCommand(); err != nil {
+		c.platform.finishSetup(err)
+		return err
+	}
 	job, err := createWindowsJob()
 	if err != nil {
 		err = fmt.Errorf("create subprocess job: %w", err)
@@ -63,72 +107,49 @@ func (c *Command) startPlatform() error {
 	c.platform.job = job
 	c.platform.mu.Unlock()
 
-	parent, err := createWindowsJobParent(job)
-	if err != nil {
-		err = fmt.Errorf("create subprocess job parent: %w", err)
-		c.platform.finishSetup(err)
-		return joinPlatformError(err, c.platform.release())
-	}
-	c.platform.mu.Lock()
-	c.platform.jobParent = parent
-	c.platform.mu.Unlock()
-	if err := c.configureWindowsCommand(parent.Process); err != nil {
-		c.platform.finishSetup(err)
-		return joinPlatformError(err, c.platform.release())
-	}
-	if err := c.Cmd.Start(); err != nil {
-		c.platform.finishSetup(err)
-		return joinPlatformError(err, c.platform.release())
-	}
-	if c.platform.afterCreate != nil {
-		c.platform.afterCreate(c.Process.Pid)
-	}
-
-	var root windows.Handle
-	jobMember := false
-	var membershipErr, duplicateErr error
-	handleErr := c.Process.WithHandle(func(raw uintptr) {
-		process := windows.Handle(raw)
-		member, err := processInWindowsJob(process, job)
-		if err != nil {
-			membershipErr = err
-			return
-		}
-		if !member {
-			membershipErr = errors.New("subprocess did not inherit its ownership job")
-			return
-		}
-		jobMember = true
-		duplicateErr = windows.DuplicateHandle(
-			windows.CurrentProcess(), process,
-			windows.CurrentProcess(), &root,
-			windows.SYNCHRONIZE, false, 0,
-		)
-	})
-	if handleErr != nil {
-		return c.failWindowsStart(fmt.Errorf("access subprocess handle: %w", handleErr), jobMember, root)
-	}
-	if membershipErr != nil {
-		return c.failWindowsStart(fmt.Errorf("verify subprocess job: %w", membershipErr), jobMember, root)
-	}
-	if duplicateErr != nil {
-		return c.failWindowsStart(fmt.Errorf("retain subprocess handle: %w", duplicateErr), jobMember, root)
+	state, startErr := c.startWindowsProcessOnThread(job)
+	if startErr != nil {
+		return c.failWindowsStart(startErr, &state)
 	}
 
 	done := make(chan struct{})
 	c.platform.mu.Lock()
 	c.platform.monitorDone = done
 	c.platform.mu.Unlock()
-	go c.platform.monitorRoot(root, done)
+	go c.platform.monitorRoot(state.root, done)
+	state.root = 0
 
 	if err := c.ctx.Err(); err != nil {
-		return c.failWindowsStart(err, true, 0)
+		return c.failWindowsStart(err, &state)
 	}
 	c.platform.finishSetup(nil)
 	return nil
 }
 
-func (c *Command) configureWindowsCommand(parent windows.Handle) error {
+func (c *Command) startWindowsProcessOnThread(job windows.Handle) (windowsStartState, error) {
+	type result struct {
+		state windowsStartState
+		err   error
+	}
+	completed := make(chan result, 1)
+	go func() {
+		runtime.LockOSThread()
+		state, err := c.startWindowsProcess(job)
+		if err != nil {
+			err = joinPlatformError(err, releaseWindowsDebugGuard(&state))
+			completed <- result{state: state, err: err}
+			// Returning while locked retires any thread-scoped debugger state if
+			// cleanup could not prove that the temporary attachment ended.
+			return
+		}
+		runtime.UnlockOSThread()
+		completed <- result{state: state}
+	}()
+	started := <-completed
+	return started.state, started.err
+}
+
+func (c *Command) configureWindowsCommand() error {
 	if c.SysProcAttr == nil {
 		c.SysProcAttr = &syscall.SysProcAttr{}
 	} else {
@@ -144,9 +165,140 @@ func (c *Command) configureWindowsCommand(parent windows.Handle) error {
 	if c.SysProcAttr.CreationFlags&windows.CREATE_BREAKAWAY_FROM_JOB != 0 {
 		return errors.New("Windows job breakaway is incompatible with subprocess ownership")
 	}
-	c.SysProcAttr.ParentProcess = syscall.Handle(parent)
+	if c.SysProcAttr.CreationFlags&(windows.DEBUG_PROCESS|windows.DEBUG_ONLY_THIS_PROCESS) != 0 {
+		return errors.New("custom Windows debugging is incompatible with subprocess ownership")
+	}
+	c.platform.resume = c.SysProcAttr.CreationFlags&windows.CREATE_SUSPENDED == 0
+	c.SysProcAttr.CreationFlags |= windows.CREATE_SUSPENDED | windows.DEBUG_ONLY_THIS_PROCESS
 	c.Cancel = c.cancelWindows
 	return nil
+}
+
+func (c *Command) startWindowsProcess(job windows.Handle) (windowsStartState, error) {
+	var state windowsStartState
+	if err := c.Cmd.Start(); err != nil {
+		return state, err
+	}
+	state.started = true
+	state.debugAttached = true
+	// Windows defaults debugger-thread exit to terminating its debuggee. The
+	// hook deliberately precedes the explicit reaffirmation so the native
+	// owner-death regression covers the first post-CreateProcess window.
+	if c.platform.afterCreate != nil {
+		c.platform.afterCreate(c.Process.Pid)
+	}
+	if err := debugSetProcessKillOnExit(); err != nil {
+		return state, fmt.Errorf("guard subprocess startup: %w", err)
+	}
+
+	processID, err := windowsProcessID(c.Process.Pid)
+	if err != nil {
+		return state, err
+	}
+	state.processID = processID
+	event, err := waitForWindowsDebugEvent()
+	if err != nil {
+		return state, fmt.Errorf("wait for subprocess startup: %w", err)
+	}
+	state.eventProcessID = event.processID
+	state.eventThreadID = event.threadID
+	state.eventPending = true
+	if event.code != windowsCreateProcessDebugEvent || event.processID != processID {
+		return state, errors.New("subprocess returned an unexpected startup event")
+	}
+	info := (*windowsCreateProcessDebugInfo)(unsafe.Pointer(&event.data[0]))
+	if info.file != 0 && info.file != windows.InvalidHandle {
+		if err := windows.CloseHandle(info.file); err != nil {
+			return state, fmt.Errorf("close subprocess image: %w", err)
+		}
+	}
+	if info.process == 0 || info.process == windows.InvalidHandle || info.thread == 0 || info.thread == windows.InvalidHandle {
+		return state, errors.New("subprocess returned incomplete startup handles")
+	}
+	if err := windows.DuplicateHandle(
+		windows.CurrentProcess(), info.thread,
+		windows.CurrentProcess(), &state.initialThread,
+		windows.THREAD_SUSPEND_RESUME, false, 0,
+	); err != nil {
+		return state, fmt.Errorf("retain subprocess startup thread: %w", err)
+	}
+
+	var assignErr, membershipErr, duplicateErr error
+	handleErr := c.Process.WithHandle(func(raw uintptr) {
+		process := windows.Handle(raw)
+		assignErr = windows.AssignProcessToJobObject(job, process)
+		if assignErr != nil {
+			return
+		}
+		state.assigned = true
+		member, err := processInWindowsJob(process, job)
+		if err != nil {
+			membershipErr = err
+			return
+		}
+		if !member {
+			membershipErr = errors.New("subprocess did not enter its ownership job")
+			return
+		}
+		duplicateErr = windows.DuplicateHandle(
+			windows.CurrentProcess(), process,
+			windows.CurrentProcess(), &state.root,
+			windows.SYNCHRONIZE, false, 0,
+		)
+	})
+	if handleErr != nil {
+		return state, fmt.Errorf("access subprocess handle: %w", handleErr)
+	}
+	if assignErr != nil {
+		return state, fmt.Errorf("assign subprocess to job: %w", assignErr)
+	}
+	if membershipErr != nil {
+		return state, fmt.Errorf("verify subprocess job: %w", membershipErr)
+	}
+	if duplicateErr != nil {
+		return state, fmt.Errorf("retain subprocess handle: %w", duplicateErr)
+	}
+	if err := c.ctx.Err(); err != nil {
+		return state, err
+	}
+	if err := continueWindowsDebugEvent(state.eventProcessID, state.eventThreadID); err != nil {
+		return state, fmt.Errorf("continue subprocess startup: %w", err)
+	}
+	state.eventPending = false
+	if err := debugActiveProcessStop(state.processID); err != nil {
+		return state, fmt.Errorf("detach subprocess startup guard: %w", err)
+	}
+
+	var debuggerPresent bool
+	var debuggerErr error
+	handleErr = c.Process.WithHandle(func(raw uintptr) {
+		debuggerPresent, debuggerErr = checkRemoteDebuggerPresent(windows.Handle(raw))
+	})
+	if handleErr != nil {
+		return state, fmt.Errorf("access detached subprocess handle: %w", handleErr)
+	}
+	if debuggerErr != nil {
+		return state, fmt.Errorf("verify detached subprocess: %w", debuggerErr)
+	}
+	if debuggerPresent {
+		return state, errors.New("subprocess startup guard remained attached")
+	}
+	state.debugAttached = false
+	if c.platform.resume {
+		previous, err := windows.ResumeThread(state.initialThread)
+		if err != nil {
+			return state, fmt.Errorf("resume subprocess: %w", err)
+		}
+		if previous != 1 {
+			return state, fmt.Errorf("subprocess startup thread had unexpected suspend count %d", previous)
+		}
+	}
+	thread := state.initialThread
+	state.initialThread = 0
+	if err := windows.CloseHandle(thread); err != nil {
+		return state, fmt.Errorf("close subprocess startup thread: %w", err)
+	}
+	return state, nil
 }
 
 func commandContextError(ctx context.Context) error {
@@ -175,118 +327,60 @@ func createWindowsJob() (windows.Handle, error) {
 	return job, nil
 }
 
-func createWindowsJobParent(job windows.Handle) (windows.ProcessInformation, error) {
-	system32, err := windows.GetSystemDirectory()
-	if err != nil {
-		return windows.ProcessInformation{}, err
+func windowsProcessID(pid int) (uint32, error) {
+	if pid <= 0 || uint64(pid) > uint64(^uint32(0)) {
+		return 0, fmt.Errorf("invalid subprocess ID %d", pid)
 	}
-	ping := filepath.Join(system32, "ping.exe")
-	executable, err := windows.UTF16PtrFromString(ping)
-	if err != nil {
-		return windows.ProcessInformation{}, err
-	}
-	commandLine, err := windows.UTF16PtrFromString(windows.ComposeCommandLine([]string{ping, "-t", "127.0.0.1"}))
-	if err != nil {
-		return windows.ProcessInformation{}, err
-	}
-	security := windows.SecurityAttributes{
-		Length:        uint32(unsafe.Sizeof(windows.SecurityAttributes{})),
-		InheritHandle: 1,
-	}
-	var stdinRead, stdinWrite, stdoutRead, stdoutWrite windows.Handle
-	if err := windows.CreatePipe(&stdinRead, &stdinWrite, &security, 0); err != nil {
-		return windows.ProcessInformation{}, err
-	}
-	defer func() {
-		if stdinRead != 0 {
-			_ = windows.CloseHandle(stdinRead)
-		}
-		if stdinWrite != 0 {
-			_ = windows.CloseHandle(stdinWrite)
-		}
-	}()
-	if err := windows.SetHandleInformation(stdinWrite, windows.HANDLE_FLAG_INHERIT, 0); err != nil {
-		return windows.ProcessInformation{}, err
-	}
-	if err := windows.CreatePipe(&stdoutRead, &stdoutWrite, &security, 0); err != nil {
-		return windows.ProcessInformation{}, err
-	}
-	defer func() {
-		if stdoutRead != 0 {
-			_ = windows.CloseHandle(stdoutRead)
-		}
-		if stdoutWrite != 0 {
-			_ = windows.CloseHandle(stdoutWrite)
-		}
-	}()
-	if err := windows.SetHandleInformation(stdoutRead, windows.HANDLE_FLAG_INHERIT, 0); err != nil {
-		return windows.ProcessInformation{}, err
-	}
-	attributes, err := windows.NewProcThreadAttributeList(2)
-	if err != nil {
-		return windows.ProcessInformation{}, err
-	}
-	defer attributes.Delete()
-	jobs := [...]windows.Handle{job}
-	if err := attributes.Update(procThreadAttributeJobList, unsafe.Pointer(&jobs[0]), unsafe.Sizeof(jobs)); err != nil {
-		return windows.ProcessInformation{}, err
-	}
-	inherited := [...]windows.Handle{stdinRead, stdoutWrite}
-	if err := attributes.Update(windows.PROC_THREAD_ATTRIBUTE_HANDLE_LIST, unsafe.Pointer(&inherited[0]), unsafe.Sizeof(inherited)); err != nil {
-		return windows.ProcessInformation{}, err
-	}
-	startup := windows.StartupInfoEx{
-		StartupInfo: windows.StartupInfo{
-			Cb:        uint32(unsafe.Sizeof(windows.StartupInfoEx{})),
-			Flags:     windows.STARTF_USESTDHANDLES,
-			StdInput:  stdinRead,
-			StdOutput: stdoutWrite,
-			StdErr:    stdoutWrite,
-		},
-		ProcThreadAttributeList: attributes.List(),
-	}
-	var process windows.ProcessInformation
-	err = windows.CreateProcess(
-		executable, commandLine, nil, nil, true,
-		windows.CREATE_NO_WINDOW|windows.EXTENDED_STARTUPINFO_PRESENT,
-		nil, nil, &startup.StartupInfo, &process,
+	return uint32(pid), nil
+}
+
+func waitForWindowsDebugEvent() (windowsDebugEvent, error) {
+	var event windowsDebugEvent
+	ok, _, callErr := procWaitForDebugEvent.Call(
+		uintptr(unsafe.Pointer(&event)),
+		uintptr(windowsTreeWait.Milliseconds()),
 	)
-	runtime.KeepAlive(jobs)
-	runtime.KeepAlive(inherited)
-	if err != nil {
-		return windows.ProcessInformation{}, err
+	if ok == 0 {
+		return windowsDebugEvent{}, callErr
 	}
-	_ = windows.CloseHandle(stdinRead)
-	stdinRead = 0
-	_ = windows.CloseHandle(stdoutWrite)
-	stdoutWrite = 0
-	ready := os.NewFile(uintptr(stdoutRead), "subprocess job parent output")
-	if ready == nil {
-		_ = releaseWindowsJobParent(process)
-		return windows.ProcessInformation{}, errors.New("retain subprocess job parent output")
+	return event, nil
+}
+
+func continueWindowsDebugEvent(processID, threadID uint32) error {
+	ok, _, callErr := procContinueDebugEvent.Call(
+		uintptr(processID), uintptr(threadID), windowsDebugContinue,
+	)
+	if ok == 0 {
+		return callErr
 	}
-	stdoutRead = 0
-	readyResult := make(chan error, 1)
-	go func() {
-		var first [1]byte
-		_, err := io.ReadFull(ready, first[:])
-		readyResult <- err
-	}()
-	select {
-	case err := <-readyResult:
-		closeErr := ready.Close()
-		if err != nil || closeErr != nil {
-			_ = releaseWindowsJobParent(process)
-			return windows.ProcessInformation{}, errors.Join(err, closeErr)
-		}
-	case <-time.After(windowsTreeWait):
-		_ = windows.TerminateProcess(process.Process, 1)
-		_ = ready.Close()
-		<-readyResult
-		_ = releaseWindowsJobParent(process)
-		return windows.ProcessInformation{}, errors.New("subprocess job parent did not initialize")
+	return nil
+}
+
+func debugActiveProcessStop(processID uint32) error {
+	ok, _, callErr := procDebugActiveProcessStop.Call(uintptr(processID))
+	if ok == 0 {
+		return callErr
 	}
-	return process, nil
+	return nil
+}
+
+func debugSetProcessKillOnExit() error {
+	ok, _, callErr := procDebugSetProcessKillOnExit.Call(1)
+	if ok == 0 {
+		return callErr
+	}
+	return nil
+}
+
+func checkRemoteDebuggerPresent(process windows.Handle) (bool, error) {
+	var present uint32
+	ok, _, callErr := procCheckRemoteDebuggerPresent.Call(
+		uintptr(process), uintptr(unsafe.Pointer(&present)),
+	)
+	if ok == 0 {
+		return false, callErr
+	}
+	return present != 0, nil
 }
 
 func processInWindowsJob(process, job windows.Handle) (bool, error) {
@@ -298,43 +392,48 @@ func processInWindowsJob(process, job windows.Handle) (bool, error) {
 	return member != 0, nil
 }
 
-func releaseWindowsJobParent(parent windows.ProcessInformation) error {
+func releaseWindowsDebugGuard(state *windowsStartState) error {
 	var cleanupErr error
-	if parent.Process != 0 {
-		event, err := windows.WaitForSingleObject(parent.Process, 0)
-		if err != nil {
-			cleanupErr = errors.Join(cleanupErr, err)
-		} else if event == uint32(windows.WAIT_TIMEOUT) {
-			if err := windows.TerminateProcess(parent.Process, 1); err != nil {
-				cleanupErr = errors.Join(cleanupErr, err)
-			} else if event, err = windows.WaitForSingleObject(parent.Process, uint32(windowsTreeWait.Milliseconds())); err != nil {
-				cleanupErr = errors.Join(cleanupErr, err)
-			} else if event != windows.WAIT_OBJECT_0 {
-				cleanupErr = errors.Join(cleanupErr, fmt.Errorf("wait for subprocess job parent returned status %d", event))
-			}
-		} else if event != windows.WAIT_OBJECT_0 {
-			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("inspect subprocess job parent returned status %d", event))
+	if state.eventPending {
+		if err := continueWindowsDebugEvent(state.eventProcessID, state.eventThreadID); err != nil {
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("continue failed subprocess startup: %w", err))
+		} else {
+			state.eventPending = false
 		}
 	}
-	if parent.Thread != 0 {
-		cleanupErr = errors.Join(cleanupErr, windows.CloseHandle(parent.Thread))
-	}
-	if parent.Process != 0 {
-		cleanupErr = errors.Join(cleanupErr, windows.CloseHandle(parent.Process))
+	if state.debugAttached && state.processID != 0 {
+		if err := debugActiveProcessStop(state.processID); err != nil {
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("detach failed subprocess startup guard: %w", err))
+		} else {
+			state.debugAttached = false
+		}
 	}
 	return cleanupErr
 }
 
-func (c *Command) failWindowsStart(primary error, assigned bool, root windows.Handle) error {
+func (c *Command) failWindowsStart(primary error, state *windowsStartState) error {
 	var cleanupErr error
+	if !state.started {
+		c.platform.finishSetup(primary)
+		return joinPlatformError(primary, c.platform.release())
+	}
 	c.platform.mu.Lock()
 	monitorOwnsRoot := c.platform.monitorDone != nil
 	monitorDone := c.platform.monitorDone
 	c.platform.mu.Unlock()
-	if root != 0 {
-		cleanupErr = errors.Join(cleanupErr, windows.CloseHandle(root))
+	if state.initialThread != 0 {
+		if err := windows.CloseHandle(state.initialThread); err != nil {
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("close subprocess startup thread: %w", err))
+		}
+		state.initialThread = 0
 	}
-	if assigned {
+	if state.root != 0 {
+		if err := windows.CloseHandle(state.root); err != nil {
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("close retained subprocess handle: %w", err))
+		}
+		state.root = 0
+	}
+	if state.assigned {
 		cleanupErr = errors.Join(cleanupErr, c.platform.terminate())
 	} else if c.Process != nil {
 		if err := c.Process.Kill(); !errors.Is(err, os.ErrProcessDone) {
@@ -518,10 +617,6 @@ func (p *platformCommand) release() error {
 		}
 		p.job = 0
 		p.closed = true
-	}
-	if p.jobParent.Process != 0 || p.jobParent.Thread != 0 {
-		p.cleanupErr = errors.Join(p.cleanupErr, releaseWindowsJobParent(p.jobParent))
-		p.jobParent = windows.ProcessInformation{}
 	}
 	return p.cleanupErr
 }

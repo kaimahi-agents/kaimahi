@@ -121,7 +121,7 @@ jobs:
           foreach ($test in $configTests) {
             if (-not ($output -match ("--- PASS: " + [regex]::Escape($test) + " \("))) { throw "$test did not pass" }
           }
-          $runTests = @('TestWindowsRunnerCancellationReapsDescendantTree','TestWindowsCommandOwnerDeathAfterCreateReapsChild','TestWindowsCommandNaturalParentExitReapsDescendantTree','TestWindowsCommandDirectProcessKillReapsDescendantTree','TestWindowsCommandCloseReapsDescendantTree','TestWindowsCommandConcurrentCloseAndWaitReapDescendantTree','TestWindowsCommandStartWaitCompletes','TestWindowsCommandPreservesPreCancelledContext','TestWindowsCommandPreservesDeadlineExceeded','TestWindowsCommandOutputMethodsUseOwnedLifecycle','TestWindowsCommandPipeUsesOwnedLifecycle')
+          $runTests = @('TestWindowsRunnerCancellationReapsDescendantTree','TestWindowsCommandOwnerDeathAfterCreateReapsChild','TestWindowsCommandNaturalParentExitReapsDescendantTree','TestWindowsCommandDirectProcessKillReapsDescendantTree','TestWindowsCommandCloseReapsDescendantTree','TestWindowsCommandConcurrentCloseAndWaitReapDescendantTree','TestWindowsCommandStartWaitCompletes','TestWindowsCommandRunStdinCompletes','TestWindowsCommandDetachesStartupGuard','TestWindowsCommandPreservesPreCancelledContext','TestWindowsCommandPreservesDeadlineExceeded','TestWindowsCommandOutputMethodsUseOwnedLifecycle','TestWindowsCommandPipeUsesOwnedLifecycle')
           $output = & "$env:RUNNER_TEMP\kmx-windows-tests.exe" go test -race -count=1 -timeout=600s -v `
             -run ('^(' + ($runTests -join '|') + ')$') ./internal/kmx/run 2>&1
           $status = $LASTEXITCODE

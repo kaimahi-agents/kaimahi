@@ -67,9 +67,9 @@ KMX never runs `az login`, opens a browser/device flow, converts credentials or
 falls back to WSL. Missing, expired or refused credentials produce a bounded safe
 error. KMX freezes the resolved kubectl path and file identity and refuses a
 changed file between calls. This is a cooperative replacement check, not byte
-attestation or a sandbox. KMX places kubectl in a kill-on-close Windows Job Object
-during process creation, so cancellation and abrupt KMX exit reap ordinary
-descendants. An arbitrary exec plugin may still perform side effects or use
+attestation or a sandbox. KMX holds kubectl before user-mode execution until it
+enters a kill-on-close Windows Job Object, so cancellation and abrupt KMX exit
+reap ordinary descendants. An arbitrary exec plugin may still perform side effects or use
 brokered process creation outside that cleanup boundary.
 
 Human table output removes terminal control and bidirectional-formatting
