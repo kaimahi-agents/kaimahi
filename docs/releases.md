@@ -48,9 +48,20 @@ folder's agent files. Bare helper names such as `kmx test cleanup` no longer
 select workspace operations; use `./cleanup` for a file named so. `kmx run FILE`
 no longer evaluates checks, so CI gates should use `kmx test FILE`.
 
-Run still invokes an existing live Orka Agent; Test evaluates workspace cases;
-Publish still transfers an OCI graph with `kmx package push`. These names do not
-add local workspace Run, numbered local versions, a plugin or a new Publish command.
+`kmx run FILE` starts or reuses a resident local Markdown agent on Unix/WSL;
+without input it sends no turn. Use `--once` for invocation-owned preview.
+Exact snapshots and routes reuse; source or route drift requires confirmed
+`--upgrade` (`--upgrade --yes` for scripts) or `--new --name NAME` for a parallel
+generation. Upgrade readies and promotes the replacement before canceling and
+closing old sessions. Local `chat` supports resumable sessions, `list` reports
+resident inventory, and `stop NAME_OR_ID` ends one worker and all its sessions.
+Native Windows keeps package-free fake Run one-shot; resident lifecycle uses WSL.
+See [resident local agents](kmx.md#resident-local-markdown-agents).
+
+`run --agent` still invokes an existing live Orka Agent; Test evaluates current
+file or workspace cases; Publish still transfers an OCI graph with
+`kmx package push`. These names do not add local workspace Run, numbered local
+versions, a plugin or a new Publish command.
 
 ## Deploy command (unreleased)
 

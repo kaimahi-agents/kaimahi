@@ -45,7 +45,7 @@ arguments instead of a deleted Make target or an invented BYO recovery route.
 | Previous route | Current route | Contract |
 |---|---|---|
 | `agent create [name]` / `create --live` | Removed | No live resource/bundle creation, previews or wizard. Root `create NAME` authors an agent file offline; native workspace source is `package create NAME`. |
-| `agent chat <name> [message...]` | `chat <name> [message...]` | Interactive Orka session, not workspace execution. |
+| `agent chat <name> [message...]` | `chat <name> [message...]` | Resident local or live Orka session, not workspace execution. Local `--new --label NAME` creates a separately resumable session; `--session ID` resumes it. |
 | `agent run [<bundle-dir>]` | `run --agent NAME` | Bundle mode removed; live Orka Task/answer/result contracts retained, including suite-owned Agents. Not workspace-local execution or fresh suite evaluation; ownership fences are unchanged. |
 | `agent show <name>` / `agent list` | `orka show <name>` / `orka list` | Live Orka detail/inventory, not workspace inspection. Show still requires namespace. |
 | `agent evaluate/lift/retire/status` / `bundle ...` | Removed | Old commands/readers/writers/receipts removed outright, no stubs or migration. No legacy-status reader or retirement replacement. |
@@ -84,9 +84,24 @@ stdout and exit contracts are preserved; this is not a receipt or bundle migrati
 
 ## Agent-file preview integration (unreleased)
 
-By default, canonical `run FILE` / `test FILE` dispatch to a cluster-independent App adapter
-and the embedded-runner interface. Run optionally adds a separate ad-hoc input;
-both check saved ordered examples. `--case ID` is always partial. Versioned
+By default, `run FILE` starts or reuses a resident tool-free fake or Copilot worker
+without a cluster. It waits for inference readiness and returns while the worker
+remains alive. Without input it sends no turn; positional or `--prompt` input uses
+an ephemeral session. Exact snapshots and routes reuse; drift requires confirmed
+`--upgrade` (`--yes` for scripts) or `--new --name NAME` for a parallel generation.
+Upgrade readies and promotes the replacement before canceling and closing old
+sessions; failed replacement leaves the old generation active.
+`list` reports local process/readiness/session inventory without configuration;
+an explicit global `--context` selects Orka inventory. `stop NAME_OR_ID` ends one
+worker and all its sessions. Runtime names and `li-...` instance IDs select one
+worker; stable `md-...` source IDs refuse ambiguous active generations.
+Native Windows keeps package-free fake Run one-shot; resident lifecycle uses WSL.
+
+Canonical `run FILE --once` / `test FILE` dispatch to a cluster-independent App
+adapter and the embedded-runner interface. Run returns answers without checks;
+Test checks saved ordered examples. `--case ID` is always partial.
+`test FILE --check` validates the current selected pair offline without inference,
+tools, journals or history; Test never targets a resident instance. Versioned
 payload-free text/JSON results are local preview, never native evidence. The
 CLI's default embedded runner uses Agent Sessions for fake, local and Copilot models, with one
 Session per agent turn and two independent judge samples per llmJudge assertion.
@@ -97,19 +112,6 @@ makes zero model calls and does not create native evidence. There are no
 inference retries or fallback. Existing live `run --agent`, full-workspace Test,
 workspace Explain and hidden legacy Eval remain unchanged. See
 [agent-file preview](kmx.md#agent-file-local-preview-unreleased-integration).
-
-`kmx run FILE --persist` registers or reuses an immutable local agent/test
-snapshot. Without input it only registers; with input it executes the cached pair
-in the invoking process, retaining no daemon, model session, credential or tool
-process. Persistent registrations are tool-free and use fake or Copilot routes
-without custom endpoints. `kmx list` shows active local registrations; `--all`
-includes stopped ones. Only an explicit global `--context` selects existing Orka
-inventory. Hidden `kmx stop NAME_OR_ID` ends a local registration, not an
-in-flight preview. Test remains current-source based, never instance-targeted.
-`kmx test FILE --check [-o text|json]` validates the selected pair without
-provider, model, tool, journal or history access; validation is not a test pass.
-Native Windows defers persistence, local List and Stop; use WSL. See
-[local preview](local-preview.md) for snapshot privacy and lifecycle limits.
 
 `kmx test FILE --runner copilotd --host ws://127.0.0.1:PORT` explicitly selects
 an already-running local native host instead of embedded Sessions. Each case uses
@@ -324,9 +326,9 @@ promotion, creation or partial-outcome path. See [suite workspace](suite-workspa
 
 ## Vocabulary
 
-**Decided: Run / Test / Publish.** `run --agent` invokes an existing live Orka
-Agent; `run FILE` previews a local agent file, optionally registering its snapshot
-with `--persist`. Test checks file or workspace cases; Publish transfers the OCI
+**Decided: Run / Test / Publish.** Run starts or reuses a resident local Markdown
+agent, previews a file with `--once`, or invokes an existing live Orka Agent with
+`--agent`; Test checks current file or workspace cases; Publish transfers the OCI
 graph with `kmx package push`.
 This does not add local workspace Run, numbered versions, a plugin or a new
 Publish command. Deploy remains real-target placement.

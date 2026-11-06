@@ -194,25 +194,23 @@ inline authoring keeps this rule; paired CLI recording writes only the tests fil
 ## Tests in a separate file (CLI)
 
 `kmx run FILE` and `kmx test FILE` read the selected tests file with the shared
-reader. Run returns answers without checks; Test evaluates the checks. Add
-`--tests FILE` to select an override, or use `run FILE "input"` for only that
-input. No source migration is automatic. A missing or empty test source is not
-a passing Test.
+reader. By default, Run starts or reuses a resident tool-free fake or Copilot
+worker on Unix/WSL; without input it sends no turn. `run FILE "input"` sends one
+turn in an ephemeral session. Exact snapshots and routes reuse; drift requires
+confirmed `--upgrade` or `--new --name NAME` for a parallel generation. Upgrade
+readies and promotes the replacement before canceling and closing old sessions.
+Owner-only snapshot state retains exact authored agent/test bytes in cleartext.
+Use local `chat` for resumable sessions, `list` for resident inventory and
+`stop NAME_OR_ID` to end one worker and all its sessions. Native Windows keeps
+package-free fake Run one-shot; use WSL for resident lifecycle.
 
-`kmx test FILE --check [--tests FILE] [-o text|json]` validates the current
-selected pair and reports identity metadata without provider, model, tool,
-journal or history access. It does not execute checks or establish a test pass.
-Ordinary Test also uses current checked source, never a persistent instance.
-
-`kmx run FILE --persist` registers or reuses an immutable snapshot of the
-selected agent/test pair. Without input it only registers; with input it runs
-the cached pair in the invoking process. Persistent registrations are tool-free;
-ordinary Run/Test tool support is unchanged. Exact authored bytes are retained
-in an owner-only cleartext cache. Source edits do not update an active snapshot:
-stop it before persisting changed source. `kmx list` shows active registrations,
-`kmx list --all` includes stopped ones, and `kmx stop NAME_OR_ID` ends one.
-Persistence, local List and Stop are deferred on native Windows; use WSL.
-See [local preview](local-preview.md) for lifecycle privacy and history limits.
+`kmx run FILE --once` returns saved-example answers without checks, or only the
+positional input when supplied. The preview tool and recording behavior below
+applies to one-shot Run and Test, not resident execution. Test evaluates current
+checked source, never a running instance; `test FILE --check` validates the
+selected pair without inference, tools, journals or history. Add `--tests FILE`
+to select an override. No source migration is automatic. A missing or empty test
+source is not a passing Test.
 
 MCP has separate read-only source/history resources and paired offline export.
 The existing Run/Test tools also accept version 3 with a checked `sourceVersion`
@@ -477,8 +475,9 @@ this file; the parser neither checks availability nor chooses/falls back to a
 model. Prose cannot grant tools or hooks. Tool names declare a requirement,
 not authority: execution needs an explicit host binding and a qualified provider.
 The CLI supports one [host-bound read-only GitHub MCP operation](local-preview.md#host-tool-foundation)
-with an explicit local binding and environment credential reference. In addition, file Run/Test
-can select named stdio MCP servers from the agent folder's `kmx.yaml` with repeatable
+with an explicit local binding and environment credential reference. These tool
+bindings require `run FILE --once` for CLI Run; resident agents are tool-free.
+In addition, one-shot file Run/Test can select named stdio MCP servers from the agent folder's `kmx.yaml` with repeatable
 `--mcp-server NAME` (replaces the saved selection) or `--no-mcp-servers` (clears it); a fixed
 `--tool-bindings` takes precedence. Disabled tools and populated recordings do not start a
 server. See [selected stdio servers](local-preview.md#selected-stdio-servers-in-file-runtest). Missing
