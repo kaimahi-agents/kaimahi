@@ -17,55 +17,24 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-const (
-	windowsTreeWait = 5 * time.Second
-
-	windowsCreateProcessDebugEvent = 3
-	windowsDebugContinue           = 0x00010002
-)
+const windowsTreeWait = 5 * time.Second
 
 var (
 	windowsKernel32                = windows.NewLazySystemDLL("kernel32.dll")
 	procCheckRemoteDebuggerPresent = windowsKernel32.NewProc("CheckRemoteDebuggerPresent")
-	procContinueDebugEvent         = windowsKernel32.NewProc("ContinueDebugEvent")
 	procDebugActiveProcessStop     = windowsKernel32.NewProc("DebugActiveProcessStop")
 	procDebugSetProcessKillOnExit  = windowsKernel32.NewProc("DebugSetProcessKillOnExit")
+	procGetProcessIDOfThread       = windowsKernel32.NewProc("GetProcessIdOfThread")
 	procIsProcessInJob             = windowsKernel32.NewProc("IsProcessInJob")
-	procWaitForDebugEvent          = windowsKernel32.NewProc("WaitForDebugEvent")
 )
 
-// The uintptr array gives the DEBUG_EVENT union its native pointer alignment.
-// Twenty-one words cover its largest member on both 32- and 64-bit Windows.
-type windowsDebugEvent struct {
-	code      uint32
-	processID uint32
-	threadID  uint32
-	data      [21]uintptr
-}
-
-type windowsCreateProcessDebugInfo struct {
-	file                windows.Handle
-	process             windows.Handle
-	thread              windows.Handle
-	baseOfImage         uintptr
-	debugInfoFileOffset uint32
-	debugInfoSize       uint32
-	threadLocalBase     uintptr
-	startAddress        uintptr
-	imageName           uintptr
-	unicode             uint16
-}
-
 type windowsStartState struct {
-	root           windows.Handle
-	initialThread  windows.Handle
-	processID      uint32
-	eventProcessID uint32
-	eventThreadID  uint32
-	started        bool
-	assigned       bool
-	eventPending   bool
-	debugAttached  bool
+	root          windows.Handle
+	initialThread windows.Handle
+	processID     uint32
+	started       bool
+	assigned      bool
+	debugAttached bool
 }
 
 type platformCommand struct {
@@ -196,32 +165,6 @@ func (c *Command) startWindowsProcess(job windows.Handle) (windowsStartState, er
 		return state, err
 	}
 	state.processID = processID
-	event, err := waitForWindowsDebugEvent()
-	if err != nil {
-		return state, fmt.Errorf("wait for subprocess startup: %w", err)
-	}
-	state.eventProcessID = event.processID
-	state.eventThreadID = event.threadID
-	state.eventPending = true
-	if event.code != windowsCreateProcessDebugEvent || event.processID != processID {
-		return state, errors.New("subprocess returned an unexpected startup event")
-	}
-	info := (*windowsCreateProcessDebugInfo)(unsafe.Pointer(&event.data[0]))
-	if info.file != 0 && info.file != windows.InvalidHandle {
-		if err := windows.CloseHandle(info.file); err != nil {
-			return state, fmt.Errorf("close subprocess image: %w", err)
-		}
-	}
-	if info.process == 0 || info.process == windows.InvalidHandle || info.thread == 0 || info.thread == windows.InvalidHandle {
-		return state, errors.New("subprocess returned incomplete startup handles")
-	}
-	if err := windows.DuplicateHandle(
-		windows.CurrentProcess(), info.thread,
-		windows.CurrentProcess(), &state.initialThread,
-		windows.THREAD_SUSPEND_RESUME, false, 0,
-	); err != nil {
-		return state, fmt.Errorf("retain subprocess startup thread: %w", err)
-	}
 
 	var assignErr, membershipErr, duplicateErr error
 	handleErr := c.Process.WithHandle(func(raw uintptr) {
@@ -261,10 +204,10 @@ func (c *Command) startWindowsProcess(job windows.Handle) (windowsStartState, er
 	if err := c.ctx.Err(); err != nil {
 		return state, err
 	}
-	if err := continueWindowsDebugEvent(state.eventProcessID, state.eventThreadID); err != nil {
-		return state, fmt.Errorf("continue subprocess startup: %w", err)
+	state.initialThread, err = openWindowsInitialThread(processID)
+	if err != nil {
+		return state, err
 	}
-	state.eventPending = false
 	if err := debugActiveProcessStop(state.processID); err != nil {
 		return state, fmt.Errorf("detach subprocess startup guard: %w", err)
 	}
@@ -293,10 +236,12 @@ func (c *Command) startWindowsProcess(job windows.Handle) (windowsStartState, er
 			return state, fmt.Errorf("subprocess startup thread had unexpected suspend count %d", previous)
 		}
 	}
-	thread := state.initialThread
-	state.initialThread = 0
-	if err := windows.CloseHandle(thread); err != nil {
-		return state, fmt.Errorf("close subprocess startup thread: %w", err)
+	if state.initialThread != 0 {
+		thread := state.initialThread
+		state.initialThread = 0
+		if err := windows.CloseHandle(thread); err != nil {
+			return state, fmt.Errorf("close subprocess startup thread: %w", err)
+		}
 	}
 	return state, nil
 }
@@ -334,26 +279,69 @@ func windowsProcessID(pid int) (uint32, error) {
 	return uint32(pid), nil
 }
 
-func waitForWindowsDebugEvent() (windowsDebugEvent, error) {
-	var event windowsDebugEvent
-	ok, _, callErr := procWaitForDebugEvent.Call(
-		uintptr(unsafe.Pointer(&event)),
-		uintptr(windowsTreeWait.Milliseconds()),
-	)
-	if ok == 0 {
-		return windowsDebugEvent{}, callErr
+func openWindowsInitialThread(processID uint32) (thread windows.Handle, returnErr error) {
+	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPTHREAD, 0)
+	if err != nil {
+		return 0, fmt.Errorf("snapshot subprocess startup thread: %w", err)
 	}
-	return event, nil
+	defer func() {
+		if err := windows.CloseHandle(snapshot); err != nil {
+			returnErr = joinPlatformError(returnErr, fmt.Errorf("close subprocess thread snapshot: %w", err))
+		}
+		if returnErr != nil && thread != 0 {
+			if err := windows.CloseHandle(thread); err != nil {
+				returnErr = joinPlatformError(returnErr, fmt.Errorf("close subprocess startup thread: %w", err))
+			}
+			thread = 0
+		}
+	}()
+
+	entry := windows.ThreadEntry32{Size: uint32(unsafe.Sizeof(windows.ThreadEntry32{}))}
+	if err := windows.Thread32First(snapshot, &entry); err != nil {
+		return 0, fmt.Errorf("read subprocess thread snapshot: %w", err)
+	}
+	var threadID uint32
+	for {
+		if entry.OwnerProcessID == processID {
+			if threadID != 0 {
+				return 0, errors.New("subprocess had multiple startup threads")
+			}
+			threadID = entry.ThreadID
+		}
+		err = windows.Thread32Next(snapshot, &entry)
+		if errors.Is(err, windows.ERROR_NO_MORE_FILES) {
+			break
+		}
+		if err != nil {
+			return thread, fmt.Errorf("read subprocess thread snapshot: %w", err)
+		}
+	}
+	if threadID == 0 {
+		return 0, errors.New("subprocess startup thread was not found")
+	}
+	thread, err = windows.OpenThread(
+		windows.THREAD_SUSPEND_RESUME|windows.THREAD_QUERY_LIMITED_INFORMATION,
+		false, threadID,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("open subprocess startup thread: %w", err)
+	}
+	observedProcessID, err := windowsThreadProcessID(thread)
+	if err != nil {
+		return thread, fmt.Errorf("read subprocess startup thread identity: %w", err)
+	}
+	if observedProcessID != processID {
+		return thread, errors.New("subprocess startup thread identity did not match")
+	}
+	return thread, nil
 }
 
-func continueWindowsDebugEvent(processID, threadID uint32) error {
-	ok, _, callErr := procContinueDebugEvent.Call(
-		uintptr(processID), uintptr(threadID), windowsDebugContinue,
-	)
-	if ok == 0 {
-		return callErr
+func windowsThreadProcessID(thread windows.Handle) (uint32, error) {
+	processID, _, callErr := procGetProcessIDOfThread.Call(uintptr(thread))
+	if processID == 0 {
+		return 0, callErr
 	}
-	return nil
+	return uint32(processID), nil
 }
 
 func debugActiveProcessStop(processID uint32) error {
@@ -394,13 +382,6 @@ func processInWindowsJob(process, job windows.Handle) (bool, error) {
 
 func releaseWindowsDebugGuard(state *windowsStartState) error {
 	var cleanupErr error
-	if state.eventPending {
-		if err := continueWindowsDebugEvent(state.eventProcessID, state.eventThreadID); err != nil {
-			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("continue failed subprocess startup: %w", err))
-		} else {
-			state.eventPending = false
-		}
-	}
 	if state.debugAttached && state.processID != 0 {
 		if err := debugActiveProcessStop(state.processID); err != nil {
 			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("detach failed subprocess startup guard: %w", err))
