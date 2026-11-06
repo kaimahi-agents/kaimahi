@@ -28,6 +28,11 @@ type offlineInstallProfile struct {
 		SHA256     string `json:"sha256"`
 		Version    string `json:"version"`
 		AppVersion string `json:"appVersion"`
+		Source     *struct {
+			Commit    string `json:"commit"`
+			Directory string `json:"directory"`
+			GitTree   string `json:"gitTree"`
+		} `json:"source,omitempty"`
 	} `json:"chart"`
 	Artifacts struct {
 		SHA256 string `json:"sha256"`
@@ -83,7 +88,10 @@ type offlineValues struct {
 		} `json:"agentHosts"`
 	} `json:"controller"`
 	Workers struct {
-		AI            offlineValueWorker `json:"ai"`
+		AI struct {
+			Image       offlineValueImage `json:"image"`
+			RBACProfile string            `json:"rbacProfile,omitempty"`
+		} `json:"ai"`
 		General       offlineValueWorker `json:"general"`
 		SessionLoader offlineValueWorker `json:"sessionLoader"`
 	} `json:"workers"`

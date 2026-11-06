@@ -1635,7 +1635,12 @@ native, no-provider installation from source
 release. The exact shipped [profile JSON](../internal/kmx/app/offline_profiles/orka-59703d6e-native-v1.json)
 has SHA-256 `9580f7967e2a952f0934ba1db533a58a1232bbe6055db05e88e295bda803774d`.
 This replaces the node-only profile hash; existing bundle records must use the
-new exact hash. No bundle input or environment variable can replace catalog pins.
+new exact hash. The additional
+[restricted-worker profile](../internal/kmx/app/offline_profiles/orka-7916cd1c-native-v1.json)
+`orka-7916cd1c-native/v1` has SHA-256
+`6ab8213cae9f1d58fe59f34b2402f93ed951752269decdf750fc2a170bddf223`.
+The manifest selects one of these compiled profiles; hashes and source identities
+cannot be mixed. No bundle input or environment variable can replace catalog pins.
 
 #### Native Orka install
 
@@ -1688,6 +1693,37 @@ inspect retained effects privately. Cache checks are invocation-time evidence,
 not an indefinite Task-availability guarantee; the guest owns cache lifetime
 and blocked-egress enforcement. Installing Orka does not prove a Task answer.
 
+#### Source-packaged restricted profile
+
+`orka-7916cd1c-native/v1` is an additional compiled profile, not an online pin
+change or a replacement for existing bundles. Obtain its exact chart package and
+published image descriptor as bundle inputs; kmx never packages or downloads them
+at installation time. Its catalog records:
+
+- Orka source commit: `7916cd1c8c083ade6b10df6ba408f854d930190c`.
+- Chart source: `manifest_staging/charts/orka`, Git tree
+  `2df37384a46a435ec6f3ec5e93468760771f6c1d`.
+- Chart `.tgz` SHA-256:
+  `19c50cff36855b8792b4777c89c598cf33ea70180e677e1a4758fc0211f069ed`.
+- Published images: Orka [run 42129731205](https://github.com/orka-agents/orka/actions/runs/42129731205),
+  with its unchanged `images.json` bound by `install.artifacts.sha256`.
+
+The chart was produced with Helm v3.20.0 using `helm package
+manifest_staging/charts/orka` from that clean commit, without generating manifests
+or building images. `install.chart.source` records the commit, directory and Git
+tree; `install.chart.sha256` authorizes the exact archive bytes. These fields are
+source-binding metadata, not upstream release signatures or runtime Git checks.
+Helm packaging can change archive timestamps: a fresh package is not assumed to
+have the recorded checksum. Keep the original package as an image-preparation
+input. The controller and worker manifests/configs are native children of the
+unchanged published image indexes; kind and the session loader are not repinned.
+
+This profile enables `workers.ai.rbacProfile: restricted`, including the chart's
+controller-wide context-token enforcement. It does not configure issuer grants
+or claim live startup, denied-read, leakage or native guest qualification.
+Existing off/audit callers must satisfy their issuer grants before use. A release
+profile can replace this development pin after that release ships and is checked.
+
 #### Manifest input
 
 `DIR/install.json` is a closed JSON object. Every field below is required.
@@ -1704,7 +1740,7 @@ URLs or special files. No image archives or layer graphs are read; install parse
 | `profile`, `profileSha256` | Catalog key and exact shipped profile-byte hash above |
 | `platform` | `{"os":"linux","architecture":"amd64"}` or `arm64`; must match the running guest |
 | `kmx` | `{"version":string,"revision":revision,"sha256":hash}`, equal to the running binary's resolved version, clean VCS revision and executable SHA-256; absent/unknown/modified build metadata refuses |
-| `orka` | `{"mode":"source","identity":"59703d6eac1760aa2dc5fed4dee9dcb74c6e5186"}` |
+| `orka` | `{"mode":"source","identity":revision}`, equal to the selected compiled profile: `59703d6eac1760aa2dc5fed4dee9dcb74c6e5186` or `7916cd1c8c083ade6b10df6ba408f854d930190c` |
 | `chart`, `artifacts` | Each `{"path":path,"sha256":hash}`; syntax-checked but unread in the cluster step; install requires exact catalog-authorized bytes |
 | `node` | Exactly `localRef`, `repository`, `indexPath`, `indexDigest`, `manifestPath`, `manifestDigest`, `configPath`, `configDigest` |
 | `components` | Complete boolean map below; no inferred enablement |

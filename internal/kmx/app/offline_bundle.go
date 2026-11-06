@@ -24,6 +24,9 @@ import (
 //go:embed offline_profiles/orka-59703d6e-native-v1.json
 var offlineProfileJSON []byte
 
+//go:embed offline_profiles/orka-7916cd1c-native-v1.json
+var offlineRestrictedProfileJSON []byte
+
 const offlineJSONLimit = 1 << 20
 
 type offlinePlatform struct {
@@ -356,11 +359,15 @@ func loadOfflineBundle(dir string, identity offlineKMXIdentity, install bool) (*
 	if err := offlineJSON(raw, &m, true); err != nil {
 		return nil, fmt.Errorf("install.json: %w", err)
 	}
+	profileJSON := offlineProfileJSON
+	if m.Profile == "orka-7916cd1c-native/v1" {
+		profileJSON = offlineRestrictedProfileJSON
+	}
 	var p offlineProfile
-	if err := offlineJSON(offlineProfileJSON, &p, false); err != nil {
+	if err := offlineJSON(profileJSON, &p, false); err != nil {
 		return nil, fmt.Errorf("embedded offline profile: %w", err)
 	}
-	if m.SchemaVersion != "kmx-offline/v1" || m.Profile != p.Profile || m.ProfileSHA256 != offlineHash(offlineProfileJSON) || m.Orka != p.Orka {
+	if m.SchemaVersion != "kmx-offline/v1" || m.Profile != p.Profile || m.ProfileSHA256 != offlineHash(profileJSON) || m.Orka != p.Orka {
 		return nil, fmt.Errorf("offline schema, profile hash or source identity is not supported")
 	}
 	if m.Platform.OS != "linux" || m.Platform.Architecture != runtime.GOARCH {

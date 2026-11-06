@@ -11,7 +11,9 @@
 // cancellation and conservative mutation projections, never readiness proof.
 //
 // Offline cluster bring-up validates a closed manifest and clean binary identity
-// against an embedded catalog. Cluster bring-up reads only pinned node evidence;
+// against an embedded catalog. The source-packaged 7916cd1c profile records chart
+// provenance and enables restricted AI workers; the 59703d6e profile is retained.
+// Cluster bring-up reads only pinned node evidence;
 // no-provider Orka install additionally verifies retained chart/image bytes,
 // generated values, local rendering and every schedulable node CRI reference.
 // Neither provisions tools or imports/pulls images. Offline reuse binds the
