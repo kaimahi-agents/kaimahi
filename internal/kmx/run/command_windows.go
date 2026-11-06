@@ -31,6 +31,7 @@ type platformCommand struct {
 	ready       chan struct{}
 	readyOnce   sync.Once
 	job         windows.Handle
+	jobParent   windows.ProcessInformation
 	monitorDone chan struct{}
 	setupErr    error
 	cleanupErr  error
@@ -66,13 +67,16 @@ func (c *Command) startPlatform() error {
 		c.platform.finishSetup(err)
 		return joinPlatformError(err, c.platform.release())
 	}
+	c.platform.mu.Lock()
+	c.platform.jobParent = parent
+	c.platform.mu.Unlock()
 	if err := c.configureWindowsCommand(parent.Process); err != nil {
 		c.platform.finishSetup(err)
-		return joinPlatformError(err, errors.Join(releaseWindowsJobParent(parent), c.platform.release()))
+		return joinPlatformError(err, c.platform.release())
 	}
 	if err := c.Cmd.Start(); err != nil {
 		c.platform.finishSetup(err)
-		return joinPlatformError(err, errors.Join(releaseWindowsJobParent(parent), c.platform.release()))
+		return joinPlatformError(err, c.platform.release())
 	}
 	if c.platform.afterCreate != nil {
 		c.platform.afterCreate(c.Process.Pid)
@@ -100,16 +104,13 @@ func (c *Command) startPlatform() error {
 		)
 	})
 	if handleErr != nil {
-		return c.failWindowsStart(fmt.Errorf("access subprocess handle: %w", handleErr), jobMember, root, parent)
+		return c.failWindowsStart(fmt.Errorf("access subprocess handle: %w", handleErr), jobMember, root)
 	}
 	if membershipErr != nil {
-		return c.failWindowsStart(fmt.Errorf("verify subprocess job: %w", membershipErr), jobMember, root, parent)
+		return c.failWindowsStart(fmt.Errorf("verify subprocess job: %w", membershipErr), jobMember, root)
 	}
 	if duplicateErr != nil {
-		return c.failWindowsStart(fmt.Errorf("retain subprocess handle: %w", duplicateErr), jobMember, root, parent)
-	}
-	if err := releaseWindowsJobParent(parent); err != nil {
-		return c.failWindowsStart(fmt.Errorf("release subprocess job parent: %w", err), true, root, windows.ProcessInformation{})
+		return c.failWindowsStart(fmt.Errorf("retain subprocess handle: %w", duplicateErr), jobMember, root)
 	}
 
 	done := make(chan struct{})
@@ -119,7 +120,7 @@ func (c *Command) startPlatform() error {
 	go c.platform.monitorRoot(root, done)
 
 	if err := c.ctx.Err(); err != nil {
-		return c.failWindowsStart(err, true, 0, windows.ProcessInformation{})
+		return c.failWindowsStart(err, true, 0)
 	}
 	c.platform.finishSetup(nil)
 	return nil
@@ -219,13 +220,19 @@ func processInWindowsJob(process, job windows.Handle) (bool, error) {
 func releaseWindowsJobParent(parent windows.ProcessInformation) error {
 	var cleanupErr error
 	if parent.Process != 0 {
-		if err := windows.TerminateProcess(parent.Process, 1); err != nil {
+		event, err := windows.WaitForSingleObject(parent.Process, 0)
+		if err != nil {
 			cleanupErr = errors.Join(cleanupErr, err)
-		}
-		if event, err := windows.WaitForSingleObject(parent.Process, uint32(windowsTreeWait.Milliseconds())); err != nil {
-			cleanupErr = errors.Join(cleanupErr, err)
+		} else if event == uint32(windows.WAIT_TIMEOUT) {
+			if err := windows.TerminateProcess(parent.Process, 1); err != nil {
+				cleanupErr = errors.Join(cleanupErr, err)
+			} else if event, err = windows.WaitForSingleObject(parent.Process, uint32(windowsTreeWait.Milliseconds())); err != nil {
+				cleanupErr = errors.Join(cleanupErr, err)
+			} else if event != windows.WAIT_OBJECT_0 {
+				cleanupErr = errors.Join(cleanupErr, fmt.Errorf("wait for subprocess job parent returned status %d", event))
+			}
 		} else if event != windows.WAIT_OBJECT_0 {
-			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("wait for subprocess job parent returned status %d", event))
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("inspect subprocess job parent returned status %d", event))
 		}
 	}
 	if parent.Thread != 0 {
@@ -237,9 +244,8 @@ func releaseWindowsJobParent(parent windows.ProcessInformation) error {
 	return cleanupErr
 }
 
-func (c *Command) failWindowsStart(primary error, assigned bool, root windows.Handle, parent windows.ProcessInformation) error {
+func (c *Command) failWindowsStart(primary error, assigned bool, root windows.Handle) error {
 	var cleanupErr error
-	cleanupErr = errors.Join(cleanupErr, releaseWindowsJobParent(parent))
 	c.platform.mu.Lock()
 	monitorOwnsRoot := c.platform.monitorDone != nil
 	monitorDone := c.platform.monitorDone
@@ -431,6 +437,10 @@ func (p *platformCommand) release() error {
 		}
 		p.job = 0
 		p.closed = true
+	}
+	if p.jobParent.Process != 0 || p.jobParent.Thread != 0 {
+		p.cleanupErr = errors.Join(p.cleanupErr, releaseWindowsJobParent(p.jobParent))
+		p.jobParent = windows.ProcessInformation{}
 	}
 	return p.cleanupErr
 }
