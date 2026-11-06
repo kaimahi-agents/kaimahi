@@ -26,7 +26,10 @@ no TokenRequest, Secret read, provisioning, endpoint probe or Tool invocation.
 Kubernetes credential helpers can still run through kubectl authentication.
 Native Windows remains unsupported. Help and completion do not load configuration.
 
-Built-ins are copied from the exact [Orka v0.3.0 API catalog](https://github.com/orka-agents/orka/blob/a533c3491d350263c0fa39bb7887dabd0d055c4e/internal/api/handlers.go#L56-L64).
+Built-ins are copied from the exact [Orka v0.3.0 API catalog](https://github.com/orka-agents/orka/blob/a533c3491d350263c0fa39bb7887dabd0d055c4e/internal/api/handlers.go#L56-L64),
+shared by the restricted source profile. Inventory reports the matched runtime's
+version and catalog source commit; the restricted profile uses its source commit
+for both, not the online release identity.
 They are offered only after observing the supported current-generation Ready
 controller image/configuration and matching watch namespace. Their source and
 reason are `pinned-catalog`, not live catalog discovery or successful execution.
@@ -159,6 +162,14 @@ fixed Vekil Copilot gateway. It never installs a runtime, starts a sign-in flow,
 downloads weights or runs an Agent, Task or inference request. Native macOS and
 Windows callers use their owning host integration instead; these commands run
 only in the Linux guest with local Docker and a checked kubeconfig.
+
+Connect recognizes the pinned online runtime or the restricted source-bound
+[offline profile](#native-installation-from-a-local-bundle). Each requires its
+matching chart identity and controller/AI-worker image pins; the offline images
+must be a same-architecture pair for amd64 or arm64. Mixed online/offline pins,
+mixed architectures and the older offline profile are not accepted. Existing
+readiness, namespace and configuration checks still apply. Recognition is a
+workload observation, not renewed bundle verification or live RBAC attestation.
 
 ```bash
 KIND_CLUSTER=local-offline kmx --context kind-local-offline --container-engine docker cluster orka model connect \

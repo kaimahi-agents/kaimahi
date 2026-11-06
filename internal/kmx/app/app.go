@@ -2,7 +2,10 @@
 // context guards, runtime adapters and external tools.
 // ReadOrkaTools shares bounded GET-only native tool inventory with destination
 // consumers: runtime-qualified pinned builtins and observed HTTP Tool resources,
-// never credentials, execution proof or provisioning.
+// never credentials, execution proof or provisioning. Connect, discovery and
+// native receipts recognize exact online or restricted source-profile chart and
+// same-architecture controller/worker tuples; inventory and public evidence name
+// the observed source identity and image pins, not an online release substitute.
 // Machine output shares payload-free envelopes and fixed error projections;
 // command adapters retain format selection, writing and exit semantics.
 // Progressive destination discovery projects local context labels or bounded,

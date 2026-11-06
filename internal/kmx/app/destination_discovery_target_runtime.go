@@ -29,7 +29,7 @@ func (a *App) discoveryTargetRuntime(ctx context.Context, s *discoveryReadSessio
 		r.State, r.Reason = "unsupported", "unsupported_runtime"
 		return r, e
 	}
-	r.Version = OrkaVersion
+	r.Version, _, _ = suiteNativeRuntimeIdentity(profile, namespace)
 	if _, e = suiteNativeControllerRuntime(controller, namespace); e != nil {
 		return r, e
 	}
