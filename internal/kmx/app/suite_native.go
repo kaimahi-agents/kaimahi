@@ -373,7 +373,7 @@ func suiteNativeControllerProfile(controller orkaDeployment, namespace string) (
 		return out, fmt.Errorf("native suite requires a live chart controller identity")
 	}
 	out.Helm = suiteNativeHelm(controller.Metadata.Labels)
-	if !suiteNativePinnedHelm(out.Helm) || controller.Metadata.Labels["app.kubernetes.io/component"] != "controller" {
+	if controller.Metadata.Labels["app.kubernetes.io/component"] != "controller" {
 		return out, fmt.Errorf("native suite requires the pinned Orka chart identity")
 	}
 	replicas := controller.Spec.Replicas
@@ -383,8 +383,8 @@ func suiteNativeControllerProfile(controller orkaDeployment, namespace string) (
 			continue
 		}
 		controllers++
-		if container.Image != "ghcr.io/orka-agents/orka@"+orkaControllerDigest || len(container.Command) != 0 {
-			return out, fmt.Errorf("native suite requires the pinned controller image and entrypoint")
+		if len(container.Command) != 0 {
+			return out, fmt.Errorf("native suite requires the pinned controller entrypoint")
 		}
 		out.ControllerImage = container.Image
 		for _, field := range []struct {
@@ -412,7 +412,38 @@ func suiteNativePinnedHelm(h suiteNativeHelmIdentity) bool {
 }
 
 func suiteNativePinnedRuntime(r suiteNativeRuntime, namespace string) bool {
-	return suiteNativePinnedHelm(r.Helm) && r.ControllerImage == "ghcr.io/orka-agents/orka@"+orkaControllerDigest && r.Mode == "harness-v2" && r.WatchNamespace == namespace && r.AIWorkerImage == "ghcr.io/orka-agents/orka/ai-worker@"+orkaAIWorkerDigest && scaffold.ValidateObjectName(r.ControllerServiceAccount) == nil && scaffold.ValidateObjectName(r.WorkerAccount) == nil
+	_, _, ok := suiteNativeRuntimeIdentity(r, namespace)
+	return ok
+}
+
+// Recognize complete tuples, not an image allowlist cross-product. This is a
+// workload observation, not renewed bundle verification or an RBAC attestation.
+// Online recognition remains independent of the embedded source profile.
+func suiteNativeRuntimeIdentity(r suiteNativeRuntime, namespace string) (version, catalog string, ok bool) {
+	if r.Mode != "harness-v2" || r.WatchNamespace != namespace || scaffold.ValidateObjectName(r.ControllerServiceAccount) != nil || scaffold.ValidateObjectName(r.WorkerAccount) != nil {
+		return "", "", false
+	}
+	if suiteNativePinnedHelm(r.Helm) && r.ControllerImage == "ghcr.io/orka-agents/orka@"+orkaControllerDigest && r.AIWorkerImage == "ghcr.io/orka-agents/orka/ai-worker@"+orkaAIWorkerDigest {
+		return OrkaVersion, orkaToolCatalogCommit, true
+	}
+	// Only compiled trusted data is parsed. The older offline profile is not
+	// supported here; no caller-selected catalog or install state is consulted.
+	var p offlineProfile
+	if json.Unmarshal(offlineRestrictedProfileJSON, &p) != nil || p.Install == nil || p.Orka.Mode != "source" || p.Orka.Identity == "" {
+		return "", "", false
+	}
+	if r.Helm.Chart != "orka-"+p.Install.Chart.Version || r.Helm.Instance == "" || r.Helm.App != "orka" || r.Helm.ManagedBy != "Helm" {
+		return "", "", false
+	}
+	controller, worker := p.Install.Images["controller"], p.Install.Images["ai-worker"]
+	for _, arch := range []string{"amd64", "arm64"} {
+		c, cok := controller.Platforms[arch]
+		w, wok := worker.Platforms[arch]
+		if cok && wok && r.ControllerImage == controller.Repository+"@"+c.ManifestDigest && r.AIWorkerImage == worker.Repository+"@"+w.ManifestDigest {
+			return p.Orka.Identity, p.Orka.Identity, true
+		}
+	}
+	return "", "", false
 }
 
 func (a *App) readSuiteNativeRuntime(ctx context.Context, namespace string) (suiteNativeRuntime, error) {
