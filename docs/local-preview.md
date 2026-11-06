@@ -194,6 +194,8 @@ checked snapshot and inference route; it sends a positional/prompt input through
 a new resident session when supplied. `--once` retains this invocation-owned
 preview path. Owner-only snapshot cache retains exact authored bytes in cleartext,
 like preview journals. The resident worker retains session history in memory. An
+explicit Copilot credential is copied once into worker memory (never environment,
+state or IPC results); each turn acquires a fresh bounded provider access snapshot.
 
 Each canonical source keeps a stable `md-...` agent ID. Every resident worker
 generation has a random `li-...` instance ID and a unique runtime name. An exact
@@ -203,8 +205,6 @@ NAME`. Upgrade starts and readies the replacement, promotes it, then cancels and
 sessions and records their workers stopped. A failed replacement leaves the old
 generation active. Chat and stop accept unique names or instance IDs; a stable
 agent ID is rejected while multiple active generations make it ambiguous.
-explicit Copilot credential is copied once into worker memory (never environment,
-state or IPC results); each turn acquires a fresh bounded provider access snapshot.
 Resident agents are tool-free in this first slice; one-shot Run/Test retain fixed
 command tools. `kmx chat NAME` creates or resumes local sessions, `kmx list` shows
 process/readiness/session state, `chat --new` prints a resumable session ID, and

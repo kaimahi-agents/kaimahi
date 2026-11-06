@@ -37,6 +37,19 @@ func residentAgentPair(t *testing.T) *agentfile.Pair {
 	return pair
 }
 
+func TestLocalAgentSocketFallsBackFromLongTemporaryPath(t *testing.T) {
+	t.Setenv("XDG_RUNTIME_DIR", "")
+	t.Setenv("TMPDIR", filepath.Join("/tmp", strings.Repeat("long-runtime-", 10)))
+	record := LocalAgentInstance{InstanceID: "li-" + strings.Repeat("a", 24)}
+	socket, err := localAgentSocket(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(socket) > 103 || !strings.HasPrefix(socket, "/tmp/kmx-runtime-") {
+		t.Fatalf("socket=%q", socket)
+	}
+}
+
 func TestResidentPreparedTurnRequiresCommitAcknowledgment(t *testing.T) {
 	pair := residentAgentPair(t)
 	record, _, err := ActivateLocalAgent(t.Context(), "", pair, "fake", "", "fake")

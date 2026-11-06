@@ -123,10 +123,6 @@ func runFileCommand(cmd *cobra.Command, state *commandState, file string, f file
 	return runFileCommandWithPair(cmd, state, file, nil, f, prompt, promptFile)
 }
 
-func runFilePairCommand(cmd *cobra.Command, state *commandState, pair *agentfile.Pair, f fileCommandOptions, prompt, promptFile string) error {
-	return runFileCommandWithPair(cmd, state, pair.AgentPath, pair, f, prompt, promptFile)
-}
-
 func runFileCommandWithPair(cmd *cobra.Command, state *commandState, file string, frozen *agentfile.Pair, f fileCommandOptions, prompt, promptFile string) error {
 	if f.Output == "jsonl" {
 		m := state.machine

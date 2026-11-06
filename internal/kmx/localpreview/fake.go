@@ -139,7 +139,13 @@ func (fakeTransport) RoundTrip(request *http.Request) (*http.Response, error) {
 			return respond(http.StatusNotFound, map[string]any{"error": map[string]string{"message": "fake: unknown model"}})
 		}
 		instructions := chat.Messages[0].Content
-		input := chat.Messages[len(chat.Messages)-1].Content
+		input := ""
+		for i := len(chat.Messages) - 1; i >= 1; i-- {
+			if chat.Messages[i].Role == "user" {
+				input = chat.Messages[i].Content
+				break
+			}
+		}
 		answer, toolCall := FakeAnswer(instructions, input)
 		name := ""
 		if toolCall {

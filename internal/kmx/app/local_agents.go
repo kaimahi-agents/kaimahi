@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
@@ -195,6 +196,38 @@ func localAgentInstanceDirectory(ctx context.Context, id string, create bool) (*
 	if err != nil {
 		return nil, "", err
 	}
+	if create {
+		lock, lockErr := fileaccess.EnsurePrivateFileAt(ctx, instances, "inventory.lock")
+		if lockErr != nil {
+			_ = instances.Close()
+			return nil, "", lockErr
+		}
+		if lockErr = waitLocalAgentLock(ctx, lock); lockErr == nil {
+			entries, readErr := instances.ReadDir(-1)
+			if readErr != nil {
+				lockErr = readErr
+			} else {
+				found, count := false, 0
+				for _, entry := range entries {
+					if entry.Name() == id && entry.IsDir() {
+						found = true
+					}
+					if validLocalAgentID(entry.Name()) && entry.IsDir() {
+						count++
+					}
+				}
+				if !found && count >= 1024 {
+					lockErr = errors.New("local agent inventory reached its source limit")
+				}
+			}
+		}
+		if lockErr != nil {
+			_ = lock.Close()
+			_ = instances.Close()
+			return nil, "", lockErr
+		}
+		defer lock.Close()
+	}
 	open := fileaccess.OpenDirectoryAt
 	if create {
 		open = fileaccess.EnsurePrivateDirectoryAt
@@ -224,22 +257,48 @@ func withLocalAgentTransition(ctx context.Context, dir *fileaccess.Directory, wo
 		return err
 	}
 	defer lock.Close()
-	deadline := time.Now().Add(2 * time.Second)
+	if err := waitLocalAgentLock(ctx, lock); err != nil {
+		return err
+	}
+	return work()
+}
+
+func withLocalAgentInventoryTransition(ctx context.Context, work func() error) error {
+	instances, err := localAgentDirectories(ctx, true)
+	if err != nil {
+		return err
+	}
+	defer instances.Close()
+	lock, err := fileaccess.EnsurePrivateFileAt(ctx, instances, "inventory.lock")
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	if err := waitLocalAgentLock(ctx, lock); err != nil {
+		return err
+	}
+	return work()
+}
+
+func waitLocalAgentLock(ctx context.Context, lock *fileaccess.PrivateFile) error {
+	deadline := time.NewTimer(30 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
 	for {
 		if err := fileaccess.TryLock(ctx, lock); err == nil {
-			break
+			return nil
 		} else if !errors.Is(err, fileaccess.ErrUnsafe) {
 			return err
 		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if time.Now().After(deadline) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
 			return errors.New("local agent lifecycle is busy")
+		case <-ticker.C:
 		}
-		time.Sleep(10 * time.Millisecond)
 	}
-	return work()
 }
 
 func ensureLocalAgentCapacity(dir *fileaccess.Directory, names ...string) error {
@@ -373,116 +432,129 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 	var result LocalAgentInstance
 	var created bool
 	err = withLocalAgentTransition(ctx, dir, func() error {
-		rows, err := ReadLocalAgentInstances(false)
-		if err != nil {
-			return err
-		}
-		active := make([]LocalAgentInstance, 0)
-		stoppedForRestart := ""
-		for _, current := range rows {
-			if current.ID == id {
-				active = append(active, current)
+		var active []LocalAgentInstance
+		var event string
+		admitted := false
+		err := withLocalAgentInventoryTransition(ctx, func() error {
+			rows, err := ReadLocalAgentInstances(false)
+			if err != nil {
+				return err
 			}
-		}
-		if options.Mode == LocalAgentActivationNormal {
-			for _, current := range active {
-				if current.SnapshotRevision == pair.SnapshotRevision && current.Provider == provider && current.Model == model {
-					if current.State == "running" {
-						result = current
-						return nil
-					}
-					if current.State == "crashed" {
-						if err := writeLocalAgentStop(ctx, dir, current.EventID, current.Started); err != nil {
-							return err
+			active = make([]LocalAgentInstance, 0)
+			stoppedForRestart := ""
+			for _, current := range rows {
+				if current.ID == id {
+					active = append(active, current)
+				}
+			}
+			if options.Mode == LocalAgentActivationNormal {
+				for _, current := range active {
+					if current.SnapshotRevision == pair.SnapshotRevision && current.Provider == provider && current.Model == model {
+						if current.State == "running" {
+							result = current
+							return nil
 						}
-						stoppedForRestart = current.EventID
-						active = nil
-						break
+						if current.State == "crashed" {
+							if err := writeLocalAgentStop(ctx, dir, current.EventID, current.Started); err != nil {
+								return err
+							}
+							stoppedForRestart = current.EventID
+							active = nil
+							break
+						}
 					}
 				}
+				if len(active) > 0 {
+					return &LocalAgentDriftError{Active: active[0], RequestedSnapshot: pair.SnapshotRevision}
+				}
 			}
-			if len(active) > 0 {
-				return &LocalAgentDriftError{Active: active[0], RequestedSnapshot: pair.SnapshotRevision}
+			event, err = randomEventID()
+			if err != nil {
+				return err
 			}
-		}
-		event, err := randomEventID()
-		if err != nil {
-			return err
-		}
-		digest := strings.TrimPrefix(pair.SnapshotRevision, "sha256:")
-		names := []string{"snapshot-" + digest + ".agent.md", "start-" + event + ".json", "active-" + event + ".lock"}
-		if options.Mode != LocalAgentActivationNew {
-			names = append(names, "primary-"+event+".json")
-		}
-		if options.Mode == LocalAgentActivationUpgrade {
-			names = append(names, "warning-"+event+".json")
-		}
-		if pair.Tests.State == "external" {
-			names = append(names, "snapshot-"+digest+".agent.test.md")
-		}
-		historyDir, _, err := localAgentInstanceDirectory(ctx, id, false)
-		if err != nil {
-			return err
-		}
-		starts, _, _, err := readInstanceEvents(ctx, historyDir, path)
-		closeErr := historyDir.Close()
-		if err != nil {
-			return err
-		}
-		if closeErr != nil {
-			return closeErr
-		}
-		if err := ensureLocalAgentCapacity(dir, names...); err != nil {
-			return err
-		}
-		agent, tests, err := cachePair(ctx, dir, path, pair)
-		if err != nil {
-			return err
-		}
-		var sequence uint64 = 1
-		for _, prior := range starts {
-			if prior.Sequence >= sequence {
-				sequence = prior.Sequence + 1
+			digest := strings.TrimPrefix(pair.SnapshotRevision, "sha256:")
+			names := []string{"snapshot-" + digest + ".agent.md", "start-" + event + ".json", "active-" + event + ".lock"}
+			if options.Mode != LocalAgentActivationNew {
+				names = append(names, "primary-"+event+".json")
 			}
-		}
-		if sequence == 0 {
-			return errors.New("local agent registration sequence exhausted")
-		}
-		instanceID := "li-" + event
-		name := pair.Agent.Identity.ID
-		if options.Mode == LocalAgentActivationNew {
-			name = options.Name
-			if name == "" {
-				name = pair.Agent.Identity.ID + "-" + event[:8]
-			}
-		}
-		if len(name) > 63 {
-			name = strings.TrimRight(name[:54], "-") + "-" + event[:8]
-		}
-		if !validLocalAgentName(name) {
-			return errors.New("local agent runtime name must use lowercase letters, digits and internal hyphens")
-		}
-		for _, row := range rows {
-			replaced := false
 			if options.Mode == LocalAgentActivationUpgrade {
-				for _, old := range active {
-					if old.EventID == row.EventID {
-						replaced = true
-						break
-					}
+				names = append(names, "warning-"+event+".json")
+			}
+			if pair.Tests.State == "external" {
+				names = append(names, "snapshot-"+digest+".agent.test.md")
+			}
+			historyDir, _, err := localAgentInstanceDirectory(ctx, id, false)
+			if err != nil {
+				return err
+			}
+			starts, _, _, err := readInstanceEvents(ctx, historyDir, path)
+			closeErr := historyDir.Close()
+			if err != nil {
+				return err
+			}
+			if closeErr != nil {
+				return closeErr
+			}
+			if err := ensureLocalAgentCapacity(dir, names...); err != nil {
+				return err
+			}
+			agent, tests, err := cachePair(ctx, dir, path, pair)
+			if err != nil {
+				return err
+			}
+			var sequence uint64 = 1
+			for _, prior := range starts {
+				if prior.Sequence >= sequence {
+					sequence = prior.Sequence + 1
 				}
 			}
-			if row.Name == name && row.EventID != stoppedForRestart && !replaced {
-				return errors.New("local agent runtime name is already active")
+			if sequence == 0 {
+				return errors.New("local agent registration sequence exhausted")
 			}
-		}
-		result = LocalAgentInstance{SchemaVersion: localAgentSchema, EventID: event, InstanceID: instanceID, Sequence: sequence, ID: id, Name: name, AuthoredName: pair.Agent.Identity.ID, Source: pair.AgentPath,
-			AgentRevision: pair.Agent.Revision, SnapshotRevision: pair.SnapshotRevision, TestsState: pair.Tests.State, TestsRevision: pair.Tests.Revision,
-			TestsPath: pair.Tests.Selection.Path, TestsExplicit: pair.Tests.Selection.Explicit, CachedAgent: agent, CachedTests: tests,
-			Provider: provider, Model: model, Started: time.Now().UTC(), State: "active"}
-		raw, _ := json.Marshal(result)
-		if err := publishPrivateBytes(ctx, dir, "start-"+event+".json", raw); err != nil {
+			instanceID := "li-" + event
+			name := pair.Agent.Identity.ID
+			if options.Mode == LocalAgentActivationNew {
+				name = options.Name
+				if name == "" {
+					name = pair.Agent.Identity.ID + "-" + event[:8]
+				}
+			}
+			if len(name) > 63 {
+				name = strings.TrimRight(name[:54], "-") + "-" + event[:8]
+			}
+			if !validLocalAgentName(name) {
+				return errors.New("local agent runtime name must use lowercase letters, digits and internal hyphens")
+			}
+			for _, row := range rows {
+				replaced := false
+				if options.Mode == LocalAgentActivationUpgrade {
+					for _, old := range active {
+						if old.EventID == row.EventID {
+							replaced = true
+							break
+						}
+					}
+				}
+				if row.Name == name && row.EventID != stoppedForRestart && !replaced {
+					return errors.New("local agent runtime name is already active")
+				}
+			}
+			result = LocalAgentInstance{SchemaVersion: localAgentSchema, EventID: event, InstanceID: instanceID, Sequence: sequence, ID: id, Name: name, AuthoredName: pair.Agent.Identity.ID, Source: pair.AgentPath,
+				AgentRevision: pair.Agent.Revision, SnapshotRevision: pair.SnapshotRevision, TestsState: pair.Tests.State, TestsRevision: pair.Tests.Revision,
+				TestsPath: pair.Tests.Selection.Path, TestsExplicit: pair.Tests.Selection.Explicit, CachedAgent: agent, CachedTests: tests,
+				Provider: provider, Model: model, Started: time.Now().UTC(), State: "active"}
+			raw, _ := json.Marshal(result)
+			if err := publishPrivateBytes(ctx, dir, "start-"+event+".json", raw); err != nil {
+				return err
+			}
+			admitted = true
+			return nil
+		})
+		if err != nil {
 			return err
+		}
+		if !admitted {
+			return nil
 		}
 		if err := startLocalAgentWorker(ctx, executable, result); err != nil {
 			_ = writeLocalAgentStop(context.Background(), dir, event, result.Started)
@@ -576,7 +648,7 @@ func readInstanceEvents(ctx context.Context, dir *fileaccess.Directory, dirPath 
 			raw, err := readPrivateBytes(ctx, dir, name, 4<<10)
 			var warning localAgentWarning
 			fileEvent := strings.TrimSuffix(strings.TrimPrefix(name, "warning-"), ".json")
-			if err != nil || strictLocalAgentJSON(raw, &warning) != nil || warning.SchemaVersion != localAgentSchema || warning.EventID != fileEvent || warning.Warning == "" || warning.Observed.IsZero() {
+			if err != nil || strictLocalAgentJSON(raw, &warning) != nil || warning.SchemaVersion != localAgentSchema || warning.EventID != fileEvent || !validHexValue(fileEvent, 24) || warning.Warning == "" || warning.Observed.IsZero() {
 				return nil, nil, nil, errors.New("local agent warning record is invalid")
 			}
 			if warning.RuntimeName != "" && !validLocalAgentName(warning.RuntimeName) {
@@ -644,6 +716,11 @@ func readInstanceEvents(ctx context.Context, dir *fileaccess.Directory, dirPath 
 			return nil, nil, nil, errors.New("local agent promotion has no matching start")
 		}
 	}
+	for event := range warnings {
+		if !seenEvent[event] {
+			return nil, nil, nil, errors.New("local agent warning has no matching start")
+		}
+	}
 	_ = active
 	return starts, stops, promotions, nil
 }
@@ -651,13 +728,13 @@ func readInstanceEvents(ctx context.Context, dir *fileaccess.Directory, dirPath 
 func validLocalAgentRecord(record LocalAgentInstance, dir string) bool {
 	digest := strings.TrimPrefix(record.SnapshotRevision, "sha256:")
 	validTests := record.TestsState == "inline" && record.CachedTests == "" && record.TestsPath != "" && !record.TestsExplicit && record.TestsRevision == record.AgentRevision || record.TestsState == "absent" && record.CachedTests == "" && record.TestsPath != "" && !record.TestsExplicit && record.TestsRevision == "" || record.TestsState == "none" && record.CachedTests == "" && record.TestsPath == "" && !record.TestsExplicit && record.TestsRevision == "" || record.TestsState == "external" && record.CachedTests != "" && record.TestsPath != "" && validDigest(record.TestsRevision)
-	return record.SchemaVersion == localAgentSchema && validHexValue(record.EventID, 24) && record.InstanceID == "li-"+record.EventID && record.Sequence > 0 && !record.Started.IsZero() && record.Stopped == nil && validLocalAgentID(record.ID) && validLocalAgentName(record.Name) && validLocalAgentName(record.AuthoredName) && filepath.Base(dir) == record.ID && LocalAgentID(record.Source) == record.ID && validDigest(record.AgentRevision) && validDigest(record.SnapshotRevision) && validTests &&
+	return record.SchemaVersion == localAgentSchema && validHexValue(record.EventID, 24) && record.InstanceID == "li-"+record.EventID && record.Sequence > 0 && !record.Started.IsZero() && record.Stopped == nil && validLocalAgentID(record.ID) && validLocalAgentName(record.Name) && record.AuthoredName != "" && filepath.Base(dir) == record.ID && LocalAgentID(record.Source) == record.ID && validDigest(record.AgentRevision) && validDigest(record.SnapshotRevision) && validTests &&
 		record.CachedAgent == filepath.Join(dir, "snapshot-"+digest+".agent.md") && (record.CachedTests == "" || record.CachedTests == filepath.Join(dir, "snapshot-"+digest+".agent.test.md")) &&
 		(record.TestsRevision == "" || validDigest(record.TestsRevision)) && (record.Provider == "fake" || record.Provider == "copilot") && agentfile.ValidModel(record.Model) && (record.Provider == "fake") == (record.Model == "fake") && record.State == "active"
 }
 
 func ReadLocalAgentInstances(all bool) ([]LocalAgentInstance, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	instances, err := localAgentDirectories(ctx, false)
 	if errors.Is(err, os.ErrNotExist) {
@@ -668,12 +745,15 @@ func ReadLocalAgentInstances(all bool) ([]LocalAgentInstance, error) {
 	}
 	defer instances.Close()
 	entries, err := instances.ReadDir(-1)
-	if err != nil || len(entries) > 1024 {
+	if err != nil || len(entries) > 1025 {
 		return nil, errors.New("local agent inventory is unavailable")
 	}
 	root, _ := config.StateDir()
 	rows := []LocalAgentInstance{}
 	for _, entry := range entries {
+		if entry.Name() == "inventory.lock" && !entry.IsDir() {
+			continue
+		}
 		if !validLocalAgentID(entry.Name()) || !entry.IsDir() {
 			return nil, errors.New("local agent inventory contains an unexpected entry")
 		}
@@ -710,29 +790,66 @@ func ReadLocalAgentInstances(all bool) ([]LocalAgentInstance, error) {
 			if row.Primary && !promotions[row.EventID].Equal(newest) {
 				row.Primary = false
 			}
-			if row.State == "active" {
+			rows = append(rows, row)
+		}
+	}
+	jobs := make(chan int)
+	errCh := make(chan error, 1)
+	var workers sync.WaitGroup
+	for range min(64, len(rows)) {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for i := range jobs {
+				if rows[i].State != "active" {
+					continue
+				}
 				probeCtx, probeCancel := context.WithTimeout(ctx, time.Second)
-				observation, probeErr := probeLocalAgent(probeCtx, row, "observe", localAgentIPCRequest{})
+				observation, probeErr := probeLocalAgent(probeCtx, rows[i], "observe", localAgentIPCRequest{})
 				probeCancel()
 				if probeErr == nil {
-					row.State, row.Ready = "running", observation.Observation.Ready
-					row.Sessions = len(observation.Observation.Sessions)
-					row.LastActivity = observation.Observation.LastActivity
+					rows[i].State, rows[i].Ready = "running", observation.Observation.Ready
+					rows[i].Sessions = len(observation.Observation.Sessions)
+					rows[i].LastActivity = observation.Observation.LastActivity
 					if observation.Observation.LastError != "" {
-						row.LastError = observation.Observation.LastError
+						rows[i].LastError = observation.Observation.LastError
 					}
-				} else if held, lockErr := localAgentWorkerLeaseHeld(ctx, row); lockErr != nil {
-					return nil, lockErr
-				} else if held {
-					row.State, row.LastError = "unavailable", "worker IPC unavailable"
+					continue
+				}
+				held, lockErr := localAgentWorkerLeaseHeld(ctx, rows[i])
+				if lockErr != nil {
+					select {
+					case errCh <- lockErr:
+					default:
+					}
+					continue
+				}
+				if held {
+					rows[i].State, rows[i].LastError = "unavailable", "worker IPC unavailable"
 				} else {
-					row.State = "crashed"
+					rows[i].State = "crashed"
 				}
 			}
-			if all || row.State == "running" || row.State == "unavailable" || row.State == "crashed" {
-				rows = append(rows, row)
+		}()
+	}
+	for i := range rows {
+		jobs <- i
+	}
+	close(jobs)
+	workers.Wait()
+	select {
+	case err := <-errCh:
+		return nil, err
+	default:
+	}
+	if !all {
+		active := rows[:0]
+		for _, row := range rows {
+			if row.State == "running" || row.State == "unavailable" || row.State == "crashed" {
+				active = append(active, row)
 			}
 		}
+		rows = active
 	}
 	sort.Slice(rows, func(i, j int) bool {
 		if rows[i].Name == rows[j].Name {
