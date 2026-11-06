@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
@@ -35,6 +36,21 @@ func TestLocalAgentListIsConfigFreeAndContextRoutesToOrka(t *testing.T) {
 	}
 	if err := execute([]string{"--context", "dev", "list"}, deps); err == nil || !strings.Contains(err.Error(), "remote selected") || *loads != 1 {
 		t.Fatalf("remote route: err=%v loads=%d", err, *loads)
+	}
+}
+
+func TestLocalAgentListTableShowsActivityAndWarnings(t *testing.T) {
+	var out, diagnostics bytes.Buffer
+	deps, _ := testDependencies(&out, &diagnostics)
+	activity := time.Date(2026, 11, 6, 1, 2, 3, 0, time.UTC)
+	deps.readLocalAgents = func(bool) ([]app.LocalAgentInstance, error) {
+		return []app.LocalAgentInstance{{ID: "md-1234567890abcdef", InstanceID: "li-1234567890abcdef", Sequence: 2, Name: "greeter", State: "running", Model: "fake", Started: activity.Add(-time.Minute), LastActivity: &activity, LastError: "cleanup incomplete"}}, nil
+	}
+	if err := execute([]string{"list"}, deps); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Last activity: 2026-11-06T01:02:03Z") || !strings.Contains(out.String(), "Warning: cleanup incomplete") {
+		t.Fatalf("out=%q", out.String())
 	}
 }
 

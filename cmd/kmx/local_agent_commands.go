@@ -77,6 +77,12 @@ func newLocalAgentListCommand(state *commandState) *cobra.Command {
 					model = "default"
 				}
 				fmt.Fprintf(cmd.OutOrStdout(), "%-13s %-14s %-3d %-20s %-9s %-5t %-8d %-24s %s\n", strings.TrimPrefix(row.ID, "md-")[:12], strings.TrimPrefix(row.InstanceID, "li-")[:12], row.Sequence, row.Name, row.State, row.Ready, row.Sessions, model, age)
+				if row.LastActivity != nil {
+					fmt.Fprintln(cmd.OutOrStdout(), "  Last activity:", row.LastActivity.Format(time.RFC3339))
+				}
+				if row.LastError != "" {
+					fmt.Fprintln(cmd.OutOrStdout(), "  Warning:", row.LastError)
+				}
 			}
 			return nil
 		},

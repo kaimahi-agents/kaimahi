@@ -115,13 +115,22 @@ func validLocalAgentLockName(name string) bool {
 
 func localAgentSocket(record LocalAgentInstance) (string, error) {
 	base := os.Getenv("XDG_RUNTIME_DIR")
+	managedBase := false
 	if base == "" {
 		base = filepath.Join(os.TempDir(), "kmx-runtime-"+strconv.Itoa(os.Getuid()))
+		managedBase = true
+	}
+	runtimeDir := filepath.Join(base, "kmx")
+	if len(filepath.Join(runtimeDir, record.InstanceID+".sock")) > 103 {
+		base = filepath.Join("/tmp", "kmx-runtime-"+strconv.Itoa(os.Getuid()))
+		runtimeDir = filepath.Join(base, "kmx")
+		managedBase = true
+	}
+	if managedBase {
 		if err := ensureLocalAgentRuntimeDirectory(base); err != nil {
 			return "", err
 		}
 	}
-	runtimeDir := filepath.Join(base, "kmx")
 	dir, err := fileaccess.EnsurePrivateDirectory(context.Background(), runtimeDir)
 	if err != nil {
 		return "", err
@@ -371,7 +380,10 @@ func (w *residentWorker) handle(ctx context.Context, request localAgentIPCReques
 		defer w.mu.Unlock()
 		if !request.Fresh && w.defaultSession != "" {
 			if existing := w.sessions[w.defaultSession]; existing != nil {
-				return localAgentIPCResponse{OK: true, EventID: w.record.EventID, Session: existing.meta}
+				existing.mu.Lock()
+				meta := existing.meta
+				existing.mu.Unlock()
+				return localAgentIPCResponse{OK: true, EventID: w.record.EventID, Session: meta}
 			}
 		}
 		if len(w.sessions) >= localAgentMaxSessions {
