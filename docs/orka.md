@@ -108,6 +108,18 @@ images in every selected kind node. No tools, images, chart or models are fetche
 and no Provider is created. See the [bundle input and install contract](kmx.md#native-orka-install)
 for exact cache/target checks, generated fixed values and disabled components.
 
+The compiled catalog also accepts `orka-7916cd1c-native/v1`, built from Orka
+commit `7916cd1c8c083ade6b10df6ba408f854d930190c`. Its source-packaged chart enables
+`workers.ai.rbacProfile: restricted`: the AI worker gets read-only lookups without
+Secrets or token creation, and the controller enforces context-token authorization
+for all callers. Existing callers must satisfy their issuer grants; the profile
+does not provision an issuer or narrow existing grants. The older `orka-59703d6e-native/v1`
+profile remains unchanged. This is not a released Orka version or a live guest
+qualification: controller startup and native calls under enforcement without an
+issuer have not been tested here. Native denied-read and leakage checks remain
+separate. Reuse compares values and workload settings, not live RBAC drift.
+See the [source-package binding](kmx.md#source-packaged-restricted-profile).
+
 Exact healthy reuse compares all custom values and live workload execution
 settings, preserves chart data/keys and reconciles only the result reader.
 Foreign, online, changed, partial and orphan state refuse without repair.

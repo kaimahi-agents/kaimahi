@@ -83,7 +83,10 @@ type offlineValues struct {
 		} `json:"agentHosts"`
 	} `json:"controller"`
 	Workers struct {
-		AI            offlineValueWorker `json:"ai"`
+		AI struct {
+			Image       offlineValueImage `json:"image"`
+			RBACProfile string            `json:"rbacProfile,omitempty"`
+		} `json:"ai"`
 		General       offlineValueWorker `json:"general"`
 		SessionLoader offlineValueWorker `json:"sessionLoader"`
 	} `json:"workers"`

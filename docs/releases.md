@@ -13,8 +13,14 @@ historical Kaimahi v0.2.0 release reported Orka v0.1.3. Current `main`
 pins **Orka v0.3.0** for fresh online installations, with v0.3.0 offline
 schemas by default; it does not upgrade existing v0.2.0 runtimes.
 `kmx cluster orka install --provider - --offline-bundle DIR` instead selects
-the fixed native source profile pinned to `59703d6e`, not the online release.
-It uses verified local chart/image data on an existing kind cluster without
+one of the compiled native source profiles pinned to `59703d6e` or `7916cd1c`,
+not the online release. The bundle manifest selects the profile; its hash and
+source identity must match that profile. The `59703d6e` profile remains unchanged.
+The `7916cd1c` profile enables restricted AI-worker permissions and controller-wide
+context-token enforcement; callers must satisfy their issuer grants. It does not
+provision an issuer or qualify live controller startup, guest denied-read/leakage
+checks or model execution. See the [source-package binding](kmx.md#source-packaged-restricted-profile).
+Both profiles use verified local chart/image data on an existing kind cluster without
 downloads or model/Provider setup. See the [native bundle install contract](kmx.md#native-orka-install).
 
 The official Homebrew namespace is limited to the public
@@ -144,7 +150,7 @@ Orka runtime pins are independent of kmx tags:
 
 | kmx build | Orka install | Offline schema target |
 |---|---|---|
-| Current `main` | Online: v0.3.0 verified Helm chart, harness-v2 (`fullnameOverride=orka-api`); fresh installations only. Offline bundle: fixed native source profile `59703d6e` with `--provider -`; no upgrade or adoption | v0.3.0 by default; explicit v0.2.0, v0.1.3 and old `main` snapshots remain readable |
+| Current `main` | Online: v0.3.0 verified Helm chart, harness-v2 (`fullnameOverride=orka-api`); fresh installations only. Offline bundle: compiled native source profiles `59703d6e` or `7916cd1c` (restricted AI workers and context-token enforcement), selected by the bundle manifest with `--provider -`; no upgrade or adoption | v0.3.0 by default; explicit v0.2.0, v0.1.3 and old `main` snapshots remain readable |
 | Kaimahi v0.8.1 release | v0.2.0 verified Helm chart, harness-v2 (`fullnameOverride=orka-api`) | v0.2.0 by default; explicit v0.1.3 or old `main` snapshot still readable |
 | Historical Kaimahi v0.2.0 release | v0.1.3 pinned manifest | historical behavior; not an upgrade path to the current chart |
 
