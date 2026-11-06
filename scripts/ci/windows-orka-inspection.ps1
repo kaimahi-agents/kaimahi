@@ -95,7 +95,9 @@ $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
 try {
     $listener.Start()
     $port = ([Net.IPEndPoint]$listener.LocalEndpoint).Port
-    [IO.File]::WriteAllText($Ready, [string]$port, [Text.UTF8Encoding]::new($false))
+    $readyTemp = "$Ready.pending"
+    [IO.File]::WriteAllText($readyTemp, [string]$port, [Text.UTF8Encoding]::new($false))
+    [IO.File]::Move($readyTemp, $Ready)
     $client = $listener.AcceptTcpClient()
     try {
         $client.ReceiveTimeout = 10000
