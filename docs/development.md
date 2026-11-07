@@ -157,13 +157,15 @@ evaluation-failure store consume the same checked foundation, including
 identity-bound clear, interrupted own-pair recovery and independent file/directory
 flush failure behavior. Windows defaults to machine-local `%LOCALAPPDATA%\kmx`.
 Windows amd64 now also builds, vets and natively executes the CLI on hosted
-`windows-latest`: version/help/completion plus one real Markdown file through
-package-free fake Run, failing Test and offline Explain. Windows arm64 is
+`windows-latest`: version/help/completion, one real Markdown file through
+package-free fake Run/failing Test/offline Explain, and read-only Orka list/show
+through a compiled native kubectl fixture. The exact staged release `.exe` also
+reaches the boundary through checksum-verified real kubectl. Windows arm64 is
 cross-built and vetted, not executed. These checks qualify only the
-[narrow Windows day-zero command boundary](windows.md), local-NTFS private state
-and exact tested artifact; they do not enable deferred adapters, real models,
-clusters, suite evidence, publication or Deploy. Stable v0.8.1 remains without a
-Windows `.exe`.
+[narrow Windows command boundary](windows.md), local-NTFS private state and exact
+tested artifact; live cluster/exec-auth proof remains separate, and workspace,
+suite evidence, publication and Deploy stay deferred. Stable v0.8.1 remains
+without a Windows `.exe`.
 
 The hosted Windows test context is established by the test-only
 [`windows-tests` launcher](../scripts/ci/windows-tests/main_windows.go), whose

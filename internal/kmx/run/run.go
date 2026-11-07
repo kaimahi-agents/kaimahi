@@ -1,5 +1,8 @@
 // Package run executes external tools for kmx.
 // It owns subprocess setup, environment overrides, output and cancellation.
+// On Windows, each command is held before user-mode execution until it enters a
+// kill-on-close Job Object, and its descendants stay contained; other platforms
+// retain native os/exec behavior.
 package run
 
 import (
@@ -36,11 +39,8 @@ func Default() *Runner {
 	return &Runner{Stdout: os.Stdout, Stderr: os.Stderr, Echo: true}
 }
 
-func (r *Runner) cmd(name string, args ...string) *exec.Cmd {
-	c := exec.Command(name, args...)
-	if r.Context != nil {
-		c = exec.CommandContext(r.Context, name, args...)
-	}
+func (r *Runner) cmd(name string, args ...string) *Command {
+	c := newCommand(r.Context, name, args...)
 	if len(r.Env) > 0 || len(r.Unset) > 0 {
 		c.Env = environ(os.Environ(), r.Env, r.Unset)
 	}
@@ -116,6 +116,10 @@ func (r *Runner) Capture(name string, args ...string) (string, error) {
 	c.Stdout, c.Stderr = &out, &errOut
 	err := c.Run()
 	if err != nil {
+		if contextErr := commandContextError(r.Context); contextErr != nil {
+			return strings.TrimSpace(out.String()),
+				fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), contextErr)
+		}
 		return strings.TrimSpace(out.String()),
 			fmt.Errorf("%s: %s", err, strings.TrimSpace(errOut.String()))
 	}
@@ -174,8 +178,10 @@ func MustExist(tool, why, install string) error {
 }
 
 // Command returns a prepared command for callers that need to manage the
-// process themselves — the chat port-forward, which runs in the background
-// and has to be waited on and killed.
-func (r *Runner) Command(name string, args ...string) *exec.Cmd {
+// process themselves. On Windows, callers must use its Start, Wait and Close
+// methods rather than starting its embedded exec.Cmd or killing Process
+// directly; those methods preserve ownership of the complete descendant tree.
+// On other platforms Command is an alias for exec.Cmd.
+func (r *Runner) Command(name string, args ...string) *Command {
 	return r.cmd(name, args...)
 }

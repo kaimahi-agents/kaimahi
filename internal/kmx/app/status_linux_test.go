@@ -77,7 +77,7 @@ func TestReadCommandsRichAndPlain(t *testing.T) {
 				out, text := reportOutput(t, rich, 32)
 				a := reportApp(t, out, `case "$*" in
 *"config view"*) printf '%s' '{"clusters":[{"name":"c","cluster":{"server":"https://127.0.0.1:6443"}}],"contexts":[{"name":"kind-test","context":{"cluster":"c"}}]}';;
-*"get agents.core.orka.ai"*) printf '%s' '{"items":[]}';;
+ *"get agents.core.orka.ai"*) printf '%s' '{"apiVersion":"v1","kind":"List","metadata":{},"items":[]}';;
 esac
 `)
 				var err error

@@ -3,7 +3,8 @@
 `kmx version -o json` reports the binary's supported machine interfaces without
 loading configuration, inspecting a cluster, accessing credentials or using the
 network. Text remains the default. The native Windows version command supports
-the same JSON interface without enabling deferred Windows operations.
+the same JSON interface without advertising or authorizing its separate
+read-only Orka inspection commands.
 
 ```sh
 kmx version -o json

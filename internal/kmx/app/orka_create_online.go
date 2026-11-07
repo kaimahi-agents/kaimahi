@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -16,59 +17,128 @@ import (
 // stderr is classified, never propagated: it may contain a TokenRequest or
 // admission echo.
 func (a *App) orkaCapture(ctx context.Context, stdin []byte, args ...string) ([]byte, error) {
-	if err := ctx.Err(); err != nil {
+	out := &orkaBoundedBuffer{remaining: 4 << 20}
+	if err := a.orkaCaptureInto(ctx, stdin, out, args...); err != nil {
 		return nil, err
+	}
+	return append([]byte(nil), out.buffer.Bytes()...), nil
+}
+
+type orkaCaptureOutput interface {
+	Write([]byte) (int, error)
+	outputError() error
+}
+
+func (a *App) orkaCaptureInto(ctx context.Context, stdin []byte, out orkaCaptureOutput, args ...string) error {
+	if err := ctx.Err(); err != nil {
+		return orkaCancelledRequest(err)
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	prepared := a.Command(append([]string{"--request-timeout=10s"}, args...)...)
-	cmd := exec.CommandContext(callCtx, prepared.Path, prepared.Args[1:]...)
-	cmd.Env = prepared.Env
-	cmd.WaitDelay = time.Second
-	cmd.Stdin = bytes.NewReader(stdin)
-	out := &orkaBoundedBuffer{remaining: 4 << 20}
 	// Classify stderr without returning its contents: API errors can echo
 	// admission payloads, tokens or Secret data. Only fixed, safe reasons
 	// leave this boundary.
 	stderr := &orkaBoundedBuffer{remaining: 4 << 10}
-	cmd.Stdout, cmd.Stderr = out, stderr
-	if err := a.executeCapture(callCtx, cmd); err != nil {
+	preparedArgs := append([]string{"--request-timeout=10s"}, args...)
+	var captureErr error
+	if a.captureCommand != nil {
+		runner := *a.Run
+		runner.Context = callCtx
+		if a.inspectionKubectl != "" {
+			freezeOrkaInspectionEnvironment(&runner)
+		}
+		tool, err := a.orkaInspectionCommand(callCtx)
+		if err != nil {
+			return fmt.Errorf("kubectl request failed; check permissions, prerequisites and the selected context")
+		}
+		prepared := runner.Command(tool, a.kubectl(preparedArgs...)...)
+		cmd := exec.CommandContext(callCtx, prepared.Path, prepared.Args[1:]...)
+		cmd.Env = prepared.Env
+		cmd.WaitDelay = time.Second
+		cmd.Stdin = bytes.NewReader(stdin)
+		cmd.Stdout, cmd.Stderr = out, stderr
+		captureErr = a.executeCapture(callCtx, cmd)
+	} else {
+		runner := *a.Run
+		runner.Context = callCtx
+		if a.inspectionKubectl != "" {
+			freezeOrkaInspectionEnvironment(&runner)
+		}
+		tool, err := a.orkaInspectionCommand(callCtx)
+		if err != nil {
+			return fmt.Errorf("kubectl request failed; check permissions, prerequisites and the selected context")
+		}
+		cmd := runner.Command(tool, a.kubectl(preparedArgs...)...)
+		cmd.WaitDelay = time.Second
+		cmd.Stdin = bytes.NewReader(stdin)
+		cmd.Stdout, cmd.Stderr = out, stderr
+		captureErr = cmd.Run()
+	}
+	if captureErr != nil {
+		if outputErr := out.outputError(); outputErr != nil {
+			return outputErr
+		}
+		if stderr.outputError() != nil {
+			return fmt.Errorf("kubectl request failed; check permissions, prerequisites and the selected context")
+		}
 		if callCtx.Err() != nil {
 			if err := ctx.Err(); err != nil {
-				return nil, fmt.Errorf("kubectl request cancelled or timed out: %w", err)
+				return orkaCancelledRequest(err)
 			}
-			return nil, fmt.Errorf("kubectl request cancelled or timed out")
+			return fmt.Errorf("kubectl request cancelled or timed out")
 		}
 		reason := strings.ToLower(stderr.buffer.String())
 		switch {
-		case strings.Contains(reason, "notfound") || strings.Contains(reason, "not found"):
+		case strings.Contains(reason, "doesn't have a resource type"),
+			strings.Contains(reason, "could not find the requested resource"):
+			return fmt.Errorf("kubectl request failed: requested Kubernetes resource type is unavailable")
+		case strings.Contains(reason, "forbidden"), strings.Contains(reason, "unauthorized"),
+			strings.Contains(reason, "provide credentials"), strings.Contains(reason, "must be logged in"):
+			return fmt.Errorf("kubectl request failed: access forbidden")
+		case strings.Contains(reason, "context canceled"), strings.Contains(reason, "context cancelled"),
+			strings.Contains(reason, "deadline exceeded"), strings.Contains(reason, "i/o timeout"),
+			strings.Contains(reason, "request timed out"), strings.Contains(reason, "connection timed out"),
+			strings.Contains(reason, "tls handshake timeout"):
+			return fmt.Errorf("kubectl request cancelled or timed out")
+		case strings.HasPrefix(strings.TrimSpace(reason), "error from server (notfound):"):
 			if strings.Contains(reason, "namespaces") && strings.Contains(reason, OrkaNamespace) {
-				return nil, fmt.Errorf("kubectl request failed: namespace %s not found", OrkaNamespace)
+				return fmt.Errorf("kubectl request failed: namespace %s not found", OrkaNamespace)
 			}
-			return nil, fmt.Errorf("kubectl request failed: requested Kubernetes resource not found")
-		case strings.Contains(reason, "forbidden"), strings.Contains(reason, "unauthorized"):
-			return nil, fmt.Errorf("kubectl request failed: access forbidden")
+			return fmt.Errorf("kubectl request failed: requested Kubernetes resource not found")
 		default:
-			return nil, fmt.Errorf("kubectl request failed; check permissions, prerequisites and the selected context")
+			return fmt.Errorf("kubectl request failed; check permissions, prerequisites and the selected context")
 		}
 	}
-	return out.buffer.Bytes(), nil
+	if stderr.outputError() != nil {
+		return fmt.Errorf("kubectl request failed; check permissions, prerequisites and the selected context")
+	}
+	return out.outputError()
 }
+
+func orkaCancelledRequest(cause error) error {
+	return fmt.Errorf("kubectl request cancelled or timed out: %w", cause)
+}
+
+var errOrkaResponseLimit = errors.New("kubectl response exceeds safe size limit")
 
 type orkaBoundedBuffer struct {
 	// Do not embed bytes.Buffer: its promoted ReadFrom would let io.Copy
 	// bypass Write and therefore bypass the subprocess response bound.
 	buffer    bytes.Buffer
 	remaining int
+	err       error
 }
 
 func (b *orkaBoundedBuffer) Write(p []byte) (int, error) {
 	if len(p) > b.remaining {
-		return 0, fmt.Errorf("kubectl response exceeds size limit")
+		b.err = errOrkaResponseLimit
+		return 0, b.err
 	}
 	b.remaining -= len(p)
 	return b.buffer.Write(p)
 }
+
+func (b *orkaBoundedBuffer) outputError() error { return b.err }
 
 func (a *App) guardOrkaMutation(ctx context.Context, opt CreateOptions, reconcileAction string) error {
 	if a.liftConsent != nil {

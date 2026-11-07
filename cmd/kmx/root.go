@@ -37,6 +37,7 @@ type dependencies struct {
 	newCopilot         func() copilotAccess
 	openGitHubSummary  func() (io.WriteCloser, error)
 	goos               string
+	goarch             string
 }
 
 func productionDependencies() dependencies {
@@ -45,6 +46,7 @@ func productionDependencies() dependencies {
 		stdin:      os.Stdin, stdout: os.Stdout, stderr: os.Stderr,
 		executable:        invocationExecutable(os.Args[0]),
 		goos:              runtime.GOOS,
+		goarch:            runtime.GOARCH,
 		openGitHubSummary: func() (io.WriteCloser, error) { return openGitHubSummary() },
 		loadConfig:        config.LoadWithOverrides, newApp: app.New, buildInfo: debug.ReadBuildInfo,
 		newAgentKitBuilder: func(options agentkitbuilder.Options) kmxsuite.SandboxBuilder {

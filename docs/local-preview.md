@@ -236,8 +236,9 @@ against one real Markdown file through package-free fake Run, an instruction-
 regressed failing Test, retained diagnostics and offline Explain. It checks that
 Explain sends nothing and neither private state family keeps an ambient
 credential canary. That qualifies only the narrow
-[native Windows day-zero path](windows.md), not providers, tools, clusters,
-suite evidence or native arm64 execution. Windows arm64 remains cross-build/vet
+[native Windows file-preview path](windows.md), not providers, tools, live
+execution, suite evidence or native arm64 execution. Separate list/show
+qualification covers read-only remote Orka inspection only. Windows arm64 remains cross-build/vet
 and checksum evidence only. No run against a real compatible model is recorded
 yet. To record one on a supported non-Windows route, a human runs:
 

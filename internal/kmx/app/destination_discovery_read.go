@@ -146,7 +146,7 @@ func (a *App) discoveryCaptureBudget(ctx context.Context, selectedContext string
 	out, diagnostics := &discoveryBuffer{remaining: min(maxStdout, 4<<20)}, &discoveryBuffer{remaining: 4 << 10}
 	defer func() { captured = out.Len() }()
 	cmd.Stdout, cmd.Stderr = out, diagnostics
-	err := a.executeCapture(child, cmd)
+	err := a.executeOwnedCapture(child, cmd)
 	if child.Err() != nil {
 		return nil, &discoveryReadFailure{reason: "read_unknown", cause: child.Err()}, 0
 	}

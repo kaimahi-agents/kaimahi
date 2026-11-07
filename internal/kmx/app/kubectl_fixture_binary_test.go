@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -118,4 +119,32 @@ func kubectlFixtureBinary(t *testing.T) string {
 		t.Fatal(kubectlFixtureBuild.err)
 	}
 	return kubectlFixtureBuild.binary
+}
+
+// installDirectKubectlFixture exposes the compiled helper as kubectl itself.
+// Unlike the legacy shell launcher, this boundary executes natively on Windows.
+func installDirectKubectlFixture(t *testing.T, dir, mode string) {
+	t.Helper()
+	name := "kubectl"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	source, target := kubectlFixtureBinary(t), filepath.Join(dir, name)
+	if err := os.Link(source, target); err != nil {
+		in, openErr := os.Open(source)
+		if openErr != nil {
+			t.Fatal(openErr)
+		}
+		out, createErr := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o700)
+		if createErr != nil {
+			_ = in.Close()
+			t.Fatal(createErr)
+		}
+		_, copyErr := io.Copy(out, in)
+		closeOutErr, closeInErr := out.Close(), in.Close()
+		if copyErr != nil || closeOutErr != nil || closeInErr != nil {
+			t.Fatalf("copy kubectl fixture: copy=%v close=%v/%v", copyErr, closeOutErr, closeInErr)
+		}
+	}
+	t.Setenv("KMX_KUBECTL_FIXTURE_MODE", mode)
 }

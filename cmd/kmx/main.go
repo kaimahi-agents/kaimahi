@@ -8,8 +8,10 @@
 // it preserves runner choice, intake, cancellation and legacy output formats.
 // Create writes a GitHub agent file and paired example test without prompts or
 // overwrites; package create retains native workspace authoring.
-// The guarded Windows tree additionally classifies
-// deferred operations before their argument or operational hooks can run.
+// The guarded Windows tree additionally classifies deferred operations before
+// their argument or operational hooks can run. Native Windows amd64 admits the
+// explicit-context, explicit-namespace Orka list/show remote inspection slice;
+// other cluster and workspace modes remain closed.
 package main
 
 import (

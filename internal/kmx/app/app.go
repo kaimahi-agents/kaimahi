@@ -46,6 +46,9 @@
 // two-sample scores and sanitized transient reasons only with content disclosure.
 // Tool availability notes derive from frozen settings and dispatch sources without
 // changing request-based assertions, recording data or the JSON result contract.
+// Live Orka list/show inspection uses bounded context-pinned kubectl reads,
+// private subprocess diagnostics and bounded terminal-safe human projections;
+// machine JSON/YAML retains the cluster's original values.
 package app
 
 import (
@@ -170,6 +173,11 @@ type App struct {
 	// Set only while preparing the Orka result forward, so cancellation and
 	// signals kill a forward even before its bound-port announcement.
 	orkaForwardContext context.Context
+	// inspectionKubectl freezes the operator-provided kubectl selected for one
+	// list/show invocation. Windows additionally binds its physical identity;
+	// later reads refuse a replaced executable instead of re-resolving PATH.
+	inspectionKubectl         string
+	inspectionKubectlIdentity string
 
 	// quickstartResultPort moves quickstart's loopback result forward off the
 	// fixed port so a test can own a listener. Empty in every real
@@ -235,6 +243,13 @@ func (a *App) executeCapture(ctx context.Context, cmd *exec.Cmd) error {
 	return cmd.Run()
 }
 
+func (a *App) executeOwnedCapture(ctx context.Context, cmd *run.Command) error {
+	if a.captureCommand != nil {
+		return a.captureCommand(ctx, preparedExecCommand(cmd))
+	}
+	return cmd.Run()
+}
+
 // kubectl returns a kubectl argument list carrying the explicit --context.
 //
 // An explicit context prevents a command from following kubeconfig's mutable
@@ -267,7 +282,8 @@ func isNotFound(err error) bool {
 		return false
 	}
 	message := err.Error()
-	return strings.Contains(message, "NotFound") || strings.Contains(message, `" not found`)
+	return strings.Contains(message, "NotFound") || strings.Contains(message, `" not found`) ||
+		strings.Contains(message, "requested Kubernetes resource not found")
 }
 
 // Command prepares a subprocess using the same explicit kubectl context and
@@ -275,7 +291,7 @@ func isNotFound(err error) bool {
 func (a *App) Command(args ...string) *exec.Cmd {
 	prepared := a.Run.Command("kubectl", a.kubectl(args...)...)
 	if a.orkaForwardContext == nil {
-		return prepared
+		return preparedExecCommand(prepared)
 	}
 	cmd := exec.CommandContext(a.orkaForwardContext, prepared.Path, prepared.Args[1:]...)
 	cmd.Env = prepared.Env

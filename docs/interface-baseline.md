@@ -93,11 +93,12 @@ requires `--force`; same-digest publication is a no-op. `package build --suite-r
 checks complete source content through the shared bounded materializer.
 
 On native Windows, the same discovery rules apply. Visibility in help/completion
-is not an enabled capability list. Current `main` permits only version/help/
-completion, package-free fake `run FILE` / `test FILE` (including the `--tests FILE`
-selector; native Windows still requires an explicit file), and offline
-`test explain ... --file FILE` (with optional `--tests FILE`; plus the hidden legacy
-Explain spelling for compatibility). Every other route refuses before effects. See the
+is not an enabled capability list. Current `main` permits version/help/completion,
+package-free fake `run FILE` / `test FILE` (including the `--tests FILE` selector;
+native Windows still requires an explicit file), offline `test explain ... --file
+FILE` (with optional `--tests FILE`; plus the hidden legacy Explain spelling for
+compatibility), and Windows-amd64 read-only `cluster orka list/show` with explicit
+context and namespace. Every other route refuses before effects. See the
 [native Windows command boundary](windows.md#supported-native-commands).
 
 Unreleased `model list` defaults to local discovery; explicit Copilot listing

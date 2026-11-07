@@ -601,6 +601,28 @@ jobs:
             -Binary $env:WINDOWS_BINARY `
             -Fixture ./internal/kmx/agentfile/testdata/greeter.agent.md `
             -ExpectedVersionLine "kmx $env:RELEASE_VERSION (release build)"
+      - name: Run exact staged executable through remote inspection helper
+        shell: pwsh
+        env:
+          WINDOWS_BINARY: ${{ runner.temp }}/checked-release/release-assets/kmx-windows-amd64.exe
+          KUBECTL_VERSION: '1.37.0'
+          KUBECTL_SHA256: '4721b614a67bb4932a0369e61f4a323d8c6ca00943d3a2ff14837c124da06f0e'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $kubectl = Join-Path $env:RUNNER_TEMP 'kubectl.exe'
+          $checksum = Join-Path $env:RUNNER_TEMP 'kubectl.exe.sha256'
+          $base = "https://dl.k8s.io/release/v$env:KUBECTL_VERSION/bin/windows/amd64"
+          Invoke-WebRequest "$base/kubectl.exe" -OutFile $kubectl
+          Invoke-WebRequest "$base/kubectl.exe.sha256" -OutFile $checksum
+          $published = (Get-Content -LiteralPath $checksum -Raw).Trim().ToLowerInvariant()
+          if ($published -cne $env:KUBECTL_SHA256) { throw 'published kubectl checksum differs from the reviewed repository pin' }
+          $want = $env:KUBECTL_SHA256
+          $got = (Get-FileHash -LiteralPath $kubectl -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($want -cnotmatch '^[0-9a-f]{64}$' -or $got -cne $want) { throw 'kubectl checksum verification failed' }
+          ./scripts/ci/windows-orka-inspection.ps1 `
+            -Binary $env:WINDOWS_BINARY `
+            -Kubectl $kubectl `
+            -ProtocolFixtureMode:$false
 
   publish:
     needs: [release, plugin-install, release-contracts, release-windows-amd64]

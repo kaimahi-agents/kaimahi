@@ -346,7 +346,8 @@ func noSuchResourceType(err error) bool {
 	}
 	// Do not widen this to generic 404s or connection failures: those do not
 	// establish that the PodMonitor kind is absent.
-	return strings.Contains(err.Error(), "doesn't have a resource type")
+	return strings.Contains(err.Error(), "doesn't have a resource type") ||
+		strings.Contains(err.Error(), "requested Kubernetes resource type is unavailable")
 }
 
 // ensureRecorded creates a resource if the record does not already have one
