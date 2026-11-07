@@ -98,7 +98,8 @@ package-free fake `run FILE` / `test FILE` (including the `--tests FILE` selecto
 native Windows still requires an explicit file), offline `test explain ... --file
 FILE` (with optional `--tests FILE`; plus the hidden legacy Explain spelling for
 compatibility), and Windows-amd64 read-only `cluster orka list/show` with explicit
-context and namespace. Every other route refuses before effects. See the
+context and namespace plus existing `cluster task result`. Every other route,
+including live Run/Chat, refuses before effects. See the
 [native Windows command boundary](windows.md#supported-native-commands).
 
 Unreleased `model list` defaults to local discovery; explicit Copilot listing

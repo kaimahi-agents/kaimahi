@@ -7,12 +7,13 @@ import (
 	"io"
 	"net"
 	"os"
-	"os/exec"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
 // subprocessKube supplies only Command: opening a tunnel must not require
@@ -20,13 +21,13 @@ import (
 type subprocessKube struct {
 	ctx      context.Context
 	scenario string
-	cmd      *exec.Cmd
+	cmd      *run.Command
 }
 
-func (k *subprocessKube) Command(args ...string) *exec.Cmd {
-	k.cmd = exec.CommandContext(k.ctx, os.Args[0], append([]string{"-test.run=^TestForwardProcess$", "--"}, args...)...)
+func (k *subprocessKube) OwnedCommand(args ...string) (*run.Command, error) {
+	k.cmd = (&run.Runner{Context: k.ctx}).Command(os.Args[0], append([]string{"-test.run=^TestForwardProcess$", "--"}, args...)...)
 	k.cmd.Env = append(os.Environ(), "KMX_FORWARD_TEST="+k.scenario)
-	return k.cmd
+	return k.cmd, nil
 }
 
 // TestForwardProcess is the executable boundary, not a mocked exec.Cmd. Its
@@ -168,7 +169,7 @@ func TestStartProvesLoopbackBindAndCloseReapsProcess(t *testing.T) {
 	// Multiple callers can tear down a session while its lifetime watcher runs.
 	var closers sync.WaitGroup
 	for range 4 {
-		closers.Go(f.Close)
+		closers.Go(func() { _ = f.Close() })
 	}
 	closers.Wait()
 	select {
@@ -282,14 +283,14 @@ func TestContextCancellationClosesDoneAfterProvenBind(t *testing.T) {
 	assertReaped(t, k)
 }
 
-type missingCommand struct{}
+type missingCommand struct{ runner run.Runner }
 
-func (missingCommand) Command(...string) *exec.Cmd {
-	return exec.Command("/nonexistent-kmx-portforward-test/kubectl")
+func (k *missingCommand) OwnedCommand(...string) (*run.Command, error) {
+	return k.runner.Command("/nonexistent-kmx-portforward-test/kubectl"), nil
 }
 
 func TestStartFailurePreservesCauseAndTarget(t *testing.T) {
-	f, err := Start(missingCommand{}, "agents", "svc/tool", "18080", "8080")
+	f, err := Start(&missingCommand{}, "agents", "svc/tool", "18080", "8080")
 	if f != nil || !errors.Is(err, os.ErrNotExist) || !strings.Contains(err.Error(), "cannot port-forward to svc/tool in agents") {
 		t.Fatalf("command start failure lost cause/target: forward=%v error=%v", f, err)
 	}

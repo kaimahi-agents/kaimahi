@@ -171,7 +171,7 @@ func (a *App) ShowAgent(name string, opt ShowOptions) error {
 	if opt.Tasks <= 0 {
 		opt.Tasks = 5
 	}
-	if err := a.preflightOrkaInspection(); err != nil {
+	if err := a.preflightOrkaRemote(); err != nil {
 		return err
 	}
 

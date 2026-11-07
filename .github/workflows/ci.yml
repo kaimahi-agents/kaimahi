@@ -121,7 +121,7 @@ jobs:
           foreach ($test in $configTests) {
             if (-not ($output -match ("--- PASS: " + [regex]::Escape($test) + " \("))) { throw "$test did not pass" }
           }
-          $runTests = @('TestWindowsRunnerCancellationReapsDescendantTree','TestWindowsCommandOwnerDeathAfterCreateReapsChild','TestWindowsCommandNaturalParentExitReapsDescendantTree','TestWindowsCommandDirectProcessKillReapsDescendantTree','TestWindowsCommandCloseReapsDescendantTree','TestWindowsCommandConcurrentCloseAndWaitReapDescendantTree','TestWindowsCommandStartWaitCompletes','TestWindowsCommandRunStdinCompletes','TestWindowsCommandDetachesStartupGuard','TestWindowsCommandPreservesPreCancelledContext','TestWindowsCommandPreservesDeadlineExceeded','TestWindowsCommandOutputMethodsUseOwnedLifecycle','TestWindowsCommandPipeUsesOwnedLifecycle')
+          $runTests = @('TestWindowsRunnerCancellationReapsDescendantTree','TestWindowsCommandOwnerDeathAfterCreateReapsChild','TestWindowsCommandOwnerDeathAfterAssignmentFailureReapsChild','TestWindowsCommandNaturalParentExitReapsDescendantTree','TestWindowsCommandDirectProcessKillReapsDescendantTree','TestWindowsCommandCloseReapsDescendantTree','TestWindowsCommandConcurrentCloseAndWaitReapDescendantTree','TestWindowsCommandStartWaitCompletes','TestWindowsCommandRunStdinCompletes','TestWindowsCommandDetachesStartupGuard','TestWindowsCommandPreservesPreCancelledContext','TestWindowsCommandPreservesDeadlineExceeded','TestWindowsCommandOutputMethodsUseOwnedLifecycle','TestWindowsCommandPipeUsesOwnedLifecycle')
           $output = & "$env:RUNNER_TEMP\kmx-windows-tests.exe" go test -race -count=1 -timeout=600s -v `
             -run ('^(' + ($runTests -join '|') + ')$') ./internal/kmx/run 2>&1
           $status = $LASTEXITCODE
@@ -141,7 +141,7 @@ jobs:
           foreach ($test in $previewTests) {
             if (-not ($output -match ("--- PASS: " + [regex]::Escape($test) + " \("))) { Write-Error "$test did not pass"; exit 1 }
           }
-          $appTests = @('TestLocalFileRunnerRunFailRetainExplainJourney','TestLocalFileRunnerJournaledAppSnapshot','TestSuiteFailureStorePublicationUncertainty','TestSuiteFailureStoreUnresolvedVisibilityKeepsDiagnosticID','TestSuiteFailureStoreOwnPairVisibleUntilWholeClear','TestSuiteFailureStoreAtomicErrors','TestFileFailureRetentionExplainRevisionAndIsolation','TestFileFailureRetentionDoesNotChangeOutcome','TestFileFailureRetentionKeepsFrozenSubjectAfterParentReplacement','TestFileFailureStoreUnresolvedVisibilityKeepsDiagnosticID','TestFileFailureStoreInterruptedWriteAndScopedClear','TestFileFailureStoreLeavesWorkspaceV1BytesCompatible','TestFileFailureStoreRejectsContradictoryRecords','TestWindowsSuiteFailureStoreLifecycle','TestWindowsSuiteFailureWorkspaceCaseAliasesSharePartition','TestWindowsFileFailureStoreLifecycleAndCaseAliases','TestOrkaAgentListSeparatesAbsentKindFromEmptyNamespace','TestOrkaAgentListCancelsActiveCompiledKubectl','TestAgentShowRendersTheWholeChainWhenHealthy','TestAgentShowHumanFieldsAreTerminalSafeAndBounded','TestAgentShowOversizedReadsAndErrorsStaySafe','TestAgentShowReadsBoundedTaskPages')
+          $appTests = @('TestLocalFileRunnerRunFailRetainExplainJourney','TestLocalFileRunnerJournaledAppSnapshot','TestSuiteFailureStorePublicationUncertainty','TestSuiteFailureStoreUnresolvedVisibilityKeepsDiagnosticID','TestSuiteFailureStoreOwnPairVisibleUntilWholeClear','TestSuiteFailureStoreAtomicErrors','TestFileFailureRetentionExplainRevisionAndIsolation','TestFileFailureRetentionDoesNotChangeOutcome','TestFileFailureRetentionKeepsFrozenSubjectAfterParentReplacement','TestFileFailureStoreUnresolvedVisibilityKeepsDiagnosticID','TestFileFailureStoreInterruptedWriteAndScopedClear','TestFileFailureStoreLeavesWorkspaceV1BytesCompatible','TestFileFailureStoreRejectsContradictoryRecords','TestWindowsSuiteFailureStoreLifecycle','TestWindowsSuiteFailureWorkspaceCaseAliasesSharePartition','TestWindowsFileFailureStoreLifecycleAndCaseAliases','TestOrkaAgentListSeparatesAbsentKindFromEmptyNamespace','TestOrkaAgentListCancelsActiveCompiledKubectl','TestAgentShowRendersTheWholeChainWhenHealthy','TestAgentShowHumanFieldsAreTerminalSafeAndBounded','TestAgentShowOversizedReadsAndErrorsStaySafe','TestAgentShowReadsBoundedTaskPages','TestTaskResultReadsTerminalAnswerOnlyOnStdout','TestTaskResultNoWaitReportsPendingWithoutOpeningResultSession')
           $output = & "$env:RUNNER_TEMP\kmx-windows-tests.exe" go test -race -count=1 -timeout=600s -v `
             -run ('^(' + ($appTests -join '|') + ')$') ./internal/kmx/app 2>&1
           $status = $LASTEXITCODE
@@ -155,7 +155,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $tests = @('TestGuardedWindowsDeferredOperationsRefuseBeforeEffects','TestGuardedWindowsAmd64AdmitsOnlyExplicitOrkaInspection','TestGuardedWindowsRemoteInspectionRefusesIncompleteOrBroaderModesBeforeEffects','TestGuardedWindowsAllowsPackageFreeFileCommands','TestGuardedWindowsFileCommandsRefuseEveryExternalRouteBeforeEffects','TestGuardedWindowsFileSnapshotCannotChangeRouteAfterAdmission','TestGuardedWindowsExplainRequiresExplicitFileAndAllowsFileScopedClear','TestGuardedWindowsFileExplainClearStaysSubjectScoped','TestGuardedWindowsSupportedCommandFlagsAreExhaustivelyAllowlisted','TestGuardedWindowsVersionHelpAndCompletionRemainInert','TestGuardedWindowsCommandTreeIsExhaustivelyClassified','TestFileCommandJournaledPreviewDemo')
+          $tests = @('TestGuardedWindowsDeferredOperationsRefuseBeforeEffects','TestGuardedWindowsAmd64AdmitsExplicitOrkaRemoteOperations','TestGuardedWindowsRemoteInspectionRefusesIncompleteOrBroaderModesBeforeEffects','TestGuardedWindowsAllowsPackageFreeFileCommands','TestGuardedWindowsFileCommandsRefuseEveryExternalRouteBeforeEffects','TestGuardedWindowsFileSnapshotCannotChangeRouteAfterAdmission','TestGuardedWindowsExplainRequiresExplicitFileAndAllowsFileScopedClear','TestGuardedWindowsFileExplainClearStaysSubjectScoped','TestGuardedWindowsSupportedCommandFlagsAreExhaustivelyAllowlisted','TestGuardedWindowsVersionHelpAndCompletionRemainInert','TestGuardedWindowsCommandTreeIsExhaustivelyClassified','TestFileCommandJournaledPreviewDemo')
           $output = & "$env:RUNNER_TEMP\kmx-windows-tests.exe" go test -race -count=1 -timeout=600s -v `
             -run ('^(' + ($tests -join '|') + ')$') ./cmd/kmx 2>&1
           $status = $LASTEXITCODE
@@ -198,6 +198,9 @@ jobs:
           ./scripts/ci/windows-orka-inspection.ps1 `
             -Binary "$env:RUNNER_TEMP\kmx.exe" `
             -Kubectl "$env:RUNNER_TEMP\kubectl.exe"
+      - name: Direct executable remote Orka Task Result journey
+        shell: pwsh
+        run: ./scripts/ci/windows-orka-task-result.ps1 -Binary "$env:RUNNER_TEMP\kmx.exe" -Kubectl "$env:RUNNER_TEMP\kubectl.exe"
 
   windows-arm64-cross:
     name: Windows arm64 cross-build metadata only (not native execution)

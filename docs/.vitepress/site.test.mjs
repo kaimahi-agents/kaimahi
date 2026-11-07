@@ -111,7 +111,7 @@ test('Test is canonical while compatibility and current runtime limits stay expl
   assert.match(workflow, /kmx package push --workspace DIR --evaluation RECEIPT REF/)
 })
 
-test('native Windows documentation keeps the read-only remote exception narrow', async () => {
+test('native Windows documentation keeps the explicit remote exception narrow', async () => {
   const html = await readFile(path.join(dist, 'docs/windows.html'), 'utf8')
   const windows = plainText(html).replace(/\s+/g, ' ')
 
@@ -127,10 +127,14 @@ test('native Windows documentation keeps the read-only remote exception narrow',
     'kmx test explain [failure-id] --file FILE',
     'cluster orka list',
     'cluster orka show',
+    'cluster task result TASK',
     'Both selectors are mandatory on native Windows',
     'operator-installed native kubectl.exe',
     'never runs az login',
     'Kubeconfig exec plugins are local operator-trusted code',
+    'loopback-only kubectl port-forward',
+    'never reconnects',
+    'PowerShell syntax',
     '--github-summary',
     'local preview only',
     'publication authority',
@@ -165,7 +169,7 @@ test('native Windows documentation keeps the read-only remote exception narrow',
   for (const deferred of [
     'Docker', 'kind', 'local Kubernetes setup', 'cluster mutation', 'workspace', 'OCI', 'suite evidence',
     'provider routes', 'kmx mcp', 'native Copilot plugin', 'AgentKit', 'Buildx',
-    'managed tools', 'publication', 'Deploy'
+    'managed tools', 'live Agent Run/chat', 'publication', 'Deploy'
   ]) assert.ok(windows.includes(deferred), `Windows deferred operation: ${deferred}`)
 
   assert.match(windows, /Sigstore bundle signs the checksum manifest/i)

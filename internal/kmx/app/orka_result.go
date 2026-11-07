@@ -37,6 +37,8 @@ type orkaResultSession struct {
 	conn        net.Conn
 	ctx         context.Context
 	cancel      context.CancelFunc
+	closeOnce   sync.Once
+	closeErr    error
 }
 
 // Losing this connection ends the session, including idle EOF and transport
@@ -254,7 +256,7 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	if err != nil {
 		failure := portFailure()
 		cancel()
-		fwd.Close()
+		_ = fwd.Close()
 		return nil, failure
 	}
 	bound := &orkaResultConn{Conn: conn, cancel: cancel}
@@ -267,7 +269,7 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	if forwardCtx.Err() != nil {
 		failure := portFailure()
 		_ = bound.Close()
-		fwd.Close()
+		_ = fwd.Close()
 		return nil, failure
 	}
 	var take sync.Once
@@ -290,15 +292,24 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	}, nil
 }
 
-func (s *orkaResultSession) close() {
+func (s *orkaResultSession) close() error {
 	if s == nil {
-		return
+		return nil
 	}
-	s.cancel()
-	_ = s.conn.Close()
-	s.forward.Close()
-	s.client.CloseIdleConnections()
-	s.token = ""
+	s.closeOnce.Do(func() {
+		// Stop and reap the owned forward before canceling its command context;
+		// successful cleanup must not be reported as context cancellation.
+		forwardErr := s.forward.Close()
+		connErr := s.conn.Close()
+		if errors.Is(connErr, net.ErrClosed) {
+			connErr = nil
+		}
+		s.cancel()
+		s.client.CloseIdleConnections()
+		s.token = ""
+		s.closeErr = errors.Join(connErr, forwardErr)
+	})
+	return s.closeErr
 }
 
 func (s *orkaResultSession) get(ctx context.Context, namespace, name string) (int, map[string]json.RawMessage, error) {

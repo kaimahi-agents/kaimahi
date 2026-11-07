@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"reflect"
 	"strings"
@@ -210,7 +211,13 @@ func (a *App) evaluateSuiteNativeTracked(ctx context.Context, placement *suiteNa
 	if err != nil {
 		return observation, err
 	}
-	defer session.close()
+	defer func() {
+		if closeErr := session.close(); closeErr != nil {
+			attributed = false
+			answer = ""
+			err = errors.Join(err, fmt.Errorf("result session cleanup failed: %w", closeErr))
+		}
+	}()
 	caseCtx := session.ctx
 	if err = session.probe(caseCtx, ns, name); err != nil {
 		return observation, err

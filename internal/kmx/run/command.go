@@ -83,6 +83,15 @@ func (c *Command) Close() error {
 	return c.closePlatform()
 }
 
+// Terminate stops the complete owned process tree without consuming the one
+// Wait call. The lifecycle owner must still call Wait to reap os/exec resources.
+func Terminate(cmd *Command) error {
+	if cmd == nil {
+		return nil
+	}
+	return cmd.Close()
+}
+
 // Output runs the command and returns its standard output.
 func (c *Command) Output() ([]byte, error) {
 	if c.Stdout != nil {

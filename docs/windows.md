@@ -1,7 +1,8 @@
 # Native Windows
 
 Native Windows support is **prerelease-only and operation-specific**. Current
-`main` adds read-only remote Orka inspection on amd64 to the narrow day-zero CLI.
+`main` adds explicit-target remote Orka inspection and existing Task Result on
+amd64 to the narrow day-zero CLI.
 Published v0.9.0 release candidates beginning with `v0.9.0-rc.4` retain only the
 day-zero commands until a later release contains this exception. This is not the
 Kubernetes agent lifecycle on Windows. Stable v0.8.1, including the version
@@ -24,12 +25,13 @@ Windows assets described below.
 | Package-free fake Test | `kmx test FILE [--tests FILE]` for the same offline fake route and the same selected agent-and-tests pair. A completed pass or failure is a local preview only. |
 | Offline file diagnostics | `kmx test explain [failure-id] --file FILE [--tests FILE]`, including its file-scoped content and clear options. Explain compares retained failures with the current agent-and-tests selection. Hidden `kmx eval explain ... --file FILE` may remain callable only as the deprecated compatibility spelling. |
 | Read-only remote Orka inspection (current main, amd64) | `kmx --context CONTEXT cluster orka list --namespace NAMESPACE` and `kmx --context CONTEXT cluster orka show NAME --namespace NAMESPACE [-o table\|json] [--tasks N]`. Both selectors are mandatory on native Windows. List is table-only on native Windows; these commands perform bounded reads only and create no KMX state. |
+| Existing Task result (current main, amd64) | `kmx --context CONTEXT cluster task result TASK --namespace NAMESPACE [--wait DURATION] [--result-port PORT]`. It reads one exact AI Task without resending; pending exits 2 and opens no tunnel. Answer stdout is accepted only after the owned loopback forward exits cleanly. |
 
 Flag-parsing errors label their help hint **PowerShell** on native Windows.
 The hint uses PowerShell's `&` call operator and quotes the executable path,
 including doubled apostrophes inside the quoted path. Run that hint in
-PowerShell, not `cmd.exe`. POSIX hints on other platforms and the older
-operational recovery commands keep their existing quoting.
+PowerShell, not `cmd.exe`. Operational Task recovery also uses PowerShell syntax;
+Unix recovery and other existing operational commands keep their POSIX quoting.
 
 For example, after downloading a qualified amd64 artifact:
 
@@ -43,6 +45,7 @@ For example, after downloading a qualified amd64 artifact:
 # Current-main amd64 build only; not present in the published rc.4-rc.6 contract:
 .\kmx-windows-amd64.exe --context existing-orka cluster orka list --namespace orka-system
 .\kmx-windows-amd64.exe --context existing-orka cluster orka show greeter --namespace orka-system
+.\kmx-windows-amd64.exe --context existing-orka cluster task result task-name --namespace orka-system
 ```
 
 The file must satisfy the [agent file contract](agent-file.md), including its
@@ -57,7 +60,7 @@ deployment authority. Offline Explain reads or clears only the selected file's
 retained local diagnostics. It does not contact a model or turn those diagnostics
 into evidence.
 
-### Remote inspection prerequisites
+### Remote Orka prerequisites
 
 Put an operator-installed native `kubectl.exe` on `PATH`. KMX does not download,
 install or update it on Windows. The selected kubeconfig and its exec-auth
@@ -71,6 +74,12 @@ attestation or a sandbox. KMX holds kubectl before user-mode execution until it
 enters a kill-on-close Windows Job Object, so cancellation and abrupt KMX exit
 reap ordinary descendants. An arbitrary exec plugin may still perform side effects or use
 brokered process creation outside that cleanup boundary.
+
+Task Result additionally requires the selected namespace's Orka API
+Service and result-reader ServiceAccount. KMX requests one bounded in-memory
+ServiceAccount token, opens an IPv4 loopback-only kubectl port-forward, pins one
+connection and never reconnects it. Tokens are never placed in argv, files or
+output. Task Result creates no Kubernetes resource and never resends work.
 
 Human table output removes terminal control and bidirectional-formatting
 characters and bounds cluster-controlled fields. Native Windows list is
@@ -95,8 +104,11 @@ currently support:
 - `kmx mcp`, a native Copilot plugin, AgentKit, Buildx or native Squad setup;
 - managed tools, tool downloads, cluster records, remembered cluster preferences
   or context operations; or
-- live Agent Run/chat and Task result, runtime setup/status, package export,
-  publication or deployment.
+- live Agent Run/chat, runtime setup/status, package export, publication or deployment.
+
+Run and Chat stay closed even with explicit selectors: Orka's current Task
+`agentRef` is name-only and has no create-time Agent UID/generation precondition,
+so KMX cannot prevent a raced Agent replacement from receiving a new prompt.
 
 This refusal boundary is operation-specific, not a claim that the underlying Go
 packages have no Windows tests. Package tests for files, models or adapters do not

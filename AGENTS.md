@@ -935,7 +935,8 @@ authority.
 Native Windows support is prerelease-only and operation-specific. Current `main`
 on amd64 permits inert version/help/completion, package-free fake `run FILE` /
 `test FILE`, offline `test explain ... --file FILE`, and read-only remote
-`cluster orka list/show` with explicit `--context` and `--namespace`. Hidden
+`cluster orka list/show` and existing `cluster task result` with explicit
+`--context` and `--namespace`. Hidden
 `eval explain` may remain only as the deprecated compatibility spelling. File
 Run/Test may use inline `--prompt`, but provider, endpoint, tool-binding,
 prompt-file and GitHub-summary modes stay deferred. Orka inspection requires an
@@ -946,7 +947,11 @@ their existing Unix kubectl-native contract, while native Windows list is
 table-only. Show resolves
 cross-namespace references exactly and withholds credential-bearing Provider
 diagnostics from every output; it names Secret references but fetches no Secret
-object and reports presence unknown. Published v0.9.0 release candidates beginning with
+object and reports presence unknown. Task Result uses one bounded in-memory
+ServiceAccount token and owned loopback-only forward; pending inspection opens
+none, cleanup errors withhold answers, and recovery uses PowerShell syntax.
+Live Run/Chat remain refused because Orka's current name-only Task AgentRef has no
+create-time Agent UID/generation precondition. Published v0.9.0 release candidates beginning with
 `v0.9.0-rc.4` retain the older day-zero-only boundary until a later release
 contains this exception.
 
@@ -960,7 +965,7 @@ existing WSL Copilot plugin.
 
 Hosted Windows amd64 must build/vet all packages and execute the checkout CLI
 through version/help/completion, package-free fake Run/failing Test/offline
-Explain and compiled-kubectl list/show journeys with no skips. The exact staged
+Explain and compiled-kubectl list/show/Task Result journeys with no skips. The exact staged
 release `.exe` must additionally reach the checksum-verified native kubectl
 inspection boundary without state. Windows
 arm64 is cross-built, vetted, metadata-checked and checksummed only; make no

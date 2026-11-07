@@ -73,10 +73,10 @@ source-evidence `--promote`, partial outcomes, and fresh-evaluation requirements
 
 This first-answer path creates a cluster, so Windows users run it inside a Linux
 WSL distribution. Current `main` has a separate **prerelease-only**
-[native Windows CLI](windows.md): the day-zero commands plus amd64 read-only Orka
-list/show against an existing explicit target. Published v0.9.0 release
+[native Windows CLI](windows.md): the day-zero commands plus amd64 explicit-target
+Orka list/show and existing Task Result. Published v0.9.0 release
 candidates beginning with `v0.9.0-rc.4` retain the day-zero-only boundary until a
-later containing release. Native inspection creates no suite evidence and cannot
+later containing release. Native remote execution creates no suite evidence and cannot
 perform the setup, workspace, model, publication or Deploy stages on this page.
 Stable v0.8.1 and `@latest` have no Windows `.exe`; use WSL below.
 

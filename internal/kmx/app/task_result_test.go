@@ -115,6 +115,39 @@ func TestTaskResultRejectsNonAITaskAndMissingTask(t *testing.T) {
 	}
 }
 
+func TestTaskResultRejectsAmbiguousIdentityJSON(t *testing.T) {
+	base := []byte(`{"apiVersion":"core.orka.ai/v1alpha1","kind":"Task","metadata":{"name":"task-one","namespace":"demo","uid":"task-uid","generation":1},"spec":{"type":"ai"}}`)
+	for _, mutation := range []struct{ name, from, to string }{
+		{"case alias apiVersion", `"apiVersion":"core.orka.ai/v1alpha1"`, `"apiVersion":"core.orka.ai/v1alpha1","APIVersion":"v1"`},
+		{"duplicate kind", `"kind":"Task"`, `"kind":"Task","kind":"Secret"`},
+		{"case alias kind", `"kind":"Task"`, `"kind":"Task","Kind":"Secret"`},
+		{"duplicate uid", `"uid":"task-uid"`, `"uid":"other","uid":"task-uid"`},
+	} {
+		t.Run(mutation.name, func(t *testing.T) {
+			raw := append([]byte(nil), base...)
+			raw = bytes.Replace(raw, []byte(mutation.from), []byte(mutation.to), 1)
+			if !bytes.Contains(raw, []byte(mutation.to)) {
+				t.Fatal("fixture mutation did not apply")
+			}
+			if _, _, err := decodeTaskResultIdentity(raw, "task-one", "demo"); err == nil || !strings.Contains(err.Error(), "invalid or terminating identity") {
+				t.Fatalf("ambiguous identity accepted: err=%v", err)
+			}
+		})
+	}
+}
+
+func TestTaskResultRejectsAmbiguousIdentityOnStatusReread(t *testing.T) {
+	f, opt := taskResultFixture(t)
+	t.Setenv("KMX_EVAL_TASK_DUPLICATE_IDENTITY_ON_READ", "2")
+	err := f.app.TaskResult(opt)
+	if err == nil || !strings.Contains(err.Error(), "invalid Task/"+opt.Task+" status response") {
+		t.Fatalf("ambiguous status identity accepted: err=%v", err)
+	}
+	if strings.Contains(f.out.String(), "answer") {
+		t.Fatalf("ambiguous status identity exposed an answer: %q", f.out.String())
+	}
+}
+
 func TestTaskResultWaitDeadlineDuringTaskGetIsPending(t *testing.T) {
 	f, opt := taskResultFixture(t)
 	t.Setenv("KMX_EVAL_TASK_GET_DELAY", "3s")

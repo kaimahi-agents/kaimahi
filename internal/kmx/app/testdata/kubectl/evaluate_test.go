@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -63,7 +64,7 @@ func TestEvalKubectlHelper(t *testing.T) {
 		}
 		_ = os.WriteFile(filepath.Join(dir, "forward-pid"), []byte(fmt.Sprint(os.Getpid())), 0600)
 		port, _, _ := strings.Cut(args[len(args)-1], ":")
-		if target := os.Getenv("KMX_EVAL_FORWARD_TARGET"); target != "" {
+		if target := os.Getenv("KMX_EVAL_FORWARD_TARGET"); target != "" || os.Getenv("KMX_EVAL_DIRECT_RESULT") == "1" {
 			if port == "" {
 				port = "0"
 			}
@@ -73,6 +74,41 @@ func TestEvalKubectlHelper(t *testing.T) {
 			}
 			_, port, _ = net.SplitHostPort(listener.Addr().String())
 			fmt.Println("Forwarding from 127.0.0.1:" + port + " -> 8080")
+			if target == "" {
+				handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					if r.Method != http.MethodGet || r.URL.Query().Get("namespace") != "demo" || r.Header.Get("Authorization") != "Bearer "+orkaTestToken() {
+						w.WriteHeader(http.StatusForbidden)
+						fmt.Fprint(w, `{"error":{"code":403,"message":"forbidden"}}`)
+						return
+					}
+					path := strings.TrimPrefix(r.URL.Path, "/api/v1/tasks/")
+					name, resource, ok := strings.Cut(path, "/")
+					if !ok || resource != "result" {
+						w.WriteHeader(http.StatusNotFound)
+						fmt.Fprint(w, `{"error":{"code":404,"message":"task not found"}}`)
+						return
+					}
+					raw, err := os.ReadFile(filepath.Join(dir, "task-"+name+".json"))
+					if err != nil {
+						w.WriteHeader(http.StatusNotFound)
+						fmt.Fprint(w, `{"error":{"code":404,"message":"task not found"}}`)
+						return
+					}
+					var task map[string]any
+					if json.Unmarshal(raw, &task) != nil {
+						w.WriteHeader(http.StatusInternalServerError)
+						fmt.Fprint(w, `{"error":{"code":500,"message":"broken"}}`)
+						return
+					}
+					answer := getenvLiftTest("KMX_EVAL_ANSWER", "native Windows answer")
+					_ = json.NewEncoder(w).Encode(map[string]string{"result": answer})
+				})
+				if err := http.Serve(listener, handler); err != nil && err != http.ErrServerClosed {
+					fail()
+				}
+				os.Exit(0)
+			}
 			for {
 				local, err := listener.Accept()
 				if err != nil {
@@ -178,7 +214,19 @@ func TestEvalKubectlHelper(t *testing.T) {
 			}
 			available := phase == "Succeeded" && os.Getenv("KMX_EVAL_RESULT_AVAILABLE") != "false"
 			task["status"] = map[string]any{"phase": phase, "resultRef": map[string]any{"available": available}}
-			_ = json.NewEncoder(os.Stdout).Encode(task)
+			body, _ := json.Marshal(task)
+			if duplicate := os.Getenv("KMX_EVAL_TASK_DUPLICATE_IDENTITY_ON_READ"); duplicate != "" {
+				path := filepath.Join(dir, "task-identity-read-count")
+				countRaw, _ := os.ReadFile(path)
+				count, _ := strconv.Atoi(string(countRaw))
+				count++
+				_ = os.WriteFile(path, []byte(strconv.Itoa(count)), 0600)
+				threshold, _ := strconv.Atoi(duplicate)
+				if count >= threshold {
+					body = bytes.Replace(body, []byte(`"uid":`), []byte(`"UID":"shadow","uid":`), 1)
+				}
+			}
+			_, _ = os.Stdout.Write(body)
 		default:
 			fail()
 		}

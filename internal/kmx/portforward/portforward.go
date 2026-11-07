@@ -1,10 +1,12 @@
-// Package portforward manages owned loopback kubectl port-forwards.
+// Package portforward manages owned loopback kubectl port-forwards. Commands
+// retain the platform process-tree lifecycle, and Close reports uncertain cleanup.
 // Callers must wait for the forward's bind announcement before sending data;
 // ownership does not authenticate later connections to a reused port.
 package portforward
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strconv"
@@ -20,12 +22,13 @@ import (
 var (
 	pollAttempts = 150
 	pollInterval = 200 * time.Millisecond
+	cleanupWait  = 5 * time.Second
 )
 
 // Kube prepares a kubectl command that the forward manages itself. The caller
 // supplies cluster context and, when needed, cancellation through the command.
 type Kube interface {
-	Command(args ...string) *exec.Cmd
+	OwnedCommand(args ...string) (*run.Command, error)
 }
 
 // Forward is a `kubectl port-forward` kmx started and proved is its own.
@@ -33,8 +36,11 @@ type Kube interface {
 // port on 127.0.0.1. Ownership does not prove a later connection to a reused port.
 type Forward struct {
 	Port string
-	pf   *exec.Cmd
+	pf   *run.Command
 	log  *syncBuffer
+	wait chan error
+	stop sync.Once
+	err  error
 	// done closes when the forward's process exits, so a forward that dies
 	// immediately (the port is taken, the deployment is missing) is a
 	// failure in milliseconds rather than a 30-second wait.
@@ -52,8 +58,12 @@ type Forward struct {
 // accept a 200 from a stale forward to a DIFFERENT cluster.
 func Start(k Kube, namespace, target, localPort, remotePort string) (*Forward, error) {
 	f := &Forward{log: &syncBuffer{}}
-	f.pf = k.Command("-n", namespace, "port-forward", "--address", "127.0.0.1",
+	var err error
+	f.pf, err = k.OwnedCommand("-n", namespace, "port-forward", "--address", "127.0.0.1",
 		target, localPort+":"+remotePort)
+	if err != nil {
+		return nil, fmt.Errorf("cannot prepare port-forward to %s in %s: %w", target, namespace, err)
+	}
 	// kubectl announces the bind on stdout and its failures on stderr; both
 	// are evidence, so both are kept.
 	f.pf.Stdout, f.pf.Stderr = f.log, f.log
@@ -61,8 +71,9 @@ func Start(k Kube, namespace, target, localPort, remotePort string) (*Forward, e
 		return nil, fmt.Errorf("cannot port-forward to %s in %s: %w", target, namespace, err)
 	}
 	f.done = make(chan struct{})
+	f.wait = make(chan error, 1)
 	go func() {
-		_ = f.pf.Wait()
+		f.wait <- f.pf.Wait()
 		close(f.done)
 	}()
 
@@ -79,15 +90,15 @@ func Start(k Kube, namespace, target, localPort, remotePort string) (*Forward, e
 		}
 	})
 	if !bound || f.Port == "" {
-		f.Close()
+		closeErr := f.Close()
 		requested := localPort
 		if requested == "" {
 			requested = "<automatic port>"
 		}
-		return nil, fmt.Errorf("the port-forward to %s never came up on 127.0.0.1:%s:\n  %s\n"+
+		return nil, errors.Join(fmt.Errorf("the port-forward to %s never came up on 127.0.0.1:%s:\n  %s\n"+
 			"  Refusing to continue: if another cluster's forward holds this port, the\n"+
 			"  operation would have landed THERE. Use a free port.",
-			target, requested, f.Detail())
+			target, requested, f.Detail()), closeErr)
 	}
 	return f, nil
 }
@@ -128,29 +139,85 @@ func (f *Forward) Detail() string {
 // It is not an authentication proof for a later connection to the same port.
 func (f *Forward) Done() <-chan struct{} { return f.done }
 
-// Close tears the forward down.
-func (f *Forward) Close() {
+// Close tears the forward down and positively waits for process exit.
+func (f *Forward) Close() error {
 	if f == nil || f.pf == nil || f.pf.Process == nil {
-		return
+		return nil
 	}
-	_ = f.pf.Process.Kill()
-	<-f.done
+	f.stop.Do(func() {
+		select {
+		case <-f.done:
+			f.err = normalizeForwardWait(<-f.wait)
+		default:
+			terminated := make(chan error, 1)
+			go func() { terminated <- run.Terminate(f.pf) }()
+			timer := time.NewTimer(cleanupWait)
+			defer timer.Stop()
+			var terminateErr error
+			select {
+			case terminateErr = <-terminated:
+			case <-timer.C:
+				f.err = fmt.Errorf("port-forward cleanup unconfirmed: termination did not return within %s", cleanupWait)
+				return
+			}
+			select {
+			case <-f.done:
+				f.err = errors.Join(terminateErr, normalizeForwardWait(<-f.wait))
+			case <-timer.C:
+				f.err = errors.Join(terminateErr, fmt.Errorf("port-forward cleanup unconfirmed: process did not exit within %s", cleanupWait))
+			}
+		}
+	})
+	return f.err
+}
+
+func normalizeForwardWait(err error) error {
+	if err == nil {
+		return nil
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		var retained []error
+		for _, part := range joined.Unwrap() {
+			if normalized := normalizeForwardWait(part); normalized != nil {
+				retained = append(retained, normalized)
+			}
+		}
+		return errors.Join(retained...)
+	}
+	if _, ok := err.(*exec.ExitError); ok {
+		return nil
+	}
+	return err
 }
 
 // syncBuffer collects the forward's output while its goroutine writes it.
 type syncBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
+	mu        sync.Mutex
+	buf       bytes.Buffer
+	truncated bool
 }
 
 func (b *syncBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.buf.Write(p)
+	written := len(p)
+	const limit = 64 << 10
+	accepted := 0
+	if remaining := limit - b.buf.Len(); remaining > 0 {
+		accepted = min(len(p), remaining)
+		_, _ = b.buf.Write(p[:accepted])
+	}
+	if written > accepted {
+		b.truncated = true
+	}
+	return written, nil
 }
 
 func (b *syncBuffer) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.truncated {
+		return b.buf.String() + "\n[output truncated]"
+	}
 	return b.buf.String()
 }

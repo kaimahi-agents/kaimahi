@@ -56,7 +56,11 @@ func orkaResultPort(port string) (string, error) {
 }
 
 func (a *App) taskRecovery(name, contextName, namespace string) string {
-	return fmt.Sprintf("%s cluster task result %s --context %s --namespace %s --wait 5m", shellArg(a.commandExecutable()), shellArg(name), shellArg(contextName), shellArg(namespace))
+	parts := []string{a.commandArg(a.commandExecutable()), "cluster", "task", "result", a.commandArg(name), "--context", a.commandArg(contextName), "--namespace", a.commandArg(namespace), "--wait", "5m"}
+	if a.CommandShell == "powershell" {
+		parts = append([]string{"&"}, parts...)
+	}
+	return strings.Join(parts, " ")
 }
 
 func (a *App) pendingTask(name, contextName, namespace string) error {
@@ -247,6 +251,9 @@ func (a *App) RunAgent(opt RunAgentOptions) error {
 			return outcome
 		}
 		return fmt.Errorf("%w; recover with: %s", outcome, worker.taskRecovery(taskName, worker.Cfg.KubeContext, namespace))
+	}
+	if err := session.close(); err != nil {
+		return fmt.Errorf("result session cleanup failed after Task completion; answer withheld: %w", err)
 	}
 	_, err = fmt.Fprintln(worker.Out, answer)
 	return err

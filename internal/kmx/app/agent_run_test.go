@@ -529,6 +529,15 @@ func TestTaskRecoveryQuotesContext(t *testing.T) {
 	}
 }
 
+func TestTaskRecoveryUsesPowerShellSyntax(t *testing.T) {
+	a := &App{Executable: `C:\Program Files\kmx.exe`, CommandShell: "powershell"}
+	got := a.taskRecovery("safe-task", "team's context", "orka-system")
+	want := `& 'C:\Program Files\kmx.exe' cluster task result 'safe-task' --context 'team''s context' --namespace 'orka-system' --wait 5m`
+	if got != want {
+		t.Fatalf("PowerShell recovery = %q, want %q", got, want)
+	}
+}
+
 func TestRunAgentRefusesSymlinkPromptFile(t *testing.T) {
 	f := runFixture(t)
 	target := filepath.Join(t.TempDir(), "private.txt")

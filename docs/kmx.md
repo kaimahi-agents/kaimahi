@@ -87,7 +87,8 @@ tests do not enable these model/provider routes in the narrow Windows CLI.
 On Windows, the install methods in this section are WSL routes for the full CLI;
 run them inside the Linux distribution. Current `main` separately supports a
 **prerelease-only, narrow** [native Windows CLI](windows.md): the day-zero
-commands plus amd64 read-only Orka list/show with explicit context and namespace.
+commands plus amd64 explicit-target Orka list/show and existing Task Result with
+explicit context and namespace.
 Published v0.9.0 release candidates beginning with `v0.9.0-rc.4` retain the
 day-zero-only boundary until a later containing release. Stable v0.8.1 and
 `@latest` have no Windows `.exe`. Do not use Homebrew,
@@ -455,8 +456,8 @@ journals, source history, workspace failures, passing proof or runtime history.
 Do not mix FILE with `--agent`, workspace, destination, evidence, native judge or
 cluster flags, including explicitly supplied defaults. Existing live
 `run --agent` and full-workspace Test contracts remain separate and unchanged.
-Those live/workspace modes are deferred on native Windows and refuse before
-effects; only separate read-only Orka list/show is admitted on Windows amd64.
+Live/workspace modes remain deferred on native Windows and refuse before effects;
+Windows amd64 separately admits explicit-target list/show and existing Task Result.
 
 ### Frozen run-profile export (unreleased)
 
@@ -2007,6 +2008,13 @@ update, copying or retirement of the Agent or its companion resources.
 once by default and opens a result session only for a readable terminal answer.
 `--wait` waits 10s–9m and reports phase changes. Pending/unreadable results exit 2;
 failed/cancelled Tasks exit 1. Preserve the Task's context and namespace.
+
+Native Windows amd64 requires explicit context and namespace for Task Result.
+Result tunnels are loopback-only, process-tree owned and must close cleanly
+before an answer is accepted; pending Task inspection starts no tunnel. It
+creates no Task, suite evidence, publication or Deploy authority. Live Run/Chat
+remain refused because Orka cannot bind a new Task to an expected Agent UID and
+generation at creation time.
 
 ## Native receipt diff
 

@@ -102,6 +102,9 @@ func (s *commandState) application() (*app.App, error) {
 	}
 	a.Out, a.Err, a.Stdin = s.deps.stdout, s.deps.stderr, s.deps.stdin
 	a.Executable = s.executable()
+	if s.deps.goos == "windows" {
+		a.CommandShell = "powershell"
+	}
 	a.Run.Stdout, a.Run.Stderr = s.deps.stdout, s.deps.stderr
 	s.app = a
 	return a, nil

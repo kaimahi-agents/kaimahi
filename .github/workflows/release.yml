@@ -191,7 +191,7 @@ jobs:
             esac
           fi
           test -s "$NOTES"
-          printf '\nRuntime qualification: this release checks the inner loop; Orka and kagent are qualified nightly on main and on demand before runtime-related tags. Native Windows qualification covers amd64 day-zero Run/Test/offline Explain; Windows arm64 is checksum, metadata and cross-build evidence only.\n' >> "$NOTES"
+          printf '\nRuntime qualification: this release checks the inner loop; Orka and kagent are qualified nightly on main and on demand before runtime-related tags. Native Windows qualification covers amd64 day-zero Run/Test/offline Explain plus explicit-target Orka inspection and existing Task Result; Windows arm64 is checksum, metadata and cross-build evidence only.\n' >> "$NOTES"
 
       # A release is a provenance claim. The tree it is built from must be
       # the tagged tree and nothing else — an untracked file here becomes
@@ -240,6 +240,13 @@ jobs:
             test "${#matches[@]}" -eq 1
             test -f "${matches[0]}"
           done
+
+      - name: Build native Windows Task Result qualification fixture
+        run: |
+          set -euo pipefail
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
+            go test -c -o "$RUNNER_TEMP/kmx-windows-kubectl-fixture.exe" ./internal/kmx/app/testdata/kubectl
+          test -s "$RUNNER_TEMP/kmx-windows-kubectl-fixture.exe"
 
       - name: All six binaries carry exact target and clean provenance
         run: |
@@ -465,6 +472,7 @@ jobs:
           path: |
             ${{ runner.temp }}/release-assets/
             ${{ runner.temp }}/release-notes.md
+            ${{ runner.temp }}/kmx-windows-kubectl-fixture.exe
           if-no-files-found: error
           overwrite: true
 
@@ -623,6 +631,15 @@ jobs:
             -Binary $env:WINDOWS_BINARY `
             -Kubectl $kubectl `
             -ProtocolFixtureMode:$false
+      - name: Run exact staged executable through Task Result helper
+        shell: pwsh
+        env:
+          WINDOWS_BINARY: ${{ runner.temp }}/checked-release/release-assets/kmx-windows-amd64.exe
+          KUBECTL_FIXTURE: ${{ runner.temp }}/checked-release/kmx-windows-kubectl-fixture.exe
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path -LiteralPath $env:KUBECTL_FIXTURE -PathType Leaf)) { throw 'missing checked Task Result fixture' }
+          ./scripts/ci/windows-orka-task-result.ps1 -Binary $env:WINDOWS_BINARY -Kubectl $env:KUBECTL_FIXTURE
 
   publish:
     needs: [release, plugin-install, release-contracts, release-windows-amd64]

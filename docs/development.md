@@ -159,7 +159,8 @@ flush failure behavior. Windows defaults to machine-local `%LOCALAPPDATA%\kmx`.
 Windows amd64 now also builds, vets and natively executes the CLI on hosted
 `windows-latest`: version/help/completion, one real Markdown file through
 package-free fake Run/failing Test/offline Explain, and read-only Orka list/show
-through a compiled native kubectl fixture. The exact staged release `.exe` also
+plus Task Result through a compiled native kubectl fixture. The exact staged
+release `.exe` also
 reaches the boundary through checksum-verified real kubectl. Windows arm64 is
 cross-built and vetted, not executed. These checks qualify only the
 [narrow Windows command boundary](windows.md), local-NTFS private state and exact

@@ -219,7 +219,7 @@ func (a *App) applyWorkspaceSuiteLift(ctx context.Context, p *preparedQuickstart
 	return result, nil
 }
 
-func (a *App) answerSuitePlacement(ctx context.Context, result ReleaseLiftResult, task string) (string, error) {
+func (a *App) answerSuitePlacement(ctx context.Context, result ReleaseLiftResult, task string) (answer string, err error) {
 	if result.State != "ready" {
 		return "", fmt.Errorf("a successful suite placement is required before an answer")
 	}
@@ -231,7 +231,12 @@ func (a *App) answerSuitePlacement(ctx context.Context, result ReleaseLiftResult
 	if err != nil {
 		return "", err
 	}
-	defer session.close()
+	defer func() {
+		if closeErr := session.close(); closeErr != nil {
+			answer = ""
+			err = errors.Join(err, fmt.Errorf("result session cleanup failed; answer withheld: %w", closeErr))
+		}
+	}()
 	if err := a.VerifyReleaseLiftPlacement(ctx, result); err != nil {
 		return "", err
 	}

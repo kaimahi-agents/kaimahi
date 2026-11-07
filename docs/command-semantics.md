@@ -356,8 +356,9 @@ recovery or teardown behavior. Ready/answered/evaluated are distinct evidence.
 - Destination status is GET-only inspection; retirement remains unavailable.
   Deploy does not transfer live state,
   sessions or memory, delete source, perform cutover or grant teardown authority.
-- Native Windows amd64 read-only Orka list/show requires explicit context and
-  namespace and never enables live Run, Test, publication or Deploy.
+- Native Windows amd64 Orka list/show and existing Task Result require explicit
+  context and namespace. They do not enable live Run/Chat, workspace Test,
+  publication or Deploy.
 
 ## Audit and existing work
 

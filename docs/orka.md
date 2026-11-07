@@ -24,7 +24,9 @@ kmx cluster orka tools --context team --namespace agents -o json
 Both selectors are required. The command performs bounded Kubernetes GETs only:
 no TokenRequest, Secret read, provisioning, endpoint probe or Tool invocation.
 Kubernetes credential helpers can still run through kubectl authentication.
-Native Windows remains unsupported. Help and completion do not load configuration.
+Native Windows still refuses this Tool inventory command. Its separate amd64
+list/show and existing Task Result boundary is documented in
+[Native Windows](windows.md). Help and completion do not load configuration.
 
 Built-ins are copied from the exact [Orka v0.3.0 API catalog](https://github.com/orka-agents/orka/blob/a533c3491d350263c0fa39bb7887dabd0d055c4e/internal/api/handlers.go#L56-L64),
 shared by the restricted source profile. Inventory reports the matched runtime's
