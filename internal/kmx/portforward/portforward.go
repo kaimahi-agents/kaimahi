@@ -6,6 +6,7 @@ package portforward
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -185,6 +186,12 @@ func normalizeForwardWait(err error) error {
 		return errors.Join(retained...)
 	}
 	if _, ok := err.(*exec.ExitError); ok {
+		return nil
+	}
+	// The forward's connection watcher can cancel the command context after
+	// explicit termination starts. Done already proves process exit; retain any
+	// separately joined platform cleanup error, but not that lifetime signal.
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return nil
 	}
 	return err

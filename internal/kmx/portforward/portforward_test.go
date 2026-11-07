@@ -283,6 +283,19 @@ func TestContextCancellationClosesDoneAfterProvenBind(t *testing.T) {
 	assertReaped(t, k)
 }
 
+func TestNormalizeForwardWaitKeepsCleanupErrors(t *testing.T) {
+	cleanup := errors.New("cleanup failed")
+	for _, lifetime := range []error{context.Canceled, context.DeadlineExceeded} {
+		if err := normalizeForwardWait(lifetime); err != nil {
+			t.Fatalf("lifetime error survived confirmed exit: %v", err)
+		}
+		err := normalizeForwardWait(errors.Join(lifetime, cleanup))
+		if !errors.Is(err, cleanup) || errors.Is(err, lifetime) {
+			t.Fatalf("joined cleanup error = %v", err)
+		}
+	}
+}
+
 type missingCommand struct{ runner run.Runner }
 
 func (k *missingCommand) OwnedCommand(...string) (*run.Command, error) {
