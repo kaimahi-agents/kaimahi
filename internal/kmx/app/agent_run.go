@@ -88,7 +88,7 @@ func orkaPhaseError(parent, phase context.Context, err error) error {
 func (a *App) runTaskWaitError(ctx context.Context, err error, name, contextName, namespace string) error {
 	var phaseDeadline *orkaPhaseDeadlineError
 	if err != nil && errors.Is(err, context.DeadlineExceeded) && (ctx.Err() == context.DeadlineExceeded || errors.As(err, &phaseDeadline)) {
-		return a.pendingTask(name, contextName, namespace)
+		return withOrkaResultCleanupStatus(a.pendingTask(name, contextName, namespace), err)
 	}
 	return err
 }

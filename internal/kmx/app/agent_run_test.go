@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/portforward"
 )
 
 func runFixture(t *testing.T) *evalFixture {
@@ -338,6 +340,11 @@ func TestRunWaitErrorKeepsTerminalFailureAndRefusalAfterDeadline(t *testing.T) {
 	}
 	if got := a.runTaskWaitError(ctx, fmt.Errorf("waiting: %w", context.DeadlineExceeded), "task", "kind-test", "orka-system"); !errors.Is(got, ErrTaskPending) {
 		t.Fatalf("expired wait not pending: %v", got)
+	}
+	const private = "private-cleanup-canary"
+	got := a.runTaskWaitError(ctx, errors.Join(fmt.Errorf("waiting: %w", context.DeadlineExceeded), errors.New(private), portforward.ErrCleanupUnconfirmed), "task", "kind-test", "orka-system")
+	if !errors.Is(got, ErrTaskPending) || !errors.Is(got, portforward.ErrCleanupUnconfirmed) || strings.Contains(got.Error(), private) {
+		t.Fatalf("pending result lost or leaked cleanup status: %v", got)
 	}
 }
 
