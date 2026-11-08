@@ -19,6 +19,8 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
 )
 
+const orkaResultTokenLifetime = 10 * time.Minute
+
 // Only this payload-free startup failure may cross suite diagnostic boundaries.
 // Never retain arbitrary port-forward subprocess output in an application error.
 type orkaResultPortError struct{}
@@ -202,6 +204,7 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 		return nil, fmt.Errorf("Orka API Service must expose port 8080")
 	}
 	// orkaCapture never echoes commands, stdout or stderr, including failures.
+	tokenRequestedAt := time.Now()
 	raw, err = a.orkaCapture(ctx, nil, "-n", opt.Namespace, "create", "token", opt.ResultServiceAccount, "--duration=10m", "-o", "json")
 	if err != nil {
 		return nil, fmt.Errorf("could not mint the temporary result session token: %w", err)
@@ -217,6 +220,11 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	}
 	if request.Status.Expiration.Before(deadline.Add(30 * time.Second)) {
 		return nil, fmt.Errorf("granted token lifetime does not cover the total execution deadline plus 30 seconds; refusing execution")
+	}
+	// TokenRequest may return a different lifetime than requested. Allow bounded
+	// clock/processing skew, but never silently accept a materially longer bearer.
+	if request.Status.Expiration.After(tokenRequestedAt.Add(orkaResultTokenLifetime + 30*time.Second)) {
+		return nil, fmt.Errorf("granted token lifetime exceeds the requested 10 minute bound; refusing execution")
 	}
 	a.notef("Result access uses ServiceAccount %q; authority details: docs/orka.md#runtime-and-result-access", opt.ResultServiceAccount)
 	// Token coverage above uses the original execution cap, not an injected

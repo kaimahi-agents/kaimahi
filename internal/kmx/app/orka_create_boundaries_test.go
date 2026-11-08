@@ -3,6 +3,9 @@ package app
 import (
 	"context"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -47,6 +50,29 @@ func TestOrkaForwardClosedOnCancellationAndBindTimeout(t *testing.T) {
 				t.Fatal("cancelled forward waited for full bind timeout")
 			}
 			assertOrkaForwardExited(t, dir)
+		})
+	}
+}
+
+func TestOrkaResultSessionRefusesTokenOutsideRequestedLifetime(t *testing.T) {
+	for _, scenario := range []string{"short-token", "long-token"} {
+		t.Run(scenario, func(t *testing.T) {
+			a, opt, _, _, dir := orkaCreateFixture(t, scenario)
+			opt.ResultServiceAccount = "reader"
+			opt.OrkaAPIService = "orka-api"
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
+			defer cancel()
+			session, err := a.openOrkaResultSession(ctx, opt)
+			if session != nil {
+				_ = session.close()
+				t.Fatal("out-of-bound token lifetime opened a result session")
+			}
+			if err == nil || !strings.Contains(err.Error(), "token lifetime") {
+				t.Fatalf("out-of-bound token lifetime accepted: %v", err)
+			}
+			if _, statErr := os.Stat(filepath.Join(dir, "forward-pid")); !os.IsNotExist(statErr) {
+				t.Fatalf("out-of-bound token reached the forward: %v", statErr)
+			}
 		})
 	}
 }

@@ -81,6 +81,17 @@ ServiceAccount token, opens an IPv4 loopback-only kubectl port-forward, pins one
 connection and never reconnects it. Tokens are never placed in argv, files or
 output. Task Result creates no Kubernetes resource and never resends work.
 
+The selected Orka Service and its backing controller are part of the trusted
+runtime boundary. Orka v0.3.0 serves this API as plaintext HTTP inside the
+port-forward and does not provide KMX with TLS backend identity or an audience-
+bound result token. KMX therefore sends the short-lived reader token to, and
+accepts the answer from, the backend Kubernetes selects. A namespace actor who
+can replace that Service routing or workload can capture the token and forge the
+answer. Use Task Result only with a runtime namespace whose workload
+administrators you trust. Loopback limits local exposure; it does not attest the
+in-cluster backend. KMX requests ten minutes and refuses a materially longer
+granted lifetime, but discarding the token is not revocation.
+
 Human table output removes terminal control and bidirectional-formatting
 characters and bounds cluster-controlled fields. Native Windows list is
 table-only; Show JSON is a bounded KMX summary, not a raw resource. Show resolves

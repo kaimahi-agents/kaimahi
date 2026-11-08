@@ -949,7 +949,12 @@ cross-namespace references exactly and withholds credential-bearing Provider
 diagnostics from every output; it names Secret references but fetches no Secret
 object and reports presence unknown. Task Result uses one bounded in-memory
 ServiceAccount token and owned loopback-only forward; pending inspection opens
-none, cleanup errors withhold answers, and recovery uses PowerShell syntax.
+none, cleanup errors withhold answers, and recovery uses PowerShell syntax. The
+selected plaintext Orka Service/backend remains a trusted runtime boundary: v0.3.0
+provides no backend TLS identity or result-token audience, so loopback is not
+in-cluster attestation. Disclose that namespace workload administrators can
+substitute the backend, capture the temporary reader token and forge an answer.
+Request ten minutes and refuse a materially longer granted lifetime.
 Live Run/Chat remain refused because Orka's current name-only Task AgentRef has no
 create-time Agent UID/generation precondition. Published v0.9.0 release candidates beginning with
 `v0.9.0-rc.4` retain the older day-zero-only boundary until a later release

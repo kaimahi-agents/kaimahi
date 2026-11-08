@@ -2015,6 +2015,12 @@ before an answer is accepted; pending Task inspection starts no tunnel. It
 creates no Task, suite evidence, publication or Deploy authority. Live Run/Chat
 remain refused because Orka cannot bind a new Task to an expected Agent UID and
 generation at creation time.
+The selected Orka Service/backend is trusted to receive the short-lived reader
+token and supply the answer: v0.3.0 exposes plaintext HTTP without backend TLS
+identity or a result-specific token audience. Loopback does not prevent a
+namespace workload administrator from substituting that backend. Use only a
+runtime namespace whose workload administrators you trust; this is not
+cryptographic backend attestation.
 
 ## Native receipt diff
 

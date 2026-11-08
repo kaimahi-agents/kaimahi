@@ -312,6 +312,14 @@ alone does not prove model execution or result-read access. Normal successful
 commands print only a short pointer to this boundary; authorization and
 transport failures remain explicit errors.
 
+The selected Orka Service and backing controller are trusted runtime components.
+The v0.3.0 API is plaintext HTTP behind the loopback forward and supplies no TLS
+backend identity or result-specific token audience, so a namespace actor able to
+replace Service routing or its workload can capture the temporary reader token
+and forge an answer. Loopback protects the local listener, not this in-cluster
+trust boundary. KMX requests a ten-minute token and refuses a materially longer
+granted lifetime; token discard is still not revocation.
+
 ## The whole journey, from nothing
 
 ```console
