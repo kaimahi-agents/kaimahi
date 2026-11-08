@@ -118,6 +118,7 @@ test('native Windows documentation keeps the explicit remote exception narrow', 
   for (const marker of [
     'prerelease-only and operation-specific',
     'v0.9.0-rc.4',
+    'v0.9.0-rc.5',
     'v0.9.0-rc.6',
     'Stable v0.8.1',
     'kmx-windows-amd64.exe',

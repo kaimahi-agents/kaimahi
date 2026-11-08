@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -244,21 +245,20 @@ type copilotToolConnection struct {
 	cancel  context.CancelFunc
 }
 
-func (c *copilotToolConnection) close() {
+func (c *copilotToolConnection) close() error {
 	c.cancel()
 	c.client.CloseIdleConnections()
-	c.forward.Close()
+	return c.forward.Close()
 }
 
 func (b *orkaChatBackend) Close() {
+	var cleanup error
 	for _, connection := range b.toolConnections {
-		connection.close()
+		cleanup = errors.Join(cleanup, connection.close())
 	}
 	b.toolConnections = nil
-	if b.resultSession != nil {
-		b.resultSession.close()
-		b.resultSession = nil
-	}
+	b.app.reportOrkaForwardCleanup("tool port-forward", cleanup)
+	b.closeResultSession()
 }
 
 func (b *orkaChatBackend) executeCopilotTool(ctx context.Context, tool copilotTool, args []byte) ([]byte, error) {
@@ -276,8 +276,9 @@ func (b *orkaChatBackend) executeCopilotTool(ctx context.Context, tool copilotTo
 	if connection != nil {
 		select {
 		case <-connection.forward.Done():
-			connection.close()
+			cleanup := connection.close()
 			delete(b.toolConnections, key)
+			b.app.reportOrkaForwardCleanup("tool port-forward", cleanup)
 			return nil, fmt.Errorf("tool connection ended; retry explicitly to open a new connection")
 		default:
 		}
@@ -325,8 +326,9 @@ func (b *orkaChatBackend) executeCopilotTool(ctx context.Context, tool copilotTo
 	b.app.setUserAgent(req)
 	response, err := connection.client.Do(req)
 	if err != nil {
-		connection.close()
+		cleanup := connection.close()
 		delete(b.toolConnections, key)
+		b.app.reportOrkaForwardCleanup("tool port-forward", cleanup)
 		return nil, err
 	}
 	defer response.Body.Close()

@@ -68,6 +68,9 @@ func validateSuiteNativeTask(raw []byte, desired map[string]any) error {
 // Drop payload-bearing diagnostics, not the phase or cancellation identity.
 // Entering placement is ambiguous even if the first write was not observed.
 func suiteEvaluationError(ctx context.Context, err error, mayHaveChanged bool) error {
+	cleanupStatus := func(failure error) error {
+		return withOrkaResultCleanupStatus(failure, err)
+	}
 	cause := ctx.Err()
 	if cause == nil {
 		for _, identity := range []error{context.Canceled, context.DeadlineExceeded} {
@@ -78,21 +81,21 @@ func suiteEvaluationError(ctx context.Context, err error, mayHaveChanged bool) e
 		}
 	}
 	if !mayHaveChanged && errors.Is(err, workspace.ErrCacheMigration) {
-		return errors.Join(workspace.ErrCacheMigration, cause)
+		return cleanupStatus(errors.Join(workspace.ErrCacheMigration, cause))
 	}
 	if errors.Is(err, workspace.ErrMultiMemberUnsupported) {
-		return errors.Join(workspace.ErrMultiMemberUnsupported, cause)
+		return cleanupStatus(errors.Join(workspace.ErrMultiMemberUnsupported, cause))
 	}
 	if !mayHaveChanged && errors.Is(err, scaffold.ErrUnresolvedPlaceholder) {
-		return errors.Join(errors.New("native suite contains an unresolved model or endpoint placeholder; set concrete values, then rerun eval"), cause)
+		return cleanupStatus(errors.Join(errors.New("native suite contains an unresolved model or endpoint placeholder; set concrete values, then rerun eval"), cause))
 	}
 	var port *orkaResultPortError
 	if errors.As(err, &port) {
-		return errors.Join(port, cause)
+		return cleanupStatus(errors.Join(port, cause))
 	}
 	var placement *suiteNativeReuseRefusal
 	if errors.As(err, &placement) {
-		return errors.Join(placement, cause)
+		return cleanupStatus(errors.Join(placement, cause))
 	}
 	var diagnostic *suiteDiagnosticError
 	if errors.As(err, &diagnostic) {
@@ -108,7 +111,7 @@ func suiteEvaluationError(ctx context.Context, err error, mayHaveChanged bool) e
 	if errors.Is(err, errSuitePassingExport) {
 		classified = errSuitePassingExport
 	}
-	return errors.Join(classified, cause)
+	return cleanupStatus(errors.Join(classified, cause))
 }
 
 func (a *App) evaluateSuiteNativeCandidate(ctx context.Context, placement *suiteNativePlacement, frame suitePassingInventoryCase, port string, judge agentruntime.EvaluationJudge, run *suiteCandidateRun) (suitePassingObservation, error) {

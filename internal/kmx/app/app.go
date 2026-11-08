@@ -12,6 +12,8 @@
 // context-pinned namespace inventories without config/state acquisition.
 // Provisioning JSONL observes existing phase boundaries with operation-local
 // cancellation and conservative mutation projections, never readiness proof.
+// Interactive Orka transport cleanup reports only fixed, payload-free status;
+// suite errors preserve cleanup uncertainty without subprocess diagnostics.
 //
 // Offline cluster bring-up validates a closed manifest and clean binary identity
 // against an embedded catalog. The source-packaged 7916cd1c profile records chart

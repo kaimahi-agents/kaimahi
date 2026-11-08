@@ -15,9 +15,11 @@ particular, the existing Windows Copilot integration remains the
 ## Supported native commands
 
 The native command boundary is closed: only the following operations are
-supported. The first four day-zero rows are present in published v0.9.0
-release-candidate Windows assets; rows labeled current main require a later
-containing build.
+supported. The first four day-zero operations are present in published v0.9.0
+release-candidate Windows assets. For Run, Test and Explain, `v0.9.0-rc.4`
+supports tests embedded in `FILE`; automatic companion-test loading and the
+explicit `--tests FILE` selector begin with `v0.9.0-rc.5`. Rows labeled current
+main require a later containing build.
 
 | Operation | Native Windows contract |
 |---|---|

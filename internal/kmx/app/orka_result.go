@@ -36,6 +36,17 @@ func withOrkaResultCleanupStatus(failure, cleanup error) error {
 	return failure
 }
 
+func (a *App) reportOrkaForwardCleanup(scope string, err error) {
+	if err == nil || a == nil || a.Err == nil {
+		return
+	}
+	if errors.Is(err, portforward.ErrCleanupUnconfirmed) {
+		a.notef("warning: Orka %s cleanup unconfirmed; a kubectl port-forward process may still be running", scope)
+		return
+	}
+	a.notef("warning: Orka %s cleanup failed after the forward exited", scope)
+}
+
 // orkaResultSession owns one short-lived, in-memory bearer and proven loopback
 // forward. There are no credential flags, persistent files, redirects or proxy
 // environment inputs. The account's authority is not reduced by this session.
@@ -272,7 +283,7 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	if err != nil {
 		failure := portFailure(nil)
 		cancel()
-		return nil, errors.Join(failure, fwd.Close())
+		return nil, withOrkaResultCleanupStatus(failure, fwd.Close())
 	}
 	bound := &orkaResultConn{Conn: conn, cancel: cancel}
 	context.AfterFunc(forwardCtx, func() { _ = bound.Close() })
@@ -284,7 +295,7 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	if forwardCtx.Err() != nil {
 		failure := portFailure(nil)
 		_ = bound.Close()
-		return nil, errors.Join(failure, fwd.Close())
+		return nil, withOrkaResultCleanupStatus(failure, fwd.Close())
 	}
 	var take sync.Once
 	transport := &http.Transport{

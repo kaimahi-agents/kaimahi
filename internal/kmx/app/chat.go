@@ -79,6 +79,15 @@ type orkaChatBackend struct {
 	resultSession    *orkaResultSession
 }
 
+func (b *orkaChatBackend) closeResultSession() {
+	if b.resultSession == nil {
+		return
+	}
+	err := b.resultSession.close()
+	b.resultSession = nil
+	b.app.reportOrkaForwardCleanup("result session", err)
+}
+
 func (b *orkaChatBackend) Agent() string { return b.agent }
 
 func quickstartResultOptions(namespace, task string) CreateOptions {
@@ -138,8 +147,7 @@ func (b *orkaChatBackend) Send(ctx context.Context, message string, renderer *ch
 	if b.resultSession != nil {
 		deadline, _ := b.resultSession.ctx.Deadline()
 		if b.resultSession.ctx.Err() != nil || time.Until(deadline) < 5*time.Minute {
-			b.resultSession.close()
-			b.resultSession = nil
+			b.closeResultSession()
 		}
 	}
 	sessionStarted := time.Now()

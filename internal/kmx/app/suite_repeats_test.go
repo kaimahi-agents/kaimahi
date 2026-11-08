@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/portforward"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
@@ -379,7 +380,7 @@ func TestSuiteRepeatCleanupFailureInvalidatesCountableFailure(t *testing.T) {
 	calls := 0
 	a.resultSessionCleanup = func() error {
 		if calls == 1 {
-			return errors.New(nativeCanary)
+			return errors.Join(errors.New(nativeCanary), portforward.ErrCleanupUnconfirmed)
 		}
 		return nil
 	}
@@ -397,7 +398,7 @@ func TestSuiteRepeatCleanupFailureInvalidatesCountableFailure(t *testing.T) {
 		}
 		return observed, runErr
 	})
-	if observations != nil || calls != 1 || !errors.Is(err, errSuiteNativeEvaluation) || errors.Is(err, errSuiteNativeCaseFailed) {
+	if observations != nil || calls != 1 || !errors.Is(err, errSuiteNativeEvaluation) || !errors.Is(err, portforward.ErrCleanupUnconfirmed) || errors.Is(err, errSuiteNativeCaseFailed) {
 		t.Fatalf("cleanup uncertainty remained countable: observations=%+v calls=%d err=%v", observations, calls, err)
 	}
 	if first.Verdict != agentruntime.EvaluationUnknown || !first.Stop || first.AnswerSHA256 != "" || first.Assertions != nil {

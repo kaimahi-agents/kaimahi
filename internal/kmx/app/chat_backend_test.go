@@ -13,6 +13,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/portforward"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
@@ -21,6 +22,18 @@ type staticChatBackend struct {
 }
 
 type waitingChatBackend struct{}
+
+func TestOrkaChatReportsResultSessionCleanupOnce(t *testing.T) {
+	var diagnostics bytes.Buffer
+	session := &orkaResultSession{closeErr: errors.Join(errors.New("private-cleanup-canary"), portforward.ErrCleanupUnconfirmed)}
+	session.closeOnce.Do(func() {})
+	b := &orkaChatBackend{app: &App{Err: &diagnostics}, resultSession: session}
+	b.closeResultSession()
+	b.closeResultSession()
+	if b.resultSession != nil || diagnostics.String() != "warning: Orka result session cleanup unconfirmed; a kubectl port-forward process may still be running\n" {
+		t.Fatalf("result cleanup was not reported safely once: session=%v diagnostics=%q", b.resultSession, diagnostics.String())
+	}
+}
 
 func (waitingChatBackend) Agent() string { return "orka-agent" }
 func (waitingChatBackend) Connect(context.Context, *chatRenderer) ([]cliui.Field, error) {
