@@ -200,7 +200,13 @@ jobs:
             -Kubectl "$env:RUNNER_TEMP\kubectl.exe"
       - name: Direct executable remote Orka Task Result journey
         shell: pwsh
-        run: ./scripts/ci/windows-orka-task-result.ps1 -Binary "$env:RUNNER_TEMP\kmx.exe" -Kubectl "$env:RUNNER_TEMP\kubectl.exe"
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $output = @(./scripts/ci/windows-orka-task-result.ps1 -Binary "$env:RUNNER_TEMP\kmx.exe" -Kubectl "$env:RUNNER_TEMP\kubectl.exe" 2>&1)
+          $output | Write-Output
+          if (@($output | Where-Object { $_ -ceq 'Native Windows amd64 Orka Task Result qualification passed.' }).Count -ne 1) {
+            throw 'Task Result qualification did not emit its exact completion marker.'
+          }
 
   windows-arm64-cross:
     name: Windows arm64 cross-build metadata only (not native execution)

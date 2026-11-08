@@ -208,6 +208,20 @@ if name == 'helm' and 'get' in args:
                            if 'windows-orka-task-result.ps1' in step.get('run', ''))
         self.assertEqual(result_step['env']['KUBECTL_FIXTURE'],
                          '${{ runner.temp }}/checked-release/kmx-windows-kubectl-fixture.exe')
+        self.assertNotIn('if', result_step)
+        self.assertNotIn('continue-on-error', result_step)
+        self.assertEqual(result_step['run'].strip(), """$ErrorActionPreference = 'Stop'
+$output = @(./scripts/ci/windows-orka-task-result.ps1 -Binary $env:WINDOWS_BINARY -Kubectl $env:KUBECTL_FIXTURE 2>&1)
+$output | Write-Output
+if (@($output | Where-Object { $_ -ceq 'Native Windows amd64 Orka Task Result qualification passed.' }).Count -ne 1) {
+  throw 'Task Result qualification did not emit its exact completion marker.'
+}""")
+        result_helper = (ROOT / 'scripts/ci/windows-orka-task-result.ps1').read_text()
+        for contract in ('ReadLineAsync()', 'Assert-ExactArgs -Call $tokenCalls[0]',
+                         'Assert-ExactArgs -Call $forwardCalls[0]',
+                         'Task Result created or resent a Kubernetes resource',
+                         'foreach ($name in $fixtureControls)'):
+            self.assertIn(contract, result_helper)
         fixture_step = next(step for step in jobs['release']['steps']
                             if step.get('name') == 'Build native Windows Task Result qualification fixture')
         self.assertIn('GOOS=windows GOARCH=amd64', fixture_step['run'])

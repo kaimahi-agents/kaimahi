@@ -638,8 +638,11 @@ jobs:
           KUBECTL_FIXTURE: ${{ runner.temp }}/checked-release/kmx-windows-kubectl-fixture.exe
         run: |
           $ErrorActionPreference = 'Stop'
-          if (-not (Test-Path -LiteralPath $env:KUBECTL_FIXTURE -PathType Leaf)) { throw 'missing checked Task Result fixture' }
-          ./scripts/ci/windows-orka-task-result.ps1 -Binary $env:WINDOWS_BINARY -Kubectl $env:KUBECTL_FIXTURE
+          $output = @(./scripts/ci/windows-orka-task-result.ps1 -Binary $env:WINDOWS_BINARY -Kubectl $env:KUBECTL_FIXTURE 2>&1)
+          $output | Write-Output
+          if (@($output | Where-Object { $_ -ceq 'Native Windows amd64 Orka Task Result qualification passed.' }).Count -ne 1) {
+            throw 'Task Result qualification did not emit its exact completion marker.'
+          }
 
   publish:
     needs: [release, plugin-install, release-contracts, release-windows-amd64]

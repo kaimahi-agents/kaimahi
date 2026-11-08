@@ -273,6 +273,39 @@ class AppShardWorkflowTests(unittest.TestCase):
         for forbidden in ("wsl", "docker", "kind create", "helm", "az login", "kubelogin convert"):
             self.assertNotIn(forbidden.lower(), helper.lower())
 
+    def test_windows_task_result_helper_proves_existing_read_and_owned_cleanup(self):
+        helper = (ROOT / "scripts/ci/windows-orka-task-result.ps1").read_text()
+        for contract in (
+                "[Parameter(Mandatory = $true)][string]$Binary",
+                "[Parameter(Mandatory = $true)][string]$Kubectl",
+                "[Diagnostics.ProcessStartInfo]::new()",
+                "$start.ArgumentList.Add($argument)",
+                "ReadLineAsync()", "-ForwardPIDPath $forwardPIDPath",
+                "accepted an answer before the owned forward exited",
+                "Assert-ExactArgs -Call $tokenCalls[0]",
+                "Assert-ExactArgs -Call $forwardCalls[0]",
+                "Task Result created or resent a Kubernetes resource",
+                "Task Result changed the existing Task",
+                "KMX_EVAL_FORWARD_TARGET", "KMX_EVAL_PHASE_SEQUENCE",
+                "foreach ($name in $fixtureControls)",
+                "Native Windows amd64 Orka Task Result qualification passed."):
+            self.assertIn(contract, helper)
+        step = next(s for s in self.jobs["windows-amd64-native"]["steps"]
+                    if s.get("name") == "Direct executable remote Orka Task Result journey")
+        self.assertNotIn("if", step)
+        self.assertNotIn("continue-on-error", step)
+        self.assertEqual(step["run"].strip(), """$ErrorActionPreference = 'Stop'
+$output = @(./scripts/ci/windows-orka-task-result.ps1 -Binary "$env:RUNNER_TEMP\kmx.exe" -Kubectl "$env:RUNNER_TEMP\kubectl.exe" 2>&1)
+$output | Write-Output
+if (@($output | Where-Object { $_ -ceq 'Native Windows amd64 Orka Task Result qualification passed.' }).Count -ne 1) {
+  throw 'Task Result qualification did not emit its exact completion marker.'
+}""")
+        marker = helper.index("Write-Output 'Native Windows amd64 Orka Task Result qualification passed.'")
+        for required in ("ReadLineAsync()", "Assert-ExactArgs -Call $tokenCalls[0]",
+                         "Assert-ExactArgs -Call $forwardCalls[0]",
+                         "Task Result changed the existing Task"):
+            self.assertLess(helper.index(required), marker)
+
     def test_final_gate_rejects_every_non_success_and_wrong_dependency_set(self):
         steps = self.jobs["hygiene"]["steps"]
         gate = steps[-1]
