@@ -373,6 +373,41 @@ func TestSuiteRepeatFailedNativeTaskStillAborts(t *testing.T) {
 	}
 }
 
+func TestSuiteRepeatCleanupFailureInvalidatesCountableFailure(t *testing.T) {
+	a, placement, _, f := nativeEvaluationFixture(t)
+	frames := repeatDriverFrames(t, "runs: 2\nminPasses: 1\n")
+	calls := 0
+	a.resultSessionCleanup = func() error {
+		if calls == 1 {
+			return errors.New(nativeCanary)
+		}
+		return nil
+	}
+	var first suitePassingObservation
+	observations, err := evaluateSuiteRuns(t.Context(), frames, 30*time.Second, io.Discard, func(ctx context.Context, frame suitePassingInventoryCase) (suitePassingObservation, error) {
+		calls++
+		if calls == 1 {
+			f.answers[frame.Case.Input] = "wrong"
+		} else {
+			f.answers[frame.Case.Input] = "answer"
+		}
+		observed, runErr := a.evaluateSuiteNative(ctx, placement, frame, f.opt.ResultPort, nil)
+		if calls == 1 {
+			first = observed
+		}
+		return observed, runErr
+	})
+	if observations != nil || calls != 1 || !errors.Is(err, errSuiteNativeEvaluation) || errors.Is(err, errSuiteNativeCaseFailed) {
+		t.Fatalf("cleanup uncertainty remained countable: observations=%+v calls=%d err=%v", observations, calls, err)
+	}
+	if first.Verdict != agentruntime.EvaluationUnknown || !first.Stop || first.AnswerSHA256 != "" || first.Assertions != nil {
+		t.Fatalf("cleanup uncertainty retained attributed evidence: %+v", first)
+	}
+	if strings.Contains(err.Error(), nativeCanary) {
+		t.Fatal("cleanup failure disclosed private detail")
+	}
+}
+
 // Fixed candidate answers isolate the threshold from both sampling and judging.
 func TestSuiteRepeatFiveRunThresholdPatterns(t *testing.T) {
 	for _, tc := range []struct {

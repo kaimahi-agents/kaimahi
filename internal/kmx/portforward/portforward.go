@@ -26,6 +26,8 @@ var (
 	cleanupWait  = 5 * time.Second
 )
 
+const forwardLogLimit = 64 << 10
+
 // Kube prepares a kubectl command that the forward manages itself. The caller
 // supplies cluster context and, when needed, cancellation through the command.
 type Kube interface {
@@ -79,7 +81,7 @@ func Start(k Kube, namespace, target, localPort, remotePort string) (*Forward, e
 	}()
 
 	bound := run.Poll(pollAttempts, pollInterval, func() bool {
-		if port := announcedPort(f.log.String(), localPort); port != "" {
+		if port := announcedPort(f.log.bindEvidence(), localPort); port != "" {
 			f.Port = port
 			return true
 		}
@@ -208,9 +210,8 @@ func (b *syncBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	written := len(p)
-	const limit = 64 << 10
 	accepted := 0
-	if remaining := limit - b.buf.Len(); remaining > 0 {
+	if remaining := forwardLogLimit - b.buf.Len(); remaining > 0 {
 		accepted = min(len(p), remaining)
 		_, _ = b.buf.Write(p[:accepted])
 	}
@@ -218,6 +219,14 @@ func (b *syncBuffer) Write(p []byte) (int, error) {
 		b.truncated = true
 	}
 	return written, nil
+}
+
+// bindEvidence returns only subprocess bytes. A synthetic diagnostic marker
+// must never complete a truncated bind announcement.
+func (b *syncBuffer) bindEvidence() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 func (b *syncBuffer) String() string {

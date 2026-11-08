@@ -212,10 +212,24 @@ func (a *App) evaluateSuiteNativeTracked(ctx context.Context, placement *suiteNa
 		return observation, err
 	}
 	defer func() {
-		if closeErr := session.close(); closeErr != nil {
+		closeErr := session.close()
+		if worker.resultSessionCleanup != nil {
+			closeErr = errors.Join(closeErr, worker.resultSessionCleanup())
+		}
+		if closeErr != nil {
 			attributed = false
 			answer = ""
-			err = errors.Join(err, fmt.Errorf("result session cleanup failed: %w", closeErr))
+			observation.AnswerSHA256 = ""
+			observation.Assertions = nil
+			observation.Matched, observation.Missing = nil, nil
+			observation.Verdict = agentruntime.EvaluationUnknown
+			observation.Stop = true
+			cleanupErr := fmt.Errorf("result session cleanup failed: %w", closeErr)
+			if errors.Is(err, errSuiteNativeCaseFailed) {
+				err = errors.Join(errSuiteNativeEvaluation, cleanupErr)
+			} else {
+				err = errors.Join(err, cleanupErr)
+			}
 		}
 	}()
 	caseCtx := session.ctx

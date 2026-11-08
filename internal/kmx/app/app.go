@@ -146,6 +146,9 @@ type App struct {
 	// waitTiming overrides retry pacing and phase deadlines in tests only.
 	// Nil preserves every production interval and timeout.
 	waitTiming *waitTiming
+	// resultSessionCleanup adds a post-close failure in tests only. Production
+	// always relies solely on the owned session's checked cleanup result.
+	resultSessionCleanup func() error
 	// progressUI replaces destination detection in tests only. Production uses
 	// cliui.New against Err so styling follows the actual output stream.
 	progressUI progressPresenter

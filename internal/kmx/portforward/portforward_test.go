@@ -357,6 +357,24 @@ func TestAutomaticForwardRequiresCompleteValidIPv4Announcement(t *testing.T) {
 	}
 }
 
+func TestTruncationMarkerCannotCompleteBindAnnouncement(t *testing.T) {
+	line := "Forwarding from 127.0.0.1:12345 -> 8080"
+	prefix := strings.Repeat("x", forwardLogLimit-len(line)-1)
+	var log syncBuffer
+	if _, err := log.Write([]byte(prefix + "\n" + line + "invalid trailing output")); err != nil {
+		t.Fatal(err)
+	}
+	if got := announcedPort(log.bindEvidence(), ""); got != "" {
+		t.Fatalf("truncated bind accepted from subprocess bytes: %q", got)
+	}
+	if got := announcedPort(log.String(), ""); got != "12345" {
+		t.Fatalf("fixture did not place the synthetic marker after the bind prefix: %q", got)
+	}
+	if !strings.Contains(log.String(), "[output truncated]") {
+		t.Fatal("truncated diagnostics lost their marker")
+	}
+}
+
 func TestNilForwardCloseIsSafe(t *testing.T) {
 	var f *Forward
 	f.Close()
