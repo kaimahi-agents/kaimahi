@@ -146,12 +146,12 @@ try {
     $calls = @(Read-KubectlCalls -Path $callsPath)
     if (@($calls | Where-Object { $null -ne $_.Document }).Count -ne 0) { throw 'Task Result submitted a Kubernetes document.' }
     foreach ($call in $calls) {
-        $args = @($call.Args)
+        $callArgs = @($call.Args)
         foreach ($verb in @('apply', 'delete', 'patch', 'replace')) {
-            if ($args -contains $verb) { throw "Task Result invoked mutating kubectl verb $verb." }
+            if ($callArgs -contains $verb) { throw "Task Result invoked mutating kubectl verb $verb." }
         }
-        $create = [Array]::IndexOf($args, 'create')
-        if ($create -ge 0 -and ($create + 1 -ge $args.Count -or $args[$create + 1] -cne 'token')) {
+        $create = [Array]::IndexOf($callArgs, 'create')
+        if ($create -ge 0 -and ($create + 1 -ge $callArgs.Count -or $callArgs[$create + 1] -cne 'token')) {
             throw 'Task Result created or resent a Kubernetes resource.'
         }
     }

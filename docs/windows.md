@@ -15,8 +15,9 @@ particular, the existing Windows Copilot integration remains the
 ## Supported native commands
 
 The native command boundary is closed: only the following operations are
-supported by a checkout build and by the published v0.9.0 release-candidate
-Windows assets described below.
+supported. The first four day-zero rows are present in published v0.9.0
+release-candidate Windows assets; rows labeled current main require a later
+containing build.
 
 | Operation | Native Windows contract |
 |---|---|

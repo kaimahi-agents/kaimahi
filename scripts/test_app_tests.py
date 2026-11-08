@@ -294,7 +294,7 @@ class AppShardWorkflowTests(unittest.TestCase):
                     if s.get("name") == "Direct executable remote Orka Task Result journey")
         self.assertNotIn("if", step)
         self.assertNotIn("continue-on-error", step)
-        self.assertEqual(step["run"].strip(), """$ErrorActionPreference = 'Stop'
+        self.assertEqual(step["run"].strip(), r"""$ErrorActionPreference = 'Stop'
 $output = @(./scripts/ci/windows-orka-task-result.ps1 -Binary "$env:RUNNER_TEMP\kmx.exe" -Kubectl "$env:RUNNER_TEMP\kubectl.exe" 2>&1)
 $output | Write-Output
 if (@($output | Where-Object { $_ -ceq 'Native Windows amd64 Orka Task Result qualification passed.' }).Count -ne 1) {

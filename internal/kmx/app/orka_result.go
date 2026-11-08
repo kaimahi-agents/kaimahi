@@ -264,8 +264,7 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	if err != nil {
 		failure := portFailure()
 		cancel()
-		_ = fwd.Close()
-		return nil, failure
+		return nil, errors.Join(failure, fwd.Close())
 	}
 	bound := &orkaResultConn{Conn: conn, cancel: cancel}
 	context.AfterFunc(forwardCtx, func() { _ = bound.Close() })
@@ -277,8 +276,7 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	if forwardCtx.Err() != nil {
 		failure := portFailure()
 		_ = bound.Close()
-		_ = fwd.Close()
-		return nil, failure
+		return nil, errors.Join(failure, fwd.Close())
 	}
 	var take sync.Once
 	transport := &http.Transport{

@@ -51,7 +51,7 @@ func (a *App) TaskResult(opt TaskResultOptions) error {
 	ctx, cancel := a.waitContext(ctx, "task-result", timeout)
 	defer cancel()
 	worker := a.withRunContext(ctx)
-	if err := worker.preflightOrkaRemote(); err != nil {
+	if err := worker.preflightOrkaTaskResult(); err != nil {
 		return err
 	}
 	inspectCtx, stopInspect := worker.waitContext(ctx, "task-result-inspect", 0)
