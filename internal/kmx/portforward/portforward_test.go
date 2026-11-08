@@ -130,6 +130,13 @@ func impatient(t *testing.T) {
 	t.Cleanup(func() { pollAttempts, pollInterval = attempts, interval })
 }
 
+func impatientCleanup(t *testing.T) {
+	t.Helper()
+	wait := cleanupWait
+	cleanupWait = time.Millisecond
+	t.Cleanup(func() { cleanupWait = wait })
+}
+
 func assertReaped(t *testing.T, k *subprocessKube) {
 	t.Helper()
 	if k.cmd.ProcessState == nil || k.cmd.ProcessState.Success() {
@@ -263,6 +270,31 @@ func TestContextCancellationStopsWaitingForUnprovenBind(t *testing.T) {
 		t.Fatal("cancelled bind waited for full bind timeout")
 	}
 	assertReaped(t, k)
+}
+
+func TestStartReportsUnconfirmedCleanupWithoutSubprocessDetail(t *testing.T) {
+	impatient(t)
+	impatientCleanup(t)
+	k := testKube(t, "silent")
+	release := make(chan struct{})
+	terminate := func(cmd *run.Command) error {
+		<-release
+		return run.Terminate(cmd)
+	}
+	f, err := start(k, "agents", "svc/tool", freePort(t), "8080", terminate)
+	close(release)
+	if f == nil || !errors.Is(err, ErrCleanupUnconfirmed) {
+		t.Fatalf("unconfirmed cleanup classification = %v, forward=%v", err, f)
+	}
+	if ErrCleanupUnconfirmed.Error() != "port-forward cleanup unconfirmed" {
+		t.Fatal("cleanup classification is not fixed text")
+	}
+	select {
+	case <-f.Done():
+		assertReaped(t, k)
+	case <-time.After(time.Second):
+		t.Fatal("released termination did not reap the subprocess")
+	}
 }
 
 func TestContextCancellationClosesDoneAfterProvenBind(t *testing.T) {

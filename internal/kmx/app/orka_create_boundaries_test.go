@@ -2,12 +2,15 @@ package app
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/portforward"
 )
 
 func TestOrkaForwardClosedOnCancellationAndBindTimeout(t *testing.T) {
@@ -74,6 +77,38 @@ func TestOrkaResultSessionRefusesTokenOutsideRequestedLifetime(t *testing.T) {
 				t.Fatalf("out-of-bound token reached the forward: %v", statErr)
 			}
 		})
+	}
+}
+
+func TestOrkaResultStartFailureKeepsSafeCleanupUncertainty(t *testing.T) {
+	a, opt, _, _, _ := orkaCreateFixture(t, "forward-fail")
+	opt.ResultServiceAccount = "reader"
+	opt.OrkaAPIService = "orka-api"
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
+	defer cancel()
+	session, err := a.openOrkaResultSession(ctx, opt)
+	if session != nil || err == nil {
+		t.Fatalf("failed forward opened a session: session=%v err=%v", session, err)
+	}
+	if strings.Contains(err.Error(), orkaTestToken()) || strings.Contains(err.Error(), "external failure") {
+		t.Fatalf("forward startup leaked subprocess diagnostics: %v", err)
+	}
+	// Ordinary startup failure does not invent cleanup uncertainty; the typed
+	// sentinel is preserved when portforward.Start supplies it.
+	if errors.Is(err, portforward.ErrCleanupUnconfirmed) {
+		t.Fatalf("confirmed process exit reported uncertain cleanup: %v", err)
+	}
+}
+
+func TestOrkaResultStartFailureRedactsCleanupCause(t *testing.T) {
+	const private = "private-cleanup-canary"
+	failure := withOrkaResultCleanupStatus(&orkaResultPortError{}, errors.Join(errors.New(private), portforward.ErrCleanupUnconfirmed))
+	if !errors.Is(failure, portforward.ErrCleanupUnconfirmed) || strings.Contains(failure.Error(), private) {
+		t.Fatalf("unsafe cleanup classification: %v", failure)
+	}
+	plain := withOrkaResultCleanupStatus(&orkaResultPortError{}, errors.New(private))
+	if errors.Is(plain, portforward.ErrCleanupUnconfirmed) || strings.Contains(plain.Error(), private) {
+		t.Fatalf("ordinary startup failure leaked or invented cleanup status: %v", plain)
 	}
 }
 

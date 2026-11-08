@@ -28,6 +28,10 @@ var (
 
 const forwardLogLimit = 64 << 10
 
+// ErrCleanupUnconfirmed reports that an owned forward may still be running.
+// It intentionally carries no subprocess output or platform diagnostic.
+var ErrCleanupUnconfirmed = errors.New("port-forward cleanup unconfirmed")
+
 // Kube prepares a kubectl command that the forward manages itself. The caller
 // supplies cluster context and, when needed, cancellation through the command.
 type Kube interface {
@@ -38,12 +42,13 @@ type Kube interface {
 // Callers must not send a byte until kubectl has said it bound the selected
 // port on 127.0.0.1. Ownership does not prove a later connection to a reused port.
 type Forward struct {
-	Port string
-	pf   *run.Command
-	log  *syncBuffer
-	wait chan error
-	stop sync.Once
-	err  error
+	Port      string
+	pf        *run.Command
+	log       *syncBuffer
+	wait      chan error
+	stop      sync.Once
+	err       error
+	terminate func(*run.Command) error
 	// done closes when the forward's process exits, so a forward that dies
 	// immediately (the port is taken, the deployment is missing) is a
 	// failure in milliseconds rather than a 30-second wait.
@@ -60,7 +65,15 @@ type Forward struct {
 // are about to talk to is OURS. Probing the service behind it first would
 // accept a 200 from a stale forward to a DIFFERENT cluster.
 func Start(k Kube, namespace, target, localPort, remotePort string) (*Forward, error) {
-	f := &Forward{log: &syncBuffer{}}
+	f, err := start(k, namespace, target, localPort, remotePort, run.Terminate)
+	if err != nil {
+		return nil, err
+	}
+	return f, nil
+}
+
+func start(k Kube, namespace, target, localPort, remotePort string, terminate func(*run.Command) error) (*Forward, error) {
+	f := &Forward{log: &syncBuffer{}, terminate: terminate}
 	var err error
 	f.pf, err = k.OwnedCommand("-n", namespace, "port-forward", "--address", "127.0.0.1",
 		target, localPort+":"+remotePort)
@@ -98,7 +111,7 @@ func Start(k Kube, namespace, target, localPort, remotePort string) (*Forward, e
 		if requested == "" {
 			requested = "<automatic port>"
 		}
-		return nil, errors.Join(fmt.Errorf("the port-forward to %s never came up on 127.0.0.1:%s:\n  %s\n"+
+		return f, errors.Join(fmt.Errorf("the port-forward to %s never came up on 127.0.0.1:%s:\n  %s\n"+
 			"  Refusing to continue: if another cluster's forward holds this port, the\n"+
 			"  operation would have landed THERE. Use a free port.",
 			target, requested, f.Detail()), closeErr)
@@ -153,21 +166,21 @@ func (f *Forward) Close() error {
 			f.err = normalizeForwardWait(<-f.wait)
 		default:
 			terminated := make(chan error, 1)
-			go func() { terminated <- run.Terminate(f.pf) }()
+			go func() { terminated <- f.terminate(f.pf) }()
 			timer := time.NewTimer(cleanupWait)
 			defer timer.Stop()
 			var terminateErr error
 			select {
 			case terminateErr = <-terminated:
 			case <-timer.C:
-				f.err = fmt.Errorf("port-forward cleanup unconfirmed: termination did not return within %s", cleanupWait)
+				f.err = ErrCleanupUnconfirmed
 				return
 			}
 			select {
 			case <-f.done:
 				f.err = errors.Join(terminateErr, normalizeForwardWait(<-f.wait))
 			case <-timer.C:
-				f.err = errors.Join(terminateErr, fmt.Errorf("port-forward cleanup unconfirmed: process did not exit within %s", cleanupWait))
+				f.err = errors.Join(terminateErr, ErrCleanupUnconfirmed)
 			}
 		}
 	})

@@ -29,6 +29,13 @@ func (*orkaResultPortError) Error() string {
 	return "result port-forward could not bind or confirm a loopback port; check port availability and Service access"
 }
 
+func withOrkaResultCleanupStatus(failure, cleanup error) error {
+	if errors.Is(cleanup, portforward.ErrCleanupUnconfirmed) {
+		return errors.Join(failure, portforward.ErrCleanupUnconfirmed)
+	}
+	return failure
+}
+
 // orkaResultSession owns one short-lived, in-memory bearer and proven loopback
 // forward. There are no credential flags, persistent files, redirects or proxy
 // environment inputs. The account's authority is not reduced by this session.
@@ -241,11 +248,12 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	a.orkaForwardContext = forwardCtx
 	fwd, err := portforward.Start(a, opt.Namespace, "svc/"+opt.OrkaAPIService, opt.ResultPort, "8080")
 	a.orkaForwardContext = nil
-	portFailure := func() error {
-		return errors.Join(&orkaResultPortError{}, orkaPhaseError(ctx, forwardParent, forwardParent.Err()))
+	portFailure := func(cleanup error) error {
+		failure := errors.Join(&orkaResultPortError{}, orkaPhaseError(ctx, forwardParent, forwardParent.Err()))
+		return withOrkaResultCleanupStatus(failure, cleanup)
 	}
 	if err != nil {
-		failure := portFailure() // Capture cancellation before releasing phase contexts.
+		failure := portFailure(err) // Capture cancellation before releasing phase contexts.
 		cancel()
 		return nil, failure
 	}
@@ -262,7 +270,7 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	// port cannot receive the bearer: no transport dial opens another socket.
 	conn, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(forwardCtx, "tcp", "127.0.0.1:"+fwd.Port)
 	if err != nil {
-		failure := portFailure()
+		failure := portFailure(nil)
 		cancel()
 		return nil, errors.Join(failure, fwd.Close())
 	}
@@ -274,7 +282,7 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	default:
 	}
 	if forwardCtx.Err() != nil {
-		failure := portFailure()
+		failure := portFailure(nil)
 		_ = bound.Close()
 		return nil, errors.Join(failure, fwd.Close())
 	}
