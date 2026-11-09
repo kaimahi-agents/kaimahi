@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"reflect"
 	"strings"
@@ -215,10 +214,7 @@ func (a *App) evaluateSuiteNativeTracked(ctx context.Context, placement *suiteNa
 		return observation, err
 	}
 	defer func() {
-		closeErr := session.close()
-		if worker.resultSessionCleanup != nil {
-			closeErr = errors.Join(closeErr, worker.resultSessionCleanup())
-		}
+		closeErr := worker.closeOrkaResultSession(session, "result session cleanup failed")
 		if closeErr != nil {
 			attributed = false
 			answer = ""
@@ -227,11 +223,10 @@ func (a *App) evaluateSuiteNativeTracked(ctx context.Context, placement *suiteNa
 			observation.Matched, observation.Missing = nil, nil
 			observation.Verdict = agentruntime.EvaluationUnknown
 			observation.Stop = true
-			cleanupErr := fmt.Errorf("result session cleanup failed: %w", closeErr)
 			if errors.Is(err, errSuiteNativeCaseFailed) {
-				err = errors.Join(errSuiteNativeEvaluation, cleanupErr)
+				err = errors.Join(errSuiteNativeEvaluation, closeErr)
 			} else {
-				err = errors.Join(err, cleanupErr)
+				err = errors.Join(err, closeErr)
 			}
 		}
 	}()

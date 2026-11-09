@@ -36,6 +36,20 @@ func withOrkaResultCleanupStatus(failure, cleanup error) error {
 	return failure
 }
 
+func (a *App) closeOrkaResultSession(session *orkaResultSession, failure string) error {
+	if session == nil {
+		return nil
+	}
+	cleanup := session.close()
+	if a != nil && a.resultSessionCleanup != nil {
+		cleanup = errors.Join(cleanup, a.resultSessionCleanup())
+	}
+	if cleanup == nil {
+		return nil
+	}
+	return withOrkaResultCleanupStatus(errors.New(failure), cleanup)
+}
+
 func (a *App) reportOrkaForwardCleanup(scope string, err error) {
 	if err == nil || a == nil || a.Err == nil {
 		return

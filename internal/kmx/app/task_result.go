@@ -150,20 +150,13 @@ func (a *App) taskResultRead(ctx context.Context, namespace string, id orkaIdent
 			return nil
 		}
 		closed = true
-		closeErr := session.close()
-		if a.resultSessionCleanup != nil {
-			closeErr = errors.Join(closeErr, a.resultSessionCleanup())
-		}
-		return closeErr
+		return a.closeOrkaResultSession(session, "result session cleanup failed; answer withheld")
 	}
-	cleanupFailure := func(outcome, cleanup error) error {
-		if cleanup == nil {
-			return outcome
+	defer func() {
+		if closeErr := closeSession(); closeErr != nil {
+			err = errors.Join(err, closeErr)
 		}
-		failure := errors.Join(outcome, errors.New("result session cleanup failed; answer withheld"))
-		return withOrkaResultCleanupStatus(failure, cleanup)
-	}
-	defer func() { err = cleanupFailure(err, closeSession()) }()
+	}()
 	answer, err := a.readOrkaTaskResult(session.ctx, namespace, id, session, nil, follow)
 	if err != nil {
 		if errors.Is(err, ErrTaskPending) {
@@ -178,7 +171,7 @@ func (a *App) taskResultRead(ctx context.Context, namespace string, id orkaIdent
 		return fmt.Errorf("Task has no printable answer")
 	}
 	if closeErr := closeSession(); closeErr != nil {
-		return cleanupFailure(nil, closeErr)
+		return closeErr
 	}
 	_, err = fmt.Fprintln(a.Out, answer)
 	return err

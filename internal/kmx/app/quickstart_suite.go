@@ -232,9 +232,9 @@ func (a *App) answerSuitePlacement(ctx context.Context, result ReleaseLiftResult
 		return "", err
 	}
 	defer func() {
-		if closeErr := session.close(); closeErr != nil {
+		if closeErr := a.closeOrkaResultSession(session, "result session cleanup failed; answer withheld"); closeErr != nil {
 			answer = ""
-			err = errors.Join(err, fmt.Errorf("result session cleanup failed; answer withheld: %w", closeErr))
+			err = errors.Join(err, closeErr)
 		}
 	}()
 	if err := a.VerifyReleaseLiftPlacement(ctx, result); err != nil {

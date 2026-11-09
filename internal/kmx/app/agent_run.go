@@ -93,7 +93,7 @@ func (a *App) runTaskWaitError(ctx context.Context, err error, name, contextName
 	return err
 }
 
-func (a *App) RunAgent(opt RunAgentOptions) error {
+func (a *App) RunAgent(opt RunAgentOptions) (err error) {
 	if a.Cfg == nil || a.Run == nil || a.Out == nil || a.Err == nil {
 		return fmt.Errorf("run requires configured kubectl and streams")
 	}
@@ -203,7 +203,19 @@ func (a *App) RunAgent(opt RunAgentOptions) error {
 	if err != nil {
 		return err
 	}
-	defer session.close()
+	closed := false
+	closeSession := func(failure string) error {
+		if closed {
+			return nil
+		}
+		closed = true
+		return worker.closeOrkaResultSession(session, failure)
+	}
+	defer func() {
+		if closeErr := closeSession("result session cleanup failed"); closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
+	}()
 	execCtx = session.ctx
 	if err := session.probe(execCtx, namespace, taskName); err != nil {
 		return err
@@ -252,8 +264,8 @@ func (a *App) RunAgent(opt RunAgentOptions) error {
 		}
 		return fmt.Errorf("%w; recover with: %s", outcome, worker.taskRecovery(taskName, worker.Cfg.KubeContext, namespace))
 	}
-	if err := session.close(); err != nil {
-		return fmt.Errorf("result session cleanup failed after Task completion; answer withheld: %w", err)
+	if closeErr := closeSession("result session cleanup failed after Task completion; answer withheld"); closeErr != nil {
+		return closeErr
 	}
 	_, err = fmt.Fprintln(worker.Out, answer)
 	return err

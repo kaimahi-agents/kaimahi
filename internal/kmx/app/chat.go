@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -83,7 +84,7 @@ func (b *orkaChatBackend) closeResultSession() {
 	if b.resultSession == nil {
 		return
 	}
-	err := b.resultSession.close()
+	err := b.app.closeOrkaResultSession(b.resultSession, "result session cleanup failed")
 	b.resultSession = nil
 	b.app.reportOrkaForwardCleanup("result session", err)
 }
@@ -189,7 +190,7 @@ func (b *orkaChatBackend) Send(ctx context.Context, message string, renderer *ch
 	return nil
 }
 
-func (a *App) runQuickstartOrkaTaskProfile(parent context.Context, agent, namespace, prompt string, profile *orkaTaskProfile, report func(string), reuse ...*orkaResultSession) (string, error) {
+func (a *App) runQuickstartOrkaTaskProfile(parent context.Context, agent, namespace, prompt string, profile *orkaTaskProfile, report func(string), reuse ...*orkaResultSession) (answer string, err error) {
 	phase := func(label string) {
 		if report != nil {
 			report(label)
@@ -221,7 +222,12 @@ func (a *App) runQuickstartOrkaTaskProfile(parent context.Context, agent, namesp
 		if err != nil {
 			return "", err
 		}
-		defer session.close()
+		defer func() {
+			if closeErr := quiet.closeOrkaResultSession(session, "result session cleanup failed; answer withheld"); closeErr != nil {
+				answer = ""
+				err = errors.Join(err, closeErr)
+			}
+		}()
 	}
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()
@@ -245,7 +251,7 @@ func (a *App) runQuickstartOrkaTaskProfile(parent context.Context, agent, namesp
 	}
 	phase("Task " + id.Name + ": waiting for worker execution and completion")
 	started = time.Now()
-	answer, err := a.waitOrkaTaskResultProgress(ctx, namespace, id, session, func() {
+	answer, err = a.waitOrkaTaskResultProgress(ctx, namespace, id, session, func() {
 		if profile != nil {
 			profile.execution = time.Since(started)
 		}

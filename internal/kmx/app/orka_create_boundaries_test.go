@@ -107,6 +107,12 @@ func TestOrkaResultStartFailureRedactsCleanupCause(t *testing.T) {
 	if errors.Is(plain, portforward.ErrCleanupUnconfirmed) || strings.Contains(plain.Error(), private) {
 		t.Fatalf("ordinary startup failure leaked or invented cleanup status: %v", plain)
 	}
+	session := &orkaResultSession{closeErr: errors.New(private)}
+	session.closeOnce.Do(func() {})
+	closed := (&App{}).closeOrkaResultSession(session, "fixed cleanup failure")
+	if closed == nil || closed.Error() != "fixed cleanup failure" || strings.Contains(closed.Error(), private) || errors.Is(closed, portforward.ErrCleanupUnconfirmed) {
+		t.Fatalf("ordinary session cleanup leaked or invented status: %v", closed)
+	}
 }
 
 func TestOrkaCleanupWarningRedactsCause(t *testing.T) {
