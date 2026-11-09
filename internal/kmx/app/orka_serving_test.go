@@ -226,6 +226,13 @@ func TestOfflineInstallReuseRefusesUnprovenReadiness(t *testing.T) {
 		{"API Service does not answer", "did not answer /readyz through Service orka-system/orka-api", true, func(t *testing.T, _ string) {
 			t.Setenv("OFFLINE_READYZ", "missing")
 		}},
+		{"Deployments read denied while waiting", "cannot read Orka Deployments in orka-system: access forbidden", false, func(t *testing.T, _ string) {
+			// Read 1 is the install-state check; the wait's first read is denied.
+			os.WriteFile(os.Getenv("OFFLINE_LIVE")+".2", []byte("forbidden"), 0o600)
+		}},
+		{"credentials rejected while waiting", "cannot read Orka Deployments in orka-system: access forbidden", false, func(t *testing.T, _ string) {
+			os.WriteFile(os.Getenv("OFFLINE_LIVE")+".2", []byte("unauthorized"), 0o600)
+		}},
 		{"API server denies services/proxy", "cannot read Orka's API readiness through its Service in orka-system: access to services/proxy forbidden", false, func(t *testing.T, _ string) {
 			t.Setenv("OFFLINE_READYZ", "rbac")
 		}},

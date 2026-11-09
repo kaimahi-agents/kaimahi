@@ -609,7 +609,11 @@ func offlineInstallApp(t *testing.T) (*App, string, *offlineNodeBundle, string) 
  "--context kind-test -n orka-system get deployment --ignore-not-found=true -o name") ;;
  "--context kind-test get crd -o jsonpath="*) if [ -n "$OFFLINE_ORPHAN" ];then printf '%s' "$OFFLINE_ORPHAN";fi;;
  "--context kind-test -n orka-system get deploy -o json") n=$(($(/bin/cat "$OFFLINE_LOG.deploy-reads" 2>/dev/null || echo 0) + 1)); echo "$n" > "$OFFLINE_LOG.deploy-reads"
-  if [ -f "$OFFLINE_LIVE.$n" ]; then /bin/cat "$OFFLINE_LIVE.$n"; else /bin/cat "$OFFLINE_LIVE"; fi;;
+  f=$OFFLINE_LIVE; if [ -f "$OFFLINE_LIVE.$n" ]; then f=$OFFLINE_LIVE.$n; fi
+  case "$(/bin/cat "$f")" in
+   forbidden) printf 'Error from server (Forbidden): deployments.apps is forbidden: User "kind-test-admin" cannot list resource "deployments" in API group "apps" in the namespace "orka-system"\n' >&2; exit 1;;
+   unauthorized) printf 'error: You must be logged in to the server (Unauthorized)\n' >&2; exit 1;;
+  esac; /bin/cat "$f";;
  "--context kind-test -n orka-system get services -o json") printf '%s' "$OFFLINE_SERVICES";;
  "--context kind-test get --raw /api/v1/namespaces/orka-system/services/http:orka-api:api/proxy/readyz") n=$(($(/bin/cat "$OFFLINE_LOG.readyz-reads" 2>/dev/null || echo 0) + 1)); echo "$n" > "$OFFLINE_LOG.readyz-reads"
   answer=$OFFLINE_READYZ; if [ -f "$OFFLINE_LOG.readyz.$n" ]; then answer=$(/bin/cat "$OFFLINE_LOG.readyz.$n"); fi

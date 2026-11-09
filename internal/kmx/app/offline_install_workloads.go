@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"reflect"
@@ -103,6 +104,9 @@ func (a *App) observeOfflineWorkloads(ctx context.Context, b *offlineInstallBund
 	if !waiting {
 		raw, err = a.offlineCapture("kubectl", args...)
 	} else if raw, err = a.offlineCaptureWithin(ctx, "kubectl", args...); err != nil {
+		if refusal := orkaServingDenial("Orka Deployments", err, false); errors.As(refusal, new(orkaRefusal)) {
+			return "", refusal
+		}
 		return fmt.Sprintf("Orka Deployments in %s could not be read", OrkaNamespace), nil
 	}
 	if err != nil {

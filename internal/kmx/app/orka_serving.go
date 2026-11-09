@@ -426,7 +426,8 @@ func (a *App) offlineCaptureWithin(ctx context.Context, tool string, args ...str
 		switch {
 		case strings.Contains(reason, `cannot get resource "services/proxy"`):
 			return nil, fmt.Errorf("%s request failed: access to services/proxy forbidden", tool)
-		case strings.Contains(reason, "error from server (forbidden)"), strings.Contains(reason, "error from server (unauthorized)"):
+		case strings.Contains(reason, "error from server (forbidden)"), strings.Contains(reason, "(unauthorized)"),
+			strings.Contains(reason, "must be logged in"):
 			return nil, fmt.Errorf("%s request failed: access forbidden", tool)
 		}
 		return nil, fmt.Errorf("%s local inspection failed or timed out", tool)
