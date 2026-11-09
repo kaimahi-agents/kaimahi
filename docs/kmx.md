@@ -1699,8 +1699,10 @@ ReplicaSet's UID is controlled by that Deployment's UID. A pod Ready since the
 node started was probed by its kubelet after the restart. Orka's API must then
 answer `/readyz` through its controller-selected API Service (the API server's
 Service proxy) with a JSON object whose `status` is `ok`; a 404 or another
-workload's plain `ok` from a stale endpoint does not count. Foreign pods and
-ReplicaSets, unsupported selectors, scaled-to-zero workloads, a missing or
+workload's plain `ok` from a stale endpoint does not count. A live selected pod
+that is foreign or belongs to a ReplicaSet the Deployment does not control (a
+foreign ReplicaSet with no selected pods is ignored), unsupported selectors,
+scaled-to-zero workloads, a missing or
 ambiguous API Service, the API server's own denial of a read (including `get`
 on `services/proxy`), a node container that is not the selected cluster's and
 execution settings that change while waiting refuse as soon as kmx observes
