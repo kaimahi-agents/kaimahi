@@ -24,18 +24,31 @@ func offlineNodeStart() time.Time {
 	return at
 }
 
-// offlineServingTiming keeps the readiness wait short in tests without changing
-// any other phase's bound.
-func offlineServingTiming() *waitTiming {
+// servingTestTiming polls the readiness wait quickly and bounds only that
+// phase, leaving every other phase's bound unchanged.
+func servingTestTiming(bound time.Duration) *waitTiming {
 	return &waitTiming{pollInterval: time.Millisecond, timeout: func(ctx context.Context, phase string, d time.Duration) (context.Context, context.CancelFunc) {
 		if phase == "orka-serving" {
-			return context.WithTimeout(ctx, 2*time.Second)
+			return context.WithTimeout(ctx, bound)
 		}
 		if d == 0 {
 			return ctx, func() {}
 		}
 		return context.WithTimeout(ctx, d)
 	}}
+}
+
+// offlineServingTiming is for tests whose readiness wait is expected to run
+// out; tests that expect success keep a generous bound.
+func offlineServingTiming() *waitTiming { return servingTestTiming(2 * time.Second) }
+
+// offlineServingReplicaSets is the ReplicaSet list for a Deployment's selector:
+// the one ReplicaSet its pods name, controlled by the Deployment's UID.
+func offlineServingReplicaSets(name, deploymentUID string) map[string]any {
+	return map[string]any{"items": []any{map[string]any{"metadata": map[string]any{
+		"name": name + "-5d8f7c9b4", "uid": name + "-rs",
+		"ownerReferences": []any{map[string]any{"apiVersion": "apps/v1", "kind": "Deployment", "name": name, "uid": deploymentUID, "controller": true}},
+	}}}}
 }
 
 // offlineServingPod is the pod list a Deployment's selector returns: one
@@ -53,7 +66,7 @@ func offlineServingPod(name string, deploy map[string]any, started, ready time.T
 		"metadata": map[string]any{
 			"name":            name + "-5d8f7c9b4-abcde",
 			"labels":          map[string]any{"kmx.test/workload": name, "pod-template-hash": "5d8f7c9b4"},
-			"ownerReferences": []any{map[string]any{"apiVersion": "apps/v1", "kind": "ReplicaSet", "name": name + "-5d8f7c9b4", "controller": true}},
+			"ownerReferences": []any{map[string]any{"apiVersion": "apps/v1", "kind": "ReplicaSet", "name": name + "-5d8f7c9b4", "uid": name + "-rs", "controller": true}},
 		},
 		"spec": map[string]any{"nodeName": "test-control-plane", "containers": containers},
 		"status": map[string]any{
@@ -165,13 +178,14 @@ func TestOfflineInstallReuseWaitsForReadinessAfterNodeStart(t *testing.T) {
 	// The Service then reaches a missing endpoint, then another workload's
 	// plain "ok" on the controller's previous address, then Orka itself.
 	os.WriteFile(log+".readyz.1", []byte("missing"), 0o600)
-	os.WriteFile(log+".readyz.2", []byte("ok"), 0o600)
+	os.WriteFile(log+".readyz.2", []byte("proxied403"), 0o600)
+	os.WriteFile(log+".readyz.3", []byte("ok"), 0o600)
 	if err := a.OrkaInstall(OrkaOptions{OfflineBundle: dir, Provider: "-"}); err != nil {
 		t.Fatalf("reuse did not finish once current readiness was shown: %v", err)
 	}
 	reads, _ := os.ReadFile(log + ".reads.orka-api-controller")
 	readyz, _ := os.ReadFile(log + ".readyz-reads")
-	if strings.TrimSpace(string(reads)) != "6" || strings.TrimSpace(string(readyz)) != "3" {
+	if strings.TrimSpace(string(reads)) != "7" || strings.TrimSpace(string(readyz)) != "4" {
 		t.Fatalf("reuse accepted readiness before the fresh Ready pod and Orka's typed answer: %s controller reads, %s API reads", reads, readyz)
 	}
 	out := a.Err.(interface{ String() string }).String()
@@ -212,6 +226,13 @@ func TestOfflineInstallReuseRefusesUnprovenReadiness(t *testing.T) {
 		{"API Service does not answer", "did not answer /readyz through Service orka-system/orka-api", true, func(t *testing.T, _ string) {
 			t.Setenv("OFFLINE_READYZ", "missing")
 		}},
+		{"API server denies services/proxy", "cannot read Orka's API readiness through its Service in orka-system: access to services/proxy forbidden", false, func(t *testing.T, _ string) {
+			t.Setenv("OFFLINE_READYZ", "rbac")
+		}},
+		{"pod's ReplicaSet belongs to another Deployment", "belongs to a ReplicaSet that orka-api-controller does not control", false, func(t *testing.T, pods string) {
+			raw, _ := json.Marshal(offlineServingReplicaSets("orka-api-controller", "someone-else"))
+			os.WriteFile(filepath.Join(pods, "orka-api-controller.rs"), raw, 0o600)
+		}},
 		{"no API Service", "no Orka API Service in orka-system", false, func(t *testing.T, _ string) {
 			t.Setenv("OFFLINE_SERVICES", `{"items":[]}`)
 		}},
@@ -247,6 +268,7 @@ func TestOfflineInstallReuseRefusesUnprovenReadiness(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a, dir, _, log := offlineInstallApp(t)
+			a.waitTiming = offlineServingTiming()
 			t.Setenv("OFFLINE_RELEASE", `[{"name":"orka","chart":"orka-0.0.0-dev","app_version":"v0.0.0-dev","status":"deployed"}]`)
 			tc.setup(t, os.Getenv("OFFLINE_PODS"))
 			err := a.OrkaInstall(OrkaOptions{OfflineBundle: dir, Provider: "-"})
@@ -287,7 +309,7 @@ func TestOrkaServingCheck(t *testing.T) {
 		return pod
 	}
 	workload := func() orkaServingWorkload {
-		return orkaServingWorkload{name: "orka-api-controller", matchLabels: map[string]string{"app.kubernetes.io/name": "orka", "app.kubernetes.io/component": "controller"}, replicas: 1, images: map[string]string{"controller": "registry.invalid/orka@sha256:1"}}
+		return orkaServingWorkload{name: "orka-api-controller", uid: "deploy-uid", matchLabels: map[string]string{"app.kubernetes.io/name": "orka", "app.kubernetes.io/component": "controller"}, replicas: 1, images: map[string]string{"controller": "registry.invalid/orka@sha256:1"}}
 	}
 	type outcome struct{ pending, refused string }
 	for _, tc := range []struct {
@@ -295,6 +317,7 @@ func TestOrkaServingCheck(t *testing.T) {
 		workload func(*orkaServingWorkload)
 		pods     func() []orkaServingPod
 		node     func(string) (time.Time, error)
+		sets     func() map[string]any
 		noBoot   bool
 		want     outcome
 		selector string
@@ -374,11 +397,31 @@ func TestOrkaServingCheck(t *testing.T) {
 			p.Metadata.OwnerReferences = append(p.Metadata.OwnerReferences, p.Metadata.OwnerReferences[0])
 			return []orkaServingPod{p}
 		}, want: outcome{refused: "not controlled by its ReplicaSet"}},
-		{name: "another ReplicaSet's pod", pods: func() []orkaServingPod {
+		{name: "ReplicaSet controlled by another Deployment", sets: func() map[string]any {
+			return offlineServingReplicaSets("orka-api-controller", "other-deploy-uid")
+		}, want: outcome{refused: "belongs to a ReplicaSet that orka-api-controller does not control"}},
+		{name: "ReplicaSet with the expected name but no controller", sets: func() map[string]any {
+			s := offlineServingReplicaSets("orka-api-controller", "deploy-uid")
+			s["items"].([]any)[0].(map[string]any)["metadata"].(map[string]any)["ownerReferences"] = []any{}
+			return s
+		}, want: outcome{refused: "does not control"}},
+		{name: "ReplicaSet being deleted", sets: func() map[string]any {
+			s := offlineServingReplicaSets("orka-api-controller", "deploy-uid")
+			s["items"].([]any)[0].(map[string]any)["metadata"].(map[string]any)["deletionTimestamp"] = "2026-01-02T03:04:06Z"
+			return s
+		}, want: outcome{pending: "ReplicaSet is being deleted"}},
+		{name: "pod's ReplicaSet not observed", sets: func() map[string]any { return map[string]any{"items": []any{}} }, want: outcome{pending: "ReplicaSet was not observed"}},
+		{name: "pod owner without a UID", pods: func() []orkaServingPod {
 			p := controller()
-			p.Metadata.OwnerReferences[0].Name = "orka-api-publisher-5d8f7c9b4"
+			p.Metadata.OwnerReferences[0].UID = ""
 			return []orkaServingPod{p}
 		}, want: outcome{refused: "not controlled by its ReplicaSet"}},
+		{name: "pod owned by a Deployment directly", pods: func() []orkaServingPod {
+			p := controller()
+			p.Metadata.OwnerReferences[0].Kind = "Deployment"
+			return []orkaServingPod{p}
+		}, want: outcome{refused: "not controlled by its ReplicaSet"}},
+		{name: "Deployment without a UID", workload: func(w *orkaServingWorkload) { w.uid = "" }, want: outcome{refused: "has no UID"}},
 		{name: "expression selector", workload: func(w *orkaServingWorkload) { w.matchExpressions = 1 }, want: outcome{refused: "no supported label selector"}},
 		{name: "selector injection", workload: func(w *orkaServingWorkload) { w.matchLabels["app"] = "orka,tier!=x" }, want: outcome{refused: "unsupported label selector"}},
 		{name: "scaled to zero", workload: func(w *orkaServingWorkload) { w.replicas = 0 }, want: outcome{refused: "scaled to 0"}},
@@ -398,6 +441,12 @@ func TestOrkaServingCheck(t *testing.T) {
 				pods: func(s string) ([]byte, error) {
 					selector = s
 					return json.Marshal(map[string]any{"items": pods})
+				},
+				replicaSets: func(string) ([]byte, error) {
+					if tc.sets != nil {
+						return json.Marshal(tc.sets())
+					}
+					return json.Marshal(offlineServingReplicaSets("orka-api-controller", "deploy-uid"))
 				},
 				decode: func(raw []byte, out any) error { return offlineJSON(raw, out, false) },
 				nodeStart: func(node string) (time.Time, error) {

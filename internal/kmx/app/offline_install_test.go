@@ -480,6 +480,7 @@ func TestOfflineInstallChangedReuse(t *testing.T) {
 					doc["items"] = items[:2]
 				case "unhealthy":
 					d["status"] = map[string]any{"readyReplicas": 1}
+					a.waitTiming = offlineServingTiming()
 				}
 				raw, _ = json.Marshal(doc)
 				os.WriteFile(path, raw, 0600)
@@ -566,19 +567,22 @@ func offlineInstallApp(t *testing.T) (*App, string, *offlineNodeBundle, string) 
 			break
 		}
 		meta := obj["metadata"].(map[string]any)
-		meta["uid"] = "owned"
+		meta["uid"] = "owned-" + meta["name"].(string)
 		meta["generation"] = 1
 		obj["status"] = map[string]any{"observedGeneration": 1, "updatedReplicas": 1, "readyReplicas": 1, "availableReplicas": 1}
 		name := meta["name"].(string)
 		obj["spec"].(map[string]any)["selector"] = map[string]any{"matchLabels": map[string]any{"kmx.test/workload": name}}
 		items = append(items, obj)
 		writeOfflinePods(t, pods, name, offlineServingPod(name, obj, offlineNodeStart().Add(10*time.Second), offlineNodeStart().Add(20*time.Second)))
+		writeOfflinePods(t, pods, name+".rs", offlineServingReplicaSets(name, "owned-"+name))
 	}
 	t.Setenv("OFFLINE_PODS", pods)
 	t.Setenv("OFFLINE_SERVICES", `{"items":[{"metadata":{"name":"orka-api","labels":{"app.kubernetes.io/name":"orka"}},"spec":{"selector":{"app.kubernetes.io/name":"orka","app.kubernetes.io/component":"controller"},"ports":[{"name":"api","port":8080},{"name":"metrics","port":8081}]}}]}`)
 	t.Setenv("OFFLINE_READYZ", `{"checks":{"kubernetes":"ok","store":"ok"},"status":"ok"}`)
 	t.Setenv("OFFLINE_NODE_STARTED", offlineNodeStartedText)
-	a.waitTiming = offlineServingTiming()
+	// Success paths get a generous bound; tests expecting the wait to run
+	// out set offlineServingTiming themselves.
+	a.waitTiming = servingTestTiming(time.Minute)
 	live := filepath.Join(tools, "live")
 	raw, _ = json.Marshal(map[string]any{"items": items})
 	os.WriteFile(live, raw, 0600)
@@ -609,7 +613,12 @@ func offlineInstallApp(t *testing.T) (*App, string, *offlineNodeBundle, string) 
  "--context kind-test -n orka-system get services -o json") printf '%s' "$OFFLINE_SERVICES";;
  "--context kind-test get --raw /api/v1/namespaces/orka-system/services/http:orka-api:api/proxy/readyz") n=$(($(/bin/cat "$OFFLINE_LOG.readyz-reads" 2>/dev/null || echo 0) + 1)); echo "$n" > "$OFFLINE_LOG.readyz-reads"
   answer=$OFFLINE_READYZ; if [ -f "$OFFLINE_LOG.readyz.$n" ]; then answer=$(/bin/cat "$OFFLINE_LOG.readyz.$n"); fi
-  [ "$answer" != missing ] || exit 1; printf '%s' "$answer";;
+  case "$answer" in
+   missing) exit 1;;
+   rbac) printf 'Error from server (Forbidden): services "orka-api" is forbidden: User "kind-test-admin" cannot get resource "services/proxy" in API group "" in the namespace "orka-system"\n' >&2; exit 1;;
+   proxied403) printf 'Error from server (Forbidden): target is not allowed\n' >&2; exit 1;;
+  esac; printf '%s' "$answer";;
+ "--context kind-test -n orka-system get replicasets --selector=kmx.test/workload="*" -o json") w=${7#--selector=kmx.test/workload=}; /bin/cat "$OFFLINE_PODS/$w.rs";;
  "--context kind-test -n orka-system get pods --selector=kmx.test/workload="*" -o json") w=${7#--selector=kmx.test/workload=}
   n=$(($(/bin/cat "$OFFLINE_LOG.reads.$w" 2>/dev/null || echo 0) + 1)); echo "$n" > "$OFFLINE_LOG.reads.$w"
   if [ -f "$OFFLINE_PODS/$w.$n" ]; then /bin/cat "$OFFLINE_PODS/$w.$n"; else /bin/cat "$OFFLINE_PODS/$w"; fi;;
@@ -655,6 +664,7 @@ func TestOfflineInstallTransaction(t *testing.T) {
 				t.Setenv("OFFLINE_PHASE_FAIL", mode)
 			}
 			if mode == "serving" {
+				a.waitTiming = offlineServingTiming()
 				// Every pod was last Ready before the node's current start.
 				t.Setenv("OFFLINE_NODE_STARTED", offlineNodeStart().Add(time.Hour).Format(time.RFC3339Nano))
 			}

@@ -140,15 +140,25 @@ func (a *App) observeOfflineWorkloads(ctx context.Context, b *offlineInstallBund
 			return fmt.Sprintf("Deployment %s status is not a completed rollout", d.Metadata.Name), nil
 		}
 	}
+	read := func(what string, proxied bool, args ...string) ([]byte, error) {
+		raw, err := a.offlineCaptureWithin(ctx, "kubectl", a.kubectl(args...)...)
+		if err != nil {
+			return nil, orkaServingDenial(what, err, proxied)
+		}
+		return raw, nil
+	}
 	reader := orkaServingReader{
 		pods: func(selector string) ([]byte, error) {
-			return a.offlineCaptureWithin(ctx, "kubectl", a.kubectl("-n", OrkaNamespace, "get", "pods", "--selector="+selector, "-o", "json")...)
+			return read("Orka pods", false, "-n", OrkaNamespace, "get", "pods", "--selector="+selector, "-o", "json")
+		},
+		replicaSets: func(selector string) ([]byte, error) {
+			return read("Orka ReplicaSets", false, "-n", OrkaNamespace, "get", "replicasets", "--selector="+selector, "-o", "json")
 		},
 		services: func() ([]byte, error) {
-			return a.offlineCaptureWithin(ctx, "kubectl", a.kubectl("-n", OrkaNamespace, "get", "services", "-o", "json")...)
+			return read("Orka Services", false, "-n", OrkaNamespace, "get", "services", "-o", "json")
 		},
 		get: func(path string) ([]byte, error) {
-			return a.offlineCaptureWithin(ctx, "kubectl", a.kubectl("get", "--raw", path)...)
+			return read("Orka's API readiness through its Service", true, "get", "--raw", path)
 		},
 		decode:    func(raw []byte, out any) error { return offlineJSON(raw, out, false) },
 		nodeStart: func(node string) (time.Time, error) { return a.kindNodeStartedAt(ctx, node) },
@@ -159,7 +169,7 @@ func (a *App) observeOfflineWorkloads(ctx context.Context, b *offlineInstallBund
 			images[c.Name] = c.Image
 		}
 		pending, err := reader.check(orkaServingWorkload{
-			name: d.Metadata.Name, matchLabels: d.Spec.Selector.MatchLabels,
+			name: d.Metadata.Name, uid: d.Metadata.UID, matchLabels: d.Spec.Selector.MatchLabels,
 			matchExpressions: len(d.Spec.Selector.MatchExpressions), replicas: d.Spec.Replicas, images: images,
 		})
 		if pending != "" || err != nil {

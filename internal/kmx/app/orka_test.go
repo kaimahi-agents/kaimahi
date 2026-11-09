@@ -111,6 +111,8 @@ case "$*" in
       missing) printf 'Error from server (NotFound): the server could not find the requested resource (fixture-sensitive-token)\n' >&2; exit 1 ;;
     esac
     printf '%s' "$answer"; exit 0 ;;
+  *"get replicasets --selector="*" -o json")
+    printf '%s' "$KMX_TEST_RS_JSON"; exit 0 ;;
   *"get pods --selector="*" -o json")
     [ "$KMX_TEST_PODS_READ" != forbidden ] || { printf 'Error from server (Forbidden): pods is forbidden (fixture-sensitive-token)\n' >&2; exit 1; }
     if [ -n "$KMX_TEST_PODS_SEQ" ]; then
@@ -259,6 +261,7 @@ func newOrkaFixture(t *testing.T, body []byte) *orkaFixture {
 	t.Setenv("KMX_TEST_READYZ", `{"checks":{"kubernetes":"ok","store":"ok"},"status":"ok"}`)
 	t.Setenv("KMX_TEST_READYZ_SEQ", "")
 	t.Setenv("KMX_TEST_PODS_SEQ", "")
+	t.Setenv("KMX_TEST_RS_JSON", "")
 	t.Setenv("KMX_TEST_DEPLOY_SEQ", "")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(body)
@@ -516,8 +519,10 @@ func TestOrkaInstallKeepsIdentifiedChartAndReconcilesReader(t *testing.T) {
 	t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.3.0","app_version":"v0.3.0","status":"deployed"}]`)
 	t.Setenv("KMX_TEST_HELM_VALUES", pinnedOrkaHelmValues(t, nil))
 	controller := orkaDeployWithImage("chart-controller", "ghcr.io/orka-agents/orka@"+orkaControllerDigest)
+	controller["metadata"].(map[string]any)["uid"] = "controller-1"
 	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, controller))
 	t.Setenv("KMX_TEST_PODS_JSON", orkaPodsJSON(t, controller, offlineNodeStart().Add(10*time.Second)))
+	t.Setenv("KMX_TEST_RS_JSON", orkaRSJSON(t, controller))
 	if err := f.app.OrkaInstall(OrkaOptions{Provider: "-"}); err != nil {
 		t.Fatalf("repeat install: %v", err)
 	}
@@ -625,6 +630,22 @@ func TestOrkaInstallRepeatRefusesUnreadyController(t *testing.T) {
 	}
 }
 
+// orkaRSJSON lists each Deployment's one ReplicaSet, controlled by its UID.
+func orkaRSJSON(t *testing.T, deploys ...map[string]any) string {
+	t.Helper()
+	var items []any
+	for _, d := range deploys {
+		meta := d["metadata"].(map[string]any)
+		uid, _ := meta["uid"].(string)
+		items = append(items, offlineServingReplicaSets(meta["name"].(string), uid)["items"].([]any)...)
+	}
+	body, err := json.Marshal(map[string]any{"items": items})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(body)
+}
+
 // orkaPodsJSON is the controller Deployment's one pod, Ready since started.
 func orkaPodsJSON(t *testing.T, deploy map[string]any, started time.Time) string {
 	t.Helper()
@@ -648,7 +669,8 @@ func TestOrkaInstallRepeatRequiresReadinessAfterNodeRestart(t *testing.T) {
 		pods                        func(*testing.T, map[string]any) string
 		later                       func(map[string]any)
 		podsRead, readyz, first     string
-		scaled, rename              bool
+		scaled, rename, deleting    bool
+		rsOwner                     string
 		waits, nodeRead             bool
 	}{
 		{name: "pod status from before the restart", started: -10 * time.Minute, want: "predates the current start of node test-control-plane", waits: true, nodeRead: true},
@@ -667,6 +689,8 @@ func TestOrkaInstallRepeatRequiresReadinessAfterNodeRestart(t *testing.T) {
 			spec["containers"].([]any)[0].(map[string]any)["image"] = "ghcr.io/foreign/orka@sha256:other"
 		}, want: "differs from kmx's pinned digest", nodeRead: true},
 		{name: "scaled to zero", scaled: true, want: "nothing is running to verify"},
+		{name: "controller being deleted", started: 10 * time.Second, deleting: true, want: "Orka's chart-controller is being deleted; refusing to reuse it"},
+		{name: "pod's ReplicaSet belongs to another Deployment", started: 10 * time.Second, rsOwner: "someone-else", want: "belongs to a ReplicaSet that chart-controller does not control"},
 		{name: "replacement controller under another name while waiting", started: -10 * time.Minute, rename: true, want: "chart-controller was replaced while kmx waited", nodeRead: true},
 		{name: "another workload answers through the Service", started: 10 * time.Second, readyz: "ok", want: "Orka's API /readyz through Service orka-system/orka-api did not report status ok", waits: true, nodeRead: true},
 		{name: "API Service does not answer", started: 10 * time.Second, readyz: "missing", want: "Orka's API did not answer /readyz through Service orka-system/orka-api", waits: true, nodeRead: true},
@@ -683,11 +707,24 @@ func TestOrkaInstallRepeatRequiresReadinessAfterNodeRestart(t *testing.T) {
 			if tc.engine != "" {
 				f.app.Cfg.ContainerEngine = tc.engine
 			}
-			f.app.waitTiming = offlineServingTiming()
+			// Only cases expecting the wait to run out shorten its bound.
+			f.app.waitTiming = servingTestTiming(time.Minute)
+			if tc.waits {
+				f.app.waitTiming = offlineServingTiming()
+			}
 			t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.3.0","app_version":"v0.3.0","status":"deployed"}]`)
 			t.Setenv("KMX_TEST_HELM_VALUES", pinnedOrkaHelmValues(t, nil))
 			controller := orkaDeployWithImage("chart-controller", pinned)
 			controller["metadata"].(map[string]any)["uid"] = "controller-1"
+			if tc.deleting {
+				controller["metadata"].(map[string]any)["deletionTimestamp"] = "2026-01-02T03:04:06Z"
+			}
+			rsOwner := map[string]any{"metadata": map[string]any{"name": "chart-controller", "uid": "controller-1"}}
+			if tc.rsOwner != "" {
+				rsOwner["metadata"].(map[string]any)["uid"] = tc.rsOwner
+			}
+			other := map[string]any{"metadata": map[string]any{"name": "other-controller", "uid": "controller-2"}}
+			t.Setenv("KMX_TEST_RS_JSON", orkaRSJSON(t, rsOwner, other))
 			if tc.scaled {
 				controller["spec"].(map[string]any)["replicas"] = 0
 			}

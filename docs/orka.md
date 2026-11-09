@@ -384,7 +384,9 @@ traffic. Configure its runtime and model access through the upstream interfaces.
   not a pre-created `orka-system` namespace containing only Secrets or ServiceAccounts.
   On an existing kind cluster, `kmx cluster up` performs this refusal and checks a
   recognized controller's Deployment status once before starting the long model
-  pull; its later Orka step waits as above.
+  pull. If that status already shows the controller unready, the preflight
+  refuses there and the Orka step's wait is not reached; otherwise the later
+  Orka step waits as above.
 - **Partial installs require operator review.** Applying CRDs or creating a
   failed Helm release can leave cluster state even if installation times out.
   A CRD field-manager conflict stops before later CRDs, waits or Helm; earlier

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os/exec"
 	"slices"
 	"strings"
@@ -28,7 +27,7 @@ func (r orkaRefusal) Unwrap() error { return r.error }
 
 // orkaServingWorkload is one Deployment whose own pods must be shown ready.
 type orkaServingWorkload struct {
-	name             string
+	name, uid        string
 	matchLabels      map[string]string
 	matchExpressions int
 	replicas         int
@@ -39,11 +38,42 @@ type orkaServingWorkload struct {
 // the readiness rules, so offline and online installs share one check.
 // nodeStart is nil when the target has no node container to consult.
 type orkaServingReader struct {
-	pods      func(selector string) ([]byte, error)
-	services  func() ([]byte, error)
-	get       func(path string) ([]byte, error)
-	decode    func([]byte, any) error
-	nodeStart func(node string) (time.Time, error)
+	pods        func(selector string) ([]byte, error)
+	replicaSets func(selector string) ([]byte, error)
+	services    func() ([]byte, error)
+	get         func(path string) ([]byte, error)
+	decode      func([]byte, any) error
+	nodeStart   func(node string) (time.Time, error)
+}
+
+// orkaOwnerRef is the part of an ownerReference that identifies its owner.
+type orkaOwnerRef struct {
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+	UID        string `json:"uid"`
+	Controller *bool  `json:"controller"`
+}
+
+type orkaServingReplicaSet struct {
+	Metadata struct {
+		Name              string         `json:"name"`
+		UID               string         `json:"uid"`
+		DeletionTimestamp *string        `json:"deletionTimestamp"`
+		OwnerReferences   []orkaOwnerRef `json:"ownerReferences"`
+	} `json:"metadata"`
+}
+
+// orkaControllerRef returns the single controller reference, if there is exactly one.
+func orkaControllerRef(refs []orkaOwnerRef) (orkaOwnerRef, bool) {
+	var found orkaOwnerRef
+	count := 0
+	for _, ref := range refs {
+		if ref.Controller != nil && *ref.Controller {
+			found = ref
+			count++
+		}
+	}
+	return found, count == 1
 }
 
 type orkaServingPod struct {
@@ -51,11 +81,7 @@ type orkaServingPod struct {
 		Name              string            `json:"name"`
 		Labels            map[string]string `json:"labels"`
 		DeletionTimestamp *string           `json:"deletionTimestamp"`
-		OwnerReferences   []struct {
-			Kind       string `json:"kind"`
-			Name       string `json:"name"`
-			Controller *bool  `json:"controller"`
-		} `json:"ownerReferences"`
+		OwnerReferences   []orkaOwnerRef    `json:"ownerReferences"`
 	} `json:"metadata"`
 	Spec struct {
 		NodeName   string `json:"nodeName"`
@@ -156,11 +182,27 @@ func (r orkaServingReader) check(w orkaServingWorkload) (string, error) {
 		if pod.Metadata.DeletionTimestamp != nil || pod.Status.Phase == "Succeeded" || pod.Status.Phase == "Failed" {
 			continue
 		}
+		live = append(live, pod)
+	}
+	// Read after the pods: a pod's ReplicaSet exists before the pod does.
+	sets, pending, err := r.ownedReplicaSets(w, selector)
+	if pending != "" || err != nil {
+		return pending, err
+	}
+	for _, pod := range live {
 		// A foreign pod will not go away by waiting.
-		if !orkaServingOwned(w.name, pod) {
+		owner, ok := orkaControllerRef(pod.Metadata.OwnerReferences)
+		if !ok || owner.Kind != "ReplicaSet" || owner.UID == "" || !orkaDNSName(pod.Metadata.Name) {
 			return "", fmt.Errorf("a pod selected by %s is not controlled by its ReplicaSet; refusing to verify a foreign workload", w.name)
 		}
-		live = append(live, pod)
+		switch sets[owner.UID] {
+		case "":
+			return fmt.Sprintf("%s pod's ReplicaSet was not observed", w.name), nil
+		case "deleting":
+			return fmt.Sprintf("%s pod's ReplicaSet is being deleted", w.name), nil
+		case "foreign":
+			return "", fmt.Errorf("a pod selected by %s belongs to a ReplicaSet that %s does not control; refusing to verify a foreign workload", w.name, w.name)
+		}
 	}
 	if len(live) != w.replicas {
 		return fmt.Sprintf("%s has %d current pods for %d replicas", w.name, len(live), w.replicas), nil
@@ -256,20 +298,42 @@ func orkaServingSelector(w orkaServingWorkload) (string, error) {
 	return strings.Join(parts, ","), nil
 }
 
-// A Deployment's pods are controlled by a ReplicaSet named after the
-// Deployment and the pod's template hash.
-func orkaServingOwned(deployment string, pod orkaServingPod) bool {
-	hash := pod.Metadata.Labels["pod-template-hash"]
-	controllers := 0
-	for _, ref := range pod.Metadata.OwnerReferences {
-		if ref.Controller != nil && *ref.Controller {
-			controllers++
-			if ref.Kind != "ReplicaSet" || hash == "" || ref.Name != deployment+"-"+hash {
-				return false
-			}
+// ownedReplicaSets maps each observed ReplicaSet UID to "owned", "deleting" or
+// "foreign" according to whether the Deployment w controls it, by UID: a
+// ReplicaSet name and template hash do not establish ownership.
+func (r orkaServingReader) ownedReplicaSets(w orkaServingWorkload, selector string) (map[string]string, string, error) {
+	if w.uid == "" {
+		return nil, "", fmt.Errorf("%s has no UID; refusing to guess its pods' owner", w.name)
+	}
+	raw, err := r.replicaSets(selector)
+	if errors.As(err, new(orkaRefusal)) {
+		return nil, "", err
+	}
+	if err != nil {
+		return nil, fmt.Sprintf("%s ReplicaSets could not be read", w.name), nil
+	}
+	var list struct {
+		Items []orkaServingReplicaSet `json:"items"`
+	}
+	if r.decode(raw, &list) != nil {
+		return nil, "", fmt.Errorf("%s ReplicaSet list is malformed; refusing to guess readiness", w.name)
+	}
+	sets := map[string]string{}
+	for _, set := range list.Items {
+		if set.Metadata.UID == "" {
+			return nil, "", fmt.Errorf("%s ReplicaSet list has an entry without a UID; refusing to guess readiness", w.name)
+		}
+		owner, ok := orkaControllerRef(set.Metadata.OwnerReferences)
+		switch {
+		case !ok || owner.Kind != "Deployment" || owner.UID != w.uid:
+			sets[set.Metadata.UID] = "foreign"
+		case set.Metadata.DeletionTimestamp != nil:
+			sets[set.Metadata.UID] = "deleting"
+		default:
+			sets[set.Metadata.UID] = "owned"
 		}
 	}
-	return controllers == 1 && orkaDNSName(pod.Metadata.Name)
+	return sets, "", nil
 }
 
 // orkaDNSName accepts a Kubernetes object or node name that is also safe as a
@@ -351,15 +415,39 @@ func (a *App) offlineCaptureWithin(ctx context.Context, tool string, args ...str
 	cmd.Env, cmd.Dir = prepared.Env, prepared.Dir
 	cmd.WaitDelay = time.Second
 	var out offlineOutput
-	cmd.Stdout = &out
-	cmd.Stderr = io.Discard
+	// Stderr is only classified, never returned: it can echo request data.
+	stderr := &orkaBoundedBuffer{remaining: 4 << 10}
+	cmd.Stdout, cmd.Stderr = &out, stderr
 	if err := cmd.Run(); err != nil {
 		if cancelled := ctx.Err(); cancelled != nil {
 			return nil, cancelled
 		}
+		reason := strings.ToLower(stderr.buffer.String())
+		switch {
+		case strings.Contains(reason, `cannot get resource "services/proxy"`):
+			return nil, fmt.Errorf("%s request failed: access to services/proxy forbidden", tool)
+		case strings.Contains(reason, "error from server (forbidden)"), strings.Contains(reason, "error from server (unauthorized)"):
+			return nil, fmt.Errorf("%s request failed: access forbidden", tool)
+		}
 		return nil, fmt.Errorf("%s local inspection failed or timed out", tool)
 	}
 	return out.buffer.Bytes(), nil
+}
+
+// orkaServingDenial turns the API server's own access denials into refusals:
+// waiting cannot grant a permission. A read through the Service proxy refuses
+// only on the services/proxy RBAC denial, because a workload behind a stale
+// endpoint can itself answer 401 or 403.
+func orkaServingDenial(what string, err error, proxied bool) error {
+	switch {
+	case err == nil:
+		return nil
+	case strings.Contains(err.Error(), "access to services/proxy forbidden"):
+		return orkaRefusal{fmt.Errorf("cannot read %s in %s: access to services/proxy forbidden", what, OrkaNamespace)}
+	case !proxied && strings.Contains(err.Error(), "access forbidden"):
+		return orkaRefusal{fmt.Errorf("cannot read %s in %s: access forbidden", what, OrkaNamespace)}
+	}
+	return err
 }
 
 // kindNodeStartedAt reads when the selected kind cluster's node container last
@@ -425,6 +513,11 @@ func (a *App) orkaServingObserver() func(context.Context) (string, error) {
 			return "", fmt.Errorf("Orka's %s was replaced while kmx waited for it; refusing to adopt the replacement. %s", first[0][0], a.orkaInstallRecovery())
 		}
 		for _, d := range required {
+			// A deletion held by a finalizer can keep the same UID, a complete
+			// rollout and Ready pods; the installation is still going away.
+			if d.Metadata.DeletionTimestamp != nil {
+				return "", fmt.Errorf("Orka's %s is being deleted; refusing to reuse it. %s", d.Metadata.Name, a.orkaInstallRecovery())
+			}
 			if d.Spec.Replicas <= 0 {
 				return "", a.orkaDeploymentReady(d)
 			}
@@ -432,29 +525,25 @@ func (a *App) orkaServingObserver() func(context.Context) (string, error) {
 				return err.Error(), nil
 			}
 		}
-		forbidden := func(what string, raw []byte, err error) ([]byte, error) {
-			if err != nil && strings.Contains(err.Error(), "access forbidden") {
-				return nil, orkaRefusal{fmt.Errorf("cannot read Orka %s in %s: access forbidden", what, OrkaNamespace)}
+		read := func(what string, proxied bool, args ...string) ([]byte, error) {
+			raw, err := a.orkaCapture(ctx, nil, args...)
+			if err != nil {
+				return nil, orkaServingDenial(what, err, proxied)
 			}
-			return raw, err
+			return raw, nil
 		}
 		reader := orkaServingReader{
 			pods: func(selector string) ([]byte, error) {
-				raw, err := a.orkaCapture(ctx, nil, "-n", OrkaNamespace, "get", "pods", "--selector="+selector, "-o", "json")
-				return forbidden("pods", raw, err)
+				return read("Orka pods", false, "-n", OrkaNamespace, "get", "pods", "--selector="+selector, "-o", "json")
+			},
+			replicaSets: func(selector string) ([]byte, error) {
+				return read("Orka ReplicaSets", false, "-n", OrkaNamespace, "get", "replicasets", "--selector="+selector, "-o", "json")
 			},
 			services: func() ([]byte, error) {
-				raw, err := a.orkaCapture(ctx, nil, "-n", OrkaNamespace, "get", "services", "-o", "json")
-				return forbidden("Services", raw, err)
+				return read("Orka Services", false, "-n", OrkaNamespace, "get", "services", "-o", "json")
 			},
 			get: func(path string) ([]byte, error) {
-				// A workload behind a stale endpoint can answer 401 or 403
-				// itself; only the API server's services/proxy denial refuses.
-				raw, err := a.orkaCapture(ctx, nil, "get", "--raw", path)
-				if err != nil && strings.Contains(err.Error(), "access to services/proxy forbidden") {
-					return nil, orkaRefusal{fmt.Errorf("cannot read Orka's API readiness through its Service in %s: access to services/proxy forbidden", OrkaNamespace)}
-				}
-				return raw, err
+				return read("Orka's API readiness through its Service", true, "get", "--raw", path)
 			},
 			decode: json.Unmarshal,
 		}
@@ -470,7 +559,7 @@ func (a *App) orkaServingObserver() func(context.Context) (string, error) {
 				images[c.Name] = c.Image
 			}
 			pending, err := reader.check(orkaServingWorkload{
-				name: d.Metadata.Name, matchLabels: d.Spec.Selector.MatchLabels,
+				name: d.Metadata.Name, uid: d.Metadata.UID, matchLabels: d.Spec.Selector.MatchLabels,
 				matchExpressions: len(d.Spec.Selector.MatchExpressions), replicas: int(d.Spec.Replicas), images: images,
 			})
 			if pending != "" || err != nil {
