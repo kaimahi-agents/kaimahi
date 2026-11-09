@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/portforward"
 )
 
 func taskResultFixture(t *testing.T) (*evalFixture, TaskResultOptions) {
@@ -86,6 +89,44 @@ func TestTaskResultNoWaitDoesNotPollAnUnavailableHTTPAnswer(t *testing.T) {
 	err := f.app.TaskResult(opt)
 	if !errors.Is(err, ErrTaskPending) || f.out.Len() != 0 {
 		t.Fatalf("err=%v stdout=%q", err, f.out)
+	}
+}
+
+func TestTaskResultPostOpenErrorsPreserveSafeCleanupStatus(t *testing.T) {
+	const private = "private-cleanup-canary"
+	for _, tc := range []struct {
+		name      string
+		setup     func(*evalFixture)
+		pending   bool
+		text      string
+		wantClass string
+	}{
+		{name: "pending answer", setup: func(f *evalFixture) { f.answers["private prompt"] = "" }, pending: true},
+		{name: "endpoint refusal", setup: func(f *evalFixture) { f.resultStatus = http.StatusForbidden }, text: "HTTP 403", wantClass: "result-http-403"},
+		{name: "answer withheld", setup: func(*evalFixture) {}, text: "result session cleanup failed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, opt := taskResultFixture(t)
+			tc.setup(f)
+			cleanupCalls := 0
+			f.app.resultSessionCleanup = func() error {
+				cleanupCalls++
+				return errors.Join(errors.New(private), portforward.ErrCleanupUnconfirmed)
+			}
+			err := f.app.TaskResult(opt)
+			if cleanupCalls != 1 || errors.Is(err, ErrTaskPending) != tc.pending || !errors.Is(err, portforward.ErrCleanupUnconfirmed) || strings.Contains(err.Error(), private) || tc.text != "" && !strings.Contains(err.Error(), tc.text) {
+				t.Fatalf("unsafe or incomplete cleanup result: %v", err)
+			}
+			if tc.wantClass != "" {
+				var diagnostic *suiteDiagnosticError
+				if !errors.As(err, &diagnostic) || diagnostic.class != tc.wantClass {
+					t.Fatalf("cleanup lost endpoint diagnostic class: %v", err)
+				}
+			}
+			if f.out.Len() != 0 {
+				t.Fatalf("post-open failure wrote stdout: %q", f.out)
+			}
+		})
 	}
 }
 

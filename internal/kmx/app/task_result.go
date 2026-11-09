@@ -136,7 +136,7 @@ func decodeTaskResultIdentity(raw []byte, name, namespace string) (orkaIdentity,
 	return orkaIdentity{Kind: "Task", Name: name, UID: object.Metadata.UID, Generation: object.Metadata.Generation, strictAPIVersion: object.APIVersion}, object.Spec.Type, nil
 }
 
-func (a *App) taskResultRead(ctx context.Context, namespace string, id orkaIdentity, port string, follow bool) error {
+func (a *App) taskResultRead(ctx context.Context, namespace string, id orkaIdentity, port string, follow bool) (err error) {
 	session, err := a.openOrkaResultSession(ctx, CreateOptions{Namespace: namespace, ResultServiceAccount: orkaResultAccount, ResultPort: port})
 	if err != nil {
 		if follow {
@@ -144,7 +144,26 @@ func (a *App) taskResultRead(ctx context.Context, namespace string, id orkaIdent
 		}
 		return err
 	}
-	defer session.close()
+	closed := false
+	closeSession := func() error {
+		if closed {
+			return nil
+		}
+		closed = true
+		closeErr := session.close()
+		if a.resultSessionCleanup != nil {
+			closeErr = errors.Join(closeErr, a.resultSessionCleanup())
+		}
+		return closeErr
+	}
+	cleanupFailure := func(outcome, cleanup error) error {
+		if cleanup == nil {
+			return outcome
+		}
+		failure := errors.Join(outcome, errors.New("result session cleanup failed; answer withheld"))
+		return withOrkaResultCleanupStatus(failure, cleanup)
+	}
+	defer func() { err = cleanupFailure(err, closeSession()) }()
 	answer, err := a.readOrkaTaskResult(session.ctx, namespace, id, session, nil, follow)
 	if err != nil {
 		if errors.Is(err, ErrTaskPending) {
@@ -158,8 +177,8 @@ func (a *App) taskResultRead(ctx context.Context, namespace string, id orkaIdent
 	if strings.TrimSpace(answer) == "" {
 		return fmt.Errorf("Task has no printable answer")
 	}
-	if err := session.close(); err != nil {
-		return fmt.Errorf("result session cleanup failed; answer withheld: %w", err)
+	if closeErr := closeSession(); closeErr != nil {
+		return cleanupFailure(nil, closeErr)
 	}
 	_, err = fmt.Fprintln(a.Out, answer)
 	return err
