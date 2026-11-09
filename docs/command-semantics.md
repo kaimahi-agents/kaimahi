@@ -84,14 +84,16 @@ stdout and exit contracts are preserved; this is not a receipt or bundle migrati
 
 ## Agent-file preview integration (unreleased)
 
-By default, canonical `run FILE` / `test FILE` dispatch to a cluster-independent App adapter
-and the embedded-runner interface. Run optionally adds a separate ad-hoc input;
-both check saved ordered examples. `--case ID` is always partial. Versioned
-payload-free text/JSON results are local preview, never native evidence. The
-CLI's default embedded runner uses Agent Sessions for fake, local and Copilot models, with one
-Session per agent turn and two independent judge samples per llmJudge assertion.
-The invocation-owned cleartext journal retains instructions, inputs, answers,
-judge payloads and reasoning under the existing retention and clearing policy.
+Canonical `run FILE` starts or reuses a resident local agent; `run FILE --once`
+and `test FILE` dispatch to the cluster-independent App adapter and embedded-runner
+interface. Native Windows implicitly uses one-shot Run because resident workers
+are unavailable. One-shot Run optionally adds a separate ad-hoc input; Test checks
+saved ordered examples. `--case ID` is always partial. Versioned payload-free
+text/JSON results are local preview, never native evidence. The embedded runner
+uses Agent Sessions for fake, local and Copilot models, with one Session per agent
+turn and two independent judge samples per llmJudge assertion. The invocation-owned
+cleartext journal retains instructions, inputs, answers, judge payloads and
+reasoning under the existing retention and clearing policy.
 Copilot content checks stay provider-owned and run before journaling. Replay
 makes zero model calls and does not create native evidence. There are no
 inference retries or fallback. Existing live `run --agent`, full-workspace Test,

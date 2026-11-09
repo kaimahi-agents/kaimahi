@@ -194,10 +194,11 @@ inline authoring keeps this rule; paired CLI recording writes only the tests fil
 ## Tests in a separate file (CLI)
 
 `kmx run FILE` and `kmx test FILE` read the selected tests file with the shared
-reader. Run returns answers without checks; Test evaluates the checks. Add
-`--tests FILE` to select an override, or use `run FILE "input"` for only that
-input. No source migration is automatic. A missing or empty test source is not
-a passing Test.
+reader. Resident Run uses the pair as its immutable snapshot; `run FILE --once`
+returns answers without checks, while Test evaluates the checks. Native Windows
+implicitly uses one-shot Run. Add `--tests FILE` to select an override, or use
+`run FILE --prompt "input"` for only that input. No source migration is automatic.
+A missing or empty test source is not a passing Test.
 
 MCP has separate read-only source/history resources and paired offline export.
 The existing Run/Test tools also accept version 3 with a checked `sourceVersion`

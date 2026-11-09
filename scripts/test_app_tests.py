@@ -219,7 +219,7 @@ class AppShardWorkflowTests(unittest.TestCase):
                 "[string]$ExpectedVersionLine",
                 "[Diagnostics.ProcessStartInfo]::new()",
                 "$start.FileName = $exe",
-                "'KMX_HOME'", "'KMX_TOOLCHAIN'", "'off'", "'PATH'",
+                "'KMX_HOME'", "'KMX_TOOLCHAIN'", "'KMX_LOCAL_AGENT_WORKER'", "'off'", "'PATH'",
                 "'COPILOT_GITHUB_TOKEN'", "'AZURE_OPENAI_API_KEY'",
                 "'HTTP_PROXY'", "'HTTPS_PROXY'", "'ALL_PROXY'", "'NO_PROXY'",
                 "[Net.WebRequest]::DefaultWebProxy",
@@ -228,7 +228,8 @@ class AppShardWorkflowTests(unittest.TestCase):
                 "@('completion', 'bash')", "__start_kmx()",
                 "retention.status -ceq 'retained'", "Assert-NoCanary",
                 "Assert-SnapshotEqual", "'historical'", "'create'",
-                "deferred state", "stateHome"):
+                "deferred state", "worker flag state", "Ambient worker flag bypassed",
+                "stateHome"):
             self.assertIn(contract, helper)
         self.assertIn("[char]0x96EA", helper)
         self.assertIn("kmx day zero $nonAscii", helper)
@@ -242,7 +243,9 @@ class AppShardWorkflowTests(unittest.TestCase):
         for contract in ("$runJSON.verdict -ceq 'unknown'",
                          "$runJSON.fullPass -eq $false",
                          "$runJSON.reasonCode -ceq 'completion_ready'",
-                         "@($runJSON.examples[0].assertions).Count -eq 0"):
+                         "$runJSON.selection.scope -ceq 'subset'",
+                         "@($runJSON.selection.caseIds).Count -eq 0",
+                         "@($runJSON.examples).Count -eq 0"):
             self.assertIn(contract, helper)
         self.assertNotIn("$runJSON.verdict -ceq 'pass'", helper)
         self.assertIn("$failedJSON.verdict -ceq 'fail'", helper)

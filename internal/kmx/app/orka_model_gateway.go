@@ -227,7 +227,7 @@ func (a *App) modelHealth(ctx context.Context, connection OrkaModelConnection) e
 		return fmt.Errorf("model catalog unavailable")
 	}
 	var catalog map[string]any
-	if modelJSON(raw, &catalog) != nil {
+	if offlineJSON(raw, &catalog, false) != nil {
 		return fmt.Errorf("model catalog unavailable")
 	}
 	data, ok := catalog["data"].([]any)

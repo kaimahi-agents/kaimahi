@@ -15,16 +15,17 @@ version, with one stderr notice and unchanged legacy output/exit contracts. See
 
 ## Installed command tree
 
-Root help shows `create`, `run`, `test`, `chat`, `model`, `package`, `cluster`,
+Root help shows `create`, `run`, `test`, `list`, `chat`, `model`, `package`, `cluster`,
 then `version`, with the tagline “Write, run and test agent files.” The tree below
 expands those visible product commands:
 
 ```text
 kmx
 ├── create NAME                   (agent file and paired example test)
-├── run [FILE [input]] [--tests FILE] | --agent <name>
+├── run [FILE] [-p|--prompt TEXT] [--tests FILE] | --agent <name>
 ├── test [FILE] [--tests FILE]
 │   └── explain [failure-id] --file FILE [--tests FILE]
+├── list [-a] [-o table|json]     (local registrations; --context selects Orka)
 ├── chat <name> [message...]
 ├── model
 │   ├── list [--provider local|copilot] [-o table|json]
@@ -79,8 +80,10 @@ preview of one agent file whose completed non-pass diagnostics can be explained 
 `test explain --file FILE`. Bare `kmx test` tests direct `*.agent.md` agents in the
 current folder and `.github/agents/` (non-recursive) with one text/JSON/GitHub summary
 reporting failed, unknown and not-run counts; it never falls back to `package test`,
-and `--tests`/`--case` require an explicit FILE. Explicit `run FILE` is the
-corresponding preview Run.
+and `--tests`/`--case` require an explicit FILE. Explicit `run FILE` starts or
+reuses a resident local agent; `run FILE --once` is the corresponding preview
+Run. Native Windows implicitly takes that one-shot path because resident workers
+are unavailable.
 File Run/Test read the agent's default companion tests unless `--tests FILE`
 selects another tests file; the agent bytes and prompt are unchanged, and file-scoped
 Explain uses the current `--tests FILE` selection.

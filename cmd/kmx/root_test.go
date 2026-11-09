@@ -22,6 +22,7 @@ import (
 func testDependencies(out, errOut *bytes.Buffer) (dependencies, *int) {
 	loads := 0
 	deps := productionDependencies()
+	deps.residentAgents = false
 	deps.stdout, deps.stderr = out, errOut
 	deps.executable = "kmx"
 	deps.loadConfig = func(context, engine string) (*config.Config, error) {
@@ -194,7 +195,7 @@ func TestGuardedWindowsAllowsPackageFreeFileCommands(t *testing.T) {
 		args func(string) []string
 	}{
 		{"run", func(file string) []string { return []string{"run", file} }},
-		{"run positional input", func(file string) []string { return []string{"run", file, "Grace"} }},
+		{"run prompt input", func(file string) []string { return []string{"run", file, "-p", "Grace"} }},
 		{"run presentation", func(file string) []string {
 			return []string{"run", file, "--case", "greeting", "--output", "json", "--prompt", "hello", "--no-content", "--verbose"}
 		}},
@@ -495,8 +496,8 @@ func TestGuardedWindowsSupportedCommandFlagsAreExhaustivelyAllowlisted(t *testin
 		allFlags   []string
 		allowFlags []string
 	}{
-		{path: []string{"run"}, args: []string{file}, allFlags: []string{"agent", "case", "container-engine", "context", "mcp-server", "model", "namespace", "no-content", "no-mcp-servers", "output", "prompt", "prompt-file", "provider", "provider-url", "result-port", "tests", "tool-bindings", "verbose", "wait"}, allowFlags: []string{"case", "no-content", "output", "prompt", "tests", "verbose"}},
-		{path: []string{"test"}, args: []string{file}, allFlags: []string{"case", "container-engine", "context", "github-summary", "host", "mcp-server", "model", "no-content", "no-mcp-servers", "output", "provider", "provider-url", "runner", "tests", "tool-bindings", "verbose"}, allowFlags: []string{"case", "no-content", "output", "tests", "verbose"}},
+		{path: []string{"run"}, args: []string{file}, allFlags: []string{"agent", "case", "container-engine", "context", "mcp-server", "model", "name", "namespace", "new", "no-content", "no-mcp-servers", "once", "output", "prompt", "prompt-file", "provider", "provider-url", "result-port", "tests", "tool-bindings", "upgrade", "verbose", "wait", "yes"}, allowFlags: []string{"case", "no-content", "once", "output", "prompt", "tests", "verbose"}},
+		{path: []string{"test"}, args: []string{file}, allFlags: []string{"case", "check", "container-engine", "context", "github-summary", "host", "mcp-server", "model", "no-content", "no-mcp-servers", "output", "provider", "provider-url", "runner", "tests", "tool-bindings", "verbose"}, allowFlags: []string{"case", "check", "no-content", "output", "tests", "verbose"}},
 		{path: []string{"test", "explain"}, allFlags: []string{"clear", "container-engine", "context", "file", "show-content", "tests", "workspace"}, allowFlags: []string{"clear", "file", "show-content", "tests"}},
 		{path: []string{"eval", "explain"}, allFlags: []string{"clear", "container-engine", "context", "file", "show-content", "tests", "workspace"}, allowFlags: []string{"clear", "file", "show-content", "tests"}},
 		{path: []string{"cluster", "orka", "list"}, allFlags: []string{"container-engine", "context", "namespace", "output"}, allowFlags: []string{"namespace", "output"}},
@@ -931,7 +932,7 @@ func commandPaths(root *cobra.Command) []string {
 // Adding or removing a subcommand fails this test until the list follows.
 func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 	want := []string{
-		"test", "test explain", "create", "chat", "run", "eval", "eval cleanup", "eval diff", "eval explain", "eval export", "eval from-sessions", "eval verify", "lift", "completion", "mcp",
+		"test", "test explain", "create", "chat", "run", "list", "stop", "eval", "eval cleanup", "eval diff", "eval explain", "eval export", "eval from-sessions", "eval verify", "lift", "completion", "mcp",
 		"model", "model list", "model login", "model logout", "version",
 		"cluster", "cluster discover", "cluster up", "cluster down", "cluster status", "cluster aks", "cluster aks up", "cluster aks down", "cluster context", "cluster context show", "cluster context use",
 		"cluster orka", "cluster orka model", "cluster orka model connect", "cluster orka model disconnect", "cluster orka install", "cluster orka status", "cluster orka tools", "cluster orka show", "cluster orka list", "cluster quickstart", "cluster quickstart-wizard", "cluster console", "cluster targets", "cluster task", "cluster task result",

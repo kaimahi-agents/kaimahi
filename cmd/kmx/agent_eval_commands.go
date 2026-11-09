@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
@@ -18,6 +20,7 @@ import (
 
 func newAgentTestCommand(state *commandState) *cobra.Command {
 	var file fileCommandOptions
+	var check bool
 	cmd := &cobra.Command{
 		Use: "test [FILE]", Short: "Test agent files in this folder, or one FILE",
 		Long: "Test checks direct agent files here and in .github/agents (not recursive).\n" +
@@ -28,6 +31,9 @@ func newAgentTestCommand(state *commandState) *cobra.Command {
 		Example: "  kmx test\n  kmx test greeter.agent.md --case greeting\n  kmx test -o json --no-content --github-summary",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
+				if check {
+					return fileUsageError(fmt.Errorf("--check requires an explicit agent FILE"))
+				}
 				if file.Output == "jsonl" {
 					return fileUsageError(fmt.Errorf("JSONL requires an explicit agent FILE"))
 				}
@@ -44,6 +50,19 @@ func newAgentTestCommand(state *commandState) *cobra.Command {
 				}
 				return fileUsageError(fmt.Errorf("usage: kmx test FILE; workspace evaluation moved to kmx package test"))
 			}
+			if check {
+				if state.contextFlag != "" || cmd.Flags().Changed("container-engine") {
+					return fileUsageError(fmt.Errorf("test --check is offline; omit cluster selectors"))
+				}
+				for _, name := range []string{"runner", "host", "case", "no-content", "model", "provider", "provider-url", "verbose", "tool-bindings", "mcp-server", "no-mcp-servers", "github-summary"} {
+					if cmd.Flags().Changed(name) {
+						return fileUsageError(fmt.Errorf("test --check does not use --%s", name))
+					}
+				}
+				if file.Output != "text" && file.Output != "json" {
+					return fileUsageError(fmt.Errorf("test --check output must be text or json"))
+				}
+			}
 			switch args[0] {
 			case "cleanup", "diff", "export", "verify", "from-sessions":
 				return fileUsageError(fmt.Errorf("workspace helper moved to kmx package test %s; use an explicit path for a file with that name", args[0]))
@@ -55,10 +74,27 @@ func newAgentTestCommand(state *commandState) *cobra.Command {
 			if len(args) == 0 {
 				return runFolderTest(cmd, state, file)
 			}
+			if check {
+				pair, err := agentfile.LoadPair(args[0], file.TestsFile)
+				if err != nil {
+					return fileUsageError(err)
+				}
+				examples := pair.Agent.Examples
+				if pair.Tests.Suite != nil {
+					examples = pair.Tests.Suite.Examples
+				}
+				result := map[string]any{"valid": true, "name": pair.Agent.Identity.ID, "agentRevision": pair.Agent.Revision, "snapshotRevision": pair.SnapshotRevision, "testsState": pair.Tests.State, "testsRevision": pair.Tests.Revision, "cases": len(examples), "tools": len(pair.Agent.Tools)}
+				if file.Output == "json" {
+					return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
+				}
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "Valid · %s · %d tests\nAgent: %s\nSnapshot: %s\nTests: %s\n", pair.Agent.Identity.ID, len(examples), pair.Agent.Revision, pair.SnapshotRevision, pair.Tests.State)
+				return err
+			}
 			return runFileCommand(cmd, state, args[0], file, "", "")
 		},
 	}
 	registerFileCommandFlags(cmd, &file, true)
+	cmd.Flags().BoolVar(&check, "check", false, "Validate FILE and selected tests without execution")
 	explain := newEvalExplainCommand(state)
 	explain.Use = "explain [failure-id] --file FILE"
 	explain.Short = "Inspect or clear retained file Test failures offline"

@@ -16,15 +16,16 @@ particular, the existing Windows Copilot integration remains the
 
 The native command boundary is closed: only the following operations are
 supported. The first four day-zero operations are present in published v0.9.0
-release-candidate Windows assets. For Run, Test and Explain, `v0.9.0-rc.4`
-supports tests embedded in `FILE`; automatic companion-test loading and the
-explicit `--tests FILE` selector begin with `v0.9.0-rc.5`. Rows labeled current
-main require a later containing build.
+release-candidate Windows assets. Published rc.4-rc.6 Run accepts a second
+positional input; current main removes that positional form and uses `--prompt`.
+For Run, Test and Explain, `v0.9.0-rc.4` supports tests embedded in `FILE`;
+automatic companion-test loading and the explicit `--tests FILE` selector begin
+with `v0.9.0-rc.5`. Rows labeled current main require a later containing build.
 
 | Operation | Native Windows contract |
 |---|---|
 | Identity and documentation | `kmx version`, root or command help, and existing `completion bash\|zsh\|fish` generation. Help and completion are inert; seeing another command in their output does not enable it. There is no PowerShell completion claim. |
-| Package-free fake Run | `kmx run FILE ["input"]`, optionally with `--tests FILE`, legacy inline `--prompt TEXT` or `--no-content`, for a Markdown agent whose effective model is `fake`. Run loads the selected agent-and-tests pair: the default companion tests, or the `--tests FILE` override. KMX opens no workspace, package, cluster, provider, network or tool-binding route. |
+| Package-free fake Run | Published rc.4-rc.6: `kmx run FILE ["input"]`; legacy `--prompt TEXT` also selects saved examples. Current main: `kmx run FILE [-p\|--prompt TEXT]`, with prompt input-only unless `--case` selects an example. Optionally use the release-appropriate `--tests FILE` or `--no-content`, for a Markdown agent whose effective model is `fake`. KMX opens no workspace, package, cluster, provider, network or tool-binding route. |
 | Package-free fake Test | `kmx test FILE [--tests FILE]` for the same offline fake route and the same selected agent-and-tests pair. A completed pass or failure is a local preview only. |
 | Offline file diagnostics | `kmx test explain [failure-id] --file FILE [--tests FILE]`, including its file-scoped content and clear options. Explain compares retained failures with the current agent-and-tests selection. Hidden `kmx eval explain ... --file FILE` may remain callable only as the deprecated compatibility spelling. |
 | Read-only remote Orka inspection (current main, amd64) | `kmx --context CONTEXT cluster orka list --namespace NAMESPACE` and `kmx --context CONTEXT cluster orka show NAME --namespace NAMESPACE [-o table\|json] [--tasks N]`. Both selectors are mandatory on native Windows. List is table-only on native Windows; these commands perform bounded reads only and create no KMX state. |
@@ -42,7 +43,7 @@ For example, after downloading a qualified amd64 artifact:
 .\kmx-windows-amd64.exe version
 .\kmx-windows-amd64.exe --help
 .\kmx-windows-amd64.exe completion bash
-.\kmx-windows-amd64.exe run .\greeter.agent.md --prompt Ada
+.\kmx-windows-amd64.exe run .\greeter.agent.md "Ada"
 .\kmx-windows-amd64.exe test .\greeter.agent.md
 .\kmx-windows-amd64.exe test explain --file .\greeter.agent.md
 # Current-main amd64 build only; not present in the published rc.4-rc.6 contract:
@@ -270,11 +271,12 @@ approval process or use WSL if that route is approved.
 Windows amd64 is natively executed on hosted `windows-latest`. The native job
 builds and vets the CLI, verifies version/help/completion, executes a real
 Markdown file through package-free fake Run, a failing fake Test and offline
-file Explain, and executes list/show against a compiled native kubectl protocol
-fixture. Release qualification repeats the day-zero journey and reaches the
-read-only inspection boundary with a checksum-verified real `kubectl.exe` using
-the exact staged `kmx-windows-amd64.exe`. It does not claim a live remote cluster
-or real Azure authentication; those remain separate runtime qualification.
+file Explain, and executes list/show and existing Task Result against compiled
+native kubectl protocol fixtures. Release qualification repeats the day-zero
+journey and reaches both the remote-inspection and existing-Task-result boundaries
+with a checksum-verified real `kubectl.exe` using the exact staged
+`kmx-windows-amd64.exe`. It does not claim a live remote cluster or real Azure
+authentication; those remain separate runtime qualification.
 
 Windows arm64 is cross-built, vetted and included in the checksum inventory. It
 is not executed on native arm64 hardware. Do not describe the arm64 asset as

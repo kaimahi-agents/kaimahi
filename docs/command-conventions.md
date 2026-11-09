@@ -11,7 +11,7 @@ should be named and shaped. Apply them to new commands and to renames.
 
 ## Help and discovery
 
-Root help lists `create`, `run`, `test`, `chat`, `model`, `package`, `cluster`,
+Root help lists `create`, `run`, `test`, `list`, `chat`, `model`, `package`, `cluster`,
 then `version`, under “Write, run and test agent files.” `mcp`, `completion` and
 `help` remain callable but are not root help entries. Keep root ordering local;
 other command groups retain their normal discovery order.

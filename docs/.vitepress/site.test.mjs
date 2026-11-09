@@ -177,6 +177,9 @@ test('native Windows documentation keeps the explicit remote exception narrow', 
   ]) assert.ok(windows.includes(deferred), `Windows deferred operation: ${deferred}`)
 
   assert.match(windows, /Sigstore bundle signs the checksum manifest/i)
+  assert.match(windows, /Published rc\.4-rc\.6 Run accepts a second positional input/)
+  assert.match(windows, /Current main: kmx run FILE \[-p\|--prompt TEXT\]/)
+  assert.match(windows, /executes list\/show and existing Task Result against compiled native kubectl protocol fixtures/)
   assert.match(windows, /certificate-identity[^\n]*\$Version/i)
   assert.match(windows, /not evaluated[^.]*not[^.]*allowed/i)
   assert.doesNotMatch(windows, /future tagged release|future containing release/i)
