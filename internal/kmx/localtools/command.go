@@ -2,7 +2,10 @@ package localtools
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
+	"io"
 	"maps"
 	"os"
 	"path/filepath"
@@ -27,21 +30,85 @@ const commandOutputLimit = 5 * 1024
 // CommandConfig is frozen host authority. Arguments are fixed and the complete
 // environment is explicit; no model value can alter the launched command.
 type CommandConfig struct {
-	Name, Command, Dir string
-	Args               []string
-	Env                map[string]string
-	CredentialEnv      []string
-	commandInfo        os.FileInfo
-	dirInfo            os.FileInfo
+	Name             string                      `json:"name"`
+	Command          string                      `json:"command"`
+	Dir              string                      `json:"directory"`
+	Args             []string                    `json:"args"`
+	ArgumentPlan     []CommandArgument           `json:"argumentPlan,omitempty"`
+	Parameters       map[string]CommandParameter `json:"parameters,omitempty"`
+	Checks           []CommandCheck              `json:"checks,omitempty"`
+	Env              map[string]string           `json:"environment"`
+	CredentialEnv    []string                    `json:"credentialEnvironment,omitempty"`
+	ExecutableDigest string                      `json:"executableDigest,omitempty"`
+	ExecutableID     string                      `json:"executableIdentity,omitempty"`
+	DirectoryID      string                      `json:"directoryIdentity,omitempty"`
+	commandInfo      os.FileInfo
+	dirInfo          os.FileInfo
 }
 
-func commandDefinitionFor(name string) api.ToolDefinition {
-	return api.ToolDefinition{Name: name, Description: "Run the host-configured command with fixed arguments.", InputSchema: map[string]any{"type": "object", "properties": map[string]any{}, "additionalProperties": false}}
+const commandExecutableLimit = 256 << 20
+
+func commandExecutableDigest(path string) (string, error) {
+	return commandExecutableDigestContext(context.Background(), path)
+}
+
+func commandExecutableDigestContext(ctx context.Context, path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", ErrCommand
+	}
+	defer file.Close()
+	before, err := file.Stat()
+	if err != nil || !before.Mode().IsRegular() || before.Size() < 0 || before.Size() > commandExecutableLimit {
+		return "", ErrCommand
+	}
+	hash := sha256.New()
+	buffer := make([]byte, 64*1024)
+	var written int64
+	for {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		n, readErr := file.Read(buffer)
+		if n > 0 {
+			written += int64(n)
+			if written > commandExecutableLimit {
+				return "", ErrCommand
+			}
+			_, _ = hash.Write(buffer[:n])
+		}
+		if errors.Is(readErr, os.ErrClosed) {
+			return "", ErrCommand
+		}
+		if readErr != nil {
+			if errors.Is(readErr, io.EOF) {
+				break
+			}
+			return "", ErrCommand
+		}
+	}
+	after, statErr := file.Stat()
+	if err != nil || statErr != nil || written != before.Size() || !os.SameFile(before, after) || after.Size() != before.Size() || after.Mode() != before.Mode() || !after.ModTime().Equal(before.ModTime()) {
+		return "", ErrCommand
+	}
+	return fmt.Sprintf("sha256:%x", hash.Sum(nil)), nil
 }
 
 func validateCommandConfig(cfg CommandConfig) (func(...string) error, error) {
 	if !ValidToolName(cfg.Name) || !filepath.IsAbs(cfg.Command) || !filepath.IsAbs(cfg.Dir) || len(cfg.Command)+len(cfg.Dir) > 8192 || len(cfg.Args) > 128 || len(cfg.Env) > 64 {
 		return nil, ErrCommand
+	}
+	if cfg.ExecutableDigest != "" {
+		digest := strings.TrimPrefix(cfg.ExecutableDigest, "sha256:")
+		if len(digest) != 64 || strings.Trim(digest, "0123456789abcdef") != "" {
+			return nil, ErrCommand
+		}
+	}
+	if (cfg.ExecutableID == "") != (cfg.DirectoryID == "") {
+		return nil, ErrCommand
+	}
+	if err := validateCommandContract(cfg); err != nil {
+		return nil, err
 	}
 	bytes := 0
 	var secrets []string
@@ -80,7 +147,7 @@ func validateCommandConfig(cfg CommandConfig) (func(...string) error, error) {
 			return nil, ErrCommand
 		}
 	}
-	if check(cfg.Name, cfg.Command, cfg.Dir) != nil {
+	if check(commandStaticValues(cfg)...) != nil {
 		return nil, ErrCommand
 	}
 	return check, nil
@@ -97,7 +164,7 @@ func NewCommandHost(configs []CommandConfig) (*Host, error) {
 	checks := map[string]func(...string) error{}
 	for _, input := range configs {
 		cfg := input
-		cfg.Args, cfg.Env, cfg.CredentialEnv = slices.Clone(cfg.Args), maps.Clone(cfg.Env), slices.Clone(cfg.CredentialEnv)
+		cfg.Args, cfg.ArgumentPlan, cfg.Parameters, cfg.Checks, cfg.Env, cfg.CredentialEnv = slices.Clone(cfg.Args), slices.Clone(cfg.ArgumentPlan), copyCommandParameters(cfg.Parameters), copyCommandChecks(cfg.Checks), maps.Clone(cfg.Env), slices.Clone(cfg.CredentialEnv)
 		if byName[cfg.Name].Name != "" {
 			return nil, ErrCommand
 		}
@@ -113,9 +180,22 @@ func NewCommandHost(configs []CommandConfig) (*Host, error) {
 		if cfg.commandInfo != nil && !os.SameFile(cfg.commandInfo, commandInfo) || cfg.dirInfo != nil && !os.SameFile(cfg.dirInfo, dirInfo) {
 			return nil, ErrCommand
 		}
+		if cfg.ExecutableID != "" {
+			commandID, commandOK := commandFileIdentity(commandInfo)
+			dirID, dirOK := commandFileIdentity(dirInfo)
+			if !commandOK || !dirOK || commandID != cfg.ExecutableID || dirID != cfg.DirectoryID {
+				return nil, ErrCommand
+			}
+		}
+		if cfg.ExecutableDigest != "" {
+			digest, digestErr := commandExecutableDigest(cfg.Command)
+			if digestErr != nil || digest != cfg.ExecutableDigest {
+				return nil, ErrCommand
+			}
+		}
 		cfg.commandInfo, cfg.dirInfo = commandInfo, dirInfo
 		byName[cfg.Name], checks[cfg.Name] = cfg, check
-		definitions = append(definitions, commandDefinitionFor(cfg.Name))
+		definitions = append(definitions, commandDefinitionFor(cfg))
 	}
 	checkAll := func(values ...string) error {
 		for _, check := range checks {
@@ -130,7 +210,13 @@ func NewCommandHost(configs []CommandConfig) (*Host, error) {
 		if !ok {
 			return api.ToolResult{}, ErrCommand
 		}
-		result, err := runCommand(ctx, cfg, checks[call.Tool])
+		args, err := commandArguments(cfg, call.Args)
+		if err != nil || checks[call.Tool](args...) != nil {
+			return api.ToolResult{}, ErrCommand
+		}
+		invocation := cfg
+		invocation.Args, invocation.ArgumentPlan, invocation.Parameters = args, nil, nil
+		result, err := runCommand(ctx, invocation, checks[call.Tool])
 		if err != nil {
 			return api.ToolResult{}, err
 		}

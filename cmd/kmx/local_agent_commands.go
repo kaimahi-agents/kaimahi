@@ -47,28 +47,34 @@ func newLocalAgentListCommand(state *commandState) *cobra.Command {
 					Agents        any    `json:"agents"`
 				}
 				type row struct {
-					ID               string                   `json:"id"`
-					AgentID          string                   `json:"agentId"`
-					InstanceID       string                   `json:"instanceId"`
-					Generation       uint64                   `json:"generation"`
-					Name             string                   `json:"name"`
-					State            string                   `json:"state"`
-					Provider         string                   `json:"provider,omitempty"`
-					Model            string                   `json:"model,omitempty"`
-					SnapshotRevision string                   `json:"snapshotRevision"`
-					Started          time.Time                `json:"started"`
-					Stopped          *time.Time               `json:"stopped,omitempty"`
-					Ready            bool                     `json:"ready"`
-					Sessions         int                      `json:"sessions"`
-					LastActivity     *time.Time               `json:"lastActivity,omitempty"`
-					LastError        string                   `json:"lastError,omitempty"`
-					Route            modelaccess.Route        `json:"route"`
-					Capabilities     modelaccess.Capabilities `json:"capabilities"`
-					Requirements     modelaccess.Requirements `json:"requirements"`
+					ToolConfigRevision string                   `json:"toolConfigRevision,omitempty"`
+					ToolPlanRevision   string                   `json:"toolPlanRevision,omitempty"`
+					ToolContractDigest string                   `json:"toolContractDigest,omitempty"`
+					ToolBindingDigest  string                   `json:"toolBindingDigest,omitempty"`
+					AgentBackend       string                   `json:"agentBackend,omitempty"`
+					ToolBackend        string                   `json:"toolBackend,omitempty"`
+					ID                 string                   `json:"id"`
+					AgentID            string                   `json:"agentId"`
+					InstanceID         string                   `json:"instanceId"`
+					Generation         uint64                   `json:"generation"`
+					Name               string                   `json:"name"`
+					State              string                   `json:"state"`
+					Provider           string                   `json:"provider,omitempty"`
+					Model              string                   `json:"model,omitempty"`
+					SnapshotRevision   string                   `json:"snapshotRevision"`
+					Started            time.Time                `json:"started"`
+					Stopped            *time.Time               `json:"stopped,omitempty"`
+					Ready              bool                     `json:"ready"`
+					Sessions           int                      `json:"sessions"`
+					LastActivity       *time.Time               `json:"lastActivity,omitempty"`
+					LastError          string                   `json:"lastError,omitempty"`
+					Route              modelaccess.Route        `json:"route"`
+					Capabilities       modelaccess.Capabilities `json:"capabilities"`
+					Requirements       modelaccess.Requirements `json:"requirements"`
 				}
 				projected := make([]row, 0, len(rows))
 				for _, item := range rows {
-					projected = append(projected, row{ID: item.ID, AgentID: item.ID, InstanceID: item.InstanceID, Generation: item.Sequence, Name: item.Name, State: item.State, Provider: item.Provider, Model: item.Model, SnapshotRevision: item.SnapshotRevision, Started: item.Started, Stopped: item.Stopped, Ready: item.Ready, Sessions: item.Sessions, LastActivity: item.LastActivity, LastError: item.LastError, Route: item.Route(), Capabilities: item.Capabilities, Requirements: item.Requirements})
+					projected = append(projected, row{ID: item.ID, AgentID: item.ID, InstanceID: item.InstanceID, Generation: item.Sequence, Name: item.Name, State: item.State, Provider: item.Provider, Model: item.Model, SnapshotRevision: item.SnapshotRevision, Started: item.Started, Stopped: item.Stopped, Ready: item.Ready, Sessions: item.Sessions, LastActivity: item.LastActivity, LastError: item.LastError, Route: item.Route(), Capabilities: item.Capabilities, Requirements: item.Requirements, ToolConfigRevision: item.ToolConfigRevision, ToolPlanRevision: item.ToolPlanRevision, ToolContractDigest: item.ToolContractDigest, ToolBindingDigest: item.ToolBindingDigest, AgentBackend: item.AgentBackend, ToolBackend: item.ToolBackend})
 				}
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(envelope{SchemaVersion: 1, Kind: "kmx.local-agent-inventory", Scope: "local", Agents: projected})
 			}
