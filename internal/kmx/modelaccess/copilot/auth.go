@@ -55,6 +55,25 @@ func New(store Store) *Provider {
 	return &Provider{store: store, http: &http.Client{Timeout: 30 * time.Second}, api: "https://api.githubcopilot.com", deviceURL: "https://github.com/login/device/code", tokenURL: "https://github.com/login/oauth/access_token", exchangeURL: "https://api.github.com/copilot_internal/v2/token", now: time.Now, wait: wait, runGH: githubToken, runStoredGH: storedGithubToken}
 }
 
+// NewExplicitCredential creates an owner whose only GitHub credential is the
+// supplied value. Invalid values never fall through to gh or keychain access.
+func NewExplicitCredential(token string) *Provider {
+	p := New(&explicitCredentialStore{token: token})
+	p.runStoredGH = func(context.Context) ([]byte, error) { return []byte(token), nil }
+	return p
+}
+
+type explicitCredentialStore struct{ token string }
+
+func (s *explicitCredentialStore) Get() (string, error) {
+	if !validCredential(s.token) {
+		return "", ErrAuthRevoked
+	}
+	return s.token, nil
+}
+func (*explicitCredentialStore) Set(string) error { return ErrKeychain }
+func (*explicitCredentialStore) Delete() error    { return ErrKeychain }
+
 // DevicePrompt contains only values safe to display, never the device secret.
 type DevicePrompt struct {
 	VerificationURI string

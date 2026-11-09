@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -25,7 +26,7 @@ type fileCommandOptions struct {
 	Runner, Host                       string
 	CaseID, Provider, Endpoint, Output string
 	Model, TestsFile                   string
-	PositionalInput                    bool
+	InputOnly                          bool
 	ToolBindings                       string
 	MCPServers                         []string
 	NoMCPServers                       bool
@@ -82,7 +83,7 @@ func validateFileCommand(cmd *cobra.Command, state *commandState, f fileCommandO
 	var invalid string
 	cmd.Flags().Visit(func(flag *pflag.Flag) {
 		switch flag.Name {
-		case "runner", "host", "case", "tests", "output", "no-content", "model", "provider", "provider-url", "prompt", "prompt-file", "verbose", "tool-bindings", "mcp-server", "no-mcp-servers", "github-summary":
+		case "runner", "host", "case", "tests", "output", "no-content", "model", "provider", "provider-url", "prompt", "prompt-file", "verbose", "tool-bindings", "mcp-server", "no-mcp-servers", "github-summary", "once", "check", "upgrade", "new", "name", "yes":
 		default:
 			invalid = flag.Name
 		}
@@ -120,6 +121,10 @@ func fileFlagsWithoutFile(cmd *cobra.Command) error {
 }
 
 func runFileCommand(cmd *cobra.Command, state *commandState, file string, f fileCommandOptions, prompt, promptFile string) error {
+	return runFileCommandWithPair(cmd, state, file, nil, f, prompt, promptFile)
+}
+
+func runFileCommandWithPair(cmd *cobra.Command, state *commandState, file string, frozen *agentfile.Pair, f fileCommandOptions, prompt, promptFile string) error {
 	if f.Output == "jsonl" {
 		m := state.machine
 		outer := m != nil && m.file != nil
@@ -140,7 +145,7 @@ func runFileCommand(cmd *cobra.Command, state *commandState, file string, f file
 			}
 			return m.finishFile(err)
 		}
-		r, err := previewFileCommand(cmd, state, file, f, prompt, promptFile, nil)
+		r, err := previewFileCommand(cmd, state, file, frozen, f, prompt, promptFile, nil)
 		m.file.result = r
 		if outer {
 			return err
@@ -148,7 +153,7 @@ func runFileCommand(cmd *cobra.Command, state *commandState, file string, f file
 		return m.finishFile(err)
 	}
 	var summary io.WriteCloser
-	result, err := previewFileCommand(cmd, state, file, f, prompt, promptFile, func() error {
+	result, err := previewFileCommand(cmd, state, file, frozen, f, prompt, promptFile, func() error {
 		if !f.GitHubSummary {
 			return nil
 		}
@@ -206,9 +211,9 @@ func runFileCommand(cmd *cobra.Command, state *commandState, file string, f file
 
 // previewFileCommand preserves one checked pair and returns the shared safe result.
 // beforeRun admits a presentation sink after intake but before execution effects.
-func previewFileCommand(cmd *cobra.Command, state *commandState, file string, f fileCommandOptions, prompt, promptFile string, beforeRun func() error) (app.FilePreviewResult, error) {
+func previewFileCommand(cmd *cobra.Command, state *commandState, file string, frozen *agentfile.Pair, f fileCommandOptions, prompt, promptFile string, beforeRun func() error) (app.FilePreviewResult, error) {
 	opt := app.FilePreviewOptions{File: file, Operation: cmd.Name(), CaseID: f.CaseID,
-		Model: f.Model, DefaultCopilot: true, AdHocOnly: f.PositionalInput && f.CaseID == "", ShowFailedContent: !f.NoContent,
+		Model: f.Model, DefaultCopilot: true, AdHocOnly: f.InputOnly && f.CaseID == "", ShowFailedContent: !f.NoContent,
 		SkipAssertions:        cmd.Name() == "run",
 		IncludeAnswer:         cmd.Name() == "run" && !f.NoContent,
 		IncludeFailureDetails: !f.NoContent, ToolBindings: f.ToolBindings}
@@ -241,20 +246,23 @@ func previewFileCommand(cmd *cobra.Command, state *commandState, file string, f 
 	}
 	// Native Windows passes the exact pair admitted by the platform gate. Other
 	// platforms load once here; later checks validate, never replace, this input.
-	pair := state.windowsFilePair
+	pair := frozen
+	if pair == nil {
+		pair = state.windowsFilePair
+	}
 	var pairErr error
 	if state.deps.goos == "windows" {
 		if pair == nil || !windowsPackageFreeFakeAgent(pair.Agent) || f.Provider != "" || f.Endpoint != "" || f.ToolBindings != "" || len(f.MCPServers) > 0 || f.NoMCPServers || f.GitHubSummary || promptFile != "" {
 			return app.FilePreviewResult{}, errWindowsOperationUnsupported
 		}
-	} else {
+	} else if pair == nil {
 		load := agentfile.LoadPair
 		if opt.Copilotd {
 			load = agentfile.LoadCopilotdPair
 		}
 		pair, pairErr = load(file, f.TestsFile)
 	}
-	if pair != nil {
+	if pair != nil && frozen == nil {
 		opt.SourceFile = pair.AgentPath
 		opt.ValidateSource = func(ctx context.Context) error {
 			if err := ctx.Err(); err != nil {
@@ -288,31 +296,14 @@ func previewFileCommand(cmd *cobra.Command, state *commandState, file string, f 
 		route := fileModelRoute(f.Provider, f.Endpoint)
 		opt.Route = &route
 	}
-	if flag := cmd.Flag("prompt"); f.PositionalInput || flag != nil && flag.Changed {
+	if flag := cmd.Flag("prompt"); flag != nil && flag.Changed {
 		opt.Input = &prompt
 	}
 	if flag := cmd.Flag("prompt-file"); flag != nil && flag.Changed {
-		var reader io.Reader = state.deps.stdin
-		if promptFile != "-" {
-			info, err := os.Stat(promptFile)
-			if err != nil || !info.Mode().IsRegular() || info.Size() > agentfile.MaxInputBytes {
-				return app.FilePreviewResult{}, fileUsageError(fmt.Errorf("prompt file must be a readable regular file of at most 16 KiB"))
-			}
-			input, err := os.Open(promptFile)
-			if err != nil {
-				return app.FilePreviewResult{}, fileUsageError(fmt.Errorf("cannot read prompt file"))
-			}
-			defer input.Close()
-			reader = input
+		input, err := readPromptInput(state, promptFile)
+		if err != nil {
+			return app.FilePreviewResult{}, err
 		}
-		if reader == nil {
-			return app.FilePreviewResult{}, fileUsageError(fmt.Errorf("prompt stdin is unavailable"))
-		}
-		b, err := io.ReadAll(io.LimitReader(reader, agentfile.MaxInputBytes+1))
-		if err != nil || len(b) > agentfile.MaxInputBytes {
-			return app.FilePreviewResult{}, fileUsageError(fmt.Errorf("prompt input must be readable and at most 16 KiB"))
-		}
-		input := string(b)
 		opt.Input = &input
 	}
 	if beforeRun != nil {
@@ -364,6 +355,30 @@ func previewFileCommand(cmd *cobra.Command, state *commandState, file string, f 
 		result.Reason = err.Error()
 	}
 	return result, err
+}
+
+func readPromptInput(state *commandState, promptFile string) (string, error) {
+	var reader io.Reader = state.deps.stdin
+	if promptFile != "-" {
+		info, err := os.Stat(promptFile)
+		if err != nil || !info.Mode().IsRegular() || info.Size() > agentfile.MaxInputBytes {
+			return "", fileUsageError(fmt.Errorf("prompt file must be a readable regular file of at most 16 KiB"))
+		}
+		input, err := os.Open(promptFile)
+		if err != nil {
+			return "", fileUsageError(fmt.Errorf("cannot read prompt file"))
+		}
+		defer input.Close()
+		reader = input
+	}
+	if reader == nil {
+		return "", fileUsageError(fmt.Errorf("prompt stdin is unavailable"))
+	}
+	b, err := io.ReadAll(io.LimitReader(reader, agentfile.MaxInputBytes+1))
+	if err != nil || len(b) > agentfile.MaxInputBytes || !utf8.Valid(b) {
+		return "", fileUsageError(fmt.Errorf("prompt input must be readable UTF-8 of at most 16 KiB"))
+	}
+	return string(b), nil
 }
 
 // Keep CLI status choices out of the shared App/MCP result contract.

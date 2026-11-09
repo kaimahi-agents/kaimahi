@@ -155,7 +155,7 @@ cluster, so a silent switch can target the wrong one.
 
 ## Commands
 
-Root help leads with `create`, `run`, `test`, `chat`, `model`, then `package`,
+Root help leads with `create`, `run`, `test`, `list`, `chat`, `model`, then `package`,
 `cluster` and `version`. `kmx mcp`, `kmx completion` and `kmx help` still work;
 they are not root help entries. Command help uses concise descriptions and
 examples; file Run/Test/Explain link to the single
@@ -202,15 +202,28 @@ Failures exit 1; unknown or incomplete sets exit 2. It never falls back to nativ
 workspace evaluation (`kmx package test`).
 
 `kmx run FILE` and `kmx test FILE` select one canonical markdown agent file,
-without workspace discovery, cluster configuration, Docker or a daemon. The
+without workspace discovery, cluster configuration or Docker. Ordinary Run/Test
+use no cluster or Docker. By default Run starts/reuses a resident local process;
+its stable source ID is `md-...` and each worker generation has a random
+`li-...` instance ID and unique runtime name. Exact snapshots reuse without a
+prompt. Drift requires `--upgrade` (and `--yes` for noninteractive confirmation)
+or `--new --name NAME`; upgrade readies and promotes the replacement before
+closing old sessions. `list` reports agent ID, instance ID, generation and name.
+`--once` performs invocation-owned preview. Local Chat creates/resumes sessions,
+`kmx list` shows process/readiness/session state, an explicit global `--context`
+selects Orka inventory, and `kmx stop NAME_OR_ID` ends a resident worker. The
 shared [tests-file rule](agent-file.md#tests-in-a-separate-file-reader-only) selects
 the companion by default; `--tests FILE` overrides it for one agent. Missing or
 empty tests do not pass Test, and bare `--tests`/`--case` require an agent FILE.
-Without input, Run prints each saved example's answer in authored order;
-`kmx run FILE "input"` previews only that input. Test checks the file's saved
-examples in authored order and accepts no ad-hoc input. Legacy Run flags
-`--prompt TEXT` and `--prompt-file FILE|-` still run a separately attributed
-ad-hoc input followed by the saved examples.
+`kmx test FILE --check` validates the selected pair and emits metadata without
+provider, model, tool, journal or history access. Test never targets an instance;
+it always evaluates current checked source.
+Without input, resident Run starts/reuses the agent and sends no turn;
+`kmx run FILE --prompt "input"` creates a resident session and sends that input. Test checks
+the file's saved examples in authored order and accepts no ad-hoc input. Use
+`kmx run FILE --once` for one-shot behavior: no input runs saved examples, while
+`-p, --prompt` or `--prompt-file` runs only that input unless `--case` explicitly
+selects a saved example too.
 Input is bounded to 16 KiB. The five-minute preview execution deadline starts
 after prompt collection. Ctrl-C/SIGTERM retain their default behavior during
 intake, including when a pipe's writer stays open without EOF; no background
@@ -295,7 +308,7 @@ cleartext, including reasoning. Neither previews nor replay produce native
 evaluation evidence.
 
 ```text
-kmx run ./greeter.agent.md "Ada"
+kmx run ./greeter.agent.md --prompt "Ada"
 kmx test ./greeter.agent.md --case greeting -o json
 kmx test ./greeter.agent.md
 ```
@@ -315,7 +328,7 @@ excerpts are shown by default; `--no-content` omits them and failure operands. A
 write stops later sends and cannot report a full pass.
 
 ```text
-kmx run ./greeter.agent.md "Ada" --provider ollama --provider-url http://127.0.0.1:11434/v1 --verbose
+kmx run ./greeter.agent.md --once --prompt "Ada" --provider ollama --provider-url http://127.0.0.1:11434/v1 --verbose
 ```
 
 For this Ollama example, first set `Model.Preferred` in your own copy of the
@@ -327,7 +340,7 @@ for users without gh:
 
 ```bash
 kmx model list --provider copilot
-kmx run ./greeter.agent.md "Ada"
+kmx run ./greeter.agent.md --prompt "Ada"
 kmx test ./greeter.agent.md
 ```
 
@@ -360,10 +373,11 @@ file Judge without `judgeModel` follows that route; conflicting authored pins st
 refuse rather than silently switching. `judgeVersion` stays authored and required.
 Strict workspace assertions and exported run profiles still require a model pin.
 
-Text `run FILE "input"` writes only the answer to stdout; the selected route/model
-and preview diagnostics go to stderr. Positional input runs only that input unless `--case ID` also explicitly selects
-a saved example to run. Without positional input, Run prints each saved example answer;
-legacy `--prompt`/`--prompt-file` still run their ad-hoc input plus saved examples.
+Text `run FILE --prompt "input"` writes only the answer to stdout; the selected
+route/model and preview diagnostics go to stderr. `--prompt` and `--prompt-file`
+run only that input unless `--case ID` also explicitly selects a saved example.
+These one-shot selection rules require `--once`; resident Run starts an agent
+without input or sends one temporary prompt turn.
 CLI Run does not evaluate checks or select/authenticate a judge. Completed example rows say ANSWERED and retain an unknown verdict with
 `fullPass: false`, never a test pass. Per-example tool modes, journal finalization
 and completion attribution still apply. Use `kmx test FILE` to evaluate checks;
@@ -1924,7 +1938,8 @@ recorded monitoring, not agents/plane; unknown ownership is left alone. Read
   answer-only Task output bypass styling.
 - Chat is a session and has no one-shot form: a message after the Agent name
   is the first turn of that session, and there is no `--json` chat output.
-  `--json` and `--session` are refused before configuration loads. Use
+  `--json` is refused before configuration loads. Local resident Chat supports
+  `--session`; Orka Chat still has no resumable server-side session. Use
   `kmx run` for answer-only stdout.
 - Quickstart JSON has keys `ok`, `context`, `cluster`, `agent`, `manifest`,
   `question`, `answer`, `governed`, `tools`, `elapsed_seconds`, `next`. `tools` is
@@ -1955,7 +1970,7 @@ is written to the sibling `agent-tests` directory. It reads no config, prompts
 for nothing and calls no model; an existing target refuses with exit 2 and is
 never overwritten. File Test selects the generated companion by default;
 `--tests FILE` selects an explicit alternative for one agent.
-For a fake-model preview, use `kmx run NAME.agent.md "hi" --model fake`.
+For a fake-model preview, use `kmx run NAME.agent.md --prompt "hi" --model fake`.
 Without that override, Run uses the default Copilot model and requires an
 existing sign-in (`gh auth login`).
 Native workspace authoring is [`kmx package create`](#kmx-package-create).
