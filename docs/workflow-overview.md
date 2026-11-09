@@ -72,13 +72,13 @@ source-evidence `--promote`, partial outcomes, and fresh-evaluation requirements
 ## Getting Started: Get Your First Answer
 
 This first-answer path creates a cluster, so Windows users run it inside a Linux
-WSL distribution. Current `main` and published v0.9.0 release candidates
-beginning with `v0.9.0-rc.4` have a separate **prerelease-only**
-[native Windows day-zero CLI](windows.md), limited to version/help/completion,
-package-free fake file Run/Test and offline file Explain. It creates no suite
-evidence and cannot perform the workspace, model, publication or Deploy stages
-on this page. Stable v0.8.1 and `@latest` have no Windows `.exe`; use WSL for
-the install routes and broader workflow below.
+WSL distribution. Current `main` has a separate **prerelease-only**
+[native Windows CLI](windows.md): the day-zero commands plus amd64 read-only Orka
+list/show against an existing explicit target. Published v0.9.0 release
+candidates beginning with `v0.9.0-rc.4` retain the day-zero-only boundary until a
+later containing release. Native inspection creates no suite evidence and cannot
+perform the setup, workspace, model, publication or Deploy stages on this page.
+Stable v0.8.1 and `@latest` have no Windows `.exe`; use WSL below.
 
 Install Docker or Podman (`CONTAINER_ENGINE=podman` selects Podman), then choose
 one independent install route for the latest stable release. Go installs require

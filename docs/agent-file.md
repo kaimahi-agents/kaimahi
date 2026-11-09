@@ -863,7 +863,8 @@ results and actual coordinator dispatch are separate observations.
 
 Native Go tests cover parser/file/process contracts on Linux/macOS/Windows.
 Windows test-child execution is not Windows native-Squad qualification; the
-separate day-zero CLI supports canonical package-free fake file Run/Test only.
+separate file route supports canonical package-free fake file Run/Test only.
+Native Windows read-only Orka list/show is independent of agent-file execution.
 An opt-in installed-Squad test separately performs native init and actual catalog/fallback
 cast/enrich in an isolated project/HOME; it runs no model or coordinator dispatch.
 

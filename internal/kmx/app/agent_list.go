@@ -1,12 +1,19 @@
 package app
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/url"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
 // ListAgents prints the Orka Agents in one namespace.
@@ -18,6 +25,9 @@ func (a *App) ListAgents(output, namespace string) error {
 	namespace = strings.TrimSpace(namespace)
 	if namespace == "" {
 		namespace = OrkaNamespace
+	}
+	if scaffold.ValidateNamespace(namespace) != nil {
+		return fmt.Errorf("Orka Agent list requires a valid namespace")
 	}
 	return a.listOrkaAgents(output, namespace)
 }
@@ -34,39 +44,36 @@ func (a *App) listOrkaAgents(output, namespace string) error {
 	if err != nil {
 		return err
 	}
-	if err := a.preflight(depKubectl); err != nil {
+	if err := a.preflightOrkaInspection(); err != nil {
 		return err
 	}
 	if format != "table" {
-		return a.kubectlRun("-n", namespace, "get", "agents.core.orka.ai", "-o", format)
-	}
-	raw, err := a.kubectlCapture("-n", namespace, "get", "agents.core.orka.ai", "-o", "json")
-	if err != nil {
-		// Only one failure needs translating here, and it is not the obvious
-		// one. A cluster that does not serve the kind has no Orka on it at
-		// all; kubectl says "doesn't have a resource type" for that, which
-		// isNotFound does not match — hence noSuchResourceType.
-		//
-		// A NAMESPACE that does not exist is deliberately not handled, because
-		// kubectl does not report it here: listing a namespaced kind in an
-		// absent namespace returns an empty list and exit 0, not NotFound.
-		// Verified against a live cluster. A branch for it would be dead code
-		// implying an error that cannot arrive.
-		//
-		// Anything else is unread, and is returned as it arrived.
-		if noSuchResourceType(err) {
-			return fmt.Errorf("no Orka Agent kind on this cluster, so nothing here is an Orka agent.\n"+
-				"  Install Orka with `%s`",
-				a.operationCommand("cluster", "orka", "install"))
+		raw, err := a.readOrkaAgentMachineList(format, namespace)
+		if err != nil {
+			return a.agentListReadError(err)
+		}
+		var out io.Writer = io.Discard
+		if a.Run.Stdout != nil {
+			out = a.Run.Stdout
+		} else if a.Out != nil {
+			out = a.Out
+		}
+		n, err := out.Write(raw)
+		if err == nil && n != len(raw) {
+			err = io.ErrShortWrite
 		}
 		return err
 	}
-	var agents objectList[orkaAgentSpec]
-	if err := json.Unmarshal([]byte(raw), &agents); err != nil {
-		return fmt.Errorf("Orka Agents returned invalid JSON: %w", err)
+	raw, err := a.readOrkaAgentTableList(namespace)
+	if err != nil {
+		return a.agentListReadError(err)
 	}
-	rows := orkaAgentListRows(agents.Items)
-	heading := "Orka Agents in " + namespace
+	agents, err := decodeOrkaAgentList(raw, namespace)
+	if err != nil {
+		return err
+	}
+	rows := orkaAgentListRows(agents)
+	heading := "Orka Agents in " + orkaHumanField(namespace)
 	ui := cliui.New(a.Out)
 	if ui.Rich() {
 		fmt.Fprintln(a.Out, ui.Report(heading, orkaAgentColumns, rows, cliui.ColumnText, cliui.ColumnState))
@@ -75,12 +82,153 @@ func (a *App) listOrkaAgents(output, namespace string) error {
 	fmt.Fprintln(a.Out, ui.Heading(heading))
 	if len(rows) == 0 {
 		fmt.Fprintln(a.Out, "  none")
-		a.notef("  Nothing in %s. Author workspace source with `%s`, prove it with eval, then Lift its immutable digest.", namespace,
+		a.notef("  Nothing in %s. Author workspace source with `%s`, prove it with eval, then Lift its immutable digest.", orkaHumanField(namespace),
 			a.operationCommand("create", "<name>", "--workspace", "<directory>", "--model", "<exact-model>", "--instructions", "<file>"))
 		return nil
 	}
 	humanTable(a.Out, orkaAgentColumns, rows)
 	return nil
+}
+
+func (a *App) readOrkaAgentList(namespace string) ([]byte, error) {
+	const pageLimit, pageCountLimit, itemLimit = 128, 32, 4096
+	const responseLimit = 4 << 20
+	ctx := a.operationContext()
+	seen := map[string]bool{}
+	cursor := ""
+	totalBytes := 0
+	items := make([]json.RawMessage, 0, pageLimit)
+	var first, firstMetadata map[string]json.RawMessage
+	var firstRaw []byte
+	for pageCount := 0; pageCount < pageCountLimit; pageCount++ {
+		path := fmt.Sprintf("/apis/core.orka.ai/v1alpha1/namespaces/%s/agents?limit=%d", url.PathEscape(namespace), pageLimit)
+		if cursor != "" {
+			path += "&continue=" + url.QueryEscape(cursor)
+		}
+		raw, err := a.orkaCapture(ctx, nil, "get", "--raw", path)
+		if err != nil {
+			return nil, err
+		}
+		if len(raw) > responseLimit-totalBytes {
+			return nil, fmt.Errorf("Orka Agent list exceeded safe response limits")
+		}
+		totalBytes += len(raw)
+		envelope, pageItems, err := decodeOrkaAgentListPage(raw, namespace)
+		if err != nil {
+			return nil, err
+		}
+		if len(pageItems) > pageLimit || len(items)+len(pageItems) > itemLimit {
+			return nil, fmt.Errorf("Orka Agent list exceeded safe item limits")
+		}
+		items = append(items, pageItems...)
+		var metadata map[string]json.RawMessage
+		if value, ok := envelope["metadata"]; ok && (json.Unmarshal(value, &metadata) != nil || metadata == nil) {
+			return nil, fmt.Errorf("Orka Agents returned invalid metadata")
+		}
+		if first == nil {
+			first = envelope
+			firstMetadata = metadata
+			firstRaw = append([]byte(nil), raw...)
+		}
+		next := ""
+		if value, ok := metadata["continue"]; ok {
+			if len(value) > 4096 || strings.TrimSpace(string(value)) == "null" || json.Unmarshal(value, &next) != nil {
+				return nil, fmt.Errorf("Orka Agent list returned an invalid continuation token")
+			}
+		}
+		if next == "" {
+			if pageCount == 0 {
+				return firstRaw, nil
+			}
+			if firstMetadata != nil {
+				delete(firstMetadata, "continue")
+				delete(firstMetadata, "remainingItemCount")
+				metadataRaw, marshalErr := json.Marshal(firstMetadata)
+				if marshalErr != nil {
+					return nil, fmt.Errorf("cannot render Orka Agent list metadata")
+				}
+				first["metadata"] = metadataRaw
+			}
+			itemsRaw, marshalErr := json.Marshal(items)
+			if marshalErr != nil {
+				return nil, fmt.Errorf("cannot render Orka Agent list")
+			}
+			first["items"] = itemsRaw
+			complete, marshalErr := json.Marshal(first)
+			if marshalErr != nil || len(complete) > responseLimit {
+				return nil, fmt.Errorf("Orka Agent list exceeded safe response limits")
+			}
+			return complete, nil
+		}
+		if len(next) > 4096 || !utf8.ValidString(next) || strings.IndexFunc(next, unicode.IsControl) >= 0 || seen[next] || next == cursor || pageCount == pageCountLimit-1 {
+			return nil, fmt.Errorf("Orka Agent list exceeded safe pagination limits")
+		}
+		seen[next] = true
+		cursor = next
+	}
+	return nil, fmt.Errorf("Orka Agent list exceeded safe pagination limits")
+}
+
+func decodeOrkaAgentList(raw []byte, namespace string) ([]orkaAgentSpec, error) {
+	_, items, err := decodeOrkaAgentListEnvelope(raw, namespace, true)
+	if err != nil {
+		return nil, err
+	}
+	agents := make([]orkaAgentSpec, 0, len(items))
+	for _, item := range items {
+		var agent orkaAgentSpec
+		if json.Unmarshal(item, &agent) != nil {
+			return nil, fmt.Errorf("Orka Agents returned invalid Agent data")
+		}
+		agents = append(agents, agent)
+	}
+	return agents, nil
+}
+
+func decodeOrkaAgentListPage(raw []byte, namespace string) (map[string]json.RawMessage, []json.RawMessage, error) {
+	return decodeOrkaAgentListEnvelope(raw, namespace, false)
+}
+
+func decodeOrkaAgentListEnvelope(raw []byte, namespace string, allowKubectlList bool) (map[string]json.RawMessage, []json.RawMessage, error) {
+	var envelope map[string]json.RawMessage
+	if suitecore.Unmarshal(raw, &envelope) != nil || envelope == nil {
+		return nil, nil, fmt.Errorf("Orka Agents returned invalid JSON")
+	}
+	var identity struct {
+		APIVersion string `json:"apiVersion"`
+		Kind       string `json:"kind"`
+	}
+	if json.Unmarshal(raw, &identity) != nil {
+		return nil, nil, fmt.Errorf("Orka Agents returned an invalid list identity")
+	}
+	typedList := identity.APIVersion == "core.orka.ai/v1alpha1" && identity.Kind == "AgentList"
+	kubectlList := allowKubectlList && identity.APIVersion == "v1" && identity.Kind == "List"
+	if !typedList && !kubectlList {
+		return nil, nil, fmt.Errorf("Orka Agents returned an invalid list identity")
+	}
+	itemsRaw, ok := envelope["items"]
+	if !ok || !bytes.HasPrefix(bytes.TrimSpace(itemsRaw), []byte("[")) {
+		return nil, nil, fmt.Errorf("Orka Agents returned an invalid item list")
+	}
+	var items []json.RawMessage
+	if json.Unmarshal(itemsRaw, &items) != nil {
+		return nil, nil, fmt.Errorf("Orka Agents returned an invalid item list")
+	}
+	for _, item := range items {
+		var agent orkaAgentSpec
+		if json.Unmarshal(item, &agent) != nil || agent.APIVersion != "core.orka.ai/v1alpha1" || agent.Kind != "Agent" ||
+			scaffold.ValidateObjectName(agent.Metadata.Name) != nil || agent.Metadata.Namespace != namespace {
+			return nil, nil, fmt.Errorf("Orka Agents returned invalid Agent identity")
+		}
+	}
+	return envelope, items, nil
+}
+
+func (a *App) agentListReadError(err error) error {
+	if noSuchResourceType(err) {
+		return a.missingOrkaInspectionKind()
+	}
+	return err
 }
 
 var orkaAgentColumns = []string{"NAME", "READY", "PROVIDER", "MODEL"}
@@ -95,10 +243,10 @@ func orkaAgentListRows(agents []orkaAgentSpec) [][]string {
 			model = "(the Provider's default)"
 		}
 		rows = append(rows, []string{
-			agent.Metadata.Name,
+			orkaHumanField(agent.Metadata.Name),
 			boolState(agent.Status.Ready),
-			valueOr(agent.Spec.ProviderRef.Name, "none"),
-			model,
+			valueOr(orkaHumanField(agent.Spec.ProviderRef.Name), "none"),
+			orkaHumanField(model),
 		})
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i][0] < rows[j][0] })

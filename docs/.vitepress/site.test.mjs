@@ -111,12 +111,12 @@ test('Test is canonical while compatibility and current runtime limits stay expl
   assert.match(workflow, /kmx package push --workspace DIR --evaluation RECEIPT REF/)
 })
 
-test('native Windows documentation keeps the day-zero and release boundary narrow', async () => {
+test('native Windows documentation keeps the read-only remote exception narrow', async () => {
   const html = await readFile(path.join(dist, 'docs/windows.html'), 'utf8')
   const windows = plainText(html).replace(/\s+/g, ' ')
 
   for (const marker of [
-    'prerelease-only, narrow day-zero CLI',
+    'prerelease-only and operation-specific',
     'v0.9.0-rc.4',
     'v0.9.0-rc.6',
     'Stable v0.8.1',
@@ -125,6 +125,12 @@ test('native Windows documentation keeps the day-zero and release boundary narro
     'kmx run FILE',
     'kmx test FILE',
     'kmx test explain [failure-id] --file FILE',
+    'cluster orka list',
+    'cluster orka show',
+    'Both selectors are mandatory on native Windows',
+    'operator-installed native kubectl.exe',
+    'never runs az login',
+    'Kubeconfig exec plugins are local operator-trusted code',
     '--github-summary',
     'local preview only',
     'publication authority',
@@ -157,7 +163,7 @@ test('native Windows documentation keeps the day-zero and release boundary narro
   ]) assert.ok(windows.includes(marker), `Windows boundary: ${marker}`)
 
   for (const deferred of [
-    'Docker', 'kind', 'Kubernetes', 'workspace', 'OCI', 'suite evidence',
+    'Docker', 'kind', 'local Kubernetes setup', 'cluster mutation', 'workspace', 'OCI', 'suite evidence',
     'provider routes', 'kmx mcp', 'native Copilot plugin', 'AgentKit', 'Buildx',
     'managed tools', 'publication', 'Deploy'
   ]) assert.ok(windows.includes(deferred), `Windows deferred operation: ${deferred}`)

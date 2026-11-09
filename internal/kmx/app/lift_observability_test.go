@@ -236,15 +236,24 @@ func TestEveryKubectlCallInThisPackageNamesAVerb(t *testing.T) {
 					return true
 				}
 				switch sel.Sel.Name {
-				case "kubectlCapture", "kubectlRun", "kubectlQuiet":
+				case "kubectlCapture", "kubectlRun", "kubectlQuiet", "orkaCapture":
+					args := call.Args
+					if sel.Sel.Name == "orkaCapture" {
+						args = args[2:]
+					}
 					if call.Ellipsis.IsValid() {
+						if sel.Sel.Name == "orkaCapture" {
+							// Generic bounded wrappers are audited where their caller
+							// supplies the concrete verb; direct captures remain checked.
+							return true
+						}
 						t.Errorf("%s: this kubectl command is assembled by whoever calls %s, so "+
 							"nothing here can tell whether it names a verb — pass the parts as "+
 							"named arguments and build the command line at this end",
 							fset.Position(call.Pos()), enclosing)
 						return true
 					}
-					judge(call.Pos(), call.Args)
+					judge(call.Pos(), args)
 				default:
 					// The direct form: Run.Run("kubectl", a.kubectl(...)...)
 					// and its Capture/Quiet/RunStdin/Command siblings.

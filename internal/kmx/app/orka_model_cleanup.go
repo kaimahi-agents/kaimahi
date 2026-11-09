@@ -51,7 +51,9 @@ func (a *App) modelChildren(ctx context.Context, ns string, root modelOwnedResou
 			Metadata         map[string]any
 			Items            []map[string]any
 		}
-		if modelJSON(raw, &list) != nil || list.APIVersion != version || list.Kind != kind+"List" || list.Metadata == nil || list.Items == nil || len(list.Items) > 64 || (list.Metadata["continue"] != nil && list.Metadata["continue"] != "") {
+		// Kubernetes dictionaries (notably managedFields) have case-sensitive
+		// keys. Keep the private checkpoint decoder out of API list reads.
+		if offlineJSON(raw, &list, false) != nil || list.APIVersion != version || list.Kind != kind+"List" || list.Metadata == nil || list.Items == nil || len(list.Items) > 64 || (list.Metadata["continue"] != nil && list.Metadata["continue"] != "") {
 			return nil, fmt.Errorf("model child closure is incomplete")
 		}
 		for _, obj := range list.Items {

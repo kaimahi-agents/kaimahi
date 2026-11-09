@@ -26,7 +26,10 @@ no TokenRequest, Secret read, provisioning, endpoint probe or Tool invocation.
 Kubernetes credential helpers can still run through kubectl authentication.
 Native Windows remains unsupported. Help and completion do not load configuration.
 
-Built-ins are copied from the exact [Orka v0.3.0 API catalog](https://github.com/orka-agents/orka/blob/a533c3491d350263c0fa39bb7887dabd0d055c4e/internal/api/handlers.go#L56-L64).
+Built-ins are copied from the exact [Orka v0.3.0 API catalog](https://github.com/orka-agents/orka/blob/a533c3491d350263c0fa39bb7887dabd0d055c4e/internal/api/handlers.go#L56-L64),
+shared by the restricted source profile. Inventory reports the matched runtime's
+version and catalog source commit; the restricted profile uses its source commit
+for both, not the online release identity.
 They are offered only after observing the supported current-generation Ready
 controller image/configuration and matching watch namespace. Their source and
 reason are `pinned-catalog`, not live catalog discovery or successful execution.
@@ -108,6 +111,18 @@ images in every selected kind node. No tools, images, chart or models are fetche
 and no Provider is created. See the [bundle input and install contract](kmx.md#native-orka-install)
 for exact cache/target checks, generated fixed values and disabled components.
 
+The compiled catalog also accepts `orka-7916cd1c-native/v1`, built from Orka
+commit `7916cd1c8c083ade6b10df6ba408f854d930190c`. Its source-packaged chart enables
+`workers.ai.rbacProfile: restricted`: the AI worker gets read-only lookups without
+Secrets or token creation, and the controller enforces context-token authorization
+for all callers. Existing callers must satisfy their issuer grants; the profile
+does not provision an issuer or narrow existing grants. The older `orka-59703d6e-native/v1`
+profile remains unchanged. This is not a released Orka version or a live guest
+qualification: controller startup and native calls under enforcement without an
+issuer have not been tested here. Native denied-read and leakage checks remain
+separate. Reuse compares values and workload settings, not live RBAC drift.
+See the [source-package binding](kmx.md#source-packaged-restricted-profile).
+
 Exact healthy reuse compares all custom values and live workload execution
 settings, preserves chart data/keys and reconciles only the result reader.
 Install and reuse then wait, up to 10 minutes, for readiness observed after the
@@ -152,6 +167,14 @@ fixed Vekil Copilot gateway. It never installs a runtime, starts a sign-in flow,
 downloads weights or runs an Agent, Task or inference request. Native macOS and
 Windows callers use their owning host integration instead; these commands run
 only in the Linux guest with local Docker and a checked kubeconfig.
+
+Connect recognizes the pinned online runtime or the restricted source-bound
+[offline profile](#native-installation-from-a-local-bundle). Each requires its
+matching chart identity and controller/AI-worker image pins; the offline images
+must be a same-architecture pair for amd64 or arm64. Mixed online/offline pins,
+mixed architectures and the older offline profile are not accepted. Existing
+readiness, namespace and configuration checks still apply. Recognition is a
+workload observation, not renewed bundle verification or live RBAC attestation.
 
 ```bash
 KIND_CLUSTER=local-offline kmx --context kind-local-offline --container-engine docker cluster orka model connect \

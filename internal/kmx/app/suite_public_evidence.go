@@ -160,11 +160,15 @@ func suitePublicRuntime(r *suitePassingReceipt) (runtime, harness suitecore.Evid
 	switch r.ExecutionMode {
 	case "native-orka":
 		s := r.Subject
-		if !suiteNativePinnedRuntime(s.Runtime, s.Target.Namespace) {
+		version, _, ok := suiteNativeRuntimeIdentity(s.Runtime, s.Target.Namespace)
+		if !ok {
 			return runtime, harness, errSuitePublicProjection
 		}
-		runtime = suitecore.EvidenceImplementation{ID: "orka", Version: "0.3.0", Digest: orkaControllerDigest}
-		harness = suitecore.EvidenceImplementation{ID: "orka", Version: "harness-v2", Digest: orkaAIWorkerDigest}
+		// The matched image references carry the actual platform manifest pins.
+		_, controller, _ := strings.Cut(s.Runtime.ControllerImage, "@")
+		_, worker, _ := strings.Cut(s.Runtime.AIWorkerImage, "@")
+		runtime = suitecore.EvidenceImplementation{ID: "orka", Version: strings.TrimPrefix(version, "v"), Digest: controller}
+		harness = suitecore.EvidenceImplementation{ID: "orka", Version: "harness-v2", Digest: worker}
 	case "native-kagent":
 		if !validSuiteKagentPassingProof(r.Kagent) {
 			return runtime, harness, errSuitePublicProjection

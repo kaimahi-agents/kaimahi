@@ -1,0 +1,13 @@
+{
+  "sourceSHA": "7916cd1c8c083ade6b10df6ba408f854d930190c",
+  "images": {
+    "acp-claude-runtime": "ghcr.io/orka-agents/orka/acp-claude-runtime@sha256:1028683c7c4a4e897609784c0ef57f20e4c122cf650e2ed70eda220a61fffcf2",
+    "acp-codex-runtime": "ghcr.io/orka-agents/orka/acp-codex-runtime@sha256:87e395dc06bf587733d639686dd4f921fdf739b870b1eab6162ffcd3dbc175a3",
+    "acp-copilot-runtime": "ghcr.io/orka-agents/orka/acp-copilot-runtime@sha256:0c67a7907f3fa0f2acd9eec61ef939262d32470c43542f7208a95296c8127e45",
+    "acp-opencode-runtime": "ghcr.io/orka-agents/orka/acp-opencode-runtime@sha256:0e630644666650ad90049da25830186e5e74493dc819138dd69dd5a95f9c73ea",
+    "ai-worker": "ghcr.io/orka-agents/orka/ai-worker@sha256:939fc6c85f9ad720c4c5babb37d5c3b6a129cead68a73cec51d3396c147ee602",
+    "controller": "ghcr.io/orka-agents/orka@sha256:a57f1dc4038465c0041e2b882925ecdf2ea1ae5358dc1d96ee0f9f234a2b860c",
+    "general-worker": "ghcr.io/orka-agents/orka/general-worker@sha256:db2a183ab4b79d4e8728539d1fb493b6221537a9ecc2b34cec8c9bec54ed636b",
+    "workspace-publisher": "ghcr.io/orka-agents/orka/workspace-publisher@sha256:d3c05a9728b5c9804f92a1ec89e78b8558b408fff5b92beab8d840e6076f443f"
+  }
+}

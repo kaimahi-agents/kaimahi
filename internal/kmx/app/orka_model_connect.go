@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"runtime"
 	"strings"
 	"time"
@@ -119,7 +120,14 @@ func (a *App) modelAbsent(ctx context.Context, r modelOwnedResource) error {
 }
 func (a *App) modelPodAdmission(ctx context.Context, dep map[string]any) error {
 	template := modelMap(modelMap(dep["spec"])["template"])
-	pod := map[string]any{"apiVersion": "v1", "kind": "Pod", "metadata": map[string]any{"name": modelText(modelMap(dep["metadata"])["name"]) + "-preflight", "namespace": OrkaNamespace, "labels": modelMap(template["metadata"])["labels"], "annotations": modelMap(template["metadata"])["annotations"]}, "spec": template["spec"]}
+	meta := map[string]any{"name": modelText(modelMap(dep["metadata"])["name"]) + "-preflight", "namespace": OrkaNamespace, "labels": modelMap(template["metadata"])["labels"]}
+	if annotations, present := modelMap(template["metadata"])["annotations"]; present {
+		meta["annotations"] = annotations
+		if values, ok := annotations.(map[string]any); ok {
+			meta["annotations"] = maps.Clone(values)
+		}
+	}
+	pod := map[string]any{"apiVersion": "v1", "kind": "Pod", "metadata": meta, "spec": template["spec"]}
 	if err := a.annotateCreatedByVersion(pod); err != nil {
 		return err
 	}

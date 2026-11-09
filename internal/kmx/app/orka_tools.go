@@ -58,9 +58,10 @@ type OrkaToolInventory struct {
 	Tools          []OrkaToolRow  `json:"tools"`
 }
 
-// Exact API catalog, in upstream order: Orka v0.3.0, commit below,
-// internal/api/handlers.go:56-64. Names are from each tool's Name() implementation.
-// This is pinned release data, not a live API observation or worker call proof.
+// Exact API catalog, in upstream order, shared by Orka v0.3.0 (commit below)
+// and the restricted source profile: internal/api/handlers.go's builtinToolsList.
+// Names come from each tool's Name(); attribution uses the matched runtime source.
+// This is pinned catalog data, not a live API observation or worker call proof.
 const orkaToolCatalogCommit = "a533c3491d350263c0fa39bb7887dabd0d055c4e"
 
 func orkaToolCatalog() []string {
@@ -307,7 +308,7 @@ func (a *App) ReadOrkaTools(ctx context.Context, opt OrkaToolOptions) (OrkaToolI
 	result.Target.NamespaceUID = o.namespace(opt.Namespace)
 	runtime, pinned := o.runtime(opt.Namespace)
 	if pinned {
-		result.RuntimeVersion, result.CatalogCommit = OrkaVersion, orkaToolCatalogCommit
+		result.RuntimeVersion, result.CatalogCommit, _ = suiteNativeRuntimeIdentity(runtime, opt.Namespace)
 		for _, name := range orkaToolCatalog() {
 			result.Tools = append(result.Tools, OrkaToolRow{Kind: "builtin", Name: name, Availability: "available", Reason: "pinned-catalog", Source: "pinned-catalog"})
 		}
