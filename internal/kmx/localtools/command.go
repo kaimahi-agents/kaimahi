@@ -2,7 +2,10 @@ package localtools
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
+	"io"
 	"maps"
 	"os"
 	"path/filepath"
@@ -27,12 +30,65 @@ const commandOutputLimit = 5 * 1024
 // CommandConfig is frozen host authority. Arguments are fixed and the complete
 // environment is explicit; no model value can alter the launched command.
 type CommandConfig struct {
-	Name, Command, Dir string
-	Args               []string
-	Env                map[string]string
-	CredentialEnv      []string
-	commandInfo        os.FileInfo
-	dirInfo            os.FileInfo
+	Name             string            `json:"name"`
+	Command          string            `json:"command"`
+	Dir              string            `json:"directory"`
+	Args             []string          `json:"args"`
+	Env              map[string]string `json:"environment"`
+	CredentialEnv    []string          `json:"credentialEnvironment,omitempty"`
+	ExecutableDigest string            `json:"executableDigest,omitempty"`
+	ExecutableID     string            `json:"executableIdentity,omitempty"`
+	DirectoryID      string            `json:"directoryIdentity,omitempty"`
+	commandInfo      os.FileInfo
+	dirInfo          os.FileInfo
+}
+
+const commandExecutableLimit = 256 << 20
+
+func commandExecutableDigest(path string) (string, error) {
+	return commandExecutableDigestContext(context.Background(), path)
+}
+
+func commandExecutableDigestContext(ctx context.Context, path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", ErrCommand
+	}
+	defer file.Close()
+	before, err := file.Stat()
+	if err != nil || !before.Mode().IsRegular() || before.Size() < 0 || before.Size() > commandExecutableLimit {
+		return "", ErrCommand
+	}
+	hash := sha256.New()
+	buffer := make([]byte, 64*1024)
+	var written int64
+	for {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		n, readErr := file.Read(buffer)
+		if n > 0 {
+			written += int64(n)
+			if written > commandExecutableLimit {
+				return "", ErrCommand
+			}
+			_, _ = hash.Write(buffer[:n])
+		}
+		if errors.Is(readErr, os.ErrClosed) {
+			return "", ErrCommand
+		}
+		if readErr != nil {
+			if errors.Is(readErr, io.EOF) {
+				break
+			}
+			return "", ErrCommand
+		}
+	}
+	after, statErr := file.Stat()
+	if err != nil || statErr != nil || written != before.Size() || !os.SameFile(before, after) || after.Size() != before.Size() || after.Mode() != before.Mode() || !after.ModTime().Equal(before.ModTime()) {
+		return "", ErrCommand
+	}
+	return fmt.Sprintf("sha256:%x", hash.Sum(nil)), nil
 }
 
 func commandDefinitionFor(name string) api.ToolDefinition {
@@ -41,6 +97,15 @@ func commandDefinitionFor(name string) api.ToolDefinition {
 
 func validateCommandConfig(cfg CommandConfig) (func(...string) error, error) {
 	if !ValidToolName(cfg.Name) || !filepath.IsAbs(cfg.Command) || !filepath.IsAbs(cfg.Dir) || len(cfg.Command)+len(cfg.Dir) > 8192 || len(cfg.Args) > 128 || len(cfg.Env) > 64 {
+		return nil, ErrCommand
+	}
+	if cfg.ExecutableDigest != "" {
+		digest := strings.TrimPrefix(cfg.ExecutableDigest, "sha256:")
+		if len(digest) != 64 || strings.Trim(digest, "0123456789abcdef") != "" {
+			return nil, ErrCommand
+		}
+	}
+	if (cfg.ExecutableID == "") != (cfg.DirectoryID == "") {
 		return nil, ErrCommand
 	}
 	bytes := 0
@@ -112,6 +177,19 @@ func NewCommandHost(configs []CommandConfig) (*Host, error) {
 		}
 		if cfg.commandInfo != nil && !os.SameFile(cfg.commandInfo, commandInfo) || cfg.dirInfo != nil && !os.SameFile(cfg.dirInfo, dirInfo) {
 			return nil, ErrCommand
+		}
+		if cfg.ExecutableID != "" {
+			commandID, commandOK := commandFileIdentity(commandInfo)
+			dirID, dirOK := commandFileIdentity(dirInfo)
+			if !commandOK || !dirOK || commandID != cfg.ExecutableID || dirID != cfg.DirectoryID {
+				return nil, ErrCommand
+			}
+		}
+		if cfg.ExecutableDigest != "" {
+			digest, digestErr := commandExecutableDigest(cfg.Command)
+			if digestErr != nil || digest != cfg.ExecutableDigest {
+				return nil, ErrCommand
+			}
 		}
 		cfg.commandInfo, cfg.dirInfo = commandInfo, dirInfo
 		byName[cfg.Name], checks[cfg.Name] = cfg, check

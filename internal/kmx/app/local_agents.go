@@ -20,6 +20,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/residenttools"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -28,32 +29,35 @@ const localAgentSchema = 2
 var errLocalAgentInventoryUninitialized = errors.New("local agent inventory is uninitialized")
 
 type LocalAgentInstance struct {
-	SchemaVersion    int        `json:"schemaVersion"`
-	EventID          string     `json:"eventId"`
-	Sequence         uint64     `json:"sequence"`
-	ID               string     `json:"id"`
-	InstanceID       string     `json:"instanceId"`
-	Name             string     `json:"name"`
-	AuthoredName     string     `json:"authoredName"`
-	Source           string     `json:"source"`
-	AgentRevision    string     `json:"agentRevision"`
-	SnapshotRevision string     `json:"snapshotRevision"`
-	TestsState       string     `json:"testsState"`
-	TestsRevision    string     `json:"testsRevision,omitempty"`
-	TestsPath        string     `json:"testsPath,omitempty"`
-	TestsExplicit    bool       `json:"testsExplicit,omitempty"`
-	CachedAgent      string     `json:"cachedAgent"`
-	CachedTests      string     `json:"cachedTests,omitempty"`
-	Provider         string     `json:"provider"`
-	Model            string     `json:"model"`
-	Started          time.Time  `json:"started"`
-	Stopped          *time.Time `json:"stopped,omitempty"`
-	State            string     `json:"state"`
-	Primary          bool       `json:"primary,omitempty"`
-	Ready            bool       `json:"ready,omitempty"`
-	Sessions         int        `json:"sessions,omitempty"`
-	LastActivity     *time.Time `json:"lastActivity,omitempty"`
-	LastError        string     `json:"lastError,omitempty"`
+	SchemaVersion      int        `json:"schemaVersion"`
+	EventID            string     `json:"eventId"`
+	Sequence           uint64     `json:"sequence"`
+	ID                 string     `json:"id"`
+	InstanceID         string     `json:"instanceId"`
+	Name               string     `json:"name"`
+	AuthoredName       string     `json:"authoredName"`
+	Source             string     `json:"source"`
+	AgentRevision      string     `json:"agentRevision"`
+	SnapshotRevision   string     `json:"snapshotRevision"`
+	TestsState         string     `json:"testsState"`
+	TestsRevision      string     `json:"testsRevision,omitempty"`
+	TestsPath          string     `json:"testsPath,omitempty"`
+	TestsExplicit      bool       `json:"testsExplicit,omitempty"`
+	CachedAgent        string     `json:"cachedAgent"`
+	CachedTests        string     `json:"cachedTests,omitempty"`
+	Provider           string     `json:"provider"`
+	Model              string     `json:"model"`
+	ToolConfigRevision string     `json:"toolConfigRevision,omitempty"`
+	ToolPlanRevision   string     `json:"toolPlanRevision,omitempty"`
+	ToolBackend        string     `json:"toolBackend,omitempty"`
+	Started            time.Time  `json:"started"`
+	Stopped            *time.Time `json:"stopped,omitempty"`
+	State              string     `json:"state"`
+	Primary            bool       `json:"primary,omitempty"`
+	Ready              bool       `json:"ready,omitempty"`
+	Sessions           int        `json:"sessions,omitempty"`
+	LastActivity       *time.Time `json:"lastActivity,omitempty"`
+	LastError          string     `json:"lastError,omitempty"`
 }
 
 type LocalAgentSession struct {
@@ -105,8 +109,9 @@ const (
 )
 
 type LocalAgentActivationOptions struct {
-	Mode LocalAgentActivationMode
-	Name string
+	Mode     LocalAgentActivationMode
+	Name     string
+	ToolPlan *residenttools.Plan
 }
 
 // LocalAgentDriftError reports an active generation whose immutable snapshot or
@@ -469,6 +474,15 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 	if options.Mode != LocalAgentActivationNew && options.Name != "" {
 		return LocalAgentInstance{}, false, errors.New("a runtime name is valid only for a new parallel instance")
 	}
+	toolConfigRevision, toolPlanRevision, toolBackend := "", "", ""
+	if len(pair.Agent.Tools) > 0 {
+		if options.ToolPlan == nil || !validDigest(options.ToolPlan.ConfigRevision()) || !validDigest(options.ToolPlan.Revision()) || options.ToolPlan.Backend != residenttools.BoundedProcess {
+			return LocalAgentInstance{}, false, errors.New("resident local agent tools require a frozen broker plan")
+		}
+		toolConfigRevision, toolPlanRevision, toolBackend = options.ToolPlan.ConfigRevision(), options.ToolPlan.Revision(), options.ToolPlan.Backend
+	} else if options.ToolPlan != nil {
+		return LocalAgentInstance{}, false, errors.New("tool-free resident local agent cannot carry a broker plan")
+	}
 	id := LocalAgentID(pair.AgentPath)
 	dir, path, err := localAgentInstanceDirectory(ctx, id, true)
 	if err != nil {
@@ -499,7 +513,7 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 			if options.Mode == LocalAgentActivationNormal {
 				var crashed *LocalAgentInstance
 				for _, current := range active {
-					if current.SnapshotRevision == pair.SnapshotRevision && current.Provider == provider && current.Model == model {
+					if current.SnapshotRevision == pair.SnapshotRevision && current.Provider == provider && current.Model == model && current.ToolConfigRevision == toolConfigRevision && current.ToolPlanRevision == toolPlanRevision && current.ToolBackend == toolBackend {
 						if current.State == "running" {
 							result = current
 							return nil
@@ -632,6 +646,7 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 				AgentRevision: pair.Agent.Revision, SnapshotRevision: pair.SnapshotRevision, TestsState: pair.Tests.State, TestsRevision: pair.Tests.Revision,
 				TestsPath: pair.Tests.Selection.Path, TestsExplicit: pair.Tests.Selection.Explicit, CachedAgent: agent, CachedTests: tests,
 				Provider: provider, Model: model, Started: time.Now().UTC(), State: "active"}
+			result.ToolConfigRevision, result.ToolPlanRevision, result.ToolBackend = toolConfigRevision, toolPlanRevision, toolBackend
 			raw, _ := json.Marshal(result)
 			if err := publishPrivateBytes(ctx, dir, "start-"+event+".json", raw); err != nil {
 				return err
@@ -645,7 +660,7 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 		if !admitted {
 			return nil
 		}
-		if err := startLocalAgentWorker(ctx, executable, result); err != nil {
+		if err := startLocalAgentWorker(ctx, executable, result, options.ToolPlan); err != nil {
 			_ = writeLocalAgentStop(context.Background(), dir, event, result.Started)
 			return err
 		}
@@ -839,9 +854,10 @@ func readInstanceEvents(ctx context.Context, dir *fileaccess.Directory, dirPath 
 func validLocalAgentRecord(record LocalAgentInstance, dir string) bool {
 	digest := strings.TrimPrefix(record.SnapshotRevision, "sha256:")
 	validTests := record.TestsState == "inline" && record.CachedTests == "" && record.TestsPath != "" && !record.TestsExplicit && record.TestsRevision == record.AgentRevision || record.TestsState == "absent" && record.CachedTests == "" && record.TestsPath != "" && !record.TestsExplicit && record.TestsRevision == "" || record.TestsState == "none" && record.CachedTests == "" && record.TestsPath == "" && !record.TestsExplicit && record.TestsRevision == "" || record.TestsState == "external" && record.CachedTests != "" && record.TestsPath != "" && validDigest(record.TestsRevision)
+	validTools := record.ToolConfigRevision == "" && record.ToolPlanRevision == "" && record.ToolBackend == "" || validDigest(record.ToolConfigRevision) && validDigest(record.ToolPlanRevision) && record.ToolBackend == residenttools.BoundedProcess
 	return record.SchemaVersion == localAgentSchema && validHexValue(record.EventID, 24) && record.InstanceID == "li-"+record.EventID && record.Sequence > 0 && !record.Started.IsZero() && record.Stopped == nil && validLocalAgentID(record.ID) && validLocalAgentName(record.Name) && record.AuthoredName != "" && filepath.Base(dir) == record.ID && LocalAgentID(record.Source) == record.ID && validDigest(record.AgentRevision) && validDigest(record.SnapshotRevision) && validTests &&
 		record.CachedAgent == filepath.Join(dir, "snapshot-"+digest+".agent.md") && (record.CachedTests == "" || record.CachedTests == filepath.Join(dir, "snapshot-"+digest+".agent.test.md")) &&
-		(record.TestsRevision == "" || validDigest(record.TestsRevision)) && (record.Provider == "fake" || record.Provider == "copilot") && agentfile.ValidModel(record.Model) && (record.Provider == "fake") == (record.Model == "fake") && record.State == "active"
+		(record.TestsRevision == "" || validDigest(record.TestsRevision)) && validTools && (record.Provider == "fake" || record.Provider == "copilot") && agentfile.ValidModel(record.Model) && (record.Provider == "fake") == (record.Model == "fake") && record.State == "active"
 }
 
 func projectLocalAgentRecoveryNames(rows []LocalAgentInstance) {
@@ -1111,6 +1127,9 @@ func LoadLocalAgentPair(ctx context.Context, record LocalAgentInstance) (*agentf
 	pair, err := agentfile.ComposePair(record.Source, agent, selection, testsRaw, present)
 	if err != nil || pair.SnapshotRevision != record.SnapshotRevision || pair.Tests.State != record.TestsState || pair.Tests.Revision != record.TestsRevision {
 		return nil, errors.New("local agent cached snapshot is invalid")
+	}
+	if (len(pair.Agent.Tools) == 0) != (record.ToolConfigRevision == "" && record.ToolPlanRevision == "" && record.ToolBackend == "") {
+		return nil, errors.New("local agent cached tool snapshot is invalid")
 	}
 	return pair, nil
 }

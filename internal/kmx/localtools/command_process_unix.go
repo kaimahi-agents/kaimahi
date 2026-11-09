@@ -61,9 +61,19 @@ func runCommandAfterStart(ctx context.Context, cfg CommandConfig, check func(...
 	checkIdentity := func() bool {
 		commandInfo, commandErr := os.Stat(cfg.Command)
 		dirInfo, dirErr := os.Stat(cfg.Dir)
-		return commandErr == nil && dirErr == nil && cfg.commandInfo != nil && cfg.dirInfo != nil && os.SameFile(cfg.commandInfo, commandInfo) && os.SameFile(cfg.dirInfo, dirInfo) && commandInfo.Mode().IsRegular() && commandInfo.Mode().Perm()&0111 != 0 && dirInfo.IsDir()
+		if commandErr != nil || dirErr != nil || cfg.commandInfo == nil || cfg.dirInfo == nil || !os.SameFile(cfg.commandInfo, commandInfo) || !os.SameFile(cfg.dirInfo, dirInfo) || !commandInfo.Mode().IsRegular() || commandInfo.Mode().Perm()&0111 == 0 || !dirInfo.IsDir() {
+			return false
+		}
+		if cfg.ExecutableDigest != "" {
+			digest, err := commandExecutableDigestContext(ctx, cfg.Command)
+			return err == nil && digest == cfg.ExecutableDigest
+		}
+		return true
 	}
 	if !checkIdentity() {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		return nil, ErrCommand
 	}
 	cmd := exec.Command(cfg.Command, cfg.Args...)

@@ -4,7 +4,9 @@ package app
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -17,6 +19,8 @@ import (
 	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/residenttools"
 )
 
 func residentAgentPair(t *testing.T) *agentfile.Pair {
@@ -141,6 +145,159 @@ func TestLocalAgentResidentSessionInvokeStop(t *testing.T) {
 	if err := PingLocalAgent(t.Context(), record); err == nil {
 		t.Fatal("stopped worker still answered")
 	}
+}
+
+func TestResidentCommandToolRunsThroughBroker(t *testing.T) {
+	home := t.TempDir()
+	if err := os.Chmod(home, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KMX_HOME", home)
+	t.Setenv("RESIDENT_TOOL_SECRET", "must-not-reach-broker-command")
+	dir := t.TempDir()
+	source := filepath.Join(dir, "resident.agent.md")
+	command := filepath.Join(dir, "command")
+	raw := []byte("---\nname: resident\ndescription: resident tool test\nmodel: fake\ntools: [check]\n---\nCall the tool `check`. Reply with exactly `tool complete`.\n")
+	if err := os.WriteFile(source, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	commandSource := "#!/bin/sh\nexec " + shellQuote(os.Args[0]) + " -test.run=^TestResidentCommandToolHelper$ -- resident-tool-helper\n"
+	if err := os.WriteFile(command, []byte(commandSource), 0700); err != nil {
+		t.Fatal(err)
+	}
+	config := fmt.Sprintf("tools: {check: Enabled}\ncommandTools:\n  check:\n    command: %q\n    args: []\n", command)
+	if err := os.WriteFile(filepath.Join(dir, "kmx.yaml"), []byte(config), 0600); err != nil {
+		t.Fatal(err)
+	}
+	pair, err := agentfile.LoadPair(source, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	commands, err := localtools.FreezeCommandPlan(t.Context(), source, pair.Agent.Tools)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := &residenttools.Plan{Backend: residenttools.BoundedProcess, Commands: commands}
+	record, created, err := ActivateLocalAgentWithOptions(t.Context(), "", pair, "fake", "", "fake", LocalAgentActivationOptions{Mode: LocalAgentActivationNormal, ToolPlan: plan})
+	if err != nil || !created || record.ToolBackend != residenttools.BoundedProcess || record.ToolConfigRevision != commands.ConfigRevision || record.ToolPlanRevision != commands.Revision {
+		t.Fatalf("record=%+v created=%v err=%v", record, created, err)
+	}
+	defer StopLocalAgent(t.Context(), record.ID)
+	session, err := OpenLocalAgentSession(t.Context(), record.ID, "tools")
+	if err != nil {
+		t.Fatal(err)
+	}
+	answer, err := InvokeLocalAgent(t.Context(), record.ID, session.ID, "run the fixed check")
+	if err != nil || answer != "tool complete" {
+		t.Fatalf("answer=%q err=%v", answer, err)
+	}
+	answer, err = InvokeLocalAgent(t.Context(), record.ID, session.ID, "run it again")
+	if err != nil || answer != "tool complete" {
+		t.Fatalf("follow-up answer=%q err=%v", answer, err)
+	}
+	if err := os.WriteFile(command, []byte(commandSource+"# changed\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	changedCommands, err := localtools.FreezeCommandPlan(t.Context(), source, pair.Agent.Tools)
+	if err != nil || changedCommands.Revision == commands.Revision {
+		t.Fatalf("changed command plan=%+v err=%v", changedCommands, err)
+	}
+	changed := &residenttools.Plan{Backend: residenttools.BoundedProcess, Commands: changedCommands}
+	_, _, err = ActivateLocalAgentWithOptions(t.Context(), "", pair, "fake", "", "fake", LocalAgentActivationOptions{Mode: LocalAgentActivationNormal, ToolPlan: changed})
+	var drift *LocalAgentDriftError
+	if !errors.As(err, &drift) {
+		t.Fatalf("tool configuration drift was not refused: %v", err)
+	}
+}
+
+func TestResidentCommandToolCancellationKeepsBrokerUsable(t *testing.T) {
+	home := t.TempDir()
+	if err := os.Chmod(home, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KMX_HOME", home)
+	dir := t.TempDir()
+	source := filepath.Join(dir, "resident.agent.md")
+	command := filepath.Join(dir, "command")
+	if err := os.WriteFile(source, []byte("---\nname: resident\nmodel: fake\ntools: [check]\n---\nCall the tool `check`. Reply with exactly `tool complete`.\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(dir, "started")
+	commandSource := "#!/bin/sh\nexec " + shellQuote(os.Args[0]) + " -test.run=^TestResidentCommandToolHelper$ -- resident-tool-slow " + shellQuote(marker) + "\n"
+	if err := os.WriteFile(command, []byte(commandSource), 0700); err != nil {
+		t.Fatal(err)
+	}
+	config := fmt.Sprintf("tools: {check: Enabled}\ncommandTools:\n  check:\n    command: %q\n    args: []\n", command)
+	if err := os.WriteFile(filepath.Join(dir, "kmx.yaml"), []byte(config), 0600); err != nil {
+		t.Fatal(err)
+	}
+	pair, err := agentfile.LoadPair(source, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	commands, err := localtools.FreezeCommandPlan(t.Context(), source, pair.Agent.Tools)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := &residenttools.Plan{Backend: residenttools.BoundedProcess, Commands: commands}
+	record, _, err := ActivateLocalAgentWithOptions(t.Context(), "", pair, "fake", "", "fake", LocalAgentActivationOptions{Mode: LocalAgentActivationNormal, ToolPlan: plan})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer StopLocalAgent(t.Context(), record.ID)
+	session, err := OpenLocalAgentSession(t.Context(), record.ID, "cancel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	result := make(chan error, 1)
+	go func() {
+		_, invokeErr := InvokeLocalAgent(ctx, record.ID, session.ID, "start slow command")
+		result <- invokeErr
+	}()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if _, statErr := os.Stat(marker); statErr == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			cancel()
+			t.Fatal("broker command did not start")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	if err := <-result; !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled call err=%v", err)
+	}
+	answer, err := InvokeLocalAgent(t.Context(), record.ID, session.ID, "retry after observed cancellation")
+	if err != nil || answer != "tool complete" {
+		t.Fatalf("broker unusable after cancellation: answer=%q err=%v", answer, err)
+	}
+}
+
+func TestResidentCommandToolHelper(t *testing.T) {
+	for i, value := range os.Args {
+		if value == "resident-tool-helper" {
+			if os.Getenv("RESIDENT_TOOL_SECRET") != "" {
+				t.Fatal("broker command inherited ambient environment")
+			}
+			fmt.Fprint(os.Stdout, "broker command completed")
+			return
+		}
+		if value == "resident-tool-slow" && i+1 < len(os.Args) {
+			marker := os.Args[i+1]
+			if _, err := os.Stat(marker); errors.Is(err, os.ErrNotExist) {
+				if err := os.WriteFile(marker, []byte("started"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				time.Sleep(30 * time.Second)
+			}
+			fmt.Fprint(os.Stdout, "broker command completed")
+			return
+		}
+	}
+	t.Skip("helper process only")
 }
 
 func TestLocalAgentResidentCrashObserved(t *testing.T) {

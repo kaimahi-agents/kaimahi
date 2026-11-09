@@ -218,6 +218,17 @@ empty tests do not pass Test, and bare `--tests`/`--case` require an agent FILE.
 `kmx test FILE --check` validates the selected pair and emits metadata without
 provider, model, tool, journal or history access. Test never targets an instance;
 it always evaluates current checked source.
+Resident Run supports only declared Enabled fixed `commandTools` from the exact
+agent-folder `kmx.yaml`; MCP servers, disabled/missing mappings and command
+environment references refuse before activation. A separate sibling broker owns
+the executable and launches one fixed-argv process per call. The model worker sees
+only typed calls/results. `kmx list -o json` reports `toolConfigRevision`,
+executable-bound `toolPlanRevision`, and the
+actual `toolBackend`; the initial `bounded-process` backend has explicit empty
+environment, executable rechecks, output bounds and process-group cleanup but is not a filesystem,
+network or operating-system sandbox. Tool config changes require `--upgrade` or a
+new named generation. The broker boundary admits a future container backend
+without making containers mandatory for local Markdown agents.
 Without input, resident Run starts/reuses the agent and sends no turn;
 `kmx run FILE --prompt "input"` creates a resident session and sends that input. Test checks
 the file's saved examples in authored order and accepts no ad-hoc input. Use

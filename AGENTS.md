@@ -73,7 +73,13 @@ invalid review as clean.
   Owner-only snapshot cache retains the exact authored agent/tests bytes and has
   the same cleartext privacy boundary as preview journals. Lifecycle records
   retain no credentials or tool processes; each turn acquires fresh inference
-  access. Native
+  access. Declared Enabled fixed `commandTools` may run only through the separate
+  credential-free resident tool broker. The initial `bounded-process` backend is
+  explicit empty-environment guarded execution, not filesystem/network/OS
+  sandboxing; record its actual backend, exact config revision and executable-
+  bound plan revision. MCP,
+  disabled/missing mappings and command environment references remain refused.
+  Tool config drift requires upgrade or a new generation. Native
   Windows persistence/list/stop remain deferred.
   Stable `md-...` identity follows the canonical source; each worker generation
   has an explicit random `li-...` instance identity, unique active runtime name,

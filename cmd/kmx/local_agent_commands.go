@@ -46,25 +46,28 @@ func newLocalAgentListCommand(state *commandState) *cobra.Command {
 					Agents        any    `json:"agents"`
 				}
 				type row struct {
-					ID               string     `json:"id"`
-					AgentID          string     `json:"agentId"`
-					InstanceID       string     `json:"instanceId"`
-					Generation       uint64     `json:"generation"`
-					Name             string     `json:"name"`
-					State            string     `json:"state"`
-					Provider         string     `json:"provider,omitempty"`
-					Model            string     `json:"model,omitempty"`
-					SnapshotRevision string     `json:"snapshotRevision"`
-					Started          time.Time  `json:"started"`
-					Stopped          *time.Time `json:"stopped,omitempty"`
-					Ready            bool       `json:"ready"`
-					Sessions         int        `json:"sessions"`
-					LastActivity     *time.Time `json:"lastActivity,omitempty"`
-					LastError        string     `json:"lastError,omitempty"`
+					ID                 string     `json:"id"`
+					AgentID            string     `json:"agentId"`
+					InstanceID         string     `json:"instanceId"`
+					Generation         uint64     `json:"generation"`
+					Name               string     `json:"name"`
+					State              string     `json:"state"`
+					Provider           string     `json:"provider,omitempty"`
+					Model              string     `json:"model,omitempty"`
+					SnapshotRevision   string     `json:"snapshotRevision"`
+					ToolConfigRevision string     `json:"toolConfigRevision,omitempty"`
+					ToolPlanRevision   string     `json:"toolPlanRevision,omitempty"`
+					ToolBackend        string     `json:"toolBackend,omitempty"`
+					Started            time.Time  `json:"started"`
+					Stopped            *time.Time `json:"stopped,omitempty"`
+					Ready              bool       `json:"ready"`
+					Sessions           int        `json:"sessions"`
+					LastActivity       *time.Time `json:"lastActivity,omitempty"`
+					LastError          string     `json:"lastError,omitempty"`
 				}
 				projected := make([]row, 0, len(rows))
 				for _, item := range rows {
-					projected = append(projected, row{ID: item.ID, AgentID: item.ID, InstanceID: item.InstanceID, Generation: item.Sequence, Name: item.Name, State: item.State, Provider: item.Provider, Model: item.Model, SnapshotRevision: item.SnapshotRevision, Started: item.Started, Stopped: item.Stopped, Ready: item.Ready, Sessions: item.Sessions, LastActivity: item.LastActivity, LastError: item.LastError})
+					projected = append(projected, row{ID: item.ID, AgentID: item.ID, InstanceID: item.InstanceID, Generation: item.Sequence, Name: item.Name, State: item.State, Provider: item.Provider, Model: item.Model, SnapshotRevision: item.SnapshotRevision, ToolConfigRevision: item.ToolConfigRevision, ToolPlanRevision: item.ToolPlanRevision, ToolBackend: item.ToolBackend, Started: item.Started, Stopped: item.Stopped, Ready: item.Ready, Sessions: item.Sessions, LastActivity: item.LastActivity, LastError: item.LastError})
 				}
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(envelope{SchemaVersion: 1, Kind: "kmx.local-agent-inventory", Scope: "local", Agents: projected})
 			}
@@ -79,6 +82,9 @@ func newLocalAgentListCommand(state *commandState) *cobra.Command {
 				fmt.Fprintf(cmd.OutOrStdout(), "%-13s %-14s %-3d %-20s %-9s %-5t %-8d %-24s %s\n", strings.TrimPrefix(row.ID, "md-")[:12], strings.TrimPrefix(row.InstanceID, "li-")[:12], row.Sequence, row.Name, row.State, row.Ready, row.Sessions, model, age)
 				if row.LastActivity != nil {
 					fmt.Fprintln(cmd.OutOrStdout(), "  Last activity:", row.LastActivity.Format(time.RFC3339))
+				}
+				if row.ToolBackend != "" {
+					fmt.Fprintln(cmd.OutOrStdout(), "  Tools:", row.ToolBackend, "· config", row.ToolConfigRevision, "· plan", row.ToolPlanRevision)
 				}
 				if row.LastError != "" {
 					fmt.Fprintln(cmd.OutOrStdout(), "  Warning:", row.LastError)

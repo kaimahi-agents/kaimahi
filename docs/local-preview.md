@@ -205,14 +205,29 @@ NAME`. Upgrade starts and readies the replacement, promotes it, then cancels and
 sessions and records their workers stopped. A failed replacement leaves the old
 generation active. Chat and stop accept unique names or instance IDs; a stable
 agent ID is rejected while multiple active generations make it ambiguous.
-Resident agents are tool-free in this first slice; one-shot Run/Test retain fixed
-command tools. `kmx chat NAME` creates or resumes local sessions, `kmx list` shows
+Resident agents may use declared Enabled fixed `commandTools` from the agent
+folder's exact `kmx.yaml`. Activation freezes both the config revision and
+resolved executable content identities, and refuses
+disabled, missing, MCP-backed or environment-referencing tools. The model worker
+receives only checked tool definitions and a typed channel to a separate sibling
+broker process; configured executable paths and fixed argv never enter
+model-worker state, history or provider requests. Each call uses the existing
+empty-input command contract, explicit empty environment, bounded output and
+owned process-group cleanup. The reported `bounded-process` backend is guarded
+host execution, **not** filesystem, network or OS sandboxing. The broker protocol
+records its actual backend so a container backend can later add mounts, network
+and resource containment without moving command authority into the model worker.
+Configuration or executable drift requires the same explicit upgrade/new-generation choice as
+source or model drift. One-shot Run/Test retain their existing command and MCP
+tool support. `kmx chat NAME` creates or resumes local sessions, `kmx list` shows
 process/readiness/session state, `chat --new` prints a resumable session ID, and
 `kmx stop NAME_OR_ID` ends the worker. Editing
 source does not update a running agent: stop it before starting the new snapshot.
 Test always evaluates the current checked source pair; `test FILE
 --check` validates that pair and reports identity metadata without model or tool
-execution. Lifecycle history is append-only and bounded to 1,024 private entries
+execution. Live resident tool effects remain effects even when answer delivery or
+the final session commit acknowledgement is lost; do not retry an uncertain call
+without inspecting external state. Lifecycle history is append-only and bounded to 1,024 private entries
 per source; reaching the bound refuses further lifecycle operations without
 automatic deletion. Native Windows refuses persistence, local List and Stop; use
 WSL.
