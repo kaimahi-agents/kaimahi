@@ -36,6 +36,44 @@ func executeCommandTool(ctx context.Context, host *Host) (api.ToolResult, error)
 	return host.Execute(ctx, controller.ToolCallContext{SessionUID: "session"}, api.ToolCall{ID: "call", Tool: "check", Args: map[string]any{}, IdempotencyKey: "once", Mediation: api.MediationControllerMediated})
 }
 
+func commandPlanFixture(t *testing.T, cfg CommandConfig) CommandPlan {
+	t.Helper()
+	commandInfo, err := os.Stat(cfg.Command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dirInfo, err := os.Stat(cfg.Dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ExecutableID, _ = commandFileIdentity(commandInfo)
+	cfg.DirectoryID, _ = commandFileIdentity(dirInfo)
+	cfg.ExecutableDigest, err = commandExecutableDigest(cfg.Command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return CommandPlan{ConfigRevision: "sha256:" + strings.Repeat("a", 64), Revision: "sha256:" + strings.Repeat("b", 64), Commands: []CommandConfig{cfg}}
+}
+
+func residentCommandFixture(t *testing.T, mode string) CommandConfig {
+	t.Helper()
+	program, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	wrapper := filepath.Join(dir, "command")
+	source := "#!/bin/sh\nGO_WANT_COMMAND_HELPER=enabled exec " + shellCommandQuote(program) + " \"$@\"\n"
+	if err := os.WriteFile(wrapper, []byte(source), 0700); err != nil {
+		t.Fatal(err)
+	}
+	return CommandConfig{Name: "check", Command: wrapper, Args: []string{"-test.run=^TestCommandHelperProcess$", "--", mode}, Dir: dir, Env: map[string]string{}}
+}
+
+func shellCommandQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
+}
+
 func TestCommandHostFixedEnvironmentAndResults(t *testing.T) {
 	t.Setenv("COMMAND_AMBIENT_CANARY", "must-not-inherit")
 	for _, mode := range []string{"success", "failure"} {
@@ -60,6 +98,56 @@ func TestCommandHostFixedEnvironmentAndResults(t *testing.T) {
 				t.Fatalf("result=%+v", result)
 			}
 		})
+	}
+}
+
+func TestCommandHostConstrainedArgumentsCannotEscapeArgv(t *testing.T) {
+	cfg := commandFixture(t, "arguments")
+	cfg.Args = nil
+	cfg.ArgumentPlan = []CommandArgument{{Literal: "-test.run=^TestCommandHelperProcess$"}, {Literal: "--"}, {Literal: "arguments"}, {Parameter: "target"}, {Parameter: "mode"}, {Parameter: "count"}}
+	minimum, maximum := int64(1), int64(3)
+	cfg.Parameters = map[string]CommandParameter{
+		"target": {Type: "path", Description: "Relative target", MaxLength: 64},
+		"mode":   {Type: "string", Description: "Mode", Pattern: "^[a-z]{1,8}$", MaxLength: 8},
+		"count":  {Type: "integer", Description: "Count", Minimum: &minimum, Maximum: &maximum},
+	}
+	host, err := NewCommandHost([]CommandConfig{cfg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(args map[string]any) (api.ToolResult, error) {
+		return host.Execute(t.Context(), controller.ToolCallContext{SessionUID: "session"}, api.ToolCall{ID: "call", Tool: "check", Args: args, IdempotencyKey: "once", Mediation: api.MediationControllerMediated})
+	}
+	result, err := call(map[string]any{"target": "sub/file.txt", "mode": "read", "count": float64(2)})
+	if err != nil || result.Output["stdout"] != "sub/file.txt|read|2\n" {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	for _, args := range []map[string]any{
+		{"target": "../secret", "mode": "read", "count": float64(2)},
+		{"target": "sub/file", "mode": "-flag", "count": float64(2)},
+		{"target": "sub/file", "mode": "read;rm", "count": float64(2)},
+		{"target": "sub/file", "mode": "read", "count": float64(4)},
+		{"target": "sub/file", "mode": "read", "count": float64(2), "extra": "x"},
+	} {
+		if result, err := call(args); err == nil || result.Output != nil {
+			t.Fatalf("escaped constrained args accepted: %+v result=%+v err=%v", args, result, err)
+		}
+	}
+}
+
+func TestCommandActivationChecksVersionAndStatus(t *testing.T) {
+	cfg := residentCommandFixture(t, "success")
+	cfg.Checks = []CommandCheck{
+		{Name: "compatibility", Args: []string{"-test.run=^TestCommandHelperProcess$", "--", "version"}, TimeoutMilliseconds: 5000, ExitCode: 0, StdoutPattern: `^tool version 1\.[0-9]+\.[0-9]+$`},
+		{Name: "readiness", Args: []string{"-test.run=^TestCommandHelperProcess$", "--", "ready"}, TimeoutMilliseconds: 5000, ExitCode: 0, StdoutPattern: `^ready$`},
+	}
+	plan := commandPlanFixture(t, cfg)
+	if err := RunCommandChecks(t.Context(), plan); err != nil {
+		t.Fatal(err)
+	}
+	plan.Commands[0].Checks[1].StdoutPattern = `^not-ready$`
+	if err := RunCommandChecks(t.Context(), plan); err == nil {
+		t.Fatal("mismatched readiness output passed")
 	}
 }
 
@@ -315,6 +403,15 @@ func TestCommandHelperProcess(t *testing.T) {
 		}
 		_, _ = os.Stdout.WriteString(strings.Repeat(args[2], commandOutputLimit/2))
 		_, _ = os.Stderr.WriteString(strings.Repeat(args[2], commandOutputLimit/2))
+	case "arguments":
+		if len(args) != 5 {
+			os.Exit(92)
+		}
+		_, _ = fmt.Fprintf(os.Stdout, "%s|%s|%s\n", args[2], args[3], args[4])
+	case "version":
+		_, _ = os.Stdout.WriteString("tool version 1.2.3\n")
+	case "ready":
+		_, _ = os.Stdout.WriteString("ready\n")
 	case "sleep":
 		_, _ = os.Stdout.WriteString("partial")
 		time.Sleep(time.Minute)

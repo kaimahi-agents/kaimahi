@@ -28,12 +28,15 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/localpreview"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess/copilot"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/residenttools"
 )
 
 const (
 	localAgentWorkerEnv   = "KMX_LOCAL_AGENT_WORKER"
+	localAgentToolsEnv    = "KMX_LOCAL_AGENT_TOOLS"
 	localAgentIPCLimit    = 1 << 20
 	localAgentMaxSessions = 64
 )
@@ -79,6 +82,8 @@ type residentWorker struct {
 	invocations           map[string]context.CancelFunc
 	explicitCredential    string
 	explicitCredentialSet bool
+	toolClient            *residenttools.Client
+	toolHost              *localtools.Host
 }
 
 type localAgentCredentialSnapshot struct {
@@ -87,6 +92,13 @@ type localAgentCredentialSnapshot struct {
 }
 
 func init() {
+	if residenttools.IsBrokerProcess() {
+		err := residenttools.Run(os.NewFile(3, "broker-channel"), os.NewFile(4, "broker-config"), os.NewFile(5, "broker-readiness"))
+		if err != nil {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
 	if os.Getenv(localAgentWorkerEnv) != "1" {
 		return
 	}
@@ -100,7 +112,11 @@ func init() {
 	} else {
 		os.Exit(1)
 	}
-	err := runLocalAgentWorker(context.Background(), os.Getenv("KMX_LOCAL_AGENT_ID"), os.Getenv("KMX_LOCAL_AGENT_EVENT"), credential, os.NewFile(3, "readiness"))
+	var brokerFile *os.File
+	if os.Getenv(localAgentToolsEnv) == "1" {
+		brokerFile = os.NewFile(5, "tool-broker")
+	}
+	err := runLocalAgentWorker(context.Background(), os.Getenv("KMX_LOCAL_AGENT_ID"), os.Getenv("KMX_LOCAL_AGENT_EVENT"), credential, os.NewFile(3, "readiness"), brokerFile)
 	if err != nil {
 		os.Exit(1)
 	}
@@ -166,7 +182,10 @@ func ensureLocalAgentRuntimeDirectory(path string) error {
 	return nil
 }
 
-func startLocalAgentWorker(ctx context.Context, executable string, record LocalAgentInstance) error {
+func startLocalAgentWorker(ctx context.Context, executable string, record LocalAgentInstance, toolPlan *residenttools.Plan) error {
+	if (toolPlan != nil && (toolPlan.ConfigRevision() != record.ToolConfigRevision || toolPlan.Revision() != record.ToolPlanRevision || toolPlan.ContractDigest() != record.ToolContractDigest || toolPlan.BindingDigest() != record.ToolBindingDigest || toolPlan.Binding.AgentRuntime.Backend != record.AgentBackend || toolPlan.Backend != record.ToolBackend)) || (toolPlan == nil && (record.ToolConfigRevision != "" || record.ToolPlanRevision != "" || record.ToolContractDigest != "" || record.ToolBindingDigest != "" || record.AgentBackend != "" || record.ToolBackend != "")) {
+		return errors.New("local agent tool broker plan does not match the admitted instance")
+	}
 	if executable == "" {
 		var err error
 		executable, err = os.Executable()
@@ -179,6 +198,15 @@ func startLocalAgentWorker(ctx context.Context, executable string, record LocalA
 		return errors.New("local agent readiness pipe is unavailable")
 	}
 	defer readiness.Close()
+	var broker *os.File
+	if toolPlan != nil {
+		broker, err = residenttools.Start(ctx, executable, *toolPlan)
+		if err != nil {
+			_ = child.Close()
+			return err
+		}
+		defer broker.Close()
+	}
 	cmd := exec.Command(executable)
 	cmd.Env = localAgentWorkerEnvironment(record)
 	credentialRead, credentialWrite, err := os.Pipe()
@@ -188,6 +216,9 @@ func startLocalAgentWorker(ctx context.Context, executable string, record LocalA
 	}
 	defer credentialRead.Close()
 	cmd.ExtraFiles = []*os.File{child, credentialRead}
+	if broker != nil {
+		cmd.ExtraFiles = append(cmd.ExtraFiles, broker)
+	}
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
@@ -243,7 +274,7 @@ func startLocalAgentWorker(ctx context.Context, executable string, record LocalA
 	}
 }
 
-func runLocalAgentWorker(ctx context.Context, id, event string, credential localAgentCredentialSnapshot, readiness *os.File) error {
+func runLocalAgentWorker(ctx context.Context, id, event string, credential localAgentCredentialSnapshot, readiness, brokerFile *os.File) error {
 	ready := func(response localAgentIPCResponse) {
 		_ = writeLocalAgentJSON(readiness, response)
 		_ = readiness.Close()
@@ -276,7 +307,7 @@ func runLocalAgentWorker(ctx context.Context, id, event string, credential local
 		time.Sleep(10 * time.Millisecond)
 	}
 	pair, err := LoadLocalAgentPair(ctx, record)
-	if err != nil || len(pair.Agent.Tools) != 0 {
+	if err != nil {
 		ready(localAgentIPCResponse{Error: "cached agent is unavailable"})
 		return errors.New("cached agent is unavailable")
 	}
@@ -306,6 +337,15 @@ func runLocalAgentWorker(ctx context.Context, id, event string, credential local
 		return err
 	}
 	w := &residentWorker{record: record, instructions: pair.Agent.Instructions, listener: listener, started: time.Now().UTC(), sessions: map[string]*residentSession{}, invocations: map[string]context.CancelFunc{}, explicitCredential: credential.Token, explicitCredentialSet: credential.Set}
+	if len(pair.Agent.Tools) > 0 {
+		w.toolClient, w.toolHost, err = residenttools.Attach(brokerFile)
+		if err != nil || !w.toolHost.Matches(pair.Agent.Tools) {
+			ready(localAgentIPCResponse{Error: "tool broker is unavailable"})
+			return errors.New("tool broker is unavailable")
+		}
+	} else if brokerFile != nil {
+		_ = brokerFile.Close()
+	}
 	ready(localAgentIPCResponse{OK: true, EventID: event})
 	for {
 		conn, err := listener.Accept()
@@ -331,7 +371,11 @@ func localAgentWorkerEnvironment(record LocalAgentInstance) []string {
 			env = append(env, value)
 		}
 	}
-	return append(env, localAgentWorkerEnv+"=1", "KMX_LOCAL_AGENT_ID="+record.ID, "KMX_LOCAL_AGENT_EVENT="+record.EventID)
+	env = append(env, localAgentWorkerEnv+"=1", "KMX_LOCAL_AGENT_ID="+record.ID, "KMX_LOCAL_AGENT_EVENT="+record.EventID)
+	if record.ToolBackend != "" {
+		env = append(env, localAgentToolsEnv+"=1")
+	}
+	return env
 }
 
 func checkLocalAgentRoute(ctx context.Context, record LocalAgentInstance, credential localAgentCredentialSnapshot) error {
@@ -361,15 +405,20 @@ func (w *residentWorker) serve(conn net.Conn) {
 		w.serveInvoke(conn, request)
 		return
 	}
+	if request.Op == "shutdown" {
+		response := w.shutdown()
+		_ = writeLocalAgentJSON(conn, response)
+		if response.OK {
+			w.mu.Lock()
+			w.closing = true
+			w.mu.Unlock()
+			_ = w.listener.Close()
+		}
+		return
+	}
 	requestCtx := context.Background()
 	response := w.handle(requestCtx, request)
 	_ = writeLocalAgentJSON(conn, response)
-	if request.Op == "shutdown" && response.OK {
-		w.mu.Lock()
-		w.closing = true
-		w.mu.Unlock()
-		_ = w.listener.Close()
-	}
 }
 
 func (w *residentWorker) handle(ctx context.Context, request localAgentIPCRequest) localAgentIPCResponse {
@@ -421,16 +470,27 @@ func (w *residentWorker) handle(ctx context.Context, request localAgentIPCReques
 		s.turn.Lock()
 		s.turn.Unlock()
 		return localAgentIPCResponse{OK: true, EventID: w.record.EventID}
-	case "shutdown":
-		w.mu.Lock()
-		for _, cancel := range w.invocations {
-			cancel()
-		}
-		w.mu.Unlock()
-		return localAgentIPCResponse{OK: true, EventID: w.record.EventID}
 	default:
 		return localAgentIPCResponse{Error: "unsupported operation"}
 	}
+}
+
+func (w *residentWorker) shutdown() localAgentIPCResponse {
+	w.mu.Lock()
+	for _, cancel := range w.invocations {
+		cancel()
+	}
+	client := w.toolClient
+	w.mu.Unlock()
+	if client != nil {
+		if err := client.Close(); err != nil {
+			return localAgentIPCResponse{Error: "tool broker cleanup is incomplete", EventID: w.record.EventID}
+		}
+		w.mu.Lock()
+		w.toolClient, w.toolHost = nil, nil
+		w.mu.Unlock()
+	}
+	return localAgentIPCResponse{OK: true, EventID: w.record.EventID}
 }
 
 func (w *residentWorker) serveInvoke(conn net.Conn, request localAgentIPCRequest) {
@@ -465,7 +525,7 @@ func (w *residentWorker) serveInvoke(conn net.Conn, request localAgentIPCRequest
 		}
 		ackCh <- line
 	}()
-	answer, commit, abort, err := w.prepareInvoke(turnCtx, s, request.Input)
+	answer, commit, abort, err := w.prepareInvoke(turnCtx, s, request.Input, request.InvocationID)
 	if err != nil {
 		_ = writeLocalAgentJSON(conn, localAgentIPCResponse{Error: "invocation failed"})
 		return
@@ -492,7 +552,7 @@ func (w *residentWorker) serveInvoke(conn net.Conn, request localAgentIPCRequest
 	_ = writeLocalAgentJSON(conn, localAgentIPCResponse{OK: true, Phase: "committed", EventID: w.record.EventID})
 }
 
-func (w *residentWorker) prepareInvoke(ctx context.Context, s *residentSession, input string) (string, func(), func(), error) {
+func (w *residentWorker) prepareInvoke(ctx context.Context, s *residentSession, input, invocationID string) (string, func(), func(), error) {
 	s.turn.Lock()
 	release := true
 	defer func() {
@@ -532,7 +592,13 @@ func (w *residentWorker) prepareInvoke(ctx context.Context, s *residentSession, 
 		}
 		transport, check, base = client, access.CheckContent, modelaccess.CopilotEndpoint
 	}
-	answer, err := localpreview.SendConversation(ctx, w.record.Provider, w.record.Model, base, transport, w.instructions, history, input, check)
+	var answer string
+	var err error
+	if w.toolHost == nil {
+		answer, err = localpreview.SendConversation(ctx, w.record.Provider, w.record.Model, base, transport, w.instructions, history, input, check)
+	} else {
+		answer, err = localpreview.SendToolConversation(ctx, w.record.Provider, w.record.Model, base, transport, w.instructions, history, input, s.meta.ID, invocationID, w.toolHost, check)
+	}
 	now = time.Now().UTC()
 	s.mu.Lock()
 	s.meta.Active, s.meta.LastActivity = false, now

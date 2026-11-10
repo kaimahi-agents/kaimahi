@@ -157,7 +157,7 @@ func (s *StdioInvocation) Resolve(ctx context.Context, names []string, settings 
 		if dirResolveErr != nil || relErr != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
 			return nil, ErrServerSelection
 		}
-		cfg := CommandConfig{Name: command.name, Command: command.command, Args: slices.Clone(command.args), Dir: dir, Env: map[string]string{}}
+		cfg := commandConfigFromDefinition(command, dir)
 		if path != "" {
 			cfg.Env["PATH"] = path
 		}
@@ -189,7 +189,7 @@ func (s *StdioInvocation) Resolve(ctx context.Context, names []string, settings 
 		commandVectors = append(commandVectors, append([]string{plan.config.Command}, plan.config.Args...))
 	}
 	for _, command := range commandConfigs {
-		commandVectors = append(commandVectors, append([]string{command.Command}, command.Args...))
+		commandVectors = append(commandVectors, commandStaticValues(command))
 	}
 	for _, argv := range commandVectors {
 		for _, check := range credentialChecks {

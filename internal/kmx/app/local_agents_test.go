@@ -368,7 +368,7 @@ func TestInterruptedUpgradeKeepsInstancesUniquelyRoutable(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = dir.Close()
-	if err := startLocalAgentWorker(t.Context(), "", replacement); err != nil {
+	if err := startLocalAgentWorker(t.Context(), "", replacement, nil); err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = StopLocalAgent(t.Context(), replacement.InstanceID) }()
@@ -446,7 +446,7 @@ func TestPromotedUpgradeRecoveryNameAvoidsParallelInstance(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = dir.Close()
-	if err := startLocalAgentWorker(t.Context(), "", replacement); err != nil {
+	if err := startLocalAgentWorker(t.Context(), "", replacement, nil); err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = StopLocalAgent(t.Context(), replacement.InstanceID) }()
@@ -774,7 +774,7 @@ func TestInterruptedUpgradeRetryPreservesSelectedRuntimeName(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = dir.Close()
-	if err := startLocalAgentWorker(t.Context(), "", interrupted); err != nil {
+	if err := startLocalAgentWorker(t.Context(), "", interrupted, nil); err != nil {
 		t.Fatal(err)
 	}
 	defer func() {

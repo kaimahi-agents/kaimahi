@@ -205,17 +205,57 @@ NAME`. Upgrade starts and readies the replacement, promotes it, then cancels and
 sessions and records their workers stopped. A failed replacement leaves the old
 generation active. Chat and stop accept unique names or instance IDs; a stable
 agent ID is rejected while multiple active generations make it ambiguous.
-Resident agents are tool-free in this first slice; one-shot Run/Test retain fixed
-command tools. `kmx chat NAME` creates or resumes local sessions, `kmx list` shows
+Resident agents may use declared Enabled fixed `commandTools` from the agent
+folder's exact `kmx.yaml`. Activation freezes both the config revision and
+resolved executable content identities, and refuses
+disabled, missing, MCP-backed or environment-referencing tools. The model worker
+receives only checked tool definitions and a typed channel to a separate sibling
+broker process; configured executable paths and fixed argv never enter
+model-worker state, history or provider requests. Each call uses the existing
+empty-input command contract, explicit empty environment, bounded output and
+owned process-group cleanup. The reported `bounded-process` backend is guarded
+host execution, **not** filesystem, network or OS sandboxing. The broker protocol
+records its actual backend so a container backend can later add mounts, network
+and resource containment without moving command authority into the model worker.
+Configuration or executable drift requires the same explicit upgrade/new-generation choice as
+source or model drift. One-shot Run/Test retain their existing command and MCP
+tool support. `kmx chat NAME` creates or resumes local sessions, `kmx list` shows
 process/readiness/session state, `chat --new` prints a resumable session ID, and
 `kmx stop NAME_OR_ID` ends the worker. Editing
 source does not update a running agent: stop it before starting the new snapshot.
 Test always evaluates the current checked source pair; `test FILE
 --check` validates that pair and reports identity metadata without model or tool
-execution. Lifecycle history is append-only and bounded to 1,024 private entries
+execution. Live resident tool effects remain effects even when answer delivery or
+the final session commit acknowledgement is lost; do not retry an uncertain call
+without inspecting external state. Lifecycle history is append-only and bounded to 1,024 private entries
 per source; reaching the bound refuses further lifecycle operations without
 automatic deletion. Native Windows refuses persistence, local List and Stop; use
 WSL.
+
+Resident activation now separates a portable, credential-free tool contract from
+a private local binding. The contract contains the `local-command` provider
+identity, sorted callable names and explicit effect/approval status; it contains
+no command, path, endpoint, credential or backend. The binding names the distinct
+agent and tool runtimes, actual filesystem/network boundary and call budgets.
+Lifecycle state retains only contract, binding, config and complete plan digests.
+Neither the binding nor local execution is AgentSuite evidence, packaged content
+or remote deployment authority.
+
+The implemented binding is `resident-process` + `bounded-process`. It truthfully
+records `host-user` ambient filesystem access and unrestricted outbound network;
+only inbound tool dispatch is isolated to the inherited broker channel. The
+broker admits one concurrent call, at most five model-selected calls per turn,
+64 calls per session and 1,024 calls per instance, with a 30-second call timeout.
+Attempts consume budget even when execution fails or is cancelled. These limits
+control dispatch and resource abuse but do not make host-user execution a
+sandbox. CLI diagnostics disclose both ambient filesystem and network access.
+
+The closed local binding also identifies `apple-container-vm`, `linux-native` and
+`rootless-oci` tool runtimes with declared-mount filesystem policy and either no
+outbound network or brokered HTTPS origins plus request/response budgets. This is
+portable planning groundwork only: runtime admission currently accepts only
+`bounded-process` and never downgrades another requested backend. No container,
+native sandbox, network proxy or credential resolver is claimed by this slice.
 
 MCP
 Run/Test also accept schema version 3 with a checked `sourceVersion` from the
@@ -424,12 +464,14 @@ structure, so args/lists do not break operational config. Aliases, anchors,
 duplicate keys, known credential shapes and existing size bounds still reject;
 only the tool consumer validates launch semantics.
 
-### Fixed command tools in file Run/Test
+### Command tools in file Run/Test
 
 The file CLI can also resolve a declared Enabled tool from `commandTools` in the
-same checked `kmx.yaml`. A command tool has no model-supplied arguments: its
-executable and argument vector are fixed host configuration, and the trusted tool
-schema accepts only an empty object. It is independent of `mcpServers`, so
+same checked `kmx.yaml`. A fixed command keeps its empty-object schema. Optional
+reviewed argument templates may expose typed string, relative-path and bounded
+integer fields; each model value becomes exactly one argv element after JSON
+schema validation and a second host-side full-match/confinement check. There is
+still no shell, concatenation, option interpolation or free-form argv. It is independent of `mcpServers`, so
 `--no-mcp-servers` does not disable commands. Use the existing `tools` state to
 disable one explicitly.
 
@@ -440,7 +482,20 @@ tools:
 commandTools:
   project_check:
     command: /absolute/path/to/go
-    args: [test, ./...]
+    args: [test, {argument: package}]
+    parameters:
+      package:
+        type: path
+        description: Relative package below the agent folder
+        maxLength: 128
+    checks:
+      compatibility:
+        args: [version]
+        timeout: 5s
+        when: activation
+        expect:
+          exitCode: 0
+          stdoutRegex: '^go version go1\.(2[4-9]|[3-9][0-9])\.[0-9]+ .+$'
     workingDirectory: .
     env:
       PRIVATE_MODULE_TOKEN: MODULE_TOKEN # child name: host variable name
@@ -448,7 +503,17 @@ commandTools:
 
 `command` must be an absolute executable. `workingDirectory` defaults to the
 physical agent folder and must remain inside it after symlink resolution. There
-is no shell, interpolation, glob expansion, executable discovery or model input.
+is no shell, interpolation, glob expansion or executable discovery. The first
+argv element must remain literal, so a model cannot choose the command's
+subcommand. Dynamic strings require either one explicit enum or an anchored RE2
+pattern and reject leading `-`; paths must be clean local relative paths without
+`..`, absolute roots or backslashes; integers require reviewed nonnegative bounds.
+These rules prevent argv/shell/path traversal through modeled fields, but a
+command may still interpret an otherwise valid string as its own language. Use
+an enum or a dedicated adapter for sensitive command grammars. Relative-path
+validation is lexical: the bounded-process backend may still follow an authored
+symlink or otherwise use its ambient host-user filesystem authority. Declared
+mount isolation remains a future container/native-backend enforcement boundary.
 Executable and directory identity are rechecked around each launch; as with
 agent-file access generally, concurrent hostile filesystem mutation is outside
 the cooperative guarantee and this is not immutable byte attestation.
@@ -473,6 +538,16 @@ A child that leaves the process group with `setsid` or `setpgid` remains outside
 that guarantee; this is neither sandboxing nor native Windows support. Command
 results, recordings and previews grant no package evidence, Publish or Deploy
 authority.
+
+Optional `compatibility` and `readiness` checks execute before a resident broker
+acknowledges readiness, and the initial hidden `kmx run FILE --check-tools
+[-o text|json]` route runs the same
+checks without model access or starting an agent. Checks use the same frozen
+executable/directory/environment, process cleanup and output/credential bounds as
+calls; only fixed args, a 1–15 second timeout, expected exit code and optional
+anchored stdout regex are accepted. Raw check output never enters model context,
+history, lifecycle state, package content or default diagnostics. A failed
+replacement check leaves the prior resident generation active.
 
 ### Stdio host lifecycle
 

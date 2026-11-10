@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -16,7 +17,9 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/residenttools"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
@@ -24,6 +27,7 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 	var opt app.RunAgentOptions
 	var file fileCommandOptions
 	var once bool
+	var checkTools bool
 	var upgrade, parallel, yes bool
 	var runtimeName string
 	cmd := &cobra.Command{
@@ -44,11 +48,33 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 	cmd.Flags().StringVar(&opt.ResultPort, "result-port", "", "Loopback forward port (chosen automatically)")
 	registerFileCommandFlags(cmd, &file, true)
 	cmd.Flags().BoolVar(&once, "once", false, "Run FILE once without starting a resident agent")
+	cmd.Flags().BoolVar(&checkTools, "check-tools", false, "Run local command compatibility/readiness checks without starting the agent")
+	_ = cmd.Flags().MarkHidden("check-tools")
 	cmd.Flags().BoolVarP(&upgrade, "upgrade", "u", false, "Replace active generations after the new worker is ready")
 	cmd.Flags().BoolVar(&parallel, "new", false, "Start a parallel resident generation")
 	cmd.Flags().StringVar(&runtimeName, "name", "", "Runtime name for --new")
 	cmd.Flags().BoolVar(&yes, "yes", false, "Confirm --upgrade without prompting")
 	cmd.Args = func(cmd *cobra.Command, args []string) error {
+		if checkTools {
+			if len(args) != 1 {
+				return fileUsageError(fmt.Errorf("--check-tools requires one agent FILE"))
+			}
+			if state.contextFlag != "" || cmd.Flags().Changed("container-engine") {
+				return fileUsageError(fmt.Errorf("local tool checks do not use cluster selectors"))
+			}
+			if state.deps.goos == "windows" {
+				return errWindowsOperationUnsupported
+			}
+			for _, name := range []string{"agent", "namespace", "prompt", "prompt-file", "wait", "result-port", "once", "upgrade", "new", "name", "yes", "case", "tests", "model", "provider", "provider-url", "no-content", "verbose", "tool-bindings", "mcp-server", "no-mcp-servers"} {
+				if cmd.Flags().Changed(name) {
+					return fileUsageError(fmt.Errorf("--check-tools conflicts with --%s", name))
+				}
+			}
+			if file.Output != "text" && file.Output != "json" {
+				return fileUsageError(fmt.Errorf("tool check output must be text or json"))
+			}
+			return nil
+		}
 		if upgrade && (parallel || once) {
 			return fileUsageError(fmt.Errorf("--upgrade conflicts with --new and --once"))
 		}
@@ -118,6 +144,9 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 	}
 	liveRun := appRun(state, func(a *app.App) error { return a.RunAgent(opt) })
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if checkTools {
+			return runLocalToolChecks(cmd, args[0], file.Output)
+		}
 		effectiveOnce := once || state.deps.goos == "windows" || !state.deps.residentAgents
 		if len(args) == 1 {
 			file.InputOnly = cmd.Flags().Changed("prompt") || cmd.Flags().Changed("prompt-file")
@@ -152,8 +181,20 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 				}
 				route := fileModelRoute(provider, file.Endpoint)
 				route.Model = model
-				if file.Endpoint != "" || provider != "copilot" && provider != "fake" || !agentfile.ValidModel(model) || secretshapes.Match(model) != nil || route.Validate() != nil || (provider == "fake") != (model == "fake") || len(pair.Agent.Tools) != 0 {
-					return fileUsageError(fmt.Errorf("resident local agents currently require a tool-free fake or Copilot route without a custom endpoint"))
+				if file.Endpoint != "" || provider != "copilot" && provider != "fake" || !agentfile.ValidModel(model) || secretshapes.Match(model) != nil || route.Validate() != nil || (provider == "fake") != (model == "fake") {
+					return fileUsageError(fmt.Errorf("resident local agents require a fake or Copilot route without a custom endpoint"))
+				}
+				var toolPlan *residenttools.Plan
+				if len(pair.Agent.Tools) > 0 {
+					commands, planErr := localtools.FreezeCommandPlan(cmd.Context(), pair.AgentPath, pair.Agent.Tools)
+					if planErr != nil {
+						return fileUsageError(fmt.Errorf("resident tools require enabled fixed commandTools without environment references: %w", planErr))
+					}
+					plan, planErr := residenttools.NewBoundedProcessPlan(commands)
+					if planErr != nil {
+						return fileUsageError(fmt.Errorf("resident tool contract could not be bound: %w", planErr))
+					}
+					toolPlan = &plan
 				}
 				mode := app.LocalAgentActivationNormal
 				if upgrade {
@@ -169,7 +210,7 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 						}
 					}
 				}
-				activation := app.LocalAgentActivationOptions{Mode: mode, Name: runtimeName}
+				activation := app.LocalAgentActivationOptions{Mode: mode, Name: runtimeName, ToolPlan: toolPlan}
 				if upgrade && !yes {
 					rows, readErr := state.deps.readLocalAgents(false)
 					if readErr != nil {
@@ -212,8 +253,16 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 				if instance.LastError != "" {
 					fmt.Fprintln(cmd.ErrOrStderr(), "Warning:", instance.LastError)
 				}
+				if instance.ToolBackend == residenttools.BoundedProcess {
+					fmt.Fprintln(cmd.ErrOrStderr(), "Resident tools: bounded-process guarded host execution (not a sandbox)")
+					fmt.Fprintln(cmd.ErrOrStderr(), "  Filesystem: host-user ambient access · Network: broker-only inbound, unrestricted outbound")
+				}
 				if len(args) == 1 && !cmd.Flags().Changed("prompt") && !cmd.Flags().Changed("prompt-file") {
-					_, err := fmt.Fprintf(cmd.ErrOrStderr(), "%s %s (%s) · snapshot %s\n", verb, instance.Name, instance.ID, instance.SnapshotRevision)
+					tools := ""
+					if instance.ToolBackend != "" {
+						tools = " · tools " + instance.ToolBackend
+					}
+					_, err := fmt.Fprintf(cmd.ErrOrStderr(), "%s %s (%s) · snapshot %s%s\n", verb, instance.Name, instance.ID, instance.SnapshotRevision, tools)
 					return err
 				}
 				session, err := app.OpenLocalAgentSession(cmd.Context(), instance.InstanceID, "run")
@@ -243,6 +292,41 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 		return liveRun(cmd, args)
 	}
 	return cmd
+}
+
+func runLocalToolChecks(cmd *cobra.Command, file, output string) error {
+	pair, err := agentfile.LoadPair(file, "")
+	if err != nil {
+		return err
+	}
+	if len(pair.Agent.Tools) == 0 {
+		return fmt.Errorf("agent declares no tools")
+	}
+	plan, err := localtools.FreezeCommandPlan(cmd.Context(), pair.AgentPath, pair.Agent.Tools)
+	if err != nil {
+		return err
+	}
+	results, err := localtools.CheckCommandPlan(cmd.Context(), plan)
+	if err != nil {
+		return fmt.Errorf("local tool checks failed")
+	}
+	if len(results) == 0 {
+		return fmt.Errorf("local tool binding declares no activation checks")
+	}
+	if output == "json" {
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(struct {
+			SchemaVersion int                             `json:"schemaVersion"`
+			Kind          string                          `json:"kind"`
+			Config        string                          `json:"configRevision"`
+			Checks        []localtools.CommandCheckResult `json:"checks"`
+		}{1, "kmx.local-tool-checks", plan.ConfigRevision, results})
+	}
+	for _, result := range results {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\n", result.Tool, result.Check, result.State); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func promptLocalAgentDrift(in *os.File, out io.Writer, active app.LocalAgentInstance) (app.LocalAgentActivationMode, string, error) {

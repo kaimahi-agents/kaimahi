@@ -5,6 +5,8 @@
 // Invocation-owned adapters resolve selected stdio servers and fixed command tools
 // from that folder. Stdio process groups and SDK sessions close before completion;
 // command calls use fixed argv, an explicit environment and owned group cleanup.
+// Credential-free frozen command plans may cross into the separate resident tool
+// broker; that bounded-process backend remains guarded execution, not a sandbox.
 package localtools
 
 import (

@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +14,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/residenttools"
 )
 
 func TestLocalAgentListIsConfigFreeAndContextRoutesToOrka(t *testing.T) {
@@ -21,12 +24,12 @@ func TestLocalAgentListIsConfigFreeAndContextRoutesToOrka(t *testing.T) {
 		if all {
 			t.Fatal("unexpected all")
 		}
-		return []app.LocalAgentInstance{{ID: "md-1234567890abcdef", Name: "greeter", State: "active", Model: "fake"}}, nil
+		return []app.LocalAgentInstance{{ID: "md-1234567890abcdef", Name: "greeter", State: "active", Model: "fake", AgentBackend: residenttools.ResidentProcess, ToolBackend: residenttools.BoundedProcess, ToolConfigRevision: "sha256:" + strings.Repeat("a", 64), ToolPlanRevision: "sha256:" + strings.Repeat("b", 64), ToolContractDigest: "sha256:" + strings.Repeat("c", 64), ToolBindingDigest: "sha256:" + strings.Repeat("d", 64)}}, nil
 	}
 	if err := execute([]string{"list", "-o", "json"}, deps); err != nil {
 		t.Fatal(err)
 	}
-	if *loads != 0 || !strings.Contains(out.String(), `"scope":"local"`) || !strings.Contains(out.String(), "greeter") {
+	if *loads != 0 || !strings.Contains(out.String(), `"scope":"local"`) || !strings.Contains(out.String(), "greeter") || !strings.Contains(out.String(), `"agentBackend":"resident-process"`) || !strings.Contains(out.String(), `"toolBackend":"bounded-process"`) {
 		t.Fatalf("local list: loads=%d out=%s", *loads, &out)
 	}
 	out.Reset()
@@ -130,6 +133,33 @@ func TestResidentRunWithoutInputStartsWithoutSendingTurn(t *testing.T) {
 	}
 	if out.Len() != 0 || !strings.Contains(diagnostics.String(), "Started") {
 		t.Fatalf("out=%q diagnostics=%q", out.String(), diagnostics.String())
+	}
+}
+
+func TestResidentRunFreezesFixedCommandTools(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "tool.agent.md")
+	if err := os.WriteFile(file, []byte("---\nname: tool\nmodel: fake\ntools: [check]\n---\nCall the tool `check`.\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	config := fmt.Sprintf("tools: {check: Enabled}\ncommandTools: {check: {command: %q, args: [-test.run=^$]}}\n", os.Args[0])
+	if err := os.WriteFile(filepath.Join(dir, "kmx.yaml"), []byte(config), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out, diagnostics bytes.Buffer
+	deps, loads := testDependencies(&out, &diagnostics)
+	deps.residentAgents = true
+	deps.activateLocalAgent = func(_ context.Context, _ string, pair *agentfile.Pair, _, _, _ string, options app.LocalAgentActivationOptions) (app.LocalAgentInstance, bool, error) {
+		if options.ToolPlan == nil || options.ToolPlan.Backend != residenttools.BoundedProcess || options.ToolPlan.Revision() == "" || len(options.ToolPlan.Commands.Commands) != 1 {
+			t.Fatalf("tool plan=%+v", options.ToolPlan)
+		}
+		return app.LocalAgentInstance{ID: "md-123", InstanceID: "li-123", Name: pair.Agent.Identity.ID, SnapshotRevision: pair.SnapshotRevision, ToolConfigRevision: options.ToolPlan.ConfigRevision(), ToolPlanRevision: options.ToolPlan.Revision(), ToolContractDigest: options.ToolPlan.ContractDigest(), ToolBindingDigest: options.ToolPlan.BindingDigest(), AgentBackend: options.ToolPlan.Binding.AgentRuntime.Backend, ToolBackend: options.ToolPlan.Backend}, true, nil
+	}
+	if err := execute([]string{"run", file}, deps); err != nil {
+		t.Fatal(err)
+	}
+	if *loads != 0 || !strings.Contains(diagnostics.String(), "tools bounded-process") {
+		t.Fatalf("loads=%d diagnostics=%q", *loads, diagnostics.String())
 	}
 }
 
