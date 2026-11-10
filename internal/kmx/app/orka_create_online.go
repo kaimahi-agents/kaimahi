@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/guard"
-	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
 // All Orka API subprocesses have both Kubernetes and process deadlines. Raw
@@ -297,10 +296,9 @@ func (a *App) readOrkaObject(ctx context.Context, namespace string, id orkaIdent
 		return nil, fmt.Errorf("cannot read %s/%s UID %s; it may have disappeared: %w", id.Kind, id.Name, id.UID, err)
 	}
 	var object orkaObject
-	if id.strictAPIVersion != "" && !agentruntime.JSONKeysUnique(raw) {
+	if id.strictAPIVersion != "" && offlineJSON(raw, &object, false) != nil {
 		return nil, fmt.Errorf("invalid %s/%s status response", id.Kind, id.Name)
-	}
-	if err := json.Unmarshal(raw, &object); err != nil {
+	} else if id.strictAPIVersion == "" && json.Unmarshal(raw, &object) != nil {
 		return nil, fmt.Errorf("invalid %s/%s status response", id.Kind, id.Name)
 	}
 	if id.strictAPIVersion != "" && object.APIVersion != id.strictAPIVersion {

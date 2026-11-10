@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
@@ -174,6 +175,36 @@ func TestTaskResultRejectsAmbiguousIdentityJSON(t *testing.T) {
 				t.Fatalf("ambiguous identity accepted: err=%v", err)
 			}
 		})
+	}
+}
+
+func TestTaskResultAcceptsCaseSensitiveKubernetesMetadata(t *testing.T) {
+	f, opt := taskResultFixture(t)
+	path := filepath.Join(f.dir, "task-"+opt.Task+".json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var task map[string]any
+	if err := json.Unmarshal(raw, &task); err != nil {
+		t.Fatal(err)
+	}
+	task["metadata"].(map[string]any)["annotations"] = map[string]any{
+		"example.com/Foo": "upper",
+		"example.com/foo": "lower",
+	}
+	raw, err = json.Marshal(task)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.app.TaskResult(opt); err != nil {
+		t.Fatalf("valid case-sensitive metadata blocked Task Result: %v", err)
+	}
+	if got := f.out.String(); got != "retrieved answer\n" {
+		t.Fatalf("stdout=%q", got)
 	}
 }
 

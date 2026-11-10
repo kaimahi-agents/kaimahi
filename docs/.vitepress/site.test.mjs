@@ -180,6 +180,7 @@ test('native Windows documentation keeps the explicit remote exception narrow', 
   assert.match(windows, /Published rc\.4-rc\.6 Run accepts a second positional input/)
   assert.match(windows, /Current main: kmx run FILE \[-p\|--prompt TEXT\]/)
   assert.match(windows, /executes list\/show and existing Task Result against compiled native kubectl protocol fixtures/)
+  assert.match(windows, /remote-inspection boundary with a checksum-verified real kubectl\.exe[^.]*Task Result against a cross-built native protocol fixture/)
   assert.match(windows, /certificate-identity[^\n]*\$Version/i)
   assert.match(windows, /not evaluated[^.]*not[^.]*allowed/i)
   assert.doesNotMatch(windows, /future tagged release|future containing release/i)

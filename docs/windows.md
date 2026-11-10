@@ -273,8 +273,9 @@ builds and vets the CLI, verifies version/help/completion, executes a real
 Markdown file through package-free fake Run, a failing fake Test and offline
 file Explain, and executes list/show and existing Task Result against compiled
 native kubectl protocol fixtures. Release qualification repeats the day-zero
-journey and reaches both the remote-inspection and existing-Task-result boundaries
-with a checksum-verified real `kubectl.exe` using the exact staged
+journey, reaches the remote-inspection boundary with a checksum-verified real
+`kubectl.exe`, and exercises Task Result against a cross-built native protocol
+fixture from the same commit, each using the exact staged
 `kmx-windows-amd64.exe`. It does not claim a live remote cluster or real Azure
 authentication; those remain separate runtime qualification.
 
