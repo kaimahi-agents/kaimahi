@@ -24,6 +24,11 @@ type commandCapture struct {
 	stderr    bytes.Buffer
 }
 
+type stdioExitObserver struct {
+	observe func() (bool, error)
+	close   func() error
+}
+
 func newCommandCapture() *commandCapture {
 	return &commandCapture{remaining: commandOutputLimit, overflow: make(chan struct{})}
 }
@@ -112,6 +117,18 @@ func runCommandAfterStart(ctx context.Context, cfg CommandConfig, check func(...
 		_ = childErr.Close()
 		return nil, ErrCommand
 	}
+	observer, observerErr := newStdioLeaderObserver(cmd.Process.Pid)
+	if observerErr != nil {
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		_ = stdout.Close()
+		_ = childOut.Close()
+		_ = stderr.Close()
+		_ = childErr.Close()
+		if errors.Is(waitCommandExit(cmd.Wait), ErrCommandCleanup) {
+			return nil, ErrCommandCleanup
+		}
+		return nil, ErrCommand
+	}
 	_ = childOut.Close()
 	_ = childErr.Close()
 	if afterStart != nil {
@@ -119,7 +136,7 @@ func runCommandAfterStart(ctx context.Context, cfg CommandConfig, check func(...
 			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 			_ = stdout.Close()
 			_ = stderr.Close()
-			if errors.Is(waitCommandExit(cmd.Wait), ErrCommandCleanup) {
+			if errors.Is(waitCommandExit(cmd.Wait), ErrCommandCleanup) || observer.close() != nil {
 				return nil, ErrCommandCleanup
 			}
 			return nil, err
@@ -130,7 +147,7 @@ func runCommandAfterStart(ctx context.Context, cfg CommandConfig, check func(...
 		_ = stdout.Close()
 		_ = stderr.Close()
 		waitErr := waitCommandExit(cmd.Wait)
-		if errors.Is(waitErr, ErrCommandCleanup) || killErr != nil && !errors.Is(killErr, syscall.ESRCH) {
+		if errors.Is(waitErr, ErrCommandCleanup) || killErr != nil && !errors.Is(killErr, syscall.ESRCH) || observer.close() != nil {
 			return nil, ErrCommandCleanup
 		}
 		return nil, ErrCommand
@@ -153,7 +170,7 @@ func runCommandAfterStart(ctx context.Context, cfg CommandConfig, check func(...
 		case <-capture.overflow:
 			completed = true
 		case <-ticker.C:
-			exited, observeErr := stdioLeaderExited(cmd.Process.Pid)
+			exited, observeErr := observer.observe()
 			if observeErr != nil {
 				cleanupFailure = true
 				completed = true
@@ -179,6 +196,9 @@ func runCommandAfterStart(ctx context.Context, cfg CommandConfig, check func(...
 	_ = stdout.Close()
 	_ = stderr.Close()
 	waitErr := waitCommandExit(cmd.Wait)
+	if observer.close() != nil {
+		cleanupFailure = true
+	}
 	if cleanupFailure || errors.Is(waitErr, ErrCommandCleanup) {
 		return nil, ErrCommandCleanup
 	}
