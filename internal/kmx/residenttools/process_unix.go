@@ -100,6 +100,9 @@ func Start(ctx context.Context, executable string, plan Plan) (*os.File, error) 
 		_ = cmd.Process.Kill()
 		<-waited
 		_ = worker.Close()
+		if ready.Error != "" {
+			return nil, errors.New(ready.Error)
+		}
 		return nil, errors.New("resident tool broker did not become ready")
 	}
 	select {
