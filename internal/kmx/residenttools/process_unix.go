@@ -37,7 +37,16 @@ func Start(ctx context.Context, executable string, plan Plan) (*os.File, error) 
 			return nil, errors.New("resident tool broker executable is unavailable")
 		}
 	}
-	pair, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
+	// Darwin has no SOCK_CLOEXEC socketpair flag. Hold Go's fork lock across
+	// creation and descriptor marking so no concurrent exec can inherit either
+	// private endpoint in the gap.
+	syscall.ForkLock.Lock()
+	pair, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
+	if err == nil {
+		unix.CloseOnExec(pair[0])
+		unix.CloseOnExec(pair[1])
+	}
+	syscall.ForkLock.Unlock()
 	if err != nil {
 		return nil, errors.New("resident tool broker channel is unavailable")
 	}

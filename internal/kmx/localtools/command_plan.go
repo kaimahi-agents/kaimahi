@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
 )
 
 // CommandPlan is a frozen, credential-free commandTools selection. It is safe
@@ -30,7 +28,7 @@ func FreezeCommandPlan(ctx context.Context, filename string, names []string) (Co
 	if len(names) == 0 {
 		return CommandPlan{}, nil
 	}
-	raw, err := readSettingsBytes(ctx, filename, fileaccess.OpenDirectory)
+	raw, err := readLaunchBytes(ctx, filename)
 	if err != nil || raw == nil {
 		return CommandPlan{}, ErrServerSelection
 	}
