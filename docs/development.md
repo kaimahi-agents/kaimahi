@@ -160,9 +160,10 @@ Windows amd64 now also builds, vets and natively executes the CLI on hosted
 `windows-latest`: version/help/completion, one real Markdown file through
 package-free fake Run/failing Test/offline Explain, and read-only Orka list/show
 plus Task Result through a compiled native kubectl fixture. The exact staged
-release `.exe` also
-reaches the boundary through checksum-verified real kubectl. Windows arm64 is
-cross-built and vetted, not executed. These checks qualify only the
+release `.exe` reaches the inspection boundary through checksum-verified real
+kubectl and exercises Task Result through a cross-built native protocol fixture
+from the same commit. Windows arm64 is cross-built and vetted, not executed.
+These checks qualify only the
 [narrow Windows command boundary](windows.md), local-NTFS private state and exact
 tested artifact; live cluster/exec-auth proof remains separate, and workspace,
 suite evidence, publication and Deploy stay deferred. Stable v0.8.1 remains

@@ -186,6 +186,8 @@ test('native Windows documentation keeps the explicit remote exception narrow', 
   assert.doesNotMatch(windows, /future tagged release|future containing release/i)
   assert.match(windows, /install\.sh[^.]*Homebrew[^.]*Go @latest[^.]*Unix or WSL/i)
   assert.doesNotMatch(windows, /native Windows builds are not supported yet|Windows CLI remains guarded/i)
+  const development = plainText(await readFile(path.join(dist, 'docs/development.html'), 'utf8')).replace(/\s+/g, ' ')
+  assert.match(development, /inspection boundary through checksum-verified real kubectl[^.]*Task Result through a cross-built native protocol fixture/)
   for (const forbiddenAdvice of [
     /run Unblock-File/i,
     /disable (?:Microsoft )?Defender to/i,
