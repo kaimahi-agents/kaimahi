@@ -178,7 +178,7 @@ func ensureLocalAgentRuntimeDirectory(path string) error {
 }
 
 func startLocalAgentWorker(ctx context.Context, executable string, record LocalAgentInstance, toolPlan *residenttools.Plan) error {
-	if (toolPlan != nil && (toolPlan.ConfigRevision() != record.ToolConfigRevision || toolPlan.Revision() != record.ToolPlanRevision || toolPlan.Backend != record.ToolBackend)) || (toolPlan == nil && (record.ToolConfigRevision != "" || record.ToolPlanRevision != "" || record.ToolBackend != "")) {
+	if (toolPlan != nil && (toolPlan.ConfigRevision() != record.ToolConfigRevision || toolPlan.Revision() != record.ToolPlanRevision || toolPlan.ContractDigest() != record.ToolContractDigest || toolPlan.BindingDigest() != record.ToolBindingDigest || toolPlan.Binding.AgentRuntime.Backend != record.AgentBackend || toolPlan.Backend != record.ToolBackend)) || (toolPlan == nil && (record.ToolConfigRevision != "" || record.ToolPlanRevision != "" || record.ToolContractDigest != "" || record.ToolBindingDigest != "" || record.AgentBackend != "" || record.ToolBackend != "")) {
 		return errors.New("local agent tool broker plan does not match the admitted instance")
 	}
 	if executable == "" {

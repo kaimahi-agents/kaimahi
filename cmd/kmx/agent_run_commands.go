@@ -163,7 +163,11 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 					if planErr != nil {
 						return fileUsageError(fmt.Errorf("resident tools require enabled fixed commandTools without environment references: %w", planErr))
 					}
-					toolPlan = &residenttools.Plan{Backend: residenttools.BoundedProcess, Commands: commands}
+					plan, planErr := residenttools.NewBoundedProcessPlan(commands)
+					if planErr != nil {
+						return fileUsageError(fmt.Errorf("resident tool contract could not be bound: %w", planErr))
+					}
+					toolPlan = &plan
 				}
 				mode := app.LocalAgentActivationNormal
 				if upgrade {
@@ -224,6 +228,7 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 				}
 				if instance.ToolBackend == residenttools.BoundedProcess {
 					fmt.Fprintln(cmd.ErrOrStderr(), "Resident tools: bounded-process guarded host execution (not a sandbox)")
+					fmt.Fprintln(cmd.ErrOrStderr(), "  Filesystem: host-user ambient access · Network: broker-only inbound, unrestricted outbound")
 				}
 				if len(args) == 1 && !cmd.Flags().Changed("prompt") && !cmd.Flags().Changed("prompt-file") {
 					tools := ""

@@ -232,6 +232,31 @@ per source; reaching the bound refuses further lifecycle operations without
 automatic deletion. Native Windows refuses persistence, local List and Stop; use
 WSL.
 
+Resident activation now separates a portable, credential-free tool contract from
+a private local binding. The contract contains the `local-command` provider
+identity, sorted callable names and explicit effect/approval status; it contains
+no command, path, endpoint, credential or backend. The binding names the distinct
+agent and tool runtimes, actual filesystem/network boundary and call budgets.
+Lifecycle state retains only contract, binding, config and complete plan digests.
+Neither the binding nor local execution is AgentSuite evidence, packaged content
+or remote deployment authority.
+
+The implemented binding is `resident-process` + `bounded-process`. It truthfully
+records `host-user` ambient filesystem access and unrestricted outbound network;
+only inbound tool dispatch is isolated to the inherited broker channel. The
+broker admits one concurrent call, at most five model-selected calls per turn,
+64 calls per session and 1,024 calls per instance, with a 30-second call timeout.
+Attempts consume budget even when execution fails or is cancelled. These limits
+control dispatch and resource abuse but do not make host-user execution a
+sandbox. CLI diagnostics disclose both ambient filesystem and network access.
+
+The closed local binding also identifies `apple-container-vm`, `linux-native` and
+`rootless-oci` tool runtimes with declared-mount filesystem policy and either no
+outbound network or brokered HTTPS origins plus request/response budgets. This is
+portable planning groundwork only: runtime admission currently accepts only
+`bounded-process` and never downgrades another requested backend. No container,
+native sandbox, network proxy or credential resolver is claimed by this slice.
+
 MCP
 Run/Test also accept schema version 3 with a checked `sourceVersion` from the
 source resource, running the selected agent/tests pairs: Run answers without

@@ -79,6 +79,14 @@ invalid review as clean.
   sandboxing; record its actual backend, exact config revision and executable-
   bound plan revision. MCP,
   disabled/missing mappings and command environment references remain refused.
+  Separate the portable credential-free tool contract from the private local
+  binding. The latter records distinct agent/tool backends, actual filesystem
+  and network exposure, credential references without values and call budgets;
+  neither local binding nor result is package/evidence/Deploy authority. Current
+  bounded execution is host-user filesystem plus unrestricted outbound network,
+  with broker-channel-only inbound dispatch. Apple-container/Linux-native/OCI
+  policy shapes do not authorize execution until their launchers are qualified;
+  never downgrade a required backend.
   Tool config drift requires upgrade or a new generation. Native
   Windows persistence/list/stop remain deferred.
   Stable `md-...` identity follows the canonical source; each worker generation

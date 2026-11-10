@@ -24,12 +24,12 @@ func TestLocalAgentListIsConfigFreeAndContextRoutesToOrka(t *testing.T) {
 		if all {
 			t.Fatal("unexpected all")
 		}
-		return []app.LocalAgentInstance{{ID: "md-1234567890abcdef", Name: "greeter", State: "active", Model: "fake", ToolBackend: residenttools.BoundedProcess, ToolConfigRevision: "sha256:" + strings.Repeat("a", 64), ToolPlanRevision: "sha256:" + strings.Repeat("b", 64)}}, nil
+		return []app.LocalAgentInstance{{ID: "md-1234567890abcdef", Name: "greeter", State: "active", Model: "fake", AgentBackend: residenttools.ResidentProcess, ToolBackend: residenttools.BoundedProcess, ToolConfigRevision: "sha256:" + strings.Repeat("a", 64), ToolPlanRevision: "sha256:" + strings.Repeat("b", 64), ToolContractDigest: "sha256:" + strings.Repeat("c", 64), ToolBindingDigest: "sha256:" + strings.Repeat("d", 64)}}, nil
 	}
 	if err := execute([]string{"list", "-o", "json"}, deps); err != nil {
 		t.Fatal(err)
 	}
-	if *loads != 0 || !strings.Contains(out.String(), `"scope":"local"`) || !strings.Contains(out.String(), "greeter") || !strings.Contains(out.String(), `"toolBackend":"bounded-process"`) {
+	if *loads != 0 || !strings.Contains(out.String(), `"scope":"local"`) || !strings.Contains(out.String(), "greeter") || !strings.Contains(out.String(), `"agentBackend":"resident-process"`) || !strings.Contains(out.String(), `"toolBackend":"bounded-process"`) {
 		t.Fatalf("local list: loads=%d out=%s", *loads, &out)
 	}
 	out.Reset()
@@ -153,7 +153,7 @@ func TestResidentRunFreezesFixedCommandTools(t *testing.T) {
 		if options.ToolPlan == nil || options.ToolPlan.Backend != residenttools.BoundedProcess || options.ToolPlan.Revision() == "" || len(options.ToolPlan.Commands.Commands) != 1 {
 			t.Fatalf("tool plan=%+v", options.ToolPlan)
 		}
-		return app.LocalAgentInstance{ID: "md-123", InstanceID: "li-123", Name: pair.Agent.Identity.ID, SnapshotRevision: pair.SnapshotRevision, ToolConfigRevision: options.ToolPlan.ConfigRevision(), ToolPlanRevision: options.ToolPlan.Revision(), ToolBackend: options.ToolPlan.Backend}, true, nil
+		return app.LocalAgentInstance{ID: "md-123", InstanceID: "li-123", Name: pair.Agent.Identity.ID, SnapshotRevision: pair.SnapshotRevision, ToolConfigRevision: options.ToolPlan.ConfigRevision(), ToolPlanRevision: options.ToolPlan.Revision(), ToolContractDigest: options.ToolPlan.ContractDigest(), ToolBindingDigest: options.ToolPlan.BindingDigest(), AgentBackend: options.ToolPlan.Binding.AgentRuntime.Backend, ToolBackend: options.ToolPlan.Backend}, true, nil
 	}
 	if err := execute([]string{"run", file}, deps); err != nil {
 		t.Fatal(err)

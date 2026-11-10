@@ -177,9 +177,16 @@ func TestResidentCommandToolRunsThroughBroker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan := &residenttools.Plan{Backend: residenttools.BoundedProcess, Commands: commands}
+	planValue, err := residenttools.NewBoundedProcessPlan(commands)
+	if err != nil {
+		t.Fatal(err)
+	}
+	planValue.Binding.Limits.MaxCallsPerSession = 2
+	planValue.Binding.Limits.MaxCallsPerInstance = 2
+	planValue.Binding.Limits.MaxCallsPerTurn = 1
+	plan := &planValue
 	record, created, err := ActivateLocalAgentWithOptions(t.Context(), "", pair, "fake", "", "fake", LocalAgentActivationOptions{Mode: LocalAgentActivationNormal, ToolPlan: plan})
-	if err != nil || !created || record.ToolBackend != residenttools.BoundedProcess || record.ToolConfigRevision != commands.ConfigRevision || record.ToolPlanRevision != commands.Revision {
+	if err != nil || !created || record.AgentBackend != residenttools.ResidentProcess || record.ToolBackend != residenttools.BoundedProcess || record.ToolConfigRevision != commands.ConfigRevision || record.ToolPlanRevision != plan.Revision() || record.ToolContractDigest != plan.ContractDigest() || record.ToolBindingDigest != plan.BindingDigest() {
 		t.Fatalf("record=%+v created=%v err=%v", record, created, err)
 	}
 	defer StopLocalAgent(t.Context(), record.ID)
@@ -195,6 +202,9 @@ func TestResidentCommandToolRunsThroughBroker(t *testing.T) {
 	if err != nil || answer != "tool complete" {
 		t.Fatalf("follow-up answer=%q err=%v", answer, err)
 	}
+	if _, err := InvokeLocalAgent(t.Context(), record.ID, session.ID, "limit this call"); err == nil {
+		t.Fatal("broker exceeded the bound call budget")
+	}
 	if err := os.WriteFile(command, []byte(commandSource+"# changed\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +212,11 @@ func TestResidentCommandToolRunsThroughBroker(t *testing.T) {
 	if err != nil || changedCommands.Revision == commands.Revision {
 		t.Fatalf("changed command plan=%+v err=%v", changedCommands, err)
 	}
-	changed := &residenttools.Plan{Backend: residenttools.BoundedProcess, Commands: changedCommands}
+	changedValue, err := residenttools.NewBoundedProcessPlan(changedCommands)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := &changedValue
 	_, _, err = ActivateLocalAgentWithOptions(t.Context(), "", pair, "fake", "", "fake", LocalAgentActivationOptions{Mode: LocalAgentActivationNormal, ToolPlan: changed})
 	var drift *LocalAgentDriftError
 	if !errors.As(err, &drift) {
@@ -239,7 +253,11 @@ func TestResidentCommandToolCancellationKeepsBrokerUsable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan := &residenttools.Plan{Backend: residenttools.BoundedProcess, Commands: commands}
+	planValue, err := residenttools.NewBoundedProcessPlan(commands)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := &planValue
 	record, _, err := ActivateLocalAgentWithOptions(t.Context(), "", pair, "fake", "", "fake", LocalAgentActivationOptions{Mode: LocalAgentActivationNormal, ToolPlan: plan})
 	if err != nil {
 		t.Fatal(err)

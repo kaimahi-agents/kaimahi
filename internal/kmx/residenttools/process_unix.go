@@ -120,7 +120,7 @@ func Run(channel, config, readiness *os.File) error {
 	defer config.Close()
 	defer readiness.Close()
 	var plan Plan
-	if err := readFrame(bufio.NewReaderSize(config, brokerLimit+1), &plan); err != nil || plan.Backend != BoundedProcess {
+	if err := readFrame(bufio.NewReaderSize(config, brokerLimit+1), &plan); err != nil || plan.validate() != nil || plan.Backend != BoundedProcess {
 		_ = writeFrame(readiness, response{Error: "resident tool broker configuration is unavailable"})
 		return errors.New("resident tool broker configuration is unavailable")
 	}
@@ -150,6 +150,9 @@ func Run(channel, config, readiness *os.File) error {
 	ctx, cancelAll := context.WithCancel(context.Background())
 	defer cancelAll()
 	active := map[string]context.CancelFunc{}
+	sessionCalls := map[string]int{}
+	turnCalls := map[string]int{}
+	totalCalls := 0
 	var activeMu sync.Mutex
 	var jobs sync.WaitGroup
 	defer func() {
@@ -179,17 +182,21 @@ func Run(channel, config, readiness *os.File) error {
 				cancel()
 			}
 		case "execute":
-			if !validRequestID(req.ID) || req.SessionUID == "" {
+			if !validRequestID(req.ID) || !validRequestID(req.InvocationID) || req.SessionUID == "" {
 				writeResponse(response{ID: req.ID, Error: "resident tool request is invalid"})
 				continue
 			}
 			activeMu.Lock()
-			if active[req.ID] != nil {
+			limits := plan.Binding.Limits
+			if active[req.ID] != nil || len(active) >= limits.MaxConcurrent || turnCalls[req.InvocationID] >= limits.MaxCallsPerTurn || sessionCalls[req.SessionUID] >= limits.MaxCallsPerSession || totalCalls >= limits.MaxCallsPerInstance {
 				activeMu.Unlock()
-				writeResponse(response{ID: req.ID, Error: "resident tool request is invalid"})
+				writeResponse(response{ID: req.ID, Error: "resident tool call limit reached"})
 				continue
 			}
-			callCtx, cancel := context.WithTimeout(ctx, brokerTimeout)
+			turnCalls[req.InvocationID]++
+			sessionCalls[req.SessionUID]++
+			totalCalls++
+			callCtx, cancel := context.WithTimeout(ctx, time.Duration(limits.TimeoutMilliseconds)*time.Millisecond)
 			active[req.ID] = cancel
 			activeMu.Unlock()
 			jobs.Add(1)
@@ -210,16 +217,4 @@ func Run(channel, config, readiness *os.File) error {
 			writeResponse(response{ID: req.ID, Error: "resident tool request is invalid"})
 		}
 	}
-}
-
-func validRequestID(value string) bool {
-	if len(value) != 24 {
-		return false
-	}
-	for _, r := range value {
-		if r < '0' || r > '9' && r < 'a' || r > 'f' {
-			return false
-		}
-	}
-	return true
 }

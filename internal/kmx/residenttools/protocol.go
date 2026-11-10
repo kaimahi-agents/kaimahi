@@ -11,6 +11,8 @@ import (
 	"io"
 	"net"
 	"os"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,24 +27,71 @@ const (
 	// process-group cleanup and bounded output. It is not a sandbox.
 	BoundedProcess = "bounded-process"
 	brokerLimit    = 64 << 10
-	brokerTimeout  = 30 * time.Second
 )
 
 // Plan is immutable broker startup authority. It is transferred over a
 // protected descriptor and is never retained in local-agent lifecycle JSON.
 type Plan struct {
 	Backend  string                 `json:"backend"`
+	Contract ToolContract           `json:"contract"`
+	Binding  LocalBinding           `json:"binding"`
 	Commands localtools.CommandPlan `json:"commands"`
 }
 
-func (p Plan) Revision() string       { return p.Commands.Revision }
+func (p Plan) validate() error {
+	if p.Backend != p.Binding.ToolRuntime.Backend || p.Contract.Validate() != nil || p.Binding.Validate() != nil || p.Binding.ContractDigest == "" || p.Binding.ResolutionDigest != p.Commands.Revision {
+		return errors.New("invalid resident tool plan")
+	}
+	contractDigest, err := p.Contract.Digest()
+	if err != nil || contractDigest != p.Binding.ContractDigest {
+		return errors.New("invalid resident tool plan")
+	}
+	if len(p.Contract.Tools) != len(p.Commands.Commands) {
+		return errors.New("invalid resident tool plan")
+	}
+	names := make([]string, 0, len(p.Commands.Commands))
+	for _, command := range p.Commands.Commands {
+		names = append(names, command.Name)
+	}
+	slices.Sort(names)
+	for i, name := range names {
+		if p.Contract.Tools[i].Name != name {
+			return errors.New("invalid resident tool plan")
+		}
+	}
+	return nil
+}
+
+func (p Plan) Revision() string {
+	if p.validate() != nil {
+		return ""
+	}
+	value := struct {
+		Contract string `json:"contract"`
+		Binding  string `json:"binding"`
+		Commands string `json:"commands"`
+	}{Commands: p.Commands.Revision}
+	value.Contract, _ = p.Contract.Digest()
+	value.Binding, _ = p.Binding.Digest()
+	revision, _ := digest(value)
+	return revision
+}
 func (p Plan) ConfigRevision() string { return p.Commands.ConfigRevision }
+func (p Plan) ContractDigest() string {
+	value, _ := p.Contract.Digest()
+	return value
+}
+func (p Plan) BindingDigest() string {
+	value, _ := p.Binding.Digest()
+	return value
+}
 
 type request struct {
-	Op         string       `json:"op"`
-	ID         string       `json:"id,omitempty"`
-	SessionUID string       `json:"sessionUid,omitempty"`
-	Call       api.ToolCall `json:"call,omitempty"`
+	Op           string       `json:"op"`
+	ID           string       `json:"id,omitempty"`
+	SessionUID   string       `json:"sessionUid,omitempty"`
+	InvocationID string       `json:"invocationId,omitempty"`
+	Call         api.ToolCall `json:"call,omitempty"`
 }
 
 type response struct {
@@ -140,7 +189,11 @@ func (c *Client) execute(ctx context.Context, scope controller.ToolCallContext, 
 		return api.ToolResult{}, err
 	}
 	id := hex.EncodeToString(raw)
-	if err := writeFrame(c.conn, request{Op: "execute", ID: id, SessionUID: scope.SessionUID, Call: call}); err != nil {
+	invocationID, _, ok := strings.Cut(call.IdempotencyKey, ":")
+	if !ok || !validRequestID(invocationID) {
+		return api.ToolResult{}, errors.New("resident tool broker request failed")
+	}
+	if err := writeFrame(c.conn, request{Op: "execute", ID: id, SessionUID: scope.SessionUID, InvocationID: invocationID, Call: call}); err != nil {
 		return api.ToolResult{}, errors.New("resident tool broker request failed")
 	}
 	type outcome struct {
@@ -170,6 +223,18 @@ func (c *Client) execute(ctx context.Context, scope controller.ToolCallContext, 
 			return api.ToolResult{}, ctx.Err()
 		}
 	}
+}
+
+func validRequestID(value string) bool {
+	if len(value) != 24 {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' && r < 'a' || r > 'f' {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *Client) Close() error {
