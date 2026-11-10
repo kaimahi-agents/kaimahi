@@ -7,12 +7,13 @@ import (
 	"io"
 	"net"
 	"os"
-	"os/exec"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
 // subprocessKube supplies only Command: opening a tunnel must not require
@@ -20,13 +21,13 @@ import (
 type subprocessKube struct {
 	ctx      context.Context
 	scenario string
-	cmd      *exec.Cmd
+	cmd      *run.Command
 }
 
-func (k *subprocessKube) Command(args ...string) *exec.Cmd {
-	k.cmd = exec.CommandContext(k.ctx, os.Args[0], append([]string{"-test.run=^TestForwardProcess$", "--"}, args...)...)
+func (k *subprocessKube) OwnedCommand(args ...string) (*run.Command, error) {
+	k.cmd = (&run.Runner{Context: k.ctx}).Command(os.Args[0], append([]string{"-test.run=^TestForwardProcess$", "--"}, args...)...)
 	k.cmd.Env = append(os.Environ(), "KMX_FORWARD_TEST="+k.scenario)
-	return k.cmd
+	return k.cmd, nil
 }
 
 // TestForwardProcess is the executable boundary, not a mocked exec.Cmd. Its
@@ -129,6 +130,13 @@ func impatient(t *testing.T) {
 	t.Cleanup(func() { pollAttempts, pollInterval = attempts, interval })
 }
 
+func impatientCleanup(t *testing.T) {
+	t.Helper()
+	wait := cleanupWait
+	cleanupWait = time.Millisecond
+	t.Cleanup(func() { cleanupWait = wait })
+}
+
 func assertReaped(t *testing.T, k *subprocessKube) {
 	t.Helper()
 	if k.cmd.ProcessState == nil || k.cmd.ProcessState.Success() {
@@ -168,7 +176,7 @@ func TestStartProvesLoopbackBindAndCloseReapsProcess(t *testing.T) {
 	// Multiple callers can tear down a session while its lifetime watcher runs.
 	var closers sync.WaitGroup
 	for range 4 {
-		closers.Go(f.Close)
+		closers.Go(func() { _ = f.Close() })
 	}
 	closers.Wait()
 	select {
@@ -264,6 +272,31 @@ func TestContextCancellationStopsWaitingForUnprovenBind(t *testing.T) {
 	assertReaped(t, k)
 }
 
+func TestStartReportsUnconfirmedCleanupWithoutSubprocessDetail(t *testing.T) {
+	impatient(t)
+	impatientCleanup(t)
+	k := testKube(t, "silent")
+	release := make(chan struct{})
+	terminate := func(cmd *run.Command) error {
+		<-release
+		return run.Terminate(cmd)
+	}
+	f, err := start(k, "agents", "svc/tool", freePort(t), "8080", terminate)
+	close(release)
+	if f == nil || !errors.Is(err, ErrCleanupUnconfirmed) {
+		t.Fatalf("unconfirmed cleanup classification = %v, forward=%v", err, f)
+	}
+	if ErrCleanupUnconfirmed.Error() != "port-forward cleanup unconfirmed" {
+		t.Fatal("cleanup classification is not fixed text")
+	}
+	select {
+	case <-f.Done():
+		assertReaped(t, k)
+	case <-time.After(time.Second):
+		t.Fatal("released termination did not reap the subprocess")
+	}
+}
+
 func TestContextCancellationClosesDoneAfterProvenBind(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -282,14 +315,27 @@ func TestContextCancellationClosesDoneAfterProvenBind(t *testing.T) {
 	assertReaped(t, k)
 }
 
-type missingCommand struct{}
+func TestNormalizeForwardWaitKeepsCleanupErrors(t *testing.T) {
+	cleanup := errors.New("cleanup failed")
+	for _, lifetime := range []error{context.Canceled, context.DeadlineExceeded} {
+		if err := normalizeForwardWait(lifetime); err != nil {
+			t.Fatalf("lifetime error survived confirmed exit: %v", err)
+		}
+		err := normalizeForwardWait(errors.Join(lifetime, cleanup))
+		if !errors.Is(err, cleanup) || errors.Is(err, lifetime) {
+			t.Fatalf("joined cleanup error = %v", err)
+		}
+	}
+}
 
-func (missingCommand) Command(...string) *exec.Cmd {
-	return exec.Command("/nonexistent-kmx-portforward-test/kubectl")
+type missingCommand struct{ runner run.Runner }
+
+func (k *missingCommand) OwnedCommand(...string) (*run.Command, error) {
+	return k.runner.Command("/nonexistent-kmx-portforward-test/kubectl"), nil
 }
 
 func TestStartFailurePreservesCauseAndTarget(t *testing.T) {
-	f, err := Start(missingCommand{}, "agents", "svc/tool", "18080", "8080")
+	f, err := Start(&missingCommand{}, "agents", "svc/tool", "18080", "8080")
 	if f != nil || !errors.Is(err, os.ErrNotExist) || !strings.Contains(err.Error(), "cannot port-forward to svc/tool in agents") {
 		t.Fatalf("command start failure lost cause/target: forward=%v error=%v", f, err)
 	}
@@ -340,6 +386,24 @@ func TestAutomaticForwardRequiresCompleteValidIPv4Announcement(t *testing.T) {
 			}
 			assertReaped(t, k)
 		})
+	}
+}
+
+func TestTruncationMarkerCannotCompleteBindAnnouncement(t *testing.T) {
+	line := "Forwarding from 127.0.0.1:12345 -> 8080"
+	prefix := strings.Repeat("x", forwardLogLimit-len(line)-1)
+	var log syncBuffer
+	if _, err := log.Write([]byte(prefix + "\n" + line + "invalid trailing output")); err != nil {
+		t.Fatal(err)
+	}
+	if got := announcedPort(log.bindEvidence(), ""); got != "" {
+		t.Fatalf("truncated bind accepted from subprocess bytes: %q", got)
+	}
+	if got := announcedPort(log.String(), ""); got != "12345" {
+		t.Fatalf("fixture did not place the synthetic marker after the bind prefix: %q", got)
+	}
+	if !strings.Contains(log.String(), "[output truncated]") {
+		t.Fatal("truncated diagnostics lost their marker")
 	}
 }
 

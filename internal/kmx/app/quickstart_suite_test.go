@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/portforward"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
@@ -220,6 +221,16 @@ func TestNativePlacementRefusalPreservesIdentityWithoutPayload(t *testing.T) {
 	got := suiteEvaluationError(t.Context(), fmt.Errorf("%s", nativeCanary), true)
 	if strings.Contains(got.Error(), nativeCanary) {
 		t.Fatal("untrusted diagnostic escaped")
+	}
+}
+
+func TestSuiteEvaluationErrorPreservesSafeCleanupStatus(t *testing.T) {
+	const private = "private-cleanup-canary"
+	cause := errors.Join(&orkaResultPortError{}, errors.New(private), portforward.ErrCleanupUnconfirmed)
+	got := suiteEvaluationError(t.Context(), cause, true)
+	var port *orkaResultPortError
+	if !errors.As(got, &port) || !errors.Is(got, portforward.ErrCleanupUnconfirmed) || strings.Contains(got.Error(), private) {
+		t.Fatalf("unsafe or missing cleanup classification: %v", got)
 	}
 }
 

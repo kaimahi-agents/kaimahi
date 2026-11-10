@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/portforward"
 )
 
 func runFixture(t *testing.T) *evalFixture {
@@ -339,6 +341,11 @@ func TestRunWaitErrorKeepsTerminalFailureAndRefusalAfterDeadline(t *testing.T) {
 	if got := a.runTaskWaitError(ctx, fmt.Errorf("waiting: %w", context.DeadlineExceeded), "task", "kind-test", "orka-system"); !errors.Is(got, ErrTaskPending) {
 		t.Fatalf("expired wait not pending: %v", got)
 	}
+	const private = "private-cleanup-canary"
+	got := a.runTaskWaitError(ctx, errors.Join(fmt.Errorf("waiting: %w", context.DeadlineExceeded), errors.New(private), portforward.ErrCleanupUnconfirmed), "task", "kind-test", "orka-system")
+	if !errors.Is(got, ErrTaskPending) || !errors.Is(got, portforward.ErrCleanupUnconfirmed) || strings.Contains(got.Error(), private) {
+		t.Fatalf("pending result lost or leaked cleanup status: %v", got)
+	}
 }
 
 func TestRunWaitErrorRecognizesOnlyExpiredOrkaPhases(t *testing.T) {
@@ -465,6 +472,24 @@ func TestRunAgentTaskNameIsNotOnStdout(t *testing.T) {
 	}
 }
 
+func TestRunAgentCleanupFailureWithholdsAnswerSafely(t *testing.T) {
+	const private = "private-cleanup-canary"
+	f := runFixture(t)
+	f.answers["private prompt"] = "answer"
+	cleanupCalls := 0
+	f.app.resultSessionCleanup = func() error {
+		cleanupCalls++
+		return errors.Join(errors.New(private), portforward.ErrCleanupUnconfirmed)
+	}
+	err := f.app.RunAgent(runOption(f))
+	if cleanupCalls != 1 || !errors.Is(err, portforward.ErrCleanupUnconfirmed) || strings.Contains(err.Error(), private) || !strings.Contains(err.Error(), "answer withheld") {
+		t.Fatalf("unsafe or incomplete cleanup result: calls=%d err=%v", cleanupCalls, err)
+	}
+	if f.out.Len() != 0 || f.taskCreates(t) != 1 {
+		t.Fatalf("cleanup failure exposed answer or changed execution: stdout=%q creates=%d", f.out, f.taskCreates(t))
+	}
+}
+
 func TestRunAgentRejectsAgentReplacedAfterInitialRead(t *testing.T) {
 	f := runFixture(t)
 	t.Setenv("KMX_EVAL_AGENT_SWAP_ON_READ", "2")
@@ -526,6 +551,15 @@ func TestTaskRecoveryQuotesContext(t *testing.T) {
 	want := "'./bin with space/kmx' cluster task result safe-task --context 'kind-prod;echo-danger' --namespace orka-system --wait 5m"
 	if got != want {
 		t.Fatalf("recovery command = %q, want %q", got, want)
+	}
+}
+
+func TestTaskRecoveryUsesPowerShellSyntax(t *testing.T) {
+	a := &App{Executable: `C:\Program Files\kmx.exe`, CommandShell: "powershell"}
+	got := a.taskRecovery("safe-task", "team's context", "orka-system")
+	want := `& 'C:\Program Files\kmx.exe' cluster task result 'safe-task' --context 'team''s context' --namespace 'orka-system' --wait 5m`
+	if got != want {
+		t.Fatalf("PowerShell recovery = %q, want %q", got, want)
 	}
 }
 

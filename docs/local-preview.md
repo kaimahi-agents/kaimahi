@@ -180,8 +180,9 @@ The fake model checks wiring offline; it does not qualify hosted Copilot access.
 by default,
 in the kmx process. Every result is labeled **local preview**. It is not
 deployment qualification, suite evidence, a passing receipt, or authority to
-publish or deploy. `kmx run FILE`, `kmx test FILE` and MCP Run/Test use it for
-fake/local and default or explicit Copilot routes through the `agentpreview.Runner` interface.
+publish or deploy. `kmx run FILE --once` (and implicit one-shot Run on native
+Windows), `kmx test FILE` and MCP Run/Test use it for fake/local and default or
+explicit Copilot routes through the `agentpreview.Runner` interface.
 CLI `kmx run FILE --once` executes the saved inputs and returns answers without evaluating
 assertions or setting up a judge. Explicit `-p, --prompt` or `--prompt-file` input
 runs only that input unless `--case` also selects a saved example. Completed Run
@@ -266,9 +267,10 @@ against one real Markdown file through package-free fake Run, an instruction-
 regressed failing Test, retained diagnostics and offline Explain. It checks that
 Explain sends nothing and neither private state family keeps an ambient
 credential canary. That qualifies only the narrow
-[native Windows file-preview path](windows.md), not providers, tools, live
-execution, suite evidence or native arm64 execution. Separate list/show
-qualification covers read-only remote Orka inspection only. Windows arm64 remains cross-build/vet
+[native Windows file-preview path](windows.md), not providers, tools, suite
+evidence or native arm64 execution. Separate compiled-kubectl qualification
+covers explicit-target Orka inspection and existing Task Result. Windows arm64
+remains cross-build/vet
 and checksum evidence only. No run against a real compatible model is recorded
 yet. To record one on a supported non-Windows route, a human runs:
 

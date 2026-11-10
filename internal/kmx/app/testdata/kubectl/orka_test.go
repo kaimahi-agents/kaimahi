@@ -272,6 +272,8 @@ func TestOrkaKubectlHelper(t *testing.T) {
 			expiry := time.Now().Add(10 * time.Minute)
 			if scenario == "short-token" {
 				expiry = time.Now().Add(time.Minute)
+			} else if scenario == "long-token" {
+				expiry = time.Now().Add(time.Hour)
 			}
 			fmt.Printf(`{"status":{"token":%q,"expirationTimestamp":%q}}`, orkaTestToken(), expiry.Format(time.RFC3339))
 			os.Exit(0)

@@ -167,9 +167,10 @@ class AppShardWorkflowTests(unittest.TestCase):
         self.assertIn('$metadataLines -join "`n"', windows_body)
         self.assertIn("windows-cli-day-zero.ps1", windows_body)
         self.assertIn("windows-orka-inspection.ps1", windows_body)
+        self.assertIn("windows-orka-task-result.ps1", windows_body)
         self.assertNotIn("kmx-windows-tests.exe\" powershell", windows_body)
         self.assertIn("TestGuardedWindowsDeferredOperationsRefuseBeforeEffects", windows_body)
-        self.assertIn("TestGuardedWindowsAmd64AdmitsOnlyExplicitOrkaInspection", windows_body)
+        self.assertIn("TestGuardedWindowsAmd64AdmitsExplicitOrkaRemoteOperations", windows_body)
         self.assertIn("TestGuardedWindowsRemoteInspectionRefusesIncompleteOrBroaderModesBeforeEffects", windows_body)
         self.assertIn("TestGuardedWindowsFileCommandsRefuseEveryExternalRouteBeforeEffects", windows_body)
         self.assertIn("TestGuardedWindowsExplainRequiresExplicitFileAndAllowsFileScopedClear", windows_body)
@@ -180,10 +181,12 @@ class AppShardWorkflowTests(unittest.TestCase):
         self.assertIn("$appTests", windows_body)
         self.assertIn("TestWindowsRunnerCancellationReapsDescendantTree", windows_body)
         self.assertIn("TestWindowsCommandOwnerDeathAfterCreateReapsChild", windows_body)
+        self.assertIn("TestWindowsCommandOwnerDeathAfterAssignmentFailureReapsChild", windows_body)
         self.assertIn("TestWindowsCommandRunStdinCompletes", windows_body)
         self.assertIn("TestWindowsCommandDetachesStartupGuard", windows_body)
         self.assertIn("TestOrkaAgentListCancelsActiveCompiledKubectl", windows_body)
         self.assertIn("TestAgentShowHumanFieldsAreTerminalSafeAndBounded", windows_body)
+        self.assertIn("TestTaskResultReadsTerminalAnswerOnlyOnStdout", windows_body)
         self.assertIn("--- SKIP:", windows_body)
         self.assertEqual(windows_body.count("did not pass"), 6)
         cross = self.jobs["windows-arm64-cross"]
@@ -216,7 +219,7 @@ class AppShardWorkflowTests(unittest.TestCase):
                 "[string]$ExpectedVersionLine",
                 "[Diagnostics.ProcessStartInfo]::new()",
                 "$start.FileName = $exe",
-                "'KMX_HOME'", "'KMX_TOOLCHAIN'", "'off'", "'PATH'",
+                "'KMX_HOME'", "'KMX_TOOLCHAIN'", "'KMX_LOCAL_AGENT_WORKER'", "'off'", "'PATH'",
                 "'COPILOT_GITHUB_TOKEN'", "'AZURE_OPENAI_API_KEY'",
                 "'HTTP_PROXY'", "'HTTPS_PROXY'", "'ALL_PROXY'", "'NO_PROXY'",
                 "[Net.WebRequest]::DefaultWebProxy",
@@ -225,7 +228,8 @@ class AppShardWorkflowTests(unittest.TestCase):
                 "@('completion', 'bash')", "__start_kmx()",
                 "retention.status -ceq 'retained'", "Assert-NoCanary",
                 "Assert-SnapshotEqual", "'historical'", "'create'",
-                "deferred state", "stateHome"):
+                "deferred state", "worker flag state", "Ambient worker flag bypassed",
+                "stateHome"):
             self.assertIn(contract, helper)
         self.assertIn("[char]0x96EA", helper)
         self.assertIn("kmx day zero $nonAscii", helper)
@@ -271,6 +275,39 @@ class AppShardWorkflowTests(unittest.TestCase):
         self.assertIn("if (Test-Path -LiteralPath $state)", helper)
         for forbidden in ("wsl", "docker", "kind create", "helm", "az login", "kubelogin convert"):
             self.assertNotIn(forbidden.lower(), helper.lower())
+
+    def test_windows_task_result_helper_proves_existing_read_and_owned_cleanup(self):
+        helper = (ROOT / "scripts/ci/windows-orka-task-result.ps1").read_text()
+        for contract in (
+                "[Parameter(Mandatory = $true)][string]$Binary",
+                "[Parameter(Mandatory = $true)][string]$Kubectl",
+                "[Diagnostics.ProcessStartInfo]::new()",
+                "$start.ArgumentList.Add($argument)",
+                "ReadLineAsync()", "-ForwardPIDPath $forwardPIDPath",
+                "accepted an answer before the owned forward exited",
+                "Assert-ExactArgs -Call $tokenCalls[0]",
+                "Assert-ExactArgs -Call $forwardCalls[0]",
+                "Task Result created or resent a Kubernetes resource",
+                "Task Result changed the existing Task",
+                "KMX_EVAL_FORWARD_TARGET", "KMX_EVAL_PHASE_SEQUENCE",
+                "foreach ($name in $fixtureControls)",
+                "Native Windows amd64 Orka Task Result qualification passed."):
+            self.assertIn(contract, helper)
+        step = next(s for s in self.jobs["windows-amd64-native"]["steps"]
+                    if s.get("name") == "Direct executable remote Orka Task Result journey")
+        self.assertNotIn("if", step)
+        self.assertNotIn("continue-on-error", step)
+        self.assertEqual(step["run"].strip(), r"""$ErrorActionPreference = 'Stop'
+$output = @(./scripts/ci/windows-orka-task-result.ps1 -Binary "$env:RUNNER_TEMP\kmx.exe" -Kubectl "$env:RUNNER_TEMP\kubectl.exe" 2>&1)
+$output | Write-Output
+if (@($output | Where-Object { $_ -ceq 'Native Windows amd64 Orka Task Result qualification passed.' }).Count -ne 1) {
+  throw 'Task Result qualification did not emit its exact completion marker.'
+}""")
+        marker = helper.index("Write-Output 'Native Windows amd64 Orka Task Result qualification passed.'")
+        for required in ("ReadLineAsync()", "Assert-ExactArgs -Call $tokenCalls[0]",
+                         "Assert-ExactArgs -Call $forwardCalls[0]",
+                         "Task Result changed the existing Task"):
+            self.assertLess(helper.index(required), marker)
 
     def test_final_gate_rejects_every_non_success_and_wrong_dependency_set(self):
         steps = self.jobs["hygiene"]["steps"]

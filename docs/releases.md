@@ -32,7 +32,7 @@ claimed; the remaining publication constraints are recorded in
 `@latest` have no Windows `.exe`. Published v0.9.0 release candidates beginning
 with `v0.9.0-rc.4` contain the narrow native Windows day-zero CLI as
 `kmx-windows-amd64.exe` and `kmx-windows-arm64.exe`; current `main` additionally
-admits read-only remote Orka list/show on amd64. See
+admits read-only remote Orka list/show and existing Task Result on amd64. See
 [native Windows](windows.md) for the exact command, trust and state limits.
 
 ## Test command (unreleased)
@@ -175,8 +175,9 @@ For a release containing Windows assets, a hosted native Windows amd64 worker
 also verifies and executes the exact staged `kmx-windows-amd64.exe`: version,
 help and completion plus package-free fake Markdown-file Run, failing Test and
 offline file Explain. Current release candidates retain that contract; a release
-containing the read-only inspection exception additionally reaches its bounded
-native kubectl boundary with a checksum-verified `kubectl.exe`. The release is
+containing the remote exception additionally reaches its bounded native kubectl
+inspection boundary with checksum-verified real kubectl and runs Task Result
+against a cross-built native protocol fixture from the same commit. The release is
 not published unless that exact artifact passes. `kmx-windows-arm64.exe` is cross-built, vetted, metadata-checked and
 checksummed only; it is not natively executed and must not be described that way.
 
@@ -225,8 +226,8 @@ Nightly schedules and runtime proof commands, pins and budgets are unchanged.
 
 On Windows, the Homebrew, `install.sh` and Go `@latest` instructions below remain
 Linux/WSL routes where applicable. Stable v0.8.1 and `@latest` have no native
-Windows `.exe`. Current `main` has a prerelease-only native amd64 read-only Orka
-inspection exception; published v0.9.0 release candidates beginning with
+Windows `.exe`. Current `main` has a prerelease-only native amd64 Orka
+inspection and existing Task Result exception; published v0.9.0 release candidates beginning with
 `v0.9.0-rc.4` retain the day-zero-only boundary until a later containing release.
 For an exact containing tag, follow
 [native Windows installation](windows.md#release-availability-and-installation).
@@ -618,7 +619,7 @@ than the first.
    publish if: the version is not semantic, the changelog has no section,
    the built binary does not report the tag, the checksums do not verify, or
    the hermetic inner-loop contracts, either native plugin install check or the
-   exact Windows amd64 day-zero and remote-inspection-boundary artifact check
+   exact Windows amd64 day-zero, remote-inspection and Task Result artifact checks
    fails. Windows arm64 remains
    cross-build/vet/checksum only. The
    release also carries `kmx.rb`, GoReleaser's rendered formula for those exact checksums

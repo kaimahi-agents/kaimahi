@@ -19,12 +19,46 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
 )
 
+const orkaResultTokenLifetime = 10 * time.Minute
+
 // Only this payload-free startup failure may cross suite diagnostic boundaries.
 // Never retain arbitrary port-forward subprocess output in an application error.
 type orkaResultPortError struct{}
 
 func (*orkaResultPortError) Error() string {
 	return "result port-forward could not bind or confirm a loopback port; check port availability and Service access"
+}
+
+func withOrkaResultCleanupStatus(failure, cleanup error) error {
+	if errors.Is(cleanup, portforward.ErrCleanupUnconfirmed) {
+		return errors.Join(failure, portforward.ErrCleanupUnconfirmed)
+	}
+	return failure
+}
+
+func (a *App) closeOrkaResultSession(session *orkaResultSession, failure string) error {
+	if session == nil {
+		return nil
+	}
+	cleanup := session.close()
+	if a != nil && a.resultSessionCleanup != nil {
+		cleanup = errors.Join(cleanup, a.resultSessionCleanup())
+	}
+	if cleanup == nil {
+		return nil
+	}
+	return withOrkaResultCleanupStatus(errors.New(failure), cleanup)
+}
+
+func (a *App) reportOrkaForwardCleanup(scope string, err error) {
+	if err == nil || a == nil || a.Err == nil {
+		return
+	}
+	if errors.Is(err, portforward.ErrCleanupUnconfirmed) {
+		a.notef("warning: Orka %s cleanup unconfirmed; a kubectl port-forward process may still be running", scope)
+		return
+	}
+	a.notef("warning: Orka %s cleanup failed after the forward exited", scope)
 }
 
 // orkaResultSession owns one short-lived, in-memory bearer and proven loopback
@@ -37,6 +71,8 @@ type orkaResultSession struct {
 	conn        net.Conn
 	ctx         context.Context
 	cancel      context.CancelFunc
+	closeOnce   sync.Once
+	closeErr    error
 }
 
 // Losing this connection ends the session, including idle EOF and transport
@@ -200,6 +236,7 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 		return nil, fmt.Errorf("Orka API Service must expose port 8080")
 	}
 	// orkaCapture never echoes commands, stdout or stderr, including failures.
+	tokenRequestedAt := time.Now()
 	raw, err = a.orkaCapture(ctx, nil, "-n", opt.Namespace, "create", "token", opt.ResultServiceAccount, "--duration=10m", "-o", "json")
 	if err != nil {
 		return nil, fmt.Errorf("could not mint the temporary result session token: %w", err)
@@ -216,6 +253,11 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	if request.Status.Expiration.Before(deadline.Add(30 * time.Second)) {
 		return nil, fmt.Errorf("granted token lifetime does not cover the total execution deadline plus 30 seconds; refusing execution")
 	}
+	// TokenRequest may return a different lifetime than requested. Allow bounded
+	// clock/processing skew, but never silently accept a materially longer bearer.
+	if request.Status.Expiration.After(tokenRequestedAt.Add(orkaResultTokenLifetime + 30*time.Second)) {
+		return nil, fmt.Errorf("granted token lifetime exceeds the requested 10 minute bound; refusing execution")
+	}
 	a.notef("Result access uses ServiceAccount %q; authority details: docs/orka.md#runtime-and-result-access", opt.ResultServiceAccount)
 	// Token coverage above uses the original execution cap, not an injected
 	// forward deadline. Bound this phase only once all session preflight passed.
@@ -231,11 +273,12 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	a.orkaForwardContext = forwardCtx
 	fwd, err := portforward.Start(a, opt.Namespace, "svc/"+opt.OrkaAPIService, opt.ResultPort, "8080")
 	a.orkaForwardContext = nil
-	portFailure := func() error {
-		return errors.Join(&orkaResultPortError{}, orkaPhaseError(ctx, forwardParent, forwardParent.Err()))
+	portFailure := func(cleanup error) error {
+		failure := errors.Join(&orkaResultPortError{}, orkaPhaseError(ctx, forwardParent, forwardParent.Err()))
+		return withOrkaResultCleanupStatus(failure, cleanup)
 	}
 	if err != nil {
-		failure := portFailure() // Capture cancellation before releasing phase contexts.
+		failure := portFailure(err) // Capture cancellation before releasing phase contexts.
 		cancel()
 		return nil, failure
 	}
@@ -252,10 +295,9 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	// port cannot receive the bearer: no transport dial opens another socket.
 	conn, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(forwardCtx, "tcp", "127.0.0.1:"+fwd.Port)
 	if err != nil {
-		failure := portFailure()
+		failure := portFailure(nil)
 		cancel()
-		fwd.Close()
-		return nil, failure
+		return nil, withOrkaResultCleanupStatus(failure, fwd.Close())
 	}
 	bound := &orkaResultConn{Conn: conn, cancel: cancel}
 	context.AfterFunc(forwardCtx, func() { _ = bound.Close() })
@@ -265,10 +307,9 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	default:
 	}
 	if forwardCtx.Err() != nil {
-		failure := portFailure()
+		failure := portFailure(nil)
 		_ = bound.Close()
-		fwd.Close()
-		return nil, failure
+		return nil, withOrkaResultCleanupStatus(failure, fwd.Close())
 	}
 	var take sync.Once
 	transport := &http.Transport{
@@ -290,15 +331,24 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	}, nil
 }
 
-func (s *orkaResultSession) close() {
+func (s *orkaResultSession) close() error {
 	if s == nil {
-		return
+		return nil
 	}
-	s.cancel()
-	_ = s.conn.Close()
-	s.forward.Close()
-	s.client.CloseIdleConnections()
-	s.token = ""
+	s.closeOnce.Do(func() {
+		// Stop and reap the owned forward before canceling its command context;
+		// successful cleanup must not be reported as context cancellation.
+		forwardErr := s.forward.Close()
+		connErr := s.conn.Close()
+		if errors.Is(connErr, net.ErrClosed) {
+			connErr = nil
+		}
+		s.cancel()
+		s.client.CloseIdleConnections()
+		s.token = ""
+		s.closeErr = errors.Join(connErr, forwardErr)
+	})
+	return s.closeErr
 }
 
 func (s *orkaResultSession) get(ctx context.Context, namespace, name string) (int, map[string]json.RawMessage, error) {

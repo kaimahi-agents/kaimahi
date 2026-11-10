@@ -56,7 +56,11 @@ func orkaResultPort(port string) (string, error) {
 }
 
 func (a *App) taskRecovery(name, contextName, namespace string) string {
-	return fmt.Sprintf("%s cluster task result %s --context %s --namespace %s --wait 5m", shellArg(a.commandExecutable()), shellArg(name), shellArg(contextName), shellArg(namespace))
+	parts := []string{a.commandArg(a.commandExecutable()), "cluster", "task", "result", a.commandArg(name), "--context", a.commandArg(contextName), "--namespace", a.commandArg(namespace), "--wait", "5m"}
+	if a.CommandShell == "powershell" {
+		parts = append([]string{"&"}, parts...)
+	}
+	return strings.Join(parts, " ")
 }
 
 func (a *App) pendingTask(name, contextName, namespace string) error {
@@ -84,12 +88,12 @@ func orkaPhaseError(parent, phase context.Context, err error) error {
 func (a *App) runTaskWaitError(ctx context.Context, err error, name, contextName, namespace string) error {
 	var phaseDeadline *orkaPhaseDeadlineError
 	if err != nil && errors.Is(err, context.DeadlineExceeded) && (ctx.Err() == context.DeadlineExceeded || errors.As(err, &phaseDeadline)) {
-		return a.pendingTask(name, contextName, namespace)
+		return withOrkaResultCleanupStatus(a.pendingTask(name, contextName, namespace), err)
 	}
 	return err
 }
 
-func (a *App) RunAgent(opt RunAgentOptions) error {
+func (a *App) RunAgent(opt RunAgentOptions) (err error) {
 	if a.Cfg == nil || a.Run == nil || a.Out == nil || a.Err == nil {
 		return fmt.Errorf("run requires configured kubectl and streams")
 	}
@@ -199,7 +203,19 @@ func (a *App) RunAgent(opt RunAgentOptions) error {
 	if err != nil {
 		return err
 	}
-	defer session.close()
+	closed := false
+	closeSession := func(failure string) error {
+		if closed {
+			return nil
+		}
+		closed = true
+		return worker.closeOrkaResultSession(session, failure)
+	}
+	defer func() {
+		if closeErr := closeSession("result session cleanup failed"); closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
+	}()
 	execCtx = session.ctx
 	if err := session.probe(execCtx, namespace, taskName); err != nil {
 		return err
@@ -247,6 +263,9 @@ func (a *App) RunAgent(opt RunAgentOptions) error {
 			return outcome
 		}
 		return fmt.Errorf("%w; recover with: %s", outcome, worker.taskRecovery(taskName, worker.Cfg.KubeContext, namespace))
+	}
+	if closeErr := closeSession("result session cleanup failed after Task completion; answer withheld"); closeErr != nil {
+		return closeErr
 	}
 	_, err = fmt.Fprintln(worker.Out, answer)
 	return err

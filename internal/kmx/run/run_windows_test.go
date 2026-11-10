@@ -51,6 +51,33 @@ func TestWindowsCommandOwnerDeathAfterCreateReapsChild(t *testing.T) {
 	waitWindowsProcess(t, "creation-window child", child)
 }
 
+func TestWindowsCommandOwnerDeathAfterAssignmentFailureReapsChild(t *testing.T) {
+	pidFile := filepath.Join(t.TempDir(), "child.pid")
+	owner := exec.Command(os.Args[0], windowsHelperArgs("owner-assignment-failure", pidFile)...)
+	owner.Stdout, owner.Stderr = io.Discard, io.Discard
+	if err := owner.Start(); err != nil {
+		t.Fatalf("start owner: %v", err)
+	}
+	ownerDone := false
+	t.Cleanup(func() {
+		if !ownerDone {
+			_ = owner.Process.Kill()
+			_ = owner.Wait()
+		}
+	})
+
+	childPID := readWindowsHelperPID(t, pidFile)
+	child := openWindowsProcessForTermination(t, childPID)
+	if err := owner.Process.Kill(); err != nil {
+		t.Fatalf("kill owner: %v", err)
+	}
+	if err := owner.Wait(); err == nil {
+		t.Fatal("killed owner exited successfully")
+	}
+	ownerDone = true
+	waitWindowsProcess(t, "assignment-failure child", child)
+}
+
 func TestWindowsRunnerCancellationReapsDescendantTree(t *testing.T) {
 	tests := []struct {
 		name string
@@ -363,6 +390,25 @@ func TestWindowsRunHelper(t *testing.T) {
 			t.Fatalf("start creation-window child: %v", err)
 		}
 		t.Fatal("creation-window hook returned")
+	case "owner-assignment-failure":
+		if len(args) != 2 {
+			t.Fatalf("owner-assignment-failure arguments = %q", args)
+		}
+		cmd := (&Runner{}).Command(os.Args[0], windowsHelperArgs("leaf")...)
+		cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
+		cmd.platform.assign = func(windows.Handle, windows.Handle) error {
+			return errors.New("injected assignment failure")
+		}
+		cmd.platform.afterAssignFailure = func(pid int) {
+			if err := os.WriteFile(args[1], []byte(strconv.Itoa(pid)), 0600); err != nil {
+				os.Exit(3)
+			}
+			select {}
+		}
+		if err := cmd.Start(); err == nil {
+			t.Fatal("assignment failure unexpectedly started child")
+		}
+		t.Fatal("assignment-failure hook returned")
 	default:
 		t.Fatalf("unknown helper mode %q", args[0])
 	}

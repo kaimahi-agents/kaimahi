@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -16,7 +17,7 @@ import (
 
 // ReadOrkaRun reads one root and its verified descendants without changing
 // Tasks. The caller's configured Kubernetes context supplies every CRD read.
-func (a *App) ReadOrkaRun(ctx context.Context, namespace, rootName, rootUID string) (runview.Run, error) {
+func (a *App) ReadOrkaRun(ctx context.Context, namespace, rootName, rootUID string) (result runview.Run, err error) {
 	if a.Cfg == nil || a.Run == nil {
 		return runview.Run{}, fmt.Errorf("run view requires a configured Kubernetes caller")
 	}
@@ -56,7 +57,11 @@ func (a *App) ReadOrkaRun(ctx context.Context, namespace, rootName, rootUID stri
 	defer cancel()
 	session, sessionErr := a.openOrkaResultSession(bounded, CreateOptions{Namespace: namespace, ResultServiceAccount: orkaResultAccount})
 	if session != nil {
-		defer session.close()
+		defer func() {
+			if closeErr := a.closeOrkaResultSession(session, "result session cleanup failed after run view read"); closeErr != nil {
+				err = errors.Join(err, closeErr)
+			}
+		}()
 	}
 	source.session, source.sessionErr = session, sessionErr
 	return runorka.NewReader(source).Read(bounded, cluster, namespace, rootName, rootUID)

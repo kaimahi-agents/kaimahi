@@ -100,7 +100,7 @@ func TestGuardedWindowsDeferredOperationsRefuseBeforeEffects(t *testing.T) {
 	}
 }
 
-func TestGuardedWindowsAmd64AdmitsOnlyExplicitOrkaInspection(t *testing.T) {
+func TestGuardedWindowsAmd64AdmitsExplicitOrkaRemoteOperations(t *testing.T) {
 	cases := []struct {
 		name string
 		args []string
@@ -108,6 +108,7 @@ func TestGuardedWindowsAmd64AdmitsOnlyExplicitOrkaInspection(t *testing.T) {
 		{"list table", []string{"--context", "remote", "cluster", "orka", "list", "--namespace", "team"}},
 		{"show table", []string{"--context", "remote", "cluster", "orka", "show", "assistant", "--namespace", "team"}},
 		{"show json", []string{"cluster", "orka", "show", "assistant", "--namespace", "team", "--tasks", "3", "-o", "json", "--context", "remote"}},
+		{"task result", []string{"--context", "remote", "cluster", "task", "result", "task-one", "--namespace", "team", "--wait", "5m"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -161,6 +162,11 @@ func TestGuardedWindowsRemoteInspectionRefusesIncompleteOrBroaderModesBeforeEffe
 		{"show invalid output", "amd64", []string{"--context", "remote", "cluster", "orka", "show", "one", "--namespace", "team", "-o", "yaml"}},
 		{"orka status stays closed", "amd64", []string{"--context", "remote", "cluster", "orka", "status"}},
 		{"orka install stays closed", "amd64", []string{"--context", "remote", "cluster", "orka", "install"}},
+		{"task missing context", "amd64", []string{"cluster", "task", "result", "task-one", "--namespace", "team"}},
+		{"task missing namespace", "amd64", []string{"--context", "remote", "cluster", "task", "result", "task-one"}},
+		{"run missing namespace", "amd64", []string{"--context", "remote", "run", "--agent", "assistant", "--prompt", "hello"}},
+		{"run prompt file stays closed", "amd64", []string{"--context", "remote", "run", "--agent", "assistant", "--namespace", "team", "--prompt-file", "prompt.txt"}},
+		{"run positional file stays closed with context", "amd64", []string{"--context", "remote", "run", "agent.md"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -490,12 +496,13 @@ func TestGuardedWindowsSupportedCommandFlagsAreExhaustivelyAllowlisted(t *testin
 		allFlags   []string
 		allowFlags []string
 	}{
-		{[]string{"run"}, []string{file}, []string{"agent", "case", "container-engine", "context", "mcp-server", "model", "name", "namespace", "new", "no-content", "no-mcp-servers", "once", "output", "prompt", "prompt-file", "provider", "provider-url", "result-port", "tests", "tool-bindings", "upgrade", "verbose", "wait", "yes"}, []string{"case", "no-content", "once", "output", "prompt", "tests", "verbose"}},
-		{[]string{"test"}, []string{file}, []string{"case", "check", "container-engine", "context", "github-summary", "host", "mcp-server", "model", "no-content", "no-mcp-servers", "output", "provider", "provider-url", "runner", "tests", "tool-bindings", "verbose"}, []string{"case", "check", "no-content", "output", "tests", "verbose"}},
-		{[]string{"test", "explain"}, nil, []string{"clear", "container-engine", "context", "file", "show-content", "tests", "workspace"}, []string{"clear", "file", "show-content", "tests"}},
-		{[]string{"eval", "explain"}, nil, []string{"clear", "container-engine", "context", "file", "show-content", "tests", "workspace"}, []string{"clear", "file", "show-content", "tests"}},
-		{[]string{"cluster", "orka", "list"}, nil, []string{"container-engine", "context", "namespace", "output"}, []string{"namespace", "output"}},
-		{[]string{"cluster", "orka", "show"}, []string{"assistant"}, []string{"container-engine", "context", "namespace", "output", "tasks"}, []string{"namespace", "output", "tasks"}},
+		{path: []string{"run"}, args: []string{file}, allFlags: []string{"agent", "case", "container-engine", "context", "mcp-server", "model", "name", "namespace", "new", "no-content", "no-mcp-servers", "once", "output", "prompt", "prompt-file", "provider", "provider-url", "result-port", "tests", "tool-bindings", "upgrade", "verbose", "wait", "yes"}, allowFlags: []string{"case", "no-content", "once", "output", "prompt", "tests", "verbose"}},
+		{path: []string{"test"}, args: []string{file}, allFlags: []string{"case", "check", "container-engine", "context", "github-summary", "host", "mcp-server", "model", "no-content", "no-mcp-servers", "output", "provider", "provider-url", "runner", "tests", "tool-bindings", "verbose"}, allowFlags: []string{"case", "check", "no-content", "output", "tests", "verbose"}},
+		{path: []string{"test", "explain"}, allFlags: []string{"clear", "container-engine", "context", "file", "show-content", "tests", "workspace"}, allowFlags: []string{"clear", "file", "show-content", "tests"}},
+		{path: []string{"eval", "explain"}, allFlags: []string{"clear", "container-engine", "context", "file", "show-content", "tests", "workspace"}, allowFlags: []string{"clear", "file", "show-content", "tests"}},
+		{path: []string{"cluster", "orka", "list"}, allFlags: []string{"container-engine", "context", "namespace", "output"}, allowFlags: []string{"namespace", "output"}},
+		{path: []string{"cluster", "orka", "show"}, args: []string{"assistant"}, allFlags: []string{"container-engine", "context", "namespace", "output", "tasks"}, allowFlags: []string{"namespace", "output", "tasks"}},
+		{path: []string{"cluster", "task", "result"}, args: []string{"task-one"}, allFlags: []string{"container-engine", "context", "namespace", "result-port", "wait"}, allowFlags: []string{"namespace", "result-port", "wait"}},
 	}
 	for _, tc := range cases {
 		var out, errOut bytes.Buffer
@@ -529,7 +536,7 @@ func TestGuardedWindowsSupportedCommandFlagsAreExhaustivelyAllowlisted(t *testin
 					t.Fatal(err)
 				}
 				_ = cmd.InheritedFlags()
-				if strings.HasPrefix(strings.Join(tc.path, " "), "cluster orka") {
+				if strings.HasPrefix(strings.Join(tc.path, " "), "cluster ") {
 					state.contextFlag = "remote"
 					if err := cmd.Flags().Set("namespace", "team"); err != nil {
 						t.Fatal(err)
@@ -546,6 +553,10 @@ func TestGuardedWindowsSupportedCommandFlagsAreExhaustivelyAllowlisted(t *testin
 					value = file
 				} else if name == "namespace" {
 					value = "team"
+				} else if name == "agent" {
+					value = "assistant"
+				} else if name == "prompt" {
+					value = "hello"
 				}
 				if err := cmd.Flags().Set(name, value); err != nil {
 					t.Fatal(err)

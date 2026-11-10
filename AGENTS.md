@@ -575,8 +575,10 @@ It is last controller-observed admission, not live availability or qualification
 
 ## Agent-file preview boundary
 
-Canonical `run FILE` / `test FILE` accept explicit `--tool-bindings FILE` as
-host-only input; no discovery or inbound-MCP binding selection. The production
+Canonical one-shot `run FILE --once` / `test FILE` accept explicit
+`--tool-bindings FILE` as host-only input; no discovery or inbound-MCP binding
+selection. Native Windows treats `run FILE` as one-shot because resident workers
+are unavailable. The production
 runner installs localtools.NewMCPHost: explicit env snapshot, no constructor
 network, lazy read-owned Streamable-HTTP session and one fixed GitHub search.
 Require exact repository_url and explicit merged_at, complete search and <=20
@@ -599,8 +601,9 @@ The internal localtools stdio owner accepts only resolved host launch inputs and
 explicit mapped names, using checked bounded pipes, frozen explicit env and owned
 Unix process-group cleanup. Callers must check Close before accepting completion
 and use the outer invocation context, not a resolver context canceled by Run.
-Only file CLI Run/Test consumes frozen folder mcpServers/liveToolServers and
-repeatable --mcp-server selection; --no-mcp-servers clears both saved/explicit
+Only one-shot file CLI Run/Test consumes frozen folder
+mcpServers/liveToolServers and repeatable --mcp-server selection;
+--no-mcp-servers clears both saved/explicit
 names, fixed --tool-bindings retains precedence. The default CLI wrapper owns
 lazy checked launch/config/env resolution and Close before App acceptance/save;
 no private CLI intent means the app/MCP factory remains unchanged. Disabled,
@@ -610,7 +613,7 @@ ambient baseline. Destination readers structurally validate then discard these
 two subtrees, keeping other operational decoding strict. Native Windows tools
 remain deferred; process groups are not containment.
 
-File CLI Run/Test also resolves declared Enabled `commandTools` from that folder:
+One-shot file CLI Run/Test also resolves declared Enabled `commandTools` from that folder:
 fixed absolute executable/argv, empty-object tool input, folder-confined working
 directory and frozen named environment references. MCP selection does not disable
 commands. Disabled and populated recorded tools do not resolve launches. Keep the
@@ -620,8 +623,9 @@ second each; uncertain cleanup withholds completion. Native Windows commands
 remain deferred. Unselected command entries receive only the shared structural
 YAML checks; their launch semantics cannot block a selected command or MCP tool.
 
-Canonical `run FILE` / `test FILE` use the parser and `agentpreview.Runner`
-interface without cluster/workspace configuration. CLI/MCP fake/local and explicit
+Canonical one-shot `run FILE --once` / `test FILE` use the parser and
+`agentpreview.Runner` interface without cluster/workspace configuration. Native
+Windows `run FILE` takes this one-shot path. CLI/MCP fake/local and explicit
 Copilot routes use embedded Sessions: optional ad-hoc input first, selected ordered
 examples, one invocation-owned private journal, and one fresh Session per agent
 turn and per judge sample. Preserve the shared two-sample scorer and exact mixed
@@ -657,8 +661,9 @@ File Run/Test `--verbose` is content-free stderr diagnostics only, never implici
 only validated local origins and standard endpoint paths may be shown. Failed
 diagnostic writes stop later sends and refuse a full pass.
 See [file preview](docs/kmx.md#agent-file-local-preview-unreleased-integration).
-CLI `run FILE` requests answer-only execution: selected inputs/mocks keep their
-order and one journal, but assertions and judge routes/access are skipped.
+CLI one-shot `run FILE --once`, including implicit native Windows one-shot Run,
+requests answer-only execution: selected inputs/mocks keep their order and one
+journal, but assertions and judge routes/access are skipped.
 Completed rows are ANSWERED with unknown verdict and never fullPass; journal,
 credential/content, completion attribution and tool/capture guards still apply.
 Test and default App/MCP preview callers retain assertion evaluation. The internal
@@ -960,7 +965,8 @@ authority.
 Native Windows support is prerelease-only and operation-specific. Current `main`
 on amd64 permits inert version/help/completion, package-free fake `run FILE` /
 `test FILE`, offline `test explain ... --file FILE`, and read-only remote
-`cluster orka list/show` with explicit `--context` and `--namespace`. Hidden
+`cluster orka list/show` and existing `cluster task result` with explicit
+`--context` and `--namespace`. Hidden
 `eval explain` may remain only as the deprecated compatibility spelling. File
 Run/Test may use inline `--prompt`, but provider, endpoint, tool-binding,
 prompt-file and GitHub-summary modes stay deferred. Orka inspection requires an
@@ -971,7 +977,16 @@ their existing Unix kubectl-native contract, while native Windows list is
 table-only. Show resolves
 cross-namespace references exactly and withholds credential-bearing Provider
 diagnostics from every output; it names Secret references but fetches no Secret
-object and reports presence unknown. Published v0.9.0 release candidates beginning with
+object and reports presence unknown. Task Result uses one bounded in-memory
+ServiceAccount token and owned loopback-only forward; pending inspection opens
+none, cleanup errors withhold answers, and recovery uses PowerShell syntax. The
+selected plaintext Orka Service/backend remains a trusted runtime boundary: v0.3.0
+provides no backend TLS identity or result-token audience, so loopback is not
+in-cluster attestation. Disclose that namespace workload administrators can
+substitute the backend, capture the temporary reader token and forge an answer.
+Request ten minutes and refuse a materially longer granted lifetime.
+Live Run/Chat remain refused because Orka's current name-only Task AgentRef has no
+create-time Agent UID/generation precondition. Published v0.9.0 release candidates beginning with
 `v0.9.0-rc.4` retain the older day-zero-only boundary until a later release
 contains this exception.
 
@@ -985,7 +1000,7 @@ existing WSL Copilot plugin.
 
 Hosted Windows amd64 must build/vet all packages and execute the checkout CLI
 through version/help/completion, package-free fake Run/failing Test/offline
-Explain and compiled-kubectl list/show journeys with no skips. The exact staged
+Explain and compiled-kubectl list/show/Task Result journeys with no skips. The exact staged
 release `.exe` must additionally reach the checksum-verified native kubectl
 inspection boundary without state. Windows
 arm64 is cross-built, vetted, metadata-checked and checksummed only; make no

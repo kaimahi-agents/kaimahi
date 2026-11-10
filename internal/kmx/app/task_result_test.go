@@ -3,12 +3,17 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/portforward"
 )
 
 func taskResultFixture(t *testing.T) (*evalFixture, TaskResultOptions) {
@@ -89,6 +94,44 @@ func TestTaskResultNoWaitDoesNotPollAnUnavailableHTTPAnswer(t *testing.T) {
 	}
 }
 
+func TestTaskResultPostOpenErrorsPreserveSafeCleanupStatus(t *testing.T) {
+	const private = "private-cleanup-canary"
+	for _, tc := range []struct {
+		name      string
+		setup     func(*evalFixture)
+		pending   bool
+		text      string
+		wantClass string
+	}{
+		{name: "pending answer", setup: func(f *evalFixture) { f.answers["private prompt"] = "" }, pending: true},
+		{name: "endpoint refusal", setup: func(f *evalFixture) { f.resultStatus = http.StatusForbidden }, text: "HTTP 403", wantClass: "result-http-403"},
+		{name: "answer withheld", setup: func(*evalFixture) {}, text: "result session cleanup failed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, opt := taskResultFixture(t)
+			tc.setup(f)
+			cleanupCalls := 0
+			f.app.resultSessionCleanup = func() error {
+				cleanupCalls++
+				return errors.Join(errors.New(private), portforward.ErrCleanupUnconfirmed)
+			}
+			err := f.app.TaskResult(opt)
+			if cleanupCalls != 1 || errors.Is(err, ErrTaskPending) != tc.pending || !errors.Is(err, portforward.ErrCleanupUnconfirmed) || strings.Contains(err.Error(), private) || tc.text != "" && !strings.Contains(err.Error(), tc.text) {
+				t.Fatalf("unsafe or incomplete cleanup result: %v", err)
+			}
+			if tc.wantClass != "" {
+				var diagnostic *suiteDiagnosticError
+				if !errors.As(err, &diagnostic) || diagnostic.class != tc.wantClass {
+					t.Fatalf("cleanup lost endpoint diagnostic class: %v", err)
+				}
+			}
+			if f.out.Len() != 0 {
+				t.Fatalf("post-open failure wrote stdout: %q", f.out)
+			}
+		})
+	}
+}
+
 func TestTaskResultRejectsNonAITaskAndMissingTask(t *testing.T) {
 	f, original := taskResultFixture(t)
 	for _, tc := range []struct {
@@ -112,6 +155,136 @@ func TestTaskResultRejectsNonAITaskAndMissingTask(t *testing.T) {
 				t.Fatalf("stdout=%q", f.out)
 			}
 		})
+	}
+}
+
+func TestTaskResultRejectsAmbiguousIdentityJSON(t *testing.T) {
+	base := []byte(`{"apiVersion":"core.orka.ai/v1alpha1","kind":"Task","metadata":{"name":"task-one","namespace":"demo","uid":"task-uid","generation":1},"spec":{"type":"ai"}}`)
+	for _, mutation := range []struct{ name, from, to string }{
+		{"case alias apiVersion", `"apiVersion":"core.orka.ai/v1alpha1"`, `"apiVersion":"core.orka.ai/v1alpha1","APIVersion":"v1"`},
+		{"duplicate kind", `"kind":"Task"`, `"kind":"Task","kind":"Secret"`},
+		{"case alias kind", `"kind":"Task"`, `"kind":"Task","Kind":"Secret"`},
+		{"duplicate uid", `"uid":"task-uid"`, `"uid":"other","uid":"task-uid"`},
+	} {
+		t.Run(mutation.name, func(t *testing.T) {
+			raw := append([]byte(nil), base...)
+			raw = bytes.Replace(raw, []byte(mutation.from), []byte(mutation.to), 1)
+			if !bytes.Contains(raw, []byte(mutation.to)) {
+				t.Fatal("fixture mutation did not apply")
+			}
+			if _, _, err := decodeTaskResultIdentity(raw, "task-one", "demo"); err == nil || !strings.Contains(err.Error(), "invalid or terminating identity") {
+				t.Fatalf("ambiguous identity accepted: err=%v", err)
+			}
+		})
+	}
+}
+
+func TestTaskResultAcceptsCaseSensitiveKubernetesMetadata(t *testing.T) {
+	f, opt := taskResultFixture(t)
+	path := filepath.Join(f.dir, "task-"+opt.Task+".json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var task map[string]any
+	if err := json.Unmarshal(raw, &task); err != nil {
+		t.Fatal(err)
+	}
+	task["metadata"].(map[string]any)["annotations"] = map[string]any{
+		"example.com/Foo": "upper",
+		"example.com/foo": "lower",
+	}
+	raw, err = json.Marshal(task)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.app.TaskResult(opt); err != nil {
+		t.Fatalf("valid case-sensitive metadata blocked Task Result: %v", err)
+	}
+	if got := f.out.String(); got != "retrieved answer\n" {
+		t.Fatalf("stdout=%q", got)
+	}
+}
+
+func TestTaskResultAcceptsLiveTaskBeyondOfflineBundleLimits(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(map[string]any) string
+		check  func(*testing.T, []byte)
+	}{
+		{
+			name: "escaped prompt over one MiB",
+			mutate: func(task map[string]any) string {
+				prompt := strings.Repeat("\x01", 180<<10)
+				task["spec"].(map[string]any)["prompt"] = prompt
+				return prompt
+			},
+			check: func(t *testing.T, raw []byte) {
+				if len(raw) <= offlineJSONLimit {
+					t.Fatalf("fixture is only %d bytes", len(raw))
+				}
+			},
+		},
+		{
+			name: "more than 1024 annotations",
+			mutate: func(task map[string]any) string {
+				annotations := map[string]any{}
+				for i := range 1025 {
+					annotations[fmt.Sprintf("example.com/key-%04d", i)] = "value"
+				}
+				task["metadata"].(map[string]any)["annotations"] = annotations
+				return task["spec"].(map[string]any)["prompt"].(string)
+			},
+			check: func(t *testing.T, raw []byte) {
+				if len(raw) >= offlineJSONLimit {
+					t.Fatalf("annotation fixture also exceeds size limit: %d bytes", len(raw))
+				}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, opt := taskResultFixture(t)
+			path := filepath.Join(f.dir, "task-"+opt.Task+".json")
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var task map[string]any
+			if err := json.Unmarshal(raw, &task); err != nil {
+				t.Fatal(err)
+			}
+			prompt := tc.mutate(task)
+			raw, err = json.Marshal(task)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tc.check(t, raw)
+			if err := os.WriteFile(path, raw, 0600); err != nil {
+				t.Fatal(err)
+			}
+			f.answers[prompt] = "retrieved answer"
+			if err := f.app.TaskResult(opt); err != nil {
+				t.Fatalf("valid live Task blocked: %v", err)
+			}
+			if got := f.out.String(); got != "retrieved answer\n" {
+				t.Fatalf("stdout=%q", got)
+			}
+		})
+	}
+}
+
+func TestTaskResultRejectsAmbiguousIdentityOnStatusReread(t *testing.T) {
+	f, opt := taskResultFixture(t)
+	t.Setenv("KMX_EVAL_TASK_DUPLICATE_IDENTITY_ON_READ", "2")
+	err := f.app.TaskResult(opt)
+	if err == nil || !strings.Contains(err.Error(), "invalid Task/"+opt.Task+" status response") {
+		t.Fatalf("ambiguous status identity accepted: err=%v", err)
+	}
+	if strings.Contains(f.out.String(), "answer") {
+		t.Fatalf("ambiguous status identity exposed an answer: %q", f.out.String())
 	}
 }
 

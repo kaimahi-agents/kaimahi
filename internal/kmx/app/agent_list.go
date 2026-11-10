@@ -44,7 +44,7 @@ func (a *App) listOrkaAgents(output, namespace string) error {
 	if err != nil {
 		return err
 	}
-	if err := a.preflightOrkaInspection(); err != nil {
+	if err := a.preflightOrkaRemote(); err != nil {
 		return err
 	}
 	if format != "table" {

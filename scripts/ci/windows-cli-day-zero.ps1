@@ -18,7 +18,7 @@ if (Test-Path -LiteralPath $root) { throw 'Day-zero qualification requires a fre
 if ($root -notmatch ' ' -or $root -notmatch '[^\x00-\x7f]') { throw 'Qualification root must exercise spaces and non-ASCII paths.' }
 
 $environmentNames = @(
-    'KMX_HOME', 'KMX_TOOLCHAIN', 'MODEL', 'PATH',
+    'KMX_HOME', 'KMX_TOOLCHAIN', 'KMX_LOCAL_AGENT_WORKER', 'MODEL', 'PATH',
     'COPILOT_GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN',
     'OPENAI_API_KEY', 'AZURE_OPENAI_API_KEY', 'ANTHROPIC_API_KEY',
     'GOOGLE_API_KEY', 'GEMINI_API_KEY', 'MODEL_API_KEY', 'ORKA_API_KEY',
@@ -120,6 +120,7 @@ try {
     $stateHome = Join-Path $root "state home $nonAscii"
     [Environment]::SetEnvironmentVariable('KMX_HOME', $stateHome, 'Process')
     [Environment]::SetEnvironmentVariable('KMX_TOOLCHAIN', 'off', 'Process')
+    [Environment]::SetEnvironmentVariable('KMX_LOCAL_AGENT_WORKER', $null, 'Process')
     [Environment]::SetEnvironmentVariable('MODEL', $null, 'Process')
     [Environment]::SetEnvironmentVariable('PATH', '', 'Process')
     foreach ($name in @(
@@ -206,6 +207,15 @@ try {
     Assert-Contract ([string]::IsNullOrWhiteSpace($deferred.Stdout)) 'Deferred command wrote ordinary output before refusal.'
     Assert-Contract ($deferred.Stderr -match '(?i)(not available|unsupported|refus)') 'Deferred command did not report an operation refusal.'
     Assert-Contract (-not (Test-Path -LiteralPath $deferredHome) -and -not (Test-Path -LiteralPath $deferredWorkspace)) 'Deferred command created state before refusal.'
+
+    $workerFlagHome = Join-Path $root "worker flag state $nonAscii"
+    $workerFlagWorkspace = Join-Path $root "worker flag workspace $nonAscii"
+    [Environment]::SetEnvironmentVariable('KMX_HOME', $workerFlagHome, 'Process')
+    [Environment]::SetEnvironmentVariable('KMX_LOCAL_AGENT_WORKER', '1', 'Process')
+    $workerFlag = Invoke-Kmx -CommandArgs @('package', 'create', 'worker-flag-greeter', '--workspace', $workerFlagWorkspace) -ExpectedExitCodes @(1)
+    Assert-Contract ([string]::IsNullOrWhiteSpace($workerFlag.Stdout)) 'Ambient worker flag bypass wrote ordinary output.'
+    Assert-Contract ($workerFlag.Stderr -match '(?i)(not available|unsupported|refus)') 'Ambient worker flag bypassed the native Windows platform refusal.'
+    Assert-Contract (-not (Test-Path -LiteralPath $workerFlagHome) -and -not (Test-Path -LiteralPath $workerFlagWorkspace)) 'Ambient worker flag bypass created state before refusal.'
 
     Write-Output 'Native Windows amd64 day-zero CLI qualification passed.'
 } finally {

@@ -84,14 +84,17 @@ stdout and exit contracts are preserved; this is not a receipt or bundle migrati
 
 ## Agent-file preview integration (unreleased)
 
-By default, canonical `run FILE` / `test FILE` dispatch to a cluster-independent App adapter
-and the embedded-runner interface. Run optionally adds a separate ad-hoc input;
-both check saved ordered examples. `--case ID` is always partial. Versioned
-payload-free text/JSON results are local preview, never native evidence. The
-CLI's default embedded runner uses Agent Sessions for fake, local and Copilot models, with one
-Session per agent turn and two independent judge samples per llmJudge assertion.
-The invocation-owned cleartext journal retains instructions, inputs, answers,
-judge payloads and reasoning under the existing retention and clearing policy.
+Canonical `run FILE` starts or reuses a resident local agent; `run FILE --once`
+and `test FILE` dispatch to the cluster-independent App adapter and embedded-runner
+interface. Native Windows implicitly uses one-shot Run because resident workers
+are unavailable. One-shot Run with `--prompt` runs only that supplied input by
+default; `--case ID` additionally selects one saved example. Test checks saved
+ordered examples, and `--case ID` is always partial. Versioned payload-free
+text/JSON results are local preview, never native evidence. The embedded runner
+uses Agent Sessions for fake, local and Copilot models, with one Session per agent
+turn and two independent judge samples per llmJudge assertion. The invocation-owned
+cleartext journal retains instructions, inputs, answers, judge payloads and
+reasoning under the existing retention and clearing policy.
 Copilot content checks stay provider-owned and run before journaling. Replay
 makes zero model calls and does not create native evidence. There are no
 inference retries or fallback. Existing live `run --agent`, full-workspace Test,
@@ -356,8 +359,9 @@ recovery or teardown behavior. Ready/answered/evaluated are distinct evidence.
 - Destination status is GET-only inspection; retirement remains unavailable.
   Deploy does not transfer live state,
   sessions or memory, delete source, perform cutover or grant teardown authority.
-- Native Windows amd64 read-only Orka list/show requires explicit context and
-  namespace and never enables live Run, Test, publication or Deploy.
+- Native Windows amd64 Orka list/show and existing Task Result require explicit
+  context and namespace. They do not enable live Run/Chat, workspace Test,
+  publication or Deploy.
 
 ## Audit and existing work
 

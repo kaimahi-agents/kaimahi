@@ -4,6 +4,8 @@ package run
 
 import (
 	"context"
+	"errors"
+	"os"
 	"os/exec"
 )
 
@@ -20,3 +22,15 @@ func newCommand(ctx context.Context, name string, args ...string) *Command {
 // Keep Capture's historical Unix error formatting. Windows needs the original
 // context cause because its Job Object cancellation replaces a process-only kill.
 func commandContextError(context.Context) error { return nil }
+
+// Terminate stops cmd without consuming its Wait call.
+func Terminate(cmd *Command) error {
+	if cmd == nil || cmd.Process == nil {
+		return nil
+	}
+	err := cmd.Process.Kill()
+	if errors.Is(err, os.ErrProcessDone) {
+		return nil
+	}
+	return err
+}

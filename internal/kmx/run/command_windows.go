@@ -29,28 +29,31 @@ var (
 )
 
 type windowsStartState struct {
-	root          windows.Handle
-	initialThread windows.Handle
-	processID     uint32
-	started       bool
-	assigned      bool
-	debugAttached bool
+	root                windows.Handle
+	initialThread       windows.Handle
+	processID           uint32
+	started             bool
+	assigned            bool
+	debugAttached       bool
+	terminationObserved bool
 }
 
 type platformCommand struct {
-	mu          sync.Mutex
-	ready       chan struct{}
-	readyOnce   sync.Once
-	job         windows.Handle
-	monitorDone chan struct{}
-	setupErr    error
-	cleanupErr  error
-	rootExited  bool
-	terminated  bool
-	cancelled   bool
-	closed      bool
-	resume      bool
-	afterCreate func(int)
+	mu                 sync.Mutex
+	ready              chan struct{}
+	readyOnce          sync.Once
+	job                windows.Handle
+	monitorDone        chan struct{}
+	setupErr           error
+	cleanupErr         error
+	rootExited         bool
+	terminated         bool
+	cancelled          bool
+	closed             bool
+	resume             bool
+	afterCreate        func(int)
+	assign             func(windows.Handle, windows.Handle) error
+	afterAssignFailure func(int)
 }
 
 func (c *Command) initPlatform() {
@@ -101,20 +104,31 @@ func (c *Command) startWindowsProcessOnThread(job windows.Handle) (windowsStartS
 		err   error
 	}
 	completed := make(chan result, 1)
+	finished := make(chan struct{})
 	go func() {
+		defer close(finished)
 		runtime.LockOSThread()
 		state, err := c.startWindowsProcess(job)
 		if err != nil {
-			err = joinPlatformError(err, releaseWindowsDebugGuard(&state))
+			err = joinPlatformError(err, c.requestWindowsStartTermination(&state))
 			completed <- result{state: state, err: err}
-			// Returning while locked retires any thread-scoped debugger state if
-			// cleanup could not prove that the temporary attachment ended.
+			// Returning while locked retires the debugger thread. Until this return,
+			// owner death remains the backstop for an unassigned suspended child.
 			return
 		}
 		runtime.UnlockOSThread()
 		completed <- result{state: state}
 	}()
 	started := <-completed
+	<-finished
+	if started.err != nil && started.state.started {
+		started.state.debugAttached = false
+		if err := waitForWindowsProcess(c.Process); err != nil {
+			started.err = joinPlatformError(started.err, err)
+		} else {
+			started.state.terminationObserved = true
+		}
+	}
 	return started.state, started.err
 }
 
@@ -169,7 +183,11 @@ func (c *Command) startWindowsProcess(job windows.Handle) (windowsStartState, er
 	var assignErr, membershipErr, duplicateErr error
 	handleErr := c.Process.WithHandle(func(raw uintptr) {
 		process := windows.Handle(raw)
-		assignErr = windows.AssignProcessToJobObject(job, process)
+		assign := c.platform.assign
+		if assign == nil {
+			assign = windows.AssignProcessToJobObject
+		}
+		assignErr = assign(job, process)
 		if assignErr != nil {
 			return
 		}
@@ -193,6 +211,9 @@ func (c *Command) startWindowsProcess(job windows.Handle) (windowsStartState, er
 		return state, fmt.Errorf("access subprocess handle: %w", handleErr)
 	}
 	if assignErr != nil {
+		if c.platform.afterAssignFailure != nil {
+			c.platform.afterAssignFailure(c.Process.Pid)
+		}
 		return state, fmt.Errorf("assign subprocess to job: %w", assignErr)
 	}
 	if membershipErr != nil {
@@ -380,16 +401,42 @@ func processInWindowsJob(process, job windows.Handle) (bool, error) {
 	return member != 0, nil
 }
 
-func releaseWindowsDebugGuard(state *windowsStartState) error {
-	var cleanupErr error
-	if state.debugAttached && state.processID != 0 {
-		if err := debugActiveProcessStop(state.processID); err != nil {
-			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("detach failed subprocess startup guard: %w", err))
-		} else {
-			state.debugAttached = false
-		}
+func (c *Command) requestWindowsStartTermination(state *windowsStartState) error {
+	if !state.started || c.Process == nil {
+		return nil
 	}
-	return cleanupErr
+
+	if state.assigned {
+		return c.platform.terminate()
+	}
+	terminateErr := c.Process.Kill()
+	if errors.Is(terminateErr, os.ErrProcessDone) {
+		return nil
+	}
+	if terminateErr != nil {
+		return terminateErr
+	}
+	return nil
+}
+
+func waitForWindowsProcess(process *os.Process) error {
+	var event uint32
+	var waitErr error
+	handleErr := process.WithHandle(func(raw uintptr) {
+		event, waitErr = windows.WaitForSingleObject(
+			windows.Handle(raw), uint32(windowsTreeWait.Milliseconds()),
+		)
+	})
+	if handleErr != nil {
+		return fmt.Errorf("access failed subprocess handle: %w", handleErr)
+	}
+	if waitErr != nil {
+		return fmt.Errorf("wait for failed subprocess: %w", waitErr)
+	}
+	if event != windows.WAIT_OBJECT_0 {
+		return fmt.Errorf("failed subprocess remained active: wait status %d", event)
+	}
+	return nil
 }
 
 func (c *Command) failWindowsStart(primary error, state *windowsStartState) error {
@@ -414,11 +461,13 @@ func (c *Command) failWindowsStart(primary error, state *windowsStartState) erro
 		}
 		state.root = 0
 	}
-	if state.assigned {
-		cleanupErr = errors.Join(cleanupErr, c.platform.terminate())
-	} else if c.Process != nil {
-		if err := c.Process.Kill(); !errors.Is(err, os.ErrProcessDone) {
-			cleanupErr = errors.Join(cleanupErr, err)
+	if !state.terminationObserved {
+		if state.assigned {
+			cleanupErr = errors.Join(cleanupErr, c.platform.terminate())
+		} else if c.Process != nil {
+			if err := c.Process.Kill(); !errors.Is(err, os.ErrProcessDone) {
+				cleanupErr = errors.Join(cleanupErr, err)
+			}
 		}
 	}
 	c.platform.finishSetup(primary)

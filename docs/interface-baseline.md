@@ -22,7 +22,7 @@ expands those visible product commands:
 ```text
 kmx
 ├── create NAME                   (agent file and paired example test)
-├── run [FILE [input]] [--tests FILE] | --agent <name>
+├── run [FILE] [-p|--prompt TEXT] [--tests FILE] | --agent <name>
 ├── test [FILE] [--tests FILE]
 │   └── explain [failure-id] --file FILE [--tests FILE]
 ├── list [-a] [-o table|json]     (local registrations; --context selects Orka)
@@ -80,8 +80,10 @@ preview of one agent file whose completed non-pass diagnostics can be explained 
 `test explain --file FILE`. Bare `kmx test` tests direct `*.agent.md` agents in the
 current folder and `.github/agents/` (non-recursive) with one text/JSON/GitHub summary
 reporting failed, unknown and not-run counts; it never falls back to `package test`,
-and `--tests`/`--case` require an explicit FILE. Explicit `run FILE` is the
-corresponding preview Run.
+and `--tests`/`--case` require an explicit FILE. Explicit `run FILE` starts or
+reuses a resident local agent; `run FILE --once` is the corresponding preview
+Run. Native Windows implicitly takes that one-shot path because resident workers
+are unavailable.
 File Run/Test read the agent's default companion tests unless `--tests FILE`
 selects another tests file; the agent bytes and prompt are unchanged, and file-scoped
 Explain uses the current `--tests FILE` selection.
@@ -99,7 +101,8 @@ package-free fake `run FILE` / `test FILE` (including the `--tests FILE` selecto
 native Windows still requires an explicit file), offline `test explain ... --file
 FILE` (with optional `--tests FILE`; plus the hidden legacy Explain spelling for
 compatibility), and Windows-amd64 read-only `cluster orka list/show` with explicit
-context and namespace. Every other route refuses before effects. See the
+context and namespace plus existing `cluster task result`. Every other route,
+including live Run/Chat, refuses before effects. See the
 [native Windows command boundary](windows.md#supported-native-commands).
 
 Unreleased `model list` defaults to local discovery; explicit Copilot listing

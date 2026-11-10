@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -39,7 +40,11 @@ type evalFixture struct {
 func newEvalFixture(t *testing.T, cases map[string]string) *evalFixture {
 	t.Helper()
 	dir := t.TempDir()
-	fakeTool(t, dir, "kubectl", kubectlFixture(t, "TestEvalKubectlHelper"))
+	if runtime.GOOS == "windows" {
+		installDirectKubectlFixture(t, dir, "evaluate")
+	} else {
+		fakeTool(t, dir, "kubectl", kubectlFixture(t, "TestEvalKubectlHelper"))
+	}
 	t.Setenv("PATH", dir)
 	t.Setenv("KMX_EVAL_DIR", dir)
 	t.Setenv("KMX_HOME", filepath.Join(dir, "user-state"))
@@ -97,7 +102,7 @@ func newEvalFixture(t *testing.T, cases map[string]string) *evalFixture {
 func (f *evalFixture) seedAgent(t *testing.T, digest string) {
 	t.Helper()
 	agent := map[string]any{
-		"kind": "Agent",
+		"apiVersion": "core.orka.ai/v1alpha1", "kind": "Agent",
 		"metadata": map[string]any{"name": f.name, "namespace": "orka-system", "uid": "agent-uid", "generation": 1,
 			"annotations": map[string]any{orkaBundleMarker: f.name, orkaPortableMarker: digest, orkaRenderedMarker: strings.Repeat("b", 64)}},
 		"status": map[string]any{"ready": true, "conditions": []any{map[string]any{"type": "Ready", "status": "True", "observedGeneration": 1}}},

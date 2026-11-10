@@ -12,6 +12,8 @@
 // context-pinned namespace inventories without config/state acquisition.
 // Provisioning JSONL observes existing phase boundaries with operation-local
 // cancellation and conservative mutation projections, never readiness proof.
+// Orka transport cleanup reports only fixed, payload-free status;
+// suite errors preserve cleanup uncertainty without subprocess diagnostics.
 //
 // Offline cluster bring-up validates a closed manifest and clean binary identity
 // against an embedded catalog. The source-packaged 7916cd1c profile records chart
@@ -48,9 +50,11 @@
 // two-sample scores and sanitized transient reasons only with content disclosure.
 // Tool availability notes derive from frozen settings and dispatch sources without
 // changing request-based assertions, recording data or the JSON result contract.
-// Live Orka list/show inspection uses bounded context-pinned kubectl reads,
-// private subprocess diagnostics and bounded terminal-safe human projections;
-// machine JSON/YAML retains the cluster's original values.
+// Live Orka list/show and explicit-target Task Result use bounded context-pinned
+// kubectl calls, owned subprocess trees and private diagnostics. Task reads reject
+// ambiguous identity aliases without imposing offline bundle entry limits.
+// Windows Result retains one connection per accepted answer and no suite evidence;
+// machine list/show output retains the Unix contract.
 package app
 
 import (
@@ -108,6 +112,10 @@ type App struct {
 	// commands retain it so a checkout binary cannot redirect to an older kmx
 	// earlier on PATH. Empty keeps the installed-command spelling "kmx".
 	Executable string
+	// CommandShell selects syntax for generated follow-up commands. Empty and
+	// "posix" preserve the existing Unix contract; "powershell" is used only by
+	// the guarded native Windows command adapter.
+	CommandShell string
 	// DeployPresentation selects current CLI stage labels only. Historical JSON,
 	// plan identities and consent-bound data remain unchanged; zero preserves Lift.
 	DeployPresentation bool
@@ -143,6 +151,9 @@ type App struct {
 	// waitTiming overrides retry pacing and phase deadlines in tests only.
 	// Nil preserves every production interval and timeout.
 	waitTiming *waitTiming
+	// resultSessionCleanup adds a post-close failure in tests only. Production
+	// always relies solely on the owned session's checked cleanup result.
+	resultSessionCleanup func() error
 	// progressUI replaces destination detection in tests only. Production uses
 	// cliui.New against Err so styling follows the actual output stream.
 	progressUI progressPresenter
@@ -298,6 +309,25 @@ func (a *App) Command(args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(a.orkaForwardContext, prepared.Path, prepared.Args[1:]...)
 	cmd.Env = prepared.Env
 	return cmd
+}
+
+// OwnedCommand prepares a forward without bypassing the platform process-tree
+// lifecycle. It also retains the invocation's frozen kubectl identity.
+func (a *App) OwnedCommand(args ...string) (*run.Command, error) {
+	ctx := a.orkaForwardContext
+	if ctx == nil {
+		ctx = a.operationContext()
+	}
+	runner := *a.Run
+	runner.Context = ctx
+	if a.inspectionKubectl != "" {
+		freezeOrkaInspectionEnvironment(&runner)
+	}
+	tool, err := a.orkaInspectionCommand(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return runner.Command(tool, a.kubectl(args...)...), nil
 }
 
 // kubeconfig reads the merged kubeconfig, saying plainly when the reason it

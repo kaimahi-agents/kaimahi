@@ -74,6 +74,10 @@ func windowsCommandAllowed(cmd *cobra.Command, args []string, state *commandStat
 			return len(args) == 1 && scaffold.ValidateObjectName(args[0]) == nil &&
 				windowsRemoteInspectionSelection(cmd, state, "table", "json") &&
 				windowsFlagsAllowed(cmd, "namespace", "output", "tasks")
+		case "cluster task result":
+			return len(args) == 1 && scaffold.ValidateObjectName(args[0]) == nil &&
+				windowsRemoteTargetSelection(cmd, state) &&
+				windowsFlagsAllowed(cmd, "namespace", "result-port", "wait")
 		}
 	}
 	if state.contextFlag != "" {
@@ -99,14 +103,7 @@ func windowsCommandAllowed(cmd *cobra.Command, args []string, state *commandStat
 }
 
 func windowsRemoteInspectionSelection(cmd *cobra.Command, state *commandState, formats ...string) bool {
-	contextName := strings.TrimSpace(state.contextFlag)
-	if contextName == "" || len(contextName) > 256 || !utf8.ValidString(contextName) ||
-		strings.IndexFunc(contextName, func(r rune) bool { return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) }) >= 0 ||
-		secretshapes.Match(contextName) != nil {
-		return false
-	}
-	namespace := cmd.Flag("namespace")
-	if namespace == nil || !namespace.Changed || scaffold.ValidateNamespace(strings.TrimSpace(namespace.Value.String())) != nil {
+	if !windowsRemoteTargetSelection(cmd, state) {
 		return false
 	}
 	output := cmd.Flag("output")
@@ -120,6 +117,20 @@ func windowsRemoteInspectionSelection(cmd *cobra.Command, state *commandState, f
 		}
 	}
 	return false
+}
+
+func windowsRemoteTargetSelection(cmd *cobra.Command, state *commandState) bool {
+	contextName := strings.TrimSpace(state.contextFlag)
+	if contextName == "" || len(contextName) > 256 || !utf8.ValidString(contextName) ||
+		strings.IndexFunc(contextName, func(r rune) bool { return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) }) >= 0 ||
+		secretshapes.Match(contextName) != nil {
+		return false
+	}
+	namespace := cmd.Flag("namespace")
+	if namespace == nil || !namespace.Changed || scaffold.ValidateNamespace(strings.TrimSpace(namespace.Value.String())) != nil {
+		return false
+	}
+	return true
 }
 
 func windowsPackageFreeFakePair(cmd *cobra.Command, args []string, state *commandState) bool {
