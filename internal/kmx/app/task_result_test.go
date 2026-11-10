@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -205,6 +206,73 @@ func TestTaskResultAcceptsCaseSensitiveKubernetesMetadata(t *testing.T) {
 	}
 	if got := f.out.String(); got != "retrieved answer\n" {
 		t.Fatalf("stdout=%q", got)
+	}
+}
+
+func TestTaskResultAcceptsLiveTaskBeyondOfflineBundleLimits(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(map[string]any) string
+		check  func(*testing.T, []byte)
+	}{
+		{
+			name: "escaped prompt over one MiB",
+			mutate: func(task map[string]any) string {
+				prompt := strings.Repeat("\x01", 180<<10)
+				task["spec"].(map[string]any)["prompt"] = prompt
+				return prompt
+			},
+			check: func(t *testing.T, raw []byte) {
+				if len(raw) <= offlineJSONLimit {
+					t.Fatalf("fixture is only %d bytes", len(raw))
+				}
+			},
+		},
+		{
+			name: "more than 1024 annotations",
+			mutate: func(task map[string]any) string {
+				annotations := map[string]any{}
+				for i := range 1025 {
+					annotations[fmt.Sprintf("example.com/key-%04d", i)] = "value"
+				}
+				task["metadata"].(map[string]any)["annotations"] = annotations
+				return task["spec"].(map[string]any)["prompt"].(string)
+			},
+			check: func(t *testing.T, raw []byte) {
+				if len(raw) >= offlineJSONLimit {
+					t.Fatalf("annotation fixture also exceeds size limit: %d bytes", len(raw))
+				}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, opt := taskResultFixture(t)
+			path := filepath.Join(f.dir, "task-"+opt.Task+".json")
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var task map[string]any
+			if err := json.Unmarshal(raw, &task); err != nil {
+				t.Fatal(err)
+			}
+			prompt := tc.mutate(task)
+			raw, err = json.Marshal(task)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tc.check(t, raw)
+			if err := os.WriteFile(path, raw, 0600); err != nil {
+				t.Fatal(err)
+			}
+			f.answers[prompt] = "retrieved answer"
+			if err := f.app.TaskResult(opt); err != nil {
+				t.Fatalf("valid live Task blocked: %v", err)
+			}
+			if got := f.out.String(); got != "retrieved answer\n" {
+				t.Fatalf("stdout=%q", got)
+			}
+		})
 	}
 }
 

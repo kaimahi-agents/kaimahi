@@ -4,4 +4,5 @@
 
 ### Fixed
 
+- Live Orka Task reads no longer apply offline bundle size and entry-count limits while retaining ambiguous identity rejection.
 - Retry transient interrupted Darwin process-exit observations during local stdio tool cleanup, with bounded retries and fail-closed handling when interruption persists.

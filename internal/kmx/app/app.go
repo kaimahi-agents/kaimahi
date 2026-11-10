@@ -51,9 +51,10 @@
 // Tool availability notes derive from frozen settings and dispatch sources without
 // changing request-based assertions, recording data or the JSON result contract.
 // Live Orka list/show and explicit-target Task Result use bounded context-pinned
-// kubectl calls, owned subprocess trees and private diagnostics. Windows Result
-// retains one connection per accepted answer and no suite evidence; machine
-// list/show output retains the Unix contract.
+// kubectl calls, owned subprocess trees and private diagnostics. Task reads reject
+// ambiguous identity aliases without imposing offline bundle entry limits.
+// Windows Result retains one connection per accepted answer and no suite evidence;
+// machine list/show output retains the Unix contract.
 package app
 
 import (

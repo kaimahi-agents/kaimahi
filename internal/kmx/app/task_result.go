@@ -128,7 +128,7 @@ func decodeTaskResultIdentity(raw []byte, name, namespace string) (orkaIdentity,
 			Type string `json:"type"`
 		} `json:"spec"`
 	}
-	if offlineJSON(raw, &object, false) != nil || object.APIVersion != "core.orka.ai/v1alpha1" || object.Kind != "Task" || object.Metadata.Name != name || object.Metadata.Namespace != namespace || object.Metadata.UID == "" || object.Metadata.Generation < 1 || object.Metadata.DeletionTimestamp != nil {
+	if liveOrkaJSON(raw, &object) != nil || object.APIVersion != "core.orka.ai/v1alpha1" || object.Kind != "Task" || object.Metadata.Name != name || object.Metadata.Namespace != namespace || object.Metadata.UID == "" || object.Metadata.Generation < 1 || object.Metadata.DeletionTimestamp != nil {
 		return orkaIdentity{}, "", fmt.Errorf("Task %s/%s has invalid or terminating identity", namespace, name)
 	}
 	return orkaIdentity{Kind: "Task", Name: name, UID: object.Metadata.UID, Generation: object.Metadata.Generation, strictAPIVersion: object.APIVersion}, object.Spec.Type, nil

@@ -134,12 +134,22 @@ func offlineJSON(raw []byte, out any, closed bool) error {
 	if len(raw) > offlineJSONLimit {
 		return fmt.Errorf("JSON exceeds 1 MiB")
 	}
+	return unambiguousJSON(raw, out, closed, 1024)
+}
+
+// liveOrkaJSON relies on orkaCapture's response bound rather than imposing the
+// smaller offline file and container-entry limits on Kubernetes objects.
+func liveOrkaJSON(raw []byte, out any) error {
+	return unambiguousJSON(raw, out, false, 0)
+}
+
+func unambiguousJSON(raw []byte, out any, closed bool, maxContainerValues int) error {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	var t reflect.Type
 	if !closed {
 		t = reflect.TypeOf(out).Elem()
 	}
-	if err := offlineJSONValue(dec, 0, t); err != nil {
+	if err := offlineJSONValue(dec, 0, t, maxContainerValues); err != nil {
 		return fmt.Errorf("invalid or duplicate JSON")
 	}
 	if _, err := dec.Token(); err != io.EOF {
@@ -156,7 +166,7 @@ func offlineJSON(raw []byte, out any, closed bool) error {
 	}
 	return nil
 }
-func offlineJSONValue(dec *json.Decoder, depth int, t reflect.Type) error {
+func offlineJSONValue(dec *json.Decoder, depth int, t reflect.Type, maxContainerValues int) error {
 	if depth > 64 {
 		return fmt.Errorf("JSON nesting")
 	}
@@ -175,7 +185,7 @@ func offlineJSONValue(dec *json.Decoder, depth int, t reflect.Type) error {
 	count := 0
 	for dec.More() {
 		count++
-		if count > 1024 {
+		if maxContainerValues > 0 && count > maxContainerValues {
 			return fmt.Errorf("JSON count")
 		}
 		var child reflect.Type
@@ -194,7 +204,7 @@ func offlineJSONValue(dec *json.Decoder, depth int, t reflect.Type) error {
 			}
 			keys[name] = true
 		}
-		if err := offlineJSONValue(dec, depth+1, child); err != nil {
+		if err := offlineJSONValue(dec, depth+1, child, maxContainerValues); err != nil {
 			return err
 		}
 	}

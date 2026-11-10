@@ -296,7 +296,7 @@ func (a *App) readOrkaObject(ctx context.Context, namespace string, id orkaIdent
 		return nil, fmt.Errorf("cannot read %s/%s UID %s; it may have disappeared: %w", id.Kind, id.Name, id.UID, err)
 	}
 	var object orkaObject
-	if id.strictAPIVersion != "" && offlineJSON(raw, &object, false) != nil {
+	if id.strictAPIVersion != "" && liveOrkaJSON(raw, &object) != nil {
 		return nil, fmt.Errorf("invalid %s/%s status response", id.Kind, id.Name)
 	} else if id.strictAPIVersion == "" && json.Unmarshal(raw, &object) != nil {
 		return nil, fmt.Errorf("invalid %s/%s status response", id.Kind, id.Name)
