@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -147,6 +148,9 @@ func parseExamplesDocument(file string, root *yaml.Node, location func(*yaml.Nod
 		if title := values["title"]; title != nil {
 			if title.Kind != yaml.ScalarNode || title.Tag != "!!str" || !ValidTestTitle(title.Value) {
 				return nil, errAt(title, "test title must be a nonblank string of at most 160 Unicode characters without control, format or line-separator characters")
+			}
+			if secretshapes.Match(title.Value) != nil {
+				return nil, errAt(title, "test title must not contain credential-shaped content")
 			}
 			e.Title = title.Value
 		}

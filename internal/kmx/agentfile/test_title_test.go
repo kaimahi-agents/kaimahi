@@ -35,6 +35,16 @@ func TestParseTestTitles(t *testing.T) {
 	}
 }
 
+func TestParseTestTitleRejectsDecodedCredentialShape(t *testing.T) {
+	// The raw source is not credential-shaped; YAML decoding assembles it.
+	value := `"\u0067` + "hp_" + strings.Repeat("A", 36) + `"`
+	_, err := ParseTests("g.agent.test.md", []byte(titleSource(value)))
+	var detail *Error
+	if !errors.As(err, &detail) || !strings.Contains(detail.Problem, "title") || !strings.Contains(detail.Problem, "credential") {
+		t.Fatal("decoded credential-shaped title was not refused with a safe title diagnostic")
+	}
+}
+
 func TestTestTitleDoesNotWidenInlineOrSquad(t *testing.T) {
 	inline := "---\nname: greeter\nmodel: fake\ntools: []\n---\nSay hello.\n\n## Examples\n\n```yaml\nexamples:\n  - id: greeting\n    title: A name\n    input: Ada\n    assertions: [{id: check, type: contains, value: Ada}]\n```\n"
 	if _, err := Parse("g.agent.md", []byte(inline)); err == nil {
