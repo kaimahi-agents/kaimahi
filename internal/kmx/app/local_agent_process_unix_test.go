@@ -160,16 +160,12 @@ func TestResidentCommandToolRunsThroughBroker(t *testing.T) {
 	t.Setenv("RESIDENT_TOOL_SECRET", "must-not-reach-broker-command")
 	dir := t.TempDir()
 	source := filepath.Join(dir, "resident.agent.md")
-	command := filepath.Join(dir, "command")
 	raw := []byte("---\nname: resident\ndescription: resident tool test\nmodel: fake\ntools: [check]\n---\nCall the tool `check`. Reply with exactly `tool complete`.\n")
 	if err := os.WriteFile(source, raw, 0600); err != nil {
 		t.Fatal(err)
 	}
 	commandSource := "#!/bin/sh\nif [ -n \"${RESIDENT_TOOL_SECRET+x}\" ]; then exit 91; fi\nprintf 'broker command completed'\n"
-	if err := os.WriteFile(command, []byte(commandSource), 0700); err != nil {
-		t.Fatal(err)
-	}
-	config := fmt.Sprintf("tools: {check: Enabled}\ncommandTools:\n  check:\n    command: %q\n    args: []\n    checks:\n      compatibility:\n        args: []\n        timeout: 5s\n        expect: {exitCode: 0}\n", command)
+	config := fmt.Sprintf("tools: {check: Enabled}\ncommandTools:\n  check:\n    command: /bin/sh\n    args: [-c, %q]\n    checks:\n      compatibility:\n        args: [-c, %q]\n        timeout: 5s\n        expect: {exitCode: 0}\n", commandSource, commandSource)
 	if err := os.WriteFile(filepath.Join(dir, "kmx.yaml"), []byte(config), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +205,7 @@ func TestResidentCommandToolRunsThroughBroker(t *testing.T) {
 	if _, err := InvokeLocalAgent(t.Context(), record.ID, session.ID, "limit this call"); err == nil {
 		t.Fatal("broker exceeded the bound call budget")
 	}
-	if err := os.WriteFile(command, []byte(commandSource+"# changed\n"), 0700); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "kmx.yaml"), []byte(config+"# changed\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	changedCommands, err := localtools.FreezeCommandPlan(t.Context(), source, pair.Agent.Tools)
@@ -236,16 +232,12 @@ func TestResidentCommandToolCancellationKeepsBrokerUsable(t *testing.T) {
 	t.Setenv("KMX_HOME", home)
 	dir := t.TempDir()
 	source := filepath.Join(dir, "resident.agent.md")
-	command := filepath.Join(dir, "command")
 	if err := os.WriteFile(source, []byte("---\nname: resident\nmodel: fake\ntools: [check]\n---\nCall the tool `check`. Reply with exactly `tool complete`.\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	marker := filepath.Join(dir, "started")
 	commandSource := "#!/bin/sh\nif [ -e " + shellQuote(marker) + " ]; then printf 'broker command completed'; exit 0; fi\nprintf started > " + shellQuote(marker) + "\nsleep 30\n"
-	if err := os.WriteFile(command, []byte(commandSource), 0700); err != nil {
-		t.Fatal(err)
-	}
-	config := fmt.Sprintf("tools: {check: Enabled}\ncommandTools:\n  check:\n    command: %q\n    args: []\n", command)
+	config := fmt.Sprintf("tools: {check: Enabled}\ncommandTools:\n  check:\n    command: /bin/sh\n    args: [-c, %q]\n", commandSource)
 	if err := os.WriteFile(filepath.Join(dir, "kmx.yaml"), []byte(config), 0600); err != nil {
 		t.Fatal(err)
 	}
