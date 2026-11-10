@@ -234,6 +234,7 @@ schemaVersion: 1
 
 ```yaml agent-test
 id: greeting
+title: Greets the person by name
 input: Ada
 assertions:
   - id: greeting-text
@@ -243,10 +244,24 @@ assertions:
 ````
 
 Only `schemaVersion: 1` is supported in this frontmatter. Each fence contains one
-mapping using the existing `id`, inline `input`, `assertions` and optional
+mapping using `id`, inline `input`, `assertions`, optional `title` and optional
 `mocks.tools` fields. The [assertion semantics](#examples-and-assertions),
 [explicit tool modes](#per-test-recorded-tools), limits and credential checks are
 unchanged. Tool checks and mock names must match the agent's declared tools.
+
+`title` is a plain-text display name, not a selector or instruction. If present,
+it must be a nonblank string of at most 160 Unicode code points, counting leading
+and trailing whitespace. Controls, Unicode format characters (including bidi
+controls) and line separators are invalid. Text is preserved without trimming or
+normalization and rendered literally. Titles are supported only in separate test
+files, not inline Examples or native Squad charters. Sparse edits and recording
+saves preserve an existing title. Credentials remain forbidden.
+
+Test output shows `id — title` when a title is present, otherwise just the id.
+JSON result examples include optional `title` beside `id`; absent titles omit the
+key. [Machine JSONL](machine-output.md#file-test-jsonl) also carries the title.
+Selection, assertions and execution identities still use the unchanged id.
+
 IDs are unique across the tests file, and node/case limits apply across fences,
 not separately to each fence. A valid header without test fences means zero tests,
 distinct from a missing tests file; neither is a passing test result.

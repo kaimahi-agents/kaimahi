@@ -57,7 +57,7 @@ func checkToolContent(check func(...string) error, r agentpreview.Request) error
 		if localtools.CheckJSONPayloads(ex.Mocks, check, mockPayloadPaths...) != nil {
 			return agentpreview.ErrUnsafeToolContent
 		}
-		fields = append(fields, ex.ID, ex.Input)
+		fields = append(fields, ex.ID, ex.Input, ex.Title)
 		for _, as := range ex.Assertions {
 			fields = append(fields, as.ID, as.Type, as.Value, as.Pattern, as.Tool, as.Rubric, as.JudgeModel, as.JudgeVersion)
 		}

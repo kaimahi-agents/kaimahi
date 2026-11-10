@@ -220,7 +220,8 @@ This opt-in format keeps the existing runner choice, intake, model/tool/judge
 validation and timeout budgets. Embedded remains default; format selection does
 not require copilotd. Run and folder Test still support their existing formats,
 not JSONL. `--github-summary` still requires JSON and refuses JSONL before work.
-Text and the existing single-document `-o json` remain unchanged.
+Text and the existing single-document `-o json` retain their existing formats;
+separate-file test titles add an optional label/field as described below.
 
 The operation is `file.test`. After the full `test FILE` route, the four explicit
 selectors `-o jsonl`, `-ojsonl`, `--output jsonl` and `--output=jsonl` guarantee safe
@@ -243,7 +244,24 @@ Unsafe or over-1024-byte identities are omitted/unavailable, never clipped.
 
 Ordered `case.summary` events immediately precede the terminal result, one per
 selected case including not-started cases (maximum 128). `caseIndex` is one-based;
-`caseId` is optional. Each summary has `state`, `verdict`, nullable `durationMs`,
+`caseId` is optional. A test authored with `title` in its `.agent.test.md` file
+also supplies optional `title` beside `caseId`, on both case-related progress
+(including session/tool events) and summary rows. It is plain display text, never
+an identifier; use `caseId` for selection and correlation. For example, these
+fields in a summary identify a named test (envelope and other fields omitted):
+
+```json
+{"event":"case.summary","caseIndex":1,"caseId":"greeting","title":"Greets the person by name","state":"complete","verdict":"pass"}
+```
+
+A missing or unsafe title is omitted, never an empty string. Titles pass the
+frozen credential checks, are absent before readiness, and are withheld whenever
+case identity is withheld, including final unsafe-content redaction. Consumers
+may display `title` and fall back to `caseId`. Single-document JSON uses the same
+optional `title` on each `examples` row beside `id`. Untitled test output stays
+unchanged; schema version remains 1.
+
+Each summary has `state`, `verdict`, nullable `durationMs`,
 `session`, `chat`, `turn`, `task`, `calls`, `usage` and separate `judgeUsage`.
 Identity fields have `availability` and an optional checked `id`; Task remains
 unavailable because native file execution uses AHP Session/chat, not Orka Tasks.

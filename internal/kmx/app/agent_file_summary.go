@@ -11,6 +11,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
 const (
@@ -76,7 +77,7 @@ func writeFilePreviewGitHubSummary(w io.Writer, result FilePreviewResult, ordina
 		fmt.Fprintln(&out, "| Test | Verdict | Duration | Reason |")
 		fmt.Fprintln(&out, "|---|---|---:|---|")
 		for _, example := range result.Examples {
-			fmt.Fprintf(&out, "| `%s` | `%s` | %s | `%s`: %s |\n", example.ID, example.Verdict, summaryDuration(example.DurationMs), example.ReasonCode, summaryReason(example.ReasonCode))
+			fmt.Fprintf(&out, "| %s | `%s` | %s | `%s`: %s |\n", summaryTestLabel(example), example.Verdict, summaryDuration(example.DurationMs), example.ReasonCode, summaryReason(example.ReasonCode))
 		}
 
 		fmt.Fprintf(&out, "\n%s Checks\n\n", level)
@@ -89,7 +90,7 @@ func writeFilePreviewGitHubSummary(w io.Writer, result FilePreviewResult, ordina
 				if written == fileSummaryMaxCheckRows {
 					continue
 				}
-				fmt.Fprintf(&out, "| `%s` | `%s` | `%s` | `%s` | `%s`: %s |\n", example.ID, assertion.ID, assertion.Type, assertion.Verdict, assertion.ReasonCode, summaryReason(assertion.ReasonCode))
+				fmt.Fprintf(&out, "| %s | `%s` | `%s` | `%s` | `%s`: %s |\n", summaryTestLabel(example), assertion.ID, assertion.Type, assertion.Verdict, assertion.ReasonCode, summaryReason(assertion.ReasonCode))
 				written++
 			}
 		}
@@ -121,7 +122,7 @@ func writeFilePreviewGitHubSummary(w io.Writer, result FilePreviewResult, ordina
 				if state == "" {
 					state = localtools.Enabled
 				}
-				fmt.Fprintf(&out, "| `%s` | `%s` | `%s` | `%s` | `%s` | %d |\n", example.ID, tool.Name, state, tool.Mode, tool.Source, tool.CallCount)
+				fmt.Fprintf(&out, "| %s | `%s` | `%s` | `%s` | `%s` | %d |\n", summaryTestLabel(example), tool.Name, state, tool.Mode, tool.Source, tool.CallCount)
 				unavailable = unavailable || fileToolUnavailable(tool, result.ToolSettings)
 				written++
 			}
@@ -139,6 +140,24 @@ func writeFilePreviewGitHubSummary(w io.Writer, result FilePreviewResult, ordina
 	}
 	_, err := io.WriteString(w, out.String())
 	return err
+}
+
+// Encode ASCII punctuation as entities so authored labels cannot create table
+// cells, links, HTML, code spans or mentions. Untitled rows stay byte-identical.
+func summaryTestLabel(example FilePreviewExample) string {
+	label := "`" + example.ID + "`"
+	if example.Title == "" {
+		return label
+	}
+	var title strings.Builder
+	for _, r := range example.Title {
+		if r > ' ' && r < 127 && !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9') {
+			fmt.Fprintf(&title, "&#%d;", r)
+		} else {
+			title.WriteRune(r)
+		}
+	}
+	return label + " — " + title.String()
 }
 
 func validFilePreviewSummary(result FilePreviewResult) bool {
@@ -200,6 +219,9 @@ func validFilePreviewSummary(result FilePreviewResult) bool {
 	}
 	recordingsSaved := 0
 	for _, example := range result.Examples {
+		if example.Title != "" && (!agentfile.ValidTestTitle(example.Title) || secretshapes.Match(example.Title) != nil) {
+			return false
+		}
 		if !evaluationEvidenceID.MatchString(example.ID) || !summaryState(example.State) || !summaryVerdict(example.Verdict) || !summaryReasonCode(example.ReasonCode) || !summaryMilliseconds(example.DurationMs) || len(example.Assertions) > runtime.EvaluationMaxAssertions {
 			return false
 		}

@@ -146,7 +146,8 @@ type FilePreviewCompletion struct {
 	Tools         []agentpreview.ToolSummary    `json:"tools,omitempty"`
 }
 type FilePreviewExample struct {
-	ID string `json:"id"`
+	ID    string `json:"id"`
+	Title string `json:"title,omitempty"`
 	FilePreviewCompletion
 	Verdict    runtime.EvaluationVerdict `json:"verdict"`
 	Assertions []FilePreviewAssertion    `json:"assertions"`
@@ -415,7 +416,7 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	}
 	for _, ex := range selected {
 		r.Selection.CaseIDs = append(r.Selection.CaseIDs, ex.ID)
-		row := FilePreviewExample{ID: ex.ID, FilePreviewCompletion: previewCompletion("not_run", "not_run"), Verdict: runtime.EvaluationUnknown, Assertions: []FilePreviewAssertion{}}
+		row := FilePreviewExample{ID: ex.ID, Title: ex.Title, FilePreviewCompletion: previewCompletion("not_run", "not_run"), Verdict: runtime.EvaluationUnknown, Assertions: []FilePreviewAssertion{}}
 		for _, as := range ex.Assertions {
 			if opt.SkipAssertions {
 				break
