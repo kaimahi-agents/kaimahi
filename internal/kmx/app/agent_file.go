@@ -414,9 +414,11 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	if len(parsed.Tools) == 0 && opt.ToolBindings != "" {
 		return fail("invalid_options", 1)
 	}
+	hasTitles := false
 	for _, ex := range selected {
+		hasTitles = hasTitles || ex.Title != ""
 		r.Selection.CaseIDs = append(r.Selection.CaseIDs, ex.ID)
-		row := FilePreviewExample{ID: ex.ID, Title: ex.Title, FilePreviewCompletion: previewCompletion("not_run", "not_run"), Verdict: runtime.EvaluationUnknown, Assertions: []FilePreviewAssertion{}}
+		row := FilePreviewExample{ID: ex.ID, FilePreviewCompletion: previewCompletion("not_run", "not_run"), Verdict: runtime.EvaluationUnknown, Assertions: []FilePreviewAssertion{}}
 		for _, as := range ex.Assertions {
 			if opt.SkipAssertions {
 				break
@@ -521,9 +523,26 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 			request.SourceText = append(request.SourceText, string(suite.Source))
 		}
 	}
+	// Keep titles out of early refusals: until the runner resolves its frozen
+	// credential owners, even a plain opaque label may be a credential.
+	if hasTitles || opt.Machine != nil {
+		request.TelemetryReady = func(check func(...string) error) error {
+			for _, ex := range selected {
+				if ex.Title != "" && check(ex.Title) != nil {
+					return agentpreview.ErrCredentialContent
+				}
+			}
+			for i, ex := range selected {
+				r.Examples[i].Title = ex.Title
+			}
+			if opt.Machine != nil {
+				return opt.Machine.ready(check)
+			}
+			return nil
+		}
+	}
 	notify := opt.CaseFinished
 	if opt.Machine != nil {
-		request.TelemetryReady = opt.Machine.ready
 		request.Observed = func(o agentpreview.Observation) error {
 			if ctx.Err() != nil {
 				return nil

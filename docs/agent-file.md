@@ -259,7 +259,9 @@ saves preserve an existing title. Credentials remain forbidden.
 
 Test output shows `id — title` when a title is present, otherwise just the id.
 JSON result examples include optional `title` beside `id`; absent titles omit the
-key. [Machine JSONL](machine-output.md#file-test-jsonl) also carries the title.
+key. Early refusals omit titles until credential preflight has approved them.
+[Machine JSONL](machine-output.md#file-test-jsonl) also carries the title. GitHub
+summaries show it once in the Tests table; Checks and Tools refer to the stable id.
 Selection, assertions and execution identities still use the unchanged id.
 
 IDs are unique across the tests file, and node/case limits apply across fences,

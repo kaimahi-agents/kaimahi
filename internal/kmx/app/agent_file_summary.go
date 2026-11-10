@@ -90,7 +90,7 @@ func writeFilePreviewGitHubSummary(w io.Writer, result FilePreviewResult, ordina
 				if written == fileSummaryMaxCheckRows {
 					continue
 				}
-				fmt.Fprintf(&out, "| %s | `%s` | `%s` | `%s` | `%s`: %s |\n", summaryTestLabel(example), assertion.ID, assertion.Type, assertion.Verdict, assertion.ReasonCode, summaryReason(assertion.ReasonCode))
+				fmt.Fprintf(&out, "| `%s` | `%s` | `%s` | `%s` | `%s`: %s |\n", example.ID, assertion.ID, assertion.Type, assertion.Verdict, assertion.ReasonCode, summaryReason(assertion.ReasonCode))
 				written++
 			}
 		}
@@ -122,7 +122,7 @@ func writeFilePreviewGitHubSummary(w io.Writer, result FilePreviewResult, ordina
 				if state == "" {
 					state = localtools.Enabled
 				}
-				fmt.Fprintf(&out, "| %s | `%s` | `%s` | `%s` | `%s` | %d |\n", summaryTestLabel(example), tool.Name, state, tool.Mode, tool.Source, tool.CallCount)
+				fmt.Fprintf(&out, "| `%s` | `%s` | `%s` | `%s` | `%s` | %d |\n", example.ID, tool.Name, state, tool.Mode, tool.Source, tool.CallCount)
 				unavailable = unavailable || fileToolUnavailable(tool, result.ToolSettings)
 				written++
 			}

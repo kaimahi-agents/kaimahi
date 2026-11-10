@@ -258,8 +258,9 @@ A missing or unsafe title is omitted, never an empty string. Titles pass the
 frozen credential checks, are absent before readiness, and are withheld whenever
 case identity is withheld, including final unsafe-content redaction. Consumers
 may display `title` and fall back to `caseId`. Single-document JSON uses the same
-optional `title` on each `examples` row beside `id`. Untitled test output stays
-unchanged; schema version remains 1.
+optional `title` on each `examples` row beside `id`. Early refusals omit titles
+until credential preflight approves them, even if a case id remains available.
+Untitled test output stays unchanged; schema version remains 1.
 
 Each summary has `state`, `verdict`, nullable `durationMs`,
 `session`, `chat`, `turn`, `task`, `calls`, `usage` and separate `judgeUsage`.

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/localpreview"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
 )
 
@@ -112,21 +114,85 @@ func TestFileTestTitleCredentialPreflight(t *testing.T) {
 	}
 }
 
-func TestFileTestTitleSummaryLiteral(t *testing.T) {
-	t.Setenv("KMX_HOME", t.TempDir())
-	title := "<b>@someone</b> | `code` [link](https://example.test)"
-	p := titlePair(t, title)
-	runner := localpreview.NewRunner(localpreview.RunnerOptions{JournalDir: func() (string, error) { return t.TempDir(), nil }})
-	result, err := (&App{FileRunner: runner}).PreviewAgentPairSnapshot(context.Background(), p, FilePreviewOptions{File: p.AgentPath, Operation: "test", Model: "fake"})
-	// This fixture can fail its assertion; the label still belongs in the summary.
-	if result.State != "complete" {
-		t.Fatalf("preview not complete: %v %+v", err, result)
+func TestFileTestTitleWithheldBeforePreflight(t *testing.T) {
+	for _, early := range []string{"cancelled", "settings", "setup-failure"} {
+		t.Run(early, func(t *testing.T) {
+			p := titlePair(t, "opaquecredential")
+			ctx := t.Context()
+			opt := FilePreviewOptions{File: p.AgentPath, Operation: "test", Model: "fake"}
+			runner := localpreview.NewRunner(localpreview.RunnerOptions{
+				Access: func(context.Context, []modelaccess.Route) (modelaccess.PreviewAccess, error) {
+					return nil, agentpreview.ErrModelUnavailable
+				},
+				JournalDir: func() (string, error) { t.Fatal("early refusal opened journal"); return "", nil },
+			})
+			switch early {
+			case "cancelled":
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+			case "settings":
+				opt.ExpectedToolSettings = &[]localtools.ToolSetting{{Name: "changed", State: localtools.Enabled}}
+			case "setup-failure":
+				route := copilotPreviewRoute()
+				opt.Route, opt.Model = &route, route.Model
+			}
+			result, err := (&App{FileRunner: runner}).PreviewAgentPairSnapshot(ctx, p, opt)
+			if err == nil {
+				t.Fatal("early refusal accepted")
+			}
+			encoded, _ := json.Marshal(result)
+			var text bytes.Buffer
+			_ = WriteFilePreview(&text, result, "text")
+			var summary bytes.Buffer
+			_ = WriteFilePreviewGitHubSummary(&summary, result)
+			if strings.Contains(string(encoded)+text.String()+summary.String(), "opaquecredential") {
+				t.Fatal("unchecked title reached early-refusal output")
+			}
+		})
+	}
+}
+
+func TestFileTestTitleSummaryByteBound(t *testing.T) {
+	result := summaryFixture()
+	result.Examples = nil
+	result.Selection.CaseIDs = nil
+	result.Selection.TotalCases = 128
+	result.ToolSettings = nil
+	for j := range 4 {
+		result.ToolSettings = append(result.ToolSettings, localtools.ToolSetting{Name: fmt.Sprintf("tool-%d", j), State: localtools.Enabled})
+	}
+	for i := range 128 {
+		ex := summaryFixture().Examples[0]
+		ex.ID, ex.Title = fmt.Sprintf("case-%d", i), strings.Repeat("~", 160)
+		ex.Assertions, ex.Tools, ex.ToolCalls = nil, nil, 4
+		for j := range 4 {
+			as := summaryFixture().Examples[0].Assertions[0]
+			as.ID = fmt.Sprintf("check-%d", j)
+			ex.Assertions = append(ex.Assertions, as)
+			ex.Tools = append(ex.Tools, agentpreview.ToolSummary{Name: fmt.Sprintf("tool-%d", j), Mode: "recorded", Source: "recorded", CallCount: 1})
+		}
+		result.Examples = append(result.Examples, ex)
+		result.Selection.CaseIDs = append(result.Selection.CaseIDs, ex.ID)
 	}
 	var out bytes.Buffer
 	if err := WriteFilePreviewGitHubSummary(&out, result); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Count(out.String(), "someone") != 2 || !strings.Contains(out.String(), "external") {
+	if out.Len() > 1<<20 {
+		t.Fatalf("supported titles exceed the GitHub step limit: %d bytes", out.Len())
+	}
+}
+
+func TestFileTestTitleSummaryLiteral(t *testing.T) {
+	title := "<b>@someone</b> | `code` [link](https://example.test)"
+	result := summaryFixture()
+	result.Examples[0].Title = title
+	var out bytes.Buffer
+	if err := WriteFilePreviewGitHubSummary(&out, result); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(out.String(), "someone") != 1 || !strings.Contains(out.String(), "greeting") {
 		t.Fatalf("missing label: %s", &out)
 	}
 	for _, active := range []string{"<b>", "@someone", " | `code`", "[link](https://example.test)"} {
