@@ -138,6 +138,10 @@ func Run(channel, config, readiness *os.File) error {
 		_ = writeFrame(readiness, response{Error: "resident tool broker configuration is unavailable"})
 		return err
 	}
+	if err := localtools.RunCommandChecks(context.Background(), plan.Commands); err != nil {
+		_ = writeFrame(readiness, response{Error: "resident tool checks failed"})
+		return err
+	}
 	conn, err := net.FileConn(channel)
 	if err != nil {
 		_ = writeFrame(readiness, response{Error: "resident tool broker channel is unavailable"})

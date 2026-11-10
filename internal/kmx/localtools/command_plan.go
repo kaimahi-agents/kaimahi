@@ -68,7 +68,7 @@ func FreezeCommandPlan(ctx context.Context, filename string, names []string) (Co
 		if resolveErr != nil || relErr != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
 			return CommandPlan{}, ErrServerSelection
 		}
-		cfg := CommandConfig{Name: definition.name, Command: definition.command, Args: slices.Clone(definition.args), Dir: dir, Env: map[string]string{}}
+		cfg := commandConfigFromDefinition(definition, dir)
 		commandInfo, commandErr := os.Stat(cfg.Command)
 		dirInfo, dirErr := os.Stat(cfg.Dir)
 		if commandErr != nil || !commandInfo.Mode().IsRegular() || commandInfo.Mode().Perm()&0111 == 0 || dirErr != nil || !dirInfo.IsDir() {

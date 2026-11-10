@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/agent-primitives/sessions/api"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 )
 
@@ -36,9 +37,11 @@ type Provider struct {
 }
 
 type ContractTool struct {
-	Name     string `json:"name"`
-	Effect   string `json:"effect"`
-	Approval string `json:"approval"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	InputSchema map[string]any `json:"inputSchema"`
+	Effect      string         `json:"effect"`
+	Approval    string         `json:"approval"`
 }
 
 // LocalBinding resolves one exact contract for one local runtime. It is private
@@ -111,10 +114,17 @@ func (c ToolContract) Validate() error {
 	}
 	prior := ""
 	for _, tool := range c.Tools {
-		if !localtools.ValidToolName(tool.Name) || tool.Name <= prior || tool.Effect != "unspecified" || tool.Approval != "policy-controlled" {
+		if !localtools.ValidToolName(tool.Name) || tool.Name <= prior || tool.Description == "" || tool.InputSchema == nil || tool.Effect != "unspecified" || tool.Approval != "policy-controlled" {
 			return errors.New("invalid resident tool contract")
 		}
 		prior = tool.Name
+	}
+	definitions := make([]api.ToolDefinition, 0, len(c.Tools))
+	for _, tool := range c.Tools {
+		definitions = append(definitions, api.ToolDefinition{Name: tool.Name, Description: tool.Description, InputSchema: tool.InputSchema})
+	}
+	if _, err := localtools.CopyDefinitions(definitions); err != nil {
+		return errors.New("invalid resident tool contract")
 	}
 	return nil
 }
@@ -197,9 +207,13 @@ func (b LocalBinding) Digest() (string, error) {
 }
 
 func boundedProcessContract(plan localtools.CommandPlan) (ToolContract, error) {
-	tools := make([]ContractTool, 0, len(plan.Commands))
-	for _, command := range plan.Commands {
-		tools = append(tools, ContractTool{Name: command.Name, Effect: "unspecified", Approval: "policy-controlled"})
+	definitions, err := localtools.CommandDefinitions(plan)
+	if err != nil {
+		return ToolContract{}, err
+	}
+	tools := make([]ContractTool, 0, len(definitions))
+	for _, definition := range definitions {
+		tools = append(tools, ContractTool{Name: definition.Name, Description: definition.Description, InputSchema: definition.InputSchema, Effect: "unspecified", Approval: "policy-controlled"})
 	}
 	slices.SortFunc(tools, func(a, b ContractTool) int { return strings.Compare(a.Name, b.Name) })
 	contract := ToolContract{Version: ToolContractVersion, Provider: Provider{ID: "local-command", Version: "1.0.0"}, Tools: tools}

@@ -238,6 +238,12 @@ Apple-container, Linux-native and rootless-OCI bindings can represent declared
 mounts and no/brokered network policy, but remain refused until their launchers
 and enforcement are implemented. Local bindings/results are never package or
 Deploy authority.
+Command bindings may add activation-only compatibility/readiness probes and
+typed argv templates. The initial hidden `kmx run FILE --check-tools
+[-o text|json]` route executes probes
+without model/config/cluster access. Dynamic values are single argv elements:
+reviewed enums or anchored strings, clean relative paths, and bounded integers;
+the first argv element remains literal and no shell is introduced.
 Without input, resident Run starts/reuses the agent and sends no turn;
 `kmx run FILE --prompt "input"` creates a resident session and sends that input. Test checks
 the file's saved examples in authored order and accepts no ad-hoc input. Use

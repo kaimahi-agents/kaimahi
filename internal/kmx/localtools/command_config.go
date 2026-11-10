@@ -2,6 +2,7 @@ package localtools
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -9,8 +10,26 @@ import (
 
 type commandDefinition struct {
 	name, command, directory string
-	args                     []string
+	args                     []CommandArgument
+	parameters               map[string]CommandParameter
+	checks                   []CommandCheck
 	env                      map[string]string
+}
+
+func commandConfigFromDefinition(def commandDefinition, dir string) CommandConfig {
+	cfg := CommandConfig{Name: def.name, Command: def.command, Dir: dir, Parameters: copyCommandParameters(def.parameters), Checks: copyCommandChecks(def.checks), Env: map[string]string{}}
+	dynamic := false
+	for _, arg := range def.args {
+		dynamic = dynamic || arg.Parameter != ""
+	}
+	if dynamic {
+		cfg.ArgumentPlan = slices.Clone(def.args)
+	} else {
+		for _, arg := range def.args {
+			cfg.Args = append(cfg.Args, arg.Literal)
+		}
+	}
+	return cfg
 }
 
 func parseCommandConfig(raw []byte, names []string) ([]commandDefinition, error) {
@@ -49,7 +68,7 @@ func parseCommandConfig(raw []byte, names []string) ([]commandDefinition, error)
 			return nil, ErrServerSelection
 		}
 		seen[name] = true
-		def := commandDefinition{name: name, directory: ".", env: map[string]string{}}
+		def := commandDefinition{name: name, directory: ".", env: map[string]string{}, parameters: map[string]CommandParameter{}}
 		keys := map[string]bool{}
 		for j := 0; j < len(entry.Content); j += 2 {
 			key, n := entry.Content[j].Value, entry.Content[j+1]
@@ -64,14 +83,19 @@ func parseCommandConfig(raw []byte, names []string) ([]commandDefinition, error)
 				}
 				def.command = n.Value
 			case "args":
-				if n.Kind != yaml.SequenceNode || n.Tag != "!!seq" || len(n.Content) > 128 {
-					return nil, ErrServerSelection
+				def.args, err = parseCommandArguments(n, text)
+				if err != nil {
+					return nil, err
 				}
-				for _, v := range n.Content {
-					if !text(v, true) {
-						return nil, ErrServerSelection
-					}
-					def.args = append(def.args, v.Value)
+			case "parameters":
+				def.parameters, err = parseCommandParameters(n, text)
+				if err != nil {
+					return nil, err
+				}
+			case "checks":
+				def.checks, err = parseCommandChecks(n, text)
+				if err != nil {
+					return nil, err
 				}
 			case "workingDirectory":
 				if !text(n, false) || filepath.IsAbs(n.Value) {

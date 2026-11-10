@@ -161,11 +161,11 @@ func TestResidentCommandToolRunsThroughBroker(t *testing.T) {
 	if err := os.WriteFile(source, raw, 0600); err != nil {
 		t.Fatal(err)
 	}
-	commandSource := "#!/bin/sh\nexec " + shellQuote(os.Args[0]) + " -test.run=^TestResidentCommandToolHelper$ -- resident-tool-helper\n"
+	commandSource := "#!/bin/sh\nif [ \"$1\" = check ]; then printf 'broker command completed'; exit 0; fi\nexec " + shellQuote(os.Args[0]) + " -test.run=^TestResidentCommandToolHelper$ -- resident-tool-helper\n"
 	if err := os.WriteFile(command, []byte(commandSource), 0700); err != nil {
 		t.Fatal(err)
 	}
-	config := fmt.Sprintf("tools: {check: Enabled}\ncommandTools:\n  check:\n    command: %q\n    args: []\n", command)
+	config := fmt.Sprintf("tools: {check: Enabled}\ncommandTools:\n  check:\n    command: %q\n    args: []\n    checks:\n      compatibility:\n        args: [check]\n        timeout: 5s\n        expect: {exitCode: 0, stdoutRegex: '^broker command completed$'}\n", command)
 	if err := os.WriteFile(filepath.Join(dir, "kmx.yaml"), []byte(config), 0600); err != nil {
 		t.Fatal(err)
 	}

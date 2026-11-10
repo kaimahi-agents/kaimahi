@@ -464,12 +464,14 @@ structure, so args/lists do not break operational config. Aliases, anchors,
 duplicate keys, known credential shapes and existing size bounds still reject;
 only the tool consumer validates launch semantics.
 
-### Fixed command tools in file Run/Test
+### Command tools in file Run/Test
 
 The file CLI can also resolve a declared Enabled tool from `commandTools` in the
-same checked `kmx.yaml`. A command tool has no model-supplied arguments: its
-executable and argument vector are fixed host configuration, and the trusted tool
-schema accepts only an empty object. It is independent of `mcpServers`, so
+same checked `kmx.yaml`. A fixed command keeps its empty-object schema. Optional
+reviewed argument templates may expose typed string, relative-path and bounded
+integer fields; each model value becomes exactly one argv element after JSON
+schema validation and a second host-side full-match/confinement check. There is
+still no shell, concatenation, option interpolation or free-form argv. It is independent of `mcpServers`, so
 `--no-mcp-servers` does not disable commands. Use the existing `tools` state to
 disable one explicitly.
 
@@ -480,7 +482,20 @@ tools:
 commandTools:
   project_check:
     command: /absolute/path/to/go
-    args: [test, ./...]
+    args: [test, {argument: package}]
+    parameters:
+      package:
+        type: path
+        description: Relative package below the agent folder
+        maxLength: 128
+    checks:
+      compatibility:
+        args: [version]
+        timeout: 5s
+        when: activation
+        expect:
+          exitCode: 0
+          stdoutRegex: '^go version go1\.(2[4-9]|[3-9][0-9])\.[0-9]+ .+$'
     workingDirectory: .
     env:
       PRIVATE_MODULE_TOKEN: MODULE_TOKEN # child name: host variable name
@@ -488,7 +503,17 @@ commandTools:
 
 `command` must be an absolute executable. `workingDirectory` defaults to the
 physical agent folder and must remain inside it after symlink resolution. There
-is no shell, interpolation, glob expansion, executable discovery or model input.
+is no shell, interpolation, glob expansion or executable discovery. The first
+argv element must remain literal, so a model cannot choose the command's
+subcommand. Dynamic strings require either one explicit enum or an anchored RE2
+pattern and reject leading `-`; paths must be clean local relative paths without
+`..`, absolute roots or backslashes; integers require reviewed nonnegative bounds.
+These rules prevent argv/shell/path traversal through modeled fields, but a
+command may still interpret an otherwise valid string as its own language. Use
+an enum or a dedicated adapter for sensitive command grammars. Relative-path
+validation is lexical: the bounded-process backend may still follow an authored
+symlink or otherwise use its ambient host-user filesystem authority. Declared
+mount isolation remains a future container/native-backend enforcement boundary.
 Executable and directory identity are rechecked around each launch; as with
 agent-file access generally, concurrent hostile filesystem mutation is outside
 the cooperative guarantee and this is not immutable byte attestation.
@@ -513,6 +538,16 @@ A child that leaves the process group with `setsid` or `setpgid` remains outside
 that guarantee; this is neither sandboxing nor native Windows support. Command
 results, recordings and previews grant no package evidence, Publish or Deploy
 authority.
+
+Optional `compatibility` and `readiness` checks execute before a resident broker
+acknowledges readiness, and the initial hidden `kmx run FILE --check-tools
+[-o text|json]` route runs the same
+checks without model access or starting an agent. Checks use the same frozen
+executable/directory/environment, process cleanup and output/credential bounds as
+calls; only fixed args, a 1–15 second timeout, expected exit code and optional
+anchored stdout regex are accepted. Raw check output never enters model context,
+history, lifecycle state, package content or default diagnostics. A failed
+replacement check leaves the prior resident generation active.
 
 ### Stdio host lifecycle
 

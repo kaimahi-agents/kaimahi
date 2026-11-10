@@ -625,8 +625,15 @@ two subtrees, keeping other operational decoding strict. Native Windows tools
 remain deferred; process groups are not containment.
 
 File CLI Run/Test also resolves declared Enabled `commandTools` from that folder:
-fixed absolute executable/argv, empty-object tool input, folder-confined working
-directory and frozen named environment references. MCP selection does not disable
+fixed absolute executable, folder-confined working directory and frozen named
+environment references. Args are fixed by default; optional reviewed templates
+accept one-argv-element string (enum or anchored RE2, no leading option), clean
+relative path or bounded integer fields, with a literal first argv element and no
+shell/concatenation. Optional activation-only compatibility/readiness checks use
+fixed args, bounded timeout, expected exit and anchored stdout regex. The broker
+runs them before readiness; hidden config-free `run FILE --check-tools` runs the same
+probes and exposes no raw output. Probe definitions affect binding identity;
+observations are local status, never package/evidence authority. MCP selection does not disable
 commands. Disabled and populated recorded tools do not resolve launches. Keep the
 combined output at 5 KiB to fit worst-case JSON escaping and the trusted result
 envelope. Close all owned pipe ends and bound draining/reaping separately to one
