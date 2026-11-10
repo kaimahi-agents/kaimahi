@@ -1,3 +1,7 @@
 ### Added
 
 - Native Windows amd64 can read existing Orka Task results with explicit context and namespace, an owned loopback result forward and PowerShell recovery. Unconfirmed forward cleanup is reported without subprocess diagnostics. The selected plaintext Orka Service/backend remains trusted to receive the short-lived reader token and supply the answer; loopback is not backend attestation. Live Run/Chat remain deferred until Orka can enforce an Agent revision at Task creation; workspace Test, publication and Deploy remain unsupported.
+
+### Fixed
+
+- Retry transient interrupted Darwin process-exit observations during local stdio tool cleanup, with bounded retries and fail-closed handling when interruption persists.
