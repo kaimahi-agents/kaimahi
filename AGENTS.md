@@ -829,7 +829,10 @@ See [copilotd file tests](docs/local-preview.md#copilotd-file-tests).
 The additive companion-reader foundation lives in `internal/kmx/agentfile`:
 `ParseTests`, `DefaultTestsPath`, `ComposePair` and checked `LoadPair`. Parsed
 `Tests` retain existing assertions/mocks semantics and whole-file limits for
-schemaVersion 1 frontmatter and per-case `yaml agent-test` fences. The combined
+schemaVersion 1 frontmatter and per-case `yaml agent-test` fences. Only separate
+test fences accept optional bounded plain-text `title`; preserve it through edits
+and credential-safe result/JSONL labels, never as execution identity or prompt
+content. Untitled output and inline/Squad formats stay unchanged. The combined
 revision binds both source paths and revisions; `Agent.Revision` remains
 agent-only. `SameSourceVersion` also checks handle-derived file/directory identity
 and version metadata; even unrelated directory timestamp changes can invalidate

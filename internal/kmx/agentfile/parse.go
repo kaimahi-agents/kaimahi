@@ -68,7 +68,7 @@ type Agent struct {
 	NativeTaskInstructions string
 }
 type Example struct {
-	ID, Input          string
+	ID, Input, Title   string
 	Mocks              *Mocks
 	Assertions         []runtime.EvaluationAssertion
 	Location           Location

@@ -13,8 +13,18 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
 )
 
+func credentialTitleExample(t *testing.T, title string) agentfile.Example {
+	t.Helper()
+	suite, err := agentfile.ParseTests("greeter.agent.test.md", []byte("---\nschemaVersion: 1\n---\n```yaml agent-test\nid: titled\ntitle: \""+title+"\"\ninput: hello\nassertions: [{id: check, type: contains, value: hello}]\n```\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return suite.Examples[0]
+}
+
 func TestPairSourceCredentialsBeforeJournal(t *testing.T) {
-	for _, field := range []string{"original", "unselected", "prose"} {
+	titled := credentialTitleExample(t, `\u0070rovider-canary`)
+	for _, field := range []string{"original", "unselected", "prose", "selected-title", "original-title", "unselected-title"} {
 		for _, adhoc := range []bool{false, true} {
 			t.Run(field+map[bool]string{true: "-adhoc", false: "-test"}[adhoc], func(t *testing.T) {
 				req := runnerRequest(t)
@@ -32,6 +42,12 @@ func TestPairSourceCredentialsBeforeJournal(t *testing.T) {
 					req.SkipAssertions = true
 				}
 				switch field {
+				case "selected-title":
+					req.Examples = []agentfile.Example{titled}
+				case "original-title":
+					original.Examples[1] = titled
+				case "unselected-title":
+					req.Agent.Examples[1] = titled
 				case "original":
 					original.Examples[1].Assertions[0].Value = "provider-canary"
 				case "unselected":
@@ -51,7 +67,8 @@ func TestPairSourceCredentialsBeforeJournal(t *testing.T) {
 }
 
 func TestPairToolCredentialsBeforeJournal(t *testing.T) {
-	for _, field := range []string{"original", "unselected", "prose", "mocks"} {
+	titled := credentialTitleExample(t, `\u0074ool-secret-canary`)
+	for _, field := range []string{"original", "unselected", "prose", "mocks", "selected-title", "original-title", "unselected-title"} {
 		t.Run(field, func(t *testing.T) {
 			req := runnerRequest(t)
 			req.Agent.Tools = []string{localtools.Operation}
@@ -65,6 +82,12 @@ func TestPairToolCredentialsBeforeJournal(t *testing.T) {
 			req.Input = &input
 			req.SkipAssertions = true
 			switch field {
+			case "selected-title":
+				req.Examples = []agentfile.Example{titled}
+			case "original-title":
+				original.Examples[1] = titled
+			case "unselected-title":
+				req.Agent.Examples[1] = titled
 			case "original":
 				original.Instructions = "tool-secret-canary"
 			case "unselected":
