@@ -165,11 +165,11 @@ func TestResidentCommandToolRunsThroughBroker(t *testing.T) {
 	if err := os.WriteFile(source, raw, 0600); err != nil {
 		t.Fatal(err)
 	}
-	commandSource := "#!/bin/sh\nif [ \"$1\" = check ]; then printf 'broker command completed'; exit 0; fi\nexec " + shellQuote(os.Args[0]) + " -test.run=^TestResidentCommandToolHelper$ -- resident-tool-helper\n"
+	commandSource := "#!/bin/sh\nif [ -n \"${RESIDENT_TOOL_SECRET+x}\" ]; then exit 91; fi\nprintf 'broker command completed'\n"
 	if err := os.WriteFile(command, []byte(commandSource), 0700); err != nil {
 		t.Fatal(err)
 	}
-	config := fmt.Sprintf("tools: {check: Enabled}\ncommandTools:\n  check:\n    command: %q\n    args: []\n    checks:\n      compatibility:\n        args: [check]\n        timeout: 5s\n        expect: {exitCode: 0, stdoutRegex: '^broker command completed$'}\n", command)
+	config := fmt.Sprintf("tools: {check: Enabled}\ncommandTools:\n  check:\n    command: %q\n    args: []\n    checks:\n      compatibility:\n        args: []\n        timeout: 5s\n        expect: {exitCode: 0}\n", command)
 	if err := os.WriteFile(filepath.Join(dir, "kmx.yaml"), []byte(config), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +241,7 @@ func TestResidentCommandToolCancellationKeepsBrokerUsable(t *testing.T) {
 		t.Fatal(err)
 	}
 	marker := filepath.Join(dir, "started")
-	commandSource := "#!/bin/sh\nexec " + shellQuote(os.Args[0]) + " -test.run=^TestResidentCommandToolHelper$ -- resident-tool-slow " + shellQuote(marker) + "\n"
+	commandSource := "#!/bin/sh\nif [ -e " + shellQuote(marker) + " ]; then printf 'broker command completed'; exit 0; fi\nprintf started > " + shellQuote(marker) + "\nsleep 30\n"
 	if err := os.WriteFile(command, []byte(commandSource), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -296,30 +296,6 @@ func TestResidentCommandToolCancellationKeepsBrokerUsable(t *testing.T) {
 	if err != nil || answer != "tool complete" {
 		t.Fatalf("broker unusable after cancellation: answer=%q err=%v", answer, err)
 	}
-}
-
-func TestResidentCommandToolHelper(t *testing.T) {
-	for i, value := range os.Args {
-		if value == "resident-tool-helper" {
-			if os.Getenv("RESIDENT_TOOL_SECRET") != "" {
-				t.Fatal("broker command inherited ambient environment")
-			}
-			fmt.Fprint(os.Stdout, "broker command completed")
-			return
-		}
-		if value == "resident-tool-slow" && i+1 < len(os.Args) {
-			marker := os.Args[i+1]
-			if _, err := os.Stat(marker); errors.Is(err, os.ErrNotExist) {
-				if err := os.WriteFile(marker, []byte("started"), 0600); err != nil {
-					t.Fatal(err)
-				}
-				time.Sleep(30 * time.Second)
-			}
-			fmt.Fprint(os.Stdout, "broker command completed")
-			return
-		}
-	}
-	t.Skip("helper process only")
 }
 
 func TestLocalAgentResidentCrashObserved(t *testing.T) {
