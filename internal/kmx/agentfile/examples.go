@@ -6,6 +6,8 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"go.yaml.in/yaml/v3"
@@ -62,12 +64,12 @@ func parseExamples(file string, lines []string, firstLine int, allowUnpinnedJudg
 		}
 		return Location{file, base + n.Line, column}
 	}
-	return parseExamplesDocument(file, &root, location, allowUnpinnedJudge, 0)
+	return parseExamplesDocument(file, &root, location, allowUnpinnedJudge, false, 0)
 }
 
 // parseExamplesDocument validates the canonical tree without re-encoding YAML.
 // nodes counts any source header already checked against the shared budget.
-func parseExamplesDocument(file string, root *yaml.Node, location func(*yaml.Node) Location, allowUnpinnedJudge bool, nodes int) ([]Example, error) {
+func parseExamplesDocument(file string, root *yaml.Node, location func(*yaml.Node) Location, allowUnpinnedJudge, allowTitle bool, nodes int) ([]Example, error) {
 	errAt := func(n *yaml.Node, problem string) *Error {
 		return &Error{location(n), "Examples", problem}
 	}
@@ -116,6 +118,9 @@ func parseExamplesDocument(file string, root *yaml.Node, location func(*yaml.Nod
 		if allowUnpinnedJudge { // Canonical additions must not widen native Squad.
 			allowed = append(allowed, "mocks")
 		}
+		if allowTitle {
+			allowed = append(allowed, "title")
+		}
 		values, err := fields(node, 3, allowed...)
 		if err != nil {
 			return nil, err
@@ -139,6 +144,12 @@ func parseExamplesDocument(file string, root *yaml.Node, location func(*yaml.Nod
 			return nil, errAt(assertions, "provide 1–64 assertions for each example")
 		}
 		e := Example{ID: id, Input: values["input"].Value, Location: location(node)}
+		if title := values["title"]; title != nil {
+			if title.Kind != yaml.ScalarNode || title.Tag != "!!str" || !ValidTestTitle(title.Value) {
+				return nil, errAt(title, "test title must be a nonblank string of at most 160 Unicode characters without control, format or line-separator characters")
+			}
+			e.Title = title.Value
+		}
 		if mocks := values["mocks"]; mocks != nil {
 			e.Mocks, err = parseMocks(mocks)
 			if err != nil {
@@ -204,6 +215,15 @@ func parseExamplesDocument(file string, root *yaml.Node, location func(*yaml.Nod
 		examples = append(examples, e)
 	}
 	return examples, nil
+}
+
+// ValidTestTitle checks display text, not credential safety or execution identity.
+// Callers publishing titles must also apply their credential-aware output checks.
+func ValidTestTitle(title string) bool {
+	return utf8.ValidString(title) && strings.TrimSpace(title) != "" && utf8.RuneCountInString(title) <= 160 &&
+		strings.IndexFunc(title, func(r rune) bool {
+			return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\u2028' || r == '\u2029'
+		}) < 0
 }
 
 // checkExamplesYAML shares syntax and complexity limits across source adapters.

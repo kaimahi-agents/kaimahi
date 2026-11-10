@@ -214,7 +214,7 @@ func projectAgent(a *Agent) []byte {
 func projectExamples(authored []Example) []any {
 	examples := make([]any, len(authored))
 	for i, e := range authored {
-		examples[i] = []any{e.ID, e.Input, e.Mocks, e.Assertions}
+		examples[i] = []any{e.ID, e.Input, e.Mocks, e.Assertions, e.Title}
 	}
 	return examples
 }
