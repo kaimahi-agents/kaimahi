@@ -25,10 +25,16 @@ type CommandPlan struct {
 // references: the separate broker receives no model credential or ambient
 // credential environment.
 func FreezeCommandPlan(ctx context.Context, filename string, names []string) (CommandPlan, error) {
+	if err := ctx.Err(); err != nil {
+		return CommandPlan{}, err
+	}
 	if len(names) == 0 {
 		return CommandPlan{}, nil
 	}
 	raw, err := readLaunchBytes(ctx, filename)
+	if ctx.Err() != nil {
+		return CommandPlan{}, ctx.Err()
+	}
 	if err != nil || raw == nil {
 		return CommandPlan{}, ErrServerSelection
 	}
@@ -80,8 +86,11 @@ func FreezeCommandPlan(ctx context.Context, filename string, names []string) (Co
 		if cfg.ExecutableID == "" || cfg.DirectoryID == "" {
 			return CommandPlan{}, ErrServerSelection
 		}
-		cfg.ExecutableDigest, err = commandExecutableDigest(cfg.Command)
+		cfg.ExecutableDigest, err = commandExecutableDigestContext(ctx, cfg.Command)
 		if err != nil {
+			if ctx.Err() != nil {
+				return CommandPlan{}, ctx.Err()
+			}
 			return CommandPlan{}, ErrServerSelection
 		}
 		if _, validateErr := validateCommandConfig(cfg); validateErr != nil {

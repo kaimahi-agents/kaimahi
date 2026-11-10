@@ -3,6 +3,8 @@
 package localtools
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,6 +39,22 @@ func TestFreezeCommandPlanIsCredentialFreeAndExact(t *testing.T) {
 	t.Setenv("RESIDENT_TOOL_TEST_TOKEN", "not-transferred")
 	if _, err := FreezeCommandPlan(t.Context(), file, []string{"check"}); err == nil {
 		t.Fatal("resident plan accepted an environment reference")
+	}
+}
+
+func TestFreezeCommandPlanPreservesCancellation(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "agent.agent.md")
+	if err := os.WriteFile(file, []byte("agent"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "kmx.yaml"), []byte("tools: {check: Enabled}\ncommandTools: {check: {command: /bin/sh, args: []}}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := FreezeCommandPlan(ctx, file, []string{"check"}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancellation lost: %v", err)
 	}
 }
 

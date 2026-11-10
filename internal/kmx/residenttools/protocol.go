@@ -184,6 +184,9 @@ func (c *Client) execute(ctx context.Context, scope controller.ToolCallContext, 
 	if err := ctx.Err(); err != nil {
 		return api.ToolResult{}, err
 	}
+	if c.conn == nil {
+		return api.ToolResult{}, errors.New("resident tool broker is unavailable")
+	}
 	raw := make([]byte, 12)
 	if _, err := rand.Read(raw); err != nil {
 		return api.ToolResult{}, err
@@ -238,8 +241,24 @@ func validRequestID(value string) bool {
 }
 
 func (c *Client) Close() error {
-	if c == nil || c.conn == nil {
+	if c == nil {
 		return nil
 	}
-	return c.conn.Close()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.conn == nil {
+		return nil
+	}
+	_ = c.conn.SetDeadline(time.Now().Add(5 * time.Second))
+	err := writeFrame(c.conn, request{Op: "shutdown"})
+	var closed response
+	if err == nil {
+		err = readFrame(c.read, &closed)
+	}
+	closeErr := c.conn.Close()
+	c.conn = nil
+	if err != nil || !closed.OK {
+		return errors.New("resident tool broker cleanup is incomplete")
+	}
+	return closeErr
 }

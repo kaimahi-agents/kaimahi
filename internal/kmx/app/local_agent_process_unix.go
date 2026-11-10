@@ -36,6 +36,7 @@ import (
 
 const (
 	localAgentWorkerEnv   = "KMX_LOCAL_AGENT_WORKER"
+	localAgentToolsEnv    = "KMX_LOCAL_AGENT_TOOLS"
 	localAgentIPCLimit    = 1 << 20
 	localAgentMaxSessions = 64
 )
@@ -111,7 +112,11 @@ func init() {
 	} else {
 		os.Exit(1)
 	}
-	err := runLocalAgentWorker(context.Background(), os.Getenv("KMX_LOCAL_AGENT_ID"), os.Getenv("KMX_LOCAL_AGENT_EVENT"), credential, os.NewFile(3, "readiness"), os.NewFile(5, "tool-broker"))
+	var brokerFile *os.File
+	if os.Getenv(localAgentToolsEnv) == "1" {
+		brokerFile = os.NewFile(5, "tool-broker")
+	}
+	err := runLocalAgentWorker(context.Background(), os.Getenv("KMX_LOCAL_AGENT_ID"), os.Getenv("KMX_LOCAL_AGENT_EVENT"), credential, os.NewFile(3, "readiness"), brokerFile)
 	if err != nil {
 		os.Exit(1)
 	}
@@ -338,7 +343,6 @@ func runLocalAgentWorker(ctx context.Context, id, event string, credential local
 			ready(localAgentIPCResponse{Error: "tool broker is unavailable"})
 			return errors.New("tool broker is unavailable")
 		}
-		defer w.toolClient.Close()
 	} else if brokerFile != nil {
 		_ = brokerFile.Close()
 	}
@@ -367,7 +371,11 @@ func localAgentWorkerEnvironment(record LocalAgentInstance) []string {
 			env = append(env, value)
 		}
 	}
-	return append(env, localAgentWorkerEnv+"=1", "KMX_LOCAL_AGENT_ID="+record.ID, "KMX_LOCAL_AGENT_EVENT="+record.EventID)
+	env = append(env, localAgentWorkerEnv+"=1", "KMX_LOCAL_AGENT_ID="+record.ID, "KMX_LOCAL_AGENT_EVENT="+record.EventID)
+	if record.ToolBackend != "" {
+		env = append(env, localAgentToolsEnv+"=1")
+	}
+	return env
 }
 
 func checkLocalAgentRoute(ctx context.Context, record LocalAgentInstance, credential localAgentCredentialSnapshot) error {
@@ -397,15 +405,20 @@ func (w *residentWorker) serve(conn net.Conn) {
 		w.serveInvoke(conn, request)
 		return
 	}
+	if request.Op == "shutdown" {
+		response := w.shutdown()
+		_ = writeLocalAgentJSON(conn, response)
+		if response.OK {
+			w.mu.Lock()
+			w.closing = true
+			w.mu.Unlock()
+			_ = w.listener.Close()
+		}
+		return
+	}
 	requestCtx := context.Background()
 	response := w.handle(requestCtx, request)
 	_ = writeLocalAgentJSON(conn, response)
-	if request.Op == "shutdown" && response.OK {
-		w.mu.Lock()
-		w.closing = true
-		w.mu.Unlock()
-		_ = w.listener.Close()
-	}
 }
 
 func (w *residentWorker) handle(ctx context.Context, request localAgentIPCRequest) localAgentIPCResponse {
@@ -457,16 +470,27 @@ func (w *residentWorker) handle(ctx context.Context, request localAgentIPCReques
 		s.turn.Lock()
 		s.turn.Unlock()
 		return localAgentIPCResponse{OK: true, EventID: w.record.EventID}
-	case "shutdown":
-		w.mu.Lock()
-		for _, cancel := range w.invocations {
-			cancel()
-		}
-		w.mu.Unlock()
-		return localAgentIPCResponse{OK: true, EventID: w.record.EventID}
 	default:
 		return localAgentIPCResponse{Error: "unsupported operation"}
 	}
+}
+
+func (w *residentWorker) shutdown() localAgentIPCResponse {
+	w.mu.Lock()
+	for _, cancel := range w.invocations {
+		cancel()
+	}
+	client := w.toolClient
+	w.mu.Unlock()
+	if client != nil {
+		if err := client.Close(); err != nil {
+			return localAgentIPCResponse{Error: "tool broker cleanup is incomplete", EventID: w.record.EventID}
+		}
+		w.mu.Lock()
+		w.toolClient, w.toolHost = nil, nil
+		w.mu.Unlock()
+	}
+	return localAgentIPCResponse{OK: true, EventID: w.record.EventID}
 }
 
 func (w *residentWorker) serveInvoke(conn net.Conn, request localAgentIPCRequest) {

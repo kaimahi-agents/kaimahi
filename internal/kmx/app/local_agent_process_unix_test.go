@@ -65,8 +65,12 @@ func TestLocalAgentWorkerEnvironmentPreservesSelectedGHConfigOnly(t *testing.T) 
 	t.Setenv("GITHUB_TOKEN", "secret")
 	env := localAgentWorkerEnvironment(LocalAgentInstance{ID: "md-123", EventID: strings.Repeat("a", 24)})
 	joined := strings.Join(env, "\n")
-	if !strings.Contains(joined, "GH_CONFIG_DIR=/private/gh-profile") || strings.Contains(joined, "GH_TOKEN=") || strings.Contains(joined, "GITHUB_TOKEN=") {
+	if !strings.Contains(joined, "GH_CONFIG_DIR=/private/gh-profile") || strings.Contains(joined, "GH_TOKEN=") || strings.Contains(joined, "GITHUB_TOKEN=") || strings.Contains(joined, localAgentToolsEnv+"=") {
 		t.Fatalf("worker environment=%q", env)
+	}
+	toolEnv := strings.Join(localAgentWorkerEnvironment(LocalAgentInstance{ID: "md-123", EventID: strings.Repeat("a", 24), ToolBackend: residenttools.BoundedProcess}), "\n")
+	if !strings.Contains(toolEnv, localAgentToolsEnv+"=1") {
+		t.Fatalf("tool worker environment=%q", toolEnv)
 	}
 }
 

@@ -5,7 +5,6 @@ package residenttools
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net"
@@ -40,13 +39,13 @@ func Start(ctx context.Context, executable string, plan Plan) (*os.File, error) 
 	// Darwin has no SOCK_CLOEXEC socketpair flag. Hold Go's fork lock across
 	// creation and descriptor marking so no concurrent exec can inherit either
 	// private endpoint in the gap.
-	syscall.ForkLock.Lock()
+	syscall.ForkLock.RLock()
 	pair, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
 	if err == nil {
 		unix.CloseOnExec(pair[0])
 		unix.CloseOnExec(pair[1])
 	}
-	syscall.ForkLock.Unlock()
+	syscall.ForkLock.RUnlock()
 	if err != nil {
 		return nil, errors.New("resident tool broker channel is unavailable")
 	}
@@ -82,13 +81,7 @@ func Start(ctx context.Context, executable string, plan Plan) (*os.File, error) 
 	_ = broker.Close()
 	_ = configRead.Close()
 	_ = readyWrite.Close()
-	encoded, encodeErr := json.Marshal(plan)
-	if encodeErr == nil && len(encoded) > brokerLimit {
-		encodeErr = errors.New("resident tool broker configuration exceeds its limit")
-	}
-	if encodeErr == nil {
-		_, encodeErr = configWrite.Write(append(encoded, '\n'))
-	}
+	encodeErr := writeFrame(configWrite, plan)
 	encodeErr = errors.Join(encodeErr, configWrite.Close())
 	if encodeErr != nil {
 		_ = cmd.Process.Kill()
@@ -194,6 +187,15 @@ func Run(channel, config, readiness *os.File) error {
 			if cancel != nil {
 				cancel()
 			}
+		case "shutdown":
+			activeMu.Lock()
+			for _, cancel := range active {
+				cancel()
+			}
+			activeMu.Unlock()
+			jobs.Wait()
+			writeResponse(response{OK: true})
+			return nil
 		case "execute":
 			if !validRequestID(req.ID) || !validRequestID(req.InvocationID) || req.SessionUID == "" {
 				writeResponse(response{ID: req.ID, Error: "resident tool request is invalid"})

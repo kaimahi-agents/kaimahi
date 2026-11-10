@@ -45,7 +45,15 @@ func SendToolConversation(ctx context.Context, provider, model, baseURL string, 
 	}
 	messages = append(messages, *api.TextMessage("user", input))
 	client := newModelClient(route{model: model, baseURL: strings.TrimSuffix(baseURL, "/"), transport: transport, safeErrors: provider != "fake"})
-	client.check = check
+	client.check = func(values ...string) error {
+		if err := host.Check(values...); err != nil {
+			return err
+		}
+		if check != nil {
+			return check(values...)
+		}
+		return nil
+	}
 	reply, err := client.residentToolModel(ctx, api.ModelRequest{Model: model, Messages: messages, Tools: definitions})
 	if err != nil {
 		return "", err
