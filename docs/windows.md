@@ -43,10 +43,12 @@ For example, after downloading a qualified amd64 artifact:
 .\kmx-windows-amd64.exe version
 .\kmx-windows-amd64.exe --help
 .\kmx-windows-amd64.exe completion bash
+# Published rc.4-rc.6 assets use positional Run input:
 .\kmx-windows-amd64.exe run .\greeter.agent.md "Ada"
 .\kmx-windows-amd64.exe test .\greeter.agent.md
 .\kmx-windows-amd64.exe test explain --file .\greeter.agent.md
 # Current-main amd64 build only; not present in the published rc.4-rc.6 contract:
+.\kmx-windows-amd64.exe run .\greeter.agent.md --prompt "Ada"
 .\kmx-windows-amd64.exe --context existing-orka cluster orka list --namespace orka-system
 .\kmx-windows-amd64.exe --context existing-orka cluster orka show greeter --namespace orka-system
 .\kmx-windows-amd64.exe --context existing-orka cluster task result task-name --namespace orka-system

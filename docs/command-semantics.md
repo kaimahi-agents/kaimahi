@@ -87,8 +87,9 @@ stdout and exit contracts are preserved; this is not a receipt or bundle migrati
 Canonical `run FILE` starts or reuses a resident local agent; `run FILE --once`
 and `test FILE` dispatch to the cluster-independent App adapter and embedded-runner
 interface. Native Windows implicitly uses one-shot Run because resident workers
-are unavailable. One-shot Run optionally adds a separate ad-hoc input; Test checks
-saved ordered examples. `--case ID` is always partial. Versioned payload-free
+are unavailable. One-shot Run with `--prompt` runs only that supplied input by
+default; `--case ID` additionally selects one saved example. Test checks saved
+ordered examples, and `--case ID` is always partial. Versioned payload-free
 text/JSON results are local preview, never native evidence. The embedded runner
 uses Agent Sessions for fake, local and Copilot models, with one Session per agent
 turn and two independent judge samples per llmJudge assertion. The invocation-owned
