@@ -252,8 +252,16 @@ placement and one fresh Task per declared run of each ordered case (default one)
 Optional KMX YAML `runs`/`minPasses` counts completed attributable assertion
 verdicts; omitted threshold requires all runs. Each run has its own deadline;
 repeat preflight states the total run-time budget, excluding placement. There is
-no early success; any unknown or execution error aborts. AgentSessions development
-evaluation uses fresh Session/config/Exec per run under the same policy. Field names/defaults follow
+no early success; any unknown or execution error aborts. Full execution remains
+the default. Standalone native Orka `package test --fail-fast` may stop a case
+group only when `passes + remaining < minPasses`; equality remains reachable.
+That early stop exits nonzero, reports executed and unexecuted runs, performs the
+ordinary candidate cleanup and creates no receipt or managed passing proof.
+`thresholdUnreachable: true` distinguishes it from an unknown execution in Orka
+JSON. File Test, kagent, AgentSessions and composed Deploy refuse the option
+before operational effects. Hidden `eval` has the same flag contract as canonical
+`package test`. AgentSessions development evaluation uses fresh
+Session/config/Exec per run under the same policy without fail-fast. Field names/defaults follow
 [AgentSuite §8.2.2](https://github.com/agent-primitives/suite/blob/main/spec.md#822-case-documents-and-assertions):
 `minPasses` requires `runs`, and both are positive integers. KMX's private YAML
 and receipts remain separate from the spec's embedded JSON format.

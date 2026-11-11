@@ -157,7 +157,7 @@ Workspace --create/test--> AgentSuite artifact --push--> OCI location
 | `create` | Agent file and paired test | Author two files without prompts, model selection or overwrites |
 | `package create` | Workspace | Author one offline member; no cluster or model call |
 | `test [FILE]` | One agent file, or direct agent files in the current folder and `.github/agents/` | With FILE, test that file; bare, one summary over folder agents with failed, unknown and not-run counts, never falling back to `package test` |
-| `package test` | Workspace/prepared AgentSuite | Run full ordered native Orka/kagent cases, or pinned AgentSessions chat with explicit `--development-host FILE` and `--bindings FILE` (`AgentSessionsBinding`); stop later cases after the first non-pass |
+| `package test` | Workspace/prepared AgentSuite | Run full ordered native Orka/kagent cases, or pinned AgentSessions chat with explicit `--development-host FILE` and `--bindings FILE` (`AgentSessionsBinding`); stop later cases after the first non-pass. Standalone Orka can opt into threshold-unreachable `--fail-fast`; incomplete runs create no proof |
 | `test export` | Latest completed exact-suite/member managed proof | Write new detached public evidence offline; captured tagged module/checksum or clean VCS provenance required, no evaluation or private-gate replacement |
 | `run-profile export FILE [--tests FILE]` | Checked agent/tests selection | Content-bearing frozen JSON on stdout; external tests use v2 with physical selection/snapshot identity, inline profiles retain v1. Source/instruction/model/example hashes and target examples `not_run`; no configuration, execution, evidence, package or deployment authority |
 | `test verify` | Local single-manifest OCI layout + detached evidence + reviewed ExpectedEvaluation | State-free offline CI gate; digest input also requires explicit layout, text/JSON success exits0, coded refusal exits1; no private-gate authority |
@@ -187,6 +187,10 @@ with explicit judge transport and identity, plus optional KMX case `runs`/`minPa
 [AgentSuite §8.2.2](https://github.com/agent-primitives/suite/blob/main/spec.md#822-case-documents-and-assertions):
 `minPasses` requires `runs`, and both are positive integers. KMX's execution cap
 is 100 runs, within the spec's consumer resource-limit allowance.
+Full execution is the default. Standalone Orka `--fail-fast` stops only when
+`passes + remaining < minPasses`, performs candidate cleanup and never creates
+proof from the incomplete run set. File Test, kagent, AgentSessions and composed
+Deploy refuse the option.
 No subset, recorded Sessions input or runtime/model override. Offline diff reads only Orka/kagent native suite receipts;
 AgentSessions evidence is refused by diff and feeds create-only Agent deployment or the separate offline AgentSessions Deploy render;
 `test from-sessions` is reference extraction/export without a native consumer.

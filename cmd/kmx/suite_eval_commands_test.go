@@ -286,6 +286,8 @@ func TestSuiteKagentEvalRefusesBeforeConfiguration(t *testing.T) {
 		{"malformed binding", "native kagent requires bounded confined author-owned bindings"},
 		{"tool assertion", "unsupported native suite evaluator"},
 		{"judge assertion", "llmJudge assertions require --judge-base-url"},
+		{"fail fast", "--fail-fast supports only standalone native Orka package test"},
+		{"fail fast false", "--fail-fast supports only standalone native Orka package test"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("KMX_HOME", t.TempDir())
@@ -301,6 +303,10 @@ func TestSuiteKagentEvalRefusesBeforeConfiguration(t *testing.T) {
 				args = append(args, "--to-namespace", "other")
 			case "result port":
 				args = append(args, "--result-port", "19180")
+			case "fail fast":
+				args = append(args, "--fail-fast")
+			case "fail fast false":
+				args = append(args, "--fail-fast=false")
 			case "malformed binding":
 				if err := os.WriteFile(binding, []byte("PRIVATE_CLI_CANARY: malformed\n"), 0600); err != nil {
 					t.Fatal(err)
@@ -338,7 +344,7 @@ func TestSuiteEvalHelpersHelpAndCompletionRemainOffline(t *testing.T) {
 			t.Fatalf("helper loaded config: %v", args)
 		}
 		if len(args) == 2 && args[0] == "eval" && args[1] == "--help" {
-			for _, text := range []string{"--bindings", "--inference", "unsecure", "trusted-proxy", "--result-port"} {
+			for _, text := range []string{"--bindings", "--inference", "unsecure", "trusted-proxy", "--result-port", "--fail-fast", "threshold is unreachable"} {
 				if !strings.Contains(out.String(), text) {
 					t.Fatalf("missing runtime boundary in help: %q", text)
 				}

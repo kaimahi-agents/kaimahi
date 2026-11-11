@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -430,6 +431,8 @@ func TestFileCommandsRefuseMixedModesBeforeConfig(t *testing.T) {
 		{"test", "FILE", "--out", "receipt.json"},
 		{"test", "FILE", "--inference", "provider:model"},
 		{"test", "FILE", "--case-timeout", "5m"},
+		{"test", "FILE", "--fail-fast"},
+		{"test", "FILE", "--fail-fast=false"},
 		{"test", "FILE", "--context", "kind-test"},
 		{"test", "FILE", "--container-engine", "docker"},
 		{"run", "FILE", "--github-summary"},
@@ -452,8 +455,12 @@ func TestFileCommandsRefuseMixedModesBeforeConfig(t *testing.T) {
 			deps, loads := testDependencies(&out, &diag)
 			f := &cliPreviewFake{verdict: runtime.EvaluationPass}
 			deps.fileRunner = f
-			if err := execute(args, deps); err == nil {
+			err := execute(args, deps)
+			if err == nil {
 				t.Fatal("mixed modes accepted")
+			}
+			if (slices.Contains(args, "--fail-fast") || slices.Contains(args, "--fail-fast=false")) && err.Error() != "unknown flag: --fail-fast\nRun kmx test --help for available flags" {
+				t.Fatalf("file Test did not refuse workspace fail-fast at the flag boundary: %v", err)
 			}
 			if *loads != 0 || f.calls != 0 || out.Len() != 0 {
 				t.Fatalf("refusal crossed argument boundary: config=%d calls=%d stdout=%q", *loads, f.calls, out.String())

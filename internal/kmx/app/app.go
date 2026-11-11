@@ -46,6 +46,10 @@
 // workspace and completed non-pass file-Test failures use the checked private
 // filesystem on supported local filesystems; visible-but-unconfirmed records
 // remain diagnostics only and file records never become evaluation evidence.
+// Standalone managed Orka Test may stop repeated diagnostics when the pass
+// threshold is unreachable; incomplete run groups still clean their candidate
+// and never become passing evidence. Other runtimes and composed Deploy retain
+// full execution and refuse that option.
 // File previews bind omitted judge models on execution copies and expose valid
 // two-sample scores and sanitized transient reasons only with content disclosure.
 // Tool availability notes derive from frozen settings and dispatch sources without

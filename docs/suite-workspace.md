@@ -1177,14 +1177,21 @@ Each run sends a fresh Task with the same authored input, never a retry. Each
 run gets the configured deadline, including its judge requests and attribution
 checks. When cases repeat, preflight prints the sum of all run-time budgets
 (`runs × --case-timeout`, summed across cases), excluding placement; this is an
-upper bound, not a prediction, and cancellation can stop it earlier. Every
-run must finish, even after enough passes or failures are known. Any unknown
-assertion/judge outcome makes the case unknown. Only completed, attributable
-assertion failures count as failing samples against the threshold; execution
-failure, missing answer, drift or cancellation still aborts later sends.
-Preflight discloses the total Task count and two judge requests per assertion
-per run. AgentSessions uses fresh Session/config/Exec rather than Tasks; its default
-one-run text receipt encoding is unchanged.
+upper bound, not a prediction. By default every run must finish, even after enough
+passes or failures are known. Standalone native Orka Test can opt into
+`--fail-fast`. After each completed attributable run, it stops only when
+`passes + remaining < minPasses`. It does not stop after reaching enough passes,
+and equality remains reachable. Cancellation can still stop either mode earlier.
+Any unknown assertion/judge outcome makes the case unknown. Only completed,
+attributable assertion failures count as failing samples against the threshold;
+execution failure, missing answer, drift or cancellation still aborts later sends.
+Preflight discloses the maximum Task count and, when applicable, the maximum two
+judge requests per assertion per run. With `--fail-fast`, these are reported as
+upper bounds. AgentSessions uses fresh Session/config/Exec rather than Tasks; its
+default one-run text receipt encoding is unchanged. File Test, kagent,
+AgentSessions and composed Deploy do not support `--fail-fast` and refuse it
+before operational effects. The hidden `kmx eval` compatibility route accepts the
+same flag as `kmx package test`.
 
 An unsuccessful terminal Orka Task reports `execution failed (assertions not
 evaluated)`, not an assertion failure or an underlying runtime cause. Abort
@@ -1196,6 +1203,13 @@ execution error rather than a threshold miss. Root test JSON includes these
 counts plus `passed`, `total`, `status`, `detail`, `cleanup` and a fixed safe
 `error` on failure. Composed Deploy adds the execution fields to its existing
 `eval` stage; GET-only cached skips omit them rather than claiming fresh Tasks.
+A fail-fast threshold stop instead reports, for example,
+`2 of 3 runs executed; 0 passed; stopped because the pass threshold is unreachable; 1 not executed`.
+Its Orka JSON includes `thresholdUnreachable: true` and leaves `aborted` false.
+Candidate cleanup still runs. Cleanup uncertainty supersedes the threshold-stop
+classification and omits `thresholdUnreachable`; the execution counts remain.
+The incomplete run set is diagnostic-only and creates neither a standalone
+receipt nor managed passing proof.
 A fully executed threshold miss retains `N/total runs passed`; an assertion fail
 followed by two passes completes a three-run, two-pass policy as `2/3`.
 Abort, cleanup and no-publication behavior are unchanged; cleanup failures never

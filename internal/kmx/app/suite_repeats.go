@@ -108,10 +108,11 @@ func validateSuiteRunGroups(rows []suitePassingCase) error {
 // SuiteRunExecutionSummary is run-local Orka reporting, never passing evidence.
 // A TaskUID records execution even when no assertions could be evaluated.
 type SuiteRunExecutionSummary struct {
-	Executed        int  `json:"executed"`
-	NotExecuted     int  `json:"notExecuted"`
-	Aborted         bool `json:"aborted"`
-	ReportingFailed bool `json:"reportingFailed,omitempty"`
+	Executed             int  `json:"executed"`
+	NotExecuted          int  `json:"notExecuted"`
+	Aborted              bool `json:"aborted"`
+	ReportingFailed      bool `json:"reportingFailed,omitempty"`
+	ThresholdUnreachable bool `json:"thresholdUnreachable,omitempty"`
 }
 
 type suiteRunSummary struct {
@@ -130,6 +131,9 @@ func (s suiteRunSummary) String() string {
 		}
 		return fmt.Sprintf("%d of %d runs executed; %d passed; aborted on %s; %d not executed", s.Executed, s.Total, s.Passed, reason, s.NotExecuted)
 	}
+	if s.ThresholdUnreachable {
+		return fmt.Sprintf("%d of %d runs executed; %d passed; stopped because the pass threshold is unreachable; %d not executed", s.Executed, s.Total, s.Passed, s.NotExecuted)
+	}
 	if s.NotExecuted > 0 {
 		return fmt.Sprintf("%d of %d runs executed; %d passed; %d not executed", s.Executed, s.Total, s.Passed, s.NotExecuted)
 	}
@@ -139,12 +143,16 @@ func (s suiteRunSummary) String() string {
 // Each fresh run gets the configured deadline, including its judging and
 // attribution checks. A late unknown vetoes an already attainable threshold.
 func evaluateSuiteRuns(ctx context.Context, frames []suitePassingInventoryCase, timeout time.Duration, out io.Writer, run func(context.Context, suitePassingInventoryCase) (suitePassingObservation, error)) ([]suitePassingObservation, error) {
-	return evaluateSuiteRunsReporting(ctx, frames, timeout, out, run, nil)
+	return evaluateSuiteRunsReportingMode(ctx, frames, timeout, out, run, nil, false)
 }
 
 // Only the Orka candidate caller supplies a TaskUID-based diagnostic summary.
 // Other runtimes retain their own execution identities and existing behavior.
 func evaluateSuiteRunsReporting(ctx context.Context, frames []suitePassingInventoryCase, timeout time.Duration, out io.Writer, run func(context.Context, suitePassingInventoryCase) (suitePassingObservation, error), summary *suiteRunSummary) (observations []suitePassingObservation, err error) {
+	return evaluateSuiteRunsReportingMode(ctx, frames, timeout, out, run, summary, false)
+}
+
+func evaluateSuiteRunsReportingMode(ctx context.Context, frames []suitePassingInventoryCase, timeout time.Duration, out io.Writer, run func(context.Context, suitePassingInventoryCase) (suitePassingObservation, error), summary *suiteRunSummary, failFast bool) (observations []suitePassingObservation, err error) {
 	thresholdMiss, reportingOnly := false, false
 	if summary != nil {
 		*summary = suiteRunSummary{Total: len(frames), SuiteRunExecutionSummary: SuiteRunExecutionSummary{NotExecuted: len(frames)}}
@@ -249,6 +257,17 @@ func evaluateSuiteRunsReporting(ctx context.Context, frames []suitePassingInvent
 			}
 			observations = append(observations, observed)
 			cancel()
+			remaining := count - j - 1
+			if failFast && remaining > 0 && passes+remaining < required {
+				if cause := ctx.Err(); cause != nil {
+					return nil, errors.Join(errSuiteNativeEvaluation, cause)
+				}
+				thresholdMiss = true
+				if summary != nil {
+					summary.ThresholdUnreachable = true
+				}
+				return nil, errSuiteNativeCaseFailed
+			}
 		}
 		if passes < required {
 			thresholdMiss = true

@@ -30,10 +30,14 @@ func (e *suiteCandidateOutcome) Error() string {
 	if !e.effects && errors.Is(e.cause, scaffold.ErrUnresolvedPlaceholder) {
 		verdict = "native suite contains an unresolved model or endpoint placeholder; set concrete values, then rerun eval"
 	}
-	if errors.Is(e.cause, errSuiteNativeCaseFailed) {
+	if errors.Is(e.cause, errSuiteCandidateCleanup) {
+		verdict = "native candidate cleanup outcome unknown"
+	} else if errors.Is(e.cause, errSuiteNativeCaseFailed) {
 		verdict = "native candidate evaluation case failed"
 		if e.runs != nil && e.runs.Aborted {
 			verdict = "native candidate execution failed"
+		} else if e.runs != nil && e.runs.ThresholdUnreachable {
+			verdict = "native candidate evaluation stopped because the pass threshold is unreachable"
 		}
 	}
 	var port *orkaResultPortError
@@ -74,6 +78,10 @@ func (a *App) evaluateSuiteWorkspaceCandidate(ctx context.Context, p *PreparedSu
 	guardRefusal := false
 	defer func() {
 		if err != nil && !guardRefusal {
+			if ctx.Err() != nil && outcome.runs != nil && outcome.runs.ThresholdUnreachable {
+				outcome.runs.ThresholdUnreachable = false
+				outcome.runs.Aborted = true
+			}
 			outcome.cause = errors.Join(err, ctx.Err())
 			err = outcome
 		}
@@ -87,7 +95,11 @@ func (a *App) evaluateSuiteWorkspaceCandidate(ctx context.Context, p *PreparedSu
 	p.started = true
 	for _, frame := range p.inventory {
 		if frame.Metadata.Runs > 1 {
-			if _, err := fmt.Fprintf(a.Err, "Run preflight: %d fresh Tasks, %s per run, %s total execution budget (upper bound; excludes placement; cancellation can stop earlier).\n", len(p.inventory), p.options.CaseTimeout, time.Duration(len(p.inventory))*p.options.CaseTimeout); err != nil {
+			stop := "cancellation can stop earlier"
+			if p.options.FailFast {
+				stop = "--fail-fast or cancellation can stop earlier"
+			}
+			if _, err := fmt.Fprintf(a.Err, "Run preflight: %d fresh Tasks, %s per run, %s total execution budget (upper bound; excludes placement; %s).\n", len(p.inventory), p.options.CaseTimeout, time.Duration(len(p.inventory))*p.options.CaseTimeout, stop); err != nil {
 				return err
 			}
 			break
@@ -151,12 +163,20 @@ func (a *App) evaluateSuiteWorkspaceCandidate(ctx context.Context, p *PreparedSu
 				}
 			}
 		}
-		if _, err := fmt.Fprintf(worker.Err, "Judge preflight: %d independent requests over case inputs, attributed answers and authored rubrics; shares each run's deadline. Identity/version are user-declared, not provider attestation. Non-pass reasoning is diagnostic-only; --show-content opts into sanitized bounded content on stderr.\n", count); err != nil {
+		requestCount := fmt.Sprintf("%d independent requests", count)
+		if p.options.FailFast {
+			requestCount = fmt.Sprintf("up to %d independent requests", count)
+		}
+		if _, err := fmt.Fprintf(worker.Err, "Judge preflight: %s over case inputs, attributed answers and authored rubrics; shares each run's deadline. Identity/version are user-declared, not provider attestation. Non-pass reasoning is diagnostic-only; --show-content opts into sanitized bounded content on stderr.\n", requestCount); err != nil {
 			return err
 		}
 	}
 	outcome.phase = "guard"
-	action := fmt.Sprintf("create fresh owned native candidate Provider and Agent, execute %d evaluation Tasks in %s, and delete this run's acknowledged owned UIDs and verify attributable children gone, including on cancellation", len(p.inventory), p.options.ToNamespace)
+	executionCount := fmt.Sprintf("execute %d evaluation Tasks", len(p.inventory))
+	if p.options.FailFast {
+		executionCount = fmt.Sprintf("execute up to %d evaluation Tasks, stopping only when a repeated pass threshold is unreachable", len(p.inventory))
+	}
+	action := fmt.Sprintf("create fresh owned native candidate Provider and Agent, %s in %s, and delete this run's acknowledged owned UIDs and verify attributable children gone, including on cancellation", executionCount, p.options.ToNamespace)
 	if err := worker.guardOrkaMutation(ctx, CreateOptions{Name: native.Subject.PhysicalMember, Namespace: p.options.ToNamespace}, action); err != nil {
 		guardRefusal = true
 		return err
@@ -190,13 +210,13 @@ func (a *App) evaluateSuiteWorkspaceCandidate(ctx context.Context, p *PreparedSu
 			return err
 		}
 		outcome.runs = &p.runs
-		observations, err = evaluateSuiteRunsReporting(ctx, p.inventory, p.options.CaseTimeout, worker.Out, func(runCtx context.Context, frame suitePassingInventoryCase) (suitePassingObservation, error) {
+		observations, err = evaluateSuiteRunsReportingMode(ctx, p.inventory, p.options.CaseTimeout, worker.Out, func(runCtx context.Context, frame suitePassingInventoryCase) (suitePassingObservation, error) {
 			outcome.phase, outcome.caseID = "case execution", suiteDiagnosticIdentity(frame.Case.ID, []string{p.diagnosticKey})
 			if err := checkSource(runCtx); err != nil {
 				return suitePassingObservation{}, err
 			}
 			return worker.evaluateSuiteNativeCandidate(runCtx, placement, frame, p.options.ResultPort, p.judge, run)
-		}, &p.runs)
+		}, &p.runs, p.options.FailFast)
 		if err != nil {
 			return err
 		}
@@ -214,6 +234,9 @@ func (a *App) evaluateSuiteWorkspaceCandidate(ctx context.Context, p *PreparedSu
 	outcome.allGone, outcome.cleanupReason = result.AllGone, result.Reason
 	p.cleanup = outcome.cleanup()
 	if cleanupErr != nil || !result.AllGone {
+		if outcome.runs != nil {
+			outcome.runs.ThresholdUnreachable = false
+		}
 		outcome.phase = "cleanup"
 		return errors.Join(executionErr, cleanupErr, cleanupContextErr, errSuiteCandidateCleanup)
 	}

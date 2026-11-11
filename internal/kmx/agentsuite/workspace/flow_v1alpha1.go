@@ -31,7 +31,7 @@ type FlowInventory struct {
 
 // PrepareFlow explicitly selects the experimental contract before ingestion.
 func PrepareFlow(ctx context.Context, root, cache string) (*Prepared, error) {
-	return prepare(ctx, root, cache, true)
+	return prepare(ctx, root, cache, true, nil)
 }
 
 func canonicalFlow(raw []byte) ([]byte, error) {

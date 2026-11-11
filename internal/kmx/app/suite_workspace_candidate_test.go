@@ -123,6 +123,92 @@ func TestCandidateExecutionAbortSummary(t *testing.T) {
 	}
 }
 
+func TestCandidateFailFastThresholdLifecycle(t *testing.T) {
+	for _, mode := range []string{"threshold", "cleanup", "cancelled", "cleanup cancellation"} {
+		t.Run(mode, func(t *testing.T) {
+			a, _, f, state := publicNativeEvaluationFixture(t)
+			opt := nativeEvaluationOptions(t)
+			opt.ResultPort, opt.ManagedPass, opt.FailFast = f.opt.ResultPort, true, true
+			repeatedCandidateCase(t, opt.Workspace)
+			p, err := PrepareSuiteWorkspaceEvaluation(t.Context(), opt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer p.Close()
+
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			f.answers[nativeCanary+" first"] = nativeCanary + " answer"
+			tasks := 0
+			state.afterCreate = func(key string) {
+				if !strings.HasPrefix(key, "Task/") {
+					return
+				}
+				tasks++
+				if tasks <= 2 {
+					f.answers[nativeCanary+" first"] = "wrong"
+				} else {
+					f.answers[nativeCanary+" first"] = nativeCanary + " answer"
+				}
+				if mode == "cancelled" && tasks == 2 {
+					cancel()
+				}
+			}
+			if mode == "cleanup" {
+				state.beforeDelete = func(context.Context, *exec.Cmd) error { return errors.New(nativeCanary) }
+			} else if mode == "cleanup cancellation" {
+				state.beforeDelete = func(context.Context, *exec.Cmd) error {
+					cancel()
+					return nil
+				}
+			}
+
+			err = a.EvaluateSuiteWorkspace(ctx, p)
+			if err == nil || tasks != 2 || len(state.creates) != 4 || p.runs.Executed != 2 || p.runs.NotExecuted != 1 || p.runs.Passed != 0 {
+				t.Fatalf("wrong fail-fast lifecycle: Tasks=%d creates=%v summary=%+v err=%v", tasks, state.creates, p.runs, err)
+			}
+			if mode == "cancelled" || mode == "cleanup cancellation" {
+				if !errors.Is(err, context.Canceled) || !p.runs.Aborted || p.runs.ThresholdUnreachable {
+					t.Fatalf("cancellation lost precedence: summary=%+v err=%v", p.runs, err)
+				}
+			} else if mode == "cleanup" {
+				if !errors.Is(err, errSuiteCandidateCleanup) || p.runs.Aborted || p.runs.ThresholdUnreachable || !strings.Contains(err.Error(), "cleanup outcome unknown") || strings.Contains(err.Error(), "stopped because the pass threshold is unreachable") {
+					t.Fatalf("cleanup uncertainty lost precedence: summary=%+v err=%v", p.runs, err)
+				}
+			} else {
+				if !errors.Is(err, errSuiteNativeCaseFailed) || p.runs.Aborted || !p.runs.ThresholdUnreachable || !strings.Contains(err.Error(), "stopped because the pass threshold is unreachable") {
+					t.Fatalf("threshold stop misclassified: summary=%+v err=%v", p.runs, err)
+				}
+			}
+			if mode == "cleanup" {
+				if !errors.Is(err, errSuiteCandidateCleanup) || len(state.objects) == 0 || strings.Contains(err.Error(), "cleanup completed") {
+					t.Fatal("cleanup uncertainty was weakened", err)
+				}
+			} else if len(state.objects) != 0 || len(state.deletes) != 4 || !strings.Contains(err.Error(), "candidate cleanup completed") {
+				t.Fatal("detached candidate cleanup was not verified", state.objects, state.deletes, err)
+			}
+			if strings.Contains(f.out.String(), "run 3/3") {
+				t.Fatal("unreachable run was sent", f.out.String())
+			}
+			if len(p.completed) != 0 || p.record != "" {
+				t.Fatal("incomplete run set gained managed proof authority")
+			}
+			if _, e := os.Stat(opt.Out); !os.IsNotExist(e) {
+				t.Fatal("incomplete run set exported a receipt", e)
+			}
+			if _, _, e := p.store.latest(t.Context(), p.suite); !errors.Is(e, errSuitePassMissing) {
+				t.Fatal("incomplete run set registered managed proof", e)
+			}
+			if records, e := filepath.Glob(filepath.Join(p.store.partition, "*.json")); e != nil || len(records) != 0 {
+				t.Fatal("incomplete run set persisted proof", records, e)
+			}
+			if strings.Contains(err.Error()+f.out.String()+fmt.Sprint(a.Err), nativeCanary) {
+				t.Fatal("payload leaked from fail-fast diagnostics")
+			}
+		})
+	}
+}
+
 func TestRootEvalJSONRefusesOtherRuntimeCountsOffline(t *testing.T) {
 	for _, runtime := range []string{"kagent", "agentsessions"} {
 		t.Run(runtime, func(t *testing.T) {
@@ -157,12 +243,14 @@ func TestRootEvalJSONRefusesOtherRuntimeCountsOffline(t *testing.T) {
 }
 
 func TestRootEvalJSONRunSummary(t *testing.T) {
-	for _, mode := range []string{"Failed", "Cancelled", "late", "no TaskUID", "cleanup", "threshold pass", "threshold miss"} {
+	for _, mode := range []string{"Failed", "Cancelled", "late", "no TaskUID", "cleanup", "threshold pass", "threshold miss", "fail-fast threshold pass", "fail-fast explicit false threshold pass", "fail-fast explicit false threshold miss", "fail-fast threshold miss", "fail-fast cleanup uncertainty"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Setenv("KMX_HOME", privateSuiteDir(t))
 			a, _, f, state := publicNativeEvaluationFixture(t)
 			opt := nativeEvaluationOptions(t)
 			opt.ResultPort, opt.ManagedPass, opt.JSON = f.opt.ResultPort, true, true
+			opt.FailFast = strings.HasPrefix(mode, "fail-fast") && !strings.HasPrefix(mode, "fail-fast explicit false")
+			opt.FailFastSet = strings.HasPrefix(mode, "fail-fast explicit false")
 			repeatedCandidateCase(t, opt.Workspace)
 			p, err := PrepareSuiteWorkspaceEvaluation(t.Context(), opt)
 			if err != nil {
@@ -170,22 +258,29 @@ func TestRootEvalJSONRunSummary(t *testing.T) {
 			}
 			defer p.Close()
 			f.answers[nativeCanary+" first"] = nativeCanary + " answer"
-			executed, passed, aborted := 1, 0, true
+			executed, passed, aborted, thresholdUnreachable := 1, 0, true, false
 			var tasks *int
-			if strings.HasPrefix(mode, "threshold") {
+			if strings.Contains(mode, "threshold") || mode == "fail-fast cleanup uncertainty" {
 				tasks = new(int)
 				state.afterCreate = func(key string) {
 					if strings.HasPrefix(key, "Task/") {
 						*tasks++
 						f.answers[nativeCanary+" first"] = nativeCanary + " answer"
-						if *tasks == 1 || mode == "threshold miss" && *tasks == 2 {
+						if *tasks == 1 || (strings.HasSuffix(mode, "threshold miss") || mode == "fail-fast cleanup uncertainty") && *tasks == 2 {
 							f.answers[nativeCanary+" first"] = "wrong"
 						}
 					}
 				}
 				executed, passed, aborted = 3, 2, false
-				if mode == "threshold miss" {
+				if strings.HasSuffix(mode, "threshold miss") {
 					passed = 1
+				}
+				if mode == "fail-fast threshold miss" || mode == "fail-fast cleanup uncertainty" {
+					executed, passed, thresholdUnreachable = 2, 0, true
+					if mode == "fail-fast cleanup uncertainty" {
+						thresholdUnreachable = false
+						state.beforeDelete = func(context.Context, *exec.Cmd) error { return errors.New(nativeCanary) }
+					}
 				}
 			} else {
 				tasks = candidateAbortScenario(t, state, mode)
@@ -202,20 +297,25 @@ func TestRootEvalJSONRunSummary(t *testing.T) {
 			var report struct {
 				Status, Detail, Error, Cleanup       string
 				Executed, NotExecuted, Passed, Total int
-				Aborted                              bool
+				Aborted, ThresholdUnreachable        bool
+				Failures                             []suiteFailureDetail
 			}
 			if e := json.Unmarshal(out.Bytes(), &report); e != nil {
 				t.Fatalf("stdout is not one JSON document: %s (%v)", &out, e)
 			}
-			if report.Executed != executed || report.NotExecuted != 3-executed || report.Passed != passed || report.Total != 3 || report.Aborted != aborted || *tasks != executed {
+			if report.Executed != executed || report.NotExecuted != 3-executed || report.Passed != passed || report.Total != 3 || report.Aborted != aborted || report.ThresholdUnreachable != thresholdUnreachable || *tasks != executed {
 				t.Fatalf("dishonest run report: %+v Tasks=%d err=%v", report, *tasks, err)
 			}
-			if mode == "threshold pass" {
+			if strings.HasSuffix(mode, "threshold pass") {
 				if err != nil || report.Status != "complete" || !strings.Contains(report.Detail, "2/3 runs passed") {
 					t.Fatal("threshold pass refused", report, err)
 				}
 				if _, _, e := p.store.latest(t.Context(), p.suite); e != nil {
 					t.Fatal("pass not registered", e)
+				}
+				receipt, e := readSuitePassingReceipt(t.Context(), opt.Out)
+				if e != nil || len(receipt.Cases) != 3 {
+					t.Fatal("complete fail-fast pass lost full evidence", e)
 				}
 			} else {
 				if err == nil || report.Status != "failed" || report.Error == "" {
@@ -224,11 +324,23 @@ func TestRootEvalJSONRunSummary(t *testing.T) {
 				if mode == "threshold miss" && (!strings.Contains(report.Detail, "1/3 runs passed") || strings.Contains(report.Detail, "aborted")) {
 					t.Fatal("threshold miss claimed execution abort", report)
 				}
+				if mode == "fail-fast explicit false threshold miss" && (report.Executed != 3 || report.NotExecuted != 0 || report.ThresholdUnreachable || report.Aborted || !strings.Contains(report.Detail, "1/3 runs passed")) {
+					t.Fatal("explicit false changed full threshold execution", report)
+				}
+				if mode == "fail-fast threshold miss" && (!strings.Contains(report.Detail, "threshold is unreachable") || !strings.Contains(report.Detail, "no passing evidence published") || len(report.Failures) != 2 || report.Failures[0].Run != 1 || report.Failures[1].Run != 2 || strings.Contains(report.Detail, "aborted")) {
+					t.Fatal("fail-fast threshold miss lost safe details", report)
+				}
+				if mode == "fail-fast cleanup uncertainty" && (!strings.Contains(report.Detail, "no passing evidence published") || strings.Contains(report.Detail, "threshold is unreachable") || report.ThresholdUnreachable || report.Cleanup != "candidate cleanup incomplete; known resources may remain" || !errors.Is(err, errSuiteCandidateCleanup)) {
+					t.Fatal("cleanup uncertainty did not supersede threshold stop", report, err)
+				}
 				if _, e := os.Stat(opt.Out); !os.IsNotExist(e) {
 					t.Fatal("failure exported", e)
 				}
+				if _, _, e := p.store.latest(t.Context(), p.suite); !errors.Is(e, errSuitePassMissing) {
+					t.Fatal("failure registered managed proof", e)
+				}
 			}
-			if mode == "cleanup" {
+			if mode == "cleanup" || mode == "fail-fast cleanup uncertainty" {
 				if strings.Contains(report.Cleanup, "completed") || len(state.objects) == 0 {
 					t.Fatal("false cleanup claim", report)
 				}
@@ -237,6 +349,9 @@ func TestRootEvalJSONRunSummary(t *testing.T) {
 			}
 			if !strings.Contains(diagnostics.String(), "Workspace:") || strings.Contains(out.String()+diagnostics.String()+fmt.Sprint(err), nativeCanary) {
 				t.Fatal("bad JSON channels/privacy", &out, &diagnostics, err)
+			}
+			if bytes.Contains(out.Bytes(), []byte(`"thresholdUnreachable"`)) != thresholdUnreachable {
+				t.Fatalf("threshold JSON field presence does not match early stop: %s", &out)
 			}
 		})
 	}

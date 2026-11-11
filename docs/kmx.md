@@ -1153,6 +1153,12 @@ See [digest deploy](suite-workspace.md#digest-lift) for gates and partial outcom
 
 ### Current Orka path and explicit version-qualified operations
 
+Standalone native Orka `kmx package test` additionally accepts `--fail-fast`.
+Full execution remains the default. The option stops only when a repeated case
+cannot reach `minPasses`, still performs candidate cleanup, exits nonzero and
+creates no partial receipt or managed proof. File Test, kagent, AgentSessions and
+composed Deploy refuse the option; hidden `kmx eval` has the same flag contract.
+
 | Command | Contract / reference |
 |---|---|
 | `kmx package ctx [--workspace <directory>] [--check] [-o table\|json]` | list named workspace destinations (name, cluster context, namespace, declared runtime, inference/bindings reference, registry/repository), offline by default. No current/default pointer or switching. Optional checks cover local context names and anonymous registry reachability only, not runtime/inference/Secret readiness. [Named destinations](suite-workspace.md#named-destinations) |
