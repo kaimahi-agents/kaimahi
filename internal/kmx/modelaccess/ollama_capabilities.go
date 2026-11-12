@@ -1,16 +1,11 @@
 package modelaccess
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
-	"net/http"
+	"os"
 	"strings"
-
-	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
 )
 
 // OllamaCapabilities reads the selected installed model's advertised metadata.
@@ -20,34 +15,22 @@ func OllamaCapabilities(ctx context.Context, route Route) (Capabilities, error) 
 	if route.Provider != "ollama" || route.Validate() != nil {
 		return Capabilities{}, errors.New("invalid Ollama route")
 	}
-	base, err := cleanBase(route.Endpoint)
+	access, err := NewEndpointAccess(route, os.Getenv(route.KeyEnv), 0)
 	if err != nil {
 		return Capabilities{}, err
 	}
+	return ollamaCapabilities(ctx, access)
+}
+
+func ollamaCapabilities(ctx context.Context, access *EndpointAccess) (Capabilities, error) {
+	// Retain gateway prefixes when replacing the selected Chat API suffix.
+	base := strings.TrimSuffix(strings.TrimRight(access.route.Endpoint, "/"), "/v1")
 	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
-	body, _ := json.Marshal(map[string]string{"model": route.Model})
-	req, err := http.NewRequestWithContext(ctx, "POST", base+"/api/show", bytes.NewReader(body))
+	body, _ := json.Marshal(map[string]string{"model": access.route.Model})
+	raw, err := access.read(ctx, "POST", base+"/api/show", body)
 	if err != nil {
-		return Capabilities{}, errors.New("Ollama metadata unavailable")
-	}
-	req.Header.Set("Content-Type", "application/json")
-	version.SetUserAgent(req)
-	client := &http.Client{Timeout: probeTimeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	resp, err := client.Do(req)
-	if err != nil {
-		if ctx.Err() != nil {
-			return Capabilities{}, ctx.Err()
-		}
-		return Capabilities{}, errors.New("Ollama metadata unavailable")
-	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, probeLimit+1))
-	if ctx.Err() != nil {
-		return Capabilities{}, ctx.Err()
-	}
-	if err != nil || len(raw) > probeLimit || resp.StatusCode != 200 || !agentruntime.JSONKeysUnique(raw) {
-		return Capabilities{}, errors.New("invalid Ollama metadata")
+		return Capabilities{}, err
 	}
 	var metadata struct {
 		Capabilities *[]string                  `json:"capabilities"`

@@ -4,7 +4,9 @@ package localagent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -22,6 +24,20 @@ func TestResidentEndpointTurnAndRouteDrift(t *testing.T) {
 			pair := residentAgentPair(t)
 			t.Setenv("RESIDENT_ENDPOINT_KEY", "private-resident-canary")
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == "GET" {
+					if provider == "anthropic" {
+						if r.URL.Path != "/v1/models/unit" || r.Header.Get("x-api-key") != "private-resident-canary" {
+							t.Error("invalid Anthropic availability probe")
+						}
+						io.WriteString(w, `{"type":"model","id":"unit"}`)
+					} else {
+						if r.URL.Path != "/v1/models" || r.Header.Get("Authorization") != "Bearer private-resident-canary" {
+							t.Error("invalid availability probe")
+						}
+						io.WriteString(w, `{"data":[{"id":"unit"}]}`)
+					}
+					return
+				}
 				if provider == "anthropic" {
 					if r.Header.Get("x-api-key") != "private-resident-canary" {
 						t.Error("missing key")
@@ -71,6 +87,95 @@ func TestResidentEndpointTurnAndRouteDrift(t *testing.T) {
 			})
 			if err != nil {
 				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestEndpointUpgradeProbeFailurePreservesWorkerAndSession(t *testing.T) {
+	for _, failure := range []string{"unreachable", "unauthorized", "missing-model", "malformed", "unsupported"} {
+		t.Run(failure, func(t *testing.T) {
+			pair := residentAgentPair(t)
+			good := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == "GET" {
+					io.WriteString(w, `{"data":[{"id":"unit"}]}`)
+					return
+				}
+				io.WriteString(w, `{"model":"unit","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"still working"}}]}`)
+			}))
+			defer good.Close()
+			old, _, err := Activate(t.Context(), "", pair, "compatible", good.URL+"/v1", "unit")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer Stop(context.Background(), old.InstanceID)
+			session, err := OpenSession(t.Context(), old.InstanceID, "kept")
+			if err != nil {
+				t.Fatal(err)
+			}
+			bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != "GET" || r.URL.Path != "/v1/models" {
+					t.Error("readiness attempted inference or an unexpected route")
+				}
+				switch failure {
+				case "unauthorized":
+					w.WriteHeader(401)
+				case "missing-model":
+					io.WriteString(w, `{"data":[{"id":"other"}]}`)
+				case "malformed":
+					io.WriteString(w, `{"data":`)
+				default:
+					w.WriteHeader(404)
+				}
+			}))
+			defer bad.Close()
+			if failure == "unreachable" {
+				bad.Close()
+			}
+			if _, _, err := ActivateWithOptions(t.Context(), "", pair, "compatible", bad.URL+"/v1", "unit", ActivationOptions{Mode: ActivationUpgrade}); err == nil {
+				t.Fatal("bad replacement promoted")
+			}
+			kept, err := ReadRecord(old.InstanceID)
+			if err != nil || kept.State != "running" {
+				t.Fatalf("old worker lost: %+v %v", kept, err)
+			}
+			answer, err := Invoke(t.Context(), old.InstanceID, session.ID, "continue")
+			if err != nil || answer != "still working" {
+				t.Fatalf("old session lost: %q %v", answer, err)
+			}
+		})
+	}
+}
+
+func TestResidentTurnUsesFrozenOutputBudget(t *testing.T) {
+	for _, tc := range []struct{ limit, required, want int }{{512, 0, 512}, {4096, 2048, 2048}} {
+		t.Run(fmt.Sprintf("%d-%d", tc.limit, tc.required), func(t *testing.T) {
+			pair := residentAgentPair(t)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == "GET" {
+					io.WriteString(w, `{"data":[{"id":"unit"}]}`)
+					return
+				}
+				var request struct {
+					MaxTokens int `json:"max_tokens"`
+				}
+				if json.NewDecoder(r.Body).Decode(&request) != nil || request.MaxTokens != tc.want {
+					t.Errorf("output budget %d want %d", request.MaxTokens, tc.want)
+				}
+				io.WriteString(w, `{"model":"unit","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"bounded"}}]}`)
+			}))
+			defer server.Close()
+			record, _, err := ActivateWithOptions(t.Context(), "", pair, "compatible", server.URL+"/v1", "unit", ActivationOptions{Capabilities: modelaccess.Capabilities{OutputTokens: tc.limit}, Requirements: modelaccess.Requirements{OutputTokens: tc.required}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer Stop(context.Background(), record.InstanceID)
+			session, err := OpenSession(t.Context(), record.InstanceID, "budget")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if answer, err := Invoke(t.Context(), record.InstanceID, session.ID, "hi"); err != nil || answer != "bounded" {
+				t.Fatalf("%q %v", answer, err)
 			}
 		})
 	}

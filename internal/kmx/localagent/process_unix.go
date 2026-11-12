@@ -341,8 +341,11 @@ func checkLocalAgentRoute(ctx context.Context, record Instance, credential local
 		return nil
 	}
 	if record.Provider != "copilot" {
-		_, err := modelaccess.NewEndpointAccess(record.Route(), credential.Token, record.Requirements.OutputTokens)
-		return err
+		access, err := record.endpointAccess(credential.Token)
+		if err != nil {
+			return err
+		}
+		return access.Probe(ctx)
 	}
 	route := modelaccess.Route{Provider: "copilot", Model: record.Model, Endpoint: modelaccess.CopilotEndpoint, Auth: "copilot"}
 	provider := copilot.New(nil)
@@ -538,7 +541,7 @@ func (w *residentWorker) prepareInvoke(ctx context.Context, s *residentSession, 
 		}
 		transport, check, base = client, access.CheckContent, modelaccess.CopilotEndpoint
 	} else if w.record.Provider != "fake" {
-		access, err := modelaccess.NewEndpointAccess(w.record.Route(), w.explicitCredential, w.record.Requirements.OutputTokens)
+		access, err := w.record.endpointAccess(w.explicitCredential)
 		if err != nil {
 			s.mu.Lock()
 			s.meta.Active = false

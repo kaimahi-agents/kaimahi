@@ -111,7 +111,7 @@ func TestProductionSurfaceIsNarrowAndOpaque(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, forbidden := range []string{"internal/kmx/app", "internal/kmx/config", "internal/kmx/agentsuite", "internal/kmx/localpreview", "internal/kmx/toolchain"} {
+		for _, forbidden := range []string{"internal/kmx/app", "internal/kmx/config", "internal/kmx/agentsuite", "internal/kmx/localpreview", "internal/kmx/localagent", "internal/kmx/modelaccess", "internal/kmx/toolchain"} {
 			if strings.Contains(string(data), forbidden) {
 				t.Errorf("%s imports or names operation package %s", name, forbidden)
 			}
@@ -152,7 +152,12 @@ func TestFoundationConsumersAreExplicit(t *testing.T) {
 				settingsReader := filepath.Join(root, "internal", "kmx", "localtools", "settings.go")
 				settingsWriter := filepath.Join(root, "internal", "kmx", "mcp", "tool_settings.go")
 				nativeSnapshot := filepath.Join(root, "cmd", "kmx", "agent_file_copilotd_snapshot.go")
-				if path != settingsReader && path != settingsWriter && path != nativeSnapshot && !slices.ContainsFunc(allowed, func(prefix string) bool { return strings.HasPrefix(path, prefix) }) {
+				residentSources := []string{
+					filepath.Join(root, "internal", "kmx", "localagent", "local_agents.go"),
+					filepath.Join(root, "internal", "kmx", "localagent", "process_unix.go"),
+					filepath.Join(root, "internal", "kmx", "modelaccess", "capabilities.go"),
+				}
+				if path != settingsReader && path != settingsWriter && path != nativeSnapshot && !slices.Contains(residentSources, path) && !slices.ContainsFunc(allowed, func(prefix string) bool { return strings.HasPrefix(path, prefix) }) {
 					t.Errorf("production package imports unwired filesystem foundation: %s", path)
 				}
 			}

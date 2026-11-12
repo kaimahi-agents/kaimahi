@@ -16,7 +16,12 @@ Ollama/Foundry Local, compatible/OpenAI and Anthropic Messages routes. Freeze ex
 endpoint/key-reference/capability/requirement identity in each generation; keys
 travel only in the worker credential pipe. Environment keys are startup snapshots;
 rotation needs a replacement generation. Missing capability metadata is unknown,
-never guessed from model names. Profiles are operator declarations, Ollama show
+never guessed from model names.
+Endpoint readiness requires a bounded non-inference exact-model catalog read;
+failed replacement access preserves the old worker and sessions. Endpoint
+transports share connection pools with request-local credentials. Ollama metadata
+retains selected HTTPS origins/gateway prefixes and selected credential ownership.
+Profiles are operator declarations, Ollama show
 metadata is advertised, and neither is execution evidence. `modelRequirements`
 frontmatter is resident-only; Run flags may strengthen but never weaken it.
 One-shot previews and Test retain their existing provider/tool contracts.

@@ -40,6 +40,15 @@ use concrete model IDs rather than aliases that return a different identity.
 Tool calls, incomplete replies, credential echoes, and model mismatches cannot
 become successful answers. Private reasoning blocks are not answer content.
 
+Before a worker becomes ready, a two-second bounded availability read verifies
+the exact model: `GET BASE/models` for Chat Completions providers or
+`GET BASE/models/MODEL` for Anthropic. Compatible endpoints must provide this
+inventory API. Missing models, failed authentication, unreachable endpoints,
+redirects, and malformed inventories refuse startup. An upgrade leaves the old
+worker and its sessions running if that check fails. The read sends no inference;
+it establishes current catalog access, not a guarantee of later successful turns.
+Endpoint accesses share a connection pool while keeping credentials request-local.
+
 Endpoint environment keys are checked against authored source before snapshot
 caching, then transferred through the owned worker pipe and kept only in memory. An environment key is a
 startup snapshot: changing it requires `--upgrade --yes` to replace the worker.
@@ -74,6 +83,10 @@ For Ollama, required capabilities are read from the selected model's read-only
 `/api/show` metadata: context length and explicit thinking/tool support. Output
 limits absent from that API remain unknown. Context metadata describes the
 advertised model limit, not a measurement of a running server's allocation.
+Explicit remote HTTPS URLs and gateway prefixes are supported: the trailing
+`/v1` Chat API suffix is replaced by `/api/show`, preserving the selected origin
+and prefix. Metadata requests use the same selected key reference and content
+checks as inference, with no redirects or retries.
 
 For a complete reviewed mapping, create an exact endpoint profile:
 
@@ -117,7 +130,8 @@ or key-environment overrides. Inventory JSON includes the frozen route and mappi
 
 Context matching is selection-time compatibility, not tokenizer-based conversation
 truncation. There is no automatic model substitution or history summarization.
-Endpoint output budgets use `outputTokens` when required, otherwise 1024 tokens;
+Endpoint output budgets use `outputTokens` when required, otherwise the smaller
+of 1024 tokens and a known declared output ceiling;
 OpenAI sends `max_completion_tokens`, other endpoints send `max_tokens`. Copilot
 retains its provider-owned request policy. Actual context-limit or quota refusals
 remain failed turns, with no replay.

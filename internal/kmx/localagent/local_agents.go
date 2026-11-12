@@ -138,6 +138,14 @@ func (i Instance) Route() modelaccess.Route {
 	return r
 }
 
+func (i Instance) endpointAccess(key string) (*modelaccess.EndpointAccess, error) {
+	budget, err := i.Requirements.OutputBudget(i.Capabilities)
+	if err != nil {
+		return nil, err
+	}
+	return modelaccess.NewEndpointAccess(i.Route(), key, budget)
+}
+
 // DriftError reports an active generation whose immutable snapshot or
 // inference route differs from the requested generation.
 type DriftError struct {
@@ -526,7 +534,7 @@ func ActivateWithOptions(ctx context.Context, executable string, pair *agentfile
 		return Instance{}, false, fmt.Errorf("model capabilities %s; select a matching exact model profile", match)
 	}
 	if provider != "fake" && provider != "copilot" {
-		access, err := modelaccess.NewEndpointAccess(requested.Route(), os.Getenv(options.KeyEnv), options.Requirements.OutputTokens)
+		access, err := requested.endpointAccess(os.Getenv(options.KeyEnv))
 		if err != nil {
 			return Instance{}, false, err
 		}

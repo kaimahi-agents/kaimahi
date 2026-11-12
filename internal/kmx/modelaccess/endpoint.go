@@ -19,6 +19,9 @@ import (
 
 var errEndpoint = errors.New("model endpoint request failed; no retry was attempted")
 
+// Request-local credentials never enter the shared connection pool.
+var endpointTransport http.RoundTripper = http.DefaultTransport.(*http.Transport).Clone()
+
 // EndpointAccess implements the shared invocation access interface for explicit
 // OpenAI-compatible and Anthropic Messages endpoints. Its credential is private
 // memory only; callers pass it through an owned pipe to resident workers.
@@ -45,8 +48,11 @@ func NewEndpointAccess(route Route, key string, output int) (*EndpointAccess, er
 	if output == 0 {
 		output = 1024
 	}
-	t := http.DefaultTransport.(*http.Transport).Clone()
-	return &EndpointAccess{route: route, key: key, output: output, next: t}, nil
+	access := &EndpointAccess{route: route, key: key, output: output, next: endpointTransport}
+	if err := access.CheckContent(route.Model, route.Endpoint, route.KeyEnv); err != nil {
+		return nil, err
+	}
+	return access, nil
 }
 
 func (a *EndpointAccess) CheckContent(values ...string) error {
@@ -140,34 +146,9 @@ func (a *EndpointAccess) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err != nil || len(raw) > 1<<20 {
 		return nil, errEndpoint
 	}
-	out, err := http.NewRequestWithContext(req.Context(), "POST", url, bytes.NewReader(raw))
+	raw, err = a.read(req.Context(), "POST", url, raw)
 	if err != nil {
-		return nil, errEndpoint
-	}
-	out.Header.Set("Content-Type", "application/json")
-	version.SetUserAgent(out)
-	if a.route.Provider == "anthropic" {
-		out.Header.Set("anthropic-version", "2023-06-01")
-		if a.key != "" {
-			out.Header.Set("x-api-key", a.key)
-		}
-	} else if a.key != "" {
-		out.Header.Set("Authorization", "Bearer "+a.key)
-	}
-	resp, err := a.next.RoundTrip(out)
-	if err != nil {
-		if req.Context().Err() != nil {
-			return nil, req.Context().Err()
-		}
-		return nil, errEndpoint
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return nil, errEndpoint
-	}
-	raw, err = io.ReadAll(io.LimitReader(resp.Body, (1<<20)+1))
-	if err != nil || len(raw) > 1<<20 || a.checkJSON(raw) != nil {
-		return nil, errEndpoint
+		return nil, err
 	}
 	if a.route.Provider == "anthropic" {
 		var answer struct {
@@ -199,4 +180,93 @@ func (a *EndpointAccess) RoundTrip(req *http.Request) (*http.Response, error) {
 		raw, _ = json.Marshal(map[string]any{"model": answer.Model, "choices": []any{map[string]any{"finish_reason": "stop", "message": map[string]string{"role": "assistant", "content": text.String()}}}})
 	}
 	return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(bytes.NewReader(raw)), ContentLength: int64(len(raw)), Request: req}, nil
+}
+
+// read performs one bounded request to the selected origin. Fixed callers own
+// path selection; redirects, raw service errors, and credential echoes refuse.
+func (a *EndpointAccess) read(ctx context.Context, method, target string, body []byte) ([]byte, error) {
+	origin, _ := url.Parse(a.route.Endpoint)
+	u, err := url.Parse(target)
+	if err != nil || u.Scheme != origin.Scheme || u.Host != origin.Host || u.User != nil || u.RawQuery != "" || u.Fragment != "" || len(body) > 1<<20 {
+		return nil, errEndpoint
+	}
+	if len(body) > 0 && a.checkJSON(body) != nil {
+		return nil, errEndpoint
+	}
+	req, err := http.NewRequestWithContext(ctx, method, target, bytes.NewReader(body))
+	if err != nil {
+		return nil, errEndpoint
+	}
+	req.Header.Set("Content-Type", "application/json")
+	version.SetUserAgent(req)
+	if a.route.Provider == "anthropic" {
+		req.Header.Set("anthropic-version", "2023-06-01")
+		if a.key != "" {
+			req.Header.Set("x-api-key", a.key)
+		}
+	} else if a.key != "" {
+		req.Header.Set("Authorization", "Bearer "+a.key)
+	}
+	resp, err := a.next.RoundTrip(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, errEndpoint
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, errEndpoint
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, (1<<20)+1))
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if err != nil || len(raw) > 1<<20 || a.checkJSON(raw) != nil {
+		return nil, errEndpoint
+	}
+	return raw, nil
+}
+
+// Probe checks access to the exact selected model without sending inference.
+// This gates replacement readiness, not a claim that a later turn will succeed.
+func (a *EndpointAccess) Probe(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
+	defer cancel()
+	endpoint := strings.TrimRight(a.route.Endpoint, "/") + "/models"
+	if a.route.Provider == "anthropic" {
+		endpoint += "/" + url.PathEscape(a.route.Model)
+	}
+	raw, err := a.read(ctx, "GET", endpoint, nil)
+	if err != nil {
+		return err
+	}
+	if a.route.Provider == "anthropic" {
+		var model struct {
+			ID   string `json:"id"`
+			Type string `json:"type"`
+		}
+		if json.Unmarshal(raw, &model) != nil || model.Type != "model" || model.ID != a.route.Model {
+			return errors.New("selected endpoint model is unavailable")
+		}
+		return nil
+	}
+	var models struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(raw, &models) != nil {
+		return errors.New("invalid endpoint model inventory")
+	}
+	matches := 0
+	for _, model := range models.Data {
+		if model.ID == a.route.Model {
+			matches++
+		}
+	}
+	if matches != 1 {
+		return errors.New("selected endpoint model is unavailable or ambiguous")
+	}
+	return nil
 }

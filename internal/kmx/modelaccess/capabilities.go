@@ -62,6 +62,22 @@ func (r Requirements) Match(c Capabilities) string {
 	return "match"
 }
 
+// OutputBudget preserves explicit minima and bounds only the default by the
+// frozen model limit. Unknown limits cannot satisfy an explicit requirement.
+func (r Requirements) OutputBudget(c Capabilities) (int, error) {
+	if r.Match(c) != "match" {
+		return 0, errors.New("model capabilities do not satisfy requirements")
+	}
+	if r.OutputTokens > 0 {
+		return r.OutputTokens, nil
+	}
+	budget := 1024
+	if c.OutputTokens > 0 {
+		budget = min(budget, c.OutputTokens)
+	}
+	return budget, nil
+}
+
 // Profile binds operator declarations to one exact route, never to a model name
 // alone. Credentials remain environment references, not profile content.
 type Profile struct {

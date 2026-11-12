@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -59,6 +61,49 @@ func TestEndpointProtocolsAndCredentialIsolation(t *testing.T) {
 				t.Fatal("credential echoed")
 			}
 		})
+	}
+}
+
+func TestEndpointAccessReusesConnectionsWithRequestScopedKeys(t *testing.T) {
+	var connections atomic.Int32
+	var requests atomic.Int32
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := requests.Add(1)
+		want := "Bearer first-private-key"
+		if n == 2 {
+			want = "Bearer second-private-key"
+		}
+		if r.Header.Get("Authorization") != want {
+			t.Error("connection reused another invocation's credential")
+		}
+		io.WriteString(w, `{"model":"unit","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"hello"}}]}`)
+	}))
+	server.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			connections.Add(1)
+		}
+	}
+	server.Start()
+	defer server.Close()
+	route := Route{Provider: "openai", Model: "unit", Endpoint: server.URL + "/v1", Auth: "env", KeyEnv: "TEST_MODEL_KEY"}
+	for _, key := range []string{"first-private-key", "second-private-key"} {
+		access, err := NewEndpointAccess(route, key, 1024)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req, _ := http.NewRequestWithContext(t.Context(), "POST", route.Endpoint+"/chat/completions", strings.NewReader(`{"model":"unit","stream":false,"messages":[{"role":"user","content":"hello"}]}`))
+		resp, err := access.RoundTrip(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if connections.Load() != 1 || requests.Load() != 2 {
+		t.Fatalf("connections=%d requests=%d", connections.Load(), requests.Load())
 	}
 }
 

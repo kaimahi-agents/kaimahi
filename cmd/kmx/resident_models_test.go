@@ -47,14 +47,18 @@ func TestResidentCLIResolvesExactLocalAndHostedRoutes(t *testing.T) {
 }
 
 func TestModelMatchReportsUnknownWithoutConfiguration(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "model.json")
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "model.json")
 	raw, _ := json.Marshal(modelaccess.Profile{Route: modelaccess.Route{Provider: "openai", Model: "unit", Endpoint: "https://api.openai.com/v1", Auth: "env", KeyEnv: "OPENAI_API_KEY"}})
 	if err := os.WriteFile(path, raw, 0600); err != nil {
 		t.Fatal(err)
 	}
 	var out, diag bytes.Buffer
 	deps, loads := testDependencies(&out, &diag)
-	err := execute([]string{"model", "match", path, "--require-reasoning"}, deps)
+	err = execute([]string{"model", "match", path, "--require-reasoning"}, deps)
 	if err == nil || *loads != 0 || !strings.Contains(out.String(), `"status":"unknown"`) {
 		t.Fatalf("%s %v", out.String(), err)
 	}
