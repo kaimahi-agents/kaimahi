@@ -9,6 +9,18 @@ changes in the package's Go doc comment.
 
 ## Package ownership
 
+Resident lifecycle belongs to `internal/kmx/localagent`; model route discovery,
+endpoint credential ownership, protocol adaptation and capability matching belong
+to `internal/kmx/modelaccess`. Resident Run supports tool-free fake/Copilot,
+Ollama/Foundry Local, compatible/OpenAI and Anthropic Messages routes. Freeze exact
+endpoint/key-reference/capability/requirement identity in each generation; keys
+travel only in the worker credential pipe. Environment keys are startup snapshots;
+rotation needs a replacement generation. Missing capability metadata is unknown,
+never guessed from model names. Profiles are operator declarations, Ollama show
+metadata is advertised, and neither is execution evidence. `modelRequirements`
+frontmatter is resident-only; Run flags may strengthen but never weaken it.
+One-shot previews and Test retain their existing provider/tool contracts.
+
 New operations belong in an operation-owned package with explicit dependencies, not as new methods on `*app.App`. Keep CLI, MCP and UI parsing, presentation and invocation wiring in their adapters. Reuse an existing focused package when it owns the behavior; otherwise add one below `internal/kmx/`. Operation packages must not import `app`, `mcp` or command packages. Pass the capabilities the operation needs, not `*app.App` or a copy of it. Existing App methods may delegate during migration; do not move unrelated code to satisfy this rule.
 
 ## Independent review
@@ -1245,6 +1257,8 @@ or build effects. Loose build staging refuses modes without owner file-read or
 directory read/search permissions before creating output, preserving declared modes.
 
 Run checks appropriate to the changed paths as described in CONTRIBUTING.md.
+The app-shard launcher fixes its Unix child umask at 0022 for ordinary fixtures;
+permission-specific subprocess tests still choose their own masks and modes.
 App CI runs all four process-isolated shards on Linux and macOS; both platforms
 gate hygiene and artifact names include OS/shard. The App test harness resolves
 the macOS temporary root before fixtures; retain production symlink refusals.

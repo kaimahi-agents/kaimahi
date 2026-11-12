@@ -1,6 +1,7 @@
-// Package modelaccess discovers model endpoints and resolves explicit model routes.
-// Route selection requires exact provider and model matches; it does not
-// authorize agent execution.
+// Package modelaccess discovers model endpoints, resolves explicit model routes,
+// matches declared capabilities, and owns bounded endpoint transports. Route
+// selection requires exact provider and model matches; selection alone does not
+// authorize agent execution or establish evaluation evidence.
 package modelaccess
 
 import (
@@ -8,6 +9,8 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
 const CopilotEndpoint = "https://api.githubcopilot.com"
@@ -22,21 +25,32 @@ type Route struct {
 	Model    string `json:"model"`
 	Endpoint string `json:"endpoint,omitempty"`
 	Auth     string `json:"auth"`
+	KeyEnv   string `json:"keyEnv,omitempty"`
 }
 
 var modelName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$`)
+var environmentName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,127}$`)
 
 func (r Route) Validate() error {
 	if !modelName.MatchString(r.Model) {
 		return errors.New("invalid model identifier")
 	}
+	if secretshapes.Match(r.Model) != nil || secretshapes.Match(r.Endpoint) != nil || secretshapes.Match(r.KeyEnv) != nil {
+		return errors.New("model route contains credential-shaped content")
+	}
+	if r.KeyEnv != "" && !environmentName.MatchString(r.KeyEnv) {
+		return errors.New("model key must name an environment variable")
+	}
+	if (r.Provider == "fake" || r.Provider == "copilot") && r.KeyEnv != "" {
+		return errors.New("selected provider owns its authentication")
+	}
 	if r.Provider == "fake" && r.Endpoint == "" && r.Auth == "none" {
 		return nil
 	}
-	if r.Auth != "none" && r.Auth != "copilot" {
+	if r.Auth != "none" && r.Auth != "copilot" && r.Auth != "env" {
 		return errors.New("unknown model authentication source")
 	}
-	if r.Provider != "ollama" && r.Provider != "foundry-local" && r.Provider != "compatible" && r.Provider != "copilot" {
+	if r.Provider != "ollama" && r.Provider != "foundry-local" && r.Provider != "compatible" && r.Provider != "copilot" && r.Provider != "openai" && r.Provider != "anthropic" {
 		return errors.New("unknown model provider")
 	}
 	u, err := url.Parse(r.Endpoint)
@@ -46,7 +60,7 @@ func (r Route) Validate() error {
 	if r.Provider == "copilot" && (r.Auth != "copilot" || r.Endpoint != CopilotEndpoint) {
 		return errors.New("invalid Copilot route")
 	}
-	if r.Provider != "copilot" && r.Auth != "none" {
+	if r.Provider != "copilot" && (r.Auth != "none" && r.Auth != "env" || (r.Auth == "env") != (r.KeyEnv != "")) {
 		return errors.New("authentication source does not match provider")
 	}
 	return nil

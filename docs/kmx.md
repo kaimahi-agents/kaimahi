@@ -219,6 +219,16 @@ empty tests do not pass Test, and bare `--tests`/`--case` require an agent FILE.
 `kmx test FILE --check` validates the selected pair and emits metadata without
 provider, model, tool, journal or history access. Test never targets an instance;
 it always evaluates current checked source.
+
+Resident Run also supports discovered Ollama/Foundry Local models and explicit
+compatible, OpenAI, or Anthropic endpoints. `--provider-key-env NAME` references
+an environment credential; `--model-profile FILE` binds an exact route to declared
+capabilities. `modelRequirements` frontmatter and `--require-context`,
+`--require-output`, `--require-reasoning` selectors require a matching capability
+mapping. `kmx model match PROFILE` checks a mapping offline and emits JSON;
+unknown requirements refuse selection. See [resident model selection](resident-models.md)
+for profiles, protocol support, credential rotation and the preview boundary.
+
 Without input, resident Run starts/reuses the agent and sends no turn;
 `kmx run FILE --prompt "input"` creates a resident session and sends that input. Test checks
 the file's saved examples in authored order and accepts no ad-hoc input. Use

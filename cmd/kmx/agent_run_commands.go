@@ -27,6 +27,8 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 	var once bool
 	var upgrade, parallel, yes bool
 	var runtimeName string
+	var keyEnv, profilePath string
+	var requirements modelaccess.Requirements
 	cmd := &cobra.Command{
 		Use: "run [FILE]", Short: "Run an agent file or an existing Orka Agent",
 		Long: "Run FILE starts or reuses a resident agent and answers without checks.\n" +
@@ -44,12 +46,37 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 	cmd.Flags().DurationVar(&opt.Wait, "wait", 5*time.Minute, "Wait for answer (10s to 9m)")
 	cmd.Flags().StringVar(&opt.ResultPort, "result-port", "", "Loopback forward port (chosen automatically)")
 	registerFileCommandFlags(cmd, &file, true)
+	cmd.Flags().Lookup("provider").Usage = "Model provider (see docs/local-preview.md)"
+	cmd.Flags().Lookup("provider-url").Usage = "Base URL; local routes can be discovered"
 	cmd.Flags().BoolVar(&once, "once", false, "Run FILE once without starting a resident agent")
 	cmd.Flags().BoolVarP(&upgrade, "upgrade", "u", false, "Replace active generations after the new worker is ready")
 	cmd.Flags().BoolVar(&parallel, "new", false, "Start a parallel resident generation")
 	cmd.Flags().StringVar(&runtimeName, "name", "", "Runtime name for --new")
 	cmd.Flags().BoolVar(&yes, "yes", false, "Confirm --upgrade without prompting")
+	cmd.Flags().StringVar(&keyEnv, "provider-key-env", "", "Endpoint key environment variable")
+	cmd.Flags().StringVar(&profilePath, "model-profile", "", "Exact route/capabilities JSON")
+	cmd.Flags().IntVar(&requirements.ContextTokens, "require-context", 0, "Minimum declared context tokens")
+	cmd.Flags().IntVar(&requirements.OutputTokens, "require-output", 0, "Output tokens required and requested")
+	cmd.Flags().BoolVar(&requirements.Reasoning, "require-reasoning", false, "Require reasoning capability")
 	cmd.Args = func(cmd *cobra.Command, args []string) error {
+		if err := requirements.Validate(); err != nil {
+			return fileUsageError(err)
+		}
+		for _, flag := range []string{"provider-key-env", "model-profile", "require-context", "require-output", "require-reasoning"} {
+			if cmd.Flags().Changed(flag) && (len(args) != 1 || once || state.deps.goos == "windows") {
+				return fileUsageError(fmt.Errorf("--%s requires resident Run on Unix/WSL", flag))
+			}
+			if (flag == "provider-key-env" || flag == "model-profile") && cmd.Flags().Changed(flag) && strings.TrimSpace(cmd.Flag(flag).Value.String()) == "" {
+				return fileUsageError(fmt.Errorf("--%s must not be empty", flag))
+			}
+		}
+		if profilePath != "" {
+			for _, flag := range []string{"provider", "provider-url", "model", "provider-key-env"} {
+				if cmd.Flags().Changed(flag) {
+					return fileUsageError(fmt.Errorf("--model-profile conflicts with --%s", flag))
+				}
+			}
+		}
 		if upgrade && (parallel || once) {
 			return fileUsageError(fmt.Errorf("--upgrade conflicts with --new and --once"))
 		}
@@ -137,6 +164,10 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 				if err != nil {
 					return err
 				}
+				requirements, err = localagent.ModelRequirements(pair, requirements)
+				if err != nil {
+					return fileUsageError(err)
+				}
 				provider := file.Provider
 				if provider == "" {
 					provider = "copilot"
@@ -153,8 +184,30 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 				}
 				route := fileModelRoute(provider, file.Endpoint)
 				route.Model = model
-				if file.Endpoint != "" || provider != "copilot" && provider != "fake" || !agentfile.ValidModel(model) || secretshapes.Match(model) != nil || route.Validate() != nil || (provider == "fake") != (model == "fake") || len(pair.Agent.Tools) != 0 {
-					return fileUsageError(fmt.Errorf("resident local agents currently require a tool-free fake or Copilot route without a custom endpoint"))
+				route.KeyEnv = keyEnv
+				var capabilities modelaccess.Capabilities
+				if profilePath != "" {
+					profile, err := modelaccess.LoadProfile(profilePath)
+					if err != nil {
+						return fileUsageError(err)
+					}
+					route, capabilities = profile.Route, profile.Capabilities
+				}
+				if profilePath == "" {
+					route, err = modelaccess.Resolve(cmd.Context(), route, state.deps.discoverModels)
+					if err != nil {
+						return fileUsageError(err)
+					}
+				}
+				provider, model = route.Provider, route.Model
+				if profilePath == "" && provider == "ollama" && requirements != (modelaccess.Requirements{}) {
+					capabilities, err = modelaccess.OllamaCapabilities(cmd.Context(), route)
+					if err != nil {
+						return err
+					}
+				}
+				if !agentfile.ValidModel(model) || secretshapes.Match(model) != nil || (provider == "fake") != (model == "fake") || len(pair.Agent.Tools) != 0 {
+					return fileUsageError(fmt.Errorf("resident local agents require a tool-free exact model route"))
 				}
 				mode := localagent.ActivationNormal
 				if upgrade {
@@ -170,7 +223,7 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 						}
 					}
 				}
-				activation := localagent.ActivationOptions{Mode: mode, Name: runtimeName}
+				activation := localagent.ActivationOptions{Mode: mode, Name: runtimeName, KeyEnv: route.KeyEnv, Capabilities: capabilities, Requirements: requirements}
 				if upgrade && !yes {
 					rows, readErr := state.deps.readLocalAgents(false)
 					if readErr != nil {
@@ -190,7 +243,7 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 						return fmt.Errorf("local agent activation cancelled")
 					}
 				}
-				instance, created, err := state.deps.activateLocalAgent(cmd.Context(), state.executable(), pair, provider, file.Endpoint, model, activation)
+				instance, created, err := state.deps.activateLocalAgent(cmd.Context(), state.executable(), pair, provider, route.Endpoint, model, activation)
 				var drift *localagent.DriftError
 				if errors.As(err, &drift) && !upgrade && !parallel {
 					choice, name, promptErr := promptLocalAgentDrift(state.deps.stdin, cmd.ErrOrStderr(), drift.Active)
@@ -201,7 +254,7 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 						return fmt.Errorf("local agent activation cancelled")
 					}
 					activation.Mode, activation.Name = choice, name
-					instance, created, err = state.deps.activateLocalAgent(cmd.Context(), state.executable(), pair, provider, file.Endpoint, model, activation)
+					instance, created, err = state.deps.activateLocalAgent(cmd.Context(), state.executable(), pair, provider, route.Endpoint, model, activation)
 				}
 				if err != nil {
 					return err

@@ -206,6 +206,8 @@ func startLocalAgentWorker(ctx context.Context, executable string, record Instan
 	token, set := "", false
 	if record.Provider == "copilot" {
 		token, set = os.LookupEnv("COPILOT_GITHUB_TOKEN")
+	} else if record.KeyEnv != "" {
+		token, set = os.LookupEnv(record.KeyEnv)
 	}
 	raw, marshalErr := json.Marshal(localAgentCredentialSnapshot{Set: set, Token: token})
 	_, writeErr := credentialWrite.Write(append(raw, '\n'))
@@ -337,6 +339,10 @@ func localAgentWorkerEnvironment(record Instance) []string {
 func checkLocalAgentRoute(ctx context.Context, record Instance, credential localAgentCredentialSnapshot) error {
 	if record.Provider == "fake" {
 		return nil
+	}
+	if record.Provider != "copilot" {
+		_, err := modelaccess.NewEndpointAccess(record.Route(), credential.Token, record.Requirements.OutputTokens)
+		return err
 	}
 	route := modelaccess.Route{Provider: "copilot", Model: record.Model, Endpoint: modelaccess.CopilotEndpoint, Auth: "copilot"}
 	provider := copilot.New(nil)
@@ -531,6 +537,23 @@ func (w *residentWorker) prepareInvoke(ctx context.Context, s *residentSession, 
 			return "", nil, nil, err
 		}
 		transport, check, base = client, access.CheckContent, modelaccess.CopilotEndpoint
+	} else if w.record.Provider != "fake" {
+		access, err := modelaccess.NewEndpointAccess(w.record.Route(), w.explicitCredential, w.record.Requirements.OutputTokens)
+		if err != nil {
+			s.mu.Lock()
+			s.meta.Active = false
+			s.meta.LastError = "invocation failed"
+			s.mu.Unlock()
+			return "", nil, nil, err
+		}
+		transport, err = access.Client(w.record.Route())
+		if err != nil {
+			s.mu.Lock()
+			s.meta.Active = false
+			s.mu.Unlock()
+			return "", nil, nil, err
+		}
+		check, base = access.CheckContent, w.record.Endpoint
 	}
 	answer, err := localpreview.SendConversation(ctx, w.record.Provider, w.record.Model, base, transport, w.instructions, history, input, check)
 	now = time.Now().UTC()

@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -20,6 +21,8 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
+	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -29,32 +32,36 @@ var errLocalAgentInventoryUninitialized = errors.New("local agent inventory is u
 
 // Instance is the safe lifecycle projection of one immutable resident worker.
 type Instance struct {
-	SchemaVersion    int        `json:"schemaVersion"`
-	EventID          string     `json:"eventId"`
-	Sequence         uint64     `json:"sequence"`
-	ID               string     `json:"id"`
-	InstanceID       string     `json:"instanceId"`
-	Name             string     `json:"name"`
-	AuthoredName     string     `json:"authoredName"`
-	Source           string     `json:"source"`
-	AgentRevision    string     `json:"agentRevision"`
-	SnapshotRevision string     `json:"snapshotRevision"`
-	TestsState       string     `json:"testsState"`
-	TestsRevision    string     `json:"testsRevision,omitempty"`
-	TestsPath        string     `json:"testsPath,omitempty"`
-	TestsExplicit    bool       `json:"testsExplicit,omitempty"`
-	CachedAgent      string     `json:"cachedAgent"`
-	CachedTests      string     `json:"cachedTests,omitempty"`
-	Provider         string     `json:"provider"`
-	Model            string     `json:"model"`
-	Started          time.Time  `json:"started"`
-	Stopped          *time.Time `json:"stopped,omitempty"`
-	State            string     `json:"state"`
-	Primary          bool       `json:"primary,omitempty"`
-	Ready            bool       `json:"ready,omitempty"`
-	Sessions         int        `json:"sessions,omitempty"`
-	LastActivity     *time.Time `json:"lastActivity,omitempty"`
-	LastError        string     `json:"lastError,omitempty"`
+	SchemaVersion    int                      `json:"schemaVersion"`
+	EventID          string                   `json:"eventId"`
+	Sequence         uint64                   `json:"sequence"`
+	ID               string                   `json:"id"`
+	InstanceID       string                   `json:"instanceId"`
+	Name             string                   `json:"name"`
+	AuthoredName     string                   `json:"authoredName"`
+	Source           string                   `json:"source"`
+	AgentRevision    string                   `json:"agentRevision"`
+	SnapshotRevision string                   `json:"snapshotRevision"`
+	TestsState       string                   `json:"testsState"`
+	TestsRevision    string                   `json:"testsRevision,omitempty"`
+	TestsPath        string                   `json:"testsPath,omitempty"`
+	TestsExplicit    bool                     `json:"testsExplicit,omitempty"`
+	CachedAgent      string                   `json:"cachedAgent"`
+	CachedTests      string                   `json:"cachedTests,omitempty"`
+	Provider         string                   `json:"provider"`
+	Model            string                   `json:"model"`
+	Endpoint         string                   `json:"endpoint,omitempty"`
+	KeyEnv           string                   `json:"keyEnv,omitempty"`
+	Capabilities     modelaccess.Capabilities `json:"capabilities,omitempty"`
+	Requirements     modelaccess.Requirements `json:"requirements,omitempty"`
+	Started          time.Time                `json:"started"`
+	Stopped          *time.Time               `json:"stopped,omitempty"`
+	State            string                   `json:"state"`
+	Primary          bool                     `json:"primary,omitempty"`
+	Ready            bool                     `json:"ready,omitempty"`
+	Sessions         int                      `json:"sessions,omitempty"`
+	LastActivity     *time.Time               `json:"lastActivity,omitempty"`
+	LastError        string                   `json:"lastError,omitempty"`
 }
 
 // Session describes one conversation owned by a resident worker generation.
@@ -110,8 +117,25 @@ const (
 
 // ActivationOptions controls resident generation creation.
 type ActivationOptions struct {
-	Mode ActivationMode
-	Name string
+	Mode         ActivationMode
+	Name         string
+	KeyEnv       string
+	Capabilities modelaccess.Capabilities
+	Requirements modelaccess.Requirements
+}
+
+func (i Instance) Route() modelaccess.Route {
+	r := modelaccess.Route{Provider: i.Provider, Model: i.Model, Endpoint: i.Endpoint, KeyEnv: i.KeyEnv, Auth: "none"}
+	if i.Provider == "copilot" {
+		r.Auth = "copilot"
+		if r.Endpoint == "" {
+			r.Endpoint = modelaccess.CopilotEndpoint
+		}
+	}
+	if i.KeyEnv != "" {
+		r.Auth = "env"
+	}
+	return r
 }
 
 // DriftError reports an active generation whose immutable snapshot or
@@ -381,6 +405,9 @@ func ensureLocalAgentCapacity(dir *fileaccess.Directory, names ...string) error 
 }
 
 func strictLocalAgentJSON(raw []byte, target any) error {
+	if !agentruntime.JSONKeysUnique(raw) {
+		return errors.New("invalid or duplicate local agent JSON fields")
+	}
 	var node yaml.Node
 	if yaml.Unmarshal(raw, &node) != nil || len(node.Content) != 1 || node.Content[0].Kind != yaml.MappingNode {
 		return errors.New("invalid local agent JSON")
@@ -414,6 +441,24 @@ func publishPrivateBytes(ctx context.Context, dir *fileaccess.Directory, name st
 		return nil
 	}
 	return err
+}
+
+func readSnapshotSource(ctx context.Context, source, revision string) ([]byte, error) {
+	parent, err := fileaccess.OpenDirectory(ctx, filepath.Dir(source))
+	if err != nil {
+		return nil, err
+	}
+	defer parent.Close()
+	f, err := fileaccess.OpenRegularAt(ctx, parent, filepath.Base(source))
+	if err != nil {
+		return nil, err
+	}
+	raw, err := io.ReadAll(io.LimitReader(f, agentfile.MaxFileBytes+1))
+	err = errors.Join(err, f.Close())
+	if err != nil || len(raw) > agentfile.MaxFileBytes || fmt.Sprintf("sha256:%x", sha256.Sum256(raw)) != revision {
+		return nil, errors.New("agent source changed while persisting")
+	}
+	return raw, nil
 }
 
 func cachePair(ctx context.Context, dir *fileaccess.Directory, dirPath string, pair *agentfile.Pair) (string, string, error) {
@@ -464,9 +509,41 @@ func Activate(ctx context.Context, executable string, pair *agentfile.Pair, prov
 }
 
 // ActivateWithOptions starts, replaces, or adds a resident generation.
-func ActivateWithOptions(ctx context.Context, executable string, pair *agentfile.Pair, provider, _ string, model string, options ActivationOptions) (Instance, bool, error) {
+func ActivateWithOptions(ctx context.Context, executable string, pair *agentfile.Pair, provider, endpoint string, model string, options ActivationOptions) (Instance, bool, error) {
 	if pair == nil || pair.Agent == nil {
 		return Instance{}, false, errors.New("local agent requires a checked agent file")
+	}
+	var requirementsErr error
+	options.Requirements, requirementsErr = ModelRequirements(pair, options.Requirements)
+	if requirementsErr != nil {
+		return Instance{}, false, requirementsErr
+	}
+	requested := Instance{Provider: provider, Model: model, Endpoint: endpoint, KeyEnv: options.KeyEnv, Capabilities: options.Capabilities, Requirements: options.Requirements}
+	if requested.Route().Validate() != nil || (provider == "fake") != (model == "fake") || len(pair.Agent.Tools) > 0 || options.Requirements.Validate() != nil || options.Capabilities.Validate() != nil {
+		return Instance{}, false, errors.New("invalid resident model route or requirements")
+	}
+	if match := options.Requirements.Match(options.Capabilities); match != "match" {
+		return Instance{}, false, fmt.Errorf("model capabilities %s; select a matching exact model profile", match)
+	}
+	if provider != "fake" && provider != "copilot" {
+		access, err := modelaccess.NewEndpointAccess(requested.Route(), os.Getenv(options.KeyEnv), options.Requirements.OutputTokens)
+		if err != nil {
+			return Instance{}, false, err
+		}
+		source, err := readSnapshotSource(ctx, pair.AgentPath, pair.Agent.Revision)
+		if err != nil {
+			return Instance{}, false, err
+		}
+		var testsSource []byte
+		if pair.Tests.State == "external" {
+			testsSource, err = readSnapshotSource(ctx, pair.Tests.Selection.Path, pair.Tests.Revision)
+			if err != nil {
+				return Instance{}, false, err
+			}
+		}
+		if err = access.CheckContent(string(source), string(testsSource), pair.AgentPath, pair.Tests.Selection.Path, endpoint, options.KeyEnv, model, options.Name); err != nil {
+			return Instance{}, false, err
+		}
 	}
 	if options.Mode == "" {
 		options.Mode = ActivationNormal
@@ -507,7 +584,7 @@ func ActivateWithOptions(ctx context.Context, executable string, pair *agentfile
 			if options.Mode == ActivationNormal {
 				var crashed *Instance
 				for _, current := range active {
-					if current.SnapshotRevision == pair.SnapshotRevision && current.Provider == provider && current.Model == model {
+					if current.SnapshotRevision == pair.SnapshotRevision && current.Route() == requested.Route() && reflect.DeepEqual(current.Capabilities, options.Capabilities) && current.Requirements == options.Requirements {
 						if current.State == "running" {
 							result = current
 							return nil
@@ -639,7 +716,7 @@ func ActivateWithOptions(ctx context.Context, executable string, pair *agentfile
 			result = Instance{SchemaVersion: localAgentSchema, EventID: event, InstanceID: instanceID, Sequence: sequence, ID: id, Name: name, AuthoredName: pair.Agent.Identity.ID, Source: pair.AgentPath,
 				AgentRevision: pair.Agent.Revision, SnapshotRevision: pair.SnapshotRevision, TestsState: pair.Tests.State, TestsRevision: pair.Tests.Revision,
 				TestsPath: pair.Tests.Selection.Path, TestsExplicit: pair.Tests.Selection.Explicit, CachedAgent: agent, CachedTests: tests,
-				Provider: provider, Model: model, Started: time.Now().UTC(), State: "active"}
+				Provider: provider, Model: model, Endpoint: endpoint, KeyEnv: options.KeyEnv, Capabilities: options.Capabilities, Requirements: options.Requirements, Started: time.Now().UTC(), State: "active"}
 			raw, _ := json.Marshal(result)
 			if err := publishPrivateBytes(ctx, dir, "start-"+event+".json", raw); err != nil {
 				return err
@@ -849,7 +926,7 @@ func validLocalAgentRecord(record Instance, dir string) bool {
 	validTests := record.TestsState == "inline" && record.CachedTests == "" && record.TestsPath != "" && !record.TestsExplicit && record.TestsRevision == record.AgentRevision || record.TestsState == "absent" && record.CachedTests == "" && record.TestsPath != "" && !record.TestsExplicit && record.TestsRevision == "" || record.TestsState == "none" && record.CachedTests == "" && record.TestsPath == "" && !record.TestsExplicit && record.TestsRevision == "" || record.TestsState == "external" && record.CachedTests != "" && record.TestsPath != "" && validDigest(record.TestsRevision)
 	return record.SchemaVersion == localAgentSchema && validHexValue(record.EventID, 24) && record.InstanceID == "li-"+record.EventID && record.Sequence > 0 && !record.Started.IsZero() && record.Stopped == nil && validID(record.ID) && validLocalAgentName(record.Name) && record.AuthoredName != "" && filepath.Base(dir) == record.ID && ID(record.Source) == record.ID && validDigest(record.AgentRevision) && validDigest(record.SnapshotRevision) && validTests &&
 		record.CachedAgent == filepath.Join(dir, "snapshot-"+digest+".agent.md") && (record.CachedTests == "" || record.CachedTests == filepath.Join(dir, "snapshot-"+digest+".agent.test.md")) &&
-		(record.TestsRevision == "" || validDigest(record.TestsRevision)) && (record.Provider == "fake" || record.Provider == "copilot") && agentfile.ValidModel(record.Model) && (record.Provider == "fake") == (record.Model == "fake") && record.State == "active"
+		(record.TestsRevision == "" || validDigest(record.TestsRevision)) && record.Route().Validate() == nil && record.Capabilities.Validate() == nil && record.Requirements.Match(record.Capabilities) == "match" && agentfile.ValidModel(record.Model) && (record.Provider == "fake") == (record.Model == "fake") && record.State == "active"
 }
 
 func projectLocalAgentRecoveryNames(rows []Instance) {

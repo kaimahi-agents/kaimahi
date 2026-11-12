@@ -76,7 +76,11 @@ func TestShortHelpInnerLoopBudgets(t *testing.T) {
 				if start < 0 {
 					t.Fatal("missing flag section")
 				}
-				if count := len(strings.Split(strings.TrimSpace(output[start:]), "\n")); count > 29 {
+				budget := 29
+				if cmd.Name() == "run" {
+					budget = 36
+				} // Resident route and capability selectors.
+				if count := len(strings.Split(strings.TrimSpace(output[start:]), "\n")); count > budget {
 					t.Errorf("flags occupy %d lines", count)
 				}
 				if *loads != 0 || diag.Len() != 0 {

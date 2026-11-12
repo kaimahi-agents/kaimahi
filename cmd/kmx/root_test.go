@@ -496,7 +496,7 @@ func TestGuardedWindowsSupportedCommandFlagsAreExhaustivelyAllowlisted(t *testin
 		allFlags   []string
 		allowFlags []string
 	}{
-		{path: []string{"run"}, args: []string{file}, allFlags: []string{"agent", "case", "container-engine", "context", "mcp-server", "model", "name", "namespace", "new", "no-content", "no-mcp-servers", "once", "output", "prompt", "prompt-file", "provider", "provider-url", "result-port", "tests", "tool-bindings", "upgrade", "verbose", "wait", "yes"}, allowFlags: []string{"case", "no-content", "once", "output", "prompt", "tests", "verbose"}},
+		{path: []string{"run"}, args: []string{file}, allFlags: []string{"agent", "case", "container-engine", "context", "mcp-server", "model", "model-profile", "name", "namespace", "new", "no-content", "no-mcp-servers", "once", "output", "prompt", "prompt-file", "provider", "provider-key-env", "provider-url", "require-context", "require-output", "require-reasoning", "result-port", "tests", "tool-bindings", "upgrade", "verbose", "wait", "yes"}, allowFlags: []string{"case", "no-content", "once", "output", "prompt", "tests", "verbose"}},
 		{path: []string{"test"}, args: []string{file}, allFlags: []string{"case", "check", "container-engine", "context", "github-summary", "host", "mcp-server", "model", "no-content", "no-mcp-servers", "output", "provider", "provider-url", "runner", "tests", "tool-bindings", "verbose"}, allowFlags: []string{"case", "check", "no-content", "output", "tests", "verbose"}},
 		{path: []string{"test", "explain"}, allFlags: []string{"clear", "container-engine", "context", "file", "show-content", "tests", "workspace"}, allowFlags: []string{"clear", "file", "show-content", "tests"}},
 		{path: []string{"eval", "explain"}, allFlags: []string{"clear", "container-engine", "context", "file", "show-content", "tests", "workspace"}, allowFlags: []string{"clear", "file", "show-content", "tests"}},
@@ -933,7 +933,7 @@ func commandPaths(root *cobra.Command) []string {
 func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 	want := []string{
 		"test", "test explain", "create", "chat", "run", "list", "stop", "eval", "eval cleanup", "eval diff", "eval explain", "eval export", "eval from-sessions", "eval verify", "lift", "completion", "mcp",
-		"model", "model list", "model login", "model logout", "version",
+		"model", "model list", "model login", "model logout", "model match", "version",
 		"cluster", "cluster discover", "cluster up", "cluster down", "cluster status", "cluster aks", "cluster aks up", "cluster aks down", "cluster context", "cluster context show", "cluster context use",
 		"cluster orka", "cluster orka model", "cluster orka model connect", "cluster orka model disconnect", "cluster orka install", "cluster orka status", "cluster orka tools", "cluster orka show", "cluster orka list", "cluster quickstart", "cluster quickstart-wizard", "cluster console", "cluster targets", "cluster task", "cluster task result",
 		"package", "package create", "package ctx", "package deploy", "package push", "package status", "package run-profile", "package run-profile export", "package suite", "package suite push", "package build", "package validate", "package policy", "package pull", "package push-image",
