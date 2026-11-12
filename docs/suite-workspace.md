@@ -1206,8 +1206,13 @@ counts plus `passed`, `total`, `status`, `detail`, `cleanup` and a fixed safe
 A fail-fast threshold stop instead reports, for example,
 `2 of 3 runs executed; 0 passed; stopped because the pass threshold is unreachable; 1 not executed`.
 Its Orka JSON includes `thresholdUnreachable: true` and leaves `aborted` false.
-Candidate cleanup still runs. Cleanup uncertainty supersedes the threshold-stop
-classification and omits `thresholdUnreachable`; the execution counts remain.
+Candidate cleanup still runs. Cleanup uncertainty, cancellation or output
+finalization failure supersedes the threshold-stop classification and omits
+`thresholdUnreachable`; the execution counts and cleanup result remain. Root JSON
+sets `outputFinalizationFailed: true` for the output-close case.
+If the explicit receipt link was already acknowledged, JSON additionally sets
+`explicitReceiptMayExist: true` and does not claim that no evidence was published;
+managed proof state remains separately inspectable before retry.
 The incomplete run set is diagnostic-only and creates neither a standalone
 receipt nor managed passing proof.
 A fully executed threshold miss retains `N/total runs passed`; an assertion fail

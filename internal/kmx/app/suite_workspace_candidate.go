@@ -78,7 +78,7 @@ func (a *App) evaluateSuiteWorkspaceCandidate(ctx context.Context, p *PreparedSu
 	guardRefusal := false
 	defer func() {
 		if err != nil && !guardRefusal {
-			if ctx.Err() != nil && outcome.runs != nil && outcome.runs.ThresholdUnreachable {
+			if ctx.Err() != nil && outcome.runs != nil && outcome.runs.NotExecuted > 0 {
 				outcome.runs.ThresholdUnreachable = false
 				outcome.runs.Aborted = true
 			}

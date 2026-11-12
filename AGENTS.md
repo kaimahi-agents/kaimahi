@@ -360,8 +360,9 @@ invalid review as clean.
   `passes + remaining < minPasses`; equality remains reachable and there is no
   early success. This diagnostic termination still performs candidate cleanup,
   exits nonzero and creates no standalone receipt or managed proof. Cleanup
-  uncertainty supersedes the threshold-stop classification while retaining
-  run counts. File Test,
+  uncertainty, cancellation or output-finalization failure supersedes the
+  threshold-stop classification while retaining run counts and cleanup result.
+  File Test,
   kagent, AgentSessions and composed Deploy refuse the option before operational
   effects; hidden `eval` retains canonical `package test` flag parity.
   Any unknown vetoes the threshold. Only

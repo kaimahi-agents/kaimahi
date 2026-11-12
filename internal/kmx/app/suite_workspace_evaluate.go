@@ -61,6 +61,9 @@ type PreparedSuiteWorkspaceEvaluation struct {
 	cleanup        string
 	publicMetadata *suitePublicMetadata
 	failures       []suiteFailureDetail
+	// Output finalization failure is a safe report classification, never proof.
+	outputFinalizationFailed bool
+	explicitReceiptMayExist  bool
 	// Composed Lift keeps its real diagnostic writer separate from quiet stage workers.
 	failureWriter io.Writer
 	diagnosticKey string
@@ -295,20 +298,28 @@ func (a *App) EvaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 	err := worker.evaluateSuiteWorkspaceWithProof(ctx, p)
 	report := struct {
 		SuiteRunExecutionSummary
-		Status   string               `json:"status"`
-		Detail   string               `json:"detail"`
-		Passed   int                  `json:"passed"`
-		Total    int                  `json:"total"`
-		Cleanup  string               `json:"cleanup"`
-		Error    string               `json:"error,omitempty"`
-		Failures []suiteFailureDetail `json:"failures,omitempty"`
-	}{Failures: suiteFailureSummaries(p.failures), SuiteRunExecutionSummary: p.runs.SuiteRunExecutionSummary, Status: "complete", Detail: p.runs.String() + "; " + p.cleanup, Passed: p.runs.Passed, Total: p.runs.Total, Cleanup: p.cleanup}
+		Status                   string               `json:"status"`
+		Detail                   string               `json:"detail"`
+		Passed                   int                  `json:"passed"`
+		Total                    int                  `json:"total"`
+		Cleanup                  string               `json:"cleanup"`
+		OutputFinalizationFailed bool                 `json:"outputFinalizationFailed,omitempty"`
+		ExplicitReceiptMayExist  bool                 `json:"explicitReceiptMayExist,omitempty"`
+		Error                    string               `json:"error,omitempty"`
+		Failures                 []suiteFailureDetail `json:"failures,omitempty"`
+	}{Failures: suiteFailureSummaries(p.failures), SuiteRunExecutionSummary: p.runs.SuiteRunExecutionSummary, Status: "complete", Detail: p.runs.String() + "; " + p.cleanup, Passed: p.runs.Passed, Total: p.runs.Total, Cleanup: p.cleanup, OutputFinalizationFailed: p.outputFinalizationFailed, ExplicitReceiptMayExist: p.explicitReceiptMayExist}
 	if err != nil {
 		report.Status = "failed"
 		// Never serialize causes: transports, writers and runtime errors can
 		// carry content. Publication/finalization failures may leave proof.
 		report.Error = "native evaluation failed; inspect diagnostics and private proof state before retrying"
-		if p.runs.Aborted || p.runs.ReportingFailed || p.runs.ThresholdUnreachable || errors.Is(err, errSuiteCandidateCleanup) {
+		if p.outputFinalizationFailed {
+			report.Detail += "; output finalization failed"
+		}
+		if p.explicitReceiptMayExist {
+			report.Detail += "; explicit receipt may exist"
+		}
+		if !p.explicitReceiptMayExist && (p.runs.Aborted || p.runs.ReportingFailed || p.runs.ThresholdUnreachable || p.outputFinalizationFailed || errors.Is(err, errSuiteCandidateCleanup)) {
 			report.Detail += "; no passing evidence published"
 		}
 	}

@@ -258,7 +258,11 @@ group only when `passes + remaining < minPasses`; equality remains reachable.
 That early stop exits nonzero, reports executed and unexecuted runs, performs the
 ordinary candidate cleanup and creates no receipt or managed passing proof.
 `thresholdUnreachable: true` distinguishes it from an unknown execution in Orka
-JSON. File Test, kagent, AgentSessions and composed Deploy refuse the option
+JSON. Cancellation, cleanup uncertainty or output-finalization failure supersedes
+that threshold-only status. JSON reports `outputFinalizationFailed` and, after an
+acknowledged explicit receipt link, `explicitReceiptMayExist`; managed proof is
+still inspected separately before retry. File Test, kagent, AgentSessions and
+composed Deploy refuse the option
 before operational effects. Hidden `eval` has the same flag contract as canonical
 `package test`. AgentSessions development evaluation uses fresh
 Session/config/Exec per run under the same policy without fail-fast. Field names/defaults follow
