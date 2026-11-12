@@ -15,6 +15,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localagent"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
@@ -278,7 +279,7 @@ func newAgentChatCommand(state *commandState) *cobra.Command {
 			}
 			if localErr == nil && local.State == "running" {
 				if session == "" {
-					opened, err := app.SelectLocalAgentSession(cmd.Context(), local.InstanceID, label, fresh)
+					opened, err := localagent.SelectSession(cmd.Context(), local.InstanceID, label, fresh)
 					if err != nil {
 						return err
 					}
@@ -289,14 +290,14 @@ func newAgentChatCommand(state *commandState) *cobra.Command {
 				}
 				message := joinArgs(args[1:])
 				if message != "" {
-					answer, err := app.InvokeLocalAgent(cmd.Context(), local.InstanceID, session, message)
+					answer, err := localagent.Invoke(cmd.Context(), local.InstanceID, session, message)
 					if err != nil {
 						return err
 					}
 					_, err = fmt.Fprintln(cmd.OutOrStdout(), answer)
 					return err
 				}
-				return app.ChatLocalAgent(cmd.Context(), local.InstanceID, session, state.deps.stdin, cmd.OutOrStdout())
+				return localagent.Chat(cmd.Context(), local.InstanceID, session, state.deps.stdin, cmd.OutOrStdout())
 			}
 			if localErr != nil && !errors.Is(localErr, os.ErrNotExist) {
 				return localErr

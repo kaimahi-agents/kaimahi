@@ -16,6 +16,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localagent"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
@@ -155,12 +156,12 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 				if file.Endpoint != "" || provider != "copilot" && provider != "fake" || !agentfile.ValidModel(model) || secretshapes.Match(model) != nil || route.Validate() != nil || (provider == "fake") != (model == "fake") || len(pair.Agent.Tools) != 0 {
 					return fileUsageError(fmt.Errorf("resident local agents currently require a tool-free fake or Copilot route without a custom endpoint"))
 				}
-				mode := app.LocalAgentActivationNormal
+				mode := localagent.ActivationNormal
 				if upgrade {
-					mode = app.LocalAgentActivationUpgrade
+					mode = localagent.ActivationUpgrade
 				}
 				if parallel {
-					mode = app.LocalAgentActivationNew
+					mode = localagent.ActivationNew
 					if runtimeName == "" {
 						var nameErr error
 						runtimeName, nameErr = promptLocalAgentName(state.deps.stdin, cmd.ErrOrStderr(), pair.Agent.Identity.ID)
@@ -169,7 +170,7 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 						}
 					}
 				}
-				activation := app.LocalAgentActivationOptions{Mode: mode, Name: runtimeName}
+				activation := localagent.ActivationOptions{Mode: mode, Name: runtimeName}
 				if upgrade && !yes {
 					rows, readErr := state.deps.readLocalAgents(false)
 					if readErr != nil {
@@ -177,7 +178,7 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 					}
 					sessions := 0
 					for _, row := range rows {
-						if row.ID == app.LocalAgentID(pair.AgentPath) {
+						if row.ID == localagent.ID(pair.AgentPath) {
 							sessions += row.Sessions
 						}
 					}
@@ -190,13 +191,13 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 					}
 				}
 				instance, created, err := state.deps.activateLocalAgent(cmd.Context(), state.executable(), pair, provider, file.Endpoint, model, activation)
-				var drift *app.LocalAgentDriftError
+				var drift *localagent.DriftError
 				if errors.As(err, &drift) && !upgrade && !parallel {
 					choice, name, promptErr := promptLocalAgentDrift(state.deps.stdin, cmd.ErrOrStderr(), drift.Active)
 					if promptErr != nil {
 						return promptErr
 					}
-					if choice == app.LocalAgentActivationNormal {
+					if choice == localagent.ActivationNormal {
 						return fmt.Errorf("local agent activation cancelled")
 					}
 					activation.Mode, activation.Name = choice, name
@@ -216,11 +217,11 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 					_, err := fmt.Fprintf(cmd.ErrOrStderr(), "%s %s (%s) · snapshot %s\n", verb, instance.Name, instance.ID, instance.SnapshotRevision)
 					return err
 				}
-				session, err := app.OpenLocalAgentSession(cmd.Context(), instance.InstanceID, "run")
+				session, err := localagent.OpenSession(cmd.Context(), instance.InstanceID, "run")
 				if err != nil {
 					return err
 				}
-				defer app.CloseLocalAgentSession(context.Background(), instance.InstanceID, session.ID)
+				defer localagent.CloseSession(context.Background(), instance.InstanceID, session.ID)
 				input := opt.Prompt
 				invokeCtx := cmd.Context()
 				var cancel context.CancelFunc
@@ -228,7 +229,7 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 					invokeCtx, cancel = context.WithTimeout(invokeCtx, opt.Wait)
 					defer cancel()
 				}
-				answer, err := app.InvokeLocalAgent(invokeCtx, instance.InstanceID, session.ID, input)
+				answer, err := localagent.Invoke(invokeCtx, instance.InstanceID, session.ID, input)
 				if err != nil {
 					return err
 				}
@@ -245,7 +246,7 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 	return cmd
 }
 
-func promptLocalAgentDrift(in *os.File, out io.Writer, active app.LocalAgentInstance) (app.LocalAgentActivationMode, string, error) {
+func promptLocalAgentDrift(in *os.File, out io.Writer, active localagent.Instance) (localagent.ActivationMode, string, error) {
 	diagnostics, ok := out.(*os.File)
 	if in == nil || !ok || !term.IsTerminal(int(in.Fd())) || !term.IsTerminal(int(diagnostics.Fd())) {
 		return "", "", fmt.Errorf("local agent snapshot changed; nonterminal use requires --upgrade --yes or --new --name NAME")
@@ -262,9 +263,9 @@ func promptLocalAgentDrift(in *os.File, out io.Writer, active app.LocalAgentInst
 			return "", "", err
 		}
 		if !confirmed {
-			return app.LocalAgentActivationNormal, "", nil
+			return localagent.ActivationNormal, "", nil
 		}
-		return app.LocalAgentActivationUpgrade, "", nil
+		return localagent.ActivationUpgrade, "", nil
 	case "n":
 		def := active.AuthoredName + "-<instance>"
 		fmt.Fprintf(out, "Runtime name [%s]: ", def)
@@ -272,9 +273,9 @@ func promptLocalAgentDrift(in *os.File, out io.Writer, active app.LocalAgentInst
 			return "", "", fmt.Errorf("read runtime name: %w", scanner.Err())
 		}
 		name := strings.TrimSpace(scanner.Text())
-		return app.LocalAgentActivationNew, name, nil
+		return localagent.ActivationNew, name, nil
 	default:
-		return app.LocalAgentActivationNormal, "", nil
+		return localagent.ActivationNormal, "", nil
 	}
 }
 

@@ -19,6 +19,7 @@ import (
 	agentkitbuilder "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/agentkit"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localagent"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
 )
@@ -37,12 +38,12 @@ type dependencies struct {
 	discoverModels     func(context.Context) []modelaccess.Report
 	newCopilot         func() copilotAccess
 	openGitHubSummary  func() (io.WriteCloser, error)
-	activateLocalAgent func(context.Context, string, *agentfile.Pair, string, string, string, app.LocalAgentActivationOptions) (app.LocalAgentInstance, bool, error)
-	readLocalAgents    func(bool) ([]app.LocalAgentInstance, error)
-	readLocalAgent     func(string) (app.LocalAgentInstance, error)
-	loadLocalAgentPair func(context.Context, app.LocalAgentInstance) (*agentfile.Pair, error)
-	withLocalAgentRun  func(context.Context, app.LocalAgentInstance, func(*agentfile.Pair) error) error
-	pingLocalAgent     func(context.Context, app.LocalAgentInstance) error
+	activateLocalAgent func(context.Context, string, *agentfile.Pair, string, string, string, localagent.ActivationOptions) (localagent.Instance, bool, error)
+	readLocalAgents    func(bool) ([]localagent.Instance, error)
+	readLocalAgent     func(string) (localagent.Instance, error)
+	loadLocalAgentPair func(context.Context, localagent.Instance) (*agentfile.Pair, error)
+	withLocalAgentRun  func(context.Context, localagent.Instance, func(*agentfile.Pair) error) error
+	pingLocalAgent     func(context.Context, localagent.Instance) error
 	stopLocalAgent     func(context.Context, string) error
 	goos               string
 	goarch             string
@@ -57,7 +58,7 @@ func productionDependencies() dependencies {
 		goos:               runtime.GOOS,
 		goarch:             runtime.GOARCH,
 		openGitHubSummary:  func() (io.WriteCloser, error) { return openGitHubSummary() },
-		activateLocalAgent: app.ActivateLocalAgentWithOptions, readLocalAgents: app.ReadLocalAgentInstances, readLocalAgent: app.ReadLocalAgentRecord, loadLocalAgentPair: app.LoadLocalAgentPair, withLocalAgentRun: app.WithLocalAgentRun, pingLocalAgent: app.PingLocalAgent, stopLocalAgent: app.StopLocalAgent,
+		activateLocalAgent: localagent.ActivateWithOptions, readLocalAgents: localagent.ReadInstances, readLocalAgent: localagent.ReadRecord, loadLocalAgentPair: localagent.LoadPair, withLocalAgentRun: localagent.WithRun, pingLocalAgent: localagent.Ping, stopLocalAgent: localagent.Stop,
 		loadConfig: config.LoadWithOverrides, newApp: app.New, buildInfo: debug.ReadBuildInfo,
 		newAgentKitBuilder: func(options agentkitbuilder.Options) kmxsuite.SandboxBuilder {
 			return agentkitbuilder.New(options)

@@ -1,4 +1,4 @@
-package app
+package localagent
 
 import (
 	"bufio"
@@ -27,7 +27,8 @@ const localAgentSchema = 2
 
 var errLocalAgentInventoryUninitialized = errors.New("local agent inventory is uninitialized")
 
-type LocalAgentInstance struct {
+// Instance is the safe lifecycle projection of one immutable resident worker.
+type Instance struct {
 	SchemaVersion    int        `json:"schemaVersion"`
 	EventID          string     `json:"eventId"`
 	Sequence         uint64     `json:"sequence"`
@@ -56,7 +57,8 @@ type LocalAgentInstance struct {
 	LastError        string     `json:"lastError,omitempty"`
 }
 
-type LocalAgentSession struct {
+// Session describes one conversation owned by a resident worker generation.
+type Session struct {
 	ID           string    `json:"id"`
 	Label        string    `json:"label,omitempty"`
 	Messages     int       `json:"messages"`
@@ -66,12 +68,13 @@ type LocalAgentSession struct {
 	LastError    string    `json:"lastError,omitempty"`
 }
 
-type LocalAgentObservation struct {
-	Ready        bool                `json:"ready"`
-	Started      time.Time           `json:"started"`
-	Sessions     []LocalAgentSession `json:"sessions,omitempty"`
-	LastActivity *time.Time          `json:"lastActivity,omitempty"`
-	LastError    string              `json:"lastError,omitempty"`
+// Observation reports current worker readiness, activity, and sessions.
+type Observation struct {
+	Ready        bool       `json:"ready"`
+	Started      time.Time  `json:"started"`
+	Sessions     []Session  `json:"sessions,omitempty"`
+	LastActivity *time.Time `json:"lastActivity,omitempty"`
+	LastError    string     `json:"lastError,omitempty"`
 }
 
 type localAgentStop struct {
@@ -96,36 +99,39 @@ type localAgentWarning struct {
 	Observed      time.Time `json:"observed"`
 }
 
-type LocalAgentActivationMode string
+// ActivationMode selects reuse, replacement, or a parallel generation.
+type ActivationMode string
 
 const (
-	LocalAgentActivationNormal  LocalAgentActivationMode = "normal"
-	LocalAgentActivationUpgrade LocalAgentActivationMode = "upgrade"
-	LocalAgentActivationNew     LocalAgentActivationMode = "new"
+	ActivationNormal  ActivationMode = "normal"
+	ActivationUpgrade ActivationMode = "upgrade"
+	ActivationNew     ActivationMode = "new"
 )
 
-type LocalAgentActivationOptions struct {
-	Mode LocalAgentActivationMode
+// ActivationOptions controls resident generation creation.
+type ActivationOptions struct {
+	Mode ActivationMode
 	Name string
 }
 
-// LocalAgentDriftError reports an active generation whose immutable snapshot or
+// DriftError reports an active generation whose immutable snapshot or
 // inference route differs from the requested generation.
-type LocalAgentDriftError struct {
-	Active            LocalAgentInstance
+type DriftError struct {
+	Active            Instance
 	RequestedSnapshot string
 }
 
-func (e *LocalAgentDriftError) Error() string {
+func (e *DriftError) Error() string {
 	return "local agent definition or route changed; choose upgrade or start a new instance"
 }
 
-func LocalAgentID(source string) string {
+// ID returns the stable identity for a canonical checked source path.
+func ID(source string) string {
 	sum := sha256.Sum256([]byte(source))
 	return fmt.Sprintf("md-%x", sum[:16])
 }
 
-func validLocalAgentID(id string) bool {
+func validID(id string) bool {
 	return validHexValue(strings.TrimPrefix(id, "md-"), 32) && strings.HasPrefix(id, "md-")
 }
 func validLocalAgentName(name string) bool {
@@ -202,7 +208,7 @@ func localAgentDirectories(ctx context.Context, create bool) (*fileaccess.Direct
 }
 
 func localAgentInstanceDirectory(ctx context.Context, id string, create bool) (*fileaccess.Directory, string, error) {
-	if !validLocalAgentID(id) {
+	if !validID(id) {
 		return nil, "", errors.New("invalid local agent identity")
 	}
 	instances, err := localAgentDirectories(ctx, create)
@@ -225,7 +231,7 @@ func localAgentInstanceDirectory(ctx context.Context, id string, create bool) (*
 					if entry.Name() == id && entry.IsDir() {
 						found = true
 					}
-					if validLocalAgentID(entry.Name()) && entry.IsDir() {
+					if validID(entry.Name()) && entry.IsDir() {
 						count++
 					}
 				}
@@ -452,43 +458,45 @@ func randomEventID() (string, error) {
 	return hex.EncodeToString(raw), err
 }
 
-func ActivateLocalAgent(ctx context.Context, executable string, pair *agentfile.Pair, provider, endpoint string, model string) (LocalAgentInstance, bool, error) {
-	return ActivateLocalAgentWithOptions(ctx, executable, pair, provider, endpoint, model, LocalAgentActivationOptions{Mode: LocalAgentActivationNormal})
+// Activate starts or reuses the normal resident generation for pair.
+func Activate(ctx context.Context, executable string, pair *agentfile.Pair, provider, endpoint string, model string) (Instance, bool, error) {
+	return ActivateWithOptions(ctx, executable, pair, provider, endpoint, model, ActivationOptions{Mode: ActivationNormal})
 }
 
-func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair *agentfile.Pair, provider, _ string, model string, options LocalAgentActivationOptions) (LocalAgentInstance, bool, error) {
+// ActivateWithOptions starts, replaces, or adds a resident generation.
+func ActivateWithOptions(ctx context.Context, executable string, pair *agentfile.Pair, provider, _ string, model string, options ActivationOptions) (Instance, bool, error) {
 	if pair == nil || pair.Agent == nil {
-		return LocalAgentInstance{}, false, errors.New("local agent requires a checked agent file")
+		return Instance{}, false, errors.New("local agent requires a checked agent file")
 	}
 	if options.Mode == "" {
-		options.Mode = LocalAgentActivationNormal
+		options.Mode = ActivationNormal
 	}
-	if options.Mode != LocalAgentActivationNormal && options.Mode != LocalAgentActivationUpgrade && options.Mode != LocalAgentActivationNew {
-		return LocalAgentInstance{}, false, errors.New("invalid local agent activation mode")
+	if options.Mode != ActivationNormal && options.Mode != ActivationUpgrade && options.Mode != ActivationNew {
+		return Instance{}, false, errors.New("invalid local agent activation mode")
 	}
-	if options.Mode != LocalAgentActivationNew && options.Name != "" {
-		return LocalAgentInstance{}, false, errors.New("a runtime name is valid only for a new parallel instance")
+	if options.Mode != ActivationNew && options.Name != "" {
+		return Instance{}, false, errors.New("a runtime name is valid only for a new parallel instance")
 	}
-	id := LocalAgentID(pair.AgentPath)
+	id := ID(pair.AgentPath)
 	dir, path, err := localAgentInstanceDirectory(ctx, id, true)
 	if err != nil {
-		return LocalAgentInstance{}, false, err
+		return Instance{}, false, err
 	}
 	defer dir.Close()
-	var result LocalAgentInstance
+	var result Instance
 	var created bool
 	err = withLocalAgentTransition(ctx, dir, func() error {
-		var active []LocalAgentInstance
-		var restart *LocalAgentInstance
+		var active []Instance
+		var restart *Instance
 		var event string
 		var promotedName string
 		admitted := false
 		err := withLocalAgentInventoryTransition(ctx, func() error {
-			rows, err := readLocalAgentInstances(false, false)
+			rows, err := readInstances(false, false)
 			if err != nil {
 				return err
 			}
-			active = make([]LocalAgentInstance, 0)
+			active = make([]Instance, 0)
 			stoppedForRestart := ""
 			for _, current := range rows {
 				if current.ID == id {
@@ -496,8 +504,8 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 				}
 			}
 			promotedName = defaultLocalAgentName(pair.Agent.Identity.ID)
-			if options.Mode == LocalAgentActivationNormal {
-				var crashed *LocalAgentInstance
+			if options.Mode == ActivationNormal {
+				var crashed *Instance
 				for _, current := range active {
 					if current.SnapshotRevision == pair.SnapshotRevision && current.Provider == provider && current.Model == model {
 						if current.State == "running" {
@@ -525,10 +533,10 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 					active = nil
 				}
 				if len(active) > 0 {
-					return &LocalAgentDriftError{Active: active[0], RequestedSnapshot: pair.SnapshotRevision}
+					return &DriftError{Active: active[0], RequestedSnapshot: pair.SnapshotRevision}
 				}
 			}
-			if options.Mode == LocalAgentActivationUpgrade {
+			if options.Mode == ActivationUpgrade {
 				selected := false
 				for _, current := range active {
 					if current.Primary {
@@ -547,7 +555,7 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 					promotedName = oldest.Name
 				}
 			}
-			if options.Mode != LocalAgentActivationNew && !validLocalAgentName(promotedName) {
+			if options.Mode != ActivationNew && !validLocalAgentName(promotedName) {
 				return errors.New("local agent runtime name must use lowercase letters, digits and internal hyphens")
 			}
 			event, err = randomEventID()
@@ -556,10 +564,10 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 			}
 			digest := strings.TrimPrefix(pair.SnapshotRevision, "sha256:")
 			names := []string{"snapshot-" + digest + ".agent.md", "start-" + event + ".json", "active-" + event + ".lock"}
-			if options.Mode != LocalAgentActivationNew {
+			if options.Mode != ActivationNew {
 				names = append(names, "primary-"+event+".json")
 			}
-			if options.Mode == LocalAgentActivationUpgrade {
+			if options.Mode == ActivationUpgrade {
 				names = append(names, "warning-"+event+".json")
 			}
 			if pair.Tests.State == "external" {
@@ -595,14 +603,14 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 			}
 			instanceID := "li-" + event
 			name := promotedName
-			if options.Mode == LocalAgentActivationUpgrade || restart != nil {
+			if options.Mode == ActivationUpgrade || restart != nil {
 				base := strings.TrimRight(promotedName, "-")
 				if len(base) > 54 {
 					base = strings.TrimRight(base[:54], "-")
 				}
 				name = base + "-" + event[:8]
 			}
-			if options.Mode == LocalAgentActivationNew {
+			if options.Mode == ActivationNew {
 				name = options.Name
 				if name == "" {
 					name = pair.Agent.Identity.ID + "-" + event[:8]
@@ -616,7 +624,7 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 			}
 			for _, row := range rows {
 				replaced := false
-				if options.Mode == LocalAgentActivationUpgrade {
+				if options.Mode == ActivationUpgrade {
 					for _, old := range active {
 						if old.EventID == row.EventID {
 							replaced = true
@@ -628,7 +636,7 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 					return errors.New("local agent runtime name is already active")
 				}
 			}
-			result = LocalAgentInstance{SchemaVersion: localAgentSchema, EventID: event, InstanceID: instanceID, Sequence: sequence, ID: id, Name: name, AuthoredName: pair.Agent.Identity.ID, Source: pair.AgentPath,
+			result = Instance{SchemaVersion: localAgentSchema, EventID: event, InstanceID: instanceID, Sequence: sequence, ID: id, Name: name, AuthoredName: pair.Agent.Identity.ID, Source: pair.AgentPath,
 				AgentRevision: pair.Agent.Revision, SnapshotRevision: pair.SnapshotRevision, TestsState: pair.Tests.State, TestsRevision: pair.Tests.Revision,
 				TestsPath: pair.Tests.Selection.Path, TestsExplicit: pair.Tests.Selection.Explicit, CachedAgent: agent, CachedTests: tests,
 				Provider: provider, Model: model, Started: time.Now().UTC(), State: "active"}
@@ -649,7 +657,7 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 			_ = writeLocalAgentStop(context.Background(), dir, event, result.Started)
 			return err
 		}
-		if options.Mode != LocalAgentActivationNew {
+		if options.Mode != ActivationNew {
 			if err := writeLocalAgentPromotion(ctx, dir, result, promotedName); err != nil {
 				_, _ = probeLocalAgent(context.Background(), result, "shutdown", localAgentIPCRequest{})
 				_ = writeLocalAgentStop(context.Background(), dir, event, result.Started)
@@ -669,7 +677,7 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 				})
 			}
 		}
-		if options.Mode == LocalAgentActivationUpgrade {
+		if options.Mode == ActivationUpgrade {
 			cleanupErrors := []error{}
 			for _, old := range active {
 				if old.State == "running" {
@@ -706,12 +714,12 @@ func ActivateLocalAgentWithOptions(ctx context.Context, executable string, pair 
 	return result, created, err
 }
 
-func readInstanceEvents(ctx context.Context, dir *fileaccess.Directory, dirPath string) ([]LocalAgentInstance, map[string]time.Time, map[string]localAgentPromotion, error) {
+func readInstanceEvents(ctx context.Context, dir *fileaccess.Directory, dirPath string) ([]Instance, map[string]time.Time, map[string]localAgentPromotion, error) {
 	entries, err := dir.ReadDir(-1)
 	if err != nil || len(entries) > 2048 {
 		return nil, nil, nil, errors.New("local agent instance state is unavailable")
 	}
-	starts, stops, promotions := []LocalAgentInstance{}, map[string]time.Time{}, map[string]localAgentPromotion{}
+	starts, stops, promotions := []Instance{}, map[string]time.Time{}, map[string]localAgentPromotion{}
 	warnings := map[string]localAgentWarning{}
 	for _, entry := range entries {
 		name := entry.Name()
@@ -773,12 +781,12 @@ func readInstanceEvents(ctx context.Context, dir *fileaccess.Directory, dirPath 
 		if err == nil && json.Unmarshal(raw, &version) == nil && version.SchemaVersion == 1 {
 			return nil, nil, nil, errors.New("draft local-agent state is obsolete; stop old draft workers, remove KMX_HOME/local-agents, and run again")
 		}
-		var record LocalAgentInstance
+		var record Instance
 		fileEvent := strings.TrimSuffix(strings.TrimPrefix(name, "start-"), ".json")
 		if err != nil || strictLocalAgentJSON(raw, &record) != nil || record.EventID != fileEvent || !validLocalAgentRecord(record, dirPath) {
 			return nil, nil, nil, errors.New("local agent record is invalid")
 		}
-		pair, err := LoadLocalAgentPair(ctx, record)
+		pair, err := LoadPair(ctx, record)
 		if err != nil || pair.Agent.Identity.ID != record.AuthoredName {
 			return nil, nil, nil, errors.New("local agent record does not match its cached snapshot")
 		}
@@ -836,15 +844,15 @@ func readInstanceEvents(ctx context.Context, dir *fileaccess.Directory, dirPath 
 	return starts, stops, promotions, nil
 }
 
-func validLocalAgentRecord(record LocalAgentInstance, dir string) bool {
+func validLocalAgentRecord(record Instance, dir string) bool {
 	digest := strings.TrimPrefix(record.SnapshotRevision, "sha256:")
 	validTests := record.TestsState == "inline" && record.CachedTests == "" && record.TestsPath != "" && !record.TestsExplicit && record.TestsRevision == record.AgentRevision || record.TestsState == "absent" && record.CachedTests == "" && record.TestsPath != "" && !record.TestsExplicit && record.TestsRevision == "" || record.TestsState == "none" && record.CachedTests == "" && record.TestsPath == "" && !record.TestsExplicit && record.TestsRevision == "" || record.TestsState == "external" && record.CachedTests != "" && record.TestsPath != "" && validDigest(record.TestsRevision)
-	return record.SchemaVersion == localAgentSchema && validHexValue(record.EventID, 24) && record.InstanceID == "li-"+record.EventID && record.Sequence > 0 && !record.Started.IsZero() && record.Stopped == nil && validLocalAgentID(record.ID) && validLocalAgentName(record.Name) && record.AuthoredName != "" && filepath.Base(dir) == record.ID && LocalAgentID(record.Source) == record.ID && validDigest(record.AgentRevision) && validDigest(record.SnapshotRevision) && validTests &&
+	return record.SchemaVersion == localAgentSchema && validHexValue(record.EventID, 24) && record.InstanceID == "li-"+record.EventID && record.Sequence > 0 && !record.Started.IsZero() && record.Stopped == nil && validID(record.ID) && validLocalAgentName(record.Name) && record.AuthoredName != "" && filepath.Base(dir) == record.ID && ID(record.Source) == record.ID && validDigest(record.AgentRevision) && validDigest(record.SnapshotRevision) && validTests &&
 		record.CachedAgent == filepath.Join(dir, "snapshot-"+digest+".agent.md") && (record.CachedTests == "" || record.CachedTests == filepath.Join(dir, "snapshot-"+digest+".agent.test.md")) &&
 		(record.TestsRevision == "" || validDigest(record.TestsRevision)) && (record.Provider == "fake" || record.Provider == "copilot") && agentfile.ValidModel(record.Model) && (record.Provider == "fake") == (record.Model == "fake") && record.State == "active"
 }
 
-func projectLocalAgentRecoveryNames(rows []LocalAgentInstance) {
+func projectLocalAgentRecoveryNames(rows []Instance) {
 	used := map[string]bool{}
 	for i := range rows {
 		used[rows[i].Name] = true
@@ -897,11 +905,11 @@ func projectLocalAgentRecoveryNames(rows []LocalAgentInstance) {
 	}
 }
 
-func ReadLocalAgentInstances(all bool) ([]LocalAgentInstance, error) {
-	return readLocalAgentInstances(all, true)
+func ReadInstances(all bool) ([]Instance, error) {
+	return readInstances(all, true)
 }
 
-func readLocalAgentInstances(all, lockInventory bool) ([]LocalAgentInstance, error) {
+func readInstances(all, lockInventory bool) ([]Instance, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if lockInventory {
@@ -910,24 +918,24 @@ func readLocalAgentInstances(all, lockInventory bool) ([]LocalAgentInstance, err
 			return nil, err
 		}
 		if _, err := os.Lstat(filepath.Join(root, "local-agents", "instances")); errors.Is(err, os.ErrNotExist) {
-			return []LocalAgentInstance{}, nil
+			return []Instance{}, nil
 		} else if err != nil {
 			return nil, errors.New("local agent inventory is unavailable")
 		}
-		var rows []LocalAgentInstance
+		var rows []Instance
 		err = withExistingLocalAgentInventoryTransition(ctx, func() error {
 			var err error
-			rows, err = readLocalAgentInstances(all, false)
+			rows, err = readInstances(all, false)
 			return err
 		})
 		if errors.Is(err, errLocalAgentInventoryUninitialized) {
-			return []LocalAgentInstance{}, nil
+			return []Instance{}, nil
 		}
 		return rows, err
 	}
 	instances, err := localAgentDirectories(ctx, false)
 	if errors.Is(err, os.ErrNotExist) {
-		return []LocalAgentInstance{}, nil
+		return []Instance{}, nil
 	}
 	if err != nil {
 		return nil, err
@@ -938,12 +946,12 @@ func readLocalAgentInstances(all, lockInventory bool) ([]LocalAgentInstance, err
 		return nil, errors.New("local agent inventory is unavailable")
 	}
 	root, _ := config.StateDir()
-	rows := []LocalAgentInstance{}
+	rows := []Instance{}
 	for _, entry := range entries {
 		if entry.Name() == "inventory.lock" && !entry.IsDir() {
 			continue
 		}
-		if !validLocalAgentID(entry.Name()) || !entry.IsDir() {
+		if !validID(entry.Name()) || !entry.IsDir() {
 			return nil, errors.New("local agent inventory contains an unexpected entry")
 		}
 		dir, err := fileaccess.OpenDirectoryAt(ctx, instances, entry.Name())
@@ -1048,12 +1056,12 @@ func readLocalAgentInstances(all, lockInventory bool) ([]LocalAgentInstance, err
 	return rows, nil
 }
 
-func resolveLocalAgent(selector string, all bool) (LocalAgentInstance, error) {
-	rows, err := ReadLocalAgentInstances(all)
+func resolveLocalAgent(selector string, all bool) (Instance, error) {
+	rows, err := ReadInstances(all)
 	if err != nil {
-		return LocalAgentInstance{}, err
+		return Instance{}, err
 	}
-	matches := make([]LocalAgentInstance, 0, 1)
+	matches := make([]Instance, 0, 1)
 	for i := range rows {
 		match := rows[i].InstanceID == selector || rows[i].Name == selector || len(selector) >= 8 && strings.HasPrefix(strings.TrimPrefix(rows[i].InstanceID, "li-"), selector)
 		if rows[i].ID == selector || len(selector) >= 8 && strings.HasPrefix(strings.TrimPrefix(rows[i].ID, "md-"), selector) {
@@ -1064,7 +1072,7 @@ func resolveLocalAgent(selector string, all bool) (LocalAgentInstance, error) {
 		}
 	}
 	if len(matches) == 0 {
-		return LocalAgentInstance{}, os.ErrNotExist
+		return Instance{}, os.ErrNotExist
 	}
 	active := matches[:0]
 	for _, match := range matches {
@@ -1076,16 +1084,16 @@ func resolveLocalAgent(selector string, all bool) (LocalAgentInstance, error) {
 		matches = active
 	}
 	if len(matches) != 1 {
-		return LocalAgentInstance{}, errors.New("local agent selector is ambiguous; use a runtime name or instance ID")
+		return Instance{}, errors.New("local agent selector is ambiguous; use a runtime name or instance ID")
 	}
 	return matches[0], nil
 }
 
-func ReadLocalAgentRecord(selector string) (LocalAgentInstance, error) {
+func ReadRecord(selector string) (Instance, error) {
 	return resolveLocalAgent(selector, true)
 }
 
-func LoadLocalAgentPair(ctx context.Context, record LocalAgentInstance) (*agentfile.Pair, error) {
+func LoadPair(ctx context.Context, record Instance) (*agentfile.Pair, error) {
 	dir, _, err := localAgentInstanceDirectory(ctx, record.ID, false)
 	if err != nil {
 		return nil, err
@@ -1114,7 +1122,7 @@ func LoadLocalAgentPair(ctx context.Context, record LocalAgentInstance) (*agentf
 	}
 	return pair, nil
 }
-func PingLocalAgent(_ context.Context, record LocalAgentInstance) error {
+func Ping(_ context.Context, record Instance) error {
 	current, err := resolveLocalAgent(record.InstanceID, true)
 	if err != nil || current.EventID != record.EventID || current.State != "running" {
 		return errors.New("local agent is not active")
@@ -1123,7 +1131,7 @@ func PingLocalAgent(_ context.Context, record LocalAgentInstance) error {
 	return err
 }
 
-func WithLocalAgentRun(ctx context.Context, record LocalAgentInstance, run func(*agentfile.Pair) error) error {
+func WithRun(ctx context.Context, record Instance, run func(*agentfile.Pair) error) error {
 	dir, _, err := localAgentInstanceDirectory(ctx, record.ID, false)
 	if err != nil {
 		return err
@@ -1134,7 +1142,7 @@ func WithLocalAgentRun(ctx context.Context, record LocalAgentInstance, run func(
 		if err != nil || current.EventID != record.EventID || current.State != "running" {
 			return errors.New("local agent is not active")
 		}
-		pair, err := LoadLocalAgentPair(ctx, current)
+		pair, err := LoadPair(ctx, current)
 		if err != nil {
 			return err
 		}
@@ -1142,7 +1150,7 @@ func WithLocalAgentRun(ctx context.Context, record LocalAgentInstance, run func(
 	})
 }
 
-func StopLocalAgent(ctx context.Context, selector string) error {
+func Stop(ctx context.Context, selector string) error {
 	record, err := resolveLocalAgent(selector, true)
 	if err != nil {
 		return err
@@ -1202,7 +1210,7 @@ func writeLocalAgentStopLocked(ctx context.Context, dir *fileaccess.Directory, e
 	return publishPrivateBytes(ctx, dir, name, raw)
 }
 
-func writeLocalAgentPromotion(ctx context.Context, dir *fileaccess.Directory, record LocalAgentInstance, runtimeName string) error {
+func writeLocalAgentPromotion(ctx context.Context, dir *fileaccess.Directory, record Instance, runtimeName string) error {
 	if !validLocalAgentName(runtimeName) {
 		return errors.New("local agent runtime name must use lowercase letters, digits and internal hyphens")
 	}
@@ -1212,7 +1220,7 @@ func writeLocalAgentPromotion(ctx context.Context, dir *fileaccess.Directory, re
 	}
 	raw, _ := json.Marshal(localAgentPromotion{SchemaVersion: localAgentSchema, EventID: record.EventID, InstanceID: record.InstanceID, RuntimeName: runtimeName, Promoted: time.Now().UTC()})
 	return withLocalAgentInventoryTransition(ctx, func() error {
-		rows, err := readLocalAgentInstances(false, false)
+		rows, err := readInstances(false, false)
 		if err != nil {
 			return err
 		}
@@ -1225,34 +1233,34 @@ func writeLocalAgentPromotion(ctx context.Context, dir *fileaccess.Directory, re
 	})
 }
 
-func ObserveLocalAgent(ctx context.Context, selector string) (LocalAgentObservation, error) {
+func Observe(ctx context.Context, selector string) (Observation, error) {
 	record, err := resolveLocalAgent(selector, false)
 	if err != nil || record.State != "running" {
-		return LocalAgentObservation{}, errors.New("local agent is not running")
+		return Observation{}, errors.New("local agent is not running")
 	}
 	response, err := probeLocalAgent(ctx, record, "observe", localAgentIPCRequest{})
 	return response.Observation, err
 }
 
-func OpenLocalAgentSession(ctx context.Context, selector, label string) (LocalAgentSession, error) {
-	return SelectLocalAgentSession(ctx, selector, label, true)
+func OpenSession(ctx context.Context, selector, label string) (Session, error) {
+	return SelectSession(ctx, selector, label, true)
 }
 
-func SelectLocalAgentSession(ctx context.Context, selector, label string, fresh bool) (LocalAgentSession, error) {
+func SelectSession(ctx context.Context, selector, label string, fresh bool) (Session, error) {
 	record, err := resolveLocalAgent(selector, false)
 	if err != nil || record.State != "running" {
-		return LocalAgentSession{}, errors.New("local agent is not running")
+		return Session{}, errors.New("local agent is not running")
 	}
 	response, err := probeLocalAgent(ctx, record, "session-open", localAgentIPCRequest{Label: label, Fresh: fresh})
 	return response.Session, err
 }
 
-func ReadLocalAgentSessions(ctx context.Context, selector string) ([]LocalAgentSession, error) {
-	observation, err := ObserveLocalAgent(ctx, selector)
+func ReadSessions(ctx context.Context, selector string) ([]Session, error) {
+	observation, err := Observe(ctx, selector)
 	return observation.Sessions, err
 }
 
-func CloseLocalAgentSession(ctx context.Context, selector, sessionID string) error {
+func CloseSession(ctx context.Context, selector, sessionID string) error {
 	record, err := resolveLocalAgent(selector, false)
 	if err != nil || record.State != "running" {
 		return errors.New("local agent is not running")
@@ -1261,7 +1269,7 @@ func CloseLocalAgentSession(ctx context.Context, selector, sessionID string) err
 	return err
 }
 
-func InvokeLocalAgent(ctx context.Context, selector, sessionID, input string) (string, error) {
+func Invoke(ctx context.Context, selector, sessionID, input string) (string, error) {
 	record, err := resolveLocalAgent(selector, false)
 	if err != nil || record.State != "running" {
 		return "", errors.New("local agent is not running")
@@ -1270,7 +1278,7 @@ func InvokeLocalAgent(ctx context.Context, selector, sessionID, input string) (s
 	return response.Answer, err
 }
 
-func ChatLocalAgent(ctx context.Context, selector, sessionID string, in io.Reader, out io.Writer) error {
+func Chat(ctx context.Context, selector, sessionID string, in io.Reader, out io.Writer) error {
 	if in == nil || out == nil {
 		return errors.New("local chat requires input and output")
 	}
@@ -1283,7 +1291,7 @@ func ChatLocalAgent(ctx context.Context, selector, sessionID string, in io.Reade
 		if input == "" {
 			continue
 		}
-		answer, err := InvokeLocalAgent(ctx, selector, sessionID, input)
+		answer, err := Invoke(ctx, selector, sessionID, input)
 		if err != nil {
 			return err
 		}

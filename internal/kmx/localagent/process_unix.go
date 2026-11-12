@@ -1,6 +1,6 @@
 //go:build !windows
 
-package app
+package localagent
 
 import (
 	"bufio"
@@ -49,24 +49,24 @@ type localAgentIPCRequest struct {
 }
 
 type localAgentIPCResponse struct {
-	OK          bool                  `json:"ok"`
-	Phase       string                `json:"phase,omitempty"`
-	Error       string                `json:"error,omitempty"`
-	EventID     string                `json:"eventId,omitempty"`
-	Observation LocalAgentObservation `json:"observation,omitempty"`
-	Session     LocalAgentSession     `json:"session,omitempty"`
-	Answer      string                `json:"answer,omitempty"`
+	OK          bool        `json:"ok"`
+	Phase       string      `json:"phase,omitempty"`
+	Error       string      `json:"error,omitempty"`
+	EventID     string      `json:"eventId,omitempty"`
+	Observation Observation `json:"observation,omitempty"`
+	Session     Session     `json:"session,omitempty"`
+	Answer      string      `json:"answer,omitempty"`
 }
 
 type residentSession struct {
 	mu      sync.Mutex
 	turn    sync.Mutex
-	meta    LocalAgentSession
+	meta    Session
 	history []localpreview.ConversationMessage
 }
 
 type residentWorker struct {
-	record                LocalAgentInstance
+	record                Instance
 	instructions          string
 	listener              net.Listener
 	started               time.Time
@@ -115,7 +115,7 @@ func validLocalAgentLockName(name string) bool {
 	return strings.HasPrefix(name, "active-") && strings.HasSuffix(name, ".lock") && validHexValue(strings.TrimSuffix(strings.TrimPrefix(name, "active-"), ".lock"), 24)
 }
 
-func localAgentSocket(record LocalAgentInstance) (string, error) {
+func localAgentSocket(record Instance) (string, error) {
 	base := os.Getenv("XDG_RUNTIME_DIR")
 	managedBase := false
 	if base == "" {
@@ -166,7 +166,7 @@ func ensureLocalAgentRuntimeDirectory(path string) error {
 	return nil
 }
 
-func startLocalAgentWorker(ctx context.Context, executable string, record LocalAgentInstance) error {
+func startLocalAgentWorker(ctx context.Context, executable string, record Instance) error {
 	if executable == "" {
 		var err error
 		executable, err = os.Executable()
@@ -275,7 +275,7 @@ func runLocalAgentWorker(ctx context.Context, id, event string, credential local
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	pair, err := LoadLocalAgentPair(ctx, record)
+	pair, err := LoadPair(ctx, record)
 	if err != nil || len(pair.Agent.Tools) != 0 {
 		ready(localAgentIPCResponse{Error: "cached agent is unavailable"})
 		return errors.New("cached agent is unavailable")
@@ -322,7 +322,7 @@ func runLocalAgentWorker(ctx context.Context, id, event string, credential local
 	}
 }
 
-func localAgentWorkerEnvironment(record LocalAgentInstance) []string {
+func localAgentWorkerEnvironment(record Instance) []string {
 	allowed := map[string]bool{"HOME": true, "PATH": true, "XDG_CONFIG_HOME": true, "XDG_RUNTIME_DIR": true, "TMPDIR": true, "KMX_HOME": true, "GH_CONFIG_DIR": true, "LANG": true, "LC_ALL": true}
 	env := []string{}
 	for _, value := range os.Environ() {
@@ -334,7 +334,7 @@ func localAgentWorkerEnvironment(record LocalAgentInstance) []string {
 	return append(env, localAgentWorkerEnv+"=1", "KMX_LOCAL_AGENT_ID="+record.ID, "KMX_LOCAL_AGENT_EVENT="+record.EventID)
 }
 
-func checkLocalAgentRoute(ctx context.Context, record LocalAgentInstance, credential localAgentCredentialSnapshot) error {
+func checkLocalAgentRoute(ctx context.Context, record Instance, credential localAgentCredentialSnapshot) error {
 	if record.Provider == "fake" {
 		return nil
 	}
@@ -400,7 +400,7 @@ func (w *residentWorker) handle(ctx context.Context, request localAgentIPCReques
 			return localAgentIPCResponse{Error: "session could not be created"}
 		}
 		now := time.Now().UTC()
-		s := &residentSession{meta: LocalAgentSession{ID: id, Label: request.Label, Created: now, LastActivity: now}}
+		s := &residentSession{meta: Session{ID: id, Label: request.Label, Created: now, LastActivity: now}}
 		w.sessions[id] = s
 		if !request.Fresh {
 			w.defaultSession = id
@@ -572,7 +572,7 @@ func (w *residentWorker) prepareInvoke(ctx context.Context, s *residentSession, 
 	return answer, commit, abort, nil
 }
 
-func (w *residentWorker) observe() LocalAgentObservation {
+func (w *residentWorker) observe() Observation {
 	w.mu.Lock()
 	sessions := make([]*residentSession, 0, len(w.sessions))
 	for _, session := range w.sessions {
@@ -580,7 +580,7 @@ func (w *residentWorker) observe() LocalAgentObservation {
 	}
 	activity, lastError := w.lastActivity, w.lastError
 	w.mu.Unlock()
-	result := LocalAgentObservation{Ready: true, Started: w.started, LastActivity: activity, LastError: lastError}
+	result := Observation{Ready: true, Started: w.started, LastActivity: activity, LastError: lastError}
 	for _, session := range sessions {
 		session.mu.Lock()
 		result.Sessions = append(result.Sessions, session.meta)
@@ -642,7 +642,7 @@ func readLocalAgentFrame(reader *bufio.Reader, target any) error {
 	return nil
 }
 
-func probeLocalAgent(ctx context.Context, record LocalAgentInstance, op string, request localAgentIPCRequest) (localAgentIPCResponse, error) {
+func probeLocalAgent(ctx context.Context, record Instance, op string, request localAgentIPCRequest) (localAgentIPCResponse, error) {
 	socket, err := localAgentSocket(record)
 	if err != nil {
 		return localAgentIPCResponse{}, errors.New("local agent is unavailable")
@@ -682,7 +682,7 @@ func probeLocalAgent(ctx context.Context, record LocalAgentInstance, op string, 
 	return response, nil
 }
 
-func invokeLocalAgentIPC(ctx context.Context, record LocalAgentInstance, sessionID, input string) (localAgentIPCResponse, error) {
+func invokeLocalAgentIPC(ctx context.Context, record Instance, sessionID, input string) (localAgentIPCResponse, error) {
 	raw := make([]byte, 12)
 	if _, err := rand.Read(raw); err != nil {
 		return localAgentIPCResponse{}, err
@@ -749,7 +749,7 @@ func invokeLocalAgentIPC(ctx context.Context, record LocalAgentInstance, session
 	}
 }
 
-func waitLocalAgentStopped(ctx context.Context, record LocalAgentInstance) error {
+func waitLocalAgentStopped(ctx context.Context, record Instance) error {
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if _, err := probeLocalAgent(ctx, record, "ping", localAgentIPCRequest{}); err != nil {
@@ -770,7 +770,7 @@ func waitLocalAgentStopped(ctx context.Context, record LocalAgentInstance) error
 	return errors.New("local agent did not stop")
 }
 
-func removeLocalAgentSocket(record LocalAgentInstance) error {
+func removeLocalAgentSocket(record Instance) error {
 	socket, err := localAgentSocket(record)
 	if err != nil {
 		return errors.New("local agent socket is unavailable")
@@ -788,7 +788,7 @@ func removeLocalAgentSocket(record LocalAgentInstance) error {
 	return nil
 }
 
-func localAgentWorkerLeaseHeld(ctx context.Context, record LocalAgentInstance) (bool, error) {
+func localAgentWorkerLeaseHeld(ctx context.Context, record Instance) (bool, error) {
 	dir, _, err := localAgentInstanceDirectory(ctx, record.ID, false)
 	if err != nil {
 		return false, err
