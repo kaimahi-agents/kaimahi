@@ -23,7 +23,14 @@
 // init/cast, operation-owned starter observations and byte-preserving enrichment.
 // Reopened member operations revalidate native casting state, never infer origin
 // or persist kmx mapping. Preview shares App snapshots, not native dispatch.
-// Native partial effects remain explicit; no extra native tool, downloader or canvas actions.
+// Native partial effects remain explicit. The canvas uses these operations and a
+// separate fixed, revision-checked shared brief, never a generic file writer.
+// Paired native preview revisions fence the loaded member and brief before execution.
+// Aggregate roster reads share one checked inventory and retain per-member validation.
+// Whole-team creation refuses occupied rosters; role and brief checks precede writes.
+// Native edits retain untouched section bytes and stable section boundaries.
+// Native suggestions prepare checked inputs for a host no-tools query, never mutations.
+// Proposal checks inspect decoded JSON strings before re-encoding host input.
 // The original-server settings writer uses agent/config byte revisions and retained
 // physical parents; preview roles never advertise or dispatch this fifth tool.
 // Canonical Edit optionally retains bounded private source preimages. Retention
@@ -104,6 +111,12 @@ func (e *Error) Error() string {
 		return "squad_setup_failed: native setup failed; inspect retained files before reconciliation; no automatic retry or rollback"
 	case "squad_not_setup":
 		return "squad_not_setup: not set up by kmx; native member state could not be validated; no origin is inferred"
+	case "invalid_squad_brief":
+		return "invalid_squad_brief: .squad/kmx-brief.md must be readable, nonempty UTF-8 text, at most 16 KiB, without NUL bytes or known credential patterns; repair or remove it manually before retrying"
+	case "squad_proposal_unavailable":
+		return "squad_proposal_unavailable: this host could not provide a tool-free proposal request; use a compatible host or supply a reviewed proposal; no team was created"
+	case "invalid_squad_proposal":
+		return "invalid_squad_proposal: the generated proposal could not be validated; review the goal and request a new proposal; no team was created"
 	case "squad_starter_changed":
 		return "squad_starter_changed: inspect the native member and partial effects manually; no automatic retry or adoption"
 	case "squad_enrichment_failed":
@@ -136,6 +149,8 @@ type Files struct {
 	// exact is a private rootless capability for one CLI-selected physical file.
 	// OpenFiles and inbound MCP never set it.
 	exact string
+	// Only the native brief adapter sets this fixed internal destination.
+	privatePath string
 }
 
 func OpenFiles(root string, validate func(string, []byte) error) (*Files, error) {
@@ -293,6 +308,9 @@ func agentPath(p string) bool {
 func (f *Files) allowedPath(p string) bool {
 	if f.exact != "" {
 		return p == f.exact
+	}
+	if f.root != nil && f.privatePath != "" && p == f.privatePath {
+		return true
 	}
 	if f.root == nil {
 		return agentPath(p)
