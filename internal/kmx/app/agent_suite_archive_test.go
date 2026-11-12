@@ -105,7 +105,7 @@ func TestBuildSuiteInspectsArchiveBeforePublish(t *testing.T) {
 				}
 				return kmxsuite.BuildResult{MediaType: kmxsuite.OCIArchiveMediaType, Digest: "untrusted", IndexDigest: "untrusted", SBOMDigest: "untrusted", AttestationsRequested: tc.requested, RequireAttestations: tc.required}, err
 			})
-			result, err := (&App{}).BuildSuite(ctx, minimalSuitePath(), output, kmxsuite.BuildSelection{}, builder)
+			result, err := (&App{}).BuildSuite(ctx, minimalSuitePath(t), output, kmxsuite.BuildSelection{}, builder)
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 					t.Fatalf("error=%v, want %q", err, tc.wantErr)
@@ -146,7 +146,7 @@ func TestBuildSuiteAtomicRenameFailureCleansStage(t *testing.T) {
 		}
 		return kmxsuite.BuildResult{MediaType: kmxsuite.OCIArchiveMediaType}, nil
 	})
-	_, err := (&App{}).BuildSuite(t.Context(), minimalSuitePath(), output, kmxsuite.BuildSelection{}, builder)
+	_, err := (&App{}).BuildSuite(t.Context(), minimalSuitePath(t), output, kmxsuite.BuildSelection{}, builder)
 	if err == nil || !strings.Contains(err.Error(), "publish AgentSuite build output") {
 		t.Fatalf("error=%v", err)
 	}
@@ -161,7 +161,7 @@ func TestBuildSuiteCancellationIdentity(t *testing.T) {
 	builder := sandboxBuilderFunc(func(context.Context, kmxsuite.SandboxPlan, io.Writer) (kmxsuite.BuildResult, error) {
 		return kmxsuite.BuildResult{}, context.Canceled
 	})
-	_, err := (&App{}).BuildSuite(ctx, minimalSuitePath(), filepath.Join(t.TempDir(), "image.tar"), kmxsuite.BuildSelection{}, builder)
+	_, err := (&App{}).BuildSuite(ctx, minimalSuitePath(t), filepath.Join(t.TempDir(), "image.tar"), kmxsuite.BuildSelection{}, builder)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error=%v", err)
 	}

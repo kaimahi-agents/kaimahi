@@ -372,6 +372,13 @@ description or release-note fragment instead.
 
 ## Pull requests
 
+The Unix app-shard launcher uses child umask `0022` for reproducible ordinary
+fixtures. When running Go package tests directly, use `umask 022` in that shell;
+group-writable `t.TempDir` children from umask `0002` are intentionally refused by
+private-state readers. Permission-specific tests set their own modes/masks.
+Use a temporary root whose ancestors are not group-writable (except sticky shared
+ancestors such as `/tmp`). Do not relax production readers to accommodate fixtures.
+
 - Keep each pull request focused on a user problem.
 - List exact verification commands and results.
 - Label behavior as continuously tested, demonstrated once, schema-valid,

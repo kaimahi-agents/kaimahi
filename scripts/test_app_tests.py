@@ -28,6 +28,21 @@ class AppShardTests(unittest.TestCase):
     def setUp(self):
         self.assertTrue(SCRIPT.exists(), "app shard runner must exist")
 
+    @unittest.skipUnless(os.name == "posix", "Unix fixture permissions")
+    def test_fixture_umask_overrides_group_writable_parent_defaults(self):
+        # Verify the actual child creation mode, not only the requested option.
+        import sys
+        with tempfile.TemporaryDirectory() as directory:
+            code = "import os; os.mkdir('fixture', 0o777); print(oct(os.stat('fixture').st_mode & 0o777))"
+            previous = os.umask(0o002)
+            try:
+                result = subprocess.check_output(
+                    [sys.executable, "-c", code], cwd=directory, text=True,
+                    **self.runner.fixture_process_options())
+            finally:
+                os.umask(previous)
+            self.assertEqual(result.strip(), "0o755")
+
     def test_partition_is_stable_disjoint_exhaustive_and_keeps_seed_tests(self):
         names = [f"TestCase{i}" for i in range(100)] + ["ExampleRun", "FuzzDecode"]
         groups = [self.runner.partition(names, i, 4) for i in range(4)]
