@@ -28,6 +28,16 @@ import (
 
 const localAgentSchema = 2
 
+const maxInstanceRecordBytes = 32 << 10
+
+func marshalInstanceRecord(record Instance) ([]byte, error) {
+	raw, err := json.Marshal(record)
+	if err != nil || len(raw) > maxInstanceRecordBytes {
+		return nil, errors.New("local agent record exceeds its storage limit")
+	}
+	return raw, nil
+}
+
 var errLocalAgentInventoryUninitialized = errors.New("local agent inventory is uninitialized")
 
 // Instance is the safe lifecycle projection of one immutable resident worker.
@@ -534,6 +544,33 @@ func ActivateWithOptions(ctx context.Context, executable string, pair *agentfile
 		return Instance{}, false, fmt.Errorf("model capabilities %s; select a matching exact model profile", match)
 	}
 	if provider != "fake" && provider != "copilot" {
+		if err := requested.Route().ValidateEndpoint(); err != nil {
+			return Instance{}, false, err
+		}
+	}
+	if options.Mode == "" {
+		options.Mode = ActivationNormal
+	}
+	if options.Mode != ActivationNormal && options.Mode != ActivationUpgrade && options.Mode != ActivationNew {
+		return Instance{}, false, errors.New("invalid local agent activation mode")
+	}
+	if options.Mode != ActivationNew && options.Name != "" {
+		return Instance{}, false, errors.New("a runtime name is valid only for a new parallel instance")
+	}
+	// An observed exact running generation owns its credential snapshot. Only
+	// creation/replacement needs access to the caller's current environment.
+	if options.Mode == ActivationNormal {
+		rows, err := ReadInstances(false)
+		if err != nil {
+			return Instance{}, false, err
+		}
+		for _, current := range rows {
+			if current.ID == ID(pair.AgentPath) && current.State == "running" && current.SnapshotRevision == pair.SnapshotRevision && current.Route() == requested.Route() && reflect.DeepEqual(current.Capabilities, options.Capabilities) && current.Requirements == options.Requirements {
+				return current, false, nil
+			}
+		}
+	}
+	if provider != "fake" && provider != "copilot" {
 		access, err := requested.endpointAccess(os.Getenv(options.KeyEnv))
 		if err != nil {
 			return Instance{}, false, err
@@ -552,15 +589,6 @@ func ActivateWithOptions(ctx context.Context, executable string, pair *agentfile
 		if err = access.CheckContent(string(source), string(testsSource), pair.AgentPath, pair.Tests.Selection.Path, endpoint, options.KeyEnv, model, options.Name); err != nil {
 			return Instance{}, false, err
 		}
-	}
-	if options.Mode == "" {
-		options.Mode = ActivationNormal
-	}
-	if options.Mode != ActivationNormal && options.Mode != ActivationUpgrade && options.Mode != ActivationNew {
-		return Instance{}, false, errors.New("invalid local agent activation mode")
-	}
-	if options.Mode != ActivationNew && options.Name != "" {
-		return Instance{}, false, errors.New("a runtime name is valid only for a new parallel instance")
 	}
 	id := ID(pair.AgentPath)
 	dir, path, err := localAgentInstanceDirectory(ctx, id, true)
@@ -673,9 +701,10 @@ func ActivateWithOptions(ctx context.Context, executable string, pair *agentfile
 			if err := ensureLocalAgentCapacity(dir, names...); err != nil {
 				return err
 			}
-			agent, tests, err := cachePair(ctx, dir, path, pair)
-			if err != nil {
-				return err
+			agent := filepath.Join(path, "snapshot-"+digest+".agent.md")
+			tests := ""
+			if pair.Tests.State == "external" {
+				tests = filepath.Join(path, "snapshot-"+digest+".agent.test.md")
 			}
 			var sequence uint64 = 1
 			for _, prior := range starts {
@@ -725,7 +754,13 @@ func ActivateWithOptions(ctx context.Context, executable string, pair *agentfile
 				AgentRevision: pair.Agent.Revision, SnapshotRevision: pair.SnapshotRevision, TestsState: pair.Tests.State, TestsRevision: pair.Tests.Revision,
 				TestsPath: pair.Tests.Selection.Path, TestsExplicit: pair.Tests.Selection.Explicit, CachedAgent: agent, CachedTests: tests,
 				Provider: provider, Model: model, Endpoint: endpoint, KeyEnv: options.KeyEnv, Capabilities: options.Capabilities, Requirements: options.Requirements, Started: time.Now().UTC(), State: "active"}
-			raw, _ := json.Marshal(result)
+			raw, err := marshalInstanceRecord(result)
+			if err != nil {
+				return err
+			}
+			if _, _, err := cachePair(ctx, dir, path, pair); err != nil {
+				return err
+			}
 			if err := publishPrivateBytes(ctx, dir, "start-"+event+".json", raw); err != nil {
 				return err
 			}
@@ -859,7 +894,7 @@ func readInstanceEvents(ctx context.Context, dir *fileaccess.Directory, dirPath 
 		if !strings.HasPrefix(name, "start-") || !strings.HasSuffix(name, ".json") {
 			return nil, nil, nil, errors.New("local agent instance state contains an unexpected entry")
 		}
-		raw, err := readPrivateBytes(ctx, dir, name, 32<<10)
+		raw, err := readPrivateBytes(ctx, dir, name, maxInstanceRecordBytes)
 		var version struct {
 			SchemaVersion int `json:"schemaVersion"`
 		}
@@ -1358,6 +1393,11 @@ func Invoke(ctx context.Context, selector, sessionID, input string) (string, err
 	record, err := resolveLocalAgent(selector, false)
 	if err != nil || record.State != "running" {
 		return "", errors.New("local agent is not running")
+	}
+	if record.Provider != "fake" && record.Provider != "copilot" {
+		if err := record.Route().ValidateEndpoint(); err != nil {
+			return "", err
+		}
 	}
 	response, err := invokeLocalAgentIPC(ctx, record, sessionID, input)
 	return response.Answer, err

@@ -115,7 +115,7 @@ func TestOllamaMetadataRefusesRedirectAndCredentialEcho(t *testing.T) {
 	for _, reply := range []string{"redirect", "echo"} {
 		t.Run(reply, func(t *testing.T) {
 			requests := 0
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				requests++
 				if reply == "redirect" {
 					w.Header().Set("Location", "/other")
@@ -125,6 +125,7 @@ func TestOllamaMetadataRefusesRedirectAndCredentialEcho(t *testing.T) {
 				io.WriteString(w, `{"capabilities":["metadata-private-key"]}`)
 			}))
 			defer server.Close()
+			trustEndpointServer(t, server)
 			t.Setenv("OLLAMA_TEST_KEY", "metadata-private-key")
 			_, err := OllamaCapabilities(t.Context(), Route{Provider: "ollama", Model: "unit", Endpoint: server.URL + "/v1", Auth: "env", KeyEnv: "OLLAMA_TEST_KEY"})
 			if err == nil || requests != 1 {

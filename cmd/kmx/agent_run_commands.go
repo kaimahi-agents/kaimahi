@@ -59,6 +59,14 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 	cmd.Flags().IntVar(&requirements.OutputTokens, "require-output", 0, "Output tokens required and requested")
 	cmd.Flags().BoolVar(&requirements.Reasoning, "require-reasoning", false, "Require reasoning capability")
 	cmd.Args = func(cmd *cobra.Command, args []string) error {
+		// Live Run's exit 2 means an admitted pending Task, never a selector error.
+		if len(args) == 0 {
+			for _, flag := range []string{"provider-key-env", "model-profile", "require-context", "require-output", "require-reasoning", "upgrade", "new", "name", "yes"} {
+				if cmd.Flags().Changed(flag) {
+					return fmt.Errorf("--%s requires an explicit agent FILE", flag)
+				}
+			}
+		}
 		if err := requirements.Validate(); err != nil {
 			return fileUsageError(err)
 		}
@@ -79,6 +87,9 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 		}
 		if upgrade && (parallel || once) {
 			return fileUsageError(fmt.Errorf("--upgrade conflicts with --new and --once"))
+		}
+		if parallel && once {
+			return fileUsageError(fmt.Errorf("--new conflicts with --once"))
 		}
 		if runtimeName != "" && !parallel {
 			return fileUsageError(fmt.Errorf("--name requires --new"))
@@ -201,9 +212,24 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 				}
 				provider, model = route.Provider, route.Model
 				if profilePath == "" && provider == "ollama" && requirements != (modelaccess.Requirements{}) {
-					capabilities, err = modelaccess.OllamaCapabilities(cmd.Context(), route)
-					if err != nil {
-						return err
+					frozen := false
+					if !upgrade && !parallel {
+						rows, readErr := state.deps.readLocalAgents(false)
+						if readErr != nil {
+							return readErr
+						}
+						for _, row := range rows {
+							if row.ID == localagent.ID(pair.AgentPath) && row.State == "running" && row.SnapshotRevision == pair.SnapshotRevision && row.Route() == route && row.Requirements == requirements {
+								capabilities, frozen = row.Capabilities, true
+								break
+							}
+						}
+					}
+					if !frozen {
+						capabilities, err = modelaccess.OllamaCapabilities(cmd.Context(), route)
+						if err != nil {
+							return err
+						}
 					}
 				}
 				if !agentfile.ValidModel(model) || secretshapes.Match(model) != nil || (provider == "fake") != (model == "fake") || len(pair.Agent.Tools) != 0 {

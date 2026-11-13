@@ -119,10 +119,16 @@ func TestShortHelpFlagScopesAndCaveats(t *testing.T) {
 		}
 		if verb == "run" {
 			_, fileFlags, _ := strings.Cut(output, "Flags (file preview):")
-			fileFlags, rest, ok := strings.Cut(fileFlags, "Flags (shared input):")
+			fileFlags, residentAndRest, residentOK := strings.Cut(fileFlags, "Flags (resident agents):")
+			residentFlags, rest, ok := strings.Cut(residentAndRest, "Flags (shared input):")
 			sharedFlags, liveFlags, liveOK := strings.Cut(rest, "Flags (live Orka):")
-			if !ok || !liveOK || strings.Contains(fileFlags, "--context") || !strings.Contains(liveFlags, "--agent") || !strings.Contains(liveFlags, "--context") {
+			if !residentOK || !ok || !liveOK || strings.Contains(fileFlags, "--context") || !strings.Contains(liveFlags, "--agent") || !strings.Contains(liveFlags, "--context") {
 				t.Fatal("file/shared/live flag scopes confused")
+			}
+			for _, flag := range []string{"--model-profile", "--provider-key-env", "--require-context", "--require-output", "--require-reasoning", "--upgrade", "--new", "--name", "--yes"} {
+				if !strings.Contains(residentFlags, flag) || strings.Contains(fileFlags, flag) {
+					t.Errorf("resident selector misplaced: %s", flag)
+				}
 			}
 			for _, flag := range []string{"--prompt ", "--prompt-file "} {
 				if !strings.Contains(sharedFlags, flag) || strings.Contains(fileFlags, flag) || strings.Contains(liveFlags, flag) {

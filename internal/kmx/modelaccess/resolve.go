@@ -50,5 +50,10 @@ func Resolve(ctx context.Context, route Route, discover func(context.Context) []
 	if route.Validate() != nil {
 		return Route{}, errors.New("invalid selected model route")
 	}
+	if route.Provider != "fake" && route.Provider != "copilot" {
+		if err := route.ValidateEndpoint(); err != nil {
+			return Route{}, err
+		}
+	}
 	return route, nil
 }

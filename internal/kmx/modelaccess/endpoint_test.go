@@ -16,7 +16,7 @@ func TestEndpointProtocolsAndCredentialIsolation(t *testing.T) {
 	for _, provider := range []string{"openai", "compatible", "ollama", "foundry-local", "anthropic"} {
 		t.Run(provider, func(t *testing.T) {
 			calls := 0
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				calls++
 				var body map[string]any
 				if json.NewDecoder(r.Body).Decode(&body) != nil {
@@ -38,6 +38,7 @@ func TestEndpointProtocolsAndCredentialIsolation(t *testing.T) {
 				}
 			}))
 			defer server.Close()
+			trustEndpointServer(t, server)
 			route := Route{Provider: provider, Model: "unit", Endpoint: server.URL + "/v1", Auth: "env", KeyEnv: "TEST_MODEL_KEY"}
 			access, err := NewEndpointAccess(route, "private-unit-credential", 2048)
 			if err != nil {
@@ -83,8 +84,9 @@ func TestEndpointAccessReusesConnectionsWithRequestScopedKeys(t *testing.T) {
 			connections.Add(1)
 		}
 	}
-	server.Start()
+	server.StartTLS()
 	defer server.Close()
+	trustEndpointServer(t, server)
 	route := Route{Provider: "openai", Model: "unit", Endpoint: server.URL + "/v1", Auth: "env", KeyEnv: "TEST_MODEL_KEY"}
 	for _, key := range []string{"first-private-key", "second-private-key"} {
 		access, err := NewEndpointAccess(route, key, 1024)
@@ -118,7 +120,7 @@ func TestEndpointRefusesRedirectMalformedAndIncompleteWithoutRetry(t *testing.T)
 	} {
 		t.Run(reply, func(t *testing.T) {
 			calls := 0
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				calls++
 				if reply == "redirect" {
 					w.Header().Set("Location", "/other")
@@ -128,6 +130,7 @@ func TestEndpointRefusesRedirectMalformedAndIncompleteWithoutRetry(t *testing.T)
 				io.WriteString(w, reply)
 			}))
 			defer server.Close()
+			trustEndpointServer(t, server)
 			route := Route{Provider: "anthropic", Model: "unit", Endpoint: server.URL + "/v1", Auth: "env", KeyEnv: "TEST_MODEL_KEY"}
 			a, err := NewEndpointAccess(route, "private-unit-credential", 1024)
 			if err != nil {
@@ -139,6 +142,13 @@ func TestEndpointRefusesRedirectMalformedAndIncompleteWithoutRetry(t *testing.T)
 			}
 		})
 	}
+}
+
+func trustEndpointServer(t *testing.T, server *httptest.Server) {
+	t.Helper()
+	previous := http.DefaultTransport
+	http.DefaultTransport = server.Client().Transport
+	t.Cleanup(func() { http.DefaultTransport = previous })
 }
 
 func TestResolveUsesExactLocalDiscoveryAndHostedDefaults(t *testing.T) {

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -18,9 +17,6 @@ import (
 )
 
 var errEndpoint = errors.New("model endpoint request failed; no retry was attempted")
-
-// Request-local credentials never enter the shared connection pool.
-var endpointTransport http.RoundTripper = http.DefaultTransport.(*http.Transport).Clone()
 
 // EndpointAccess implements the shared invocation access interface for explicit
 // OpenAI-compatible and Anthropic Messages endpoints. Its credential is private
@@ -35,12 +31,11 @@ type EndpointAccess struct {
 var _ PreviewAccess = (*EndpointAccess)(nil)
 
 func NewEndpointAccess(route Route, key string, output int) (*EndpointAccess, error) {
-	if route.Validate() != nil || route.Provider == "copilot" || route.Provider == "fake" || output < 0 || output > 10000000 {
-		return nil, errors.New("invalid endpoint route")
+	if err := route.ValidateEndpoint(); err != nil {
+		return nil, err
 	}
-	u, _ := url.Parse(route.Endpoint)
-	if u.Scheme != "https" && !net.ParseIP(u.Hostname()).IsLoopback() && u.Hostname() != "localhost" {
-		return nil, errors.New("model endpoint requires HTTPS or loopback HTTP")
+	if output < 0 || output > 10000000 {
+		return nil, errors.New("invalid endpoint route")
 	}
 	if (route.KeyEnv != "") != (key != "") || len(key) > 32768 || !utf8.ValidString(key) || strings.ContainsAny(key, "\r\n\x00") {
 		return nil, errors.New("model endpoint credential is missing or invalid")
@@ -48,7 +43,8 @@ func NewEndpointAccess(route Route, key string, output int) (*EndpointAccess, er
 	if output == 0 {
 		output = 1024
 	}
-	access := &EndpointAccess{route: route, key: key, output: output, next: endpointTransport}
+	// DefaultTransport owns the shared pool; authentication stays on each request.
+	access := &EndpointAccess{route: route, key: key, output: output, next: http.DefaultTransport}
 	if err := access.CheckContent(route.Model, route.Endpoint, route.KeyEnv); err != nil {
 		return nil, err
 	}

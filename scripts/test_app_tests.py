@@ -226,6 +226,20 @@ class AppShardWorkflowTests(unittest.TestCase):
         self.assertNotIn("if", worker)
         self.assertEqual(len(self.jobs["hygiene"]["steps"]), 1)
 
+    def test_resident_lifecycle_runs_on_both_required_platforms(self):
+        job = self.jobs["app-tests"]
+        self.assertIn("app-tests", self.jobs["hygiene"]["needs"])
+        self.assertEqual(job["strategy"]["matrix"]["os"], ["ubuntu-latest", "macos-latest"])
+        self.assertIn(0, job["strategy"]["matrix"]["shard"])
+        step = next(s for s in job["steps"] if s.get("name") == "Required resident lifecycle tests")
+        self.assertEqual(step["if"], "matrix.shard == 0")
+        self.assertNotIn("continue-on-error", job)
+        self.assertNotIn("continue-on-error", step)
+        self.assertIn("set -euo pipefail", step["run"])
+        self.assertIn("go test -race -count=1 -v ./internal/kmx/localagent", step["run"])
+        self.assertIn("--- PASS: TestLocalAgentResidentSessionInvokeStop ", step["run"])
+        self.assertIn("! grep -q -- '--- SKIP:'", step["run"])
+
     def test_windows_day_zero_helper_is_direct_offline_and_fail_closed(self):
         helper = (ROOT / "scripts/ci/windows-cli-day-zero.ps1").read_text()
         for contract in (

@@ -23,7 +23,7 @@ func TestResidentEndpointTurnAndRouteDrift(t *testing.T) {
 		t.Run(provider, func(t *testing.T) {
 			pair := residentAgentPair(t)
 			t.Setenv("RESIDENT_ENDPOINT_KEY", "private-resident-canary")
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == "GET" {
 					if provider == "anthropic" {
 						if r.URL.Path != "/v1/models/unit" || r.Header.Get("x-api-key") != "private-resident-canary" {
@@ -51,8 +51,9 @@ func TestResidentEndpointTurnAndRouteDrift(t *testing.T) {
 				}
 			}))
 			defer server.Close()
+			executable := residentTLSWorker(t, server)
 			options := ActivationOptions{KeyEnv: "RESIDENT_ENDPOINT_KEY"}
-			record, created, err := ActivateWithOptions(t.Context(), "", pair, provider, server.URL+"/v1", "unit", options)
+			record, created, err := ActivateWithOptions(t.Context(), executable, pair, provider, server.URL+"/v1", "unit", options)
 			if err != nil || !created {
 				t.Fatalf("activate %v", err)
 			}
@@ -65,6 +66,25 @@ func TestResidentEndpointTurnAndRouteDrift(t *testing.T) {
 			if err != nil || answer != "hello endpoint" {
 				t.Fatalf("%q %v", answer, err)
 			}
+			if err := os.Unsetenv("RESIDENT_ENDPOINT_KEY"); err != nil {
+				t.Fatal(err)
+			}
+			reused, created, err := ActivateWithOptions(t.Context(), executable, pair, provider, server.URL+"/v1", "unit", options)
+			if err != nil || created || reused.InstanceID != record.InstanceID {
+				t.Fatalf("exact reuse required credential: %+v %v", reused, err)
+			}
+			for _, mode := range []ActivationMode{ActivationNew, ActivationUpgrade} {
+				changed := options
+				changed.Mode = mode
+				if _, _, err := ActivateWithOptions(t.Context(), executable, pair, provider, server.URL+"/v1", "unit", changed); err == nil {
+					t.Fatalf("%s ignored missing credential", mode)
+				}
+			}
+			answer, err = Invoke(t.Context(), record.InstanceID, session.ID, "retained key")
+			if err != nil || answer != "hello endpoint" {
+				t.Fatalf("worker lost credential snapshot: %q %v", answer, err)
+			}
+			t.Setenv("RESIDENT_ENDPOINT_KEY", "private-resident-canary")
 			_, _, err = ActivateWithOptions(t.Context(), "", pair, provider, server.URL+"/different", "unit", options)
 			var drift *DriftError
 			if !errors.As(err, &drift) {

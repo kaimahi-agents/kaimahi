@@ -87,6 +87,10 @@ type Profile struct {
 
 func LoadProfile(path string) (Profile, error) {
 	var p Profile
+	path, err := filepath.Abs(path)
+	if err != nil {
+		return p, errors.New("model profile unavailable")
+	}
 	dir, err := fileaccess.OpenDirectory(context.Background(), filepath.Dir(path))
 	if err != nil {
 		return p, errors.New("model profile unavailable")
@@ -109,6 +113,11 @@ func LoadProfile(path string) (Profile, error) {
 	d.DisallowUnknownFields()
 	if !agentruntime.JSONKeysUnique(b) || d.Decode(&p) != nil || d.Decode(new(any)) != io.EOF || p.Route.Validate() != nil || p.Capabilities.Validate() != nil {
 		return Profile{}, errors.New("invalid model profile")
+	}
+	if p.Route.Provider != "fake" && p.Route.Provider != "copilot" {
+		if err := p.Route.ValidateEndpoint(); err != nil {
+			return Profile{}, err
+		}
 	}
 	return p, nil
 }

@@ -33,8 +33,9 @@ manager. `--provider-key-env NAME` selects another environment variable; it
 never accepts the key value. Custom compatible endpoints can also use this flag.
 
 Anthropic uses its Messages API with the version header and `x-api-key`.
-OpenAI/compatible/local endpoints use Chat Completions. External endpoints require
-HTTPS; loopback HTTP is supported. Requests do not follow redirects or retry.
+OpenAI/compatible/local endpoints use Chat Completions. Credentialed routes require
+HTTPS, including loopback endpoints; HTTP is supported only for keyless loopback
+routes. Requests do not follow redirects or retry.
 Only completed text answers with the exact selected model identity are accepted;
 use concrete model IDs rather than aliases that return a different identity.
 Tool calls, incomplete replies, credential echoes, and model mismatches cannot
@@ -52,12 +53,18 @@ Endpoint accesses share a connection pool while keeping credentials request-loca
 Endpoint environment keys are checked against authored source before snapshot
 caching, then transferred through the owned worker pipe and kept only in memory. An environment key is a
 startup snapshot: changing it requires `--upgrade --yes` to replace the worker.
+Exact reuse does not read or require the caller's current environment key. Creation,
+crash restart, and explicit replacement still require the current credential.
 Copilot retains its existing per-turn access/refresh behavior. Endpoint, key
 reference, capabilities, and requirements are frozen with the generation. A
 changed selection requires an upgrade or a parallel `--new --name NAME` instance.
 Existing fake/Copilot lifecycle records remain readable. Records written with
 the new route/mapping fields require this updated binary; older strict readers
 may refuse them.
+Endpoint URLs are bounded to 4096 bytes; the complete serialized start record must
+fit the reader's 32 KiB limit before snapshots or start records are published.
+Previously created credentialed-HTTP records remain inspectable and stoppable,
+but new invocations require a secure route.
 
 ## Declare and match capabilities
 

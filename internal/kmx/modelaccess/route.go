@@ -6,6 +6,7 @@ package modelaccess
 
 import (
 	"errors"
+	"net"
 	"net/url"
 	"regexp"
 	"strings"
@@ -14,6 +15,9 @@ import (
 )
 
 const CopilotEndpoint = "https://api.githubcopilot.com"
+
+// MaxEndpointBytes bounds route metadata before it enters retained state.
+const MaxEndpointBytes = 4096
 
 // CopilotDefaultModel is the file-preview choice when no runtime or authored model is supplied.
 const CopilotDefaultModel = "gpt-5.6-terra"
@@ -32,6 +36,9 @@ var modelName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$`)
 var environmentName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,127}$`)
 
 func (r Route) Validate() error {
+	if len(r.Endpoint) > MaxEndpointBytes {
+		return errors.New("model endpoint exceeds 4096 bytes")
+	}
 	if !modelName.MatchString(r.Model) {
 		return errors.New("invalid model identifier")
 	}
@@ -62,6 +69,25 @@ func (r Route) Validate() error {
 	}
 	if r.Provider != "copilot" && (r.Auth != "none" && r.Auth != "env" || (r.Auth == "env") != (r.KeyEnv != "")) {
 		return errors.New("authentication source does not match provider")
+	}
+	return nil
+}
+
+// ValidateEndpoint checks transport policy without reading credentials. Keeping
+// this separate from record syntax lets older records remain visible/stoppable.
+func (r Route) ValidateEndpoint() error {
+	if err := r.Validate(); err != nil {
+		return err
+	}
+	if r.Provider == "fake" || r.Provider == "copilot" {
+		return errors.New("provider owns its transport")
+	}
+	u, _ := url.Parse(r.Endpoint)
+	if u.Scheme != "https" && r.KeyEnv != "" {
+		return errors.New("credentialed model endpoints require HTTPS")
+	}
+	if u.Scheme != "https" && !net.ParseIP(u.Hostname()).IsLoopback() && u.Hostname() != "localhost" {
+		return errors.New("model endpoint requires HTTPS or keyless loopback HTTP")
 	}
 	return nil
 }

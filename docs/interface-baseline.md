@@ -29,6 +29,7 @@ kmx
 ├── chat <name> [message...]
 ├── model
 │   ├── list [--provider local|copilot] [-o table|json]
+│   ├── match PROFILE                (offline capability matching)
 │   ├── login [--gh]
 │   └── logout
 ├── package

@@ -15,7 +15,12 @@ to `internal/kmx/modelaccess`. Resident Run supports tool-free fake/Copilot,
 Ollama/Foundry Local, compatible/OpenAI and Anthropic Messages routes. Freeze exact
 endpoint/key-reference/capability/requirement identity in each generation; keys
 travel only in the worker credential pipe. Environment keys are startup snapshots;
-rotation needs a replacement generation. Missing capability metadata is unknown,
+rotation needs a replacement generation; exact running reuse never requires the
+caller to export the key again. Credentialed endpoints require HTTPS, including
+loopback; HTTP is keyless-loopback only. Endpoint URLs are bounded to 4096 bytes,
+and the marshaled start record must fit the shared 32 KiB read/write budget before
+snapshot/start publication. Relative model profiles become absolute clean paths
+before no-symlink reads. Missing capability metadata is unknown,
 never guessed from model names.
 Endpoint readiness requires a bounded non-inference exact-model catalog read;
 failed replacement access preserves the old worker and sessions. Endpoint
@@ -25,6 +30,9 @@ Profiles are operator declarations, Ollama show
 metadata is advertised, and neither is execution evidence. `modelRequirements`
 frontmatter is resident-only; Run flags may strengthen but never weaken it.
 One-shot previews and Test retain their existing provider/tool contracts.
+Resident-only flags have a distinct help section; no-FILE selection errors use
+ordinary failure exits, never live Run's pending-Task exit 2. Linux/macOS resident
+lifecycle tests run in shard zero of the required app-tests/hygiene dependency graph.
 
 New operations belong in an operation-owned package with explicit dependencies, not as new methods on `*app.App`. Keep CLI, MCP and UI parsing, presentation and invocation wiring in their adapters. Reuse an existing focused package when it owns the behavior; otherwise add one below `internal/kmx/`. Operation packages must not import `app`, `mcp` or command packages. Pass the capabilities the operation needs, not `*app.App` or a copy of it. Existing App methods may delegate during migration; do not move unrelated code to satisfy this rule.
 
