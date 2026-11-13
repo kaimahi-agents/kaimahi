@@ -30,6 +30,16 @@
 // reuse; incompatible sources and node binds refuse without repair. Model-local
 // API capture uses closed GVK paths and returns only checked execution settings;
 // it performs no sign-in, model configuration or inference.
+//
+// Installing or reusing Orka never trusts Deployment status alone: it can be the
+// controller manager's record from before a node restart. Offline install and
+// both install-reuse paths wait, bounded, until each workload's pods, owned
+// through their ReplicaSet's UID, report kubelet readiness no older than their
+// kind node container's current start and Orka's typed /readyz answers through
+// its API Service. Online reuse on a context other than kind-<KIND_CLUSTER>
+// uses no restart reference. Every read in the wait is bounded, the API
+// server's own denials refuse, and nothing is written or repaired.
+//
 // Model connection state retains nonsecret, acknowledged identities through
 // private immutable checkpoints and a process-held target lock. Partial effects
 // and publication errors never authorize replay or ownership reconstruction.
