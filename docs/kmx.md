@@ -1704,6 +1704,8 @@ exact live execution-setting comparison and explicit rollouts of all three
 Deployments, then result-reader reconciliation. The full profile hash is a
 Helm value, not a label. Exact healthy reuse requires the complete custom values
 and live workload set, skips CRD/Helm writes and preserves chart keys/data.
+A model gateway Deployment that `kmx model connect` marked as its own is outside
+that set; every bundle Deployment is still compared, even when marked.
 Online, foreign, changed, partial or orphan installs refuse; no adoption,
 upgrade, repair, retry or automatic cleanup occurs. Failures stop later phases;
 inspect retained effects privately. Cache checks are invocation-time evidence,
