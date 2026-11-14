@@ -12,13 +12,16 @@ import (
 // Even a future configuration field containing an apostrophe stays shell data.
 func TestOrkaModelKeyLauncherQuotesConfig(t *testing.T) {
 	dir := t.TempDir()
-	tool, config := filepath.Join(dir, "busybox"), filepath.Join(dir, "providers.json")
+	tool, config, executable := filepath.Join(dir, "busybox"), filepath.Join(dir, "providers.json"), filepath.Join(dir, "vekil")
 	if err := os.WriteFile(tool, []byte("#!/bin/sh\ncase \"$1\" in stat) echo '0:65532:640:1:regular file:12';; cat) printf fixture-only;; *) exit 7;; esac\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
 	vendor := "fixture'company"
-	script := modelLauncherScript("unused", tool, "/bin/true", vendor, "gpt-4.1")
-	script = strings.ReplaceAll(script, "/run/vekil/providers.json", config)
+	script := modelLauncherScript("unused", tool, executable, vendor, "gpt-4.1")
+	script = strings.ReplaceAll(script, "/run/vekil/providers.json", shellArg(config))
 	if out, err := exec.Command("/bin/sh", "-c", script).CombinedOutput(); err != nil || len(out) != 0 {
 		t.Fatalf("configuration escaped shell quoting: %v", err)
 	}
