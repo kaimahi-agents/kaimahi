@@ -18,9 +18,9 @@ import (
 )
 
 // Only the external workload observation changes; all real readers and guards run.
-func restrictedRuntimeDeployment(t *testing.T, d map[string]any, arch string) {
+func restrictedRuntimeDeployment(t *testing.T, d map[string]any, key, arch string) {
 	t.Helper()
-	_, p := restrictedProfileFixture(t)
+	_, p := offlineSourceProfileFixture(t, key)
 	d["metadata"].(map[string]any)["labels"].(map[string]any)["helm.sh/chart"] = "orka-" + p.Install.Chart.Version
 	c := d["spec"].(map[string]any)["template"].(map[string]any)["spec"].(map[string]any)["containers"].([]any)[0].(map[string]any)
 	controller, worker := p.Install.Images["controller"], p.Install.Images["ai-worker"]
@@ -33,183 +33,208 @@ func restrictedRuntimeDeployment(t *testing.T, d map[string]any, arch string) {
 	}
 }
 
-func restrictedNativeFixture(t *testing.T, arch string) (*App, *nativeReadFixture) {
+func restrictedNativeFixture(t *testing.T, key, arch string) (*App, *nativeReadFixture) {
 	t.Helper()
 	a, _, f := nativeFixture(t)
-	restrictedRuntimeDeployment(t, nativeController(f), arch)
+	restrictedRuntimeDeployment(t, nativeController(f), key, arch)
 	f.objects["serviceaccount/orka-ai-worker"]["metadata"].(map[string]any)["labels"].(map[string]any)["helm.sh/chart"] = "orka-0.0.0-dev"
 	return a, f
 }
 
 func TestOfflineRuntimeRecognitionNative(t *testing.T) {
-	for _, arch := range []string{"amd64", "arm64"} {
-		t.Run(arch, func(t *testing.T) {
-			a, f := restrictedNativeFixture(t, arch)
-			runtime, err := a.readSuiteNativeRuntime(t.Context(), OrkaNamespace)
-			if err != nil || runtime.WorkerAccountUID != "worker-uid" || runtime.Helm.Chart != "orka-0.0.0-dev" {
-				t.Fatalf("restricted runtime not recognized: %+v %v", runtime, err)
-			}
-			f.change = func(key string, _ int, obj map[string]any) error {
-				if key == "deploy/-o" {
-					nativeController(f)["metadata"].(map[string]any)["generation"] = 2
+	for _, profile := range offlineSourceProfiles {
+		for _, arch := range []string{"amd64", "arm64"} {
+			t.Run(profile.key+"/"+arch, func(t *testing.T) {
+				a, f := restrictedNativeFixture(t, profile.key, arch)
+				runtime, err := a.readSuiteNativeRuntime(t.Context(), OrkaNamespace)
+				if err != nil || runtime.WorkerAccountUID != "worker-uid" || runtime.Helm.Chart != "orka-0.0.0-dev" {
+					t.Fatalf("restricted runtime not recognized: %+v %v", runtime, err)
 				}
-				return nil
-			}
-			if _, err := a.readSuiteNativeRuntime(t.Context(), OrkaNamespace); err == nil || !strings.Contains(err.Error(), "not Ready for its current generation") {
-				t.Fatalf("changed controller: %v", err)
-			}
-		})
+				f.change = func(key string, _ int, obj map[string]any) error {
+					if key == "deploy/-o" {
+						nativeController(f)["metadata"].(map[string]any)["generation"] = 2
+					}
+					return nil
+				}
+				if _, err := a.readSuiteNativeRuntime(t.Context(), OrkaNamespace); err == nil || !strings.Contains(err.Error(), "not Ready for its current generation") {
+					t.Fatalf("changed controller: %v", err)
+				}
+			})
+		}
 	}
 }
 
 func TestOfflineRuntimeRecognitionGuards(t *testing.T) {
-	for _, change := range []string{"mixed worker architecture", "online worker", "online controller", "online chart", "old profile", "mode", "namespace", "controller account", "worker account", "entrypoint", "duplicate flag", "not ready", "duplicate controller", "worker identity"} {
-		t.Run(change, func(t *testing.T) {
-			a, f := restrictedNativeFixture(t, "amd64")
-			d, c := nativeController(f), nativeContainer(f)
-			spec := d["spec"].(map[string]any)["template"].(map[string]any)["spec"].(map[string]any)
-			args := c["args"].([]any)
-			replace := func(prefix, value string) {
-				for i, arg := range args {
-					if strings.HasPrefix(arg.(string), prefix) {
-						args[i] = prefix + value
+	for _, profile := range offlineSourceProfiles {
+		for _, change := range []string{"mixed worker architecture", "mixed profile worker", "mixed profile controller", "online worker", "online controller", "online chart", "old profile", "mode", "namespace", "controller account", "worker account", "entrypoint", "duplicate flag", "not ready", "duplicate controller", "worker identity"} {
+			t.Run(profile.key+"/"+change, func(t *testing.T) {
+				a, f := restrictedNativeFixture(t, profile.key, "amd64")
+				d, c := nativeController(f), nativeContainer(f)
+				spec := d["spec"].(map[string]any)["template"].(map[string]any)["spec"].(map[string]any)
+				args := c["args"].([]any)
+				replace := func(prefix, value string) {
+					for i, arg := range args {
+						if strings.HasPrefix(arg.(string), prefix) {
+							args[i] = prefix + value
+						}
 					}
 				}
-			}
-			want := "unsupported native controller"
-			switch change {
-			case "mixed worker architecture":
-				_, p := restrictedProfileFixture(t)
-				worker := p.Install.Images["ai-worker"]
-				replace("--ai-worker-image=", worker.Repository+"@"+worker.Platforms["arm64"].ManifestDigest)
-			case "online worker":
-				replace("--ai-worker-image=", "ghcr.io/orka-agents/orka/ai-worker@"+orkaAIWorkerDigest)
-			case "online controller":
-				c["image"] = "ghcr.io/orka-agents/orka@" + orkaControllerDigest
-			case "online chart":
-				d["metadata"].(map[string]any)["labels"].(map[string]any)["helm.sh/chart"] = "orka-0.3.0"
-			case "old profile":
-				var p offlineProfile
-				if err := json.Unmarshal(offlineProfileJSON, &p); err != nil {
-					t.Fatal(err)
+				want := "unsupported native controller"
+				switch change {
+				case "mixed worker architecture":
+					_, p := offlineSourceProfileFixture(t, profile.key)
+					worker := p.Install.Images["ai-worker"]
+					replace("--ai-worker-image=", worker.Repository+"@"+worker.Platforms["arm64"].ManifestDigest)
+				case "mixed profile worker", "mixed profile controller":
+					other := "7916cd1c"
+					if profile.key == other {
+						other = "3cb1f0df"
+					}
+					_, p := offlineSourceProfileFixture(t, other)
+					if change == "mixed profile worker" {
+						worker := p.Install.Images["ai-worker"]
+						replace("--ai-worker-image=", worker.Repository+"@"+worker.Platforms["amd64"].ManifestDigest)
+					} else {
+						controller := p.Install.Images["controller"]
+						c["image"] = controller.Repository + "@" + controller.Platforms["amd64"].ManifestDigest
+					}
+				case "online worker":
+					replace("--ai-worker-image=", "ghcr.io/orka-agents/orka/ai-worker@"+orkaAIWorkerDigest)
+				case "online controller":
+					c["image"] = "ghcr.io/orka-agents/orka@" + orkaControllerDigest
+				case "online chart":
+					d["metadata"].(map[string]any)["labels"].(map[string]any)["helm.sh/chart"] = "orka-0.3.0"
+				case "old profile":
+					var p offlineProfile
+					if err := json.Unmarshal(offlineProfileJSON, &p); err != nil {
+						t.Fatal(err)
+					}
+					controller, worker := p.Install.Images["controller"], p.Install.Images["ai-worker"]
+					c["image"] = controller.Repository + "@" + controller.Platforms["amd64"].ManifestDigest
+					replace("--ai-worker-image=", worker.Repository+"@"+worker.Platforms["amd64"].ManifestDigest)
+				case "mode":
+					replace("--controller-mode=", "all")
+				case "namespace":
+					replace("--watch-namespace=", "other")
+				case "controller account":
+					spec["serviceAccountName"] = "bad/account"
+				case "worker account":
+					replace("--ai-worker-service-account-name=", "bad/account")
+				case "entrypoint":
+					c["command"] = []any{"/other"}
+					want = "pinned controller entrypoint"
+				case "duplicate flag":
+					c["args"] = append(args, "--controller-mode=harness-v2")
+					want = "one explicit controller-mode flag"
+				case "not ready":
+					d["status"].(map[string]any)["readyReplicas"] = 0
+					want = "not Ready for its current generation"
+				case "duplicate controller":
+					f.objects["deploy/-o"]["items"] = []any{d, d}
+					want = "multiple Orka controller Deployments"
+				case "worker identity":
+					f.objects["serviceaccount/orka-ai-worker"]["metadata"].(map[string]any)["labels"].(map[string]any)["orka.ai/worker-trust"] = "general"
+					want = "lacks worker-trust=ai label"
 				}
-				controller, worker := p.Install.Images["controller"], p.Install.Images["ai-worker"]
-				c["image"] = controller.Repository + "@" + controller.Platforms["amd64"].ManifestDigest
-				replace("--ai-worker-image=", worker.Repository+"@"+worker.Platforms["amd64"].ManifestDigest)
-			case "mode":
-				replace("--controller-mode=", "all")
-			case "namespace":
-				replace("--watch-namespace=", "other")
-			case "controller account":
-				spec["serviceAccountName"] = "bad/account"
-			case "worker account":
-				replace("--ai-worker-service-account-name=", "bad/account")
-			case "entrypoint":
-				c["command"] = []any{"/other"}
-				want = "pinned controller entrypoint"
-			case "duplicate flag":
-				c["args"] = append(args, "--controller-mode=harness-v2")
-				want = "one explicit controller-mode flag"
-			case "not ready":
-				d["status"].(map[string]any)["readyReplicas"] = 0
-				want = "not Ready for its current generation"
-			case "duplicate controller":
-				f.objects["deploy/-o"]["items"] = []any{d, d}
-				want = "multiple Orka controller Deployments"
-			case "worker identity":
-				f.objects["serviceaccount/orka-ai-worker"]["metadata"].(map[string]any)["labels"].(map[string]any)["orka.ai/worker-trust"] = "general"
-				want = "lacks worker-trust=ai label"
-			}
-			if _, err := a.readSuiteNativeRuntime(t.Context(), OrkaNamespace); err == nil || !strings.Contains(err.Error(), want) {
-				t.Fatalf("%s: wanted %q, got %v", change, want, err)
-			}
-		})
+				if _, err := a.readSuiteNativeRuntime(t.Context(), OrkaNamespace); err == nil || !strings.Contains(err.Error(), want) {
+					t.Fatalf("%s: wanted %q, got %v", change, want, err)
+				}
+			})
+		}
 	}
 }
 
 func TestOfflineRuntimeRecognitionInventoryAndDiscovery(t *testing.T) {
-	for _, arch := range []string{"amd64", "arm64"} {
-		t.Run(arch, func(t *testing.T) {
-			a, pages := targetFixture(t)
-			d := pages["/apis/apps/v1/namespaces/orka-system/deployments?limit=64"].(map[string]any)["items"].([]any)[0].(map[string]any)
-			restrictedRuntimeDeployment(t, d, arch)
-			pages["/api/v1/namespaces/orka-system/serviceaccounts/orka-ai-worker"].(map[string]any)["metadata"].(map[string]any)["labels"].(map[string]any)["helm.sh/chart"] = "orka-0.0.0-dev"
-			got, err := a.ReadOrkaTools(t.Context(), OrkaToolOptions{Namespace: OrkaNamespace})
-			if err != nil || !got.Complete || got.RuntimeVersion != restrictedSourceSHA || got.CatalogCommit != restrictedSourceSHA {
-				t.Fatalf("inventory attribution: %+v %v", got, err)
+	for _, profile := range offlineSourceProfiles {
+		for _, arch := range []string{"amd64", "arm64"} {
+			t.Run(profile.key+"/"+arch, func(t *testing.T) {
+				a, pages := targetFixture(t)
+				d := pages["/apis/apps/v1/namespaces/orka-system/deployments?limit=64"].(map[string]any)["items"].([]any)[0].(map[string]any)
+				restrictedRuntimeDeployment(t, d, profile.key, arch)
+				pages["/api/v1/namespaces/orka-system/serviceaccounts/orka-ai-worker"].(map[string]any)["metadata"].(map[string]any)["labels"].(map[string]any)["helm.sh/chart"] = "orka-0.0.0-dev"
+				got, err := a.ReadOrkaTools(t.Context(), OrkaToolOptions{Namespace: OrkaNamespace})
+				if err != nil || !got.Complete || got.RuntimeVersion != profile.source || got.CatalogCommit != profile.source {
+					t.Fatalf("inventory attribution: %+v %v", got, err)
+				}
+				names := []string{}
+				for _, row := range got.Tools {
+					if row.Kind == "builtin" {
+						names = append(names, row.Name)
+					}
+				}
+				if !slices.Equal(names, []string{"web_search", "code_exec", "file_read", "web_fetch", "file_write", "request_approval", "reply_in_conversation"}) {
+					t.Fatal(names)
+				}
+				discovery, err := a.Discover(t.Context(), DiscoveryOptions{Context: "kind-test", Namespace: OrkaNamespace})
+				if err != nil || !discovery.Complete || discovery.Target.Runtime.State != "available" || discovery.Target.Runtime.Version != profile.source {
+					t.Fatalf("discovery attribution: %+v %v", discovery, err)
+				}
+			})
+		}
+	}
+}
+
+func TestOfflineRuntimeRecognitionConnect(t *testing.T) {
+	for _, profile := range offlineSourceProfiles {
+		t.Run(profile.key, func(t *testing.T) {
+			_, _, native := nativeFixture(t)
+			d := nativeController(native)
+			a, objects, calls := modelLifecycleFixture(t)
+			restrictedRuntimeDeployment(t, d, profile.key, "amd64")
+			capture := a.captureCommand
+			a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
+				if strings.Contains(strings.Join(cmd.Args, " "), "/apis/apps/v1/namespaces/orka-system/deployments?limit=64") {
+					return json.NewEncoder(cmd.Stdout).Encode(map[string]any{"apiVersion": "apps/v1", "kind": "DeploymentList", "metadata": map[string]any{}, "items": []any{d}})
+				}
+				return capture(ctx, cmd)
 			}
-			names := []string{}
-			for _, row := range got.Tools {
-				if row.Kind == "builtin" {
-					names = append(names, row.Name)
+			opt := OrkaModelConnectOptions{OperationID: "11111111-1111-4111-8111-111111111111", Namespace: OrkaNamespace, Route: "copilot", Provider: "copilot", Model: "gpt-4.1", CredentialGeneration: "22222222-2222-4222-8222-222222222222"}
+			result, err := a.ConnectOrkaModel(opt)
+			if err != nil || result.Connection == nil || result.Connection.State != "model_ready" || len(objects) != 4 {
+				t.Fatalf("connect: %+v %v cause=%v", result, err, errors.Unwrap(err))
+			}
+			beforeObjects, _ := json.Marshal(objects)
+			before := len(*calls)
+			again, err := a.ConnectOrkaModel(opt)
+			if err != nil || again.Connection == nil || again.Connection.ID != result.Connection.ID {
+				t.Fatalf("reconnect: %+v %v", again, err)
+			}
+			for _, call := range (*calls)[before:] {
+				if strings.Contains(call, " create ") || strings.Contains(call, " delete ") {
+					t.Fatal("reconnect mutated: " + call)
 				}
 			}
-			if !slices.Equal(names, []string{"web_search", "code_exec", "file_read", "web_fetch", "file_write", "request_approval", "reply_in_conversation"}) {
-				t.Fatal(names)
+			// Another individually approved tuple must not authorize reuse of this connection.
+			restrictedRuntimeDeployment(t, d, profile.key, "arm64")
+			before = len(*calls)
+			_, err = a.ConnectOrkaModel(opt)
+			var modelErr *OrkaModelError
+			if !errors.As(err, &modelErr) || modelErr.Code() != "execution_unknown" || modelErr.cause == nil || !strings.Contains(modelErr.cause.Error(), "retained model connection requires explicit disconnect") {
+				t.Fatalf("changed runtime: expected retained-connection refusal, got %v cause=%v", err, errors.Unwrap(err))
 			}
-			discovery, err := a.Discover(t.Context(), DiscoveryOptions{Context: "kind-test", Namespace: OrkaNamespace})
-			if err != nil || !discovery.Complete || discovery.Target.Runtime.State != "available" || discovery.Target.Runtime.Version != restrictedSourceSHA {
-				t.Fatalf("discovery attribution: %+v %v", discovery, err)
+			afterObjects, _ := json.Marshal(objects)
+			if !reflect.DeepEqual(beforeObjects, afterObjects) {
+				t.Fatal("changed runtime mutated connection")
+			}
+			for _, call := range (*calls)[before:] {
+				if strings.Contains(call, " create ") || strings.Contains(call, " delete ") {
+					t.Fatal("changed runtime mutated: " + call)
+				}
 			}
 		})
 	}
 }
 
-func TestOfflineRuntimeRecognitionConnect(t *testing.T) {
-	_, _, native := nativeFixture(t)
-	d := nativeController(native)
-	a, objects, calls := modelLifecycleFixture(t)
-	restrictedRuntimeDeployment(t, d, "amd64")
-	capture := a.captureCommand
-	a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
-		if strings.Contains(strings.Join(cmd.Args, " "), "/apis/apps/v1/namespaces/orka-system/deployments?limit=64") {
-			return json.NewEncoder(cmd.Stdout).Encode(map[string]any{"apiVersion": "apps/v1", "kind": "DeploymentList", "metadata": map[string]any{}, "items": []any{d}})
-		}
-		return capture(ctx, cmd)
-	}
-	opt := OrkaModelConnectOptions{OperationID: "11111111-1111-4111-8111-111111111111", Namespace: OrkaNamespace, Route: "copilot", Provider: "copilot", Model: "gpt-4.1", CredentialGeneration: "22222222-2222-4222-8222-222222222222"}
-	result, err := a.ConnectOrkaModel(opt)
-	if err != nil || result.Connection == nil || result.Connection.State != "model_ready" || len(objects) != 4 {
-		t.Fatalf("connect: %+v %v cause=%v", result, err, errors.Unwrap(err))
-	}
-	beforeObjects, _ := json.Marshal(objects)
-	before := len(*calls)
-	again, err := a.ConnectOrkaModel(opt)
-	if err != nil || again.Connection == nil || again.Connection.ID != result.Connection.ID {
-		t.Fatalf("reconnect: %+v %v", again, err)
-	}
-	for _, call := range (*calls)[before:] {
-		if strings.Contains(call, " create ") || strings.Contains(call, " delete ") {
-			t.Fatal("reconnect mutated: " + call)
-		}
-	}
-	// Another individually approved tuple must not authorize reuse of this connection.
-	restrictedRuntimeDeployment(t, d, "arm64")
-	before = len(*calls)
-	_, err = a.ConnectOrkaModel(opt)
-	var modelErr *OrkaModelError
-	if !errors.As(err, &modelErr) || modelErr.Code() != "execution_unknown" || modelErr.cause == nil || !strings.Contains(modelErr.cause.Error(), "retained model connection requires explicit disconnect") {
-		t.Fatalf("changed runtime: expected retained-connection refusal, got %v cause=%v", err, errors.Unwrap(err))
-	}
-	afterObjects, _ := json.Marshal(objects)
-	if !reflect.DeepEqual(beforeObjects, afterObjects) {
-		t.Fatal("changed runtime mutated connection")
-	}
-	for _, call := range (*calls)[before:] {
-		if strings.Contains(call, " create ") || strings.Contains(call, " delete ") {
-			t.Fatal("changed runtime mutated: " + call)
-		}
-	}
-}
-
 func TestOfflineRuntimeRecognitionPublicExport(t *testing.T) {
-	for _, pin := range []struct{ arch, controller, worker string }{
-		{"amd64", "sha256:2b137a6210c1ba044f6569d2374169330645a44f730634517d675b30db94ed48", "sha256:2fdd6db33fb5111a3959029e39d1a6447453d6f254d414906d5cce0ba0d11a51"},
-		{"arm64", "sha256:43f2b547e12497d92bb67486a587b0d5312558d1cf5f67811c61ab74f0fc3036", "sha256:eb1e0591f3545ed26f3da1d61e6968c1f5b40bb2b6e39483fafc7916158c148f"},
+	for _, pin := range []struct{ key, source, arch, controller, worker string }{
+		{"7916cd1c", restrictedSourceSHA, "amd64", "sha256:2b137a6210c1ba044f6569d2374169330645a44f730634517d675b30db94ed48", "sha256:2fdd6db33fb5111a3959029e39d1a6447453d6f254d414906d5cce0ba0d11a51"},
+		{"7916cd1c", restrictedSourceSHA, "arm64", "sha256:43f2b547e12497d92bb67486a587b0d5312558d1cf5f67811c61ab74f0fc3036", "sha256:eb1e0591f3545ed26f3da1d61e6968c1f5b40bb2b6e39483fafc7916158c148f"},
+		{"3cb1f0df", cancelSourceSHA, "amd64", "sha256:e346d92f85f29dfef07fd199bdc34c333b3f286c36dba0766fbe260d646ebacd", "sha256:55bf52f0f26a4ec1f587c837f9f74ce3fd49717370773eb0aa41d455d94c6707"},
+		{"3cb1f0df", cancelSourceSHA, "arm64", "sha256:11cf4282db855eb1d10f819a5da292b48efb9df3516282efed2a03ea6a307928", "sha256:19bd2139eb9f7adab7edbc60ff02e2f0029330041afc4513e714d5e5c00b48b3"},
 	} {
-		t.Run(pin.arch, func(t *testing.T) {
+		t.Run(pin.key+"/"+pin.arch, func(t *testing.T) {
 			root, prepared, suite, placement, observations := passingFixture(t)
-			a, _ := restrictedNativeFixture(t, pin.arch)
+			a, _ := restrictedNativeFixture(t, pin.key, pin.arch)
 			native, err := a.prepareSuiteNative(t.Context(), suite, OrkaNamespace, "inference")
 			if err != nil {
 				t.Fatal(err)
@@ -245,7 +270,7 @@ func TestOfflineRuntimeRecognitionPublicExport(t *testing.T) {
 			if err := suitecore.Unmarshal(data, &evidence); err != nil {
 				t.Fatal(err)
 			}
-			if evidence.Execution.Runtime != (suitecore.EvidenceImplementation{ID: "orka", Version: restrictedSourceSHA, Digest: pin.controller}) || evidence.Execution.Harness != (suitecore.EvidenceImplementation{ID: "orka", Version: "harness-v2", Digest: pin.worker}) {
+			if evidence.Execution.Runtime != (suitecore.EvidenceImplementation{ID: "orka", Version: pin.source, Digest: pin.controller}) || evidence.Execution.Harness != (suitecore.EvidenceImplementation{ID: "orka", Version: "harness-v2", Digest: pin.worker}) {
 				t.Fatal("untruthful runtime evidence", evidence.Execution)
 			}
 			// Existing export performs shared VerifyEvaluation schema/expectation validation.
@@ -257,7 +282,8 @@ func TestOfflineRuntimeRecognitionPublicExport(t *testing.T) {
 // Failure of the trusted embedded profile must not affect the independent online tuple.
 func TestOfflineRuntimeRecognitionEmbeddedFailure(t *testing.T) {
 	a, _, _ := nativeFixture(t)
-	offline, _ := restrictedNativeFixture(t, "amd64")
+	offline, _ := restrictedNativeFixture(t, "7916cd1c", "amd64")
+	other, _ := restrictedNativeFixture(t, "3cb1f0df", "amd64")
 	saved := offlineRestrictedProfileJSON
 	offlineRestrictedProfileJSON = []byte(`{`)
 	t.Cleanup(func() { offlineRestrictedProfileJSON = saved })
@@ -266,5 +292,18 @@ func TestOfflineRuntimeRecognitionEmbeddedFailure(t *testing.T) {
 	}
 	if _, err := a.readSuiteNativeRuntime(t.Context(), OrkaNamespace); err != nil {
 		t.Fatal(fmt.Errorf("online depends on offline profile: %w", err))
+	}
+	if _, err := other.readSuiteNativeRuntime(t.Context(), OrkaNamespace); err != nil {
+		t.Fatalf("new tuple depends on unrelated malformed profile: %v", err)
+	}
+	offlineRestrictedProfileJSON = saved
+	savedCancel := offlineCancelProfileJSON
+	offlineCancelProfileJSON = []byte("{}")
+	t.Cleanup(func() { offlineCancelProfileJSON = savedCancel })
+	if _, err := offline.readSuiteNativeRuntime(t.Context(), OrkaNamespace); err != nil {
+		t.Fatalf("old tuple depends on unrelated malformed profile: %v", err)
+	}
+	if _, err := other.readSuiteNativeRuntime(t.Context(), OrkaNamespace); err == nil {
+		t.Fatal("incomplete profile accepted")
 	}
 }

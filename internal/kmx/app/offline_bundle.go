@@ -27,6 +27,9 @@ var offlineProfileJSON []byte
 //go:embed offline_profiles/orka-7916cd1c-native-v1.json
 var offlineRestrictedProfileJSON []byte
 
+//go:embed offline_profiles/orka-3cb1f0df-native-v1.json
+var offlineCancelProfileJSON []byte
+
 const offlineJSONLimit = 1 << 20
 
 type offlinePlatform struct {
@@ -369,9 +372,16 @@ func loadOfflineBundle(dir string, identity offlineKMXIdentity, install bool) (*
 	if err := offlineJSON(raw, &m, true); err != nil {
 		return nil, fmt.Errorf("install.json: %w", err)
 	}
-	profileJSON := offlineProfileJSON
-	if m.Profile == "orka-7916cd1c-native/v1" {
+	var profileJSON []byte
+	switch m.Profile {
+	case "orka-59703d6e-native/v1":
+		profileJSON = offlineProfileJSON
+	case "orka-7916cd1c-native/v1":
 		profileJSON = offlineRestrictedProfileJSON
+	case "orka-3cb1f0df-native/v1":
+		profileJSON = offlineCancelProfileJSON
+	default:
+		return nil, fmt.Errorf("offline schema, profile hash or source identity is not supported")
 	}
 	var p offlineProfile
 	if err := offlineJSON(profileJSON, &p, false); err != nil {

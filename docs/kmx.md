@@ -1666,6 +1666,10 @@ new exact hash. The additional
 [restricted-worker profile](../internal/kmx/app/offline_profiles/orka-7916cd1c-native-v1.json)
 `orka-7916cd1c-native/v1` has SHA-256
 `6ab8213cae9f1d58fe59f34b2402f93ed951752269decdf750fc2a170bddf223`.
+The additional
+[Task-cancel profile](../internal/kmx/app/offline_profiles/orka-3cb1f0df-native-v1.json)
+`orka-3cb1f0df-native/v1` has SHA-256
+`20647cab1e653394fe7466608a08dd816f05d1a44bc8a8598fa478f7e20fc8f5`.
 The manifest selects one of these compiled profiles; hashes and source identities
 cannot be mixed. No bundle input or environment variable can replace catalog pins.
 
@@ -1752,9 +1756,11 @@ checkout containing this profile, extract the exact bytes without rebuilding:
 python3 - <<'PY'
 import base64, hashlib, json
 from pathlib import Path
-fixture = json.loads(Path('internal/kmx/app/testdata/offline-7916-install.json').read_text())
+key = '7916cd1c'  # or '3cb1f0df' for the Task-cancel profile below
+profile = json.loads(Path(f'internal/kmx/app/offline_profiles/orka-{key}-native-v1.json').read_text())
+fixture = json.loads(Path(f'internal/kmx/app/testdata/offline-{key[:4]}-install.json').read_text())
 chart = b''.join(base64.b64decode(chunk, validate=True) for chunk in fixture['chartChunks'])
-assert hashlib.sha256(chart).hexdigest() == '19c50cff36855b8792b4777c89c598cf33ea70180e677e1a4758fc0211f069ed'
+assert hashlib.sha256(chart).hexdigest() == profile['install']['chart']['sha256']
 Path('bundle').mkdir(exist_ok=True)
 with Path('bundle/chart.tgz').open('xb') as output:
     output.write(chart)
@@ -1772,6 +1778,39 @@ or claim live startup, denied-read, leakage or native guest qualification.
 Existing off/audit callers must satisfy their issuer grants before use. A release
 profile can replace this development pin after that release ships and is checked.
 
+#### Task-cancel source profile
+
+`orka-3cb1f0df-native/v1` adds Orka source
+`3cb1f0df36705af9ff81cb8b4e8a0f8d36ee6eea` without replacing either older
+profile or the online pin. Its exact source-package bindings are:
+
+- Chart source: `manifest_staging/charts/orka`, Git tree
+  `47daa71d98e45d833df5f741437dbe6aaf63c6cb`.
+- Retained chart `.tgz` SHA-256:
+  `11cc020b923dd5bc810a6f3b97f236a6e3123ce8ad80791d912c0af760abcca8`.
+- Published images: Orka [run 43169852275](https://github.com/orka-agents/orka/actions/runs/43169852275);
+  unchanged `images.json` SHA-256:
+  `6f620c97411465b1f1559b57f6d279313894dcf0006ae25f8121e35afbb66080`.
+
+The [retained install fixture](../internal/kmx/app/testdata/offline-3cb1-install.json)
+uses the same archive/metadata format and extraction example above; select
+`key = '3cb1f0df'`. The [published descriptor](../internal/kmx/app/testdata/offline-3cb1-images.json)
+is retained byte-for-byte. Both native image sets are source-bound; kind and the
+BusyBox session loader remain unchanged. Repackaging is not equivalent to
+restoring the retained archive.
+
+Restricted AI-worker RBAC and controller context-token enforcement remain enabled.
+The chart adds an isolated retained Task-webhook signing namespace and
+controller-only key grant, AI-worker identity admission protection, and the
+client's `tasks/cancel` update grant. No fixture-only private-connector-endpoint
+allowance is enabled. Both-platform OCI validation and real Helm rendering are
+covered by tests; these do not prove live admission, cancellation or guest startup.
+
+Connect, discovery, native suite recognition and public evidence export accept
+only complete same-architecture controller/AI-worker tuples from this profile or
+`7916cd1c`, with the matching chart identity. Cross-profile or cross-architecture
+image pairs refuse; recognition does not reverify a bundle or attest live RBAC.
+
 #### Manifest input
 
 `DIR/install.json` is a closed JSON object. Every field below is required.
@@ -1788,7 +1827,7 @@ URLs or special files. No image archives or layer graphs are read; install parse
 | `profile`, `profileSha256` | Catalog key and exact shipped profile-byte hash above |
 | `platform` | `{"os":"linux","architecture":"amd64"}` or `arm64`; must match the running guest |
 | `kmx` | `{"version":string,"revision":revision,"sha256":hash}`, equal to the running binary's resolved version, clean VCS revision and executable SHA-256; absent/unknown/modified build metadata refuses |
-| `orka` | `{"mode":"source","identity":revision}`, equal to the selected compiled profile: `59703d6eac1760aa2dc5fed4dee9dcb74c6e5186` or `7916cd1c8c083ade6b10df6ba408f854d930190c` |
+| `orka` | `{"mode":"source","identity":revision}`, equal to the selected compiled profile: `59703d6eac1760aa2dc5fed4dee9dcb74c6e5186`, `7916cd1c8c083ade6b10df6ba408f854d930190c` or `3cb1f0df36705af9ff81cb8b4e8a0f8d36ee6eea` |
 | `chart`, `artifacts` | Each `{"path":path,"sha256":hash}`; syntax-checked but unread in the cluster step; install requires exact catalog-authorized bytes |
 | `node` | Exactly `localRef`, `repository`, `indexPath`, `indexDigest`, `manifestPath`, `manifestDigest`, `configPath`, `configDigest` |
 | `components` | Complete boolean map below; no inferred enablement |

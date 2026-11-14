@@ -1,0 +1,301 @@
+{
+  "profile": "orka-3cb1f0df-native/v1",
+  "capabilities": [
+    "cluster",
+    "install"
+  ],
+  "orka": {
+    "mode": "source",
+    "identity": "3cb1f0df36705af9ff81cb8b4e8a0f8d36ee6eea"
+  },
+  "node": {
+    "repository": "kindest/node",
+    "indexDigest": "sha256:4613778f3cfcd10e615029370f5786704559103cf27bef934597ba562b269661",
+    "platforms": {
+      "amd64": {
+        "manifestDigest": "sha256:986401fce0e567a9860075ba9df8c8459bd99a35f79024d8a682773fb40f0753",
+        "configDigest": "sha256:a9f00b2666c3e111d51e6cab9b122e2c96cc539f22ffbf0612169bfafdb9818b"
+      },
+      "arm64": {
+        "manifestDigest": "sha256:cf1d8a817f85226f8b256fca15fb0eebcb82ebc8598f496b9f9290f6cffb4688",
+        "configDigest": "sha256:b200139c59c438b5ab199e7b0886c95583cfb1a2508de05dd77a25930d99d13f"
+      }
+    }
+  },
+  "install": {
+    "chart": {
+      "sha256": "11cc020b923dd5bc810a6f3b97f236a6e3123ce8ad80791d912c0af760abcca8",
+      "version": "0.0.0-dev",
+      "appVersion": "v0.0.0-dev",
+      "source": {
+        "commit": "3cb1f0df36705af9ff81cb8b4e8a0f8d36ee6eea",
+        "directory": "manifest_staging/charts/orka",
+        "gitTree": "47daa71d98e45d833df5f741437dbe6aaf63c6cb"
+      }
+    },
+    "artifacts": {
+      "sha256": "6f620c97411465b1f1559b57f6d279313894dcf0006ae25f8121e35afbb66080",
+      "kind": "images.json"
+    },
+    "images": {
+      "controller": {
+        "repository": "ghcr.io/orka-agents/orka",
+        "indexDigest": "sha256:c0fde3d1cb12ebedcbd9aca3ffd8016b8cb8e9b6d6e1c824a3f6cda58c398323",
+        "platforms": {
+          "amd64": {
+            "manifestDigest": "sha256:e346d92f85f29dfef07fd199bdc34c333b3f286c36dba0766fbe260d646ebacd",
+            "configDigest": "sha256:93ce7d857bcb36a54282f3ab1333143b92ed402b47dc76867099224d1965179f"
+          },
+          "arm64": {
+            "manifestDigest": "sha256:11cf4282db855eb1d10f819a5da292b48efb9df3516282efed2a03ea6a307928",
+            "configDigest": "sha256:6e9ac4bd80a73d73f4786ec3ffc39704f9377e58b1501c622a5394a705f6f7a2"
+          }
+        }
+      },
+      "ai-worker": {
+        "repository": "ghcr.io/orka-agents/orka/ai-worker",
+        "indexDigest": "sha256:316c076f2a2baa0d6aebd1e3f2f52234ef1522e80a42b75d802e325dbbd8cbfe",
+        "platforms": {
+          "amd64": {
+            "manifestDigest": "sha256:55bf52f0f26a4ec1f587c837f9f74ce3fd49717370773eb0aa41d455d94c6707",
+            "configDigest": "sha256:fdad3c2ee7eeb43b055a6c0f9ee6388f38c1e0c8644e86f327a24ed65ad295e0"
+          },
+          "arm64": {
+            "manifestDigest": "sha256:19bd2139eb9f7adab7edbc60ff02e2f0029330041afc4513e714d5e5c00b48b3",
+            "configDigest": "sha256:bd3b4834f3bd6402224ac429341391dd21a1a9cc908f813043b97044d490b316"
+          }
+        }
+      },
+      "general-worker": {
+        "repository": "ghcr.io/orka-agents/orka/general-worker",
+        "indexDigest": "sha256:4891f4032d9b4e0e9027e2a39be3656f5bf2216f9f3a180b156dd7ae422e84b9",
+        "platforms": {
+          "amd64": {
+            "manifestDigest": "sha256:12432a9f8ce4bf7b08ee59dd1d8c4c7819a5800b7981a8948a9d2eee19d86fd9",
+            "configDigest": "sha256:2504af342f84834bb06d2b67f6aa262aeb651a34be46b84edd41a612a02ec7c1"
+          },
+          "arm64": {
+            "manifestDigest": "sha256:7917ef01228f7c1751098034bdd2fee0936cdcd4a845a33ea871f1de423798f6",
+            "configDigest": "sha256:a9d64f7b5a06876a216ab2759bed36cf647a97b45ad619399efcfabde532d2f8"
+          }
+        }
+      },
+      "publisher": {
+        "repository": "ghcr.io/orka-agents/orka/workspace-publisher",
+        "indexDigest": "sha256:546d498d81139b496e23fa8a4e41c7fc564073eeb7fdcadc9bc38930b6835c84",
+        "platforms": {
+          "amd64": {
+            "manifestDigest": "sha256:8ce59d8b1ccf0fec4aaa21d541f2c3e4cd9e5609b6bd41bde7d2d14fb13cd2f0",
+            "configDigest": "sha256:4506cbcd1906553b0ddd48ea54e5a813026df49ca1300cf47da9337a8125a6cf"
+          },
+          "arm64": {
+            "manifestDigest": "sha256:354eb80c96b74a5bc351385f47200a548c4fc854bc64771c700357f20e6eee63",
+            "configDigest": "sha256:0eb0cad8a4e2ade778409a57afe93652c421cc62170be9c18e9171492c107f10"
+          }
+        }
+      },
+      "session-loader": {
+        "repository": "docker.io/library/busybox",
+        "indexDigest": "sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e",
+        "platforms": {
+          "amd64": {
+            "manifestDigest": "sha256:66a6306db78bf2dbf3487f293aa8d6990d8e506fdffab9cc43fe422becf886e4",
+            "configDigest": "sha256:30ecbe1509090b38ef3260f3609d64d8261230464eaa4d235901db496e9647fb"
+          },
+          "arm64": {
+            "manifestDigest": "sha256:d82c2ab94640ded77cf76514ce6a84870761105058a4a9e51b05a8a79be97a6c",
+            "configDigest": "sha256:ad4f11f7c85f87c0a6d6c0fe492ad53f9cdcff6e8c88b881360c70eff701c67b"
+          }
+        }
+      }
+    },
+    "values": {
+      "amd64": {
+        "labels": {
+          "kmx.kaimahi.dev/installed": "true"
+        },
+        "fullnameOverride": "orka-api",
+        "controller": {
+          "mode": "harness-v2",
+          "image": {
+            "repository": "ghcr.io/orka-agents/orka",
+            "digest": "sha256:e346d92f85f29dfef07fd199bdc34c333b3f286c36dba0766fbe260d646ebacd",
+            "tag": "",
+            "pullPolicy": "IfNotPresent"
+          },
+          "gateway": {
+            "crdsReadyOverride": true
+          },
+          "acpRuntime": {
+            "codexImage": "",
+            "claudeImage": "",
+            "copilotImage": "",
+            "opencodeImage": "",
+            "toolboxes": {
+              "enabled": false
+            }
+          },
+          "executionWorkspace": {
+            "dispatchEnabled": false
+          },
+          "substrate": {
+            "mcpToolsEnabled": false
+          },
+          "connectors": {
+            "enabled": false
+          },
+          "dashboard": {
+            "enabled": false
+          },
+          "agentHosts": {
+            "enabled": false,
+            "github": {
+              "enabled": false
+            }
+          }
+        },
+        "workers": {
+          "ai": {
+            "image": {
+              "repository": "ghcr.io/orka-agents/orka/ai-worker",
+              "digest": "sha256:55bf52f0f26a4ec1f587c837f9f74ce3fd49717370773eb0aa41d455d94c6707",
+              "tag": "",
+              "pullPolicy": "IfNotPresent"
+            },
+            "rbacProfile": "restricted"
+          },
+          "general": {
+            "image": {
+              "repository": "ghcr.io/orka-agents/orka/general-worker",
+              "digest": "sha256:12432a9f8ce4bf7b08ee59dd1d8c4c7819a5800b7981a8948a9d2eee19d86fd9",
+              "tag": ""
+            }
+          },
+          "sessionLoader": {
+            "image": {
+              "repository": "docker.io/library/busybox",
+              "digest": "sha256:66a6306db78bf2dbf3487f293aa8d6990d8e506fdffab9cc43fe422becf886e4",
+              "tag": ""
+            }
+          }
+        },
+        "publisher": {
+          "enabled": true,
+          "image": {
+            "repository": "ghcr.io/orka-agents/orka/workspace-publisher",
+            "digest": "sha256:8ce59d8b1ccf0fec4aaa21d541f2c3e4cd9e5609b6bd41bde7d2d14fb13cd2f0",
+            "tag": "",
+            "pullPolicy": "IfNotPresent"
+          }
+        },
+        "store": {
+          "persistence": {
+            "enabled": true
+          }
+        },
+        "scmEgressProxy": {
+          "enabled": true
+        },
+        "providerProxy": {
+          "enabled": false
+        },
+        "ingress": {
+          "enabled": false
+        }
+      },
+      "arm64": {
+        "labels": {
+          "kmx.kaimahi.dev/installed": "true"
+        },
+        "fullnameOverride": "orka-api",
+        "controller": {
+          "mode": "harness-v2",
+          "image": {
+            "repository": "ghcr.io/orka-agents/orka",
+            "digest": "sha256:11cf4282db855eb1d10f819a5da292b48efb9df3516282efed2a03ea6a307928",
+            "tag": "",
+            "pullPolicy": "IfNotPresent"
+          },
+          "gateway": {
+            "crdsReadyOverride": true
+          },
+          "acpRuntime": {
+            "codexImage": "",
+            "claudeImage": "",
+            "copilotImage": "",
+            "opencodeImage": "",
+            "toolboxes": {
+              "enabled": false
+            }
+          },
+          "executionWorkspace": {
+            "dispatchEnabled": false
+          },
+          "substrate": {
+            "mcpToolsEnabled": false
+          },
+          "connectors": {
+            "enabled": false
+          },
+          "dashboard": {
+            "enabled": false
+          },
+          "agentHosts": {
+            "enabled": false,
+            "github": {
+              "enabled": false
+            }
+          }
+        },
+        "workers": {
+          "ai": {
+            "image": {
+              "repository": "ghcr.io/orka-agents/orka/ai-worker",
+              "digest": "sha256:19bd2139eb9f7adab7edbc60ff02e2f0029330041afc4513e714d5e5c00b48b3",
+              "tag": "",
+              "pullPolicy": "IfNotPresent"
+            },
+            "rbacProfile": "restricted"
+          },
+          "general": {
+            "image": {
+              "repository": "ghcr.io/orka-agents/orka/general-worker",
+              "digest": "sha256:7917ef01228f7c1751098034bdd2fee0936cdcd4a845a33ea871f1de423798f6",
+              "tag": ""
+            }
+          },
+          "sessionLoader": {
+            "image": {
+              "repository": "docker.io/library/busybox",
+              "digest": "sha256:d82c2ab94640ded77cf76514ce6a84870761105058a4a9e51b05a8a79be97a6c",
+              "tag": ""
+            }
+          }
+        },
+        "publisher": {
+          "enabled": true,
+          "image": {
+            "repository": "ghcr.io/orka-agents/orka/workspace-publisher",
+            "digest": "sha256:354eb80c96b74a5bc351385f47200a548c4fc854bc64771c700357f20e6eee63",
+            "tag": "",
+            "pullPolicy": "IfNotPresent"
+          }
+        },
+        "store": {
+          "persistence": {
+            "enabled": true
+          }
+        },
+        "scmEgressProxy": {
+          "enabled": true
+        },
+        "providerProxy": {
+          "enabled": false
+        },
+        "ingress": {
+          "enabled": false
+        }
+      }
+    }
+  }
+}
