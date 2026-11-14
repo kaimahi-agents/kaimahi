@@ -155,6 +155,9 @@ Keep these distinctions:
   context, how it was chosen, the server and the namespaces on stderr, then runs the guard.
   A local kind cluster proceeds. A remote context needs typed confirmation or
   `KAIMAHI_CONFIRM=<context>`. A non-interactive run without consent refuses.
+  Preconfirmed live Run may put the same action, context, selection source,
+  server, namespace and posture on one line; other operations and refusals keep
+  the full target presentation.
 - **Offline create resolves the workspace before writing.** Without a workspace,
   terminal use asks `Start one here? [Y/n]`; nonterminal or redirected use
   refuses with a `--workspace` hint. Invalid nearest markers and second members

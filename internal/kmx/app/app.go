@@ -1,5 +1,7 @@
 // Package app orchestrates kmx operations using resolved configuration,
-// context guards, runtime adapters and external tools.
+// context guards, runtime adapters and external tools. A preconfirmed live Run
+// selects the compact target disclosure while retaining the same guard decision;
+// every other operation keeps the full target presentation.
 // Guest model connections route Copilot or OpenAI/Anthropic API keys through
 // pinned Vekil; credentials stay in guest memory and the gateway environment,
 // never native Provider Secrets. Readiness is catalog access, not inference.

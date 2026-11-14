@@ -2062,7 +2062,12 @@ submits one Task to a Ready live Orka Agent, including a suite-owned Agent place
 by Deploy. Select its context with `--context` and its namespace with `--namespace`
 (default `orka-system`); `--agent` names the live Agent. `--wait` defaults to 5m,
 maximum 9m. stdout contains only the answer; stderr retains Task identity and
-retrieval instructions. Bundle-directory selection is removed.
+retrieval instructions. When `KAIMAHI_CONFIRM` exactly names the selected
+context, live Run presents action, context, selection source, server, namespace
+and posture in one compact stderr line before any existing confirmation notice
+and the result-authority notice. A remote target with missing or conflicting
+confirmation keeps the full guard presentation and refuses before Task creation.
+Bundle-directory selection is removed.
 
 `kmx chat NAME --namespace NAMESPACE --context CONTEXT` opens the supported Orka
 chat path against a live Agent, including suite-owned Agents. Each native chat
