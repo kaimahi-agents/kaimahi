@@ -44,9 +44,9 @@ func modelLauncherScript(tokenFile, tool, executable, vendor, model string) stri
 	env, setup, args := "COPILOT_GITHUB_TOKEN", "", ""
 	if vendor != "" {
 		env = "MODEL_API_KEY"
-		// Only trusted, nonsecret configuration enters this shell literal.
+		// The fixed graph contains only JSON-encodable values, never credentials.
 		config, _ := json.Marshal(modelVendorConfig(vendor, model))
-		setup = "umask 077\nprintf '%s' '" + string(config) + "' > /run/vekil/providers.json"
+		setup = "umask 077\nprintf '%s' " + shellArg(string(config)) + " > /run/vekil/providers.json"
 		args = " --providers-config /run/vekil/providers.json"
 	}
 	return fmt.Sprintf(`set -eu

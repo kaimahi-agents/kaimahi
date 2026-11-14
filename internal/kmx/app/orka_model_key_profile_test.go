@@ -9,6 +9,33 @@ import (
 	"testing"
 )
 
+// Even a future configuration field containing an apostrophe stays shell data.
+func TestOrkaModelKeyLauncherQuotesConfig(t *testing.T) {
+	dir := t.TempDir()
+	tool, config := filepath.Join(dir, "busybox"), filepath.Join(dir, "providers.json")
+	if err := os.WriteFile(tool, []byte("#!/bin/sh\ncase \"$1\" in stat) echo '0:65532:640:1:regular file:12';; cat) printf fixture-only;; *) exit 7;; esac\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	vendor := "fixture'company"
+	script := modelLauncherScript("unused", tool, "/bin/true", vendor, "gpt-4.1")
+	script = strings.ReplaceAll(script, "/run/vekil/providers.json", config)
+	if out, err := exec.Command("/bin/sh", "-c", script).CombinedOutput(); err != nil || len(out) != 0 {
+		t.Fatalf("configuration escaped shell quoting: %v", err)
+	}
+	raw, err := os.ReadFile(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg struct {
+		Providers []struct {
+			ID string `json:"id"`
+		} `json:"providers"`
+	}
+	if json.Unmarshal(raw, &cfg) != nil || len(cfg.Providers) != 1 || cfg.Providers[0].ID != vendor {
+		t.Fatal("configuration changed")
+	}
+}
+
 func TestOrkaModelKeyProfiles(t *testing.T) {
 	for _, vendor := range []string{"openai", "anthropic"} {
 		for _, arch := range []string{"amd64", "arm64"} {
