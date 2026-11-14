@@ -92,6 +92,9 @@ The shared safe-error vocabulary is:
 | `unsupported` | `check_inputs` |
 | `confirmation_required` | `confirm_target` |
 | `credential_unavailable` | `supply_credentials` |
+| `credential_rejected` | `supply_credentials` |
+| `provider_unreachable` | `check_configuration` |
+| `model_unavailable` | `check_configuration` |
 | `permission_denied` | `inspect_target` |
 | `dependency_unavailable` | `check_configuration` |
 | `operation_failed` | `inspect_target` |
@@ -104,8 +107,9 @@ Only `invalid_arguments` and `output_failed` are used by version. Other codes
 are shared vocabulary, not claims that additional command adapters exist.
 Recovery is guidance, never automatic retry authorization. Unknown internal
 classifications fall back to `operation_failed`; untyped causes are not
-classified by substring matching their text. The narrow discovery exception below
-classifies only fixed, version-pinned kubectl diagnostic-line prefixes; it never
+classified by substring matching their text. Guest model setup separately
+recognizes pinned Vekil readiness prefixes, as described below. The narrow
+discovery exception below classifies only fixed, version-pinned kubectl diagnostic-line prefixes; it never
 reflects diagnostic bodies or grants API evidence.
 
 ## Provisioning event streams
@@ -212,7 +216,9 @@ Their recoveries are `supply_credentials`, `check_configuration` and
 replies and local transport failures do not imply a rejected key or a company
 network failure. A failed key-readiness GET may open a bounded owned loopback
 forward to classify Vekil's HTTP 503 body; this can never establish readiness.
-Unconfirmed forward cleanup reports `execution_unknown`. No raw causes,
+Unconfirmed forward cleanup reports `execution_unknown` unless caller
+cancellation or deadline takes precedence; those codes also require inspecting
+execution. No raw causes,
 credentials, paths or response bodies are emitted. A cancelled or broken
 writer stops later sends and does not retry output. Missing/truncated output is
 incomplete delivery, never authority to replay a CREATE or old DELETE. Keep
