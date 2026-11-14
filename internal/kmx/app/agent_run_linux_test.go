@@ -9,6 +9,7 @@ import (
 func TestRunAgentRemoteTypedConfirmationKeepsFullTargetDisclosure(t *testing.T) {
 	f := runFixture(t)
 	t.Setenv("KMX_EVAL_REMOTE", "1")
+	t.Setenv("TERM", "dumb")
 	f.answers["private prompt"] = "remote answer"
 	master, slave := chatPTY(t, 120)
 	f.app.Stdin, f.app.Err = slave, slave
