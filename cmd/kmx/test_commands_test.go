@@ -33,7 +33,7 @@ func TestTestCommandTreesAndDiscovery(t *testing.T) {
 		t.Fatalf("independent tree visibility: err=%v canonical=%v legacy=%v", err, canonical, legacy)
 	}
 	for _, cmd := range []*cobra.Command{canonical, legacy} {
-		if !strings.Contains(cmd.Long, "use package test explain") || strings.Contains(cmd.Long, "eval explain") {
+		if !strings.Contains(cmd.Long, "use package test explain") || !strings.Contains(cmd.Long, "Standalone Orka --fail-fast") || strings.Contains(cmd.Long, "eval explain") {
 			t.Fatalf("%s help teaches legacy failure inspection: %s", cmd.Name(), cmd.Long)
 		}
 	}
@@ -53,12 +53,19 @@ func TestTestCommandTreesAndDiscovery(t *testing.T) {
 		if left == right || child != "" && left.Flags().FlagUsages() != right.Flags().FlagUsages() {
 			t.Fatalf("helper %q shares commands or has different flags", child)
 		}
-		for _, flag := range []string{"workspace", "out", "output", "to-context", "sessions", "suite"} {
+		for _, flag := range []string{"workspace", "out", "output", "to-context", "fail-fast", "sessions", "suite"} {
 			if left.Flags().Lookup(flag) == nil {
 				continue
 			}
 			before := right.Flags().Lookup(flag).Value.String()
-			if err := left.Flags().Set(flag, "eval"); err != nil {
+			value := "eval"
+			if flag == "fail-fast" {
+				value = "true"
+				if before != "false" {
+					t.Fatalf("%s --fail-fast default changed: %s", child, before)
+				}
+			}
+			if err := left.Flags().Set(flag, value); err != nil {
 				t.Fatal(err)
 			}
 			if right.Flags().Lookup(flag).Changed || right.Flags().Lookup(flag).Value.String() != before {
@@ -275,43 +282,47 @@ func TestTestLegacyNoticeMalformedContextAndOpaqueValues(t *testing.T) {
 func TestTestEvaluationJSONAndRecoveryCompatibility(t *testing.T) {
 	t.Setenv("KMX_HOME", t.TempDir())
 	root, _ := suiteEvalSource(t)
-	var legacyJSON []byte
-	for _, verb := range []string{"eval", "package test"} {
-		var out, diag bytes.Buffer
-		deps, loads := testDependencies(&out, &diag)
-		deps.executable = "/build with space/kmx"
-		deps.loadConfig = func(ctx, engine string) (*config.Config, error) {
-			*loads++
-			return &config.Config{KubeContext: ctx, ContainerEngine: engine, KindCluster: "demo"}, nil
-		}
-		var operation *app.App
-		deps.newApp = func(cfg *config.Config) *app.App {
-			cfg.KubeContext = "different" // no native call; report preflight abort JSON
-			operation = app.New(cfg)
-			return operation
-		}
-		args := append([]string{"--container-engine", "podman"}, append(strings.Fields(verb), "--workspace", root, "--to-context", "eval", "--inference", "provider:eval", "-o", "json")...)
-		err := execute(args, deps)
-		var report map[string]any
-		if err == nil || *loads != 1 || operation == nil || json.Unmarshal(out.Bytes(), &report) != nil || report["status"] != "failed" {
-			t.Fatalf("%s missing JSON refusal: err=%v loads=%d stdout=%q", verb, err, *loads, &out)
-		}
-		if verb == "eval" {
-			legacyJSON = append([]byte(nil), out.Bytes()...)
-		} else if !bytes.Equal(legacyJSON, out.Bytes()) {
-			t.Fatalf("machine JSON changed: legacy=%s canonical=%s", legacyJSON, &out)
-		}
-		wantCommand := "KIND_CLUSTER=demo CONTAINER_ENGINE=podman '/build with space/kmx' --container-engine podman " + verb + " --workspace " + root + " --to-context eval --inference provider:eval -o json"
-		if operation.InvocationCommand != wantCommand || operation.TestPresentation != (verb == "package test") {
-			t.Fatalf("%s recovery rewrote opaque values/invoked route or lost presentation selection: %s test=%v", verb, operation.InvocationCommand, operation.TestPresentation)
-		}
-		want := 0
-		if verb == "eval" {
-			want = 1
-		}
-		if strings.Count(diag.String(), legacyEvalNotice) != want {
-			t.Fatalf("operational notice: %q", &diag)
-		}
+	for _, failFastArg := range []string{"--fail-fast", "--fail-fast=false"} {
+		t.Run(failFastArg, func(t *testing.T) {
+			var legacyJSON []byte
+			for _, verb := range []string{"eval", "package test"} {
+				var out, diag bytes.Buffer
+				deps, loads := testDependencies(&out, &diag)
+				deps.executable = "/build with space/kmx"
+				deps.loadConfig = func(ctx, engine string) (*config.Config, error) {
+					*loads++
+					return &config.Config{KubeContext: ctx, ContainerEngine: engine, KindCluster: "demo"}, nil
+				}
+				var operation *app.App
+				deps.newApp = func(cfg *config.Config) *app.App {
+					cfg.KubeContext = "different" // no native call; report preflight abort JSON
+					operation = app.New(cfg)
+					return operation
+				}
+				args := append([]string{"--container-engine", "podman"}, append(strings.Fields(verb), "--workspace", root, "--to-context", "eval", "--inference", "provider:eval", failFastArg, "-o", "json")...)
+				err := execute(args, deps)
+				var report map[string]any
+				if err == nil || *loads != 1 || operation == nil || json.Unmarshal(out.Bytes(), &report) != nil || report["status"] != "failed" {
+					t.Fatalf("%s missing JSON refusal: err=%v loads=%d stdout=%q", verb, err, *loads, &out)
+				}
+				if verb == "eval" {
+					legacyJSON = append([]byte(nil), out.Bytes()...)
+				} else if !bytes.Equal(legacyJSON, out.Bytes()) {
+					t.Fatalf("machine JSON changed: legacy=%s canonical=%s", legacyJSON, &out)
+				}
+				wantCommand := "KIND_CLUSTER=demo CONTAINER_ENGINE=podman '/build with space/kmx' --container-engine podman " + verb + " --workspace " + root + " --to-context eval --inference provider:eval " + failFastArg + " -o json"
+				if operation.InvocationCommand != wantCommand || operation.TestPresentation != (verb == "package test") {
+					t.Fatalf("%s recovery rewrote opaque values/invoked route or lost presentation selection: %s test=%v", verb, operation.InvocationCommand, operation.TestPresentation)
+				}
+				want := 0
+				if verb == "eval" {
+					want = 1
+				}
+				if strings.Count(diag.String(), legacyEvalNotice) != want {
+					t.Fatalf("operational notice: %q", &diag)
+				}
+			}
+		})
 	}
 }
 

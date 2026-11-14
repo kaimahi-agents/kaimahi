@@ -100,6 +100,58 @@ func TestSuiteWorkspaceEvaluationOfflineRefusals(t *testing.T) {
 	}
 }
 
+func TestSuiteWorkspaceFailFastRefusesUnsupportedModes(t *testing.T) {
+	for _, runtime := range []string{"orka convenience", "kagent", "kagent source explicit false", "kagent explicit false", "agentsessions"} {
+		t.Run(runtime, func(t *testing.T) {
+			var opt SuiteWorkspaceEvaluationOptions
+			if runtime == "kagent" || runtime == "kagent explicit false" {
+				opt = suiteKagentEvaluationOptions(t)
+				opt.ManagedPass = true
+			} else {
+				opt = nativeEvaluationOptions(t)
+			}
+			if strings.HasPrefix(runtime, "kagent source") {
+				member := filepath.Join(opt.Workspace, "agents/greeter/member.yaml")
+				raw, err := os.ReadFile(member)
+				if err != nil {
+					t.Fatal(err)
+				}
+				writeFile(t, member, strings.Split(string(raw), "\nruntime:")[0]+"\nruntime: {id: kagent, version: v0.10.3, engine: go}\n")
+				opt.ManagedPass = true
+			}
+			if runtime == "agentsessions" {
+				member := filepath.Join(opt.Workspace, "agents/greeter/member.yaml")
+				raw, err := os.ReadFile(member)
+				if err != nil {
+					t.Fatal(err)
+				}
+				writeFile(t, member, strings.Split(string(raw), "\nruntime:")[0]+"\nruntime: {id: agentsessions, version: "+workspace.AgentSessionsVersion+", engine: chat}\n")
+				opt.ManagedPass, opt.DevelopmentHost, opt.Bindings = true, "host.json", "bindings.yaml"
+			}
+			if strings.Contains(runtime, "explicit false") {
+				opt.FailFastSet = true
+			} else {
+				opt.FailFast = true
+			}
+			home := filepath.Join(t.TempDir(), "absent-state")
+			t.Setenv("KMX_HOME", home)
+			p, err := PrepareSuiteWorkspaceEvaluation(t.Context(), opt)
+			if p != nil {
+				p.Close()
+			}
+			if p != nil || err == nil || err.Error() != "--fail-fast supports only standalone native Orka package test" {
+				t.Fatalf("unsupported fail-fast mode reached execution: prepared=%t err=%v", p != nil, err)
+			}
+			if _, statErr := os.Stat(opt.Out); !os.IsNotExist(statErr) {
+				t.Fatal("unsupported fail-fast mode wrote evidence", statErr)
+			}
+			if _, statErr := os.Stat(home); !os.IsNotExist(statErr) {
+				t.Fatal("unsupported fail-fast mode created KMX state", statErr)
+			}
+		})
+	}
+}
+
 func TestSuiteWorkspaceEvaluationNamesPlaceholderBeforeConfiguration(t *testing.T) {
 	t.Setenv("KMX_HOME", t.TempDir())
 	opt := nativeEvaluationOptions(t)

@@ -50,6 +50,10 @@ func SourceFiles(ctx context.Context, root string, prepared *Prepared) (map[stri
 // when redacting untrusted preparation errors.
 var ErrCacheMigration = errors.New("prepared cache uses an earlier or unknown packaging policy; move aside only the affected prepared cache entry and retry; if the rebuilt artifact identity changes, rerun kmx package test before kmx package push; keep existing receipts and managed passing evidence")
 
+// ErrRuntimeMismatch is returned before cache creation when the exact source
+// snapshot does not select the runtime required by an operation.
+var ErrRuntimeMismatch = errors.New("workspace runtime does not match required runtime")
+
 const cachePackaging = "kmx.directory-modes/v1"
 
 type cacheRecord struct {
@@ -111,10 +115,19 @@ func cached(ctx context.Context, key string, s *snapshot, flowMode bool) (*Prepa
 // Prepare atomically publishes a complete private cache entry. Concurrent
 // candidates may duplicate work; only a verified complete winner is reused.
 func Prepare(ctx context.Context, root, cacheDir string) (*Prepared, error) {
-	return prepare(ctx, root, cacheDir, false)
+	return prepare(ctx, root, cacheDir, false, nil)
 }
 
-func prepare(ctx context.Context, root, cacheDir string, flowMode bool) (*Prepared, error) {
+// PrepareExactRuntime binds runtime admission to the same frozen source snapshot
+// that is packaged. A mismatch refuses before creating cache state.
+func PrepareExactRuntime(ctx context.Context, root, cacheDir string, expected RuntimeProfile) (*Prepared, error) {
+	if err := expected.validate(); err != nil {
+		return nil, err
+	}
+	return prepare(ctx, root, cacheDir, false, &expected)
+}
+
+func prepare(ctx context.Context, root, cacheDir string, flowMode bool, expectedRuntime *RuntimeProfile) (*Prepared, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -132,6 +145,9 @@ func prepare(ctx context.Context, root, cacheDir string, flowMode bool) (*Prepar
 	s, err := loadSourceMode(ctx, root, flowMode)
 	if err != nil {
 		return nil, err
+	}
+	if expectedRuntime != nil && s.runtime != *expectedRuntime {
+		return nil, ErrRuntimeMismatch
 	}
 	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
 		return nil, err

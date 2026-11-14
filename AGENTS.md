@@ -379,7 +379,17 @@ invalid review as clean.
   declared run of each ordered case. Optional KMX YAML runs/minPasses defaults
   to one run/all passes, bounded to 100 runs plus the offline receipt budget.
   Each run receives its own case-timeout budget, including judging/attribution;
-  repeat preflight states the summed run-time budget excluding placement.
+  repeat preflight states the summed run-time budget excluding placement. Full
+  execution remains the default. Standalone native Orka Test alone accepts
+  `--fail-fast`: after a completed attributable run, stop only when
+  `passes + remaining < minPasses`; equality remains reachable and there is no
+  early success. This diagnostic termination still performs candidate cleanup,
+  exits nonzero and creates no standalone receipt or managed proof. Cleanup
+  uncertainty, cancellation or output-finalization failure supersedes the
+  threshold-stop classification while retaining run counts and cleanup result.
+  File Test,
+  kagent, AgentSessions and composed Deploy refuse the option before operational
+  effects; hidden `eval` retains canonical `package test` flag parity.
   Any unknown vetoes the threshold. Only
   completed attributable assertion failures are countable; execution errors
   still abort. Orka abort reports count executed runs from returned nonempty

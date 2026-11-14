@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -184,6 +185,43 @@ func TestCreateAuthorsExplicitRuntime(t *testing.T) {
 				t.Fatal("new authoring omitted explicit runtime", member)
 			}
 		})
+	}
+}
+
+func TestPrepareExactRuntimeRefusesBeforeCachePublication(t *testing.T) {
+	for _, profile := range []workspace.RuntimeProfile{
+		{ID: "orka"},
+		{ID: "kagent", Version: "v0.10.3", Engine: "go"},
+		{ID: "agentsessions", Version: workspace.AgentSessionsVersion, Engine: "chat"},
+	} {
+		t.Run(profile.ID, func(t *testing.T) {
+			root, cache := createWorkspace(t)
+			declaration := "runtime: {id: " + profile.ID
+			if profile.Version != "" {
+				declaration += ", version: " + profile.Version + ", engine: " + profile.Engine
+			}
+			setMemberRuntime(t, root, declaration+"}\n")
+			prepared, err := workspace.PrepareExactRuntime(t.Context(), root, cache, workspace.RuntimeProfile{ID: "orka"})
+			if profile.ID == "orka" {
+				if err != nil || prepared == nil {
+					t.Fatalf("matching runtime preparation = %+v, %v", prepared, err)
+				}
+				return
+			}
+			if prepared != nil || !errors.Is(err, workspace.ErrRuntimeMismatch) {
+				t.Fatalf("runtime mismatch = %+v, %v", prepared, err)
+			}
+			if _, statErr := os.Stat(cache); !os.IsNotExist(statErr) {
+				t.Fatal("runtime mismatch published cache state", statErr)
+			}
+		})
+	}
+
+	root, cache := createWorkspace(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := workspace.PrepareExactRuntime(ctx, root, cache, workspace.RuntimeProfile{ID: "orka"}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("exact-runtime preparation lost cancellation: %v", err)
 	}
 }
 

@@ -32,6 +32,12 @@ type SuiteWorkspaceEvaluationOptions struct {
 	JSON bool
 	// ShowContent opts into sanitized answer/operand/rationale diagnostics on stderr.
 	ShowContent bool
+	// FailFast stops standalone public Orka diagnostics when a repeated case can
+	// no longer meet minPasses. Incomplete runs never produce passing evidence.
+	FailFast bool
+	// FailFastSet records explicit option selection so unsupported runtimes also
+	// refuse --fail-fast=false before operational configuration.
+	FailFastSet bool
 }
 
 // PreparedSuiteWorkspaceEvaluation owns its offline source snapshot and anchored
@@ -55,6 +61,9 @@ type PreparedSuiteWorkspaceEvaluation struct {
 	cleanup        string
 	publicMetadata *suitePublicMetadata
 	failures       []suiteFailureDetail
+	// Output finalization failure is a safe report classification, never proof.
+	outputFinalizationFailed bool
+	explicitReceiptMayExist  bool
 	// Composed Lift keeps its real diagnostic writer separate from quiet stage workers.
 	failureWriter io.Writer
 	diagnosticKey string
@@ -95,6 +104,10 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 	if (opt.Out == "" && !opt.ManagedPass) || opt.CaseTimeout <= 0 || opt.CaseTimeout > 9*time.Minute {
 		return nil, errors.New("native evaluation requires private output and bounded case timeout")
 	}
+	failFastSelected := opt.FailFast || opt.FailFastSet
+	if failFastSelected && (!opt.ManagedPass || opt.DevelopmentHost != "" || opt.Bindings != "" || opt.ExpectedRuntime != "" && opt.ExpectedRuntime != "orka") {
+		return nil, errors.New("--fail-fast supports only standalone native Orka package test")
+	}
 	if opt.DevelopmentHost != "" {
 		if opt.ToContext != "" || opt.ToNamespace != "" || opt.Inference != "" || opt.ResultPort != "" {
 			return nil, errors.New("development host evaluation refuses cluster, inference and result selectors")
@@ -122,8 +135,16 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 	if opt.ManagedPass && suiteReceiptInside(filepath.Join(state, "passing"), root) {
 		return nil, errSuitePassStore
 	}
-	prepared, err := workspace.Prepare(ctx, root, cache)
+	var prepared *workspace.Prepared
+	if failFastSelected {
+		prepared, err = workspace.PrepareExactRuntime(ctx, root, cache, workspace.RuntimeProfile{ID: "orka"})
+	} else {
+		prepared, err = workspace.Prepare(ctx, root, cache)
+	}
 	if err != nil {
+		if errors.Is(err, workspace.ErrRuntimeMismatch) {
+			return nil, errors.New("--fail-fast supports only standalone native Orka package test")
+		}
 		return nil, suiteEvaluationError(ctx, err, false)
 	}
 	suite, err := workspace.Load(ctx, prepared)
@@ -132,6 +153,9 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 	}
 	if opt.JSON && suite.Runtime.ID != "orka" {
 		return nil, errors.New("native eval JSON output supports only Orka")
+	}
+	if failFastSelected && suite.Runtime.ID != "orka" {
+		return nil, errors.New("--fail-fast supports only standalone native Orka package test")
 	}
 	if opt.ExpectedRuntime != "" && opt.ExpectedRuntime != suite.Runtime.ID {
 		return nil, errors.New("destination runtime declaration does not match packaged runtime")
@@ -274,20 +298,28 @@ func (a *App) EvaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 	err := worker.evaluateSuiteWorkspaceWithProof(ctx, p)
 	report := struct {
 		SuiteRunExecutionSummary
-		Status   string               `json:"status"`
-		Detail   string               `json:"detail"`
-		Passed   int                  `json:"passed"`
-		Total    int                  `json:"total"`
-		Cleanup  string               `json:"cleanup"`
-		Error    string               `json:"error,omitempty"`
-		Failures []suiteFailureDetail `json:"failures,omitempty"`
-	}{Failures: suiteFailureSummaries(p.failures), SuiteRunExecutionSummary: p.runs.SuiteRunExecutionSummary, Status: "complete", Detail: p.runs.String() + "; " + p.cleanup, Passed: p.runs.Passed, Total: p.runs.Total, Cleanup: p.cleanup}
+		Status                   string               `json:"status"`
+		Detail                   string               `json:"detail"`
+		Passed                   int                  `json:"passed"`
+		Total                    int                  `json:"total"`
+		Cleanup                  string               `json:"cleanup"`
+		OutputFinalizationFailed bool                 `json:"outputFinalizationFailed,omitempty"`
+		ExplicitReceiptMayExist  bool                 `json:"explicitReceiptMayExist,omitempty"`
+		Error                    string               `json:"error,omitempty"`
+		Failures                 []suiteFailureDetail `json:"failures,omitempty"`
+	}{Failures: suiteFailureSummaries(p.failures), SuiteRunExecutionSummary: p.runs.SuiteRunExecutionSummary, Status: "complete", Detail: p.runs.String() + "; " + p.cleanup, Passed: p.runs.Passed, Total: p.runs.Total, Cleanup: p.cleanup, OutputFinalizationFailed: p.outputFinalizationFailed, ExplicitReceiptMayExist: p.explicitReceiptMayExist}
 	if err != nil {
 		report.Status = "failed"
 		// Never serialize causes: transports, writers and runtime errors can
 		// carry content. Publication/finalization failures may leave proof.
 		report.Error = "native evaluation failed; inspect diagnostics and private proof state before retrying"
-		if p.runs.Aborted || p.runs.ReportingFailed {
+		if p.outputFinalizationFailed {
+			report.Detail += "; output finalization failed"
+		}
+		if p.explicitReceiptMayExist {
+			report.Detail += "; explicit receipt may exist"
+		}
+		if !p.explicitReceiptMayExist && (p.runs.Aborted || p.runs.ReportingFailed || p.runs.ThresholdUnreachable || p.outputFinalizationFailed || errors.Is(err, errSuiteCandidateCleanup)) {
 			report.Detail += "; no passing evidence published"
 		}
 	}

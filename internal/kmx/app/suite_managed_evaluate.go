@@ -43,9 +43,18 @@ func (p *PreparedSuiteWorkspaceEvaluation) reportPassingReceipt(out io.Writer) e
 	return nil
 }
 
-func (a *App) finishManagedEvaluation(ctx context.Context, p *PreparedSuiteWorkspaceEvaluation, evaluationErr error) error {
+func (a *App) finishManagedEvaluation(ctx context.Context, p *PreparedSuiteWorkspaceEvaluation, evaluationErr error) (err error) {
 	// This is outside the evaluator call, after all of its deferred closes.
-	err := errors.Join(evaluationErr, p.closeOutput())
+	linked := p.output != nil && p.output.linked
+	defer func() {
+		p.explicitReceiptMayExist = err != nil && p.options.Out != "" && linked
+	}()
+	closeErr := p.closeOutput()
+	p.outputFinalizationFailed = closeErr != nil
+	if p.outputFinalizationFailed {
+		p.runs.ThresholdUnreachable = false
+	}
+	err = errors.Join(evaluationErr, closeErr)
 	if err == nil {
 		err = workspace.CheckCurrent(ctx, p.root, p.prepared)
 	}

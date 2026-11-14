@@ -141,7 +141,7 @@ func newAgentEvaluationCommand(state *commandState, verb string) *cobra.Command 
 			"Packaged AgentSessions requires --development-host FILE: an explicit private operator observation of a pinned built-in chat host on literal loopback, unauthenticated, and --bindings FILE: an AgentSessionsBinding whose model.name is exactly the packaged model. Evidence records the binding digest, which covers every judged or repeated run; the host's endpoint is not attested. It refuses all cluster/inference/result selectors and loads no cluster configuration. Authored llmJudge uses the same explicit judge transport options and transfers case inputs, attributed answers and rubrics.\n" +
 			"Development journals retain instructions, inputs, answers and per-exec config in cleartext under operator-managed retention. This is not authenticated remote promotion.\n" +
 			"Public Orka uses fresh digest/run-scoped candidates, never adoption/update/reuse, and exports passing evidence only after verified cleanup and final source/shared-input checks. Startup reports leftovers without deleting or blocking a fresh evaluation. Use package test cleanup [full-run-id] for explicit confirmed recovery; unanchored orphans refuse. Private Quickstart/console and other runtimes are unchanged.\n" +
-			"Cases optionally declare runs/minPasses (default one run; omitted threshold requires all runs). Each run submits a fresh Task or AgentSessions Session/config/Exec, never retried, within its own per-run deadline including judging. Repeated cases disclose the total run-time budget in preflight.\n" +
+			"Cases optionally declare runs/minPasses (default one run; omitted threshold requires all runs). Each run submits a fresh Task or AgentSessions Session/config/Exec, never retried, within its own per-run deadline including judging. Repeated cases disclose the total run-time budget in preflight. Standalone Orka --fail-fast may stop only after a repeated threshold becomes unreachable; incomplete runs are diagnostic-only and produce no passing proof.\n" +
 			"Any unknown run vetoes a pass. Execution failure, drift or cancellation aborts without a receipt; resources or Sessions may remain.\n" +
 			"Output defaults to text for all runtimes. Orka-only -o json emits one payload-free outcome document on success or execution abort; diagnostics go to stderr. Execution counts use returned TaskUIDs, not assertion completion; total remains planned.\n" +
 			"Completed passing metadata is registered in private KMX state after successful evaluation, Orka cleanup and finalization. --out optionally also writes a new standalone receipt in an existing private directory outside workspace/cache trees. Managed evidence retains only full passing metadata, unsigned and not a policy gate; failure diagnostics are separate.\n" +
@@ -167,7 +167,7 @@ func newAgentEvaluationCommand(state *commandState, verb string) *cobra.Command 
 				return fmt.Errorf("--context cannot be used with native eval; use --to-context")
 			}
 			if native.DevelopmentHost != "" {
-				for _, name := range []string{"to", "to-context", "to-namespace", "inference", "result-port", "container-engine"} {
+				for _, name := range []string{"to", "to-context", "to-namespace", "inference", "result-port", "fail-fast", "container-engine"} {
 					if cmd.Flag(name).Changed {
 						return fmt.Errorf("--development-host refuses --%s", name)
 					}
@@ -190,6 +190,7 @@ func newAgentEvaluationCommand(state *commandState, verb string) *cobra.Command 
 				return err
 			}
 			selectedNative := native
+			selectedNative.FailFastSet = cmd.Flags().Changed("fail-fast")
 			selectedNative.JSON = output == "json"
 			if !cmd.Flags().Changed("to-namespace") {
 				selectedNative.ToNamespace = ""
@@ -257,6 +258,7 @@ func newAgentEvaluationCommand(state *commandState, verb string) *cobra.Command 
 		})
 	}
 	group.Flags().BoolVar(&native.ShowContent, "show-content", false, "print sanitized bounded failure excerpts, expected values and judge rationale on stderr (not evidence)")
+	group.Flags().BoolVar(&native.FailFast, "fail-fast", false, "stop standalone Orka diagnostics when a repeated pass threshold is unreachable (no partial proof)")
 	group.Flags().StringVar(&native.Out, "out", "", "optional new standalone private receipt outside workspace/cache (managed proof is automatic)")
 	group.Flags().DurationVar(&native.CaseTimeout, "case-timeout", 5*time.Minute, "deadline per run, at most 9m")
 	group.Flags().StringVar(&native.ResultPort, "result-port", "", "loopback result-forward port (omitted: choose automatically)")
