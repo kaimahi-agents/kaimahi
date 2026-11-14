@@ -426,21 +426,23 @@ func suiteNativeRuntimeIdentity(r suiteNativeRuntime, namespace string) (version
 	if suiteNativePinnedHelm(r.Helm) && r.ControllerImage == "ghcr.io/orka-agents/orka@"+orkaControllerDigest && r.AIWorkerImage == "ghcr.io/orka-agents/orka/ai-worker@"+orkaAIWorkerDigest {
 		return OrkaVersion, orkaToolCatalogCommit, true
 	}
-	// Only compiled trusted data is parsed. The older offline profile is not
+	// Only compiled trusted data is parsed. The oldest offline profile is not
 	// supported here; no caller-selected catalog or install state is consulted.
-	var p offlineProfile
-	if json.Unmarshal(offlineRestrictedProfileJSON, &p) != nil || p.Install == nil || p.Orka.Mode != "source" || p.Orka.Identity == "" {
-		return "", "", false
-	}
-	if r.Helm.Chart != "orka-"+p.Install.Chart.Version || r.Helm.Instance == "" || r.Helm.App != "orka" || r.Helm.ManagedBy != "Helm" {
-		return "", "", false
-	}
-	controller, worker := p.Install.Images["controller"], p.Install.Images["ai-worker"]
-	for _, arch := range []string{"amd64", "arm64"} {
-		c, cok := controller.Platforms[arch]
-		w, wok := worker.Platforms[arch]
-		if cok && wok && r.ControllerImage == controller.Repository+"@"+c.ManifestDigest && r.AIWorkerImage == worker.Repository+"@"+w.ManifestDigest {
-			return p.Orka.Identity, p.Orka.Identity, true
+	for _, raw := range [][]byte{offlineRestrictedProfileJSON, offlineCancelProfileJSON} {
+		var p offlineProfile
+		if json.Unmarshal(raw, &p) != nil || p.Install == nil || p.Orka.Mode != "source" || p.Orka.Identity == "" {
+			continue
+		}
+		if r.Helm.Chart != "orka-"+p.Install.Chart.Version || r.Helm.Instance == "" || r.Helm.App != "orka" || r.Helm.ManagedBy != "Helm" {
+			continue
+		}
+		controller, worker := p.Install.Images["controller"], p.Install.Images["ai-worker"]
+		for _, arch := range []string{"amd64", "arm64"} {
+			c, cok := controller.Platforms[arch]
+			w, wok := worker.Platforms[arch]
+			if cok && wok && r.ControllerImage == controller.Repository+"@"+c.ManifestDigest && r.AIWorkerImage == worker.Repository+"@"+w.ManifestDigest {
+				return p.Orka.Identity, p.Orka.Identity, true
+			}
 		}
 	}
 	return "", "", false

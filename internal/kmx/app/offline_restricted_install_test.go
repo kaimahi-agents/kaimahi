@@ -18,11 +18,11 @@ import (
 
 // The retained archive is the original source package, not a fresh timestamped
 // Helm package. OCI fixtures contain metadata only, never image layers.
-func offlineRestrictedInstallFixture(t *testing.T) (string, map[string]any) {
+func offlineRestrictedInstallFixture(t *testing.T, key string) (string, map[string]any) {
 	t.Helper()
 	dir, m := offlineInstallFixture(t)
-	raw, p := restrictedProfileFixture(t)
-	fixture, err := os.ReadFile("testdata/offline-7916-install.json")
+	raw, p := offlineSourceProfileFixture(t, key)
+	fixture, err := os.ReadFile("testdata/offline-" + key[:4] + "-install.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,29 +72,47 @@ func offlineRestrictedInstallFixture(t *testing.T) (string, map[string]any) {
 // Full install loading exercises the catalog, archive, descriptor and native OCI
 // evidence. It does not import images, contact a cluster or configure a provider.
 func TestOfflineRestrictedInstallBundle(t *testing.T) {
-	dir, m := offlineRestrictedInstallFixture(t)
-	b, err := loadOfflineInstallBundle(dir, offlineTestIdentity())
-	if err != nil {
-		t.Fatal(err)
-	}
-	var got offlineValues
-	if err = json.Unmarshal(b.install.values, &got); err != nil {
-		t.Fatal(err)
-	}
-	if got.Workers.AI.RBACProfile != "restricted" {
-		t.Fatal("install lost restricted values")
-	}
-	for _, field := range []string{"chart", "artifacts"} {
-		t.Run(field, func(t *testing.T) {
-			row := m[field].(map[string]any)
-			old := row["sha256"]
-			row["sha256"] = strings.Repeat("f", 64)
-			offlineWriteManifest(t, dir, m)
-			if _, err := loadOfflineInstallBundle(dir, offlineTestIdentity()); err == nil {
-				t.Fatal("unreviewed install pin accepted", field)
+	for _, profile := range offlineSourceProfiles {
+		t.Run(profile.key, func(t *testing.T) {
+			dir, m := offlineRestrictedInstallFixture(t, profile.key)
+			b, err := loadOfflineInstallBundle(dir, offlineTestIdentity())
+			if err != nil {
+				t.Fatal(err)
 			}
-			row["sha256"] = old
-			offlineWriteManifest(t, dir, m)
+			var got offlineValues
+			if err = json.Unmarshal(b.install.values, &got); err != nil {
+				t.Fatal(err)
+			}
+			if got.Workers.AI.RBACProfile != "restricted" {
+				t.Fatal("install lost restricted values")
+			}
+			for _, field := range []string{"chart", "artifacts"} {
+				t.Run(field, func(t *testing.T) {
+					row := m[field].(map[string]any)
+					old := row["sha256"]
+					row["sha256"] = strings.Repeat("f", 64)
+					offlineWriteManifest(t, dir, m)
+					if _, err := loadOfflineInstallBundle(dir, offlineTestIdentity()); err == nil {
+						t.Fatal("unreviewed install pin accepted", field)
+					}
+					row["sha256"] = old
+					offlineWriteManifest(t, dir, m)
+				})
+			}
+			t.Run("mixed profile image", func(t *testing.T) {
+				other := "7916cd1c"
+				if profile.key == other {
+					other = "3cb1f0df"
+				}
+				_, p := offlineSourceProfileFixture(t, other)
+				row := m["images"].([]any)[0].(map[string]any)
+				pin := p.Install.Images["controller"]
+				row["indexDigest"], row["manifestDigest"], row["configDigest"] = pin.IndexDigest, pin.Platforms[runtime.GOARCH].ManifestDigest, pin.Platforms[runtime.GOARCH].ConfigDigest
+				offlineWriteManifest(t, dir, m)
+				if _, err := loadOfflineInstallBundle(dir, offlineTestIdentity()); err == nil {
+					t.Fatal("mixed source image accepted")
+				}
+			})
 		})
 	}
 }
@@ -102,27 +120,41 @@ func TestOfflineRestrictedInstallBundle(t *testing.T) {
 // Both architecture inventories must retain real, linked OCI bytes even when
 // the test host can install only one architecture. This reads no image layers.
 func TestOfflineRestrictedInstallOCIPlatforms(t *testing.T) {
-	dir, _ := offlineRestrictedInstallFixture(t)
-	_, p := restrictedProfileFixture(t)
-	for _, arch := range []string{"amd64", "arm64"} {
-		for name, pin := range p.Install.Images {
-			t.Run(arch+"/"+name, func(t *testing.T) {
-				prefix := name + "-" + arch
-				read := func(suffix string) []byte {
-					t.Helper()
-					raw, err := os.ReadFile(filepath.Join(dir, prefix+"-"+suffix+".json"))
-					if err != nil {
-						t.Fatal(err)
-					}
-					return raw
+	for _, profile := range offlineSourceProfiles {
+		t.Run(profile.key, func(t *testing.T) {
+			dir, _ := offlineRestrictedInstallFixture(t, profile.key)
+			_, p := offlineSourceProfileFixture(t, profile.key)
+			for _, arch := range []string{"amd64", "arm64"} {
+				for name, pin := range p.Install.Images {
+					t.Run(arch+"/"+name, func(t *testing.T) {
+						prefix := name + "-" + arch
+						read := func(suffix string) []byte {
+							t.Helper()
+							raw, err := os.ReadFile(filepath.Join(dir, prefix+"-"+suffix+".json"))
+							if err != nil {
+								t.Fatal(err)
+							}
+							return raw
+						}
+						child := pin.Platforms[arch]
+						row := offlineNodeRow{Repository: pin.Repository, IndexDigest: &pin.IndexDigest, ManifestDigest: child.ManifestDigest, ConfigDigest: child.ConfigDigest}
+						config := read("config")
+						if _, err := validateOfflineOCI(row, offlinePlatform{OS: "linux", Architecture: arch}, read("index"), read("manifest"), config); err != nil {
+							t.Fatal(err)
+						}
+						var source struct {
+							Config struct{ Labels map[string]string }
+						}
+						if err := json.Unmarshal(config, &source); err != nil {
+							t.Fatal(err)
+						}
+						if name != "session-loader" && source.Config.Labels["org.opencontainers.image.revision"] != profile.source {
+							t.Fatal("OCI config does not name source", name, arch)
+						}
+					})
 				}
-				child := pin.Platforms[arch]
-				row := offlineNodeRow{Repository: pin.Repository, IndexDigest: &pin.IndexDigest, ManifestDigest: child.ManifestDigest, ConfigDigest: child.ConfigDigest}
-				if _, err := validateOfflineOCI(row, offlinePlatform{OS: "linux", Architecture: arch}, read("index"), read("manifest"), read("config")); err != nil {
-					t.Fatal(err)
-				}
-			})
-		}
+			}
+		})
 	}
 }
 
@@ -132,52 +164,68 @@ func TestOfflineRestrictedInstallActualHelm(t *testing.T) {
 	if _, err := exec.LookPath("helm"); err != nil {
 		t.Skip("guest supplied Helm unavailable")
 	}
-	dir, _ := offlineRestrictedInstallFixture(t)
-	b, err := loadOfflineInstallBundle(dir, offlineTestIdentity())
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, p := restrictedProfileFixture(t)
-	a := New(&config.Config{KubeContext: "kind-test"}).offlineHelmTarget()
-	if err = a.renderOfflineChart(b.install); err != nil {
-		t.Fatal(err)
-	}
-	chart, cleanup, err := offlineChartFile(b.install.chart)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer cleanup()
-	for _, arch := range []string{"amd64", "arm64"} {
-		t.Run(arch, func(t *testing.T) {
-			values, err := json.Marshal(p.Install.Values[arch])
+	for _, profile := range offlineSourceProfiles {
+		t.Run(profile.key, func(t *testing.T) {
+			dir, _ := offlineRestrictedInstallFixture(t, profile.key)
+			b, err := loadOfflineInstallBundle(dir, offlineTestIdentity())
 			if err != nil {
 				t.Fatal(err)
 			}
-			raw, err := a.offlineInput(values, "helm", "template", orkaRelease, chart, "-n", OrkaNamespace, "--kube-context", a.Cfg.KubeContext, "-f", "-")
+			_, p := offlineSourceProfileFixture(t, profile.key)
+			a := New(&config.Config{KubeContext: "kind-test"}).offlineHelmTarget()
+			if err = a.renderOfflineChart(b.install); err != nil {
+				t.Fatal(err)
+			}
+			chart, cleanup, err := offlineChartFile(b.install.chart)
 			if err != nil {
 				t.Fatal(err)
 			}
-			images := append([]offlineImageRow(nil), b.install.images...)
-			for i := range images {
-				images[i].ManifestDigest = p.Install.Images[images[i].Component].Platforms[arch].ManifestDigest
-			}
-			workloads, err := offlineRenderAudit(raw, images)
-			if err != nil {
-				t.Fatal(err)
-			}
-			n := 0
-			for _, arg := range workloads["orka-api-controller"].Containers[0].Args {
-				if strings.HasPrefix(arg, "--context-token-authz-mode") {
-					if arg != "--context-token-authz-mode=enforce" {
-						t.Fatal("authorization is not enforced", arg)
+			defer cleanup()
+			for _, arch := range []string{"amd64", "arm64"} {
+				t.Run(arch, func(t *testing.T) {
+					values, err := json.Marshal(p.Install.Values[arch])
+					if err != nil {
+						t.Fatal(err)
 					}
-					n++
-				}
+					raw, err := a.offlineInput(values, "helm", "template", orkaRelease, chart, "-n", OrkaNamespace, "--kube-context", a.Cfg.KubeContext, "-f", "-")
+					if err != nil {
+						t.Fatal(err)
+					}
+					images := append([]offlineImageRow(nil), b.install.images...)
+					for i := range images {
+						images[i].ManifestDigest = p.Install.Images[images[i].Component].Platforms[arch].ManifestDigest
+					}
+					workloads, err := offlineRenderAudit(raw, images)
+					if err != nil {
+						t.Fatal(err)
+					}
+					n := 0
+					for _, arg := range workloads["orka-api-controller"].Containers[0].Args {
+						if strings.HasPrefix(arg, "--context-token-authz-mode") {
+							if arg != "--context-token-authz-mode=enforce" {
+								t.Fatal("authorization is not enforced", arg)
+							}
+							n++
+						}
+					}
+					if n != 1 {
+						t.Fatal("enforcement flag must occur exactly once", n)
+					}
+					offlineAssertRestrictedRole(t, raw)
+					for _, workload := range workloads {
+						for _, container := range workload.Containers {
+							for _, arg := range container.Args {
+								if strings.Contains(arg, "allow-private-connector") {
+									t.Fatal("fixture-only private endpoints enabled", arg)
+								}
+							}
+						}
+					}
+					if profile.key == "3cb1f0df" {
+						offlineAssertCancelSecurity(t, raw, workloads["orka-api-controller"].Containers[0].Args)
+					}
+				})
 			}
-			if n != 1 {
-				t.Fatal("enforcement flag must occur exactly once", n)
-			}
-			offlineAssertRestrictedRole(t, raw)
 		})
 	}
 }
