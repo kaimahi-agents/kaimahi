@@ -2067,7 +2067,9 @@ context, live Run presents action, context, selection source, server, namespace
 and posture in one compact stderr line before any existing confirmation notice
 and the result-authority notice. Without preconfirmation, a remote terminal Run
 keeps the full guard presentation and requires the exact context to be typed;
-nonterminal use and conflicting confirmation refuse before Task creation.
+remote nonterminal use refuses before Task creation. Exact preconfirmation also
+permits nonterminal Run, while conflicting confirmation refuses before Task
+creation.
 Bundle-directory selection is removed.
 
 `kmx chat NAME --namespace NAMESPACE --context CONTEXT` opens the supported Orka
