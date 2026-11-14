@@ -109,9 +109,9 @@ invalid review as clean.
   instance IDs. Never silently replace an active generation.
   Preconfirmed live Orka `run --agent` may compact its target disclosure, but
   still names action, context, selection source, server, namespace and posture
-  on stderr and keeps the result-authority notice. A remote target with missing
-  or mismatched confirmation retains the full guard presentation and refuses
-  before Task creation.
+  on stderr and keeps the result-authority notice. Missing preconfirmation
+  retains the full guard presentation and exact typed terminal consent;
+  nonterminal use and mismatched confirmation refuse before Task creation.
   Run input is flag-only: `-p, --prompt TEXT` or `--prompt-file FILE|-`; a second
   positional argument is removed. Either input flag selects only that ad-hoc input
   unless `--case` explicitly adds a saved example. Native Windows keeps
