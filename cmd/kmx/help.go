@@ -81,6 +81,7 @@ func shortCommandHelp(cmd *cobra.Command, _ []string) {
 	local := cmd.LocalFlags()
 	if cmd.Name() == "run" {
 		fileFlags := pflag.NewFlagSet("file", pflag.ContinueOnError)
+		residentFlags := pflag.NewFlagSet("resident", pflag.ContinueOnError)
 		sharedFlags := pflag.NewFlagSet("input", pflag.ContinueOnError)
 		liveFlags := pflag.NewFlagSet("live", pflag.ContinueOnError)
 		local.VisitAll(func(flag *pflag.Flag) {
@@ -91,6 +92,8 @@ func shortCommandHelp(cmd *cobra.Command, _ []string) {
 				sharedFlags.AddFlag(flag)
 			case "once":
 				fileFlags.AddFlag(flag)
+			case "upgrade", "new", "name", "yes", "provider-key-env", "model-profile", "require-context", "require-output", "require-reasoning":
+				residentFlags.AddFlag(flag)
 			case "agent", "namespace", "wait", "result-port":
 				liveFlags.AddFlag(flag)
 			default:
@@ -105,6 +108,7 @@ func shortCommandHelp(cmd *cobra.Command, _ []string) {
 			liveFlags.AddFlag(&display)
 		})
 		writeHelpFlags(out, "Flags (file preview)", fileFlags)
+		fmt.Fprintf(out, "Flags (resident agents):\n%s", residentFlags.FlagUsagesWrapped(80))
 		// Adjacent headings retain the short-help line budget as file flags grow.
 		fmt.Fprintf(out, "Flags (shared input):\n%s", sharedFlags.FlagUsagesWrapped(80))
 		fmt.Fprintf(out, "Flags (live Orka):\n%s", liveFlags.FlagUsagesWrapped(80))

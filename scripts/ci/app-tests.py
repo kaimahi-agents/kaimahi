@@ -3,12 +3,20 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
 import sys
 
 PACKAGE = "github.com/kaimahi-agents/kaimahi/internal/kmx/app"
+
+
+def fixture_process_options():
+    # Go's numbered t.TempDir children inherit the process umask. Make ordinary
+    # fixtures non-writable by other users without changing production checks.
+    # Permission-specific tests still set their own modes/masks explicitly.
+    return {"umask": 0o022} if os.name == "posix" else {}
 
 
 def test_names(output):
@@ -61,13 +69,13 @@ def summarize(path, selected):
 
 def run(shard, shards, output):
     names = test_names(subprocess.check_output(
-        ["go", "test", PACKAGE, "-list", "^(Test|Example|Fuzz)"], text=True))
+        ["go", "test", PACKAGE, "-list", "^(Test|Example|Fuzz)"], text=True, **fixture_process_options()))
     selected = partition(names, shard, shards)
     pattern = "^(" + "|".join(re.escape(name) for name in selected) + ")$"
     print(f"app shard {shard}/{shards}: {len(selected)} of {len(names)} top-level tests", flush=True)
     with output.open("w") as stream:
         process = subprocess.run(["go", "test", PACKAGE, "-json", "-count=1", "-timeout=600s", "-run", pattern],
-                                 stdout=stream, stderr=subprocess.STDOUT)
+                                  stdout=stream, stderr=subprocess.STDOUT, **fixture_process_options())
     try:
         result = summarize(output, selected)
     except ValueError as error:

@@ -61,7 +61,7 @@ func newEvaluationVerifyFixture(t *testing.T, judge, repeated bool) evaluationVe
 		t.Fatal(err)
 	}
 	f := evaluationVerifyFixture{source: filepath.Join(root, "source"), layout: filepath.Join(root, "layout"), evidencePath: filepath.Join(root, "evidence.json"), expectPath: filepath.Join(root, "expected.json")}
-	if err := os.CopyFS(f.source, os.DirFS(minimalSuitePath())); err != nil {
+	if err := os.CopyFS(f.source, os.DirFS(minimalSuitePath(t))); err != nil {
 		t.Fatal(err)
 	}
 	var graph suitecore.Suite

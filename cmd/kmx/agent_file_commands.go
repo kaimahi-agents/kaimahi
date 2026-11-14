@@ -83,7 +83,7 @@ func validateFileCommand(cmd *cobra.Command, state *commandState, f fileCommandO
 	var invalid string
 	cmd.Flags().Visit(func(flag *pflag.Flag) {
 		switch flag.Name {
-		case "runner", "host", "case", "tests", "output", "no-content", "model", "provider", "provider-url", "prompt", "prompt-file", "verbose", "tool-bindings", "mcp-server", "no-mcp-servers", "github-summary", "once", "check", "upgrade", "new", "name", "yes":
+		case "runner", "host", "case", "tests", "output", "no-content", "model", "provider", "provider-url", "prompt", "prompt-file", "verbose", "tool-bindings", "mcp-server", "no-mcp-servers", "github-summary", "once", "check", "upgrade", "new", "name", "yes", "provider-key-env", "model-profile", "require-context", "require-output", "require-reasoning":
 		default:
 			invalid = flag.Name
 		}

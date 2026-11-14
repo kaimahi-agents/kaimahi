@@ -147,7 +147,7 @@ func TestFileCreatePair(t *testing.T) {
 				t.Fatalf("tests = %q, %v", got, err)
 			}
 			output := out.String()
-			if !strings.Contains(output, "Wrote ") || !strings.Contains(output, "Next:\n") || !strings.Contains(output, "kmx run ") || !strings.Contains(output, ` "hi"`) || !strings.Contains(output, "kmx test ") {
+			if !strings.Contains(output, "Wrote ") || !strings.Contains(output, "Next:\n") || !strings.Contains(output, "kmx run ") || !strings.Contains(output, ` --prompt "hi"`) || !strings.Contains(output, "kmx test ") {
 				t.Fatalf("missing next steps: %s", output)
 			}
 			if destination == "cwd" {
@@ -181,7 +181,7 @@ func TestFileCreateDescriptionAndQuotedNextCommands(t *testing.T) {
 	if err := yaml.Unmarshal(bytes.Split(raw, []byte("---"))[1], &front); err != nil || front.Name != "-greeter" || front.Description != description {
 		t.Fatalf("frontmatter = %+v / %v", front, err)
 	}
-	want := "  '/bin/my kmx' run 'a'\"'\"'b folder/-greeter.agent.md' \"hi\"\n  '/bin/my kmx' test 'a'\"'\"'b folder/-greeter.agent.md'\n"
+	want := "  '/bin/my kmx' run 'a'\"'\"'b folder/-greeter.agent.md' --prompt \"hi\"\n  '/bin/my kmx' test 'a'\"'\"'b folder/-greeter.agent.md'\n"
 	if !strings.Contains(out.String(), want) {
 		t.Fatalf("unsafe next commands: %s", &out)
 	}
