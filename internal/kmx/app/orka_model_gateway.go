@@ -197,7 +197,7 @@ func (a *App) modelCheckGateway(ctx context.Context, connection OrkaModelConnect
 	if err != nil {
 		return nil, err
 	}
-	if err := a.modelHealth(ctx, connection); err != nil {
+	if err := a.modelHealth(ctx, connection, kids...); err != nil {
 		return nil, err
 	}
 	for _, r := range roots {
@@ -212,17 +212,24 @@ func (a *App) modelCheckGateway(ctx context.Context, connection OrkaModelConnect
 	return kids, nil
 }
 
-func (a *App) modelHealth(ctx context.Context, connection OrkaModelConnection) error {
+func (a *App) modelHealth(ctx context.Context, connection OrkaModelConnection, children ...modelChild) error {
 	path := "/api/v1/namespaces/orka-system/services/http:" + connection.Provider + "-vekil:1337/proxy/"
 	raw, err := a.orkaCapture(ctx, nil, "get", "--raw", path+"readyz")
 	if err != nil {
+		if connection.Route == "key" {
+			return a.modelKeyReadinessFailure(ctx, connection, children)
+		}
 		return fmt.Errorf("model authenticated readiness unavailable")
 	}
 	var ready map[string]any
 	if modelJSON(raw, &ready) != nil || ready["status"] != "ready" {
 		return fmt.Errorf("model authenticated readiness unavailable")
 	}
-	raw, err = a.orkaCapture(ctx, nil, "get", "--raw", path+"v1/models")
+	catalogPath := path + "v1/models"
+	if connection.Vendor == "anthropic" {
+		catalogPath += "?limit=1000"
+	}
+	raw, err = a.orkaCapture(ctx, nil, "get", "--raw", catalogPath)
 	if err != nil {
 		return fmt.Errorf("model catalog unavailable")
 	}
@@ -231,7 +238,7 @@ func (a *App) modelHealth(ctx context.Context, connection OrkaModelConnection) e
 		return fmt.Errorf("model catalog unavailable")
 	}
 	data, ok := catalog["data"].([]any)
-	if !ok || len(data) == 0 || len(data) > 4096 {
+	if !ok || len(data) == 0 && connection.Route != "key" || len(data) > 4096 {
 		return fmt.Errorf("model catalog unavailable")
 	}
 	found := 0
@@ -245,6 +252,9 @@ func (a *App) modelHealth(ctx context.Context, connection OrkaModelConnection) e
 		}
 	}
 	if found != 1 {
+		if connection.Route == "key" {
+			return modelFailure("model_unavailable", nil)
+		}
 		return fmt.Errorf("selected model is not advertised")
 	}
 	return nil

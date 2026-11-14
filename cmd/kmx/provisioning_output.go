@@ -316,7 +316,7 @@ func provisioningJSONInvocation(argv []string) string {
 			continue
 		}
 		switch {
-		case name == "--namespace" || name == "-n" || name == "--connection" || name == "--credential-generation" || name == "--route" || name == "--credential-mount" || name == "--step" || name == "--offline-bundle" || name == "--provider" || name == "--model" || name == "--model-url":
+		case name == "--namespace" || name == "-n" || name == "--connection" || name == "--credential-generation" || name == "--route" || name == "--vendor" || name == "--credential-mount" || name == "--step" || name == "--offline-bundle" || name == "--provider" || name == "--model" || name == "--model-url":
 			if !inline {
 				i++
 			}

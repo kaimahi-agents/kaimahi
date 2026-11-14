@@ -193,7 +193,8 @@ The model/catalog observation and local finalization never mark model installati
 as a possible remote mutation. Other setup adapters are unchanged.
 
 The terminal result can add `connection` (`id`, `route`, `provider`, `model`,
-`credentialGeneration`, `state`) and `remoteState`. An anchored failure retains
+`credentialGeneration`, `state`) and `remoteState`. API-key connections also
+include `vendor: openai|anthropic` with `route: key`; Copilot omits `vendor`. An anchored failure retains
 its connection ID with `state: unknown`; early preflight failure has no connection.
 Success states are `model_ready` for Connect and `gateway_stopped` for complete
 Disconnect. `remoteState` is `may_continue` for a connected gateway, `unknown`
@@ -201,9 +202,18 @@ when process state is uncertain, and `stopped` only after observed gateway/cache
 stop (even if later binding cleanup fails). It is not model-answer evidence.
 The optional proof field remains absent: no proof action is implemented here.
 
-Errors use the existing closed safe vocabulary, including `credential_unavailable`,
-`dependency_unavailable`, `permission_denied` and `execution_unknown`; raw causes,
-credentials, paths and response bodies are not emitted. A cancelled or broken
+Errors use the closed safe vocabulary, including `credential_unavailable`,
+`dependency_unavailable`, `permission_denied` and `execution_unknown`. API-key
+Connect adds `credential_rejected` for Vekil-reported upstream 401/403,
+`provider_unreachable` for its upstream transport-failure diagnostic, and
+`model_unavailable` when the selected catalog ID is missing or repeated.
+Their recoveries are `supply_credentials`, `check_configuration` and
+`check_configuration`, respectively. Other statuses (including 429), malformed
+replies and local transport failures do not imply a rejected key or a company
+network failure. A failed key-readiness GET may open a bounded owned loopback
+forward to classify Vekil's HTTP 503 body; this can never establish readiness.
+Unconfirmed forward cleanup reports `execution_unknown`. No raw causes,
+credentials, paths or response bodies are emitted. A cancelled or broken
 writer stops later sends and does not retry output. Missing/truncated output is
 incomplete delivery, never authority to replay a CREATE or old DELETE. Keep
 partial IDs and effects for explicit recovery; automatic sign-in or inference

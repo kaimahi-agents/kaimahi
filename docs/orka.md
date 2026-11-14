@@ -160,7 +160,7 @@ integration have not been qualified by these command fixtures.
 ## Connect a guest model route
 
 In the owned Linux guest, `model connect` configures the existing Orka to use a
-fixed Vekil Copilot gateway. It never installs a runtime, starts a sign-in flow,
+fixed Vekil gateway for Copilot or an OpenAI/Anthropic API key. It never installs a runtime, starts a sign-in flow,
 downloads weights or runs an Agent, Task or inference request. Native macOS and
 Windows callers use their owning host integration instead; these commands run
 only in the Linux guest with local Docker and a checked kubeconfig.
@@ -186,18 +186,31 @@ KIND_CLUSTER=local-offline kmx --context kind-local-offline --container-engine d
 The UUIDs above are examples. The owning guest endpoint supplies the credential
 generation after private delivery and retains the connection ID returned by
 Connect. Do not copy a credential or derive a generation from its contents.
-The fixed credential file is root:65532, mode 0640, under the memory mount above.
-KMX checks its metadata; the gateway launcher validates the bytes in memory.
-The Kubernetes Secret is a fixed noncredential placeholder. No credential flag,
-file-path flag, login fallback or keyed route is supported.
+The credential file is root:65532, mode 0640, under the memory mount above:
+`copilot-github-token` for `--route copilot`, or `model-api-key` for `--route key`.
+The existing `copilot-v1` mount covers both filenames; no new mount is needed.
+KMX checks metadata; the gateway launcher validates bytes and exports them only
+inside Vekil. Its API-key config names an environment variable, never the key.
+The Kubernetes Secret stays a fixed noncredential placeholder. No credential
+flag, file-path flag or login fallback is supported.
+
+For an API key, replace the route selectors in Connect with
+`--route key --vendor openai` (or `anthropic`); `--vendor` is forbidden with Copilot.
+`--provider` remains the native Kubernetes object name, not the company selector.
+For example, use `--provider workspace --model gpt-4.1` with OpenAI, or an exact
+model ID advertised for the Anthropic key. Both native Provider types point at
+Vekil, not directly at the company. Anthropic catalog requests use `limit=1000`;
+OpenAI dynamic discovery adds Responses capabilities only for the qualified
+`gpt-4.1` default. Other models keep their discovered capabilities.
 
 `model_ready` requires acknowledged resources, exact admitted execution settings,
 an owned serving Pod, authenticated `/readyz` and exact advertised catalog
 membership. Catalog data can be cached: this is operational readiness, not proof
 of fresh selected-model authorization or a successful model answer. Reconnecting
 the same configuration and generation checks health without inference or remote
-writes. A changed generation requires explicit Disconnect before clearing and
-redelivering credentials. Connect never hot-reloads or substitutes a model.
+writes. A changed route, vendor, model or generation requires explicit Disconnect;
+the owning endpoint clears its credential file before Disconnect and redelivery.
+Only one connection is retained per workspace. Connect never hot-reloads or substitutes a model.
 
 Disconnect requires the retained ID and deletes only acknowledged resources with
 UID/resourceVersion conditions. Missing API objects alone do not prove a stopped
@@ -211,7 +224,11 @@ A failed result may retain an ID with state `unknown`: keep it for recovery.
 Both commands accept text or existing setup JSONL; Disconnect accepts no generation.
 Existing target consent applies, without a new prompt. Native guest credential
 delivery and live account/model execution remain unqualified by these fixtures.
-There is no `model prove` capability yet. See [machine output](machine-output.md).
+There is no `model prove` capability yet. Listing models does not prove credit
+or rate-limit availability; those failures may first appear during inference.
+API-key configuration and errors are fixture-tested, not real-account qualified.
+See [machine output](machine-output.md) for safe key-rejection, reachability and
+missing-model codes.
 
 ## Seeing it before doing it
 

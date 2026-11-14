@@ -16,7 +16,7 @@ import (
 func modelGatewayFixture(t *testing.T) (*App, map[string]map[string]any, []modelOwnedResource) {
 	t.Helper()
 	a, objects, _ := modelConfigureFixture(t)
-	docs, err := modelDocuments("copilot", "gpt-4.1", "11111111-1111-4111-8111-111111111111", "amd64")
+	docs, err := modelDocuments("copilot", "gpt-4.1", "11111111-1111-4111-8111-111111111111", "amd64", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,24 +153,27 @@ func TestOrkaModelGatewayIdentitySet(t *testing.T) {
 }
 
 func TestOrkaModelCredentialMetadata(t *testing.T) {
-	for _, invalid := range []bool{false, true} {
-		t.Run(fmt.Sprint(invalid), func(t *testing.T) {
-			a, _, _ := modelConfigureFixture(t)
-			if invalid {
-				tool := filepath.Join(strings.Split(os.Getenv("PATH"), string(os.PathListSeparator))[0], "stat")
-				raw, err := os.ReadFile(tool)
-				if err != nil {
-					t.Fatal(err)
+	for _, route := range []string{"copilot", "key"} {
+		for _, invalid := range []bool{false, true} {
+			t.Run(fmt.Sprint(invalid), func(t *testing.T) {
+				a, _, _ := modelConfigureFixture(t)
+				if invalid {
+					tool := filepath.Join(strings.Split(os.Getenv("PATH"), string(os.PathListSeparator))[0], "stat")
+					raw, err := os.ReadFile(tool)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err = os.WriteFile(tool, []byte(strings.ReplaceAll(string(raw), "regular file:0:65532:640:1:12", "regular file:0:65532:640:1:0")), 0700); err != nil {
+						t.Fatal(err)
+					}
 				}
-				if err = os.WriteFile(tool, []byte(strings.ReplaceAll(string(raw), "regular file:0:65532:640:1:12", "regular file:0:65532:640:1:0")), 0700); err != nil {
-					t.Fatal(err)
+				if err := a.modelCredentialInput(route); (err != nil) != invalid {
+					t.Fatalf("credential metadata %v: %v", invalid, err)
 				}
-			}
-			if err := a.modelCredentialInput(); (err != nil) != invalid {
-				t.Fatalf("credential metadata %v: %v", invalid, err)
-			}
-		})
+			})
+		}
 	}
+
 }
 
 // A child cannot retain cleanup authority by preserving its name after UID reuse.

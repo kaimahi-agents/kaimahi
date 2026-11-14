@@ -355,7 +355,7 @@ func validateModelCheckpoint(s modelCheckpoint) error {
 		}
 	}
 	c := s.Connection
-	if s.Version != 1 || !verificationIdentity(s.ClusterUID) || !verificationIdentity(s.NamespaceUID) || !modelUUID(c.ID) || !modelUUID(c.CredentialGeneration) || c.Route != "copilot" || !verificationIdentity(c.Provider) || !verificationIdentity(c.Model) {
+	if s.Version != 1 || !verificationIdentity(s.ClusterUID) || !verificationIdentity(s.NamespaceUID) || !modelUUID(c.ID) || !modelUUID(c.CredentialGeneration) || !validModelRoute(c.Route, c.Vendor) || !verificationIdentity(c.Provider) || !verificationIdentity(c.Model) {
 		return errors.New("invalid model connection")
 	}
 	if c.State != "unknown" && c.State != "model_ready" && c.State != "gateway_stopped" {
