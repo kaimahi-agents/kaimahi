@@ -78,7 +78,7 @@ func TestOrkaModelWindowsAndFlags(t *testing.T) {
 
 // Adapter-only phase fixtures; actual lifecycle cancellation is tested in App.
 func TestOrkaModelJSONL(t *testing.T) {
-	for _, failure := range []string{"", "preflight", "model", "cancel"} {
+	for _, failure := range []string{"", "preflight", "model", "cancel", "credential_rejected", "provider_unreachable", "model_unavailable"} {
 		t.Run(failure, func(t *testing.T) {
 			var out, diag bytes.Buffer
 			deps, _ := testDependencies(&out, &diag)
@@ -106,6 +106,9 @@ func TestOrkaModelJSONL(t *testing.T) {
 				if failure == "model" {
 					return app.NewMachineError("credential_unavailable", "model")
 				}
+				if strings.HasPrefix(failure, "credential_") || failure == "provider_unreachable" || failure == "model_unavailable" {
+					return &machineCommandError{code: failure, safe: app.NewMachineError(failure, "model")}
+				}
 				m.observe("Model model", "done", nil)
 				result.Connection.State = "model_ready"
 				result.RemoteState = "may_continue"
@@ -125,6 +128,11 @@ func TestOrkaModelJSONL(t *testing.T) {
 				t.Fatal(err)
 			}
 			terminal := setupResultRecord(t, out.Bytes(), exit)
+			if failure == "credential_rejected" || failure == "provider_unreachable" || failure == "model_unavailable" {
+				if terminal["error"].(map[string]any)["code"] != failure {
+					t.Fatal("lost model error code", terminal)
+				}
+			}
 			pairs := 0
 			for _, r := range machineRecords(t, out.Bytes()) {
 				if r["stage"] == "preflight" {

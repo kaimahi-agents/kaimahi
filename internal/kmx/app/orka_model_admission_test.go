@@ -19,7 +19,7 @@ func TestOrkaModelPodAdmissionBuildIdentity(t *testing.T) {
 			t.Run(fmt.Sprintf("%s/annotations=%t", arch, annotated), func(t *testing.T) {
 				a, _, _ := modelLifecycleFixture(t)
 				a.buildIdentity = version.Build{Version: "v0.9.0-test", Release: true}
-				docs, err := modelDocuments("copilot", "gpt-4.1", modelConnectOptions().OperationID, arch)
+				docs, err := modelDocuments("copilot", "gpt-4.1", modelConnectOptions().OperationID, arch, "")
 				if err != nil {
 					t.Fatal(err)
 				}

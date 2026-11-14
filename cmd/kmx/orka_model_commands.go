@@ -20,11 +20,11 @@ func newOrkaModelLeaf(state *commandState, verb string) *cobra.Command {
 	var connect app.OrkaModelConnectOptions
 	var connection string
 	var result app.OrkaModelResult
-	long := "Use the fixed guest-memory Copilot credential profile in the owned Linux VM.\nNo runtime installation, sign-in flow, model inference or resource adoption.\nAn uncertain operation retains its connection ID for explicit recovery."
+	long := "Use a guest-memory Copilot token or API key in the owned Linux VM.\nNo runtime installation, sign-in flow, model inference or resource adoption.\nAn uncertain operation retains its connection ID for explicit recovery."
 	if verb == "disconnect" {
 		long = "Stop only the retained model connection and owned resources in the Linux VM.\nNo credential reads, runtime removal, sign-in flow, model inference or resource adoption.\nAn uncertain operation retains its connection ID for explicit recovery."
 	}
-	cmd := &cobra.Command{Use: verb, Short: map[string]string{"connect": "Configure Copilot through the owned gateway without inference", "disconnect": "Stop only the retained model connection and owned resources"}[verb], Long: long, Args: func(_ *cobra.Command, args []string) error {
+	cmd := &cobra.Command{Use: verb, Short: map[string]string{"connect": "Connect a model route through the owned gateway without inference", "disconnect": "Stop only the retained model connection and owned resources"}[verb], Long: long, Args: func(_ *cobra.Command, args []string) error {
 		if len(args) != 0 {
 			return fmt.Errorf("model %s accepts no positional arguments", verb)
 		}
@@ -33,8 +33,8 @@ func newOrkaModelLeaf(state *commandState, verb string) *cobra.Command {
 		}
 		if verb == "connect" {
 			id, err := uuid.Parse(connect.CredentialGeneration)
-			if connect.Route != "copilot" || strings.TrimSpace(connect.Model) == "" || err != nil || id.String() != connect.CredentialGeneration || id.Version() != 4 || id.Variant() != uuid.RFC4122 {
-				return fmt.Errorf("model connect requires --route copilot, --model ID and --credential-generation UUIDv4")
+			if !(connect.Route == "copilot" && connect.Vendor == "" || connect.Route == "key" && (connect.Vendor == "openai" || connect.Vendor == "anthropic")) || strings.TrimSpace(connect.Model) == "" || err != nil || id.String() != connect.CredentialGeneration || id.Version() != 4 || id.Variant() != uuid.RFC4122 {
+				return fmt.Errorf("model connect requires --route copilot or --route key --vendor openai|anthropic, --model ID and --credential-generation UUIDv4")
 			}
 		} else if id, err := uuid.Parse(connection); err != nil || id.String() != connection || id.Version() != 4 || id.Variant() != uuid.RFC4122 {
 			return fmt.Errorf("model disconnect requires --connection UUIDv4")
@@ -44,11 +44,12 @@ func newOrkaModelLeaf(state *commandState, verb string) *cobra.Command {
 	cmd.Flags().StringVarP(&connect.Namespace, "namespace", "n", "", "exact runtime namespace (required: orka-system)")
 	cmd.Flags().StringVar(&connect.Provider, "provider", "", "owned native Provider name (required)")
 	if verb == "connect" {
-		cmd.Flags().StringVar(&connect.Route, "route", "", "model route (required: copilot)")
+		cmd.Flags().StringVar(&connect.Route, "route", "", "model route (required: copilot or key)")
+		cmd.Flags().StringVar(&connect.Vendor, "vendor", "", "API key company (key route only: openai or anthropic)")
 		cmd.Flags().StringVar(&connect.Model, "model", "", "exact advertised model ID (required)")
 		cmd.Flags().StringVar(&connect.CredentialGeneration, "credential-generation", "", "endpoint-issued credential generation UUIDv4 (required)")
 		cmd.Example = "  kmx cluster orka model connect --namespace orka-system --route copilot \\\n    --provider copilot --model gpt-4.1 --credential-generation UUID\n" +
-			"  kmx cluster orka model connect --namespace orka-system --route copilot \\\n    --provider copilot --model gpt-4.1 --credential-generation UUID -o jsonl"
+			"  kmx cluster orka model connect --namespace orka-system --route key \\\n    --vendor openai --provider workspace --model gpt-4.1 --credential-generation UUID -o jsonl"
 	} else {
 		cmd.Flags().StringVar(&connection, "connection", "", "retained connection UUIDv4 (required)")
 		cmd.Example = "  kmx cluster orka model disconnect --namespace orka-system \\\n    --provider copilot --connection UUID\n" +

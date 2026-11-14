@@ -6,13 +6,14 @@ import (
 
 // Model connection selectors are nonsecret. Credential delivery and generation
 // serialization belong to the owning guest endpoint, not these options.
-type OrkaModelConnectOptions struct{ OperationID, Namespace, Route, Provider, Model, CredentialGeneration string }
+type OrkaModelConnectOptions struct{ OperationID, Namespace, Route, Vendor, Provider, Model, CredentialGeneration string }
 type OrkaModelProveOptions struct{ OperationID, Namespace, Provider, Connection, CredentialGeneration string }
 type OrkaModelDisconnectOptions struct{ OperationID, Namespace, Provider, Connection string }
 
 type OrkaModelConnection struct {
 	ID                   string `json:"id"`
 	Route                string `json:"route"`
+	Vendor               string `json:"vendor,omitempty"`
 	Provider             string `json:"provider"`
 	Model                string `json:"model"`
 	CredentialGeneration string `json:"credentialGeneration"`
@@ -44,7 +45,7 @@ func (e *OrkaModelError) Error() string { return NewMachineError(e.Code(), "pref
 func (e *OrkaModelError) Unwrap() error { return e.cause }
 func (e *OrkaModelError) Code() string {
 	switch e.code {
-	case "credential_unavailable", "permission_denied", "dependency_unavailable", "execution_unknown", "invalid_arguments", "configuration_invalid", "cancelled", "deadline_exceeded", "output_failed", "unsupported":
+	case "credential_rejected", "provider_unreachable", "model_unavailable", "credential_unavailable", "permission_denied", "dependency_unavailable", "execution_unknown", "invalid_arguments", "configuration_invalid", "cancelled", "deadline_exceeded", "output_failed", "unsupported":
 		return e.code
 	default:
 		return "operation_failed"
