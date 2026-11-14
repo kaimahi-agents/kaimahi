@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -9,12 +10,23 @@ import (
 const modelCredentialFile = modelCredentialDir + "/copilot-github-token"
 const modelOperationLabel = "kaimahi.dev/model-operation"
 
+func validModelRoute(route, vendor string) bool {
+	return route == "copilot" && vendor == "" || route == "key" && (vendor == "openai" || vendor == "anthropic")
+}
+
+func modelCredentialPath(route string) string {
+	if route == "key" {
+		return modelCredentialDir + "/model-api-key"
+	}
+	return modelCredentialFile
+}
+
 // The endpoint owns bytes and serializes delivery; kmx only checks metadata.
-func (a *App) modelCredentialInput() error {
+func (a *App) modelCredentialInput(route string) error {
 	if _, err := a.modelMountSource(); err != nil {
 		return err
 	}
-	raw, err := a.offlineCapture("stat", "-c", "%F:%u:%g:%a:%h:%s", "--", modelCredentialFile)
+	raw, err := a.offlineCapture("stat", "-c", "%F:%u:%g:%a:%h:%s", "--", modelCredentialPath(route))
 	f := strings.Split(strings.TrimSpace(string(raw)), ":")
 	if err != nil || len(f) != 6 || f[0] != "regular file" || f[1] != "0" || f[2] != "65532" || f[3] != "640" || f[4] != "1" {
 		return fmt.Errorf("credential file is unavailable or incompatible")
@@ -28,7 +40,15 @@ func (a *App) modelCredentialInput() error {
 
 // The interpreter is static on both qualified platforms. Copying it to a new
 // memory volume keeps the approved shell-less upstream Vekil image unchanged.
-func modelLauncherScript(tokenFile, tool, executable string) string {
+func modelLauncherScript(tokenFile, tool, executable, vendor, model string) string {
+	env, setup, args := "COPILOT_GITHUB_TOKEN", "", ""
+	if vendor != "" {
+		env = "MODEL_API_KEY"
+		// Only trusted, nonsecret configuration enters this shell literal.
+		config, _ := json.Marshal(modelVendorConfig(vendor, model))
+		setup = "umask 077\nprintf '%s' '" + string(config) + "' > /run/vekil/providers.json"
+		args = " --providers-config /run/vekil/providers.json"
+	}
 	return fmt.Sprintf(`set -eu
 export LC_ALL=C
 file=%q
@@ -41,18 +61,33 @@ case "$size" in ''|*[!0-9]*) exit 1 ;; esac
 token=$("$bb" cat -- "$file") || exit 1
 [ "${#token}" -eq "$size" ] || exit 1
 case "$token" in ''|*[![:graph:]]*) exit 1 ;; esac
-export COPILOT_GITHUB_TOKEN="$token"
-exec %q --host 0.0.0.0 --port 1337 --token-dir /run/vekil/auth --state-bindings-mode memory --policy-routing off >/dev/null 2>&1
-`, tokenFile, tool, executable)
+export %s="$token"
+%s
+exec %q --host 0.0.0.0 --port 1337 --token-dir /run/vekil/auth --state-bindings-mode memory --policy-routing off%s >/dev/null 2>&1
+`, tokenFile, tool, env, setup, executable, args)
 }
 
-func modelDocuments(provider, model, operation, arch string) ([]map[string]any, error) {
+// modelVendorConfig configures upstream access; the key value never enters it.
+func modelVendorConfig(vendor, model string) map[string]any {
+	p := map[string]any{"id": vendor, "default": true, "type": "openai-compatible", "base_url": "https://api.openai.com/v1", "api_key_env": "MODEL_API_KEY", "model_discovery": "openai"}
+	if vendor == "anthropic" {
+		p["type"], p["base_url"] = "anthropic-compatible", "https://api.anthropic.com"
+		p["auth_type"], p["auth_header"], p["models_path"] = "api-key-header", "x-api-key", "/v1/models"
+		p["extra_headers"] = map[string]string{"anthropic-version": "2023-06-01"}
+	} else if model == "gpt-4.1" {
+		// This model alone was qualified with Orka's Responses-first client.
+		p["models"] = []any{map[string]any{"public_id": "gpt-4.1", "endpoints": []string{"/responses", "/chat/completions"}}}
+	}
+	return map[string]any{"providers": []any{p}}
+}
+
+func modelDocuments(provider, model, operation, arch, vendor string) ([]map[string]any, error) {
 	images := map[string][2]string{
 		"amd64": {"b885b08ca26abb6362fee830cc683c255ec740da28ffcb48b711232ffebf2040", "5624bb6777cf469b1fb50ae3f981b15d2715ee2fffaf20b9998cfb7843726835"},
 		"arm64": {"9c1788a001e9abac79286d5cb5ccf43cbce67fe9391f68fefc835cfce0947948", "a4b7bbbb14a7e50bec3f6cbc4e2560c9b6792a7ae7062637bdfc25793817d4ff"},
 	}
 	pins, ok := images[arch]
-	if !ok || !modelResourceName(provider) || len(provider) > 45 || !verificationIdentity(model) || !modelUUID(operation) {
+	if !ok || (vendor != "" && !validModelRoute("key", vendor)) || !modelResourceName(provider) || len(provider) > 45 || !verificationIdentity(model) || !modelUUID(operation) {
 		return nil, fmt.Errorf("unsupported model profile")
 	}
 	name := provider + "-vekil"
@@ -65,7 +100,11 @@ func modelDocuments(provider, model, operation, arch string) ([]map[string]any, 
 	security := map[string]any{"runAsNonRoot": true, "runAsUser": 65532, "runAsGroup": 65532, "allowPrivilegeEscalation": false, "readOnlyRootFilesystem": true, "capabilities": map[string]any{"drop": []any{"ALL"}}}
 	memory := map[string]any{"name": "memory", "mountPath": "/run/vekil"}
 	init := map[string]any{"name": "launcher", "image": "docker.io/library/busybox@sha256:" + pins[1], "imagePullPolicy": "Never", "command": []any{"/bin/sh", "-ec"}, "args": []any{`umask 077; mkdir -p /run/vekil/bin /run/vekil/auth /run/vekil/home /run/vekil/data /run/vekil/config /run/vekil/tmp; cp /bin/busybox /run/vekil/bin/busybox; chmod 500 /run/vekil/bin/busybox`}, "securityContext": security, "volumeMounts": []any{memory}}
-	container := map[string]any{"name": "vekil", "image": "ghcr.io/sozercan/vekil@sha256:" + pins[0], "imagePullPolicy": "Never", "command": []any{"/run/vekil/bin/busybox", "sh", "-ec"}, "args": []any{modelLauncherScript(modelCredentialFile, "/run/vekil/bin/busybox", "/vekil")}, "securityContext": security, "volumeMounts": []any{memory, map[string]any{"name": "credential", "mountPath": modelCredentialDir, "readOnly": true, "mountPropagation": "None"}}, "ports": []any{map[string]any{"name": "http", "containerPort": 1337, "protocol": "TCP"}}, "env": []any{map[string]any{"name": "HOME", "value": "/run/vekil/home"}, map[string]any{"name": "XDG_CONFIG_HOME", "value": "/run/vekil/config"}, map[string]any{"name": "XDG_DATA_HOME", "value": "/run/vekil/data"}, map[string]any{"name": "TMPDIR", "value": "/run/vekil/tmp"}}}
+	credential := modelCredentialFile
+	if vendor != "" {
+		credential = modelCredentialPath("key")
+	}
+	container := map[string]any{"name": "vekil", "image": "ghcr.io/sozercan/vekil@sha256:" + pins[0], "imagePullPolicy": "Never", "command": []any{"/run/vekil/bin/busybox", "sh", "-ec"}, "args": []any{modelLauncherScript(credential, "/run/vekil/bin/busybox", "/vekil", vendor, model)}, "securityContext": security, "volumeMounts": []any{memory, map[string]any{"name": "credential", "mountPath": modelCredentialDir, "readOnly": true, "mountPropagation": "None"}}, "ports": []any{map[string]any{"name": "http", "containerPort": 1337, "protocol": "TCP"}}, "env": []any{map[string]any{"name": "HOME", "value": "/run/vekil/home"}, map[string]any{"name": "XDG_CONFIG_HOME", "value": "/run/vekil/config"}, map[string]any{"name": "XDG_DATA_HOME", "value": "/run/vekil/data"}, map[string]any{"name": "TMPDIR", "value": "/run/vekil/tmp"}}}
 	// Gate listener startup without polling upstream authentication or inference.
 	container["readinessProbe"] = map[string]any{"tcpSocket": map[string]any{"port": 1337}, "periodSeconds": 1, "timeoutSeconds": 1, "failureThreshold": 3, "successThreshold": 1}
 	pod := map[string]any{"serviceAccountName": "default", "automountServiceAccountToken": false, "enableServiceLinks": false, "securityContext": map[string]any{"runAsNonRoot": true, "runAsUser": 65532, "runAsGroup": 65532, "fsGroup": 65532, "seccompProfile": map[string]any{"type": "RuntimeDefault"}}, "containers": []any{container}, "initContainers": []any{init}, "volumes": []any{map[string]any{"name": "credential", "hostPath": map[string]any{"path": modelCredentialDir, "type": "Directory"}}, map[string]any{"name": "memory", "emptyDir": map[string]any{"medium": "Memory", "sizeLimit": "128Mi"}}}}
@@ -78,6 +117,10 @@ func modelDocuments(provider, model, operation, arch string) ([]map[string]any, 
 	key["type"] = "Opaque"
 	key["data"] = map[string]any{"api-key": "bm90LXVzZWQtYnktdGhpcy1lbmRwb2ludA=="}
 	service := makeDoc("Service", "v1", name, map[string]any{"type": "ClusterIP", "selector": labels, "ports": []any{map[string]any{"name": "http", "port": 1337, "targetPort": 1337, "protocol": "TCP"}}})
-	binding := makeDoc("Provider", "core.orka.ai/v1alpha1", provider, map[string]any{"type": "openai", "defaultModel": model, "baseURL": "http://" + name + ".orka-system.svc:1337/v1", "secretRef": map[string]any{"name": secret, "key": "api-key"}})
+	providerType := "openai"
+	if vendor == "anthropic" {
+		providerType = "anthropic"
+	}
+	binding := makeDoc("Provider", "core.orka.ai/v1alpha1", provider, map[string]any{"type": providerType, "defaultModel": model, "baseURL": "http://" + name + ".orka-system.svc:1337/v1", "secretRef": map[string]any{"name": secret, "key": "api-key"}})
 	return []map[string]any{key, dep, service, binding}, nil
 }

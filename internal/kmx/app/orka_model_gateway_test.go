@@ -50,7 +50,7 @@ func modelConfigureFixture(t *testing.T) (*App, map[string]map[string]any, *[]st
 	script := `#!/bin/sh
 case "$0 $*" in
 */findmnt*) printf 'tmpfs rw,nosuid,nodev,noexec\n';;
-*/stat*copilot-github-token*) printf 'regular file:0:65532:640:1:12\n';;
+*/stat*copilot-github-token*|*/stat*model-api-key*) printf 'regular file:0:65532:640:1:12\n';;
 */stat*credentials*) printf 'directory:0:65532:750:1:2\n';;
 */stat*) printf 'directory:0:0:755:1:1\n';;
 *docker*'context inspect'*) printf '%s' "$OFFLINE_DOCKER_CONTEXT_JSON";;
@@ -108,7 +108,7 @@ case "$0 $*" in
 				fmt.Fprint(cmd.Stdout, `{"status":"ready"}`)
 				return nil
 			}
-			if strings.HasSuffix(path, "/v1/models") {
+			if strings.HasSuffix(path, "/v1/models") || strings.HasSuffix(path, "/v1/models?limit=1000") {
 				fmt.Fprint(cmd.Stdout, `{"data":[{"id":"gpt-4.1"}]}`)
 				return nil
 			}

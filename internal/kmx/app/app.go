@@ -1,5 +1,8 @@
 // Package app orchestrates kmx operations using resolved configuration,
 // context guards, runtime adapters and external tools.
+// Guest model connections route Copilot or OpenAI/Anthropic API keys through
+// pinned Vekil; credentials stay in guest memory and the gateway environment,
+// never native Provider Secrets. Readiness is catalog access, not inference.
 // ReadOrkaTools shares bounded GET-only native tool inventory with destination
 // consumers: runtime-qualified pinned builtins and observed HTTP Tool resources,
 // never credentials, execution proof or provisioning. Connect, discovery and
