@@ -107,6 +107,12 @@ invalid review as clean.
   canceling and closing old sessions (no drain guarantee), or `--new` for a parallel named generation. Stable IDs
   refuse ambiguous routing; Chat/stop/session routing accepts runtime names and
   instance IDs. Never silently replace an active generation.
+  Preconfirmed live Orka `run --agent` may compact its target disclosure, but
+  still names action, context, selection source, server, namespace and posture
+  on stderr and keeps the result-authority notice. For remote targets, missing
+  preconfirmation retains the full guard presentation and exact typed terminal
+  consent. Without preconfirmation, nonterminal use refuses; exact
+  preconfirmation permits it, while mismatched confirmation refuses before Task creation.
   Run input is flag-only: `-p, --prompt TEXT` or `--prompt-file FILE|-`; a second
   positional argument is removed. Either input flag selects only that ad-hoc input
   unless `--case` explicitly adds a saved example. Native Windows keeps
