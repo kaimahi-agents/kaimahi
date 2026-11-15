@@ -75,10 +75,10 @@ func (e *suiteCandidateOutcome) cleanup() string {
 // No local persistence, name-based recovery, selectable partial proof or retries.
 func (a *App) evaluateSuiteWorkspaceCandidate(ctx context.Context, p *PreparedSuiteWorkspaceEvaluation) (err error) {
 	outcome := &suiteCandidateOutcome{phase: "preflight"}
-	guardRefusal := false
+	guardRefusal, thresholdStopped := false, false
 	defer func() {
 		if err != nil && !guardRefusal {
-			if ctx.Err() != nil && outcome.runs != nil && outcome.runs.NotExecuted > 0 {
+			if ctx.Err() != nil && outcome.runs != nil && thresholdStopped {
 				outcome.runs.ThresholdUnreachable = false
 				outcome.runs.Aborted = true
 			}
@@ -217,6 +217,7 @@ func (a *App) evaluateSuiteWorkspaceCandidate(ctx context.Context, p *PreparedSu
 			}
 			return worker.evaluateSuiteNativeCandidate(runCtx, placement, frame, p.options.ResultPort, p.judge, run)
 		}, &p.runs, p.options.FailFast)
+		thresholdStopped = p.options.FailFast && p.runs.ThresholdUnreachable
 		if err != nil {
 			return err
 		}

@@ -218,6 +218,76 @@ func TestCandidateFailFastThresholdLifecycle(t *testing.T) {
 	}
 }
 
+func TestRootEvalJSONCleanupCancellationPreservesAssertionFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		failFast         bool
+		failFastSelected bool
+	}{
+		{name: "default"},
+		{name: "explicit false", failFastSelected: true},
+		{name: "enabled without early stop", failFast: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("KMX_HOME", privateSuiteDir(t))
+			a, _, f, state := publicNativeEvaluationFixture(t)
+			opt := nativeEvaluationOptions(t)
+			opt.ResultPort, opt.ManagedPass, opt.JSON = f.opt.ResultPort, true, true
+			opt.FailFast, opt.FailFastSet = tc.failFast, tc.failFastSelected
+			p, err := PrepareSuiteWorkspaceEvaluation(t.Context(), opt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer p.Close()
+
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			f.answers[nativeCanary+" first"] = "wrong"
+			f.answers[nativeCanary+" second"] = nativeCanary + " answer"
+			state.beforeDelete = func(context.Context, *exec.Cmd) error {
+				cancel()
+				return nil
+			}
+			var out, diagnostics bytes.Buffer
+			a.Out, a.Err = &out, &diagnostics
+
+			err = a.EvaluateSuiteWorkspace(ctx, p)
+			var report struct {
+				Status, Detail, Cleanup              string
+				Executed, NotExecuted, Passed, Total int
+				Aborted, ThresholdUnreachable        bool
+			}
+			if decodeErr := json.Unmarshal(out.Bytes(), &report); decodeErr != nil {
+				t.Fatalf("stdout is not one JSON document: %s (%v)", &out, decodeErr)
+			}
+			if err == nil || !errors.Is(err, errSuiteNativeCaseFailed) || !errors.Is(err, context.Canceled) {
+				t.Fatalf("assertion failure or cancellation identity lost: %v", err)
+			}
+			if report.Status != "failed" || report.Executed != 1 || report.NotExecuted != 1 || report.Passed != 0 || report.Total != 2 || report.Aborted || report.ThresholdUnreachable {
+				t.Fatalf("normal assertion failure was reclassified: %+v err=%v", report, err)
+			}
+			if !strings.Contains(report.Detail, "1 of 2 runs executed; 0 passed; 1 not executed") || strings.Contains(report.Detail, "aborted on execution error") || strings.Contains(report.Detail, "threshold is unreachable") {
+				t.Fatalf("normal assertion detail was reclassified: %+v", report)
+			}
+			if report.Cleanup != "candidate cleanup completed" || len(state.objects) != 0 || len(state.creates) != 3 {
+				t.Fatalf("cleanup or execution count changed: report=%+v creates=%v objects=%v", report, state.creates, state.objects)
+			}
+			if len(p.completed) != 0 || p.record != "" {
+				t.Fatal("incomplete run set gained managed proof authority")
+			}
+			if _, statErr := os.Stat(opt.Out); !os.IsNotExist(statErr) {
+				t.Fatal("assertion failure exported a receipt", statErr)
+			}
+			if _, _, latestErr := p.store.latest(t.Context(), p.suite); !errors.Is(latestErr, errSuitePassMissing) {
+				t.Fatal("assertion failure registered managed proof", latestErr)
+			}
+			if strings.Contains(out.String()+diagnostics.String()+err.Error(), nativeCanary) {
+				t.Fatal("payload leaked from assertion failure diagnostics")
+			}
+		})
+	}
+}
+
 func TestRootEvalJSONRefusesOtherRuntimeCountsOffline(t *testing.T) {
 	for _, runtime := range []string{"kagent", "agentsessions"} {
 		t.Run(runtime, func(t *testing.T) {
