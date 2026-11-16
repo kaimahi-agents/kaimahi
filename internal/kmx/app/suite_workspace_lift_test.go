@@ -167,28 +167,43 @@ func TestWorkspaceLiftPlanColdOffline(t *testing.T) {
 }
 
 func TestWorkspaceLiftEvaluationJSONRefusedOffline(t *testing.T) {
-	t.Setenv("KMX_HOME", privateSuiteDir(t))
-	eval := nativeEvaluationOptions(t)
-	eval.Out, eval.JSON = "", true
-	opt := WorkspaceLiftOptions{Workspace: eval.Workspace, Evaluation: eval, Destination: ReleaseLiftOptions{ToContext: "remote-prod", Inference: "provider:inference"}, EvalName: "dev", DestinationName: "prod", Repository: "registry.invalid/agents"}
-	p, err := PrepareWorkspaceLift(t.Context(), opt)
-	if p != nil {
-		p.Close()
-	}
-	if p != nil || err == nil || err.Error() != "workspace Lift requires only frozen workspace and concrete Orka selections" {
-		t.Fatalf("nested evaluation JSON was not refused offline: prepared=%t err=%v", p != nil, err)
-	}
-	state, e := config.StateDir()
-	if e != nil {
-		t.Fatal(e)
-	}
-	if _, e := os.Stat(filepath.Join(state, "suites")); !os.IsNotExist(e) {
-		t.Fatal("nested JSON refusal reached private proof state", e)
+	for _, nested := range []string{"JSON", "fail-fast", "fail-fast explicit false"} {
+		t.Run(nested, func(t *testing.T) {
+			t.Setenv("KMX_HOME", privateSuiteDir(t))
+			eval := nativeEvaluationOptions(t)
+			eval.Out = ""
+			if nested == "JSON" {
+				eval.JSON = true
+			} else if nested == "fail-fast" {
+				eval.FailFast = true
+			} else {
+				eval.FailFastSet = true
+			}
+			opt := WorkspaceLiftOptions{Workspace: eval.Workspace, Evaluation: eval, Destination: ReleaseLiftOptions{ToContext: "remote-prod", Inference: "provider:inference"}, EvalName: "dev", DestinationName: "prod", Repository: "registry.invalid/agents"}
+			p, err := PrepareWorkspaceLift(t.Context(), opt)
+			if p != nil {
+				p.Close()
+			}
+			if p != nil || err == nil || err.Error() != "workspace Lift requires only frozen workspace and concrete Orka selections" {
+				t.Fatalf("nested evaluation %s was not refused offline: prepared=%t err=%v", nested, p != nil, err)
+			}
+			state, e := config.StateDir()
+			if e != nil {
+				t.Fatal(e)
+			}
+			if _, e := os.Stat(filepath.Join(state, "suites")); !os.IsNotExist(e) {
+				t.Fatalf("nested %s refusal reached private proof state: %v", nested, e)
+			}
+		})
 	}
 
 	// The outer format still owns the single composed report, without config.
+	t.Setenv("KMX_HOME", privateSuiteDir(t))
+	eval := nativeEvaluationOptions(t)
+	eval.Out = ""
+	opt := WorkspaceLiftOptions{Workspace: eval.Workspace, Evaluation: eval, Destination: ReleaseLiftOptions{ToContext: "remote-prod", Inference: "provider:inference"}, EvalName: "dev", DestinationName: "prod", Repository: "registry.invalid/agents"}
 	opt.Evaluation.JSON, opt.JSON, opt.PlanOnly = false, true, true
-	p, err = PrepareWorkspaceLift(t.Context(), opt)
+	p, err := PrepareWorkspaceLift(t.Context(), opt)
 	if err != nil {
 		t.Fatal(err)
 	}

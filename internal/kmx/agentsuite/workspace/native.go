@@ -65,6 +65,7 @@ type snapshot struct {
 	name, fingerprint string
 	files             map[string][]byte
 	source            map[string]SourceFile
+	runtime           RuntimeProfile
 }
 
 func entries(r *os.Root, name string, limit int) ([]os.DirEntry, error) {
@@ -107,6 +108,7 @@ func loadSourceMode(ctx context.Context, root string, flowMode bool) (*snapshot,
 	var files map[string][]byte
 	renderer, executionProfile := multiRendererVersion, ""
 	var declaredRuntime *RuntimeProfile
+	var selectedRuntime RuntimeProfile
 	if s.workspace.SchemaVersion == 3 {
 		m := s.members[0]
 		files, err = resolveProfiled(s.workspace.Name, m, s.profiles)
@@ -120,6 +122,7 @@ func loadSourceMode(ctx context.Context, root string, flowMode bool) (*snapshot,
 		if profileErr != nil {
 			return nil, profileErr
 		}
+		selectedRuntime = profile
 		renderer = rendererVersion
 		if profile.ID == "kagent" {
 			renderer, executionProfile, declaredRuntime = kagentRendererVersion, kagentExecutionProfile, &profile
@@ -153,7 +156,7 @@ func loadSourceMode(ctx context.Context, root string, flowMode bool) (*snapshot,
 	if err != nil {
 		return nil, err
 	}
-	return &snapshot{name: s.workspace.Name, fingerprint: fingerprint, files: files, source: s.source}, nil
+	return &snapshot{name: s.workspace.Name, fingerprint: fingerprint, files: files, source: s.source, runtime: selectedRuntime}, nil
 }
 
 // authoredCases parses eval/*.yaml in file-name order (the evaluation order).
