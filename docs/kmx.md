@@ -242,8 +242,8 @@ new named generation. The broker boundary admits a future container backend
 without making containers mandatory for local Markdown agents.
 The local lifecycle additionally records separate portable-contract and private
 binding digests plus the selected agent and tool backends. The current binding
-discloses host-user ambient filesystem access and unrestricted outbound network;
-inbound dispatch is possible only over the inherited broker channel. Broker call
+discloses host-user ambient filesystem access and unrestricted network access;
+the typed dispatch channel is separate from network ingress policy. Broker call
 budgets are one concurrent, five per turn, 64 per session and 1,024 per instance.
 Apple-container, Linux-native and rootless-OCI bindings can represent declared
 mounts and no/brokered network policy, but remain refused until their launchers
@@ -255,6 +255,7 @@ typed argv templates. The initial hidden `kmx run FILE --check-tools
 without model/config/cluster access. Dynamic values are single argv elements:
 reviewed enums or anchored strings, clean relative paths, and bounded integers;
 the first argv element remains literal and no shell is introduced.
+See [resident tool setup and Agent Primitives mapping](resident-tools.md).
 Without input, resident Run starts/reuses the agent and sends no turn;
 `kmx run FILE --prompt "input"` creates a resident session and sends that input. Test checks
 the file's saved examples in authored order and accepts no ad-hoc input. Use

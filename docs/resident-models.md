@@ -143,8 +143,10 @@ OpenAI sends `max_completion_tokens`, other endpoints send `max_tokens`. Copilot
 retains its provider-owned request policy. Actual context-limit or quota refusals
 remain failed turns, with no replay.
 
-Resident execution remains text-only and tool-free. Recorded `toolCalling` and
-`streaming` capabilities do not enable resident tools or streaming. One-shot
+Resident endpoint routes remain text-only and tool-free. Fake/Copilot agents may
+use the separate [command-tool broker](resident-tools.md); an explicit
+`toolCalling: false` profile refuses tool-bearing activation. Other endpoint
+adapters and recorded `streaming` metadata do not enable tools or streaming. One-shot
 `run --once`, file Test, and MCP retain their existing preview contracts; resident
 `modelRequirements` is not a new suite evaluation or deployment gate. Native
 Windows resident execution remains deferred. Transport and lifecycle tests use

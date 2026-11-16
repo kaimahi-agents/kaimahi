@@ -213,7 +213,7 @@ disabled, missing, MCP-backed or environment-referencing tools. The model worker
 receives only checked tool definitions and a typed channel to a separate sibling
 broker process; configured executable paths and fixed argv never enter
 model-worker state, history or provider requests. Each call uses the existing
-empty-input command contract, explicit empty environment, bounded output and
+empty-input command contract by default (or reviewed typed arguments), explicit empty environment, bounded output and
 owned process-group cleanup. The reported `bounded-process` backend is guarded
 host execution, **not** filesystem, network or OS sandboxing. The broker protocol
 records its actual backend so a container backend can later add mounts, network
@@ -236,23 +236,26 @@ WSL.
 Resident model discovery, endpoint credentials, and capability requirements are
 described in [resident model selection](resident-models.md). Local worker placement
 does not imply local inference: OpenAI, Anthropic, and Copilot send content to their
-selected hosted service.
+selected hosted service. Resident broker tool calls currently use fake or Copilot;
+other endpoint routes remain tool-free and refuse tool-bearing activation.
 
 Resident activation now separates a portable, credential-free tool contract from
 a private local binding. The contract contains the `local-command` provider
-identity, sorted callable names and explicit effect/approval status; it contains
-no command, path, endpoint, credential or backend. The binding names the distinct
+identity, sorted callable names and conservative `mutating`/`policy-controlled`
+effect/approval status. It excludes resolved commands, host paths, endpoints,
+credentials and backend bindings. The binding names the distinct
 agent and tool runtimes, actual filesystem/network boundary and call budgets.
 Lifecycle state retains only contract, binding, config and complete plan digests.
 Neither the binding nor local execution is AgentSuite evidence, packaged content
 or remote deployment authority.
 
 The implemented binding is `resident-process` + `bounded-process`. It truthfully
-records `host-user` ambient filesystem access and unrestricted outbound network;
-only inbound tool dispatch is isolated to the inherited broker channel. The
+records `host-user` ambient filesystem access and unrestricted inbound/outbound
+network. The separate `dispatch` field describes the inherited broker channel;
+it is not a network-ingress restriction. The
 broker admits one concurrent call, at most five model-selected calls per turn,
 64 calls per session and 1,024 calls per instance, with a 30-second call timeout.
-Attempts consume budget even when execution fails or is cancelled. These limits
+Admitted attempts consume budget even when execution fails or is cancelled. These limits
 control dispatch and resource abuse but do not make host-user execution a
 sandbox. CLI diagnostics disclose both ambient filesystem and network access.
 
@@ -262,6 +265,8 @@ outbound network or brokered HTTPS origins plus request/response budgets. This i
 portable planning groundwork only: runtime admission currently accepts only
 `bounded-process` and never downgrades another requested backend. No container,
 native sandbox, network proxy or credential resolver is claimed by this slice.
+See [the broker demo and Agent Primitives mapping](resident-tools.md) for a runnable
+example and the distinction between local types, runtime behavior and portable artifacts.
 
 MCP
 Run/Test also accept schema version 3 with a checked `sourceVersion` from the
@@ -510,12 +515,12 @@ commandTools:
 
 `command` must be an absolute executable. `workingDirectory` defaults to the
 physical agent folder and must remain inside it after symlink resolution. There
-is no shell, interpolation, glob expansion or executable discovery. The first
+is no implicit shell, interpolation, glob expansion or executable discovery. The first
 argv element must remain literal, so a model cannot choose the command's
 subcommand. Dynamic strings require either one explicit enum or an anchored RE2
 pattern and reject leading `-`; paths must be clean local relative paths without
 `..`, absolute roots or backslashes; integers require reviewed nonnegative bounds.
-These rules prevent argv/shell/path traversal through modeled fields, but a
+These rules prevent adding argv elements or lexically escaping path parameters, but a
 command may still interpret an otherwise valid string as its own language. Use
 an enum or a dedicated adapter for sensitive command grammars. Relative-path
 validation is lexical: the bounded-process backend may still follow an authored
@@ -526,7 +531,8 @@ agent-file access generally, concurrent hostile filesystem mutation is outside
 the cooperative guarantee and this is not immutable byte attestation.
 The complete child environment contains frozen PATH when available plus the
 explicit named references; every explicit value is conservatively treated as
-sensitive. Unused, Disabled and fully recorded tools do not resolve environment
+sensitive in one-shot Run/Test. Resident bindings instead reject environment
+references and launch commands with an explicitly empty environment. Unused, Disabled and fully recorded tools do not resolve environment
 or start a process. Pending recording capture uses the ordinary checked save only
 after command cleanup; populated recordings replay offline without parsing the
 launch subtree.
@@ -555,6 +561,12 @@ calls; only fixed args, a 1–15 second timeout, expected exit code and optional
 anchored stdout regex are accepted. Raw check output never enters model context,
 history, lifecycle state, package content or default diagnostics. A failed
 replacement check leaves the prior resident generation active.
+Startup allows ten seconds of overhead plus each declared check timeout and its
+two-second cleanup allowance; caller cancellation still bounds the whole operation.
+Closing the control channel cancels in-progress activation probes. Broker control,
+configuration and readiness descriptors are close-on-exec before probes run.
+Repeated `(session UID, idempotency key)` calls refuse within the broker lifetime;
+they never replay a command. This is not durable recovery after broker loss.
 
 ### Stdio host lifecycle
 

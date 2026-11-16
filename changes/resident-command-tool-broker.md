@@ -1,7 +1,8 @@
 ### Added
 
 - Resident local Markdown agents can use enabled fixed `commandTools` through a
-  separate sibling broker process. The model worker receives typed calls/results
+  separate sibling broker process with fake/Copilot inference. Other endpoint
+  routes remain tool-free. The model worker receives typed calls/results
   but no configured executable or argv; configuration and executable content
   identities participate in lifecycle drift. The initial credential-free bounded-process backend retains fixed argv,
   explicit empty environment, output limits and process-group cleanup and is
@@ -19,3 +20,17 @@
   status; `kmx run FILE --check-tools` runs them without a model. Dynamic values remain
   single argv elements restricted to reviewed enums/anchored strings, clean
   relative paths or bounded integers, with no shell or model-selected subcommand.
+
+### Fixed
+
+- Match argument/probe regexes against the complete value, including alternations.
+  Budget startup for all declared probes and cleanup; cancellation/EOF stops owned
+  probe groups, and inherited broker descriptors cannot reach commands.
+- Bind complete resolved inputs and exact schemas before activation, reject
+  unsupported credential resolvers/backends, and reject repeated session-scoped
+  call keys without replay. Retain cleanup uncertainty and credential checks across
+  normalized command output and model/tool boundaries.
+- Record host-user network ingress/egress separately from broker dispatch. Tool
+  effects are conservatively mutating. Sessions API reuse and private tool/binding
+  digests do not claim durable Sessions journaling or public AgentSuite artifacts.
+  See `docs/resident-tools.md` for the tested setup demo and primitive mapping.

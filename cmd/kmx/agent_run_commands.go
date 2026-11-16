@@ -240,6 +240,9 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 					route, capabilities = profile.Route, profile.Capabilities
 				}
 				if profilePath == "" {
+					if len(pair.Agent.Tools) > 0 && route.Provider != "fake" && route.Provider != "copilot" {
+						return fileUsageError(fmt.Errorf("resident command tools require fake or Copilot; other routes remain tool-free"))
+					}
 					route, err = modelaccess.Resolve(cmd.Context(), route, state.deps.discoverModels)
 					if err != nil {
 						return fileUsageError(err)
@@ -343,7 +346,7 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 					fmt.Fprintln(cmd.ErrOrStderr(), "Warning:", instance.LastError)
 				}
 				if instance.ToolBackend != "" {
-					if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Tools: %s · host-user filesystem and unrestricted outbound network; not a sandbox\n", instance.ToolBackend); err != nil {
+					if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Tools: %s · host-user filesystem and unrestricted network; not a sandbox\n", instance.ToolBackend); err != nil {
 						return err
 					}
 				}

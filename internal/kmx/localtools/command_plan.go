@@ -3,6 +3,7 @@ package localtools
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -18,6 +19,19 @@ type CommandPlan struct {
 	ConfigRevision string          `json:"configRevision"`
 	Revision       string          `json:"revision"`
 	Commands       []CommandConfig `json:"commands"`
+}
+
+// Digest binds the exact closed execution inputs, independently of source bytes.
+// It is a private KMX identity, not an AgentSuite/JCS artifact digest.
+func (p CommandPlan) Digest() (string, error) {
+	raw, err := json.Marshal(struct {
+		Config   string          `json:"config"`
+		Commands []CommandConfig `json:"commands"`
+	}{p.ConfigRevision, p.Commands})
+	if err != nil {
+		return "", ErrServerSelection
+	}
+	return fmt.Sprintf("sha256:%x", sha256.Sum256(raw)), nil
 }
 
 // FreezeCommandPlan reads the agent folder's exact kmx.yaml once and resolves
@@ -63,8 +77,6 @@ func FreezeCommandPlan(ctx context.Context, filename string, names []string) (Co
 	slices.Sort(wanted)
 	seen := make([]string, 0, len(definitions))
 	plan := CommandPlan{ConfigRevision: fmt.Sprintf("sha256:%x", sha256.Sum256(raw))}
-	identity := sha256.New()
-	_, _ = identity.Write(raw)
 	for _, definition := range definitions {
 		if len(definition.env) != 0 {
 			return CommandPlan{}, ErrServerSelection
@@ -98,20 +110,15 @@ func FreezeCommandPlan(ctx context.Context, filename string, names []string) (Co
 		}
 		seen = append(seen, cfg.Name)
 		plan.Commands = append(plan.Commands, cfg)
-		_, _ = identity.Write([]byte{0})
-		_, _ = identity.Write([]byte(cfg.Name))
-		_, _ = identity.Write([]byte{0})
-		_, _ = identity.Write([]byte(cfg.ExecutableDigest))
-		_, _ = identity.Write([]byte{0})
-		_, _ = identity.Write([]byte(cfg.ExecutableID))
-		_, _ = identity.Write([]byte{0})
-		_, _ = identity.Write([]byte(cfg.DirectoryID))
 	}
 	slices.Sort(seen)
 	if !slices.Equal(seen, wanted) {
 		return CommandPlan{}, ErrServerSelection
 	}
-	plan.Revision = fmt.Sprintf("sha256:%x", identity.Sum(nil))
+	plan.Revision, err = plan.Digest()
+	if err != nil {
+		return CommandPlan{}, err
+	}
 	return plan, nil
 }
 
@@ -127,6 +134,9 @@ func OpenCommandPlan(plan CommandPlan) (*Host, error) {
 		return valid
 	}
 	if !validRevision(plan.ConfigRevision) || !validRevision(plan.Revision) || len(plan.Commands) == 0 || len(plan.Commands) > 32 {
+		return nil, ErrServerSelection
+	}
+	if digest, err := plan.Digest(); err != nil || digest != plan.Revision {
 		return nil, ErrServerSelection
 	}
 	for _, cfg := range plan.Commands {

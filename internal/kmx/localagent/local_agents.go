@@ -570,12 +570,20 @@ func ActivateWithOptions(ctx context.Context, executable string, pair *agentfile
 		return Instance{}, false, errors.New("a runtime name is valid only for a new parallel instance")
 	}
 	if len(pair.Agent.Tools) > 0 {
+		if options.Capabilities.ToolCalling != nil && !*options.Capabilities.ToolCalling {
+			return Instance{}, false, errors.New("selected model profile explicitly disables tool calling")
+		}
 		if provider != "fake" && provider != "copilot" {
 			return Instance{}, false, errors.New("resident command tools require the fake or Copilot tool-capable route")
 		}
 		if options.ToolPlan == nil || !validDigest(options.ToolPlan.ConfigRevision()) || !validDigest(options.ToolPlan.Revision()) || options.ToolPlan.Binding.AgentRuntime.Backend != residenttools.ResidentProcess || options.ToolPlan.Backend != residenttools.BoundedProcess {
 			return Instance{}, false, errors.New("resident tools require a frozen broker plan")
 		}
+		frozen, err := options.ToolPlan.Freeze(pair.Agent.Tools)
+		if err != nil {
+			return Instance{}, false, err
+		}
+		options.ToolPlan = &frozen
 		requested.ToolConfigRevision, requested.ToolPlanRevision = options.ToolPlan.ConfigRevision(), options.ToolPlan.Revision()
 		requested.ToolContractDigest, requested.ToolBindingDigest = options.ToolPlan.ContractDigest(), options.ToolPlan.BindingDigest()
 		requested.AgentBackend, requested.ToolBackend = options.ToolPlan.Binding.AgentRuntime.Backend, options.ToolPlan.Backend

@@ -59,6 +59,7 @@ type LocalBinding struct {
 
 type RuntimeBinding struct {
 	Backend    string           `json:"backend"`
+	Dispatch   string           `json:"dispatch"`
 	Filesystem FilesystemPolicy `json:"filesystem"`
 	Network    NetworkPolicy    `json:"network"`
 }
@@ -114,7 +115,7 @@ func (c ToolContract) Validate() error {
 	}
 	prior := ""
 	for _, tool := range c.Tools {
-		if !localtools.ValidToolName(tool.Name) || tool.Name <= prior || tool.Description == "" || tool.InputSchema == nil || tool.Effect != "unspecified" || tool.Approval != "policy-controlled" {
+		if !localtools.ValidToolName(tool.Name) || tool.Name <= prior || tool.Description == "" || tool.InputSchema == nil || tool.Effect != "mutating" || tool.Approval != "policy-controlled" {
 			return errors.New("invalid resident tool contract")
 		}
 		prior = tool.Name
@@ -170,13 +171,16 @@ func validateRuntimeBinding(runtime RuntimeBinding, agent bool) error {
 	if agent {
 		incoming, working = "client-channel-only", "snapshot-cache"
 	}
+	if runtime.Dispatch != incoming {
+		return errors.New("invalid runtime dispatch channel")
+	}
 	if host {
-		if runtime.Filesystem.Mode != "host-user" || runtime.Filesystem.WorkingDirectory != working || !runtime.Filesystem.AmbientRead || !runtime.Filesystem.AmbientWrite || runtime.Network.Mode != "host-user" || runtime.Network.Incoming != incoming || runtime.Network.Outgoing != "unrestricted" || len(runtime.Network.Origins) != 0 || runtime.Network.MaxRequestsPerCall != 0 || runtime.Network.MaxRequestsPerSession != 0 || runtime.Network.MaxResponseBytes != 0 {
+		if runtime.Filesystem.Mode != "host-user" || runtime.Filesystem.WorkingDirectory != working || !runtime.Filesystem.AmbientRead || !runtime.Filesystem.AmbientWrite || runtime.Network.Mode != "host-user" || runtime.Network.Incoming != "unrestricted" || runtime.Network.Outgoing != "unrestricted" || len(runtime.Network.Origins) != 0 || runtime.Network.MaxRequestsPerCall != 0 || runtime.Network.MaxRequestsPerSession != 0 || runtime.Network.MaxResponseBytes != 0 {
 			return errors.New("invalid host-user runtime policy")
 		}
 		return nil
 	}
-	if runtime.Filesystem.Mode != "declared-mounts" || runtime.Filesystem.AmbientRead || runtime.Filesystem.AmbientWrite || runtime.Network.Mode != "isolated" || runtime.Network.Incoming != incoming || runtime.Network.Outgoing != "none" && runtime.Network.Outgoing != "brokered" {
+	if runtime.Filesystem.Mode != "declared-mounts" || runtime.Filesystem.AmbientRead || runtime.Filesystem.AmbientWrite || runtime.Network.Mode != "isolated" || runtime.Network.Incoming != "none" || runtime.Network.Outgoing != "none" && runtime.Network.Outgoing != "brokered" {
 		return errors.New("invalid isolated runtime policy")
 	}
 	if runtime.Network.Outgoing == "none" {
@@ -213,7 +217,7 @@ func boundedProcessContract(plan localtools.CommandPlan) (ToolContract, error) {
 	}
 	tools := make([]ContractTool, 0, len(definitions))
 	for _, definition := range definitions {
-		tools = append(tools, ContractTool{Name: definition.Name, Description: definition.Description, InputSchema: definition.InputSchema, Effect: "unspecified", Approval: "policy-controlled"})
+		tools = append(tools, ContractTool{Name: definition.Name, Description: definition.Description, InputSchema: definition.InputSchema, Effect: "mutating", Approval: "policy-controlled"})
 	}
 	slices.SortFunc(tools, func(a, b ContractTool) int { return strings.Compare(a.Name, b.Name) })
 	contract := ToolContract{Version: ToolContractVersion, Provider: Provider{ID: "local-command", Version: "1.0.0"}, Tools: tools}
@@ -233,8 +237,8 @@ func NewBoundedProcessPlan(commands localtools.CommandPlan) (Plan, error) {
 	}
 	binding := LocalBinding{
 		Version: LocalBindingVersion, EnvironmentClass: "local", ContractDigest: contractDigest, ResolutionDigest: commands.Revision,
-		AgentRuntime: RuntimeBinding{Backend: ResidentProcess, Filesystem: FilesystemPolicy{Mode: "host-user", WorkingDirectory: "snapshot-cache", AmbientRead: true, AmbientWrite: true}, Network: NetworkPolicy{Mode: "host-user", Incoming: "client-channel-only", Outgoing: "unrestricted"}},
-		ToolRuntime:  RuntimeBinding{Backend: BoundedProcess, Filesystem: FilesystemPolicy{Mode: "host-user", WorkingDirectory: "agent-subtree", AmbientRead: true, AmbientWrite: true}, Network: NetworkPolicy{Mode: "host-user", Incoming: "broker-channel-only", Outgoing: "unrestricted"}},
+		AgentRuntime: RuntimeBinding{Backend: ResidentProcess, Dispatch: "client-channel-only", Filesystem: FilesystemPolicy{Mode: "host-user", WorkingDirectory: "snapshot-cache", AmbientRead: true, AmbientWrite: true}, Network: NetworkPolicy{Mode: "host-user", Incoming: "unrestricted", Outgoing: "unrestricted"}},
+		ToolRuntime:  RuntimeBinding{Backend: BoundedProcess, Dispatch: "broker-channel-only", Filesystem: FilesystemPolicy{Mode: "host-user", WorkingDirectory: "agent-subtree", AmbientRead: true, AmbientWrite: true}, Network: NetworkPolicy{Mode: "host-user", Incoming: "unrestricted", Outgoing: "unrestricted"}},
 		Limits:       InvocationLimits{MaxConcurrent: 1, MaxCallsPerTurn: localtools.MaxCalls, MaxCallsPerSession: 64, MaxCallsPerInstance: 1024, TimeoutMilliseconds: 30000},
 	}
 	if err := binding.Validate(); err != nil {

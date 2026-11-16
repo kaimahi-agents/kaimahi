@@ -52,7 +52,12 @@ func commandPlanFixture(t *testing.T, cfg CommandConfig) CommandPlan {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return CommandPlan{ConfigRevision: "sha256:" + strings.Repeat("a", 64), Revision: "sha256:" + strings.Repeat("b", 64), Commands: []CommandConfig{cfg}}
+	plan := CommandPlan{ConfigRevision: "sha256:" + strings.Repeat("a", 64), Commands: []CommandConfig{cfg}}
+	plan.Revision, err = plan.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return plan
 }
 
 func residentCommandFixture(t *testing.T, mode string) CommandConfig {
@@ -146,6 +151,7 @@ func TestCommandActivationChecksVersionAndStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 	plan.Commands[0].Checks[1].StdoutPattern = `^not-ready$`
+	plan.Revision, _ = plan.Digest()
 	if err := RunCommandChecks(t.Context(), plan); err == nil {
 		t.Fatal("mismatched readiness output passed")
 	}

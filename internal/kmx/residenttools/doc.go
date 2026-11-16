@@ -5,8 +5,10 @@
 // not a filesystem, network or operating-system sandbox. Additional backends,
 // including container isolation, must preserve this protocol and report their
 // actual backend rather than silently weakening isolation.
-// Portable ToolContract values contain only provider/tool authority; private
+// Logical ToolContract values contain only provider/tool definitions; private
 // LocalBinding values separately identify agent/tool runtimes, local resolution,
 // isolation facts and bounded call/network policy. Neither is AgentSuite evidence
-// or remote deployment authority.
+// or remote deployment authority. Sessions API calls/results retain controller-
+// mediated execution and per-session idempotency scope, but this private broker
+// does not create a durable Sessions journal or public ToolProvider artifact.
 package residenttools

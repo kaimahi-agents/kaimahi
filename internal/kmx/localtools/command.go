@@ -240,7 +240,7 @@ func commandResult(exit int, stdout, stderr []byte, check func(...string) error)
 	}
 	rawOut, rawErr := string(stdout), string(stderr)
 	cleanOut, cleanErr := normalizeCommandOutput(rawOut), normalizeCommandOutput(rawErr)
-	if check(rawOut, rawErr, rawOut+rawErr, cleanOut, cleanErr) != nil {
+	if check(rawOut, rawErr, rawOut+rawErr, cleanOut, cleanErr, cleanOut+cleanErr) != nil {
 		return nil, ErrCommand
 	}
 	result := map[string]any{"exitCode": exit, "succeeded": exit == 0}

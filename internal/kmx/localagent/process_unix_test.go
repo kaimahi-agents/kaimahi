@@ -20,6 +20,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/residenttools"
 )
 
@@ -185,6 +186,15 @@ func TestResidentCommandToolRunsThroughBroker(t *testing.T) {
 	planValue.Binding.Limits.MaxCallsPerInstance = 2
 	planValue.Binding.Limits.MaxCallsPerTurn = 1
 	plan := &planValue
+	toolCalling := false
+	_, _, err = ActivateWithOptions(t.Context(), "", pair, "fake", "", "fake", ActivationOptions{ToolPlan: plan, Capabilities: modelaccess.Capabilities{ToolCalling: &toolCalling}})
+	if err == nil || !strings.Contains(err.Error(), "disables tool calling") {
+		t.Fatalf("explicit tool refusal lost: %v", err)
+	}
+	entries, err := os.ReadDir(home)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("refusal created state: %v %v", entries, err)
+	}
 	record, created, err := ActivateWithOptions(t.Context(), "", pair, "fake", "", "fake", ActivationOptions{Mode: ActivationNormal, ToolPlan: plan})
 	if err != nil || !created || record.AgentBackend != residenttools.ResidentProcess || record.ToolBackend != residenttools.BoundedProcess || record.ToolConfigRevision != commands.ConfigRevision || record.ToolPlanRevision != plan.Revision() || record.ToolContractDigest != plan.ContractDigest() || record.ToolBindingDigest != plan.BindingDigest() {
 		t.Fatalf("record=%+v created=%v err=%v", record, created, err)

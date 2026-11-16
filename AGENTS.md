@@ -11,7 +11,7 @@ changes in the package's Go doc comment.
 
 Resident lifecycle belongs to `internal/kmx/localagent`; model route discovery,
 endpoint credential ownership, protocol adaptation and capability matching belong
-to `internal/kmx/modelaccess`. Resident Run supports tool-free fake/Copilot,
+to `internal/kmx/modelaccess`. Resident Run supports fake/Copilot,
 Ollama/Foundry Local, compatible/OpenAI and Anthropic Messages routes. Freeze exact
 endpoint/key-reference/capability/requirement identity in each generation; keys
 travel only in the worker credential pipe. Environment keys are startup snapshots;
@@ -30,6 +30,15 @@ Profiles are operator declarations, Ollama show
 metadata is advertised, and neither is execution evidence. `modelRequirements`
 frontmatter is resident-only; Run flags may strengthen but never weaken it.
 One-shot previews and Test retain their existing provider/tool contracts.
+Resident command tools use fake/Copilot only; the other endpoint adapters remain
+tool-free. `residenttools` owns the broker and its private contract/binding. Complete
+resolved input digests, exact schema mapping and admission checks precede effects.
+Unknown credential resolvers and unimplemented backends refuse. AP Sessions types
+and per-session idempotency scope are reused without claiming durable Sessions
+journaling or public AgentSuite artifacts. Tool effects are conservatively mutating.
+Broker dispatch channels are distinct from unrestricted host-user network ingress
+and egress. Readiness budgets include every probe and cleanup; EOF/cancellation
+stops owned probe groups, and inherited broker descriptors are close-on-exec.
 Resident-only flags have a distinct help section; no-FILE selection errors use
 ordinary failure exits, never live Run's pending-Task exit 2. Linux/macOS resident
 lifecycle tests run in shard zero of the required app-tests/hygiene dependency graph.
@@ -108,8 +117,8 @@ invalid review as clean.
   binding. The latter records distinct agent/tool backends, actual filesystem
   and network exposure, credential references without values and call budgets;
   neither local binding nor result is package/evidence/Deploy authority. Current
-  bounded execution is host-user filesystem plus unrestricted outbound network,
-  with broker-channel-only inbound dispatch. Apple-container/Linux-native/OCI
+  bounded execution is host-user filesystem plus unrestricted network,
+  with broker-channel-only dispatch recorded separately from network ingress. Apple-container/Linux-native/OCI
   policy shapes do not authorize execution until their launchers are qualified;
   never downgrade a required backend.
   Tool config drift requires upgrade or a new generation. Native

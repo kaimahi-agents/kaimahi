@@ -15,6 +15,7 @@ func contractFixture(t *testing.T) Plan {
 		Revision:       "sha256:" + strings.Repeat("b", 64),
 		Commands:       []localtools.CommandConfig{{Name: "check"}},
 	}
+	commands.Revision, _ = commands.Digest()
 	plan, err := NewBoundedProcessPlan(commands)
 	if err != nil {
 		t.Fatal(err)
@@ -33,7 +34,7 @@ func TestBoundedPlanSeparatesPortableContractAndLocalBinding(t *testing.T) {
 			t.Fatalf("portable contract contains %q: %s", forbidden, contract)
 		}
 	}
-	if plan.Binding.EnvironmentClass != "local" || plan.Binding.AgentRuntime.Backend != ResidentProcess || plan.Binding.ToolRuntime.Backend != BoundedProcess || plan.Binding.ToolRuntime.Filesystem.Mode != "host-user" || plan.Binding.ToolRuntime.Network.Incoming != "broker-channel-only" || plan.Binding.ToolRuntime.Network.Outgoing != "unrestricted" || plan.ContractDigest() == "" || plan.BindingDigest() == "" || plan.Revision() == "" {
+	if plan.Binding.EnvironmentClass != "local" || plan.Binding.AgentRuntime.Backend != ResidentProcess || plan.Binding.ToolRuntime.Backend != BoundedProcess || plan.Binding.ToolRuntime.Filesystem.Mode != "host-user" || plan.Binding.ToolRuntime.Dispatch != "broker-channel-only" || plan.Binding.ToolRuntime.Network.Incoming != "unrestricted" || plan.Binding.ToolRuntime.Network.Outgoing != "unrestricted" || plan.ContractDigest() == "" || plan.BindingDigest() == "" || plan.Revision() == "" {
 		t.Fatalf("plan=%+v", plan)
 	}
 	changed := plan
@@ -48,7 +49,7 @@ func TestContainerBindingRepresentsStrongerPolicyWithoutAdmission(t *testing.T) 
 	binding := plan.Binding
 	binding.ToolRuntime.Backend = AppleContainer
 	binding.ToolRuntime.Filesystem = FilesystemPolicy{Mode: "declared-mounts", WorkingDirectory: "/workspace"}
-	binding.ToolRuntime.Network = NetworkPolicy{Mode: "isolated", Incoming: "broker-channel-only", Outgoing: "none"}
+	binding.ToolRuntime.Network = NetworkPolicy{Mode: "isolated", Incoming: "none", Outgoing: "none"}
 	if err := binding.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -56,11 +57,11 @@ func TestContainerBindingRepresentsStrongerPolicyWithoutAdmission(t *testing.T) 
 	if plan.Revision() == "" {
 		t.Fatal("portable plan could not identify an Apple-container binding")
 	}
-	binding.ToolRuntime.Network = NetworkPolicy{Mode: "isolated", Incoming: "broker-channel-only", Outgoing: "brokered", Origins: []string{"https://api.example.com"}, MaxRequestsPerCall: 2, MaxRequestsPerSession: 32, MaxResponseBytes: 64 << 10}
+	binding.ToolRuntime.Network = NetworkPolicy{Mode: "isolated", Incoming: "none", Outgoing: "brokered", Origins: []string{"https://api.example.com"}, MaxRequestsPerCall: 2, MaxRequestsPerSession: 32, MaxResponseBytes: 64 << 10}
 	if err := binding.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	binding.AgentRuntime = RuntimeBinding{Backend: AppleContainer, Filesystem: FilesystemPolicy{Mode: "declared-mounts", WorkingDirectory: "/agent"}, Network: NetworkPolicy{Mode: "isolated", Incoming: "client-channel-only", Outgoing: "brokered", Origins: []string{"https://models.example.com"}, MaxRequestsPerCall: 2, MaxRequestsPerSession: 64, MaxResponseBytes: 1 << 20}}
+	binding.AgentRuntime = RuntimeBinding{Backend: AppleContainer, Dispatch: "client-channel-only", Filesystem: FilesystemPolicy{Mode: "declared-mounts", WorkingDirectory: "/agent"}, Network: NetworkPolicy{Mode: "isolated", Incoming: "none", Outgoing: "brokered", Origins: []string{"https://models.example.com"}, MaxRequestsPerCall: 2, MaxRequestsPerSession: 64, MaxResponseBytes: 1 << 20}}
 	if err := binding.Validate(); err != nil {
 		t.Fatal(err)
 	}

@@ -486,6 +486,7 @@ func (w *residentWorker) handle(ctx context.Context, request localAgentIPCReques
 
 func (w *residentWorker) shutdown() localAgentIPCResponse {
 	w.mu.Lock()
+	w.closing = true
 	for _, cancel := range w.invocations {
 		cancel()
 	}
@@ -493,6 +494,9 @@ func (w *residentWorker) shutdown() localAgentIPCResponse {
 	w.mu.Unlock()
 	if client != nil {
 		if err := client.Close(); err != nil {
+			w.mu.Lock()
+			w.lastError = "tool broker cleanup is incomplete"
+			w.mu.Unlock()
 			return localAgentIPCResponse{Error: "tool broker cleanup is incomplete", EventID: w.record.EventID}
 		}
 		w.mu.Lock()
@@ -569,6 +573,12 @@ func (w *residentWorker) prepareInvoke(ctx context.Context, s *residentSession, 
 			s.turn.Unlock()
 		}
 	}()
+	w.mu.Lock()
+	toolHost, closing := w.toolHost, w.closing
+	w.mu.Unlock()
+	if closing {
+		return "", nil, nil, errors.New("local agent is stopping")
+	}
 	now := time.Now().UTC()
 	s.mu.Lock()
 	s.meta.Active, s.meta.LastActivity = true, now
@@ -620,10 +630,10 @@ func (w *residentWorker) prepareInvoke(ctx context.Context, s *residentSession, 
 	}
 	var answer string
 	var err error
-	if w.toolHost == nil {
+	if toolHost == nil {
 		answer, err = localpreview.SendConversation(ctx, w.record.Provider, w.record.Model, base, transport, w.instructions, history, input, check)
 	} else {
-		answer, err = localpreview.SendToolConversation(ctx, w.record.Provider, w.record.Model, base, transport, w.instructions, history, input, s.meta.ID, invocationID, w.toolHost, check)
+		answer, err = localpreview.SendToolConversation(ctx, w.record.Provider, w.record.Model, base, transport, w.instructions, history, input, s.meta.ID, invocationID, toolHost, check)
 	}
 	now = time.Now().UTC()
 	s.mu.Lock()

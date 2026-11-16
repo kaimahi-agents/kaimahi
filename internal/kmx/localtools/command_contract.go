@@ -37,10 +37,22 @@ type CommandCheck struct {
 	StdoutPattern       string   `json:"stdoutPattern,omitempty"`
 }
 
+func compileCommandPattern(pattern string) (*regexp.Regexp, error) {
+	return regexp.Compile(`\A(?:` + pattern + `)\z`)
+}
+
 func copyCommandParameters(values map[string]CommandParameter) map[string]CommandParameter {
 	copy := make(map[string]CommandParameter, len(values))
 	for name, value := range values {
 		value.Enum = slices.Clone(value.Enum)
+		if value.Minimum != nil {
+			n := *value.Minimum
+			value.Minimum = &n
+		}
+		if value.Maximum != nil {
+			n := *value.Maximum
+			value.Maximum = &n
+		}
 		copy[name] = value
 	}
 	return copy
@@ -105,7 +117,7 @@ func validateCommandContract(cfg CommandConfig) error {
 					if len(parameter.Pattern) > 512 || !strings.HasPrefix(parameter.Pattern, "^") || !strings.HasSuffix(parameter.Pattern, "$") {
 						return ErrCommand
 					}
-					if _, err := regexp.Compile(parameter.Pattern); err != nil {
+					if _, err := compileCommandPattern(parameter.Pattern); err != nil {
 						return ErrCommand
 					}
 				}
@@ -147,7 +159,7 @@ func validateCommandContract(cfg CommandConfig) error {
 			if !strings.HasPrefix(check.StdoutPattern, "^") || !strings.HasSuffix(check.StdoutPattern, "$") {
 				return ErrCommand
 			}
-			if _, err := regexp.Compile(check.StdoutPattern); err != nil {
+			if _, err := compileCommandPattern(check.StdoutPattern); err != nil {
 				return ErrCommand
 			}
 		}
@@ -167,7 +179,7 @@ func commandDefinitionFor(cfg CommandConfig) api.ToolDefinition {
 			property["description"] = parameter.Description
 		}
 		if parameter.Pattern != "" {
-			property["pattern"] = parameter.Pattern
+			property["pattern"] = "^(?:" + parameter.Pattern + ")$"
 		}
 		if len(parameter.Enum) > 0 {
 			property["enum"] = slices.Clone(parameter.Enum)
@@ -226,8 +238,8 @@ func commandArguments(cfg CommandConfig, values map[string]any) ([]string, error
 				return nil, ErrCommand
 			}
 			if parameter.Pattern != "" {
-				matched, _ := regexp.MatchString(parameter.Pattern, text)
-				if !matched {
+				pattern, err := compileCommandPattern(parameter.Pattern)
+				if err != nil || !pattern.MatchString(text) {
 					return nil, ErrCommand
 				}
 			} else if !slices.Contains(parameter.Enum, text) {
@@ -290,8 +302,8 @@ func checkCommandObservation(check CommandCheck, result map[string]any) error {
 	}
 	if check.StdoutPattern != "" {
 		stdout, _ := result["stdout"].(string)
-		matched, err := regexp.MatchString(check.StdoutPattern, strings.TrimSuffix(stdout, "\n"))
-		if err != nil || !matched {
+		pattern, err := compileCommandPattern(check.StdoutPattern)
+		if err != nil || !pattern.MatchString(strings.TrimSuffix(stdout, "\n")) {
 			return errors.New("command check output did not match")
 		}
 	}

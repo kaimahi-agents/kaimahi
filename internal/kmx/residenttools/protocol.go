@@ -19,6 +19,7 @@ import (
 	"github.com/agent-primitives/sessions/api"
 	"github.com/agent-primitives/sessions/controller"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
+	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
@@ -46,6 +47,18 @@ func (p Plan) validate() error {
 	if err != nil || contractDigest != p.Binding.ContractDigest {
 		return errors.New("invalid resident tool plan")
 	}
+	derived, err := boundedProcessContract(p.Commands)
+	if err != nil {
+		return errors.New("invalid resident tool contract mapping")
+	}
+	expected, err := derived.Digest()
+	if err != nil || expected != contractDigest {
+		return errors.New("resident tool contract does not match definitions")
+	}
+	resolved, err := p.Commands.Digest()
+	if err != nil || resolved != p.Commands.Revision {
+		return errors.New("resident execution plan changed")
+	}
 	if len(p.Contract.Tools) != len(p.Commands.Commands) {
 		return errors.New("invalid resident tool plan")
 	}
@@ -60,6 +73,48 @@ func (p Plan) validate() error {
 		}
 	}
 	return nil
+}
+
+func (p Plan) validateRuntime() error {
+	if err := p.validate(); err != nil {
+		return err
+	}
+	if p.Backend != BoundedProcess || p.Binding.AgentRuntime.Backend != ResidentProcess || len(p.Binding.CredentialRefs) != 0 {
+		return errors.New("resident tool runtime or credential resolver is unsupported")
+	}
+	for _, command := range p.Commands.Commands {
+		if len(command.Env) != 0 || len(command.CredentialEnv) != 0 {
+			return errors.New("resident tool environment is unsupported")
+		}
+	}
+	return nil
+}
+
+// Freeze admits one implemented binding and copies all mutable input before any
+// process effect. Names must exactly match the checked agent declaration.
+func (p Plan) Freeze(names []string) (Plan, error) {
+	if err := p.validateRuntime(); err != nil {
+		return Plan{}, err
+	}
+	var frame bytes.Buffer
+	if err := writeFrame(&frame, p); err != nil {
+		return Plan{}, err
+	}
+	var copy Plan
+	if err := readFrame(bufio.NewReaderSize(&frame, brokerLimit+1), &copy); err != nil {
+		return Plan{}, err
+	}
+	wanted := slices.Clone(names)
+	slices.Sort(wanted)
+	if len(wanted) != len(copy.Contract.Tools) {
+		return Plan{}, errors.New("resident tool selection does not match agent")
+	}
+	for i, name := range wanted {
+		if name != copy.Contract.Tools[i].Name {
+			return Plan{}, errors.New("resident tool selection does not match agent")
+		}
+	}
+	return copy, nil
 }
 
 func (p Plan) Revision() string {
@@ -107,7 +162,10 @@ func writeFrame(w io.Writer, value any) error {
 	if err != nil || len(raw)+1 > brokerLimit {
 		return errors.New("resident tool broker frame is unavailable")
 	}
-	_, err = w.Write(append(raw, '\n'))
+	n, err := w.Write(append(raw, '\n'))
+	if err == nil && n != len(raw)+1 {
+		return io.ErrShortWrite
+	}
 	return err
 }
 
@@ -116,7 +174,7 @@ func readFrame(r *bufio.Reader, value any) error {
 	if errors.Is(err, io.EOF) && len(line) == 0 {
 		return io.EOF
 	}
-	if err != nil || len(line) > brokerLimit {
+	if err != nil || len(line) > brokerLimit || !agentruntime.JSONKeysUnique(line) {
 		return errors.New("resident tool broker frame is unavailable")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(line))
@@ -133,9 +191,10 @@ func readFrame(r *bufio.Reader, value any) error {
 
 // Client is the model worker's typed handle to one broker process.
 type Client struct {
-	conn net.Conn
-	read *bufio.Reader
-	mu   sync.Mutex
+	conn     net.Conn
+	read     *bufio.Reader
+	mu       sync.Mutex
+	closeErr error
 }
 
 // Attach consumes an inherited broker descriptor and obtains the broker-owned
@@ -150,6 +209,7 @@ func Attach(file *os.File) (*Client, *localtools.Host, error) {
 		return nil, nil, errors.New("resident tool broker is unavailable")
 	}
 	client := &Client{conn: conn, read: bufio.NewReaderSize(conn, brokerLimit+1)}
+	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
 	client.mu.Lock()
 	err = writeFrame(conn, request{Op: "describe"})
 	var described response
@@ -157,10 +217,11 @@ func Attach(file *os.File) (*Client, *localtools.Host, error) {
 		err = readFrame(client.read, &described)
 	}
 	client.mu.Unlock()
-	if err != nil || !described.OK || len(described.Definitions) == 0 {
+	if err != nil || !described.OK || described.Error != "" || described.ID != "" || described.Result != nil || len(described.Definitions) == 0 {
 		_ = conn.Close()
 		return nil, nil, errors.New("resident tool broker is unavailable")
 	}
+	_ = conn.SetDeadline(time.Time{})
 	host, err := localtools.NewTrustedHost(described.Definitions, client.execute, checkContent)
 	if err != nil {
 		_ = conn.Close()
@@ -206,11 +267,12 @@ func (c *Client) execute(ctx context.Context, scope controller.ToolCallContext, 
 	done := make(chan outcome, 1)
 	go func() {
 		var value response
-		done <- outcome{value, readFrame(c.read, &value)}
+		err := readFrame(c.read, &value)
+		done <- outcome{value, err}
 	}()
 	select {
 	case out := <-done:
-		if out.err != nil || !out.response.OK || out.response.ID != id || out.response.Result == nil {
+		if out.err != nil || !out.response.OK || out.response.Error != "" || len(out.response.Definitions) != 0 || out.response.ID != id || out.response.Result == nil {
 			return api.ToolResult{}, errors.New("resident tool broker execution failed")
 		}
 		return *out.response.Result, nil
@@ -247,7 +309,7 @@ func (c *Client) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.conn == nil {
-		return nil
+		return c.closeErr
 	}
 	_ = c.conn.SetDeadline(time.Now().Add(5 * time.Second))
 	err := writeFrame(c.conn, request{Op: "shutdown"})
@@ -257,8 +319,9 @@ func (c *Client) Close() error {
 	}
 	closeErr := c.conn.Close()
 	c.conn = nil
-	if err != nil || !closed.OK {
-		return errors.New("resident tool broker cleanup is incomplete")
+	if err != nil || !closed.OK || closed.Error != "" || closed.Result != nil || closed.ID != "" || len(closed.Definitions) != 0 || closeErr != nil {
+		c.closeErr = errors.New("resident tool broker cleanup is incomplete")
+		return c.closeErr
 	}
-	return closeErr
+	return nil
 }
