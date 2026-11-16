@@ -1182,9 +1182,10 @@ passes or failures are known. Standalone native Orka Test can opt into
 `--fail-fast`. After each completed attributable run, it stops only when
 `passes + remaining < minPasses`. It does not stop after reaching enough passes,
 and equality remains reachable. Cancellation can still stop either mode earlier.
-Any unknown assertion/judge outcome makes the case unknown. Only completed,
-attributable assertion failures count as failing samples against the threshold;
-execution failure, missing answer, drift or cancellation still aborts later sends.
+Any unknown assertion/judge outcome makes the case unknown. Only runs with
+complete, attributable assertion results can count toward the threshold; one or
+more known assertion failures make that run a failing sample. Execution failure,
+missing answer, drift or cancellation still aborts later sends.
 Preflight discloses the maximum Task count and, when applicable, the maximum two
 judge requests per assertion per run. With `--fail-fast`, these are reported as
 upper bounds. AgentSessions uses fresh Session/config/Exec rather than Tasks; its
@@ -1219,6 +1220,115 @@ A fully executed threshold miss retains `N/total runs passed`; an assertion fail
 followed by two passes completes a three-run, two-pass policy as `2/3`.
 Abort, cleanup and no-publication behavior are unchanged; cleanup failures never
 claim cleanup completed.
+
+### Choose `runs` and `minPasses`
+
+Repeat policy belongs to packaged workspace cases evaluated by `kmx package test`.
+It is not a field for single-file `kmx test FILE`. Choose a policy from the
+consequence of one **completed, attributable failed run**, not from a pass
+percentage you want to see.
+
+**One run / one required pass (1/1)** is the default. It is the fastest feedback
+for a deterministic assertion or an inexpensive inner loop:
+
+<!-- repeat-policy-example: repeat-policy-1-of-1.yaml -->
+
+```yaml
+id: capital-once
+input: What is the capital of France?
+expectContains: [Paris]
+```
+
+**Three runs / three required passes (3/3)** repeats the observation while keeping
+the strict rule that any known failure rejects the case. Omitting `minPasses`
+requires all three runs to pass:
+
+<!-- repeat-policy-example: repeat-policy-3-of-3.yaml -->
+
+```yaml
+id: capital-strict
+input: What is the capital of France?
+expectContains: [Paris]
+runs: 3
+```
+
+**Three runs / two required passes (3/2)** tolerates one completed, attributable
+failed run. One or more known assertion failures within that run still consume one
+run, while failures in two runs consume two. Use it only when accepting one failed
+run is an explicit product decision:
+
+<!-- repeat-policy-example: repeat-policy-2-of-3.yaml -->
+
+```yaml
+id: capital-tolerant
+input: What is the capital of France?
+expectContains: [Paris]
+runs: 3
+minPasses: 2
+```
+
+Without `--fail-fast`, the complete known pass/fail sequences behave as follows:
+
+| Policy | Ordered run outcomes | Case outcome |
+|---|---|---|
+| 1/1 | pass | pass |
+| 1/1 | fail | fail |
+| 3/3 | pass, pass, pass | pass |
+| 3/3 | pass, fail, pass | fail after all three known runs |
+| 3/2 | pass, fail, pass | pass; the failed run remains in diagnostics and evidence |
+| 3/2 | pass, fail, fail | fail after all three known runs |
+| 3/2 | pass, pass, unknown | unknown; no passing proof, even though two earlier runs passed |
+
+Unknown is not a tolerated failure. A missing or unattributed answer, split or
+unavailable judge result, timeout, cancellation, source/binding drift or
+diagnostic-write failure stops later sends. Uncertain candidate cleanup prevents a
+new passing receipt. A later output-close, persistence or reporting failure returns
+nonzero, but an acknowledged explicit receipt or visible eligible managed record
+may still exist; inspect the disclosed path and state before retrying.
+`--fail-fast` changes only a known unreachable threshold: it may stop a 3/3 case
+after its first known failure, or a 3/2 case after two known failures. It does not
+provide early success, convert unknown into fail, retry a run, or weaken candidate
+cleanup.
+
+For `R` runs and `J` `llmJudge` assertions per run, budget up to `R` agent
+executions and up to `2*R*J` judge requests. A three-run case with one judge
+therefore budgets 3 evaluated runs plus up to 6 judge requests. Keep those units
+separate: one evaluated run can involve several runtime protocol operations and
+provider calls that KMX does not count as one request. Fail-fast, cancellation or
+an operational failure can reduce the actual count; KMX never adds an inference
+retry. Every run gets its own `--case-timeout`, including judging and attribution.
+Preflight sums those configured per-run deadline windows across ordered cases. The
+sum excludes placement and cleanup and is not a transport-call count, measured
+execution time or predicted wall-clock time.
+
+Use deterministic assertions when the output contract can be stated exactly.
+Model output and judge scoring can vary, so repeats can reveal observed variation,
+but 1/1, 3/3 and 3/2 are small release policies, not a statistical reliability
+guarantee, confidence interval or service-level objective. Increase `runs` only
+after considering model cost, judge cost, latency and the consequence of accepting
+a known miss. Keep the 100-run and receipt-size limits as safety bounds, not as a
+recommended sample size.
+
+An explicit `kmx package test` always performs a fresh evaluation; it does not
+skip because managed proof already exists. A completed proof is historical,
+exact-suite evidence. During evaluation, any selected source or binding drift
+aborts the frozen operation. Between operations, a semantic model, instruction or
+case edit changes the packaged suite identity and requires fresh evaluation;
+equivalent source spelling can retain the same packaged identity. Default Push may
+consume the latest exact-suite managed proof and labels it a **historical pass, not
+current target health**. See [managed passing proof](#managed-passing-proof).
+
+Plain create-only [composed workspace Deploy](#composed-workspace-deploy) may skip
+evaluation only when that exact packaged identity and the freshly selected
+evaluation subject (runtime, target and inference binding) match a complete cleaned
+receipt. The skip is GET-only and reports no fresh execution counts. A changed
+subject requires a fresh candidate evaluation rather than relabeling old proof.
+Source-only promotion uses the source receipt to gate absent destination placement;
+it is **not destination evaluation** and does not establish destination
+reliability. The separate explicit [update and rollback](#update-and-rollback)
+contract may consume retained exact-version release evidence, including original
+evidence retained with an eligible placement. That remains historical source
+evidence, not fresh destination evaluation or current target health.
 
 Passing private receipts store contiguous per-run rows, with `run` ordinals and
 the declared `runs`/`minPasses`, actual pass/fail verdicts, assertion evidence and

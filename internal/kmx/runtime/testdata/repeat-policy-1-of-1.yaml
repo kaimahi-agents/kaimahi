@@ -1,0 +1,3 @@
+id: capital-once
+input: What is the capital of France?
+expectContains: [Paris]
