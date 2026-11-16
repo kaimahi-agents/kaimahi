@@ -28,6 +28,21 @@ class AppShardTests(unittest.TestCase):
     def setUp(self):
         self.assertTrue(SCRIPT.exists(), "app shard runner must exist")
 
+    @unittest.skipUnless(os.name == "posix", "Unix fixture permissions")
+    def test_fixture_umask_overrides_group_writable_parent_defaults(self):
+        # Verify the actual child creation mode, not only the requested option.
+        import sys
+        with tempfile.TemporaryDirectory() as directory:
+            code = "import os; os.mkdir('fixture', 0o777); print(oct(os.stat('fixture').st_mode & 0o777))"
+            previous = os.umask(0o002)
+            try:
+                result = subprocess.check_output(
+                    [sys.executable, "-c", code], cwd=directory, text=True,
+                    **self.runner.fixture_process_options())
+            finally:
+                os.umask(previous)
+            self.assertEqual(result.strip(), "0o755")
+
     def test_partition_is_stable_disjoint_exhaustive_and_keeps_seed_tests(self):
         names = [f"TestCase{i}" for i in range(100)] + ["ExampleRun", "FuzzDecode"]
         groups = [self.runner.partition(names, i, 4) for i in range(4)]
@@ -210,6 +225,20 @@ class AppShardWorkflowTests(unittest.TestCase):
         self.assertNotIn("needs", worker)
         self.assertNotIn("if", worker)
         self.assertEqual(len(self.jobs["hygiene"]["steps"]), 1)
+
+    def test_resident_lifecycle_runs_on_both_required_platforms(self):
+        job = self.jobs["app-tests"]
+        self.assertIn("app-tests", self.jobs["hygiene"]["needs"])
+        self.assertEqual(job["strategy"]["matrix"]["os"], ["ubuntu-latest", "macos-latest"])
+        self.assertIn(0, job["strategy"]["matrix"]["shard"])
+        step = next(s for s in job["steps"] if s.get("name") == "Required resident lifecycle tests")
+        self.assertEqual(step["if"], "matrix.shard == 0")
+        self.assertNotIn("continue-on-error", job)
+        self.assertNotIn("continue-on-error", step)
+        self.assertIn("set -euo pipefail", step["run"])
+        self.assertIn("go test -race -count=1 -v ./internal/kmx/localagent", step["run"])
+        self.assertIn("--- PASS: TestLocalAgentResidentSessionInvokeStop ", step["run"])
+        self.assertIn("! grep -q -- '--- SKIP:'", step["run"])
 
     def test_windows_day_zero_helper_is_direct_offline_and_fail_closed(self):
         helper = (ROOT / "scripts/ci/windows-cli-day-zero.ps1").read_text()

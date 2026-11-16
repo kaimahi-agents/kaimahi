@@ -748,3 +748,55 @@ func TestOfflineInstallEarlyRefusal(t *testing.T) {
 		}
 	}
 }
+
+func TestOfflineInstallReuseWithConnectedModel(t *testing.T) {
+	const operation = "11111111-1111-4111-8111-111111111111"
+	for _, mode := range []string{"connected", "unmarked", "foreign-marker", "bundle-marked", "missing-workload", "invalid-name"} {
+		t.Run(mode, func(t *testing.T) {
+			a, dir, _, log := offlineInstallApp(t)
+			t.Setenv("OFFLINE_RELEASE", `[{"name":"orka","chart":"orka-0.0.0-dev","app_version":"v0.0.0-dev","status":"deployed"}]`)
+			path := os.Getenv("OFFLINE_LIVE")
+			raw, _ := os.ReadFile(path)
+			var doc map[string]any
+			json.Unmarshal(raw, &doc)
+			items := doc["items"].([]any)
+			annotations := map[string]any{modelOperationAnnotation: operation}
+			name := "copilot-vekil"
+			switch mode {
+			case "unmarked":
+				annotations = map[string]any{}
+			case "foreign-marker":
+				annotations = map[string]any{modelOperationAnnotation: "foreign"}
+			case "invalid-name":
+				name = "Copilot_Vekil"
+			}
+			model := map[string]any{"apiVersion": "apps/v1", "kind": "Deployment", "metadata": map[string]any{"name": name, "namespace": OrkaNamespace, "uid": "model", "generation": 1, "annotations": annotations}, "spec": map[string]any{"replicas": 1, "template": map[string]any{"spec": map[string]any{"containers": []any{map[string]any{"name": "vekil", "image": "foreign"}}}}}, "status": map[string]any{"observedGeneration": 1, "updatedReplicas": 1, "readyReplicas": 1, "availableReplicas": 1}}
+			switch mode {
+			case "bundle-marked":
+				// A model marker never exempts a bundle workload from the strict check.
+				d := items[0].(map[string]any)
+				d["metadata"].(map[string]any)["annotations"] = map[string]any{modelOperationAnnotation: operation}
+				spec := d["spec"].(map[string]any)["template"].(map[string]any)["spec"].(map[string]any)
+				spec["containers"].([]any)[0].(map[string]any)["image"] = "foreign"
+			case "missing-workload":
+				items = append(items[:2], model)
+			default:
+				items = append(items, model)
+			}
+			doc["items"] = items
+			raw, _ = json.Marshal(doc)
+			os.WriteFile(path, raw, 0600)
+			err := a.OrkaInstall(OrkaOptions{OfflineBundle: dir, Provider: "-"})
+			if (err == nil) != (mode == "connected") {
+				t.Fatalf("%s: %v", mode, err)
+			}
+			commands, _ := os.ReadFile(log)
+			if strings.Contains(string(commands), "helm install") || strings.Contains(string(commands), "--server-side") {
+				t.Fatalf("release overwritten: %s", commands)
+			}
+			if mode == "connected" && strings.Contains(string(commands), "rollout status deployment/copilot-vekil") {
+				t.Fatal("model Deployment treated as a bundle workload")
+			}
+		})
+	}
+}

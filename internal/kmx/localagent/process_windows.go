@@ -1,6 +1,6 @@
 //go:build windows
 
-package app
+package localagent
 
 import (
 	"context"
@@ -12,29 +12,29 @@ type localAgentIPCRequest struct {
 	Fresh                                 bool
 }
 type localAgentIPCResponse struct {
-	Observation LocalAgentObservation
-	Session     LocalAgentSession
+	Observation Observation
+	Session     Session
 	Answer      string
 }
 
 func validLocalAgentSocketName(string) bool { return false }
 func validLocalAgentLockName(string) bool   { return false }
-func startLocalAgentWorker(context.Context, string, LocalAgentInstance) error {
+func startLocalAgentWorker(context.Context, string, Instance) error {
 	return errors.New("persistent local agents are unavailable on native Windows; use WSL")
 }
-func probeLocalAgent(context.Context, LocalAgentInstance, string, localAgentIPCRequest) (localAgentIPCResponse, error) {
+func probeLocalAgent(context.Context, Instance, string, localAgentIPCRequest) (localAgentIPCResponse, error) {
 	return localAgentIPCResponse{}, errors.New("persistent local agents are unavailable on native Windows; use WSL")
 }
 
-func invokeLocalAgentIPC(context.Context, LocalAgentInstance, string, string) (localAgentIPCResponse, error) {
+func invokeLocalAgentIPC(context.Context, Instance, string, string) (localAgentIPCResponse, error) {
 	return localAgentIPCResponse{}, errors.New("persistent local agents are unavailable on native Windows; use WSL")
 }
-func waitLocalAgentStopped(context.Context, LocalAgentInstance) error {
+func waitLocalAgentStopped(context.Context, Instance) error {
 	return errors.New("persistent local agents are unavailable on native Windows; use WSL")
 }
-func removeLocalAgentSocket(LocalAgentInstance) error {
+func removeLocalAgentSocket(Instance) error {
 	return errors.New("persistent local agents are unavailable on native Windows; use WSL")
 }
-func localAgentWorkerLeaseHeld(context.Context, LocalAgentInstance) (bool, error) {
+func localAgentWorkerLeaseHeld(context.Context, Instance) (bool, error) {
 	return false, errors.New("persistent local agents are unavailable on native Windows; use WSL")
 }

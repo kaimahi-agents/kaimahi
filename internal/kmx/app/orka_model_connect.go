@@ -151,7 +151,7 @@ func (a *App) modelPodAdmission(ctx context.Context, dep map[string]any) error {
 // ConnectOrkaModel configures only the owned gateway and native Provider.
 // Acknowledgment loss never enters a recovery CREATE or ownership adoption.
 func (a *App) ConnectOrkaModel(opt OrkaModelConnectOptions) (result OrkaModelResult, err error) {
-	if a == nil || a.Cfg == nil || a.Run == nil || a.Cfg.KubeContext == "" || !modelUUID(opt.OperationID) || !modelUUID(opt.CredentialGeneration) || opt.Namespace != OrkaNamespace || opt.Route != "copilot" || !modelResourceName(opt.Provider) || len(opt.Provider) > 45 || !verificationIdentity(opt.Model) || strings.EqualFold(opt.Model, "auto") {
+	if a == nil || a.Cfg == nil || a.Run == nil || a.Cfg.KubeContext == "" || !modelUUID(opt.OperationID) || !modelUUID(opt.CredentialGeneration) || opt.Namespace != OrkaNamespace || !validModelRoute(opt.Route, opt.Vendor) || !modelResourceName(opt.Provider) || len(opt.Provider) > 45 || !verificationIdentity(opt.Model) || strings.EqualFold(opt.Model, "auto") {
 		return result, modelFailure("invalid_arguments", nil)
 	}
 	if runtime.GOOS != "linux" || a.Cfg.ContainerEngine != "docker" {
@@ -192,7 +192,7 @@ func (a *App) ConnectOrkaModel(opt OrkaModelConnectOptions) (result OrkaModelRes
 			record.close()
 		}
 	}()
-	if err = a.modelCredentialInput(); err != nil {
+	if err = a.modelCredentialInput(opt.Route); err != nil {
 		return result, modelFailure("credential_unavailable", err)
 	}
 	if a.Cfg.ContainerEngine != "docker" {
@@ -214,7 +214,7 @@ func (a *App) ConnectOrkaModel(opt OrkaModelConnectOptions) (result OrkaModelRes
 	}
 	if record.anchored {
 		c := record.state.Connection
-		if record.state.Complete || record.state.Pending != nil || len(record.state.Resources) != 4 || record.state.RuntimeDigest != target.runtime || c.Route != opt.Route || c.Provider != opt.Provider || c.Model != opt.Model || c.CredentialGeneration != opt.CredentialGeneration {
+		if record.state.Complete || record.state.Pending != nil || len(record.state.Resources) != 4 || record.state.RuntimeDigest != target.runtime || c.Route != opt.Route || c.Vendor != opt.Vendor || c.Provider != opt.Provider || c.Model != opt.Model || c.CredentialGeneration != opt.CredentialGeneration {
 			return result, fmt.Errorf("retained model connection requires explicit disconnect")
 		}
 		for _, root := range record.state.Resources {
@@ -245,7 +245,7 @@ func (a *App) ConnectOrkaModel(opt OrkaModelConnectOptions) (result OrkaModelRes
 		result.RemoteState = "may_continue"
 		return result, nil
 	}
-	docs, err := modelDocuments(opt.Provider, opt.Model, opt.OperationID, target.arch)
+	docs, err := modelDocuments(opt.Provider, opt.Model, opt.OperationID, target.arch, opt.Vendor)
 	if err != nil {
 		return result, err
 	}
@@ -265,7 +265,7 @@ func (a *App) ConnectOrkaModel(opt OrkaModelConnectOptions) (result OrkaModelRes
 		return result, err
 	}
 	a.modelProgress("preflight", "done", nil)
-	state := modelCheckpoint{Version: 1, ClusterUID: target.cluster, NamespaceUID: target.namespace, RuntimeDigest: target.runtime, Connection: OrkaModelConnection{ID: uuid.NewString(), Route: opt.Route, Provider: opt.Provider, Model: opt.Model, CredentialGeneration: opt.CredentialGeneration, State: "unknown"}}
+	state := modelCheckpoint{Version: 1, ClusterUID: target.cluster, NamespaceUID: target.namespace, RuntimeDigest: target.runtime, Connection: OrkaModelConnection{ID: uuid.NewString(), Route: opt.Route, Vendor: opt.Vendor, Provider: opt.Provider, Model: opt.Model, CredentialGeneration: opt.CredentialGeneration, State: "unknown"}}
 	if err = record.checkpoint(ctx, state); err != nil {
 		return result, err
 	}

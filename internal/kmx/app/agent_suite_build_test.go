@@ -24,7 +24,7 @@ func TestBuildSuiteAtomicallyReplacesExistingOutput(t *testing.T) {
 		_, err := dst.Write(archive)
 		return kmxsuite.BuildResult{}, err
 	})
-	if _, err := (&App{}).BuildSuite(context.Background(), minimalSuitePath(), output, kmxsuite.BuildSelection{}, builder); err != nil {
+	if _, err := (&App{}).BuildSuite(context.Background(), minimalSuitePath(t), output, kmxsuite.BuildSelection{}, builder); err != nil {
 		t.Fatalf("BuildSuite() error = %v", err)
 	}
 	if !called {
@@ -49,7 +49,7 @@ func TestBuildSuitePreservesExistingOutputAfterBuilderFailure(t *testing.T) {
 		_, _ = dst.Write([]byte("partial"))
 		return kmxsuite.BuildResult{}, errors.New("build failed")
 	})
-	_, err := (&App{}).BuildSuite(context.Background(), minimalSuitePath(), output, kmxsuite.BuildSelection{}, builder)
+	_, err := (&App{}).BuildSuite(context.Background(), minimalSuitePath(t), output, kmxsuite.BuildSelection{}, builder)
 	if err == nil || !strings.Contains(err.Error(), "build failed") {
 		t.Fatalf("BuildSuite() error = %v", err)
 	}
@@ -78,7 +78,7 @@ func TestBuildSuiteRejectsNonDirectoryOutputParent(t *testing.T) {
 	builder := sandboxBuilderFunc(func(context.Context, kmxsuite.SandboxPlan, io.Writer) (kmxsuite.BuildResult, error) {
 		return kmxsuite.BuildResult{}, nil
 	})
-	_, err := (&App{}).BuildSuite(context.Background(), minimalSuitePath(), output, kmxsuite.BuildSelection{}, builder)
+	_, err := (&App{}).BuildSuite(context.Background(), minimalSuitePath(t), output, kmxsuite.BuildSelection{}, builder)
 	if err == nil {
 		t.Fatal("BuildSuite() succeeded")
 	}
@@ -92,14 +92,22 @@ func TestBuildSuiteRejectsDirectoryOutput(t *testing.T) {
 	builder := sandboxBuilderFunc(func(context.Context, kmxsuite.SandboxPlan, io.Writer) (kmxsuite.BuildResult, error) {
 		return kmxsuite.BuildResult{}, nil
 	})
-	_, err := (&App{}).BuildSuite(context.Background(), minimalSuitePath(), output, kmxsuite.BuildSelection{}, builder)
+	_, err := (&App{}).BuildSuite(context.Background(), minimalSuitePath(t), output, kmxsuite.BuildSelection{}, builder)
 	if err == nil || !strings.Contains(err.Error(), "is a directory") {
 		t.Fatalf("BuildSuite() error = %v", err)
 	}
 }
 
-func minimalSuitePath() string {
-	return filepath.Join("..", "..", "..", "testdata", "agentsuite", "minimal")
+func minimalSuitePath(t *testing.T) string {
+	t.Helper()
+	// Git does not preserve read/write bits; checkout umask is not fixture policy.
+	// Copy the unchanged public bytes into a test-owned tree with known modes.
+	root := t.TempDir()
+	if err := os.Chmod(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	copyTree(t, filepath.Join("..", "..", "..", "testdata", "agentsuite", "minimal"), root)
+	return root
 }
 
 type sandboxBuilderFunc func(context.Context, kmxsuite.SandboxPlan, io.Writer) (kmxsuite.BuildResult, error)

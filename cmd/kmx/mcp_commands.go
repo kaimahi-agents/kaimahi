@@ -119,7 +119,7 @@ func newMCPCommand(state *commandState) *cobra.Command {
 			}
 			kmxmcp.AddAgentVersionResource(server, files)
 			if squad != nil {
-				kmxmcp.AddSquadResource(server, squad)
+				kmxmcp.AddSquadResource(server, squad, route)
 			}
 			if err := kmxmcp.Serve(ctx, server, state.deps.stdin, mcpOutput{cmd.OutOrStdout()}); err != nil {
 				if ctx.Err() != nil || errors.Is(err, io.EOF) {

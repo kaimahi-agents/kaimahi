@@ -10,18 +10,18 @@ import (
 	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localagent"
 )
 
 func TestLocalAgentListIsConfigFreeAndContextRoutesToOrka(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
-	deps.readLocalAgents = func(all bool) ([]app.LocalAgentInstance, error) {
+	deps.readLocalAgents = func(all bool) ([]localagent.Instance, error) {
 		if all {
 			t.Fatal("unexpected all")
 		}
-		return []app.LocalAgentInstance{{ID: "md-1234567890abcdef", Name: "greeter", State: "active", Model: "fake"}}, nil
+		return []localagent.Instance{{ID: "md-1234567890abcdef", Name: "greeter", State: "active", Model: "fake"}}, nil
 	}
 	if err := execute([]string{"list", "-o", "json"}, deps); err != nil {
 		t.Fatal(err)
@@ -43,8 +43,8 @@ func TestLocalAgentListTableShowsActivityAndWarnings(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	deps, _ := testDependencies(&out, &diagnostics)
 	activity := time.Date(2026, 11, 6, 1, 2, 3, 0, time.UTC)
-	deps.readLocalAgents = func(bool) ([]app.LocalAgentInstance, error) {
-		return []app.LocalAgentInstance{{ID: "md-1234567890abcdef", InstanceID: "li-1234567890abcdef", Sequence: 2, Name: "greeter", State: "running", Model: "fake", Started: activity.Add(-time.Minute), LastActivity: &activity, LastError: "cleanup incomplete"}}, nil
+	deps.readLocalAgents = func(bool) ([]localagent.Instance, error) {
+		return []localagent.Instance{{ID: "md-1234567890abcdef", InstanceID: "li-1234567890abcdef", Sequence: 2, Name: "greeter", State: "running", Model: "fake", Started: activity.Add(-time.Minute), LastActivity: &activity, LastError: "cleanup incomplete"}}, nil
 	}
 	if err := execute([]string{"list"}, deps); err != nil {
 		t.Fatal(err)
@@ -75,26 +75,26 @@ func TestResidentRunActivatesCheckedPairAndOnceDoesNot(t *testing.T) {
 			deps, loads := testDependencies(&out, &diagnostics)
 			deps.residentAgents = true
 			calls := 0
-			var activated app.LocalAgentInstance
-			deps.activateLocalAgent = func(_ context.Context, executable string, pair *agentfile.Pair, provider, endpoint, model string, options app.LocalAgentActivationOptions) (app.LocalAgentInstance, bool, error) {
+			var activated localagent.Instance
+			deps.activateLocalAgent = func(_ context.Context, executable string, pair *agentfile.Pair, provider, endpoint, model string, options localagent.ActivationOptions) (localagent.Instance, bool, error) {
 				calls++
 				if pair.AgentPath != file || pair.SnapshotRevision == "" || provider != "fake" || model != "fake" {
 					t.Fatalf("pair=%+v provider=%q model=%q", pair, provider, model)
 				}
-				activated = app.LocalAgentInstance{ID: "md-123", InstanceID: "li-123", Name: pair.Agent.Identity.ID, AgentRevision: pair.Agent.Revision, SnapshotRevision: pair.SnapshotRevision, TestsState: pair.Tests.State, TestsRevision: pair.Tests.Revision, CachedAgent: pair.AgentPath, Provider: provider, Model: model}
+				activated = localagent.Instance{ID: "md-123", InstanceID: "li-123", Name: pair.Agent.Identity.ID, AgentRevision: pair.Agent.Revision, SnapshotRevision: pair.SnapshotRevision, TestsState: pair.Tests.State, TestsRevision: pair.Tests.Revision, CachedAgent: pair.AgentPath, Provider: provider, Model: model}
 				return activated, true, nil
 			}
-			deps.readLocalAgent = func(string) (app.LocalAgentInstance, error) {
+			deps.readLocalAgent = func(string) (localagent.Instance, error) {
 				if activated.ID == "" {
-					return app.LocalAgentInstance{}, os.ErrNotExist
+					return localagent.Instance{}, os.ErrNotExist
 				}
 				return activated, nil
 			}
-			deps.pingLocalAgent = func(context.Context, app.LocalAgentInstance) error { return nil }
-			deps.loadLocalAgentPair = func(_ context.Context, instance app.LocalAgentInstance) (*agentfile.Pair, error) {
+			deps.pingLocalAgent = func(context.Context, localagent.Instance) error { return nil }
+			deps.loadLocalAgentPair = func(_ context.Context, instance localagent.Instance) (*agentfile.Pair, error) {
 				return agentfile.LoadPair(instance.CachedAgent, instance.CachedTests)
 			}
-			deps.withLocalAgentRun = func(ctx context.Context, instance app.LocalAgentInstance, run func(*agentfile.Pair) error) error {
+			deps.withLocalAgentRun = func(ctx context.Context, instance localagent.Instance, run func(*agentfile.Pair) error) error {
 				pair, err := deps.loadLocalAgentPair(ctx, instance)
 				if err != nil {
 					return err
@@ -121,8 +121,8 @@ func TestResidentRunWithoutInputStartsWithoutSendingTurn(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	deps, _ := testDependencies(&out, &diagnostics)
 	deps.residentAgents = true
-	deps.activateLocalAgent = func(_ context.Context, _ string, pair *agentfile.Pair, _, _, _ string, _ app.LocalAgentActivationOptions) (app.LocalAgentInstance, bool, error) {
-		return app.LocalAgentInstance{ID: "md-123", InstanceID: "li-123", Name: pair.Agent.Identity.ID, SnapshotRevision: pair.SnapshotRevision}, true, nil
+	deps.activateLocalAgent = func(_ context.Context, _ string, pair *agentfile.Pair, _, _, _ string, _ localagent.ActivationOptions) (localagent.Instance, bool, error) {
+		return localagent.Instance{ID: "md-123", InstanceID: "li-123", Name: pair.Agent.Identity.ID, SnapshotRevision: pair.SnapshotRevision}, true, nil
 	}
 	deps.fileRunner = &cliPreviewFake{cause: errors.New("must not execute")}
 	if err := execute([]string{"run", file, "--model", "fake"}, deps); err != nil {
@@ -186,8 +186,8 @@ func TestResidentRunNonterminalDriftRefusesWithGuidance(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	deps, _ := testDependencies(&out, &diagnostics)
 	deps.residentAgents = true
-	deps.activateLocalAgent = func(_ context.Context, _ string, pair *agentfile.Pair, _, _, _ string, options app.LocalAgentActivationOptions) (app.LocalAgentInstance, bool, error) {
-		return app.LocalAgentInstance{}, false, &app.LocalAgentDriftError{Active: app.LocalAgentInstance{ID: app.LocalAgentID(pair.AgentPath), InstanceID: "li-123", Name: "greeter"}, RequestedSnapshot: pair.SnapshotRevision}
+	deps.activateLocalAgent = func(_ context.Context, _ string, pair *agentfile.Pair, _, _, _ string, options localagent.ActivationOptions) (localagent.Instance, bool, error) {
+		return localagent.Instance{}, false, &localagent.DriftError{Active: localagent.Instance{ID: localagent.ID(pair.AgentPath), InstanceID: "li-123", Name: "greeter"}, RequestedSnapshot: pair.SnapshotRevision}
 	}
 	if err := execute([]string{"run", file, "--model", "fake"}, deps); err == nil || !strings.Contains(err.Error(), "--upgrade --yes") || !strings.Contains(err.Error(), "--new --name") {
 		t.Fatalf("err=%v", err)

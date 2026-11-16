@@ -75,6 +75,7 @@ func (a *App) verifyOfflineWorkloads(b *offlineInstallBundle, rollout bool) erro
 				Name, Namespace, UID string
 				Generation           int64
 				DeletionTimestamp    *string
+				Annotations          map[string]string
 			}
 			Spec struct {
 				Replicas int
@@ -86,11 +87,23 @@ func (a *App) verifyOfflineWorkloads(b *offlineInstallBundle, rollout bool) erro
 			}
 		}
 	}
-	if offlineJSON(raw, &list, false) != nil || len(list.Items) != len(b.workloads) {
+	if offlineJSON(raw, &list, false) != nil {
+		return fmt.Errorf("offline live workload set differs; refusing reinstall")
+	}
+	// A connected model adds its own kmx-marked Deployment to this namespace.
+	// Leave it out of the bundle set; bundle names are always checked strictly.
+	items := list.Items[:0]
+	for _, d := range list.Items {
+		if _, bundled := b.workloads[d.Metadata.Name]; !bundled && modelResourceName(d.Metadata.Name) && modelUUID(d.Metadata.Annotations[modelOperationAnnotation]) {
+			continue
+		}
+		items = append(items, d)
+	}
+	if len(items) != len(b.workloads) {
 		return fmt.Errorf("offline live workload set differs; refusing reinstall")
 	}
 	seen := map[string]bool{}
-	for _, d := range list.Items {
+	for _, d := range items {
 		expected, ok := b.workloads[d.Metadata.Name]
 		gotBytes, _ := json.Marshal(offlineNormalizeWorkload(d.Spec.Template.Spec))
 		wantBytes, _ := json.Marshal(offlineNormalizeWorkload(expected))

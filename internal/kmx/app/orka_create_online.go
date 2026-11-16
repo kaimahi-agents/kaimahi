@@ -141,6 +141,10 @@ func (b *orkaBoundedBuffer) Write(p []byte) (int, error) {
 func (b *orkaBoundedBuffer) outputError() error { return b.err }
 
 func (a *App) guardOrkaMutation(ctx context.Context, opt CreateOptions, reconcileAction string) error {
+	return a.guardOrkaMutationWithPresentation(ctx, opt, reconcileAction, guard.PresentationDefault)
+}
+
+func (a *App) guardOrkaMutationWithPresentation(ctx context.Context, opt CreateOptions, reconcileAction string, presentation guard.Presentation) error {
 	if a.liftConsent != nil {
 		if err := a.liftConsent.check(ctx, a, opt); err != nil {
 			return err
@@ -173,7 +177,7 @@ func (a *App) guardOrkaMutation(ctx context.Context, opt CreateOptions, reconcil
 	if reconcileAction != "" {
 		action = reconcileAction
 	}
-	if err := guard.CheckContext(ctx, cfg, guard.Request{Action: action, Context: a.Cfg.KubeContext, Source: a.Cfg.ContextSource, Namespaces: opt.Namespace, Confirm: a.Cfg.Confirm, Command: command}, a.Err, a.Stdin); err != nil {
+	if err := guard.CheckContext(ctx, cfg, guard.Request{Action: action, Context: a.Cfg.KubeContext, Source: a.Cfg.ContextSource, Namespaces: opt.Namespace, Confirm: a.Cfg.Confirm, Command: command, Presentation: presentation}, a.Err, a.Stdin); err != nil {
 		return err
 	}
 	a.guarded = true

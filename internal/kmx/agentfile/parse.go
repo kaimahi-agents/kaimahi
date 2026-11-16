@@ -64,7 +64,7 @@ type Agent struct {
 	HasFrontmatter      bool
 	CopilotToolsOmitted bool
 	// NativeTaskInstructions is set only by the explicit native preview adapter.
-	// Real routes retain Instructions; fake orientation uses this task-only text.
+	// Real routes retain Instructions; fake orientation uses task and shared-brief text.
 	NativeTaskInstructions string
 }
 type Example struct {

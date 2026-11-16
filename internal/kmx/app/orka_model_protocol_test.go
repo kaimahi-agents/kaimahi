@@ -71,7 +71,7 @@ func TestOrkaModelMalformedCRI(t *testing.T) {
 }
 
 func TestOrkaModelProfileAdmissionFields(t *testing.T) {
-	docs, _ := modelDocuments("copilot", "gpt-4.1", "11111111-1111-4111-8111-111111111111", "amd64")
+	docs, _ := modelDocuments("copilot", "gpt-4.1", "11111111-1111-4111-8111-111111111111", "amd64", "")
 	raw, _ := json.Marshal(modelMap(modelMap(docs[1]["spec"])["template"])["spec"])
 	var want, admitted map[string]any
 	json.Unmarshal(raw, &want)

@@ -1,6 +1,8 @@
 // Package guard checks Kubernetes context safety and obtains scoped confirmation.
 // It classifies the named context using kubeconfig, not the name alone.
 // Unreadable configuration and missing required confirmation refuse action.
+// Explicit compact presentation changes only a preconfirmed Run disclosure;
+// target classification and consent decisions remain the same.
 package guard
 
 import (
@@ -58,6 +60,17 @@ type Posture struct {
 	// is the only case that proceeds without confirmation.
 	Local bool
 }
+
+// Presentation selects target disclosure formatting only. It never changes a
+// guard decision or supplies confirmation.
+type Presentation uint8
+
+const (
+	PresentationDefault Presentation = iota
+	// PresentationCompactPreconfirmedRun is the live-Run one-line disclosure.
+	// It applies only when Confirm exactly equals Context.
+	PresentationCompactPreconfirmedRun
+)
 
 // LoadKubeconfig returns the merged kubeconfig as kubectl sees it.
 func LoadKubeconfig(kubectlBin string) (*Kubeconfig, error) {
@@ -191,6 +204,9 @@ type Request struct {
 	// kubeconfig contains unrelated contexts. The caller must actually create
 	// or repair this exact context before doing any cluster work.
 	CreatesContext bool
+	// Presentation selects output formatting without changing validation or
+	// confirmation. The zero value retains the full target banner.
+	Presentation Presentation
 }
 
 // Check prints the banner and either returns nil (proceed) or an error
@@ -242,8 +258,16 @@ func CheckContext(ctx context.Context, cfg *Kubeconfig, req Request, out io.Writ
 			"  Nothing was applied. This is a bug in kmx, not something you can set.", req.Context)
 	}
 	source := req.Source
+	defaultUnchosen := req.Source == config.SourceDefault && len(cfg.Contexts) > 0 && !req.CreatesContext &&
+		strings.TrimSpace(cfg.CurrentContext) != req.Context
+	selectedContextMissing := req.RequireConfirmation && req.MustBeKnown && posture.Host == ""
+	compact := req.Presentation == PresentationCompactPreconfirmedRun && req.Confirm == req.Context &&
+		!defaultUnchosen && !selectedContextMissing
 	ui := cliui.New(out)
-	if ui.Rich() {
+	if compact {
+		fmt.Fprintf(out, "%s · action=%q · context=%q · source=%q · server=%q · namespace=%q · posture=%q\n",
+			ui.Heading("Run target"), req.Action, posture.Context, source, hostShown, namespaces, posture.Label)
+	} else if ui.Rich() {
 		fmt.Fprintln(out, ui.Callout(cliui.CalloutWarning, "Target confirmation", []cliui.Field{
 			{Label: "about to", Value: req.Action}, {Label: "context", Value: posture.Context},
 			{Label: "chosen by", Value: source}, {Label: "server", Value: hostShown},
@@ -278,8 +302,7 @@ func CheckContext(ctx context.Context, cfg *Kubeconfig, req Request, out io.Writ
 	// is not, with nothing having chosen between them. The banner is the only
 	// thing standing between an operator and the wrong cluster, and a banner
 	// naming a cluster nobody picked is not a safety net.
-	if req.Source == config.SourceDefault && len(cfg.Contexts) > 0 && !req.CreatesContext &&
-		strings.TrimSpace(cfg.CurrentContext) != req.Context {
+	if defaultUnchosen {
 		return fmt.Errorf("kube-guard: nothing chose a cluster, so kmx will not act on one.\n"+
 			"  It would have used %q, which is a name kmx made up, and your kubeconfig\n"+
 			"  holds %d context(s) it could have meant instead.%s\n"+
@@ -289,7 +312,7 @@ func CheckContext(ctx context.Context, cfg *Kubeconfig, req Request, out io.Writ
 			req.Context, len(cfg.Contexts), currentContextNote(cfg.CurrentContext))
 	}
 
-	if req.RequireConfirmation && req.MustBeKnown && posture.Host == "" {
+	if selectedContextMissing {
 		return fmt.Errorf("kube-guard: selected context is not described; refusing")
 	}
 	if posture.Local && !req.RequireConfirmation {

@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/guard"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
@@ -152,7 +153,7 @@ func (a *App) RunAgent(opt RunAgentOptions) (err error) {
 		args = append(args, "--result-port", port)
 	}
 	worker.InvocationCommand = worker.operationCommand(append(args, "--prompt-file", "-")...)
-	if err := worker.guardOrkaMutation(ctx, CreateOptions{Name: name, Namespace: namespace}, "execute one AI Task against Agent "+name+" in "+namespace); err != nil {
+	if err := worker.guardOrkaMutationWithPresentation(ctx, CreateOptions{Name: name, Namespace: namespace}, "execute one AI Task against Agent "+name+" in "+namespace, guard.PresentationCompactPreconfirmedRun); err != nil {
 		return err
 	}
 	prompt := opt.Prompt

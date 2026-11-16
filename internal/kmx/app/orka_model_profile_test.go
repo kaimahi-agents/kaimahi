@@ -11,7 +11,7 @@ import (
 )
 
 func TestOrkaModelAdmissionDefaults(t *testing.T) {
-	docs, _ := modelDocuments("copilot", "gpt-4.1", "11111111-1111-4111-8111-111111111111", "amd64")
+	docs, _ := modelDocuments("copilot", "gpt-4.1", "11111111-1111-4111-8111-111111111111", "amd64", "")
 	raw, _ := json.Marshal(docs[1]["spec"])
 	var want, got map[string]any
 	json.Unmarshal(raw, &want)
@@ -28,7 +28,7 @@ func TestOrkaModelAdmissionDefaults(t *testing.T) {
 
 func TestOrkaModelProfile(t *testing.T) {
 	for _, arch := range []string{"amd64", "arm64"} {
-		docs, err := modelDocuments("copilot", "gpt-4.1", "11111111-1111-4111-8111-111111111111", arch)
+		docs, err := modelDocuments("copilot", "gpt-4.1", "11111111-1111-4111-8111-111111111111", arch, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -65,51 +65,57 @@ func TestOrkaModelProfile(t *testing.T) {
 			t.Fatal("unpinned or credential-valued deployment")
 		}
 	}
-	if _, err := modelDocuments("copilot", "gpt-4.1", "11111111-1111-4111-8111-111111111111", "windows"); err == nil {
+	if _, err := modelDocuments("copilot", "gpt-4.1", "11111111-1111-4111-8111-111111111111", "windows", ""); err == nil {
 		t.Fatal("unsupported architecture")
 	}
 }
 
 func TestOrkaModelLauncher(t *testing.T) {
+	t.Setenv("MODEL_API_KEY", "")
+	t.Setenv("COPILOT_GITHUB_TOKEN", "")
 	// The filesystem/tool/exec boundary is synthetic; no provider binary runs.
-	for _, data := range []string{"", " ", "\n\t", "ghu_fixture\n", "ghu_one\nghu_two", "ghu_\x00fixture", "ghu_fixture\r", "ghu_\x7ffixture", "ghu_é", strings.Repeat("x", 16385), "ghu_fixture"} {
-		t.Run(fmt.Sprintf("bytes-%d-%x", len(data), []byte(data)[:min(4, len(data))]), func(t *testing.T) {
-			dir := t.TempDir()
-			token := filepath.Join(dir, "credential")
-			if err := os.WriteFile(token, []byte(data), 0600); err != nil {
-				t.Fatal(err)
-			}
-			tool := filepath.Join(dir, "tool")
-			capture := filepath.Join(dir, "observed")
-			fake := filepath.Join(dir, "vekil")
-			toolScript := `#!/bin/sh
+	for _, vendor := range []string{"", "openai", "anthropic"} {
+		for _, data := range []string{"", " ", "\n\t", "ghu_fixture\n", "ghu_one\nghu_two", "ghu_\x00fixture", "ghu_fixture\r", "ghu_\x7ffixture", "ghu_é", strings.Repeat("x", 16385), "ghu_fixture"} {
+			t.Run(fmt.Sprintf("bytes-%d-%x", len(data), []byte(data)[:min(4, len(data))]), func(t *testing.T) {
+				dir := t.TempDir()
+				token := filepath.Join(dir, "credential")
+				if err := os.WriteFile(token, []byte(data), 0600); err != nil {
+					t.Fatal(err)
+				}
+				tool := filepath.Join(dir, "tool")
+				capture := filepath.Join(dir, "observed")
+				fake := filepath.Join(dir, "vekil")
+				toolScript := `#!/bin/sh
 case "$1" in
 stat) printf '0:65532:640:1:regular file:%s\n' "$(wc -c < "$TOKEN_TEST_FILE" | tr -d ' ')";;
 cat) shift; exec /bin/cat "$@";;
 *) exit 7;; esac
 `
-			if err := os.WriteFile(tool, []byte(toolScript), 0700); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(fake, []byte("#!/bin/sh\nprintf '%s' \"$COPILOT_GITHUB_TOKEN\" > \"$TOKEN_TEST_CAPTURE\"\n"), 0700); err != nil {
-				t.Fatal(err)
-			}
-			cmd := exec.Command("/bin/sh", "-c", modelLauncherScript(token, tool, fake))
-			cmd.Env = append(os.Environ(), "TOKEN_TEST_FILE="+token, "TOKEN_TEST_CAPTURE="+capture)
-			output, err := cmd.CombinedOutput()
-			if len(output) != 0 {
-				t.Fatal("launcher leaked output")
-			}
-			got, readErr := os.ReadFile(capture)
-			if data == "ghu_fixture" {
-				if err != nil || readErr != nil || string(got) != data {
-					t.Fatalf("valid credential refused: %v", err)
+				if err := os.WriteFile(tool, []byte(toolScript), 0700); err != nil {
+					t.Fatal(err)
 				}
-			} else {
-				if err == nil || !os.IsNotExist(readErr) {
-					t.Fatal("started Vekil with missing/whitespace/multiline/oversize input")
+				if err := os.WriteFile(fake, []byte("#!/bin/sh\nprintf '%s' \"${MODEL_API_KEY:-$COPILOT_GITHUB_TOKEN}\" > \"$TOKEN_TEST_CAPTURE\"\n"), 0700); err != nil {
+					t.Fatal(err)
 				}
-			}
-		})
+				script := modelLauncherScript(token, tool, fake, vendor, "gpt-4.1")
+				script = strings.ReplaceAll(script, "/run/vekil/providers.json", filepath.Join(dir, "providers.json"))
+				cmd := exec.Command("/bin/sh", "-c", script)
+				cmd.Env = append(os.Environ(), "TOKEN_TEST_FILE="+token, "TOKEN_TEST_CAPTURE="+capture)
+				output, err := cmd.CombinedOutput()
+				if len(output) != 0 {
+					t.Fatal("launcher leaked output")
+				}
+				got, readErr := os.ReadFile(capture)
+				if data == "ghu_fixture" {
+					if err != nil || readErr != nil || string(got) != data {
+						t.Fatalf("valid credential refused: %v", err)
+					}
+				} else {
+					if err == nil || !os.IsNotExist(readErr) {
+						t.Fatal("started Vekil with missing/whitespace/multiline/oversize input")
+					}
+				}
+			})
+		}
 	}
 }

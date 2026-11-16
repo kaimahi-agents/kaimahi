@@ -210,13 +210,18 @@ Resident agents are tool-free in this first slice; one-shot Run/Test retain fixe
 command tools. `kmx chat NAME` creates or resumes local sessions, `kmx list` shows
 process/readiness/session state, `chat --new` prints a resumable session ID, and
 `kmx stop NAME_OR_ID` ends the worker. Editing
-source does not update a running agent: stop it before starting the new snapshot.
+source does not update a running agent: use `run FILE --upgrade` for replacement.
 Test always evaluates the current checked source pair; `test FILE
 --check` validates that pair and reports identity metadata without model or tool
 execution. Lifecycle history is append-only and bounded to 1,024 private entries
 per source; reaching the bound refuses further lifecycle operations without
 automatic deletion. Native Windows refuses persistence, local List and Stop; use
 WSL.
+
+Resident model discovery, endpoint credentials, and capability requirements are
+described in [resident model selection](resident-models.md). Local worker placement
+does not imply local inference: OpenAI, Anthropic, and Copilot send content to their
+selected hosted service.
 
 MCP
 Run/Test also accept schema version 3 with a checked `sourceVersion` from the

@@ -59,7 +59,7 @@ type OrkaToolInventory struct {
 }
 
 // Exact API catalog, in upstream order, shared by Orka v0.3.0 (commit below)
-// and the restricted source profile: internal/api/handlers.go's builtinToolsList.
+// and source profiles 7916cd1c and 3cb1f0df: internal/api/handlers.go's builtinToolsList.
 // Names come from each tool's Name(); attribution uses the matched runtime source.
 // This is pinned catalog data, not a live API observation or worker call proof.
 const orkaToolCatalogCommit = "a533c3491d350263c0fa39bb7887dabd0d055c4e"

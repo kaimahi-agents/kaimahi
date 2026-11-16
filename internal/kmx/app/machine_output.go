@@ -60,6 +60,12 @@ func (e MachineError) projection() machineErrorJSON {
 		v.Message, v.Recovery = "Target confirmation is required.", "confirm_target"
 	case "credential_unavailable":
 		v.Message, v.Recovery = "A required credential is unavailable.", "supply_credentials"
+	case "credential_rejected":
+		v.Message, v.Recovery = "The model company rejected the credential.", "supply_credentials"
+	case "provider_unreachable":
+		v.Message, v.Recovery = "The workspace could not reach the model company.", "check_configuration"
+	case "model_unavailable":
+		v.Message, v.Recovery = "The selected model is not advertised for this credential.", "check_configuration"
 	case "permission_denied":
 		v.Message, v.Recovery = "The operation was not permitted.", "inspect_target"
 	case "dependency_unavailable":

@@ -80,6 +80,7 @@ func newModelCommand(state *commandState) *cobra.Command {
 	list.Flags().StringVar(&provider, "provider", "local", "model source: local or copilot (uses an existing gh sign-in)")
 	_ = list.RegisterFlagCompletionFunc("provider", staticCompletion([]string{"local", "copilot"}))
 	group.AddCommand(list)
+	group.AddCommand(newModelMatchCommand())
 	addCopilotCommands(group, state)
 	return group
 }

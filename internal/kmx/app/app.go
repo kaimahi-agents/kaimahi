@@ -1,5 +1,10 @@
 // Package app orchestrates kmx operations using resolved configuration,
-// context guards, runtime adapters and external tools.
+// context guards, runtime adapters and external tools. A preconfirmed live Run
+// selects the compact target disclosure while retaining the same guard decision;
+// every other operation keeps the full target presentation.
+// Guest model connections route Copilot or OpenAI/Anthropic API keys through
+// pinned Vekil; credentials stay in guest memory and the gateway environment,
+// never native Provider Secrets. Readiness is catalog access, not inference.
 // ReadOrkaTools shares bounded GET-only native tool inventory with destination
 // consumers: runtime-qualified pinned builtins and observed HTTP Tool resources,
 // never credentials, execution proof or provisioning. Connect, discovery and
@@ -16,8 +21,9 @@
 // suite errors preserve cleanup uncertainty without subprocess diagnostics.
 //
 // Offline cluster bring-up validates a closed manifest and clean binary identity
-// against an embedded catalog. The source-packaged 7916cd1c profile records chart
-// provenance and enables restricted AI workers; the 59703d6e profile is retained.
+// against an embedded catalog. The source-packaged 7916cd1c and 3cb1f0df profiles
+// record chart provenance and enable restricted AI workers; 3cb1f0df adds Task
+// cancel support. The 59703d6e profile is retained unchanged.
 // Cluster bring-up reads only pinned node evidence;
 // no-provider Orka install additionally verifies retained chart/image bytes,
 // generated values, local rendering and every schedulable node CRI reference.

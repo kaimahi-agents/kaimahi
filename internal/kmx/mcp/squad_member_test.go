@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -124,5 +125,62 @@ func TestSquadMemberEditPreservesNativeBytesAndRefusesStale(t *testing.T) {
 		t.Fatal("invalid owned candidate accepted")
 	} else if e, ok := err.(*Error); !ok || e.Code != "invalid_squad_member" {
 		t.Fatalf("invalid edit mislabeled as partial native effects: %v", err)
+	}
+}
+
+func TestSquadMemberEditsPreserveUntouchedSections(t *testing.T) {
+	root, _, creator := createdSquadMember(t)
+	doc, err := creator.Member(t.Context(), "leader")
+	if err != nil {
+		t.Fatal(err)
+	}
+	member := squadLead()
+	for _, prompt := range []string{"Reply with exactly `Goodbye`.", "Reply with exactly `Hello`."} {
+		before := doc.Source()
+		member.Model, member.TaskInstructions = doc.Model, prompt
+		var start, end int
+		for _, section := range doc.Sections {
+			switch section.Name {
+			case "Task Instructions":
+				start, end = section.Body.Start, section.Body.End
+			case "Examples":
+				member.Examples = string(before[section.Body.Start:section.Body.End])
+			}
+		}
+		if start == 0 {
+			t.Fatal("missing task section")
+		}
+		want := append(bytes.Clone(before[:start]), []byte("\n"+prompt+"\n\n")...)
+		want = append(want, before[end:]...)
+		if _, err := creator.EditMember(t.Context(), "leader", doc.Revision, member); err != nil {
+			t.Fatal(err)
+		}
+		doc, err = creator.Member(t.Context(), "leader")
+		if err != nil || !bytes.Equal(doc.Source(), want) {
+			t.Fatal("prompt edit changed untouched sections", err)
+		}
+	}
+	before := bytes.ReplaceAll(doc.Source(), []byte("\n"), []byte("\r\n"))
+	if err := os.WriteFile(filepath.Join(root, ".squad/agents/leader/charter.md"), before, 0644); err != nil {
+		t.Fatal(err)
+	}
+	doc, err = creator.Member(t.Context(), "leader")
+	if err != nil {
+		t.Fatal(err)
+	}
+	member.Model, member.TaskInstructions = "fake", strings.Trim(doc.TaskInstructions, "\r\n")
+	for _, section := range doc.Sections {
+		if section.Name == "Examples" {
+			member.Examples = string(before[section.Body.Start:section.Body.End])
+		}
+	}
+	want := append(bytes.Clone(before[:doc.Preferred.Start]), []byte(member.Model)...)
+	want = append(want, before[doc.Preferred.End:]...)
+	if _, err := creator.EditMember(t.Context(), "leader", doc.Revision, member); err != nil {
+		t.Fatal(err)
+	}
+	doc, err = creator.Member(t.Context(), "leader")
+	if err != nil || !bytes.Equal(doc.Source(), want) {
+		t.Fatal("model edit changed untouched sections", err)
 	}
 }

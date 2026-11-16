@@ -9,6 +9,31 @@ changes in the package's Go doc comment.
 
 ## Package ownership
 
+Resident lifecycle belongs to `internal/kmx/localagent`; model route discovery,
+endpoint credential ownership, protocol adaptation and capability matching belong
+to `internal/kmx/modelaccess`. Resident Run supports tool-free fake/Copilot,
+Ollama/Foundry Local, compatible/OpenAI and Anthropic Messages routes. Freeze exact
+endpoint/key-reference/capability/requirement identity in each generation; keys
+travel only in the worker credential pipe. Environment keys are startup snapshots;
+rotation needs a replacement generation; exact running reuse never requires the
+caller to export the key again. Credentialed endpoints require HTTPS, including
+loopback; HTTP is keyless-loopback only. Endpoint URLs are bounded to 4096 bytes,
+and the marshaled start record must fit the shared 32 KiB read/write budget before
+snapshot/start publication. Relative model profiles become absolute clean paths
+before no-symlink reads. Missing capability metadata is unknown,
+never guessed from model names.
+Endpoint readiness requires a bounded non-inference exact-model catalog read;
+failed replacement access preserves the old worker and sessions. Endpoint
+transports share connection pools with request-local credentials. Ollama metadata
+retains selected HTTPS origins/gateway prefixes and selected credential ownership.
+Profiles are operator declarations, Ollama show
+metadata is advertised, and neither is execution evidence. `modelRequirements`
+frontmatter is resident-only; Run flags may strengthen but never weaken it.
+One-shot previews and Test retain their existing provider/tool contracts.
+Resident-only flags have a distinct help section; no-FILE selection errors use
+ordinary failure exits, never live Run's pending-Task exit 2. Linux/macOS resident
+lifecycle tests run in shard zero of the required app-tests/hygiene dependency graph.
+
 New operations belong in an operation-owned package with explicit dependencies, not as new methods on `*app.App`. Keep CLI, MCP and UI parsing, presentation and invocation wiring in their adapters. Reuse an existing focused package when it owns the behavior; otherwise add one below `internal/kmx/`. Operation packages must not import `app`, `mcp` or command packages. Pass the capabilities the operation needs, not `*app.App` or a copy of it. Existing App methods may delegate during migration; do not move unrelated code to satisfy this rule.
 
 ## Independent review
@@ -82,6 +107,12 @@ invalid review as clean.
   canceling and closing old sessions (no drain guarantee), or `--new` for a parallel named generation. Stable IDs
   refuse ambiguous routing; Chat/stop/session routing accepts runtime names and
   instance IDs. Never silently replace an active generation.
+  Preconfirmed live Orka `run --agent` may compact its target disclosure, but
+  still names action, context, selection source, server, namespace and posture
+  on stderr and keeps the result-authority notice. For remote targets, missing
+  preconfirmation retains the full guard presentation and exact typed terminal
+  consent. Without preconfirmation, nonterminal use refuses; exact
+  preconfirmation permits it, while mismatched confirmation refuses before Task creation.
   Run input is flag-only: `-p, --prompt TEXT` or `--prompt-file FILE|-`; a second
   positional argument is removed. Either input flag selects only that ad-hoc input
   unless `--case` explicitly adds a saved example. Native Windows keeps
@@ -807,9 +838,56 @@ roster and enriched charter on each operation/restart; never persist kmx mapping
 Failed validation shows **not set up by kmx**, never origin guessing or canonical
 fallback. Valid mapping is not authenticated origin, restored draft or prior pass.
 Edit replaces only Preferred/Task Instructions/Examples with source/parent CAS.
-Native preview is revision-bound and tool-free; fake consumes task-only directives,
-real routes retain native+task instructions excluding Examples. No package digest,
-team runtime or native Squad canvas actions. See [native authoring](docs/agent-file.md#internal-native-cast-and-enrich).
+Preserve untouched section bytes and avoid accumulating boundary blank lines.
+Native preview is revision-bound and tool-free; fake consumes shared-brief/task
+directives, while real routes retain native+task instructions excluding Examples.
+The initial Squad canvas uses a native adapter over the same operations.
+New teams start with an
+empty user-authored goal and reviewed Copilot proposals; ship no static Squad
+scenario presets or example actions. Its aggregate kmx://squad
+resource reconstructs the roster; a separate .squad/kmx-brief.md stores only shared
+context with revision-checked writes. Aggregate reads share one checked inventory
+and registry per request, never across requests; charters retain individual checked
+reads. Brief-conflict preflight is inside the creator gate, before native effects.
+Whole-proposal Create also requires an empty registry, roster and member footprint
+under that gate. Validate the qualified native role title before casting using
+its JavaScript catalog casing, preserving international literal roles; canvas
+specialists use matching literal role/display titles. Reject known credential
+patterns in shared briefs before persistence and again before preview.
+Native previews include that saved context
+and report its revision separately from member source revision. Preserve partial
+Create/brief-publication outcomes and session-only results. The canvas supplies
+both expectedRevision and expectedBriefRevision to native Run/Test; validate the
+pair before preview and use those snapshots. Omitting both retains legacy reads.
+Background observation stales changed member/brief results without dropping drafts.
+Failed native reads invalidate current-pass status in both the adapter and editor;
+valid reads restore editing, while only a fresh preview restores current results.
+Unconfirmed pure Run/Test replies allow explicit reload and a fresh preview, never
+automatic replay. Create/Edit uncertainty stays fenced, including an attempted
+edit followed by an unconfirmed preview.
+Native empty-test members remain editable; Test requires a nonempty test set.
+Retire pending suggestions after creation effects and retain acknowledged brief
+saves even when readback fails. Optional native Test
+run IDs bind progress and connection-scoped cancellation through the existing
+Test tool's squad-preview-cancel target. Cancellation starts no inference and
+does not abort the Copilot session; final Test state remains authoritative.
+The native canvas keeps newer prompt drafts when typing stops an active preview.
+This includes edits back to the original baseline while a newer save is in flight.
+Generated proposals are offered for explicit review before replacing a draft.
+Native team and test suggestions use the host's transient no-tools query, never
+an ordinary chat turn. Native Run target squad-proposal only checks and prepares
+authored inputs; it calls no model and writes no files. Scan decoded draft JSON
+strings, including nested values and keys, before encoding host-query input.
+The query follows the current chat model and context, with reviewed member
+preferences initialized from the model catalog; proposals are not execution/model
+attestation. Unsupported hosts refuse without a chat fallback. Test proposals
+bind and recheck member/brief revisions
+and remain unsaved drafts. Native member views hide the unsupported Tools section.
+Native Squad remains opt-in development packaging, not normal marketplace setup;
+never download a launcher or edit trusted startup configuration automatically.
+The experimental
+upstream SquadBackend/HarnessAdapter runtime contract is separate follow-up work,
+not a name for this authoring adapter. See [native authoring](docs/agent-file.md#internal-native-cast-and-enrich).
 
 ## Explicit native file tests
 
@@ -1208,6 +1286,8 @@ or build effects. Loose build staging refuses modes without owner file-read or
 directory read/search permissions before creating output, preserving declared modes.
 
 Run checks appropriate to the changed paths as described in CONTRIBUTING.md.
+The app-shard launcher fixes its Unix child umask at 0022 for ordinary fixtures;
+permission-specific subprocess tests still choose their own masks and modes.
 App CI runs all four process-isolated shards on Linux and macOS; both platforms
 gate hygiene and artifact names include OS/shard. The App test harness resolves
 the macOS temporary root before fixtures; retain production symlink refusals.

@@ -1,6 +1,6 @@
 //go:build !windows
 
-package app
+package localagent
 
 import (
 	"bufio"
@@ -41,7 +41,7 @@ func residentAgentPair(t *testing.T) *agentfile.Pair {
 func TestLocalAgentSocketFallsBackFromLongTemporaryPath(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", "")
 	t.Setenv("TMPDIR", filepath.Join("/tmp", strings.Repeat("long-runtime-", 10)))
-	record := LocalAgentInstance{InstanceID: "li-" + strings.Repeat("a", 24)}
+	record := Instance{InstanceID: "li-" + strings.Repeat("a", 24)}
 	socket, err := localAgentSocket(record)
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +59,7 @@ func TestLocalAgentWorkerEnvironmentPreservesSelectedGHConfigOnly(t *testing.T) 
 	t.Setenv("GH_CONFIG_DIR", "/private/gh-profile")
 	t.Setenv("GH_TOKEN", "secret")
 	t.Setenv("GITHUB_TOKEN", "secret")
-	env := localAgentWorkerEnvironment(LocalAgentInstance{ID: "md-123", EventID: strings.Repeat("a", 24)})
+	env := localAgentWorkerEnvironment(Instance{ID: "md-123", EventID: strings.Repeat("a", 24)})
 	joined := strings.Join(env, "\n")
 	if !strings.Contains(joined, "GH_CONFIG_DIR=/private/gh-profile") || strings.Contains(joined, "GH_TOKEN=") || strings.Contains(joined, "GITHUB_TOKEN=") {
 		t.Fatalf("worker environment=%q", env)
@@ -68,12 +68,12 @@ func TestLocalAgentWorkerEnvironmentPreservesSelectedGHConfigOnly(t *testing.T) 
 
 func TestResidentPreparedTurnRequiresCommitAcknowledgment(t *testing.T) {
 	pair := residentAgentPair(t)
-	record, _, err := ActivateLocalAgent(t.Context(), "", pair, "fake", "", "fake")
+	record, _, err := Activate(t.Context(), "", pair, "fake", "", "fake")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer StopLocalAgent(t.Context(), record.ID)
-	session, err := OpenLocalAgentSession(t.Context(), record.ID, "ack")
+	defer Stop(t.Context(), record.ID)
+	session, err := OpenSession(t.Context(), record.ID, "ack")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestResidentPreparedTurnRequiresCommitAcknowledgment(t *testing.T) {
 	_ = conn.Close()
 	deadline := time.Now().Add(time.Second)
 	for {
-		sessions, err := ReadLocalAgentSessions(t.Context(), record.ID)
+		sessions, err := ReadSessions(t.Context(), record.ID)
 		if err == nil && len(sessions) == 1 && sessions[0].Messages == 0 && !sessions[0].Active {
 			break
 		}
@@ -103,7 +103,7 @@ func TestResidentPreparedTurnRequiresCommitAcknowledgment(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	answer, err := InvokeLocalAgent(t.Context(), record.ID, session.ID, "Grace")
+	answer, err := Invoke(t.Context(), record.ID, session.ID, "Grace")
 	if err != nil || answer != "hello Grace" {
 		t.Fatalf("follow-up=%q err=%v", answer, err)
 	}
@@ -111,34 +111,34 @@ func TestResidentPreparedTurnRequiresCommitAcknowledgment(t *testing.T) {
 
 func TestLocalAgentResidentSessionInvokeStop(t *testing.T) {
 	pair := residentAgentPair(t)
-	record, created, err := ActivateLocalAgent(t.Context(), "", pair, "fake", "", "fake")
+	record, created, err := Activate(t.Context(), "", pair, "fake", "", "fake")
 	if err != nil || !created || record.State != "running" {
 		t.Fatalf("activate: %+v created=%v err=%v", record, created, err)
 	}
-	session, err := OpenLocalAgentSession(t.Context(), record.ID, "first")
+	session, err := OpenSession(t.Context(), record.ID, "first")
 	if err != nil || !strings.HasPrefix(session.ID, "session-") || session.Label != "first" {
 		t.Fatalf("open: %+v err=%v", session, err)
 	}
-	answer, err := InvokeLocalAgent(t.Context(), record.ID, session.ID, "Ada")
+	answer, err := Invoke(t.Context(), record.ID, session.ID, "Ada")
 	if err != nil || answer != "hello Ada" {
 		t.Fatalf("first invoke: %q err=%v", answer, err)
 	}
-	answer, err = InvokeLocalAgent(t.Context(), record.ID, session.ID, "Grace")
+	answer, err = Invoke(t.Context(), record.ID, session.ID, "Grace")
 	if err != nil || answer != "hello Grace" {
 		t.Fatalf("second invoke: %q err=%v", answer, err)
 	}
-	sessions, err := ReadLocalAgentSessions(t.Context(), record.ID)
+	sessions, err := ReadSessions(t.Context(), record.ID)
 	if err != nil || len(sessions) != 1 || sessions[0].Messages != 4 || sessions[0].Active || sessions[0].LastError != "" {
 		t.Fatalf("sessions: %+v err=%v", sessions, err)
 	}
-	rows, err := ReadLocalAgentInstances(false)
+	rows, err := ReadInstances(false)
 	if err != nil || len(rows) != 1 || rows[0].State != "running" || !rows[0].Ready || rows[0].Sessions != 1 || rows[0].LastActivity == nil {
 		t.Fatalf("rows: %+v err=%v", rows, err)
 	}
-	if err := StopLocalAgent(t.Context(), record.ID); err != nil {
+	if err := Stop(t.Context(), record.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := PingLocalAgent(t.Context(), record); err == nil {
+	if err := Ping(t.Context(), record); err == nil {
 		t.Fatal("stopped worker still answered")
 	}
 }
@@ -151,7 +151,7 @@ func TestLocalAgentResidentCrashObserved(t *testing.T) {
 	if err := os.WriteFile(wrapper, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
-	record, _, err := ActivateLocalAgent(t.Context(), wrapper, pair, "fake", "", "fake")
+	record, _, err := Activate(t.Context(), wrapper, pair, "fake", "", "fake")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +168,7 @@ func TestLocalAgentResidentCrashObserved(t *testing.T) {
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		rows, listErr := ReadLocalAgentInstances(false)
+		rows, listErr := ReadInstances(false)
 		if listErr == nil && len(rows) == 1 && rows[0].State == "crashed" && !rows[0].Ready {
 			break
 		}
@@ -177,10 +177,10 @@ func TestLocalAgentResidentCrashObserved(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	if err := PingLocalAgent(t.Context(), record); err == nil {
+	if err := Ping(t.Context(), record); err == nil {
 		t.Fatal("crashed worker answered ping")
 	}
-	if err := StopLocalAgent(t.Context(), record.ID); err != nil {
+	if err := Stop(t.Context(), record.ID); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -193,7 +193,7 @@ func TestLocalAgentResidentRestartsAfterCrash(t *testing.T) {
 	if err := os.WriteFile(wrapper, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
-	first, _, err := ActivateLocalAgent(t.Context(), wrapper, pair, "fake", "", "fake")
+	first, _, err := Activate(t.Context(), wrapper, pair, "fake", "", "fake")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +210,7 @@ func TestLocalAgentResidentRestartsAfterCrash(t *testing.T) {
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		rows, _ := ReadLocalAgentInstances(false)
+		rows, _ := ReadInstances(false)
 		if len(rows) == 1 && rows[0].State == "crashed" {
 			break
 		}
@@ -219,11 +219,11 @@ func TestLocalAgentResidentRestartsAfterCrash(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	second, created, err := ActivateLocalAgent(t.Context(), wrapper, pair, "fake", "", "fake")
+	second, created, err := Activate(t.Context(), wrapper, pair, "fake", "", "fake")
 	if err != nil || !created || second.EventID == first.EventID || second.State != "running" {
 		t.Fatalf("restart: first=%+v second=%+v created=%v err=%v", first, second, created, err)
 	}
-	if err := StopLocalAgent(t.Context(), second.ID); err != nil {
+	if err := Stop(t.Context(), second.ID); err != nil {
 		t.Fatal(err)
 	}
 }
