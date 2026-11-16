@@ -1,6 +1,8 @@
 package app
 
 import (
+	"errors"
+
 	"github.com/google/uuid"
 )
 
@@ -43,6 +45,22 @@ type OrkaModelError struct {
 
 func (e *OrkaModelError) Error() string { return NewMachineError(e.Code(), "preflight").Error() }
 func (e *OrkaModelError) Unwrap() error { return e.cause }
+
+// DiagnosticReason exposes only fixed observation classifications, not causes.
+func (e *OrkaModelError) DiagnosticReason() string {
+	if e.Code() != "execution_unknown" {
+		return ""
+	}
+	var observation *modelObservationError
+	if !errors.As(e.cause, &observation) {
+		return ""
+	}
+	return safeModelObservationReason(observation.reason)
+}
+
+type modelObservationError struct{ reason string }
+
+func (*modelObservationError) Error() string { return "model resource acknowledgment is invalid" }
 func (e *OrkaModelError) Code() string {
 	switch e.code {
 	case "credential_rejected", "provider_unreachable", "model_unavailable", "credential_unavailable", "permission_denied", "dependency_unavailable", "execution_unknown", "invalid_arguments", "configuration_invalid", "cancelled", "deadline_exceeded", "output_failed", "unsupported":

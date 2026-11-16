@@ -25,7 +25,7 @@ type MachineResult struct {
 
 // MachineError carries only fixed diagnostic vocabulary, never a provider cause.
 type MachineError struct {
-	code, stage string
+	code, stage, reason string
 }
 
 // NewMachineError withholds unknown codes and stages rather than reflecting
@@ -40,11 +40,28 @@ func NewMachineError(code, stage string) *MachineError {
 	return &MachineError{code: code, stage: stage}
 }
 
+// WithReason returns a copy carrying only a closed observation classification.
+func (e *MachineError) WithReason(reason string) *MachineError {
+	copied := *e
+	copied.reason = safeModelObservationReason(reason)
+	return &copied
+}
+
+func safeModelObservationReason(reason string) string {
+	switch reason {
+	case "model_resource_identity_invalid", "model_resource_ownership_changed", "model_resource_generation_invalid", "model_resource_spec_changed", "model_resource_generation_changed":
+		return reason
+	default:
+		return ""
+	}
+}
+
 type machineErrorJSON struct {
 	Code     string `json:"code"`
 	Message  string `json:"message"`
 	Stage    string `json:"stage,omitempty"`
 	Recovery string `json:"recovery"`
+	Reason   string `json:"reason,omitempty"`
 }
 
 func (e MachineError) projection() machineErrorJSON {
@@ -80,6 +97,9 @@ func (e MachineError) projection() machineErrorJSON {
 		v.Message, v.Recovery = "Cannot write machine output.", "none"
 	default:
 		v.Code, v.Message, v.Recovery = "operation_failed", "The operation failed.", "inspect_target"
+	}
+	if v.Code == "execution_unknown" {
+		v.Reason = safeModelObservationReason(e.reason)
 	}
 	return v
 }

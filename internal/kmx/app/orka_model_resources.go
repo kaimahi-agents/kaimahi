@@ -8,6 +8,7 @@ import (
 	"net"
 	"reflect"
 	"strings"
+	"time"
 )
 
 const modelOperationAnnotation = "kaimahi.dev/orka-model-operation"
@@ -135,30 +136,51 @@ func modelDefault(path string, value any, kind string) bool {
 	}
 	return false
 }
+
+// The registry increments generation once when it marks a resource for deletion,
+// even though its execution spec is unchanged. The caller has already checked
+// identity, exact retained spec, and positive integral generations. Subtracting
+// those positive generations avoids overflowing a retained generation+1.
+func modelDeletionGeneration(want modelOwnedResource, generation int64, meta map[string]any) bool {
+	if want.Terminating || generation-want.Generation != 1 {
+		return false
+	}
+	stamp, ok := meta["deletionTimestamp"].(string)
+	if !ok {
+		return false
+	}
+	if _, err := time.Parse(time.RFC3339Nano, stamp); err != nil {
+		return false
+	}
+	grace, ok := meta["deletionGracePeriodSeconds"].(float64)
+	return ok && grace == 0
+}
+
 func modelObserved(ns string, want modelOwnedResource, obj map[string]any) (modelOwnedResource, error) {
-	fail := fmt.Errorf("model resource acknowledgment is invalid")
 	api, ok := modelAPIFor(want.Kind)
 	meta := modelMap(obj["metadata"])
 	if !ok || obj["apiVersion"] != api.version || obj["kind"] != want.Kind || meta["name"] != want.Name || meta["namespace"] != ns {
-		return modelOwnedResource{}, fail
+		return modelOwnedResource{}, &modelObservationError{reason: "model_resource_identity_invalid"}
 	}
 	uid, rv := modelText(meta["uid"]), modelText(meta["resourceVersion"])
 	if !verificationIdentity(uid) || !verificationIdentity(rv) || want.UID != "" && want.UID != uid || modelMap(meta["annotations"])[modelOperationAnnotation] != want.Marker {
-		return modelOwnedResource{}, fail
+		return modelOwnedResource{}, &modelObservationError{reason: "model_resource_ownership_changed"}
 	}
 	generation, _ := meta["generation"].(float64)
 	if api.generation && (generation < 1 || generation != float64(int64(generation))) {
-		return modelOwnedResource{}, fail
+		return modelOwnedResource{}, &modelObservationError{reason: "model_resource_generation_invalid"}
 	}
 	spec := modelExecutionSpec(want.Kind, obj)
 	if spec == nil || modelStateHasCredentialShape(spec) || !modelSpecMatches(want.Spec, spec, "", want.Kind) {
-		return modelOwnedResource{}, fail
+		return modelOwnedResource{}, &modelObservationError{reason: "model_resource_spec_changed"}
 	}
 	if want.UID != "" && !reflect.DeepEqual(want.Spec, spec) {
-		return modelOwnedResource{}, fail
+		return modelOwnedResource{}, &modelObservationError{reason: "model_resource_spec_changed"}
 	}
 	if want.UID != "" && want.Generation > 0 && want.Generation != int64(generation) {
-		return modelOwnedResource{}, fail
+		if !api.generation || !modelDeletionGeneration(want, int64(generation), meta) {
+			return modelOwnedResource{}, &modelObservationError{reason: "model_resource_generation_changed"}
+		}
 	}
 	want.Terminating = meta["deletionTimestamp"] != nil
 	want.UID, want.ResourceVersion, want.Generation, want.Spec = uid, rv, int64(generation), spec

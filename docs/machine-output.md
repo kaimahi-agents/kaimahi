@@ -78,8 +78,9 @@ error-framing guarantee. Unknown commands are not a root-wide JSON protocol.
 Help and completion remain human/inert output, even with an output flag.
 
 Machine errors contain fixed code/message/recovery fields and an optional
-allowlisted stage; they never serialize the original cause or an arbitrary
-provider details object. Error text and stderr omit reflected arguments,
+allowlisted stage. Guest model observation failures can additionally include a
+closed `reason` value, described below. They never serialize the original cause
+or an arbitrary provider details object. Error text and stderr omit reflected arguments,
 credentials, headers, URLs, payloads, tool inputs/results and provider bodies.
 Clients should use codes, not parse the message prose.
 
@@ -207,8 +208,25 @@ stop (even if later binding cleanup fails). It is not model-answer evidence.
 The optional proof field remains absent: no proof action is implemented here.
 
 Errors use the closed safe vocabulary, including `credential_unavailable`,
-`dependency_unavailable`, `permission_denied` and `execution_unknown`. API-key
-Connect adds `credential_rejected` for Vekil-reported upstream 401/403,
+`dependency_unavailable`, `permission_denied` and `execution_unknown`.
+For `execution_unknown` caused by a model resource observation refusal, the
+optional `error.reason` identifies the checked boundary without resource values:
+
+| Reason | Observation refused |
+|---|---|
+| `model_resource_identity_invalid` | Resource type, name or namespace did not match. |
+| `model_resource_ownership_changed` | UID or ownership marker did not match, or UID/resource version was invalid. |
+| `model_resource_generation_invalid` | A required generation was missing or malformed. |
+| `model_resource_spec_changed` | The execution projection did not match the retained resource. |
+| `model_resource_generation_changed` | Generation changed outside the native deletion transition. |
+
+Unknown or untyped causes omit `reason`; arbitrary cause text is never copied.
+Cancellation, deadline and output failures take precedence and omit this detail.
+The code, stage, fixed message, recovery and exit semantics are unchanged.
+Readers ignore this optional schema version 1 field. It is not ownership evidence or
+permission to retry a mutation.
+
+API-key Connect adds `credential_rejected` for Vekil-reported upstream 401/403,
 `provider_unreachable` for its upstream transport-failure diagnostic, and
 `model_unavailable` when the selected catalog ID is missing or repeated.
 Their recoveries are `supply_credentials`, `check_configuration` and
