@@ -10,6 +10,10 @@ Commands retain the user's filesystem and inbound/outbound network authority.
 Review `kmx.yaml`, including activation probes, as executable host configuration.
 An empty environment does not prevent a program from reading host credential files.
 
+For a fuller workflow, try the [project-maintenance demo](project-maintenance-demo.md):
+monitor mocked PRs/issues, build a report and rebase disposable local worktrees,
+including dirty-worktree and conflict outcomes.
+
 ## Run a small offline demo
 
 This example uses `/usr/bin/touch` and a deterministic fake model. It verifies real
