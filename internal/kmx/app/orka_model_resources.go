@@ -271,7 +271,7 @@ func (a *App) readModelObject(ctx context.Context, ns string, want modelOwnedRes
 		return want, false, nil
 	}
 	if !verificationIdentity(string(raw)) || want.UID != "" && string(raw) != want.UID {
-		return want, false, fmt.Errorf("model presence identity changed")
+		return want, false, fmt.Errorf("model presence identity changed: %w", &modelObservationError{reason: "model_resource_ownership_changed"})
 	}
 	raw, err = a.orkaCapture(ctx, nil, "get", "--raw", path)
 	if err != nil {

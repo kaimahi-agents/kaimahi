@@ -220,6 +220,8 @@ optional `error.reason` identifies the checked boundary without resource values:
 | `model_resource_spec_changed` | The execution projection did not match the retained resource. |
 | `model_resource_generation_changed` | Generation changed outside the native deletion transition. |
 
+Presence-query UID mismatches retain the ownership classification through model
+connection and readiness checks without including the UID.
 Unknown or untyped causes omit `reason`; arbitrary cause text is never copied.
 Cancellation, deadline and output failures take precedence and omit this detail.
 The code, stage, fixed message, recovery and exit semantics are unchanged.

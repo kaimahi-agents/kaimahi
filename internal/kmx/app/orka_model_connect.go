@@ -219,7 +219,10 @@ func (a *App) ConnectOrkaModel(opt OrkaModelConnectOptions) (result OrkaModelRes
 		}
 		for _, root := range record.state.Resources {
 			_, present, e := a.readModelObject(ctx, OrkaNamespace, root)
-			if e != nil || !present {
+			if e != nil {
+				return result, fmt.Errorf("retained model ownership unavailable: %w", e)
+			}
+			if !present {
 				return result, fmt.Errorf("retained model ownership unavailable")
 			}
 		}
