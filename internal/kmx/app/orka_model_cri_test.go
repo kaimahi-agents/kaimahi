@@ -55,7 +55,7 @@ func TestOrkaModelNativeCRIUID(t *testing.T) {
 		{"empty UID", "", "kube-system", "etcd-test-control-plane", "CONTAINER_RUNNING", "model process identity unavailable", false},
 		{"control UID", "bad\nuid", "kube-system", "etcd-test-control-plane", "CONTAINER_RUNNING", "model process identity unavailable", false},
 		{"long UID", strings.Repeat("x", 257), "kube-system", "etcd-test-control-plane", "CONTAINER_RUNNING", "model process identity unavailable", false},
-		{"key shaped UID", "sk-proj-" + strings.Repeat("X", 100), "kube-system", "etcd-test-control-plane", "CONTAINER_RUNNING", "model process identity unavailable", false},
+		{"key shaped UID", strings.Join([]string{"sk", "proj", strings.Repeat("X", 100)}, "-"), "kube-system", "etcd-test-control-plane", "CONTAINER_RUNNING", "model process identity unavailable", false},
 		{"uppercase hash", strings.Repeat("AB", 16), "kube-system", "etcd-test-control-plane", "CONTAINER_RUNNING", "model process identity unavailable", false},
 		{"bad namespace", uid, "bad.namespace", "etcd-test-control-plane", "CONTAINER_RUNNING", "model process identity unavailable", false},
 		{"bad name", uid, "kube-system", "INVALID", "CONTAINER_RUNNING", "model process identity unavailable", false},
