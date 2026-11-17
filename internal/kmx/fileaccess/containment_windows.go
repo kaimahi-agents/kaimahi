@@ -4,6 +4,9 @@ package fileaccess
 
 import (
 	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -33,4 +36,28 @@ func physicallyContains(ctx context.Context, tree, candidate string) (bool, erro
 		candidatePath += containmentSeparator + strings.ToLower(suffix[i])
 	}
 	return candidatePath == rootPath || strings.HasPrefix(candidatePath, rootPath+containmentSeparator), nil
+}
+
+func nearestExistingDirectory(ctx context.Context, candidate string) (*Directory, []string, error) {
+	absolute, err := filepath.Abs(candidate)
+	if err != nil {
+		return nil, nil, err
+	}
+	path := absolute
+	var suffix []string
+	for {
+		directory, err := OpenDirectory(ctx, path)
+		if err == nil {
+			return directory, suffix, nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, nil, err
+		}
+		parent := filepath.Dir(path)
+		if parent == path {
+			return nil, nil, ErrMissing
+		}
+		suffix = append(suffix, filepath.Base(path))
+		path = parent
+	}
 }

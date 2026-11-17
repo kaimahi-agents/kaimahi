@@ -3,6 +3,7 @@
 package app
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -15,6 +16,9 @@ func TestWindowsWorkspaceTestCandidateManagedProofJourney(t *testing.T) {
 	t.Setenv("KMX_EVAL_FORWARD_TARGET", fixture.resultAddress)
 	a.CommandShell = "powershell"
 	a.Cfg.Confirm = "kind-test"
+	if err := a.preflightSuiteWorkspaceKubectl(); err != nil {
+		t.Fatalf("pinned kubectl preflight: %v", err)
+	}
 	root := windowsNativeWorkspaceFixture(t)
 	opt := SuiteWorkspaceEvaluationOptions{Workspace: root, ToContext: "kind-test", ToNamespace: OrkaNamespace, Inference: "provider:inference", ManagedPass: true, CaseTimeout: 5 * time.Minute}
 	p, err := PrepareSuiteWorkspaceEvaluation(t.Context(), opt)
@@ -26,7 +30,12 @@ func TestWindowsWorkspaceTestCandidateManagedProofJourney(t *testing.T) {
 		fixture.answers[frame.Case.Input] = nativeCanary + " answer"
 	}
 	if err := a.EvaluateSuiteWorkspace(t.Context(), p); err != nil {
-		t.Fatal(err)
+		calls := orkaCalls(t, fixture.dir)
+		last := "none"
+		if len(calls) > 0 {
+			last = fmt.Sprint(calls[len(calls)-1].Args)
+		}
+		t.Fatalf("evaluation: %v; calls=%d last=%s diagnostics=%s", err, len(calls), last, a.Err)
 	}
 	receipt, record, err := p.store.latest(t.Context(), p.suite)
 	if err != nil || record == "" || receipt.CandidateCleanup != "complete" || len(state.objects) != 0 {
