@@ -217,6 +217,7 @@ jobs:
           if ($status -eq 0) { throw 'incomplete Windows workspace Test selection succeeded.' }
           if (Test-Path -LiteralPath $state) { throw 'refused Windows workspace Test created state.' }
           $output | Write-Output
+          exit 0
       - name: Direct executable day-zero journey
         shell: pwsh
         run: ./scripts/ci/windows-cli-day-zero.ps1 -Binary "$env:RUNNER_TEMP\kmx.exe" -Fixture ./internal/kmx/agentfile/testdata/greeter.agent.md
