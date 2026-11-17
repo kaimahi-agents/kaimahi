@@ -120,7 +120,7 @@ func TestOrkaModelKeyCatalog(t *testing.T) {
 		{`{"data":[{"id":"claude-sonnet-5-5"}]}`, ""},
 		{`{"data":[{"id":"other"}]}`, "model_unavailable"},
 		{`{"data":[]}`, "model_unavailable"},
-		{`{"data":[{"id":"claude-sonnet-5-5"},{"id":"claude-sonnet-5-5"}]}`, "model_unavailable"},
+		{`{"data":[{"id":"claude-sonnet-5-5"},{"id":"claude-sonnet-5-5"}]}`, "dependency_unavailable"},
 	} {
 		a, _, _ := modelLifecycleFixture(t)
 		capture := a.captureCommand

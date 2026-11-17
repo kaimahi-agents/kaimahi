@@ -92,7 +92,7 @@ func (e *modelReasonFixtureError) DiagnosticReason() string { return e.reason }
 
 // Adapter-only phase fixtures; actual lifecycle cancellation is tested in App.
 func TestOrkaModelJSONL(t *testing.T) {
-	for _, failure := range []string{"", "preflight", "model", "cancel", "credential_rejected", "provider_unreachable", "model_unavailable", "reason", "reason-unknown", "reason-cancel", "reason-deadline", "reason-other-operation"} {
+	for _, failure := range []string{"", "preflight", "model", "cancel", "credential_rejected", "provider_unreachable", "model_unavailable", "empty_catalog", "reason", "reason-unknown", "reason-cancel", "reason-deadline", "reason-other-operation"} {
 		t.Run(failure, func(t *testing.T) {
 			var out, diag bytes.Buffer
 			deps, _ := testDependencies(&out, &diag)
@@ -144,6 +144,15 @@ func TestOrkaModelJSONL(t *testing.T) {
 					return &machineCommandError{code: "execution_unknown", cause: cause, safe: app.NewMachineError("execution_unknown", "gateway")}
 				}
 				m.observe("Model model", "active", nil)
+				if failure == "model_unavailable" || failure == "empty_catalog" {
+					choices := []app.OrkaModelChoice{}
+					if failure == "model_unavailable" {
+						disabled := false
+						choices = append(choices, app.OrkaModelChoice{ID: "listed-model", PickerEnabled: &disabled})
+					}
+					result.ModelChoices = &choices
+					return &machineCommandError{code: "model_unavailable", safe: app.NewMachineError("model_unavailable", "model")}
+				}
 				if failure == "cancel" {
 					m.cancel()
 					return context.Canceled
@@ -187,6 +196,15 @@ func TestOrkaModelJSONL(t *testing.T) {
 					t.Fatalf("untrusted/superseded reason escaped: %v", failureError)
 				}
 			}
+			choices, present := terminal["modelChoices"]
+			if failure == "model_unavailable" || failure == "empty_catalog" {
+				rows, ok := choices.([]any)
+				if !ok || failure == "empty_catalog" && len(rows) != 0 || failure == "model_unavailable" && (len(rows) != 1 || rows[0].(map[string]any)["pickerEnabled"] != false) {
+					t.Fatal("lost catalog projection", terminal)
+				}
+			} else if present {
+				t.Fatal("unavailable became empty catalog", terminal)
+			}
 			pairs := 0
 			for _, r := range machineRecords(t, out.Bytes()) {
 				if r["stage"] == "preflight" {
@@ -211,6 +229,32 @@ func TestOrkaModelJSONL(t *testing.T) {
 				t.Fatal(terminal)
 			}
 		})
+	}
+}
+
+func TestOrkaModelChoicesDoNotEraseIdentityAtRecordLimit(t *testing.T) {
+	var out bytes.Buffer
+	m := newProvisioningOutput(&out, "cluster.orka.model.connect", context.Background())
+	defer m.stop()
+	choices := make([]app.OrkaModelChoice, 4096)
+	for i := range choices {
+		choices[i].ID = fmt.Sprintf("model-%04d", i)
+	}
+	result := app.OrkaModelResult{Connection: &app.OrkaModelConnection{ID: "11111111-1111-4111-8111-111111111111", State: "unknown"}, RemoteState: "unknown", ModelChoices: &choices}
+	m.setup.model = &result
+	if err := m.setupResult("apply", nil, "failed", 1, app.NewMachineError("model_unavailable", "model")); err != nil {
+		t.Fatal(err)
+	}
+	records := machineRecords(t, out.Bytes())
+	if len(records) != 1 {
+		t.Fatal("missing terminal result", out.String())
+	}
+	terminal := records[0]
+	if terminal["connection"] == nil || terminal["modelChoices"] != nil || len(out.Bytes()) > machineRecordLimit {
+		t.Fatal("oversized catalog erased identity", terminal)
+	}
+	if result.ModelChoices == nil {
+		t.Fatal("projection mutated the owned result")
 	}
 }
 

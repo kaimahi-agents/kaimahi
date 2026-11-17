@@ -181,6 +181,10 @@ func (a *App) ConnectOrkaModel(opt OrkaModelConnectOptions) (result OrkaModelRes
 		}
 		if err != nil && record != nil {
 			result = modelConnectionResult(record, "unknown")
+			var safe *OrkaModelError
+			if result.Connection != nil && errors.As(err, &safe) {
+				result.ModelChoices = safe.modelChoices
+			}
 		}
 		if err != nil {
 			var safe *OrkaModelError
