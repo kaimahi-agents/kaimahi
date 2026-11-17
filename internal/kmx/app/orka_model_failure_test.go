@@ -38,7 +38,7 @@ func TestOrkaModelPreflightFailures(t *testing.T) {
 				if persistentModelCreate(cmd) {
 					creates++
 				}
-				if damage == "occupied" && slices.Contains(cmd.Args, "--ignore-not-found=true") {
+				if damage == "occupied" && slices.Contains(cmd.Args, "jsonpath={.metadata.uid}") {
 					fmt.Fprint(cmd.Stdout, "foreign")
 					return nil
 				}
@@ -289,7 +289,7 @@ func TestOrkaModelPreflightNeverAssumesStopped(t *testing.T) {
 				t.Fatal(err)
 			}
 			capture := a.captureCommand
-			deletes := 0
+			deletes, deniedReads := 0, 0
 			secret := "/api/v1/namespaces/orka-system/secrets/copilot-model-key"
 			for path, obj := range objects {
 				if obj["kind"] == "Secret" {
@@ -303,12 +303,17 @@ func TestOrkaModelPreflightNeverAssumesStopped(t *testing.T) {
 				if slices.Contains(cmd.Args, "delete") {
 					deletes++
 				}
-				if damage == "read-denied" && strings.HasSuffix(strings.Join(cmd.Args, " "), secret) {
+				fullSecretRead := strings.HasSuffix(strings.Join(cmd.Args, " "), secret) || slices.Contains(cmd.Args, "secrets") && slices.Contains(cmd.Args, "json") && slices.Contains(cmd.Args, secret[strings.LastIndex(secret, "/")+1:])
+				if damage == "read-denied" && fullSecretRead {
+					deniedReads++
 					return fmt.Errorf("denied")
 				}
 				return capture(ctx, cmd)
 			}
 			r, err := a.DisconnectOrkaModel(modelDisconnectOptions(connected.Connection.ID))
+			if damage == "read-denied" && deniedReads != 1 {
+				t.Fatalf("read denial was not exercised: %d", deniedReads)
+			}
 			if err == nil || r.RemoteState == "stopped" || deletes != 0 {
 				t.Fatalf("preflight failure falsely stopped live gateway: %+v %v sends%d", r, err, deletes)
 			}

@@ -108,7 +108,7 @@ func TestOrkaModelTerminatingGenerationDoesNotAuthorizeDelete(t *testing.T) {
 			sends++
 			return fmt.Errorf("terminating observation authorized another DELETE")
 		}
-		if slices.Contains(cmd.Args, "--ignore-not-found=true") {
+		if slices.Contains(cmd.Args, "jsonpath={.metadata.uid}") {
 			fmt.Fprint(cmd.Stdout, "owned")
 			return nil
 		}
@@ -208,7 +208,7 @@ func TestOrkaModelDisconnectForegroundTermination(t *testing.T) {
 			deleting[path] = 0
 			return json.NewEncoder(cmd.Stdout).Encode(obj)
 		}
-		if slices.Contains(cmd.Args, "--ignore-not-found=true") {
+		if slices.Contains(cmd.Args, "jsonpath={.metadata.uid}") {
 			get := slices.Index(cmd.Args, "get")
 			resource, name := cmd.Args[get+1], cmd.Args[get+2]
 			for path, reads := range deleting {

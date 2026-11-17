@@ -143,21 +143,25 @@ case "$0 $*" in
 				qualified := "pods"
 				if child["kind"] == "ReplicaSet" {
 					qualified = "replicasets.apps"
+					if slices.Contains(cmd.Args, "json") {
+						qualified = "replicasets.v1.apps"
+					}
 				}
 				if resource == qualified && modelMap(child["metadata"])["name"] == name {
-					fmt.Fprint(cmd.Stdout, modelMap(child["metadata"])["uid"])
-					return nil
+					return modelFixtureObservation(cmd, child)
 				}
 			}
 			for path, obj := range objects {
 				api, _ := modelAPIFor(modelText(obj["kind"]))
 				qualified := api.plural
-				if group, _, grouped := strings.Cut(api.version, "/"); grouped {
+				if group, version, grouped := strings.Cut(api.version, "/"); grouped {
+					if slices.Contains(cmd.Args, "json") {
+						qualified += "." + version
+					}
 					qualified += "." + group
 				}
 				if resource == qualified && strings.HasSuffix(path, "/"+api.plural+"/"+name) {
-					fmt.Fprint(cmd.Stdout, modelMap(obj["metadata"])["uid"])
-					break
+					return modelFixtureObservation(cmd, obj)
 				}
 			}
 			return nil
@@ -165,4 +169,15 @@ case "$0 $*" in
 		return fmt.Errorf("unexpected fixture command")
 	}
 	return a, objects, &calls
+}
+
+func modelFixtureObservation(cmd *exec.Cmd, obj map[string]any) error {
+	if slices.Contains(cmd.Args, "jsonpath={.metadata.uid}") {
+		_, err := fmt.Fprint(cmd.Stdout, modelMap(obj["metadata"])["uid"])
+		return err
+	}
+	if slices.Contains(cmd.Args, "json") {
+		return json.NewEncoder(cmd.Stdout).Encode(obj)
+	}
+	return fmt.Errorf("unexpected fixture observation mode")
 }

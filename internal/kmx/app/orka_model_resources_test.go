@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 
@@ -59,13 +60,16 @@ func TestOrkaModelReadQualifiedResource(t *testing.T) {
 			calls := 0
 			a.captureCommand = func(_ context.Context, cmd *exec.Cmd) error {
 				calls++
+				expected := qualified
+				if calls == 2 {
+					group, version, _ := strings.Cut(api.version, "/")
+					expected = api.plural + "." + version + "." + group
+				}
+				if !slices.Contains(cmd.Args, expected) {
+					t.Fatalf("read%d lost exact resource/version qualification: %v", calls, cmd.Args)
+				}
 				if calls == 1 {
-					for _, arg := range cmd.Args {
-						if arg == qualified {
-							fmt.Fprint(cmd.Stdout, "owned-uid")
-							return nil
-						}
-					}
+					fmt.Fprint(cmd.Stdout, "owned-uid")
 					return nil
 				}
 				return json.NewEncoder(cmd.Stdout).Encode(map[string]any{"apiVersion": api.version, "kind": kind, "metadata": map[string]any{"name": "model", "namespace": OrkaNamespace, "uid": "owned-uid", "resourceVersion": "8", "generation": 1, "annotations": map[string]any{modelOperationAnnotation: want.Marker}}, "spec": map[string]any{}})

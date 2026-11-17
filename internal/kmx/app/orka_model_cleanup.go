@@ -180,7 +180,7 @@ func (a *App) modelDeleteOwned(ctx context.Context, ns string, root modelOwnedRe
 func (a *App) modelChildrenGone(ctx context.Context, ns string, children []modelChild) (bool, error) {
 	gone := true
 	for _, c := range children {
-		version, prefix, ok := modelChildAPI(c.Kind)
+		version, _, ok := modelChildAPI(c.Kind)
 		if !ok || version != c.APIVersion || scaffold.ValidateObjectName(c.Name) != nil || !verificationIdentity(c.UID) {
 			return false, fmt.Errorf("invalid retained child identity")
 		}
@@ -188,9 +188,10 @@ func (a *App) modelChildrenGone(ctx context.Context, ns string, children []model
 		if c.Kind == "ReplicaSet" {
 			plural = "replicasets"
 		}
-		resource := plural
-		if group, _, grouped := strings.Cut(version, "/"); grouped {
+		resource, snapshotResource := plural, plural
+		if group, v, grouped := strings.Cut(version, "/"); grouped {
 			resource += "." + group
+			snapshotResource += "." + v + "." + group
 		}
 		raw, err := a.orkaCapture(ctx, nil, "-n", ns, "get", resource, c.Name, "--ignore-not-found=true", "-o", "jsonpath={.metadata.uid}")
 		if err != nil {
@@ -202,9 +203,13 @@ func (a *App) modelChildrenGone(ctx context.Context, ns string, children []model
 		if string(raw) != c.UID {
 			return false, fmt.Errorf("retained child identity changed")
 		}
-		raw, err = a.orkaCapture(ctx, nil, "get", "--raw", prefix+"/namespaces/"+ns+"/"+plural+"/"+c.Name)
+		raw, err = a.orkaCapture(ctx, nil, "-n", ns, "get", snapshotResource, c.Name, "--ignore-not-found=true", "-o", "json")
 		if err != nil {
 			return false, err
+		}
+		// Garbage collection may remove the child after its matching UID read.
+		if len(raw) == 0 {
+			continue
 		}
 		var obj map[string]any
 		if modelJSON(raw, &obj) != nil || obj["apiVersion"] != version || obj["kind"] != c.Kind {

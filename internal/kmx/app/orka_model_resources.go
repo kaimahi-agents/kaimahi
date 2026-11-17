@@ -253,15 +253,15 @@ func (a *App) readModelObject(ctx context.Context, ns string, want modelOwnedRes
 	if !verificationIdentity(want.UID) || !verificationIdentity(want.ResourceVersion) {
 		return want, false, fmt.Errorf("model read requires retained acknowledgment")
 	}
-	path, err := modelPath(ns, want)
-	if err != nil {
+	if _, err := modelPath(ns, want); err != nil {
 		return want, false, err
 	}
 	// A successful explicit presence query distinguishes absence from read failure.
 	api, _ := modelAPIFor(want.Kind)
-	resource := api.plural
-	if group, _, grouped := strings.Cut(api.version, "/"); grouped {
+	resource, snapshotResource := api.plural, api.plural
+	if group, version, grouped := strings.Cut(api.version, "/"); grouped {
 		resource += "." + group
+		snapshotResource += "." + version + "." + group
 	}
 	raw, err := a.orkaCapture(ctx, nil, "-n", ns, "get", resource, want.Name, "--ignore-not-found=true", "-o", "jsonpath={.metadata.uid}")
 	if err != nil {
@@ -273,9 +273,13 @@ func (a *App) readModelObject(ctx context.Context, ns string, want modelOwnedRes
 	if !verificationIdentity(string(raw)) || want.UID != "" && string(raw) != want.UID {
 		return want, false, fmt.Errorf("model presence identity changed: %w", &modelObservationError{reason: "model_resource_ownership_changed"})
 	}
-	raw, err = a.orkaCapture(ctx, nil, "get", "--raw", path)
+	raw, err = a.orkaCapture(ctx, nil, "-n", ns, "get", snapshotResource, want.Name, "--ignore-not-found=true", "-o", "json")
 	if err != nil {
 		return want, false, err
+	}
+	// Native deletion can finish between the UID precheck and this snapshot.
+	if len(raw) == 0 {
+		return want, false, nil
 	}
 	var observed map[string]any
 	if modelJSON(raw, &observed) != nil {

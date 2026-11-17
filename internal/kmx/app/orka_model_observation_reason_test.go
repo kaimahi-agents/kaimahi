@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -38,16 +39,16 @@ func TestOrkaModelOwnershipReasonAtObservationBoundaries(t *testing.T) {
 			}
 			capture := a.captureCommand
 			catalogSeen, changed := false, false
-			rawAfterChange := 0
+			fullAfterChange := 0
 			a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
 				args := strings.Join(cmd.Args, " ")
-				if changed && strings.Contains(args, "--raw") {
-					rawAfterChange++
+				if changed && (strings.Contains(args, "--raw") || slices.Contains(cmd.Args, "--ignore-not-found=true") && slices.Contains(cmd.Args, "json")) {
+					fullAfterChange++
 				}
 				if strings.HasSuffix(args, "/v1/models") {
 					catalogSeen = true
 				}
-				if strings.Contains(args, "--ignore-not-found=true") && (boundary != "final-check" || catalogSeen) {
+				if strings.Contains(args, "jsonpath={.metadata.uid}") && (boundary != "final-check" || catalogSeen) {
 					changed = true
 					fmt.Fprint(cmd.Stdout, "replaced-observation-uid")
 					return nil
@@ -62,8 +63,8 @@ func TestOrkaModelOwnershipReasonAtObservationBoundaries(t *testing.T) {
 			case "final-check":
 				_, err = a.modelCheckGateway(ctx, OrkaModelConnection{Provider: "copilot", Model: "gpt-4.1"}, roots)
 			}
-			if !changed || rawAfterChange != 0 || boundary == "final-check" && !catalogSeen {
-				t.Fatalf("wrong boundary: changed%t rawAfter%d catalog%t", changed, rawAfterChange, catalogSeen)
+			if !changed || fullAfterChange != 0 || boundary == "final-check" && !catalogSeen {
+				t.Fatalf("wrong boundary: changed%t fullAfter%d catalog%t", changed, fullAfterChange, catalogSeen)
 			}
 			modelRequireOwnershipReason(t, err)
 		})
@@ -82,7 +83,7 @@ func TestOrkaModelRetainedConnectKeepsOwnershipReason(t *testing.T) {
 		if strings.Contains(args, " create ") || strings.Contains(args, " delete ") || strings.Contains(args, " replace ") {
 			mutations++
 		}
-		if strings.Contains(args, "--ignore-not-found=true") {
+		if strings.Contains(args, "jsonpath={.metadata.uid}") {
 			changed = true
 			fmt.Fprint(cmd.Stdout, "replaced-observation-uid")
 			return nil
