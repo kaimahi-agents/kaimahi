@@ -239,6 +239,7 @@ class AppShardWorkflowTests(unittest.TestCase):
         self.assertIn("go test -race -count=1 -v ./internal/kmx/localagent", step["run"])
         self.assertIn("./internal/kmx/residenttools", step["run"])
         self.assertIn("./internal/kmx/localtools", step["run"])
+        self.assertIn("-skip '^TestHostedMCPWithScriptedModelJournal$'", step["run"])
         self.assertIn("--- PASS: TestLocalAgentResidentSessionInvokeStop ", step["run"])
         self.assertIn("! grep -q -- '--- SKIP:'", step["run"])
 

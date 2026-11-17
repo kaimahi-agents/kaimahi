@@ -23,6 +23,15 @@
 
 ### Fixed
 
+- Preserve cleanup-failure classification through sanitized tool errors, including
+  cancellation, so uncertain cleanup refuses later broker calls and successful
+  Stop. Protect inherited worker descriptors before credential helpers run and
+  close command exit observers even after failed waits. Darwin accepts zombie-only
+  process-group signal refusal only after complete owned-group observation.
+- Keep required resident CI hermetic by excluding the exact opt-in hosted MCP
+  test while retaining the no-skip gate. Resolve macOS test temporary roots before
+  checked filesystem reads without weakening production symlink refusals.
+
 - Match argument/probe regexes against the complete value, including alternations.
   Budget startup for all declared probes and cleanup; cancellation/EOF stops owned
   probe groups, and inherited broker descriptors cannot reach commands.

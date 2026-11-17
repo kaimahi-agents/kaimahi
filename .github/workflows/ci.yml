@@ -56,7 +56,7 @@ jobs:
         run: |
           set -euo pipefail
           umask 022
-          go test -race -count=1 -v ./internal/kmx/localagent ./internal/kmx/residenttools ./internal/kmx/localtools | tee resident-tests.log
+          go test -race -count=1 -v ./internal/kmx/localagent ./internal/kmx/residenttools ./internal/kmx/localtools -skip '^TestHostedMCPWithScriptedModelJournal$' | tee resident-tests.log
           grep -q -- '--- PASS: TestLocalAgentResidentSessionInvokeStop ' resident-tests.log
           ! grep -q -- '--- SKIP:' resident-tests.log
       - name: App test timings (no test output)

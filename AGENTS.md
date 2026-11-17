@@ -39,6 +39,10 @@ journaling or public AgentSuite artifacts. Tool effects are conservatively mutat
 Broker dispatch channels are distinct from unrestricted host-user network ingress
 and egress. Readiness budgets include every probe and cleanup; EOF/cancellation
 stops owned probe groups, and inherited broker descriptors are close-on-exec.
+Worker descriptors are protected before credential-helper launches. Sanitized tool
+errors retain cleanup-failure classification even during cancellation; uncertain
+cleanup refuses further calls and successful Stop. Darwin zombie-only group signal
+refusal requires positive complete owned-group observation before acceptance.
 Resident-only flags have a distinct help section; no-FILE selection errors use
 ordinary failure exits, never live Run's pending-Task exit 2. Linux/macOS resident
 lifecycle tests run in shard zero of the required app-tests/hygiene dependency graph.

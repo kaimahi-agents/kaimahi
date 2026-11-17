@@ -32,6 +32,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess/copilot"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/residenttools"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -280,6 +281,23 @@ func runLocalAgentWorker(ctx context.Context, id, event string, credential local
 	ready := func(response localAgentIPCResponse) {
 		_ = writeLocalAgentJSON(readiness, response)
 		_ = readiness.Close()
+	}
+	// ExtraFiles loses CLOEXEC across the worker exec. Restore it before route
+	// checks can launch credential helpers, including gh auth token.
+	syscall.ForkLock.RLock()
+	var descriptorErr error
+	for _, file := range []*os.File{readiness, brokerFile} {
+		if file != nil {
+			if _, err := unix.FcntlInt(file.Fd(), unix.F_SETFD, unix.FD_CLOEXEC); err != nil {
+				descriptorErr = err
+				break
+			}
+		}
+	}
+	syscall.ForkLock.RUnlock()
+	if descriptorErr != nil {
+		ready(localAgentIPCResponse{Error: "worker descriptor protection failed"})
+		return errors.New("worker descriptor protection failed")
 	}
 	record, err := resolveLocalAgent("li-"+event, true)
 	if err != nil || record.EventID != event || record.State == "stopped" {

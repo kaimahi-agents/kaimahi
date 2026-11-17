@@ -119,7 +119,7 @@ func runCommandAfterStart(ctx context.Context, cfg CommandConfig, check func(...
 	}
 	observer, observerErr := newStdioLeaderObserver(cmd.Process.Pid)
 	if observerErr != nil {
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		_ = killCommandGroup(cmd.Process.Pid)
 		_ = stdout.Close()
 		_ = childOut.Close()
 		_ = stderr.Close()
@@ -133,21 +133,21 @@ func runCommandAfterStart(ctx context.Context, cfg CommandConfig, check func(...
 	_ = childErr.Close()
 	if afterStart != nil {
 		if err := afterStart(cmd.Process.Pid); err != nil {
-			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			_ = killCommandGroup(cmd.Process.Pid)
 			_ = stdout.Close()
 			_ = stderr.Close()
-			if errors.Is(waitCommandExit(cmd.Wait), ErrCommandCleanup) || observer.close() != nil {
+			if errors.Is(finishCommandWait(cmd.Wait, observer), ErrCommandCleanup) {
 				return nil, ErrCommandCleanup
 			}
 			return nil, err
 		}
 	}
 	if !checkIdentity() {
-		killErr := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		killErr := killCommandGroup(cmd.Process.Pid)
 		_ = stdout.Close()
 		_ = stderr.Close()
-		waitErr := waitCommandExit(cmd.Wait)
-		if errors.Is(waitErr, ErrCommandCleanup) || killErr != nil && !errors.Is(killErr, syscall.ESRCH) || observer.close() != nil {
+		waitErr := finishCommandWait(cmd.Wait, observer)
+		if errors.Is(waitErr, ErrCommandCleanup) || killErr != nil && !errors.Is(killErr, syscall.ESRCH) {
 			return nil, ErrCommandCleanup
 		}
 		return nil, ErrCommand
@@ -180,7 +180,7 @@ func runCommandAfterStart(ctx context.Context, cfg CommandConfig, check func(...
 			}
 		}
 	}
-	killErr := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	killErr := killCommandGroup(cmd.Process.Pid)
 	if killErr != nil && !errors.Is(killErr, syscall.ESRCH) {
 		cleanupFailure = true
 	}
@@ -195,10 +195,7 @@ func runCommandAfterStart(ctx context.Context, cfg CommandConfig, check func(...
 	}
 	_ = stdout.Close()
 	_ = stderr.Close()
-	waitErr := waitCommandExit(cmd.Wait)
-	if observer.close() != nil {
-		cleanupFailure = true
-	}
+	waitErr := finishCommandWait(cmd.Wait, observer)
 	if cleanupFailure || errors.Is(waitErr, ErrCommandCleanup) {
 		return nil, ErrCommandCleanup
 	}
@@ -235,6 +232,15 @@ func runCommandAfterStart(ctx context.Context, cfg CommandConfig, check func(...
 	out, diagnostic := slices.Clone(capture.stdout.Bytes()), slices.Clone(capture.stderr.Bytes())
 	capture.mu.Unlock()
 	return commandResult(exitCode, out, diagnostic, check)
+}
+
+func finishCommandWait(wait func() error, observer *stdioExitObserver) error {
+	waitErr := waitCommandExit(wait)
+	// Close even when waiting failed; on Darwin this owns a kqueue descriptor.
+	if observer.close() != nil {
+		return ErrCommandCleanup
+	}
+	return waitErr
 }
 
 // waitCommandExit bounds reaping independently of the already-expired invocation
