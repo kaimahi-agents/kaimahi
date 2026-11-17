@@ -7,6 +7,8 @@
 // interrupted non-reaping exit observations retry within a fixed bound, while
 // uncertain cleanup still refuses completion. Command calls use fixed argv, an
 // explicit environment and owned group cleanup.
+// Credential-free frozen command plans may cross into the separate resident tool
+// broker; that bounded-process backend remains guarded execution, not a sandbox.
 package localtools
 
 import (

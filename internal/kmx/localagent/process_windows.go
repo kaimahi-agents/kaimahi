@@ -5,6 +5,8 @@ package localagent
 import (
 	"context"
 	"errors"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/residenttools"
 )
 
 type localAgentIPCRequest struct {
@@ -19,7 +21,7 @@ type localAgentIPCResponse struct {
 
 func validLocalAgentSocketName(string) bool { return false }
 func validLocalAgentLockName(string) bool   { return false }
-func startLocalAgentWorker(context.Context, string, Instance) error {
+func startLocalAgentWorker(context.Context, string, Instance, *residenttools.Plan) error {
 	return errors.New("persistent local agents are unavailable on native Windows; use WSL")
 }
 func probeLocalAgent(context.Context, Instance, string, localAgentIPCRequest) (localAgentIPCResponse, error) {

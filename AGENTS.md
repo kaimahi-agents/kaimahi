@@ -11,7 +11,7 @@ changes in the package's Go doc comment.
 
 Resident lifecycle belongs to `internal/kmx/localagent`; model route discovery,
 endpoint credential ownership, protocol adaptation and capability matching belong
-to `internal/kmx/modelaccess`. Resident Run supports tool-free fake/Copilot,
+to `internal/kmx/modelaccess`. Resident Run supports fake/Copilot,
 Ollama/Foundry Local, compatible/OpenAI and Anthropic Messages routes. Freeze exact
 endpoint/key-reference/capability/requirement identity in each generation; keys
 travel only in the worker credential pipe. Environment keys are startup snapshots;
@@ -30,6 +30,19 @@ Profiles are operator declarations, Ollama show
 metadata is advertised, and neither is execution evidence. `modelRequirements`
 frontmatter is resident-only; Run flags may strengthen but never weaken it.
 One-shot previews and Test retain their existing provider/tool contracts.
+Resident command tools use fake/Copilot only; the other endpoint adapters remain
+tool-free. `residenttools` owns the broker and its private contract/binding. Complete
+resolved input digests, exact schema mapping and admission checks precede effects.
+Unknown credential resolvers and unimplemented backends refuse. AP Sessions types
+and per-session idempotency scope are reused without claiming durable Sessions
+journaling or public AgentSuite artifacts. Tool effects are conservatively mutating.
+Broker dispatch channels are distinct from unrestricted host-user network ingress
+and egress. Readiness budgets include every probe and cleanup; EOF/cancellation
+stops owned probe groups, and inherited broker descriptors are close-on-exec.
+Worker descriptors are protected before credential-helper launches. Sanitized tool
+errors retain cleanup-failure classification even during cancellation; uncertain
+cleanup refuses further calls and successful Stop. Darwin zombie-only group signal
+refusal requires positive complete owned-group observation before acceptance.
 Resident-only flags have a distinct help section; no-FILE selection errors use
 ordinary failure exits, never live Run's pending-Task exit 2. Linux/macOS resident
 lifecycle tests run in shard zero of the required app-tests/hygiene dependency graph.
@@ -98,7 +111,21 @@ invalid review as clean.
   Owner-only snapshot cache retains the exact authored agent/tests bytes and has
   the same cleartext privacy boundary as preview journals. Lifecycle records
   retain no credentials or tool processes; each turn acquires fresh inference
-  access. Native
+  access. Declared Enabled fixed `commandTools` may run only through the separate
+  credential-free resident tool broker. The initial `bounded-process` backend is
+  explicit empty-environment guarded execution, not filesystem/network/OS
+  sandboxing; record its actual backend, exact config revision and executable-
+  bound plan revision. MCP,
+  disabled/missing mappings and command environment references remain refused.
+  Separate the portable credential-free tool contract from the private local
+  binding. The latter records distinct agent/tool backends, actual filesystem
+  and network exposure, credential references without values and call budgets;
+  neither local binding nor result is package/evidence/Deploy authority. Current
+  bounded execution is host-user filesystem plus unrestricted network,
+  with broker-channel-only dispatch recorded separately from network ingress. Apple-container/Linux-native/OCI
+  policy shapes do not authorize execution until their launchers are qualified;
+  never downgrade a required backend.
+  Tool config drift requires upgrade or a new generation. Native
   Windows persistence/list/stop remain deferred.
   Stable `md-...` identity follows the canonical source; each worker generation
   has an explicit random `li-...` instance identity, unique active runtime name,
@@ -654,9 +681,16 @@ ambient baseline. Destination readers structurally validate then discard these
 two subtrees, keeping other operational decoding strict. Native Windows tools
 remain deferred; process groups are not containment.
 
-One-shot file CLI Run/Test also resolves declared Enabled `commandTools` from that folder:
-fixed absolute executable/argv, empty-object tool input, folder-confined working
-directory and frozen named environment references. MCP selection does not disable
+File CLI Run/Test also resolves declared Enabled `commandTools` from that folder:
+fixed absolute executable, folder-confined working directory and frozen named
+environment references. Args are fixed by default; optional reviewed templates
+accept one-argv-element string (enum or anchored RE2, no leading option), clean
+relative path or bounded integer fields, with a literal first argv element and no
+shell/concatenation. Optional activation-only compatibility/readiness checks use
+fixed args, bounded timeout, expected exit and anchored stdout regex. The broker
+runs them before readiness; hidden config-free `run FILE --check-tools` runs the same
+probes and exposes no raw output. Probe definitions affect binding identity;
+observations are local status, never package/evidence authority. MCP selection does not disable
 commands. Disabled and populated recorded tools do not resolve launches. Keep the
 combined output at 5 KiB to fit worst-case JSON escaping and the trusted result
 envelope. Close all owned pipe ends and bound draining/reaping separately to one

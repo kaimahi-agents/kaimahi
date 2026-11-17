@@ -3,6 +3,7 @@ package localtools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"regexp"
 	"slices"
 	"strconv"
@@ -229,6 +230,15 @@ func (h *Host) Matches(names []string) bool {
 	return true
 }
 
+// trustedCleanupError retains only classification, never executor error text.
+// Cancellation must not erase the stronger fact that owned cleanup is uncertain.
+type trustedCleanupError struct{ cancellation error }
+
+func (e trustedCleanupError) Error() string { return errReadFailed.Error() }
+func (e trustedCleanupError) Is(target error) bool {
+	return target == ErrCommandCleanup || target == errReadFailed || errors.Is(e.cancellation, target)
+}
+
 func (h *Host) executeTrusted(ctx context.Context, scope controller.ToolCallContext, call api.ToolCall) (api.ToolResult, error) {
 	if err := ctx.Err(); err != nil {
 		return api.ToolResult{}, err
@@ -246,6 +256,9 @@ func (h *Host) executeTrusted(ctx context.Context, scope controller.ToolCallCont
 		_ = json.Unmarshal(raw, &call.Args)
 	}
 	result, err := h.execute(ctx, scope, call)
+	if errors.Is(err, ErrCommandCleanup) {
+		return api.ToolResult{}, trustedCleanupError{cancellation: ctx.Err()}
+	}
 	if contextErr := ctx.Err(); contextErr != nil {
 		return api.ToolResult{}, contextErr
 	}

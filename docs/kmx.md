@@ -229,6 +229,33 @@ mapping. `kmx model match PROFILE` checks a mapping offline and emits JSON;
 unknown requirements refuse selection. See [resident model selection](resident-models.md)
 for profiles, protocol support, credential rotation and the preview boundary.
 
+Resident Run supports only declared Enabled fixed `commandTools` from the exact
+agent-folder `kmx.yaml`; MCP servers, disabled/missing mappings and command
+environment references refuse before activation. A separate sibling broker owns
+the executable and launches one fixed-argv process per call. The model worker sees
+only typed calls/results. `kmx list -o json` reports `toolConfigRevision`,
+executable-bound `toolPlanRevision`, and the
+actual `toolBackend`; the initial `bounded-process` backend has explicit empty
+environment, executable rechecks, output bounds and process-group cleanup but is not a filesystem,
+network or operating-system sandbox. Tool config changes require `--upgrade` or a
+new named generation. The broker boundary admits a future container backend
+without making containers mandatory for local Markdown agents.
+The local lifecycle additionally records separate portable-contract and private
+binding digests plus the selected agent and tool backends. The current binding
+discloses host-user ambient filesystem access and unrestricted network access;
+the typed dispatch channel is separate from network ingress policy. Broker call
+budgets are one concurrent, five per turn, 64 per session and 1,024 per instance.
+Apple-container, Linux-native and rootless-OCI bindings can represent declared
+mounts and no/brokered network policy, but remain refused until their launchers
+and enforcement are implemented. Local bindings/results are never package or
+Deploy authority.
+Command bindings may add activation-only compatibility/readiness probes and
+typed argv templates. The initial hidden `kmx run FILE --check-tools
+[-o text|json]` route executes probes
+without model/config/cluster access. Dynamic values are single argv elements:
+reviewed enums or anchored strings, clean relative paths, and bounded integers;
+the first argv element remains literal and no shell is introduced.
+See [resident tool setup and Agent Primitives mapping](resident-tools.md).
 Without input, resident Run starts/reuses the agent and sends no turn;
 `kmx run FILE --prompt "input"` creates a resident session and sends that input. Test checks
 the file's saved examples in authored order and accepts no ad-hoc input. Use
