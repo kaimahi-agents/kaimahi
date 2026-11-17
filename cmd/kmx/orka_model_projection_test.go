@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -76,28 +77,72 @@ func TestOrkaModelWindowsAndFlags(t *testing.T) {
 	}
 }
 
+// Typed observation classification is a trusted internal error-chain contract;
+// the wire projection must still reject any value outside its fixed vocabulary.
+type modelReasonFixtureError struct {
+	reason string
+	cause  error
+}
+
+func (e *modelReasonFixtureError) Error() string {
+	return "Bearer-secret https://private.invalid/provider-body"
+}
+func (e *modelReasonFixtureError) Unwrap() error            { return e.cause }
+func (e *modelReasonFixtureError) DiagnosticReason() string { return e.reason }
+
 // Adapter-only phase fixtures; actual lifecycle cancellation is tested in App.
 func TestOrkaModelJSONL(t *testing.T) {
-	for _, failure := range []string{"", "preflight", "model", "cancel", "credential_rejected", "provider_unreachable", "model_unavailable", "empty_catalog"} {
+	for _, failure := range []string{"", "preflight", "model", "cancel", "credential_rejected", "provider_unreachable", "model_unavailable", "empty_catalog", "reason", "reason-unknown", "reason-cancel", "reason-deadline", "reason-other-operation"} {
 		t.Run(failure, func(t *testing.T) {
 			var out, diag bytes.Buffer
 			deps, _ := testDependencies(&out, &diag)
-			m := newProvisioningOutput(&out, "cluster.orka.model.connect", context.Background())
+			reasonCase := strings.HasPrefix(failure, "reason")
+			operation := "cluster.orka.model.connect"
+			if reasonCase {
+				operation = "cluster.orka.model.disconnect"
+			}
+			if failure == "reason-other-operation" {
+				operation = "cluster.up"
+			}
+			m := newProvisioningOutput(&out, operation, context.Background())
 			defer m.stop()
 			state := &commandState{deps: deps, machine: m}
 			cmd := &cobra.Command{Use: "fixture", SilenceUsage: true, SilenceErrors: true}
 			var result app.OrkaModelResult
 			bindProvisioningOutput(cmd, state, m.operation, func() provisioningSelection {
+				if failure == "reason-other-operation" {
+					return upSelection(app.UpOptions{})
+				}
 				return provisioningSelection{mode: "apply", stages: []string{"gateway", "provider", "model"}, deferPreflight: true, model: &result}
 			}, func(a *app.App) error {
-				if m.setup.prepared {
+				if m.setup.prepared && failure != "reason-other-operation" {
 					t.Fatal("preflight completed before actual handler checks")
 				}
 				if failure == "preflight" {
 					return errors.New("private-preflight")
 				}
-				m.observe("Model preflight", "done", nil)
+				if failure == "reason-other-operation" {
+					m.observe("Prepare kind cluster", "active", nil)
+				} else {
+					m.observe("Model preflight", "done", nil)
+				}
 				result = app.OrkaModelResult{Connection: &app.OrkaModelConnection{ID: "11111111-1111-4111-8111-111111111111", State: "unknown"}, RemoteState: "unknown"}
+				if reasonCase {
+					if failure != "reason-other-operation" {
+						m.observe("Model gateway", "active", nil)
+					}
+					cause := &modelReasonFixtureError{reason: "model_resource_generation_changed"}
+					switch failure {
+					case "reason-unknown":
+						cause.reason = "Bearer-secret https://private.invalid/provider-body"
+					case "reason-cancel":
+						m.cancel()
+						cause.cause = context.Canceled
+					case "reason-deadline":
+						cause.cause = context.DeadlineExceeded
+					}
+					return &machineCommandError{code: "execution_unknown", cause: cause, safe: app.NewMachineError("execution_unknown", "gateway")}
+				}
 				m.observe("Model model", "active", nil)
 				if failure == "model_unavailable" || failure == "empty_catalog" {
 					choices := []app.OrkaModelChoice{}
@@ -137,9 +182,18 @@ func TestOrkaModelJSONL(t *testing.T) {
 				t.Fatal(err)
 			}
 			terminal := setupResultRecord(t, out.Bytes(), exit)
-			if failure == "credential_rejected" || failure == "provider_unreachable" || failure == "model_unavailable" {
-				if terminal["error"].(map[string]any)["code"] != failure {
-					t.Fatal("lost model error code", terminal)
+			wantCode := map[string]string{"credential_rejected": failure, "provider_unreachable": failure, "model_unavailable": failure, "reason": "execution_unknown", "reason-unknown": "execution_unknown", "reason-cancel": "cancelled", "reason-deadline": "deadline_exceeded", "reason-other-operation": "execution_unknown"}[failure]
+			if wantCode != "" && terminal["error"].(map[string]any)["code"] != wantCode {
+				t.Fatal("lost model error/override code", terminal)
+			}
+			if reasonCase {
+				failureError := terminal["error"].(map[string]any)
+				if failure == "reason" {
+					if failureError["reason"] != "model_resource_generation_changed" || failureError["stage"] != "gateway" || failureError["message"] != "The execution outcome is unknown." {
+						t.Fatalf("safe reason lost: %v", failureError)
+					}
+				} else if _, ok := failureError["reason"]; ok {
+					t.Fatalf("untrusted/superseded reason escaped: %v", failureError)
 				}
 			}
 			choices, present := terminal["modelChoices"]
@@ -160,18 +214,18 @@ func TestOrkaModelJSONL(t *testing.T) {
 					}
 				}
 			}
-			if pairs != 2 {
+			if failure != "reason-other-operation" && pairs != 2 {
 				t.Fatalf("preflight pairs%d", pairs)
 			}
 			for _, value := range terminal["effects"].([]any) {
-				if value.(map[string]any)["mutation"] != "none" {
+				if !reasonCase && value.(map[string]any)["mutation"] != "none" {
 					t.Fatal("health became install mutation", value)
 				}
 			}
-			if failure != "preflight" && terminal["connection"] == nil {
+			if failure != "preflight" && failure != "reason-other-operation" && terminal["connection"] == nil {
 				t.Fatal("partial result lost ID")
 			}
-			if terminal["proof"] != nil || terminal["verdict"] != "not_applicable" || strings.Contains(out.String()+diag.String(), "private") {
+			if terminal["proof"] != nil || terminal["verdict"] != "not_applicable" || strings.Contains(out.String()+diag.String()+fmt.Sprint(err), "private") || strings.Contains(out.String()+diag.String()+fmt.Sprint(err), "Bearer-secret") {
 				t.Fatal(terminal)
 			}
 		})
@@ -241,9 +295,15 @@ func TestOrkaModelJSONLOutputBreak(t *testing.T) {
 			cmd.SetOut(&w.out)
 			cmd.SetErr(&diag)
 			cmd.SetArgs([]string{"-ojsonl"})
-			err := cmd.Execute()
-			if err = m.finishSetup(err); err == nil || effects != 0 || w.calls != limit+1 {
+			_ = cmd.Execute()
+			err := m.finishSetup(&machineCommandError{code: "execution_unknown", cause: &modelReasonFixtureError{reason: "model_resource_generation_changed"}, safe: app.NewMachineError("execution_unknown", "gateway")})
+			var reported *machineCommandError
+			if !errors.As(err, &reported) || reported.safe == nil || effects != 0 || w.calls != limit+1 {
 				t.Fatalf("broken output retried or allowed effects: %v effects%d writes%d", err, effects, w.calls)
+			}
+			raw, _ := json.Marshal(reported.safe)
+			if strings.Contains(string(raw), `"reason"`) || !strings.Contains(string(raw), `"code":"output_failed"`) {
+				t.Fatalf("writer did not override reason: %s", raw)
 			}
 		})
 	}
