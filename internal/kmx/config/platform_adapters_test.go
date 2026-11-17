@@ -17,7 +17,6 @@ func TestUnsupportedPlatformAdaptersAreInert(t *testing.T) {
 	files := []string{
 		"destination_open_windows.go",
 		"../app/fspolicy_windows.go",
-		"../app/private_state_windows.go",
 		"../agentsuite/oras/extract_windows.go",
 		"../agentsuite/oras/layout_lock_windows.go",
 		"../agentsuite/oras/storage_windows.go",

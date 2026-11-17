@@ -52,7 +52,7 @@ func TestFreezeOrkaCleansValidationStage(t *testing.T) {
 		t.Fatalf("frozen identity = %+v", summary)
 	}
 	suite, err := p.Suite(t.Context())
-	if err != nil || suite.Digest != summary.SuiteDigest || suite.Runtime.ID != "orka" {
+	if err != nil || suite.Digest != summary.SuiteDigest || suite.Runtime.ID != "orka" || suite.RequiredImages == nil || len(suite.RequiredImages) != 0 {
 		t.Fatalf("suite = %+v, %v", suite, err)
 	}
 	entries, err := os.ReadDir(filepath.Join(base, "validation"))

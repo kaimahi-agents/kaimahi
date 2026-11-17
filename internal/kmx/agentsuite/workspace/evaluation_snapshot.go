@@ -239,7 +239,9 @@ func cloneEvaluationSuite(suite *NativeSuite) *NativeSuite {
 	}
 	cloned := *suite
 	cloned.Instructions = bytes.Clone(suite.Instructions)
-	cloned.RequiredImages = append([]string(nil), suite.RequiredImages...)
+	if suite.RequiredImages != nil {
+		cloned.RequiredImages = append([]string{}, suite.RequiredImages...)
+	}
 	cloned.Cases = make([]PackagedCase, len(suite.Cases))
 	for i, item := range suite.Cases {
 		cloned.Cases[i] = item
