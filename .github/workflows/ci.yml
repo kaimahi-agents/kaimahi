@@ -210,8 +210,11 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $state = Join-Path $env:RUNNER_TEMP 'workspace-test-gate-state'
           $env:KMX_HOME = $state
+          $ErrorActionPreference = 'Continue'
           $output = @(& "$env:RUNNER_TEMP\kmx.exe" package test --workspace . 2>&1)
-          if ($LASTEXITCODE -eq 0) { throw 'incomplete Windows workspace Test selection succeeded.' }
+          $status = $LASTEXITCODE
+          $ErrorActionPreference = 'Stop'
+          if ($status -eq 0) { throw 'incomplete Windows workspace Test selection succeeded.' }
           if (Test-Path -LiteralPath $state) { throw 'refused Windows workspace Test created state.' }
           $output | Write-Output
       - name: Direct executable day-zero journey
