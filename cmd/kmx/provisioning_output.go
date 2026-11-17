@@ -176,6 +176,12 @@ func (m *machineOutput) finishSetup(err error) error {
 	var safe *app.MachineError
 	if err != nil {
 		safe = app.NewMachineError(code, m.setup.stage)
+		if code == "execution_unknown" && (m.operation == "cluster.orka.model.connect" || m.operation == "cluster.orka.model.disconnect") {
+			var classified interface{ DiagnosticReason() string }
+			if errors.As(err, &classified) {
+				safe = safe.WithReason(classified.DiagnosticReason())
+			}
+		}
 	}
 	if !m.setup.preflight {
 		if e := m.beginPreflight(); e != nil {

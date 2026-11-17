@@ -83,7 +83,11 @@ func (a *App) modelServingGateway(ctx context.Context, root modelOwnedResource) 
 		}
 	}()
 	for {
-		if current, exists, err := a.readModelObject(ctx, OrkaNamespace, root); err != nil || !exists || current.Terminating {
+		current, exists, err := a.readModelObject(ctx, OrkaNamespace, root)
+		if err != nil {
+			return nil, fmt.Errorf("model gateway ownership unavailable: %w", err)
+		}
+		if !exists || current.Terminating {
 			return nil, fmt.Errorf("model gateway ownership unavailable")
 		}
 		kids, err := a.modelChildren(ctx, OrkaNamespace, root)
@@ -122,6 +126,23 @@ func (a *App) modelServingGateway(ctx context.Context, root modelOwnedResource) 
 			return nil, err
 		}
 	}
+}
+
+// CRI UIDs stay local to comparison, never output or retained state. Kubelet's
+// static-Pod FNV128 UID overlaps the credential detector's bare-hex key shape.
+func modelCRIUID(value string) bool {
+	if verificationIdentity(value) {
+		return true
+	}
+	if len(value) != 32 {
+		return false
+	}
+	for _, c := range value {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 // API disappearance is not process death after node loss or a forced deletion.
@@ -163,7 +184,7 @@ func (a *App) modelGatewayStopped(ctx context.Context, root modelOwnedResource, 
 			c := modelMap(value)
 			labels := modelMap(c["labels"])
 			uid := modelText(labels["io.kubernetes.pod.uid"])
-			if !verificationIdentity(uid) || !modelResourceName(modelText(labels["io.kubernetes.pod.namespace"])) || scaffold.ValidateObjectName(modelText(labels["io.kubernetes.pod.name"])) != nil {
+			if !modelCRIUID(uid) || !modelResourceName(modelText(labels["io.kubernetes.pod.namespace"])) || scaffold.ValidateObjectName(modelText(labels["io.kubernetes.pod.name"])) != nil {
 				return fmt.Errorf("model process identity unavailable")
 			}
 			switch c["state"] {
@@ -201,7 +222,11 @@ func (a *App) modelCheckGateway(ctx context.Context, connection OrkaModelConnect
 		return nil, err
 	}
 	for _, r := range roots {
-		if current, present, e := a.readModelObject(ctx, OrkaNamespace, r); e != nil || !present || current.Terminating {
+		current, present, e := a.readModelObject(ctx, OrkaNamespace, r)
+		if e != nil {
+			return nil, fmt.Errorf("model ownership changed during readiness: %w", e)
+		}
+		if !present || current.Terminating {
 			return nil, fmt.Errorf("model ownership changed during readiness")
 		}
 	}
