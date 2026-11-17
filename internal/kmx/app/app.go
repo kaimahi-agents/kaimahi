@@ -42,8 +42,10 @@
 // Connect/Disconnect configure only the owned Linux guest gateway and Provider,
 // with exact reuse, no inference and UID/RV-conditioned cleanup. Active health
 // plus catalog membership is operational readiness, never model-answer proof.
-// Catalog decoding allows at most 1 MiB and 1,024 entries per JSON array or
-// object; private checkpoint decoding retains its 64 KiB limit.
+// Catalog decoding allows at most 1 MiB and 4,096 entries per JSON array or
+// object; private checkpoint decoding retains its 64 KiB limit. Missing or
+// explicitly disabled models return sanitized choices separately from diagnostics,
+// retaining the owned connection for cleanup even when its catalog is unavailable.
 // Host credential delivery and VM-stop recovery remain outside these methods.
 //
 // App coordinates consent, side effects and runtime-specific evidence.

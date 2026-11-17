@@ -39,6 +39,29 @@ func TestOrkaModelKeyLauncherQuotesConfig(t *testing.T) {
 	}
 }
 
+func TestOrkaModelOpenAISelectedEndpoints(t *testing.T) {
+	for _, model := range []string{"gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o", "gpt-4o-mini"} {
+		t.Run(model, func(t *testing.T) {
+			p := modelVendorConfig("openai", model)["providers"].([]any)[0].(map[string]any)
+			models, ok := p["models"].([]any)
+			if !ok || len(models) != 1 {
+				t.Fatal("missing selected-route declaration", p)
+			}
+			m := models[0].(map[string]any)
+			raw, _ := json.Marshal(m["endpoints"])
+			if m["public_id"] != model || string(raw) != `["/responses","/chat/completions"]` || p["model_discovery"] != "openai" || p["include_models"] != nil {
+				t.Fatal("selected route narrows discovery or loses endpoints", p)
+			}
+		})
+	}
+	for _, model := range []string{"gpt-4.1-2025-04-14", "gpt-future", "other"} {
+		p := modelVendorConfig("openai", model)["providers"].([]any)[0].(map[string]any)
+		if p["models"] != nil {
+			t.Fatal("unqualified selected-route declaration", model)
+		}
+	}
+}
+
 func TestOrkaModelKeyProfiles(t *testing.T) {
 	for _, vendor := range []string{"openai", "anthropic"} {
 		for _, arch := range []string{"amd64", "arm64"} {

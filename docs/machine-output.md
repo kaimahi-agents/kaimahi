@@ -210,7 +210,16 @@ Errors use the closed safe vocabulary, including `credential_unavailable`,
 `dependency_unavailable`, `permission_denied` and `execution_unknown`. API-key
 Connect adds `credential_rejected` for Vekil-reported upstream 401/403,
 `provider_unreachable` for its upstream transport-failure diagnostic, and
-`model_unavailable` when the selected catalog ID is missing or repeated.
+`model_unavailable` when the selected catalog ID is missing or explicitly disabled.
+Copilot uses the same missing-model refusal. A valid catalog accompanies that
+refusal as optional `modelChoices`: rows contain `id` and optional boolean
+`pickerEnabled` and `chatSupported` fields, never raw metadata. Explicit false
+flags are retained. `[]` means a valid empty catalog; an omitted list means
+choices are unavailable, not empty. Duplicate IDs, malformed data, failed reads
+or responses above 1 MiB or 4,096 entries report `dependency_unavailable` without
+choices. Anthropic reads a bounded first page with `limit=1000`, not all pages.
+If choices would exceed the 64 KiB machine record limit, the entire list is
+omitted while the refusal and connection remain intact.
 Their recoveries are `supply_credentials`, `check_configuration` and
 `check_configuration`, respectively. Other statuses (including 429), malformed
 replies and local transport failures do not imply a rejected key or a company

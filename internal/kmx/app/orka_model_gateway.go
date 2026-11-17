@@ -231,31 +231,67 @@ func (a *App) modelHealth(ctx context.Context, connection OrkaModelConnection, c
 	}
 	raw, err = a.orkaCapture(ctx, nil, "get", "--raw", catalogPath)
 	if err != nil {
-		return fmt.Errorf("model catalog unavailable")
+		return modelFailure("dependency_unavailable", err)
 	}
+	choices, err := modelCatalogChoices(raw)
+	if err != nil {
+		return modelFailure("dependency_unavailable", err)
+	}
+	for _, choice := range choices {
+		if choice.ID == connection.Model && (choice.PickerEnabled == nil || *choice.PickerEnabled) && (choice.ChatSupported == nil || *choice.ChatSupported) {
+			return nil
+		}
+	}
+	return &OrkaModelError{code: "model_unavailable", modelChoices: &choices}
+}
+
+// Validate the whole bounded catalog before returning any choices. Unknown
+// metadata is discarded; it can never replace the independently retained identity.
+func modelCatalogChoices(raw []byte) ([]OrkaModelChoice, error) {
 	var catalog map[string]any
-	if offlineJSON(raw, &catalog, false) != nil {
-		return fmt.Errorf("model catalog unavailable")
+	if len(raw) > 1<<20 || unambiguousJSON(raw, &catalog, false, 4096) != nil {
+		return nil, fmt.Errorf("model catalog unavailable")
 	}
 	data, ok := catalog["data"].([]any)
-	if !ok || len(data) == 0 && connection.Route != "key" || len(data) > 4096 {
-		return fmt.Errorf("model catalog unavailable")
+	if !ok || len(data) > 4096 {
+		return nil, fmt.Errorf("model catalog unavailable")
 	}
-	found := 0
-	for _, model := range data {
-		id := modelText(modelMap(model)["id"])
-		if !verificationIdentity(id) {
-			return fmt.Errorf("model catalog unavailable")
+	choices := make([]OrkaModelChoice, 0, len(data))
+	seen := make(map[string]bool, len(data))
+	for _, value := range data {
+		row := modelMap(value)
+		id := modelText(row["id"])
+		if !verificationIdentity(id) || seen[id] {
+			return nil, fmt.Errorf("model catalog unavailable")
 		}
-		if id == connection.Model {
-			found++
+		seen[id] = true
+		choice := OrkaModelChoice{ID: id}
+		if flag := row["model_picker_enabled"]; flag != nil {
+			b, ok := flag.(bool)
+			if !ok {
+				return nil, fmt.Errorf("model catalog unavailable")
+			}
+			choice.PickerEnabled = &b
 		}
+		if endpoints := row["supported_endpoints"]; endpoints != nil {
+			list, ok := endpoints.([]any)
+			if !ok || len(list) > 64 {
+				return nil, fmt.Errorf("model catalog unavailable")
+			}
+			chat := false
+			for _, endpoint := range list {
+				s, ok := endpoint.(string)
+				if !ok || len(s) > 4096 {
+					return nil, fmt.Errorf("model catalog unavailable")
+				}
+				switch s {
+				case "/chat/completions", "/v1/chat/completions", "/responses", "/v1/responses", "/v1/messages":
+					chat = true
+				}
+			}
+			choice.ChatSupported = &chat
+		}
+		choices = append(choices, choice)
 	}
-	if found != 1 {
-		if connection.Route == "key" {
-			return modelFailure("model_unavailable", nil)
-		}
-		return fmt.Errorf("selected model is not advertised")
-	}
-	return nil
+	return choices, nil
 }

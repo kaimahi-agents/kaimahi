@@ -28,17 +28,28 @@ type OrkaModelProof struct {
 	TerminalState  string `json:"terminalState"`
 	State          string `json:"state"`
 }
+
+// OrkaModelChoice contains catalog evidence only, not a routing or entitlement grant.
+type OrkaModelChoice struct {
+	ID            string `json:"id"`
+	PickerEnabled *bool  `json:"pickerEnabled,omitempty"`
+	ChatSupported *bool  `json:"chatSupported,omitempty"`
+}
+
 type OrkaModelResult struct {
-	Connection  *OrkaModelConnection `json:"connection,omitempty"`
-	Proof       *OrkaModelProof      `json:"proof,omitempty"`
-	RemoteState string               `json:"remoteState,omitempty"`
+	// A pointer distinguishes a valid empty catalog from an unavailable list.
+	ModelChoices *[]OrkaModelChoice   `json:"modelChoices,omitempty"`
+	Connection   *OrkaModelConnection `json:"connection,omitempty"`
+	Proof        *OrkaModelProof      `json:"proof,omitempty"`
+	RemoteState  string               `json:"remoteState,omitempty"`
 }
 
 // OrkaModelError retains the cause for cancellation/exit handling, but neither
 // its displayed message nor its code reflects external text or private state.
 type OrkaModelError struct {
-	code  string
-	cause error
+	code         string
+	cause        error
+	modelChoices *[]OrkaModelChoice
 }
 
 func (e *OrkaModelError) Error() string { return NewMachineError(e.Code(), "preflight").Error() }

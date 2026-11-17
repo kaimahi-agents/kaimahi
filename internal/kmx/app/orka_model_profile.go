@@ -74,9 +74,12 @@ func modelVendorConfig(vendor, model string) map[string]any {
 		p["type"], p["base_url"] = "anthropic-compatible", "https://api.anthropic.com"
 		p["auth_type"], p["auth_header"], p["models_path"] = "api-key-header", "x-api-key", "/v1/models"
 		p["extra_headers"] = map[string]string{"anthropic-version": "2023-06-01"}
-	} else if model == "gpt-4.1" {
-		// This model alone was qualified with Orka's Responses-first client.
-		p["models"] = []any{map[string]any{"public_id": "gpt-4.1", "endpoints": []string{"/responses", "/chat/completions"}}}
+	} else {
+		// Overlay only the selected route; dynamic discovery remains account-wide.
+		switch model {
+		case "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o", "gpt-4o-mini":
+			p["models"] = []any{map[string]any{"public_id": model, "endpoints": []string{"/responses", "/chat/completions"}}}
+		}
 	}
 	return map[string]any{"providers": []any{p}}
 }
