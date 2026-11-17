@@ -302,7 +302,7 @@ if (@($output | Where-Object { $_ -ceq 'Native Windows amd64 Orka Task Result qu
                 notes_text = notes.read_text()
                 self.assertEqual(notes_text.count('Runtime qualification:'), 1 if expected == 0 else 0)
                 if expected == 0:
-                    self.assertIn('Native Windows qualification covers amd64 day-zero Run/Test/offline Explain plus explicit-target Orka inspection and existing Task Result', notes_text)
+                    self.assertIn('the workspace-Test storage/command contract is qualified in native checkout CI but not yet by the exact staged executable', notes_text)
                     self.assertIn('Windows arm64 is checksum, metadata and cross-build evidence only', notes_text)
                 if expected:
                     self.assertIn('CHANGELOG.md has no section', result.stderr)

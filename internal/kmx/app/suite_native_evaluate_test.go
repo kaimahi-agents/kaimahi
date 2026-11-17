@@ -215,7 +215,7 @@ func TestAgentSessionsEvaluationRefusesBeforeOutputAndOrkaPreflight(t *testing.T
 	p.suite.Runtime = workspace.RuntimeProfile{ID: "agentsessions", Version: workspace.AgentSessionsVersion, Engine: "chat"}
 	a.captureCommand = func(context.Context, *exec.Cmd) error { t.Fatal("unsupported runtime reached subprocess"); return nil }
 	a.Cfg.KubeContext = p.options.ToContext
-	if err := a.EvaluateSuiteWorkspace(t.Context(), p); err == nil || p.started {
+	if err := a.EvaluateSuiteWorkspace(t.Context(), p); err == nil || p.operation.Start(t.Context()) != nil {
 		t.Fatalf("runtime consumed evaluation authority: %v", err)
 	}
 	if _, err := os.Stat(good.Out); !os.IsNotExist(err) {

@@ -412,6 +412,7 @@ func (a *App) guardWith(action, command, namespaces string, mustBeKnown, creates
 		Namespaces:     namespaces,
 		Confirm:        a.Cfg.Confirm,
 		Command:        command,
+		CommandShell:   a.CommandShell,
 		MustBeKnown:    mustBeKnown,
 		CreatesContext: createsContext,
 	}, a.Err, a.Stdin); err != nil {

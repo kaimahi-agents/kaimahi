@@ -209,6 +209,28 @@ func TestWindowsIdentityAliases(t *testing.T) {
 	}
 }
 
+func TestWindowsPhysicalContainmentCollapsesAliases(t *testing.T) {
+	root := filepath.Join(foundationTempDir(t), "LongWorkspaceNameForContainment")
+	child := filepath.Join(root, "nested")
+	outside := filepath.Join(filepath.Dir(root), "outside")
+	for _, directory := range []string{child, outside} {
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	short := shortPath(t, root)
+	for _, candidate := range []string{strings.ToUpper(child), filepath.Join(short, "nested"), filepath.Join(short, "new", "receipt.json")} {
+		inside, err := PhysicallyContains(t.Context(), root, candidate)
+		if err != nil || !inside {
+			t.Fatalf("containment through %q = %t, %v", candidate, inside, err)
+		}
+	}
+	inside, err := PhysicallyContains(t.Context(), root, outside)
+	if err != nil || inside {
+		t.Fatalf("outside containment = %t, %v", inside, err)
+	}
+}
+
 func identityForWindowsPath(t *testing.T, dir, name string) string {
 	t.Helper()
 	parent := openTestDirectory(t, dir)

@@ -173,6 +173,13 @@ func newSuitePassingReceipt(ctx context.Context, prepared *workspace.Prepared, p
 	return newSuitePassingReceiptRun(ctx, prepared, placement, observations, "")
 }
 
+func newSuitePassingReceiptFrozen(ctx context.Context, suite *workspace.NativeSuite, fingerprint string, placement *suiteNativePlacement, observations []suitePassingObservation) (*suitePassingReceipt, error) {
+	if placement != nil && (placement.Subject.PhysicalMember != "" || placement.Subject.EvaluationRun != "") {
+		return nil, errSuitePassingReceipt
+	}
+	return newSuitePassingReceiptSuite(ctx, suite, fingerprint, placement, observations, "")
+}
+
 // The caller invokes this only after proving candidate cleanup complete. This
 // constructor binds that declaration to the run allocated before native effects.
 func newSuitePassingCandidateReceipt(ctx context.Context, prepared *workspace.Prepared, placement *suiteNativePlacement, observations []suitePassingObservation, runID string) (*suitePassingReceipt, error) {
@@ -185,6 +192,16 @@ func newSuitePassingCandidateReceipt(ctx context.Context, prepared *workspace.Pr
 	return newSuitePassingReceiptRun(ctx, prepared, placement, observations, runID)
 }
 
+func newSuitePassingCandidateReceiptFrozen(ctx context.Context, suite *workspace.NativeSuite, fingerprint string, placement *suiteNativePlacement, observations []suitePassingObservation, runID string) (*suitePassingReceipt, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if placement == nil || placement.Subject.FlowCandidate != nil || !evaluationRunID(runID) || placement.Subject.EvaluationRun != runID || !placement.Subject.validPhysicalMember() {
+		return nil, errSuitePassingReceipt
+	}
+	return newSuitePassingReceiptSuite(ctx, suite, fingerprint, placement, observations, runID)
+}
+
 func newSuitePassingReceiptRun(ctx context.Context, prepared *workspace.Prepared, placement *suiteNativePlacement, observations []suitePassingObservation, runID string) (*suitePassingReceipt, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -194,6 +211,13 @@ func newSuitePassingReceiptRun(ctx context.Context, prepared *workspace.Prepared
 	}
 	suite, err := workspace.Load(ctx, prepared)
 	if err != nil {
+		return nil, err
+	}
+	return newSuitePassingReceiptSuite(ctx, suite, prepared.Fingerprint, placement, observations, runID)
+}
+
+func newSuitePassingReceiptSuite(ctx context.Context, suite *workspace.NativeSuite, fingerprint string, placement *suiteNativePlacement, observations []suitePassingObservation, runID string) (*suitePassingReceipt, error) {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if !suiteNativeOrkaInput(suite) {
@@ -212,7 +236,10 @@ func newSuitePassingReceiptRun(ctx context.Context, prepared *workspace.Prepared
 			return nil, err
 		}
 	}
-	r := &suitePassingReceipt{SchemaVersion: 1, Domain: "kmx.native-suite.passing/v1", ExecutionMode: "native-orka", RunID: runID, SourceFingerprint: prepared.Fingerprint, Subject: placement.Subject, Provider: placement.Provider, Agent: placement.Agent, CasesDigest: casesDigest, Result: "pass", Cases: make([]suitePassingCase, 0, len(inventory))}
+	if !suitePrefixedDigest(fingerprint) {
+		return nil, errSuitePassingReceipt
+	}
+	r := &suitePassingReceipt{SchemaVersion: 1, Domain: "kmx.native-suite.passing/v1", ExecutionMode: "native-orka", RunID: runID, SourceFingerprint: fingerprint, Subject: placement.Subject, Provider: placement.Provider, Agent: placement.Agent, CasesDigest: casesDigest, Result: "pass", Cases: make([]suitePassingCase, 0, len(inventory))}
 	if placement.Subject.EvaluationRun != "" {
 		r.CandidateCleanup = "complete"
 	}

@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"io"
 	"time"
-
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 )
 
 // The evaluator may export an explicit receipt, but export alone cannot create
@@ -56,7 +54,7 @@ func (a *App) finishManagedEvaluation(ctx context.Context, p *PreparedSuiteWorks
 	}
 	err = errors.Join(evaluationErr, closeErr)
 	if err == nil {
-		err = workspace.CheckCurrent(ctx, p.root, p.prepared)
+		err = p.checkCurrent(ctx)
 	}
 	if err == nil && p.bindings != nil {
 		err = p.bindings.recheck()

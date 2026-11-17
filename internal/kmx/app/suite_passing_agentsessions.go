@@ -137,7 +137,7 @@ func newSuiteSessionsPassingReceipt(ctx context.Context, p *PreparedSuiteWorkspa
 			return nil, err
 		}
 	}
-	if p == nil || p.prepared == nil || p.suite == nil {
+	if p == nil || p.sourceFingerprint() == "" || p.suite == nil {
 		return nil, errSuitePassingReceipt
 	}
 	proof := &suiteSessionsPassingProof{Subject: subject, RequiredImages: []string{}}
@@ -151,7 +151,7 @@ func newSuiteSessionsPassingReceipt(ctx context.Context, p *PreparedSuiteWorkspa
 	if !reflect.DeepEqual(inventory, p.inventory) || len(observations) != len(inventory) {
 		return nil, errSuitePassingReceipt
 	}
-	r := &suitePassingReceipt{SchemaVersion: 1, Domain: suiteSessionsPassingDomain, ExecutionMode: "native-agentsessions", SourceFingerprint: p.prepared.Fingerprint, Sessions: proof, CasesDigest: casesDigest, Result: "pass", Cases: make([]suitePassingCase, 0, len(inventory))}
+	r := &suitePassingReceipt{SchemaVersion: 1, Domain: suiteSessionsPassingDomain, ExecutionMode: "native-agentsessions", SourceFingerprint: p.sourceFingerprint(), Sessions: proof, CasesDigest: casesDigest, Result: "pass", Cases: make([]suitePassingCase, 0, len(inventory))}
 	for i, o := range observations {
 		result := o.Result
 		if result.ExecutionFailed || result.ModelMixed || result.Model != subject.Model || result.ConfigDigest != subject.ConfigDigest || result.Harness != subject.Host.Harness || result.HarnessVersion != subject.Host.HarnessVersion || result.Output == "" || len(result.ToolCalls) != 0 {

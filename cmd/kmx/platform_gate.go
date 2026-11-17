@@ -67,6 +67,10 @@ func windowsCommandAllowed(cmd *cobra.Command, args []string, state *commandStat
 	}
 	if state.deps.goarch == "amd64" {
 		switch path {
+		case "package test", "eval":
+			return windowsWorkspaceTestSelection(cmd, args, state)
+		case "package test cleanup", "eval cleanup":
+			return windowsWorkspaceCleanupSelection(cmd, args, state)
 		case "cluster orka list":
 			return len(args) == 0 && windowsRemoteInspectionSelection(cmd, state, "table") &&
 				windowsFlagsAllowed(cmd, "namespace", "output")
@@ -100,6 +104,61 @@ func windowsCommandAllowed(cmd *cobra.Command, args []string, state *commandStat
 			windowsFlagsAllowed(cmd, "clear", "file", "tests", "show-content")
 	}
 	return false
+}
+
+func windowsWorkspaceCleanupSelection(cmd *cobra.Command, args []string, state *commandState) bool {
+	if len(args) > 1 || state.contextFlag != "" || !windowsFlagsAllowed(cmd, "to-context", "to-namespace") {
+		return false
+	}
+	if len(args) == 1 && (len(args[0]) != 32 || strings.Trim(args[0], "0123456789abcdef") != "") {
+		return false
+	}
+	for _, name := range []string{"to-context", "to-namespace"} {
+		flag := cmd.Flag(name)
+		if flag == nil || !flag.Changed || strings.TrimSpace(flag.Value.String()) == "" {
+			return false
+		}
+	}
+	if flag := cmd.Flag("to"); flag != nil && flag.Changed {
+		return false
+	}
+	if flag := cmd.Flag("workspace"); flag != nil && flag.Changed {
+		return false
+	}
+	contextName := strings.TrimSpace(cmd.Flag("to-context").Value.String())
+	return len(contextName) <= 256 && utf8.ValidString(contextName) &&
+		strings.IndexFunc(contextName, func(r rune) bool { return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) }) < 0 &&
+		secretshapes.Match(contextName) == nil && scaffold.ValidateNamespace(strings.TrimSpace(cmd.Flag("to-namespace").Value.String())) == nil
+}
+
+func windowsWorkspaceTestSelection(cmd *cobra.Command, args []string, state *commandState) bool {
+	if len(args) != 0 || state.contextFlag != "" || !windowsFlagsAllowed(cmd, "workspace", "to-context", "to-namespace", "inference", "out") {
+		return false
+	}
+	for _, name := range []string{"workspace", "to-context", "to-namespace", "inference"} {
+		flag := cmd.Flag(name)
+		if flag == nil || !flag.Changed || strings.TrimSpace(flag.Value.String()) == "" {
+			return false
+		}
+	}
+	for _, name := range []string{"to", "bindings", "development-host", "result-port", "judge-base-url", "judge-key-env", "fail-fast", "show-content", "container-engine"} {
+		if flag := cmd.Flag(name); flag != nil && flag.Changed {
+			return false
+		}
+	}
+	if output := cmd.Flag("output"); output == nil || output.Value.String() != "text" {
+		return false
+	}
+	if provider := strings.TrimSpace(cmd.Flag("inference").Value.String()); !strings.HasPrefix(provider, "provider:") || scaffold.ValidateObjectName(strings.TrimPrefix(provider, "provider:")) != nil {
+		return false
+	}
+	if scaffold.ValidateNamespace(strings.TrimSpace(cmd.Flag("to-namespace").Value.String())) != nil {
+		return false
+	}
+	contextName := strings.TrimSpace(cmd.Flag("to-context").Value.String())
+	return contextName != "" && len(contextName) <= 256 && utf8.ValidString(contextName) &&
+		strings.IndexFunc(contextName, func(r rune) bool { return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) }) < 0 &&
+		secretshapes.Match(contextName) == nil
 }
 
 func windowsRemoteInspectionSelection(cmd *cobra.Command, state *commandState, formats ...string) bool {

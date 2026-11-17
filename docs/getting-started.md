@@ -15,11 +15,11 @@ This guide covers the full cluster/workspace lifecycle. On Windows, run these
 install and workflow commands inside a Linux WSL distribution. Current `main`
 also has a **prerelease-only, narrow** [native Windows CLI](windows.md):
 version/help/completion, package-free fake file Run/Test/Explain and amd64
-explicit-target Orka list/show and existing Task Result with explicit context
-and namespace. Published
+explicit-target Orka list/show, existing Task Result and remote Orka workspace
+Test with explicit workspace, context, namespace and Provider. Published
 v0.9.0 release candidates beginning with `v0.9.0-rc.4` retain the day-zero-only
 boundary until a later containing release. Native Windows still does not support
-the setup, workspace, model, publication or deployment steps below. Stable
+setup, authoring, general workspace storage, model setup, publication or deployment. Stable
 v0.8.1 and `@latest` have no Windows `.exe`; Homebrew and the Go route shown here
 remain macOS/Linux or WSL guidance.
 

@@ -4,11 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
@@ -89,10 +87,12 @@ func (a *App) evaluateSuiteWorkspaceCandidate(ctx context.Context, p *PreparedSu
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if p == nil || p.suite == nil || !suiteNativeOrkaInput(p.suite) || p.output == nil || p.started || a.Cfg == nil || a.Run == nil || a.Cfg.KubeContext != p.options.ToContext {
+	if p == nil || p.suite == nil || !suiteNativeOrkaInput(p.suite) || p.output == nil || a.Cfg == nil || a.Run == nil || a.Cfg.KubeContext != p.options.ToContext {
 		return errSuiteNativeEvaluation
 	}
-	p.started = true
+	if p.operation == nil || p.operation.Start(ctx) != nil {
+		return errSuiteNativeEvaluation
+	}
 	for _, frame := range p.inventory {
 		if frame.Metadata.Runs > 1 {
 			stop := "cancellation can stop earlier"
@@ -109,12 +109,10 @@ func (a *App) evaluateSuiteWorkspaceCandidate(ctx context.Context, p *PreparedSu
 	runner.Context = ctx
 	worker := *a
 	worker.Cfg, worker.Run, worker.guarded = &cfg, &runner, false
-	kubectl := depKubectl
-	kubectl.fetchable = false
-	if err := worker.preflight(kubectl); err != nil {
+	if err := worker.preflightSuiteWorkspaceKubectl(); err != nil {
 		return err
 	}
-	checkSource := func(checkCtx context.Context) error { return workspace.CheckCurrent(checkCtx, p.root, p.prepared) }
+	checkSource := p.checkCurrent
 	if err := checkSource(ctx); err != nil {
 		return err
 	}
@@ -130,7 +128,8 @@ func (a *App) evaluateSuiteWorkspaceCandidate(ctx context.Context, p *PreparedSu
 		return err
 	}
 	worker.reportCandidateStartup(ctx, native.Subject.Target)
-	if _, err := fmt.Fprintf(worker.Err, "Current candidate: run=%s context=%q clusterUID=%s namespace=%q namespaceUID=%s member=%s suite=%s\nRecovery: %s %s cleanup %s --to-context %s --to-namespace %s\n", runID, cfg.KubeContext, native.Subject.Target.ClusterUID, native.Subject.Target.Namespace, native.Subject.Target.NamespaceUID, native.Subject.PhysicalMember, native.Subject.SuiteDigest, shellArg(worker.commandExecutable()), worker.testCommandVerb(), runID, shellArg(cfg.KubeContext), shellArg(native.Subject.Target.Namespace)); err != nil {
+	recovery := worker.workspaceTestCommand("cleanup", runID, "--to-context", cfg.KubeContext, "--to-namespace", native.Subject.Target.Namespace)
+	if _, err := fmt.Fprintf(worker.Err, "Current candidate: run=%s context=%q clusterUID=%s namespace=%q namespaceUID=%s member=%s suite=%s\nRecovery: %s\n", runID, cfg.KubeContext, native.Subject.Target.ClusterUID, native.Subject.Target.Namespace, native.Subject.Target.NamespaceUID, native.Subject.PhysicalMember, native.Subject.SuiteDigest, recovery); err != nil {
 		return err
 	}
 	if !validSuitePassingSubject(native.Subject) {
@@ -142,15 +141,7 @@ func (a *App) evaluateSuiteWorkspaceCandidate(ctx context.Context, p *PreparedSu
 	if err := worker.preflightSuiteNativeResults(ctx, p.options.ToNamespace); err != nil {
 		return err
 	}
-	checkOutput := func() error {
-		if err := p.output.unchanged(); err != nil {
-			return err
-		}
-		if _, err := p.output.root.Lstat(p.output.name); !os.IsNotExist(err) {
-			return errSuitePassingExport
-		}
-		return nil
-	}
+	checkOutput := func() error { return p.output.absent(ctx) }
 	if err := checkOutput(); err != nil {
 		return err
 	}
@@ -193,7 +184,7 @@ func (a *App) evaluateSuiteWorkspaceCandidate(ctx context.Context, p *PreparedSu
 	if _, err := fmt.Fprintln(worker.Err, "Task execution uses the selected ServiceAccount's full effective authority. v0.3.0 Task-read enforcement is unverified; v0.1.3 only authenticates result reads. Retain the namespaced Task-get grant. Discarding the token is not revocation. Candidate cleanup does not erase runtime/model logs or independently retained results."); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(worker.Out, "Workspace: %q; AgentSuite: %s\n", p.root, p.prepared.Descriptor.Digest); err != nil {
+	if _, err := fmt.Fprintf(worker.Out, "Workspace: %q; AgentSuite: %s\n", p.root, p.suiteDigest()); err != nil {
 		return err
 	}
 	run, err := newSuiteCandidateRun(native, checkSource)
@@ -259,7 +250,7 @@ func (a *App) evaluateSuiteWorkspaceCandidate(ctx context.Context, p *PreparedSu
 		return err
 	}
 	outcome.phase = "receipt export"
-	receipt, err := newSuitePassingCandidateReceipt(ctx, p.prepared, placement, observations, runID)
+	receipt, err := newSuitePassingCandidateReceiptFrozen(ctx, p.suite, p.sourceFingerprint(), placement, observations, runID)
 	if err != nil {
 		return err
 	}

@@ -65,6 +65,7 @@ type snapshot struct {
 	name, fingerprint string
 	files             map[string][]byte
 	source            map[string]SourceFile
+	selected          map[string]string
 	runtime           RuntimeProfile
 }
 
@@ -156,7 +157,7 @@ func loadSourceMode(ctx context.Context, root string, flowMode bool) (*snapshot,
 	if err != nil {
 		return nil, err
 	}
-	return &snapshot{name: s.workspace.Name, fingerprint: fingerprint, files: files, source: s.source, runtime: selectedRuntime}, nil
+	return &snapshot{name: s.workspace.Name, fingerprint: fingerprint, files: files, source: s.source, selected: maps.Clone(s.selected), runtime: selectedRuntime}, nil
 }
 
 // authoredCases parses eval/*.yaml in file-name order (the evaluation order).

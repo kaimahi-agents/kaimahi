@@ -290,3 +290,15 @@ func (a *App) operationCommand(args ...string) string {
 	}
 	return strings.Join(parts, " ")
 }
+
+func (a *App) workspaceTestCommand(args ...string) string {
+	parts := []string{a.commandArg(a.commandExecutable())}
+	if a.CommandShell == "powershell" {
+		parts = append([]string{"&"}, parts...)
+	}
+	parts = append(parts, strings.Fields(a.testCommandVerb())...)
+	for _, arg := range args {
+		parts = append(parts, a.commandArg(arg))
+	}
+	return strings.Join(parts, " ")
+}

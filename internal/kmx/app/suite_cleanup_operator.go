@@ -207,6 +207,9 @@ func (a *App) CleanupSuiteCandidates(ctx context.Context, opt SuiteCandidateClea
 	ctx, cancel := context.WithTimeout(ctx, suiteCandidateCleanupBudget)
 	defer cancel()
 	worker.Run.Context = ctx
+	if err := worker.preflightSuiteWorkspaceKubectl(); err != nil {
+		return err
+	}
 	target, err := worker.candidateCleanupTarget(ctx, opt.Namespace)
 	if err != nil {
 		return errSuiteCandidateCleanup
@@ -261,7 +264,7 @@ func (a *App) CleanupSuiteCandidates(ctx context.Context, opt SuiteCandidateClea
 	if command == "" {
 		command = shellArg(worker.commandExecutable()) + " " + worker.testCommandVerb() + " cleanup " + shellArg(opt.RunID) + " --to-context " + shellArg(target.Context) + " --to-namespace " + shellArg(target.Namespace)
 	}
-	if err := guard.CheckContext(ctx, kube, guard.Request{Action: "delete the displayed candidate run root UIDs and verify child closure", Context: target.Context, Source: cfg.ContextSource, Namespaces: target.Namespace, Confirm: cfg.Confirm, Command: command, MustBeKnown: true, RequireConfirmation: true}, worker.Err, worker.Stdin); err != nil {
+	if err := guard.CheckContext(ctx, kube, guard.Request{Action: "delete the displayed candidate run root UIDs and verify child closure", Context: target.Context, Source: cfg.ContextSource, Namespaces: target.Namespace, Confirm: cfg.Confirm, Command: command, CommandShell: worker.CommandShell, MustBeKnown: true, RequireConfirmation: true}, worker.Err, worker.Stdin); err != nil {
 		return err
 	}
 	worker.guarded = true

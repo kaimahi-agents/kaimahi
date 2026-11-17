@@ -184,6 +184,9 @@ type Request struct {
 	// Command is named back to the operator in the "to proceed" hints, so
 	// the hint is the command they actually typed.
 	Command string
+	// CommandShell selects syntax for the noninteractive confirmation hint.
+	// Empty and "posix" retain the established contract.
+	CommandShell string
 	// MustBeKnown says this action needs the kubeconfig to actually
 	// describe the cluster, so the "about to be created" allowance below
 	// does not apply to it.
@@ -326,6 +329,10 @@ func CheckContext(ctx context.Context, cfg *Kubeconfig, req Request, out io.Writ
 		confirm = "'" + strings.ReplaceAll(confirm, "'", "'\"'\"'") + "'"
 	}
 	proceed := fmt.Sprintf("  to proceed:  KAIMAHI_CONFIRM=%s %s", confirm, req.Command)
+	if req.CommandShell == "powershell" {
+		quoted := "'" + strings.NewReplacer("'", "''", "‘", "‘‘", "’", "’’", "‚", "‚‚", "‛", "‛‛").Replace(req.Context) + "'"
+		proceed = fmt.Sprintf("  to proceed:  $env:KAIMAHI_CONFIRM = %s; %s", quoted, req.Command)
+	}
 
 	// Remote: explicit confirmation naming the context, or nothing happens.
 	if req.Confirm != "" {

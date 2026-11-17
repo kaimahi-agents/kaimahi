@@ -134,14 +134,26 @@ func (s *commandState) operationApplication(cmd *cobra.Command) (*app.App, error
 	// Chat slash commands are separate operations; replaying the outer chat
 	// command would not repeat the mutation they are asking to confirm.
 	if cmd.Name() != "chat" && cmd.Name() != "console" && len(s.argv) > 0 {
-		parts := []string{"KIND_CLUSTER=" + quoteShell(a.Cfg.KindCluster), "CONTAINER_ENGINE=" + quoteShell(a.Cfg.ContainerEngine),
-			quoteShell(s.executable()), "--context", quoteShell(a.Cfg.KubeContext)}
-		for _, arg := range s.argv {
-			parts = append(parts, quoteShell(arg))
+		var parts []string
+		if a.CommandShell == "powershell" {
+			parts = []string{"&", powerShellQuote(s.executable())}
+			for _, arg := range s.argv {
+				parts = append(parts, powerShellQuote(arg))
+			}
+		} else {
+			parts = []string{"KIND_CLUSTER=" + quoteShell(a.Cfg.KindCluster), "CONTAINER_ENGINE=" + quoteShell(a.Cfg.ContainerEngine),
+				quoteShell(s.executable()), "--context", quoteShell(a.Cfg.KubeContext)}
+			for _, arg := range s.argv {
+				parts = append(parts, quoteShell(arg))
+			}
 		}
 		a.InvocationCommand = strings.Join(parts, " ")
 	}
 	return a, nil
+}
+
+func powerShellQuote(value string) string {
+	return "'" + strings.NewReplacer("'", "''", "‘", "‘‘", "’", "’’", "‚", "‚‚", "‛", "‛‛").Replace(value) + "'"
 }
 
 func execute(argv []string, deps dependencies) error {

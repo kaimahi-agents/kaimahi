@@ -18,6 +18,8 @@ func (*App) provisionOrkaInspection() error { return nil }
 // Windows Task Result uses the physically pinned remote inspection boundary.
 func (a *App) preflightOrkaTaskResult() error { return a.preflightOrkaRemote() }
 
+func (a *App) preflightSuiteWorkspaceKubectl() error { return a.preflightOrkaRemote() }
+
 func inspectOrkaInspectionKubectl(ctx context.Context, path string) (identity string, err error) {
 	if !filepath.IsAbs(path) || !strings.EqualFold(filepath.Ext(path), ".exe") {
 		return "", fmt.Errorf("native kubectl must resolve to an absolute .exe")

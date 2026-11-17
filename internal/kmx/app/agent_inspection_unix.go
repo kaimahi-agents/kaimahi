@@ -16,6 +16,12 @@ func (a *App) provisionOrkaInspection() error {
 // inspection path instead.
 func (a *App) preflightOrkaTaskResult() error { return a.preflight(depKubectl) }
 
+func (a *App) preflightSuiteWorkspaceKubectl() error {
+	kubectl := depKubectl
+	kubectl.fetchable = false
+	return a.preflight(kubectl)
+}
+
 func inspectOrkaInspectionKubectl(context.Context, string) (string, error) { return "", nil }
 func recheckOrkaInspectionKubectl(context.Context, string, string) error   { return nil }
 

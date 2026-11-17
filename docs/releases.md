@@ -32,7 +32,8 @@ claimed; the remaining publication constraints are recorded in
 `@latest` have no Windows `.exe`. Published v0.9.0 release candidates beginning
 with `v0.9.0-rc.4` contain the narrow native Windows day-zero CLI as
 `kmx-windows-amd64.exe` and `kmx-windows-arm64.exe`; current `main` additionally
-admits read-only remote Orka list/show and existing Task Result on amd64. See
+admits read-only remote Orka list/show, existing Task Result and explicit remote
+Orka workspace Test on amd64. See
 [native Windows](windows.md) for the exact command, trust and state limits.
 
 ## Test command (unreleased)
@@ -227,13 +228,13 @@ Nightly schedules and runtime proof commands, pins and budgets are unchanged.
 On Windows, the Homebrew, `install.sh` and Go `@latest` instructions below remain
 Linux/WSL routes where applicable. Stable v0.8.1 and `@latest` have no native
 Windows `.exe`. Current `main` has a prerelease-only native amd64 Orka
-inspection and existing Task Result exception; published v0.9.0 release candidates beginning with
+inspection, existing Task Result and explicit workspace-Test exception; published v0.9.0 release candidates beginning with
 `v0.9.0-rc.4` retain the day-zero-only boundary until a later containing release.
 For an exact containing tag, follow
 [native Windows installation](windows.md#release-availability-and-installation).
 There is no Winget or other Windows package-manager namespace claim. Use WSL for
-cluster setup/mutation, workspace, model/provider, plugin, publication and
-deployment workflows.
+cluster setup, general workspace/OCI operations, model/provider setup, plugin,
+publication and deployment workflows.
 
 With Homebrew on macOS or Linux:
 
@@ -326,6 +327,9 @@ lists it, verify the manifest's Sigstore bundle and then that asset's SHA-256,
 and retain Windows policy signals; the complete PowerShell procedure is in the
 [Windows guide](windows.md).
 Windows amd64 has native hosted execution for the narrow day-zero commands.
+Explicit remote-Orka Test is natively qualified from the checkout; the exact
+staged executable success journey remains required before a containing release
+may claim artifact-level Test qualification.
 Windows arm64 has cross-build/vet/checksum evidence only, not native execution.
 
 A downloaded CLI needs no Go toolchain for native setup and agent workflows;
@@ -619,7 +623,7 @@ than the first.
    publish if: the version is not semantic, the changelog has no section,
    the built binary does not report the tag, the checksums do not verify, or
    the hermetic inner-loop contracts, either native plugin install check or the
-   exact Windows amd64 day-zero, remote-inspection and Task Result artifact checks
+   exact Windows amd64 day-zero, remote-inspection, Task Result and workspace-Test contract checks
    fails. Windows arm64 remains
    cross-build/vet/checksum only. The
    release also carries `kmx.rb`, GoReleaser's rendered formula for those exact checksums
