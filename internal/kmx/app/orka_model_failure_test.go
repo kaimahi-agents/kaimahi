@@ -117,13 +117,16 @@ func TestOrkaModelChangedConnection(t *testing.T) {
 			if err == nil || r.Connection == nil || r.Connection.ID != first.Connection.ID || r.Connection.State != "unknown" {
 				t.Fatalf("changed connection accepted %+v %v", r, err)
 			}
+			if damage == "uid" {
+				modelRequireObservationReason(t, err, "model_resource_ownership_changed")
+			}
 			if damage != "generation" {
 				if _, err = a.DisconnectOrkaModel(modelDisconnectOptions(first.Connection.ID)); err == nil {
 					t.Fatal("changed ownership deleted")
 				}
 			}
 			for _, call := range (*calls)[before:] {
-				if strings.Contains(call, " create ") || strings.Contains(call, " delete ") {
+				if strings.Contains(call, " create ") || strings.Contains(call, " delete ") || strings.Contains(call, " replace ") {
 					t.Fatal("changed connection mutated", call)
 				}
 			}
@@ -162,8 +165,10 @@ func TestOrkaModelAmbiguousDisconnect(t *testing.T) {
 	for _, damage := range []string{"intact", "absent", "replaced", "terminating", "old-request-race"} {
 		t.Run(damage, func(t *testing.T) {
 			a, objects, _ := modelLifecycleFixture(t)
+			waits := 0
 			a.waitTiming = &waitTiming{pollInterval: time.Millisecond, timeout: func(ctx context.Context, phase string, duration time.Duration) (context.Context, context.CancelFunc) {
 				if phase == "orka-model-delete" {
+					waits++
 					duration = 40 * time.Millisecond
 				}
 				return context.WithTimeout(ctx, duration)
@@ -184,6 +189,11 @@ func TestOrkaModelAmbiguousDisconnect(t *testing.T) {
 					path := cmd.Args[slices.Index(cmd.Args, "--raw")+1]
 					var body map[string]any
 					json.NewDecoder(cmd.Stdin).Decode(&body)
+					meta := modelMap(objects[path]["metadata"])
+					pre := modelMap(body["preconditions"])
+					if body["propagationPolicy"] != "Foreground" || pre["uid"] != meta["uid"] || pre["resourceVersion"] != meta["resourceVersion"] {
+						t.Fatal("lost conditional foreground DELETE")
+					}
 					if path == depPath {
 						depDeletes++
 						if first {
@@ -194,6 +204,11 @@ func TestOrkaModelAmbiguousDisconnect(t *testing.T) {
 							}
 							if damage == "absent" {
 								delete(objects, path)
+							}
+							if damage == "terminating" {
+								meta["generation"], meta["resourceVersion"] = float64(2), "4"
+								meta["deletionTimestamp"], meta["deletionGracePeriodSeconds"] = "2026-11-16T22:36:05Z", float64(0)
+								meta["finalizers"] = []any{"foregroundDeletion"}
 							}
 							return fmt.Errorf("lost private-ack")
 						}
@@ -231,14 +246,11 @@ func TestOrkaModelAmbiguousDisconnect(t *testing.T) {
 				if damage == "replaced" {
 					modelMap(dep["metadata"])["uid"] = "foreign"
 				}
-				if damage == "terminating" {
-					modelMap(dep["metadata"])["deletionTimestamp"] = "2026-11-05T00:00:00Z"
-				}
 			}
 			opt.OperationID = "44444444-4444-4444-8444-444444444444"
 			r, err := a.DisconnectOrkaModel(opt)
 			if damage == "replaced" || damage == "terminating" {
-				if err == nil || deletes != 1 || r.RemoteState == "stopped" {
+				if err == nil || deletes != 1 || r.RemoteState == "stopped" || damage == "terminating" && waits != 1 {
 					t.Fatalf("unsafe recovery: %+v %v sends%d", r, err, deletes)
 				}
 				return

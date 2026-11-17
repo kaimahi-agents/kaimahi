@@ -33,7 +33,7 @@ func modelFixtureChildren(objects map[string]map[string]any) []map[string]any {
 	return nil
 }
 
-func modelConfigureFixture(t *testing.T) (*App, map[string]map[string]any, *[]string) {
+func modelConfigureFixture(t *testing.T, criBody ...string) (*App, map[string]map[string]any, *[]string) {
 	t.Helper()
 	if runtime.GOOS != "linux" {
 		t.Skip("model gateway is guest Linux only")
@@ -62,6 +62,13 @@ case "$0 $*" in
 *docker*'container inspect'*) printf '[{"Name":"/test-control-plane","Image":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","Config":{"Labels":{"io.x-k8s.kind.cluster":"test"}},"State":{"Running":true},"Mounts":[{"Type":"bind","Source":"/run/bridge/credentials","Destination":"/run/bridge/credentials","RW":false,"Propagation":"rprivate"}]}]';;
 *) exit 7;; esac
 `
+	if len(criBody) > 0 {
+		updated := strings.Replace(script, `printf '{"containers":[]}'`, "printf '%s' '"+criBody[0]+"'", 1)
+		if updated == script {
+			t.Fatal("CRI fixture was not replaced")
+		}
+		script = updated
+	}
 	for _, name := range []string{"findmnt", "stat", "docker"} {
 		if err := os.WriteFile(filepath.Join(bin, name), []byte(script), 0700); err != nil {
 			t.Fatal(err)

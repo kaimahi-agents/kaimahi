@@ -8,14 +8,17 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
-func modelGatewayFixture(t *testing.T) (*App, map[string]map[string]any, []modelOwnedResource) {
+func modelGatewayFixture(t *testing.T, criBody ...string) (*App, map[string]map[string]any, []modelOwnedResource) {
 	t.Helper()
-	a, objects, _ := modelConfigureFixture(t)
+	a, objects, _ := modelConfigureFixture(t, criBody...)
 	docs, err := modelDocuments("copilot", "gpt-4.1", "11111111-1111-4111-8111-111111111111", "amd64", "")
 	if err != nil {
 		t.Fatal(err)
@@ -32,9 +35,10 @@ func modelGatewayFixture(t *testing.T) (*App, map[string]map[string]any, []model
 }
 
 func TestOrkaModelGatewayObservation(t *testing.T) {
-	for _, damage := range []string{"", "no-pod", "foreign-pod", "auth", "catalog", "terminating-Deployment", "terminating-Service", "terminating-Provider", "terminating-Secret"} {
+	for _, damage := range []string{"", "no-pod", "foreign-pod", "auth", "catalog", "terminating-Deployment", "terminating-Service", "terminating-Provider", "terminating-Secret", "ownership-serving", "ownership-final-check"} {
 		t.Run(damage, func(t *testing.T) {
 			a, objects, roots := modelGatewayFixture(t)
+			root, _ := modelGatewayRoot(roots)
 			if strings.HasPrefix(damage, "terminating-") {
 				for _, obj := range objects {
 					if obj["kind"] == strings.TrimPrefix(damage, "terminating-") {
@@ -43,9 +47,19 @@ func TestOrkaModelGatewayObservation(t *testing.T) {
 				}
 			}
 			capture := a.captureCommand
-			health := 0
+			health, fullAfterChange := 0, 0
+			catalogSeen, changed := false, false
 			a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
 				args := strings.Join(cmd.Args, " ")
+				if changed && (strings.Contains(args, "--raw") || slices.Contains(cmd.Args, "--ignore-not-found=true") && slices.Contains(cmd.Args, "json")) {
+					fullAfterChange++
+				}
+				catalogSeen = catalogSeen || strings.HasSuffix(args, "/v1/models")
+				if strings.HasPrefix(damage, "ownership-") && slices.Contains(cmd.Args, "jsonpath={.metadata.uid}") && (damage != "ownership-final-check" || catalogSeen) {
+					changed = true
+					fmt.Fprint(cmd.Stdout, "replaced-observation-uid")
+					return nil
+				}
 				if strings.Contains(args, "/proxy/") {
 					health++
 				}
@@ -74,7 +88,19 @@ func TestOrkaModelGatewayObservation(t *testing.T) {
 				ctx, cancel = context.WithTimeout(ctx, 300*time.Millisecond)
 				defer cancel()
 			}
-			children, err := a.modelCheckGateway(ctx, OrkaModelConnection{Provider: "copilot", Model: "gpt-4.1"}, roots)
+			var children []modelChild
+			var err error
+			if damage == "ownership-serving" {
+				_, err = a.modelServingGateway(ctx, root)
+			} else {
+				children, err = a.modelCheckGateway(ctx, OrkaModelConnection{Provider: "copilot", Model: "gpt-4.1"}, roots)
+			}
+			if strings.HasPrefix(damage, "ownership-") {
+				if !changed || fullAfterChange != 0 || damage == "ownership-final-check" && !catalogSeen {
+					t.Fatalf("wrong boundary: changed%t full%d catalog%t", changed, fullAfterChange, catalogSeen)
+				}
+				modelRequireObservationReason(t, err, "model_resource_ownership_changed")
+			}
 			if damage == "" {
 				if err != nil || len(children) != 2 {
 					t.Fatalf("owned gateway %+v %v", children, err)
@@ -95,9 +121,32 @@ func TestOrkaModelGatewayObservation(t *testing.T) {
 }
 
 func TestOrkaModelGatewayStopObservation(t *testing.T) {
-	for _, state := range []string{"absent", "unrelated", "CONTAINER_EXITED", "CONTAINER_RUNNING", "CONTAINER_UNKNOWN"} {
-		t.Run(state, func(t *testing.T) {
-			a, objects, roots := modelGatewayFixture(t)
+	uid := strings.Repeat("a1", 16)
+	if verificationIdentity(uid) || secretshapes.Match(uid) == nil {
+		t.Fatal("global credential/identity policy was weakened")
+	}
+	for _, tc := range []struct {
+		name, uid, namespace, pod, state, refusal string
+		retained                                  bool
+	}{
+		{"unrelated static Pod", uid, "kube-system", "etcd-test-control-plane", "CONTAINER_RUNNING", "", false},
+		{"retained static UID", uid, "kube-system", "unrelated", "CONTAINER_RUNNING", "model credential process stop is unknown", true},
+		{"gateway prefix", uid, OrkaNamespace, "copilot-vekil-other", "CONTAINER_RUNNING", "model credential process stop is unknown", false},
+		{"owned created", uid, OrkaNamespace, "copilot-vekil-other", "CONTAINER_CREATED", "model credential process stop is unknown", false},
+		{"owned unknown", uid, OrkaNamespace, "copilot-vekil-other", "CONTAINER_UNKNOWN", "model credential process stop is unknown", false},
+		{"owned exited", uid, OrkaNamespace, "copilot-vekil-other", "CONTAINER_EXITED", "", false},
+		{"unrelated invalid state", uid, "kube-system", "etcd-test-control-plane", "INVALID", "model process state unavailable", false},
+		{"empty UID", "", "kube-system", "etcd-test-control-plane", "CONTAINER_RUNNING", "model process identity unavailable", false},
+		{"control UID", "bad\nuid", "kube-system", "etcd-test-control-plane", "CONTAINER_RUNNING", "model process identity unavailable", false},
+		{"long UID", strings.Repeat("x", 257), "kube-system", "etcd-test-control-plane", "CONTAINER_RUNNING", "model process identity unavailable", false},
+		{"key shaped UID", strings.Join([]string{"sk", "proj", strings.Repeat("X", 100)}, "-"), "kube-system", "etcd-test-control-plane", "CONTAINER_RUNNING", "model process identity unavailable", false},
+		{"uppercase hash", strings.Repeat("AB", 16), "kube-system", "etcd-test-control-plane", "CONTAINER_RUNNING", "model process identity unavailable", false},
+		{"bad namespace", uid, "bad.namespace", "etcd-test-control-plane", "CONTAINER_RUNNING", "model process identity unavailable", false},
+		{"bad name", uid, "kube-system", "INVALID", "CONTAINER_RUNNING", "model process identity unavailable", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body, _ := json.Marshal(map[string]any{"containers": []any{map[string]any{"state": tc.state, "labels": map[string]any{"io.kubernetes.pod.uid": tc.uid, "io.kubernetes.pod.namespace": tc.namespace, "io.kubernetes.pod.name": tc.pod}}}})
+			a, objects, roots := modelGatewayFixture(t, string(body))
 			root, err := modelGatewayRoot(roots)
 			if err != nil {
 				t.Fatal(err)
@@ -112,30 +161,23 @@ func TestOrkaModelGatewayStopObservation(t *testing.T) {
 			if err != nil || !gone {
 				t.Fatalf("child absence %v %v", gone, err)
 			}
-			if state != "absent" {
-				t.Setenv("MODEL_CRI_RUNNING", "1")
-				tool := filepath.Join(strings.Split(os.Getenv("PATH"), string(os.PathListSeparator))[0], "docker")
-				raw, e := os.ReadFile(tool)
-				if e != nil {
-					t.Fatal(e)
-				}
-				actual := state
-				script := string(raw)
-				if state == "unrelated" {
-					actual = "CONTAINER_RUNNING"
-					script = strings.ReplaceAll(script, "copilot-vekil-pod", "other.worker")
-					script = strings.ReplaceAll(script, "owned-pod", "other-uid")
-					script = strings.ReplaceAll(script, "orka-system", "other-system")
-				}
-				if e = os.WriteFile(tool, []byte(strings.ReplaceAll(script, "CONTAINER_RUNNING", actual)), 0700); e != nil {
-					t.Fatal(e)
-				}
+			if tc.retained {
+				kids = append(kids, modelChild{Kind: "Pod", UID: uid})
 			}
 			err = a.modelGatewayStopped(context.Background(), root, kids)
-			if (err == nil) != (state == "absent" || state == "unrelated" || state == "CONTAINER_EXITED") {
-				t.Fatalf("false process stop %s: %v", state, err)
+			if tc.refusal == "" && err != nil || tc.refusal != "" && (err == nil || err.Error() != tc.refusal) {
+				t.Fatalf("process refusal=%v want %q", err, tc.refusal)
 			}
 		})
+	}
+}
+
+func modelRequireObservationReason(t *testing.T, err error, reason string) {
+	t.Helper()
+	safe := modelFailure("execution_unknown", err)
+	var typed *OrkaModelError
+	if !errors.As(safe, &typed) || typed.Code() != "execution_unknown" || typed.DiagnosticReason() != reason || typed.Error() != "The execution outcome is unknown." {
+		t.Fatalf("reason %s lost: %v (%v)", reason, err, safe)
 	}
 }
 

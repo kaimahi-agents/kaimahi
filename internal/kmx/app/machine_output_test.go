@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -24,6 +25,7 @@ func TestMachineErrorVocabulary(t *testing.T) {
 	} {
 		t.Run(tc.code, func(t *testing.T) {
 			e := NewMachineError(tc.code, "preflight")
+			original := *e
 			b, err := json.Marshal(e)
 			if err != nil {
 				t.Fatal(err)
@@ -38,13 +40,31 @@ func TestMachineErrorVocabulary(t *testing.T) {
 			if len(got["message"]) > 256 {
 				t.Fatal("unbounded message")
 			}
+			for _, reason := range []string{"model_resource_identity_invalid", "model_resource_ownership_changed", "model_resource_generation_invalid", "model_resource_spec_changed", "model_resource_generation_changed", "", "private-url https://private.invalid/Bearer-secret", "MODEL_RESOURCE_GENERATION_CHANGED"} {
+				safe := e.WithReason(reason)
+				raw, _ := json.Marshal(safe)
+				var row map[string]string
+				json.Unmarshal(raw, &row)
+				wantReason := ""
+				if tc.code == "execution_unknown" && strings.HasPrefix(reason, "model_resource_") {
+					wantReason = reason
+				}
+				if row["reason"] != wantReason || wantReason == "" && len(row) != 4 || row["code"] != tc.code || row["stage"] != "preflight" || row["message"] != tc.message || row["recovery"] != tc.recovery || safe.Error() != e.Error() || *e != original || strings.Contains(string(raw), "private") || strings.Contains(string(raw), "Bearer-secret") {
+					t.Fatalf("reason altered safe envelope: %s", raw)
+				}
+			}
 		})
 	}
 }
 
 func TestMachineErrorWithholdsUnknownValues(t *testing.T) {
+	for _, cause := range []error{errors.New("model_resource_generation_changed"), errors.New("Bearer-secret https://private.invalid")} {
+		if modelFailure("execution_unknown", cause).(*OrkaModelError).DiagnosticReason() != "" {
+			t.Fatal("classified untyped lookalike")
+		}
+	}
 	for _, e := range []*MachineError{NewMachineError("private-provider-body", "private-url"), {}} {
-		b, err := json.Marshal(e)
+		b, err := json.Marshal(e.WithReason("model_resource_generation_changed"))
 		if err != nil {
 			t.Fatal(err)
 		}
