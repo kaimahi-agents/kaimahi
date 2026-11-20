@@ -20,6 +20,7 @@ type offlineLiveDeployment struct {
 		Name, Namespace, UID string
 		Generation           int64
 		DeletionTimestamp    *string
+		Annotations          map[string]string
 	}
 	Spec struct {
 		Replicas int
@@ -113,11 +114,23 @@ func (a *App) observeOfflineWorkloads(ctx context.Context, b *offlineInstallBund
 		return "", err
 	}
 	var list struct{ Items []offlineLiveDeployment }
-	if offlineJSON(raw, &list, false) != nil || len(list.Items) != len(b.workloads) {
+	if offlineJSON(raw, &list, false) != nil {
+		return "", fmt.Errorf("offline live workload set differs; refusing reinstall")
+	}
+	// A connected model adds its own kmx-marked Deployment to this namespace.
+	// Leave it out of the bundle set; bundle names are always checked strictly.
+	items := list.Items[:0]
+	for _, d := range list.Items {
+		if _, bundled := b.workloads[d.Metadata.Name]; !bundled && modelResourceName(d.Metadata.Name) && modelUUID(d.Metadata.Annotations[modelOperationAnnotation]) {
+			continue
+		}
+		items = append(items, d)
+	}
+	if len(items) != len(b.workloads) {
 		return "", fmt.Errorf("offline live workload set differs; refusing reinstall")
 	}
 	seen := map[string]bool{}
-	for _, d := range list.Items {
+	for _, d := range items {
 		expected, ok := b.workloads[d.Metadata.Name]
 		gotBytes, _ := json.Marshal(offlineNormalizeWorkload(d.Spec.Template.Spec))
 		wantBytes, _ := json.Marshal(offlineNormalizeWorkload(expected))
@@ -133,10 +146,10 @@ func (a *App) observeOfflineWorkloads(ctx context.Context, b *offlineInstallBund
 	if !waiting {
 		return "", nil
 	}
-	slices.SortFunc(list.Items, func(x, y offlineLiveDeployment) int {
+	slices.SortFunc(items, func(x, y offlineLiveDeployment) int {
 		return strings.Compare(x.Metadata.Name, y.Metadata.Name)
 	})
-	for _, d := range list.Items {
+	for _, d := range items {
 		if d.Spec.Replicas <= 0 {
 			return "", fmt.Errorf("offline live workload %s is scaled to %d; effects retained, no reinstall attempted", d.Metadata.Name, d.Spec.Replicas)
 		}
@@ -167,7 +180,7 @@ func (a *App) observeOfflineWorkloads(ctx context.Context, b *offlineInstallBund
 		decode:    func(raw []byte, out any) error { return offlineJSON(raw, out, false) },
 		nodeStart: func(node string) (time.Time, error) { return a.kindNodeStartedAt(ctx, node) },
 	}
-	for _, d := range list.Items {
+	for _, d := range items {
 		images := map[string]string{}
 		for _, c := range b.workloads[d.Metadata.Name].Containers {
 			images[c.Name] = c.Image

@@ -58,6 +58,8 @@ func TestDeployLegacyNoticeAndRefusals(t *testing.T) {
 		{nil, "workspace VERB requires explicit --to NAME", nil},
 		{[]string{"one", "two"}, "usage: kmx VERB --to NAME | kmx VERB <ref>@<digest> (--to NAME | --to-context <ctx>) (--inference provider:NAME | --bindings FILE) --evidence FILE [--from-layout DIR] [--promote] [--update] [--plan] | kmx VERB <ref>@<digest> --to <AgentSessions-destination> --evidence FILE [--name NAME] [--from-layout DIR] [--plan] | kmx VERB <ref>@<digest> --harness-image IMAGE --bindings FILE --evidence FILE --plan", nil},
 		{[]string{"--unknown"}, "unknown flag: --unknown", nil},
+		{[]string{"--to", "prod", "--fail-fast"}, "unknown flag: --fail-fast", nil},
+		{[]string{"--to", "prod", "--fail-fast=false"}, "unknown flag: --fail-fast", nil},
 		{[]string{"--to", "prod", "--output", "yaml"}, "VERB output must be text or json", nil},
 		{[]string{"--to", ""}, "VERB requires non-empty --to", nil},
 		{[]string{"--context", "other"}, "--context cannot be used with suite VERB; use --to-context", nil},
@@ -71,7 +73,7 @@ func TestDeployLegacyNoticeAndRefusals(t *testing.T) {
 			wantError := strings.ReplaceAll(tc.want, "VERB", strings.TrimPrefix(verb, "package "))
 			if verb == "package deploy" {
 				wantError = strings.ReplaceAll(wantError, "kmx deploy", "kmx package deploy")
-				if len(tc.tail) == 1 && tc.tail[0] == "--unknown" {
+				if strings.HasPrefix(tc.want, "unknown flag:") {
 					wantError += "\nRun kmx package deploy --help for available flags"
 				}
 			}

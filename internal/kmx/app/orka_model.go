@@ -1,18 +1,21 @@
 package app
 
 import (
+	"errors"
+
 	"github.com/google/uuid"
 )
 
 // Model connection selectors are nonsecret. Credential delivery and generation
 // serialization belong to the owning guest endpoint, not these options.
-type OrkaModelConnectOptions struct{ OperationID, Namespace, Route, Provider, Model, CredentialGeneration string }
+type OrkaModelConnectOptions struct{ OperationID, Namespace, Route, Vendor, Provider, Model, CredentialGeneration string }
 type OrkaModelProveOptions struct{ OperationID, Namespace, Provider, Connection, CredentialGeneration string }
 type OrkaModelDisconnectOptions struct{ OperationID, Namespace, Provider, Connection string }
 
 type OrkaModelConnection struct {
 	ID                   string `json:"id"`
 	Route                string `json:"route"`
+	Vendor               string `json:"vendor,omitempty"`
 	Provider             string `json:"provider"`
 	Model                string `json:"model"`
 	CredentialGeneration string `json:"credentialGeneration"`
@@ -27,24 +30,51 @@ type OrkaModelProof struct {
 	TerminalState  string `json:"terminalState"`
 	State          string `json:"state"`
 }
+
+// OrkaModelChoice contains catalog evidence only, not a routing or entitlement grant.
+type OrkaModelChoice struct {
+	ID            string `json:"id"`
+	PickerEnabled *bool  `json:"pickerEnabled,omitempty"`
+	ChatSupported *bool  `json:"chatSupported,omitempty"`
+}
+
 type OrkaModelResult struct {
-	Connection  *OrkaModelConnection `json:"connection,omitempty"`
-	Proof       *OrkaModelProof      `json:"proof,omitempty"`
-	RemoteState string               `json:"remoteState,omitempty"`
+	// A pointer distinguishes a valid empty catalog from an unavailable list.
+	ModelChoices *[]OrkaModelChoice   `json:"modelChoices,omitempty"`
+	Connection   *OrkaModelConnection `json:"connection,omitempty"`
+	Proof        *OrkaModelProof      `json:"proof,omitempty"`
+	RemoteState  string               `json:"remoteState,omitempty"`
 }
 
 // OrkaModelError retains the cause for cancellation/exit handling, but neither
 // its displayed message nor its code reflects external text or private state.
 type OrkaModelError struct {
-	code  string
-	cause error
+	code         string
+	cause        error
+	modelChoices *[]OrkaModelChoice
 }
 
 func (e *OrkaModelError) Error() string { return NewMachineError(e.Code(), "preflight").Error() }
 func (e *OrkaModelError) Unwrap() error { return e.cause }
+
+// DiagnosticReason exposes only fixed observation classifications, not causes.
+func (e *OrkaModelError) DiagnosticReason() string {
+	if e.Code() != "execution_unknown" {
+		return ""
+	}
+	var observation *modelObservationError
+	if !errors.As(e.cause, &observation) {
+		return ""
+	}
+	return safeModelObservationReason(observation.reason)
+}
+
+type modelObservationError struct{ reason string }
+
+func (*modelObservationError) Error() string { return "model resource acknowledgment is invalid" }
 func (e *OrkaModelError) Code() string {
 	switch e.code {
-	case "credential_unavailable", "permission_denied", "dependency_unavailable", "execution_unknown", "invalid_arguments", "configuration_invalid", "cancelled", "deadline_exceeded", "output_failed", "unsupported":
+	case "credential_rejected", "provider_unreachable", "model_unavailable", "credential_unavailable", "permission_denied", "dependency_unavailable", "execution_unknown", "invalid_arguments", "configuration_invalid", "cancelled", "deadline_exceeded", "output_failed", "unsupported":
 		return e.code
 	default:
 		return "operation_failed"

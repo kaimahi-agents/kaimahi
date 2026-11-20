@@ -194,10 +194,11 @@ inline authoring keeps this rule; paired CLI recording writes only the tests fil
 ## Tests in a separate file (CLI)
 
 `kmx run FILE` and `kmx test FILE` read the selected tests file with the shared
-reader. Run returns answers without checks; Test evaluates the checks. Add
-`--tests FILE` to select an override, or use `run FILE "input"` for only that
-input. No source migration is automatic. A missing or empty test source is not
-a passing Test.
+reader. Resident Run uses the pair as its immutable snapshot; `run FILE --once`
+returns answers without checks, while Test evaluates the checks. Native Windows
+implicitly uses one-shot Run. Add `--tests FILE` to select an override, or use
+`run FILE --prompt "input"` for only that input. No source migration is automatic.
+A missing or empty test source is not a passing Test.
 
 MCP has separate read-only source/history resources and paired offline export.
 The existing Run/Test tools also accept version 3 with a checked `sourceVersion`
@@ -234,6 +235,7 @@ schemaVersion: 1
 
 ```yaml agent-test
 id: greeting
+title: Greets the person by name
 input: Ada
 assertions:
   - id: greeting-text
@@ -243,10 +245,26 @@ assertions:
 ````
 
 Only `schemaVersion: 1` is supported in this frontmatter. Each fence contains one
-mapping using the existing `id`, inline `input`, `assertions` and optional
+mapping using `id`, inline `input`, `assertions`, optional `title` and optional
 `mocks.tools` fields. The [assertion semantics](#examples-and-assertions),
 [explicit tool modes](#per-test-recorded-tools), limits and credential checks are
 unchanged. Tool checks and mock names must match the agent's declared tools.
+
+`title` is a plain-text display name, not a selector or instruction. If present,
+it must be a nonblank string of at most 160 Unicode code points, counting leading
+and trailing whitespace. Controls, Unicode format characters (including bidi
+controls) and line separators are invalid. Text is preserved without trimming or
+normalization and rendered literally. Titles are supported only in separate test
+files, not inline Examples or native Squad charters. Sparse edits and recording
+saves preserve an existing title. Credentials remain forbidden.
+
+Test output shows `id — title` when a title is present, otherwise just the id.
+JSON result examples include optional `title` beside `id`; absent titles omit the
+key. Early refusals omit titles until credential preflight has approved them.
+[Machine JSONL](machine-output.md#file-test-jsonl) also carries the title. GitHub
+summaries show it once in the Tests table; Checks and Tools refer to the stable id.
+Selection, assertions and execution identities still use the unchanged id.
+
 IDs are unique across the tests file, and node/case limits apply across fences,
 not separately to each fence. A valid header without test fences means zero tests,
 distinct from a missing tests file; neither is a passing test result.
@@ -806,6 +824,9 @@ bundled or installed by kmx.
 The approved request has a Lead and up to seven specialists, at most 1 MiB of
 logical authored fields. Each member must fit the existing 256 KiB charter
 budget after enrichment. CLI role and expected native display Role are separate.
+Their values must agree with the qualified native catalog or literal role before
+casting. The canvas uses matching literal specialist titles and refuses creating
+another team in a saved roster. Fixed native support agents are not team members.
 Stable IDs must be portable, nonreserved and unchanged by native slugification.
 Role text excludes option prefixes, control characters and known Markdown/TS
 interpolation delimiters. Authored-field syntax and known cross-member identity
@@ -886,9 +907,18 @@ reparses the candidate and uses the same source/parent CAS. Preview reparses an
 explicit native snapshot and shares the existing tool-free App/runner/judge path
 in memory, without writing a canonical file or inventing Identity.Purpose. Real
 routes receive preserved native plus task instructions excluding Examples; fake
-orientation reads task-only directives. Results bind exact native source revision,
-not an AgentSuite/package digest or team execution. Native flow is chat-only;
-there are no new Squad canvas actions.
+orientation reads task-only directives. The native canvas supplies a saved shared
+brief from `.squad/kmx-brief.md`; its revision is reported separately from the
+member source revision. Native Run/Test accepts optional `expectedRevision` and
+`expectedBriefRevision` together and checks both before previewing those snapshots.
+The brief revision is `none` when absent. Supplying only one refuses; omitting both
+preserves legacy caller behavior. The canvas always supplies the pair and observes
+outside member/brief changes without discarding drafts. An empty test list remains
+editable, but cannot produce a passing Test.
+
+Results are individual local previews, not an AgentSuite/package digest or team
+execution. The [native Squad canvas](../plugins/copilot/SQUAD-CANVAS.md) uses these
+existing MCP operations for reviewed creation and member editing/testing.
 
 ## Future AgentSuite mapping — not implemented
 

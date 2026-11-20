@@ -24,11 +24,13 @@ kmx cluster orka tools --context team --namespace agents -o json
 Both selectors are required. The command performs bounded Kubernetes GETs only:
 no TokenRequest, Secret read, provisioning, endpoint probe or Tool invocation.
 Kubernetes credential helpers can still run through kubectl authentication.
-Native Windows remains unsupported. Help and completion do not load configuration.
+Native Windows still refuses this Tool inventory command. Its separate amd64
+list/show and existing Task Result boundary is documented in
+[Native Windows](windows.md). Help and completion do not load configuration.
 
 Built-ins are copied from the exact [Orka v0.3.0 API catalog](https://github.com/orka-agents/orka/blob/a533c3491d350263c0fa39bb7887dabd0d055c4e/internal/api/handlers.go#L56-L64),
-shared by the restricted source profile. Inventory reports the matched runtime's
-version and catalog source commit; the restricted profile uses its source commit
+shared by the restricted source profiles. Inventory reports the matched runtime's
+version and catalog source commit; each source profile uses its source commit
 for both, not the online release identity.
 They are offered only after observing the supported current-generation Ready
 controller image/configuration and matching watch namespace. Their source and
@@ -123,6 +125,15 @@ issuer have not been tested here. Native denied-read and leakage checks remain
 separate. Reuse compares values and workload settings, not live RBAC drift.
 See the [source-package binding](kmx.md#source-packaged-restricted-profile).
 
+The additive `orka-3cb1f0df-native/v1` profile pins source
+`3cb1f0df36705af9ff81cb8b4e8a0f8d36ee6eea` with Task cancel support. It retains
+restricted workers and context-token enforcement, adds the chart's isolated
+Task-webhook signing namespace/controller key grant and AI-worker identity
+admission, and grants the client `tasks/cancel` update. It does not enable the
+fixture-only private-endpoint allowance. Existing profiles, kind and BusyBox pins
+are unchanged. See the [exact retained chart and image bindings](kmx.md#task-cancel-source-profile).
+Both-platform metadata and Helm tests are not live cancellation or guest proof.
+
 Exact healthy reuse compares all custom values and live workload execution
 settings, preserves chart data/keys and reconciles only the result reader.
 Install and reuse then wait, up to 10 minutes, for readiness observed after the
@@ -163,16 +174,17 @@ integration have not been qualified by these command fixtures.
 ## Connect a guest model route
 
 In the owned Linux guest, `model connect` configures the existing Orka to use a
-fixed Vekil Copilot gateway. It never installs a runtime, starts a sign-in flow,
+fixed Vekil gateway for Copilot or an OpenAI/Anthropic API key. It never installs a runtime, starts a sign-in flow,
 downloads weights or runs an Agent, Task or inference request. Native macOS and
 Windows callers use their owning host integration instead; these commands run
 only in the Linux guest with local Docker and a checked kubeconfig.
 
-Connect recognizes the pinned online runtime or the restricted source-bound
-[offline profile](#native-installation-from-a-local-bundle). Each requires its
-matching chart identity and controller/AI-worker image pins; the offline images
-must be a same-architecture pair for amd64 or arm64. Mixed online/offline pins,
-mixed architectures and the older offline profile are not accepted. Existing
+Connect recognizes the pinned online runtime or either restricted source-bound
+[offline profile](#native-installation-from-a-local-bundle), `7916cd1c` or `3cb1f0df`.
+Each requires its matching chart identity and controller/AI-worker image pins;
+the offline images must be a same-profile, same-architecture pair for amd64 or
+arm64. Mixed online/offline pins, mixed source profiles, mixed architectures and
+the oldest `59703d6e` offline profile are not accepted. Existing
 readiness, namespace and configuration checks still apply. Recognition is a
 workload observation, not renewed bundle verification or live RBAC attestation.
 
@@ -189,18 +201,31 @@ KIND_CLUSTER=local-offline kmx --context kind-local-offline --container-engine d
 The UUIDs above are examples. The owning guest endpoint supplies the credential
 generation after private delivery and retains the connection ID returned by
 Connect. Do not copy a credential or derive a generation from its contents.
-The fixed credential file is root:65532, mode 0640, under the memory mount above.
-KMX checks its metadata; the gateway launcher validates the bytes in memory.
-The Kubernetes Secret is a fixed noncredential placeholder. No credential flag,
-file-path flag, login fallback or keyed route is supported.
+The credential file is root:65532, mode 0640, under the memory mount above:
+`copilot-github-token` for `--route copilot`, or `model-api-key` for `--route key`.
+The existing `copilot-v1` mount covers both filenames; no new mount is needed.
+KMX checks metadata; the gateway launcher validates bytes and exports them only
+inside Vekil. Its API-key config names an environment variable, never the key.
+The Kubernetes Secret stays a fixed noncredential placeholder. No credential
+flag, file-path flag or login fallback is supported.
+
+For an API key, replace the route selectors in Connect with
+`--route key --vendor openai` (or `anthropic`); `--vendor` is forbidden with Copilot.
+`--provider` remains the native Kubernetes object name, not the company selector.
+For example, use `--provider workspace --model gpt-4.1` with OpenAI, or an exact
+model ID advertised for the Anthropic key. Both native Provider types point at
+Vekil, not directly at the company. Anthropic catalog requests use `limit=1000`;
+OpenAI dynamic discovery adds Responses capabilities only for the qualified
+`gpt-4.1` default. Other models keep their discovered capabilities.
 
 `model_ready` requires acknowledged resources, exact admitted execution settings,
 an owned serving Pod, authenticated `/readyz` and exact advertised catalog
 membership. Catalog data can be cached: this is operational readiness, not proof
 of fresh selected-model authorization or a successful model answer. Reconnecting
 the same configuration and generation checks health without inference or remote
-writes. A changed generation requires explicit Disconnect before clearing and
-redelivering credentials. Connect never hot-reloads or substitutes a model.
+writes. A changed route, vendor, model or generation requires explicit Disconnect;
+the owning endpoint clears its credential file before Disconnect and redelivery.
+Only one connection is retained per workspace. Connect never hot-reloads or substitutes a model.
 
 Disconnect requires the retained ID and deletes only acknowledged resources with
 UID/resourceVersion conditions. Missing API objects alone do not prove a stopped
@@ -214,7 +239,11 @@ A failed result may retain an ID with state `unknown`: keep it for recovery.
 Both commands accept text or existing setup JSONL; Disconnect accepts no generation.
 Existing target consent applies, without a new prompt. Native guest credential
 delivery and live account/model execution remain unqualified by these fixtures.
-There is no `model prove` capability yet. See [machine output](machine-output.md).
+There is no `model prove` capability yet. Listing models does not prove credit
+or rate-limit availability; those failures may first appear during inference.
+API-key configuration and errors are fixture-tested, not real-account qualified.
+See [machine output](machine-output.md) for safe key-rejection, reachability and
+missing-model codes.
 
 ## Seeing it before doing it
 
@@ -314,6 +343,14 @@ forward/connection and stop on connection loss, not resubmit. Ready or admission
 alone does not prove model execution or result-read access. Normal successful
 commands print only a short pointer to this boundary; authorization and
 transport failures remain explicit errors.
+
+The selected Orka Service and backing controller are trusted runtime components.
+The v0.3.0 API is plaintext HTTP behind the loopback forward and supplies no TLS
+backend identity or result-specific token audience, so a namespace actor able to
+replace Service routing or its workload can capture the temporary reader token
+and forge an answer. Loopback protects the local listener, not this in-cluster
+trust boundary. KMX requests a ten-minute token and refuses a materially longer
+granted lifetime; token discard is still not revocation.
 
 ## The whole journey, from nothing
 

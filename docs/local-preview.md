@@ -180,14 +180,50 @@ The fake model checks wiring offline; it does not qualify hosted Copilot access.
 by default,
 in the kmx process. Every result is labeled **local preview**. It is not
 deployment qualification, suite evidence, a passing receipt, or authority to
-publish or deploy. `kmx run FILE`, `kmx test FILE` and MCP Run/Test use it for
-fake/local and default or explicit Copilot routes through the `agentpreview.Runner` interface.
-CLI `kmx run FILE` executes the saved inputs and returns answers without evaluating
-assertions or setting up a judge. Explicit positional input runs that input; saved
-inputs explicitly selected alongside it keep their own fixtures. Completed Run
+publish or deploy. `kmx run FILE --once` (and implicit one-shot Run on native
+Windows), `kmx test FILE` and MCP Run/Test use it for fake/local and default or
+explicit Copilot routes through the `agentpreview.Runner` interface.
+CLI `kmx run FILE --once` executes the saved inputs and returns answers without evaluating
+assertions or setting up a judge. Explicit `-p, --prompt` or `--prompt-file` input
+runs only that input unless `--case` also selects a saved example. Completed Run
 rows are **ANSWERED**, not passing tests; JSON keeps an unknown verdict and
 `fullPass: false`. No judge is selected or authenticated for CLI Run. Test and the
-existing single-source MCP Run/Test behavior continue to evaluate checks. MCP
+existing single-source MCP Run/Test behavior continue to evaluate checks.
+
+By default, `kmx run FILE` starts or reuses a resident local process bound to the
+checked snapshot and inference route; it sends `--prompt` or `--prompt-file` input through
+a new resident session when supplied. `--once` retains this invocation-owned
+preview path. Owner-only snapshot cache retains exact authored bytes in cleartext,
+like preview journals. The resident worker retains session history in memory. An
+explicit Copilot credential is copied once into worker memory (never environment,
+state or IPC results); each turn acquires a fresh bounded provider access snapshot.
+
+Each canonical source keeps a stable `md-...` agent ID. Every resident worker
+generation has a random `li-...` instance ID and a unique runtime name. An exact
+snapshot and route are reused. If either drifts, terminals offer upgrade, parallel
+new instance, or cancel; scripts must pass `--upgrade --yes` or `--new --name
+NAME`. Upgrade starts and readies the replacement, promotes it, then cancels and closes old
+sessions and records their workers stopped. A failed replacement leaves the old
+generation active. Chat and stop accept unique names or instance IDs; a stable
+agent ID is rejected while multiple active generations make it ambiguous.
+Resident agents are tool-free in this first slice; one-shot Run/Test retain fixed
+command tools. `kmx chat NAME` creates or resumes local sessions, `kmx list` shows
+process/readiness/session state, `chat --new` prints a resumable session ID, and
+`kmx stop NAME_OR_ID` ends the worker. Editing
+source does not update a running agent: use `run FILE --upgrade` for replacement.
+Test always evaluates the current checked source pair; `test FILE
+--check` validates that pair and reports identity metadata without model or tool
+execution. Lifecycle history is append-only and bounded to 1,024 private entries
+per source; reaching the bound refuses further lifecycle operations without
+automatic deletion. Native Windows refuses persistence, local List and Stop; use
+WSL.
+
+Resident model discovery, endpoint credentials, and capability requirements are
+described in [resident model selection](resident-models.md). Local worker placement
+does not imply local inference: OpenAI, Anthropic, and Copilot send content to their
+selected hosted service.
+
+MCP
 Run/Test also accept schema version 3 with a checked `sourceVersion` from the
 source resource, running the selected agent/tests pairs: Run answers without
 checks, and Test evaluates the selected checks. Version-3 Create/Edit and
@@ -236,9 +272,10 @@ against one real Markdown file through package-free fake Run, an instruction-
 regressed failing Test, retained diagnostics and offline Explain. It checks that
 Explain sends nothing and neither private state family keeps an ambient
 credential canary. That qualifies only the narrow
-[native Windows file-preview path](windows.md), not providers, tools, live
-execution, suite evidence or native arm64 execution. Separate list/show
-qualification covers read-only remote Orka inspection only. Windows arm64 remains cross-build/vet
+[native Windows file-preview path](windows.md), not providers, tools, suite
+evidence or native arm64 execution. Separate compiled-kubectl qualification
+covers explicit-target Orka inspection and existing Task Result. Windows arm64
+remains cross-build/vet
 and checksum evidence only. No run against a real compatible model is recorded
 yet. To record one on a supported non-Windows route, a human runs:
 

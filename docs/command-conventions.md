@@ -11,7 +11,7 @@ should be named and shaped. Apply them to new commands and to renames.
 
 ## Help and discovery
 
-Root help lists `create`, `run`, `test`, `chat`, `model`, `package`, `cluster`,
+Root help lists `create`, `run`, `test`, `list`, `chat`, `model`, `package`, `cluster`,
 then `version`, under “Write, run and test agent files.” `mcp`, `completion` and
 `help` remain callable but are not root help entries. Keep root ordering local;
 other command groups retain their normal discovery order.
@@ -155,6 +155,9 @@ Keep these distinctions:
   context, how it was chosen, the server and the namespaces on stderr, then runs the guard.
   A local kind cluster proceeds. A remote context needs typed confirmation or
   `KAIMAHI_CONFIRM=<context>`. A non-interactive run without consent refuses.
+  Preconfirmed live Run may put the same action, context, selection source,
+  server, namespace and posture on one line; other operations and refusals keep
+  the full target presentation.
 - **Offline create resolves the workspace before writing.** Without a workspace,
   terminal use asks `Start one here? [Y/n]`; nonterminal or redirected use
   refuses with a `--workspace` hint. Invalid nearest markers and second members

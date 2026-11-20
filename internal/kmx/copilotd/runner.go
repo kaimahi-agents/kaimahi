@@ -105,7 +105,14 @@ func (r *runner) Run(ctx context.Context, req agentpreview.Request) (out agentpr
 		fields = append(fields, *req.Input)
 	}
 	for _, ex := range req.Examples {
-		fields = append(fields, ex.ID, ex.Input)
+		fields = append(fields, ex.ID, ex.Input, ex.Title)
+	}
+	for _, source := range []*agentfile.Agent{req.Agent, req.SourceAgent} {
+		if source != nil {
+			for _, ex := range source.Examples {
+				fields = append(fields, ex.Title)
+			}
+		}
 	}
 	if access != nil {
 		if err = access.CheckContent(fields...); err != nil {

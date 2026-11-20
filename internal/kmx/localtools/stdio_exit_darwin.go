@@ -6,6 +6,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+const stdioKeventInterruptLimit = 8
+
 // A zero-timeout process event observes exit without reaping the leader. ESRCH
 // on registration also means our still-unreaped child has already exited.
 func stdioLeaderExited(pid int) (exited bool, err error) {
@@ -25,7 +27,9 @@ func stdioLeaderExited(pid int) (exited bool, err error) {
 	}()
 	var events [1]unix.Kevent_t
 	changes := []unix.Kevent_t{{Ident: uint64(pid), Filter: unix.EVFILT_PROC, Flags: unix.EV_ADD | unix.EV_ENABLE, Fflags: unix.NOTE_EXIT}}
-	n, err := unix.Kevent(fd, changes, events[:], &unix.Timespec{})
+	n, err := stdioKeventNoIntr(func(timeout *unix.Timespec) (int, error) {
+		return unix.Kevent(fd, changes, events[:], timeout)
+	})
 	if err == unix.ESRCH {
 		return true, nil
 	}
@@ -39,4 +43,15 @@ func stdioLeaderExited(pid int) (exited bool, err error) {
 		return false, ErrStdioCleanup
 	}
 	return events[0].Fflags&unix.NOTE_EXIT != 0, nil
+}
+
+func stdioKeventNoIntr(call func(*unix.Timespec) (int, error)) (int, error) {
+	for range stdioKeventInterruptLimit {
+		n, err := call(&unix.Timespec{})
+		if err == unix.EINTR {
+			continue
+		}
+		return n, err
+	}
+	return 0, unix.EINTR
 }

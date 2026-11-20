@@ -130,10 +130,11 @@ func TestSuiteSessionsCLIExplicitDevelopmentAndNoClusterConfiguration(t *testing
 	if _, err := os.Stat(filepath.Join(dir, "pass.json")); err != nil {
 		t.Fatal("no complete CLI proof", err)
 	}
-	for _, flags := range [][]string{{"--to-context", "kind-other"}, {"--to-namespace", "orka-system"}, {"--inference", "provider:inference"}, {"--result-port", "19180"}, {"--context", "kind-other"}, {"--container-engine", "docker"}, {"--development-host", ""}} {
+	for _, flags := range [][]string{{"--to-context", "kind-other"}, {"--to-namespace", "orka-system"}, {"--inference", "provider:inference"}, {"--result-port", "19180"}, {"--fail-fast"}, {"--fail-fast=false"}, {"--context", "kind-other"}, {"--container-engine", "docker"}, {"--development-host", ""}} {
 		negative := append([]string{}, args...)
 		negative[len(negative)-1] = filepath.Join(dir, strings.TrimPrefix(flags[0], "--")+"-denied.json")
-		want := "--development-host refuses " + flags[0]
+		wantFlag := strings.SplitN(flags[0], "=", 2)[0]
+		want := "--development-host refuses " + wantFlag
 		if flags[0] == "--context" {
 			want = "--context cannot"
 		}

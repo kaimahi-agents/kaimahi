@@ -4,7 +4,9 @@
 // journaled settings distinguish live Enabled calls during zero-effect replay.
 // Invocation-owned adapters resolve selected stdio servers and fixed command tools
 // from that folder. Stdio process groups and SDK sessions close before completion;
-// command calls use fixed argv, an explicit environment and owned group cleanup.
+// interrupted non-reaping exit observations retry within a fixed bound, while
+// uncertain cleanup still refuses completion. Command calls use fixed argv, an
+// explicit environment and owned group cleanup.
 package localtools
 
 import (

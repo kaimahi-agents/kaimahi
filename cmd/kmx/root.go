@@ -19,12 +19,14 @@ import (
 	agentkitbuilder "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/agentkit"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localagent"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
 )
 
 type dependencies struct {
 	fileRunner         agentpreview.Runner
+	residentAgents     bool
 	stdin              *os.File
 	stdout             io.Writer
 	stderr             io.Writer
@@ -36,19 +38,28 @@ type dependencies struct {
 	discoverModels     func(context.Context) []modelaccess.Report
 	newCopilot         func() copilotAccess
 	openGitHubSummary  func() (io.WriteCloser, error)
+	activateLocalAgent func(context.Context, string, *agentfile.Pair, string, string, string, localagent.ActivationOptions) (localagent.Instance, bool, error)
+	readLocalAgents    func(bool) ([]localagent.Instance, error)
+	readLocalAgent     func(string) (localagent.Instance, error)
+	loadLocalAgentPair func(context.Context, localagent.Instance) (*agentfile.Pair, error)
+	withLocalAgentRun  func(context.Context, localagent.Instance, func(*agentfile.Pair) error) error
+	pingLocalAgent     func(context.Context, localagent.Instance) error
+	stopLocalAgent     func(context.Context, string) error
 	goos               string
 	goarch             string
 }
 
 func productionDependencies() dependencies {
 	return dependencies{
-		fileRunner: newFileMCPRunner(app.NewLocalFileRunner()),
-		stdin:      os.Stdin, stdout: os.Stdout, stderr: os.Stderr,
-		executable:        invocationExecutable(os.Args[0]),
-		goos:              runtime.GOOS,
-		goarch:            runtime.GOARCH,
-		openGitHubSummary: func() (io.WriteCloser, error) { return openGitHubSummary() },
-		loadConfig:        config.LoadWithOverrides, newApp: app.New, buildInfo: debug.ReadBuildInfo,
+		fileRunner:     newFileMCPRunner(app.NewLocalFileRunner()),
+		residentAgents: true,
+		stdin:          os.Stdin, stdout: os.Stdout, stderr: os.Stderr,
+		executable:         invocationExecutable(os.Args[0]),
+		goos:               runtime.GOOS,
+		goarch:             runtime.GOARCH,
+		openGitHubSummary:  func() (io.WriteCloser, error) { return openGitHubSummary() },
+		activateLocalAgent: localagent.ActivateWithOptions, readLocalAgents: localagent.ReadInstances, readLocalAgent: localagent.ReadRecord, loadLocalAgentPair: localagent.LoadPair, withLocalAgentRun: localagent.WithRun, pingLocalAgent: localagent.Ping, stopLocalAgent: localagent.Stop,
+		loadConfig: config.LoadWithOverrides, newApp: app.New, buildInfo: debug.ReadBuildInfo,
 		newAgentKitBuilder: func(options agentkitbuilder.Options) kmxsuite.SandboxBuilder {
 			return agentkitbuilder.New(options)
 		},
@@ -102,6 +113,9 @@ func (s *commandState) application() (*app.App, error) {
 	}
 	a.Out, a.Err, a.Stdin = s.deps.stdout, s.deps.stderr, s.deps.stdin
 	a.Executable = s.executable()
+	if s.deps.goos == "windows" {
+		a.CommandShell = "powershell"
+	}
 	a.Run.Stdout, a.Run.Stderr = s.deps.stdout, s.deps.stderr
 	s.app = a
 	return a, nil
@@ -286,7 +300,7 @@ func newRootCommand(state *commandState) *cobra.Command {
 	root.AddCommand(
 		newVersionCommand(state), newMCPCommand(state), newCompletionCommand(root), newModelCommand(state),
 		newFileCreateCommand(state), newAgentChatCommand(state), newAgentRunCommand(state),
-		newAgentTestCommand(state), newAgentEvalCommand(state), newReleaseLiftCommand(state),
+		newAgentTestCommand(state), newLocalAgentListCommand(state), newLocalAgentStopCommand(state), newAgentEvalCommand(state), newReleaseLiftCommand(state),
 		newClusterCommand(state), newPackageCommand(state),
 	)
 	configureCommandHelp(root, state)

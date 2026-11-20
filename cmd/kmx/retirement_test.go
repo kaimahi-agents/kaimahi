@@ -48,9 +48,7 @@ func TestLegacyChatTransportFlagsAreRetired(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"chat", "hello-world", "--session", "abc"}, "--session"},
 		{[]string{"chat", "hello-world", "--json"}, "--json"},
-		{[]string{"chat", "--session", "abc"}, "--session"},
 		{[]string{"chat", "--json"}, "--json"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
@@ -79,7 +77,7 @@ func TestLegacyChatTransportFlagsAreRetired(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"session", "json"} {
+	for _, name := range []string{"json"} {
 		flag := cmd.Flags().Lookup(name)
 		if flag == nil || !flag.Hidden {
 			t.Errorf("retired --%s must parse but stay out of help", name)

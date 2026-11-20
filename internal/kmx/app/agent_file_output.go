@@ -89,7 +89,11 @@ func writeFilePreviewText(w io.Writer, r FilePreviewResult, standalone bool) err
 		} else if r.Operation == "run" && ex.ReasonCode == "completion_ready" && len(ex.Assertions) == 0 {
 			label = "ANSWERED"
 		}
-		fmt.Fprintf(&b, "%s %s (%dms)\n", label, ex.ID, ex.DurationMs)
+		name := ex.ID
+		if ex.Title != "" {
+			name += " — " + ex.Title
+		}
+		fmt.Fprintf(&b, "%s %s (%dms)\n", label, name, ex.DurationMs)
 		writeFileTools(&b, ex.FilePreviewCompletion, r.ToolSettings)
 		for _, as := range ex.Assertions {
 			reason := as.Reason

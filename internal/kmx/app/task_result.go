@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -23,7 +22,7 @@ func (a *App) TaskResult(opt TaskResultOptions) error {
 	if err := scaffold.ValidateObjectName(opt.Task); err != nil {
 		return err
 	}
-	namespace := opt.Namespace
+	namespace := strings.TrimSpace(opt.Namespace)
 	if namespace == "" {
 		namespace = OrkaNamespace
 	}
@@ -50,7 +49,7 @@ func (a *App) TaskResult(opt TaskResultOptions) error {
 	ctx, cancel := a.waitContext(ctx, "task-result", timeout)
 	defer cancel()
 	worker := a.withRunContext(ctx)
-	if err := worker.preflight(depKubectl); err != nil {
+	if err := worker.preflightOrkaTaskResult(); err != nil {
 		return err
 	}
 	inspectCtx, stopInspect := worker.waitContext(ctx, "task-result-inspect", 0)
@@ -66,24 +65,13 @@ func (a *App) TaskResult(opt TaskResultOptions) error {
 	if len(raw) == 0 {
 		return fmt.Errorf("Task %s/%s not found", namespace, opt.Task)
 	}
-	var object struct {
-		Kind     string `json:"kind"`
-		Metadata struct {
-			Name, Namespace, UID string
-			Generation           int64
-			DeletionTimestamp    *time.Time `json:"deletionTimestamp"`
-		} `json:"metadata"`
-		Spec struct {
-			Type string `json:"type"`
-		} `json:"spec"`
+	id, taskType, err := decodeTaskResultIdentity(raw, opt.Task, namespace)
+	if err != nil {
+		return err
 	}
-	if json.Unmarshal(raw, &object) != nil || object.Kind != "Task" || object.Metadata.Name != opt.Task || object.Metadata.Namespace != namespace || object.Metadata.UID == "" || object.Metadata.Generation < 1 || object.Metadata.DeletionTimestamp != nil {
-		return fmt.Errorf("Task %s/%s has invalid or terminating identity", namespace, opt.Task)
-	}
-	if object.Spec.Type != "ai" {
+	if taskType != "ai" {
 		return fmt.Errorf("Task %s/%s is not an AI Task (spec.type != ai)", namespace, opt.Task)
 	}
-	id := orkaIdentity{Kind: "Task", Name: opt.Task, UID: object.Metadata.UID, Generation: object.Metadata.Generation}
 	// Re-read with the pinned identity rather than trusting an old phase
 	// observation. A replaced Task cannot lend its result to this invocation.
 	statusStarted := false
@@ -127,7 +115,26 @@ func (a *App) TaskResult(opt TaskResultOptions) error {
 	}
 }
 
-func (a *App) taskResultRead(ctx context.Context, namespace string, id orkaIdentity, port string, follow bool) error {
+func decodeTaskResultIdentity(raw []byte, name, namespace string) (orkaIdentity, string, error) {
+	var object struct {
+		APIVersion string `json:"apiVersion"`
+		Kind       string `json:"kind"`
+		Metadata   struct {
+			Name, Namespace, UID string
+			Generation           int64
+			DeletionTimestamp    *time.Time `json:"deletionTimestamp"`
+		} `json:"metadata"`
+		Spec struct {
+			Type string `json:"type"`
+		} `json:"spec"`
+	}
+	if liveOrkaJSON(raw, &object) != nil || object.APIVersion != "core.orka.ai/v1alpha1" || object.Kind != "Task" || object.Metadata.Name != name || object.Metadata.Namespace != namespace || object.Metadata.UID == "" || object.Metadata.Generation < 1 || object.Metadata.DeletionTimestamp != nil {
+		return orkaIdentity{}, "", fmt.Errorf("Task %s/%s has invalid or terminating identity", namespace, name)
+	}
+	return orkaIdentity{Kind: "Task", Name: name, UID: object.Metadata.UID, Generation: object.Metadata.Generation, strictAPIVersion: object.APIVersion}, object.Spec.Type, nil
+}
+
+func (a *App) taskResultRead(ctx context.Context, namespace string, id orkaIdentity, port string, follow bool) (err error) {
 	session, err := a.openOrkaResultSession(ctx, CreateOptions{Namespace: namespace, ResultServiceAccount: orkaResultAccount, ResultPort: port})
 	if err != nil {
 		if follow {
@@ -135,7 +142,19 @@ func (a *App) taskResultRead(ctx context.Context, namespace string, id orkaIdent
 		}
 		return err
 	}
-	defer session.close()
+	closed := false
+	closeSession := func() error {
+		if closed {
+			return nil
+		}
+		closed = true
+		return a.closeOrkaResultSession(session, "result session cleanup failed; answer withheld")
+	}
+	defer func() {
+		if closeErr := closeSession(); closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
+	}()
 	answer, err := a.readOrkaTaskResult(session.ctx, namespace, id, session, nil, follow)
 	if err != nil {
 		if errors.Is(err, ErrTaskPending) {
@@ -148,6 +167,9 @@ func (a *App) taskResultRead(ctx context.Context, namespace string, id orkaIdent
 	}
 	if strings.TrimSpace(answer) == "" {
 		return fmt.Errorf("Task has no printable answer")
+	}
+	if closeErr := closeSession(); closeErr != nil {
+		return closeErr
 	}
 	_, err = fmt.Fprintln(a.Out, answer)
 	return err

@@ -49,7 +49,7 @@ func newFileCreateCommand(state *commandState) *cobra.Command {
 			if strings.HasPrefix(operand, "-") {
 				operand = "./" + operand
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Wrote %s and %s\n\nNext:\n  %s run %s \"hi\"\n  %s test %s\n",
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Wrote %s and %s\n\nNext:\n  %s run %s --prompt \"hi\"\n  %s test %s\n",
 				agent, tests, quoteShell(state.executable()), quoteShell(operand), quoteShell(state.executable()), quoteShell(operand))
 			return fileUsageError(err)
 		},

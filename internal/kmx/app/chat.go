@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -79,6 +80,15 @@ type orkaChatBackend struct {
 	resultSession    *orkaResultSession
 }
 
+func (b *orkaChatBackend) closeResultSession() {
+	if b.resultSession == nil {
+		return
+	}
+	err := b.app.closeOrkaResultSession(b.resultSession, "result session cleanup failed")
+	b.resultSession = nil
+	b.app.reportOrkaForwardCleanup("result session", err)
+}
+
 func (b *orkaChatBackend) Agent() string { return b.agent }
 
 func quickstartResultOptions(namespace, task string) CreateOptions {
@@ -138,8 +148,7 @@ func (b *orkaChatBackend) Send(ctx context.Context, message string, renderer *ch
 	if b.resultSession != nil {
 		deadline, _ := b.resultSession.ctx.Deadline()
 		if b.resultSession.ctx.Err() != nil || time.Until(deadline) < 5*time.Minute {
-			b.resultSession.close()
-			b.resultSession = nil
+			b.closeResultSession()
 		}
 	}
 	sessionStarted := time.Now()
@@ -181,7 +190,7 @@ func (b *orkaChatBackend) Send(ctx context.Context, message string, renderer *ch
 	return nil
 }
 
-func (a *App) runQuickstartOrkaTaskProfile(parent context.Context, agent, namespace, prompt string, profile *orkaTaskProfile, report func(string), reuse ...*orkaResultSession) (string, error) {
+func (a *App) runQuickstartOrkaTaskProfile(parent context.Context, agent, namespace, prompt string, profile *orkaTaskProfile, report func(string), reuse ...*orkaResultSession) (answer string, err error) {
 	phase := func(label string) {
 		if report != nil {
 			report(label)
@@ -213,7 +222,12 @@ func (a *App) runQuickstartOrkaTaskProfile(parent context.Context, agent, namesp
 		if err != nil {
 			return "", err
 		}
-		defer session.close()
+		defer func() {
+			if closeErr := quiet.closeOrkaResultSession(session, "result session cleanup failed; answer withheld"); closeErr != nil {
+				answer = ""
+				err = errors.Join(err, closeErr)
+			}
+		}()
 	}
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()
@@ -237,7 +251,7 @@ func (a *App) runQuickstartOrkaTaskProfile(parent context.Context, agent, namesp
 	}
 	phase("Task " + id.Name + ": waiting for worker execution and completion")
 	started = time.Now()
-	answer, err := a.waitOrkaTaskResultProgress(ctx, namespace, id, session, func() {
+	answer, err = a.waitOrkaTaskResultProgress(ctx, namespace, id, session, func() {
 		if profile != nil {
 			profile.execution = time.Since(started)
 		}

@@ -166,7 +166,7 @@ func runFolderTest(cmd *cobra.Command, state *commandState, f fileCommandOptions
 			row.Directory = ".github/agents"
 		}
 		if !aborted {
-			result, fileErr := previewFileCommand(cmd, state, file, f, "", "", nil)
+			result, fileErr := previewFileCommand(cmd, state, file, nil, f, "", "", nil)
 			// Intake refusals may precede resolved-credential checks too. Only
 			// completed results can name discovered sources in folder output.
 			if result.State != "complete" {

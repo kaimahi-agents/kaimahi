@@ -15,19 +15,21 @@ version, with one stderr notice and unchanged legacy output/exit contracts. See
 
 ## Installed command tree
 
-Root help shows `create`, `run`, `test`, `chat`, `model`, `package`, `cluster`,
+Root help shows `create`, `run`, `test`, `list`, `chat`, `model`, `package`, `cluster`,
 then `version`, with the tagline “Write, run and test agent files.” The tree below
 expands those visible product commands:
 
 ```text
 kmx
 ├── create NAME                   (agent file and paired example test)
-├── run [FILE [input]] [--tests FILE] | --agent <name>
+├── run [FILE] [-p|--prompt TEXT] [--tests FILE] | --agent <name>
 ├── test [FILE] [--tests FILE]
 │   └── explain [failure-id] --file FILE [--tests FILE]
+├── list [-a] [-o table|json]     (local registrations; --context selects Orka)
 ├── chat <name> [message...]
 ├── model
 │   ├── list [--provider local|copilot] [-o table|json]
+│   ├── match PROFILE                (offline capability matching)
 │   ├── login [--gh]
 │   └── logout
 ├── package
@@ -79,8 +81,10 @@ preview of one agent file whose completed non-pass diagnostics can be explained 
 `test explain --file FILE`. Bare `kmx test` tests direct `*.agent.md` agents in the
 current folder and `.github/agents/` (non-recursive) with one text/JSON/GitHub summary
 reporting failed, unknown and not-run counts; it never falls back to `package test`,
-and `--tests`/`--case` require an explicit FILE. Explicit `run FILE` is the
-corresponding preview Run.
+and `--tests`/`--case` require an explicit FILE. Explicit `run FILE` starts or
+reuses a resident local agent; `run FILE --once` is the corresponding preview
+Run. Native Windows implicitly takes that one-shot path because resident workers
+are unavailable.
 File Run/Test read the agent's default companion tests unless `--tests FILE`
 selects another tests file; the agent bytes and prompt are unchanged, and file-scoped
 Explain uses the current `--tests FILE` selection.
@@ -98,7 +102,8 @@ package-free fake `run FILE` / `test FILE` (including the `--tests FILE` selecto
 native Windows still requires an explicit file), offline `test explain ... --file
 FILE` (with optional `--tests FILE`; plus the hidden legacy Explain spelling for
 compatibility), and Windows-amd64 read-only `cluster orka list/show` with explicit
-context and namespace. Every other route refuses before effects. See the
+context and namespace plus existing `cluster task result`. Every other route,
+including live Run/Chat, refuses before effects. See the
 [native Windows command boundary](windows.md#supported-native-commands).
 
 Unreleased `model list` defaults to local discovery; explicit Copilot listing
@@ -153,7 +158,7 @@ Workspace --create/test--> AgentSuite artifact --push--> OCI location
 | `create` | Agent file and paired test | Author two files without prompts, model selection or overwrites |
 | `package create` | Workspace | Author one offline member; no cluster or model call |
 | `test [FILE]` | One agent file, or direct agent files in the current folder and `.github/agents/` | With FILE, test that file; bare, one summary over folder agents with failed, unknown and not-run counts, never falling back to `package test` |
-| `package test` | Workspace/prepared AgentSuite | Run full ordered native Orka/kagent cases, or pinned AgentSessions chat with explicit `--development-host FILE` and `--bindings FILE` (`AgentSessionsBinding`); stop later cases after the first non-pass |
+| `package test` | Workspace/prepared AgentSuite | Run full ordered native Orka/kagent cases, or pinned AgentSessions chat with explicit `--development-host FILE` and `--bindings FILE` (`AgentSessionsBinding`); stop later cases after the first non-pass. Standalone Orka can opt into threshold-unreachable `--fail-fast`; incomplete runs create no proof |
 | `test export` | Latest completed exact-suite/member managed proof | Write new detached public evidence offline; captured tagged module/checksum or clean VCS provenance required, no evaluation or private-gate replacement |
 | `run-profile export FILE [--tests FILE]` | Checked agent/tests selection | Content-bearing frozen JSON on stdout; external tests use v2 with physical selection/snapshot identity, inline profiles retain v1. Source/instruction/model/example hashes and target examples `not_run`; no configuration, execution, evidence, package or deployment authority |
 | `test verify` | Local single-manifest OCI layout + detached evidence + reviewed ExpectedEvaluation | State-free offline CI gate; digest input also requires explicit layout, text/JSON success exits0, coded refusal exits1; no private-gate authority |
@@ -183,6 +188,10 @@ with explicit judge transport and identity, plus optional KMX case `runs`/`minPa
 [AgentSuite §8.2.2](https://github.com/agent-primitives/suite/blob/main/spec.md#822-case-documents-and-assertions):
 `minPasses` requires `runs`, and both are positive integers. KMX's execution cap
 is 100 runs, within the spec's consumer resource-limit allowance.
+Full execution is the default. Standalone Orka `--fail-fast` stops only when
+`passes + remaining < minPasses`, performs candidate cleanup and never creates
+proof from the incomplete run set. File Test, kagent, AgentSessions and composed
+Deploy refuse the option.
 No subset, recorded Sessions input or runtime/model override. Offline diff reads only Orka/kagent native suite receipts;
 AgentSessions evidence is refused by diff and feeds create-only Agent deployment or the separate offline AgentSessions Deploy render;
 `test from-sessions` is reference extraction/export without a native consumer.

@@ -9,6 +9,31 @@ changes in the package's Go doc comment.
 
 ## Package ownership
 
+Resident lifecycle belongs to `internal/kmx/localagent`; model route discovery,
+endpoint credential ownership, protocol adaptation and capability matching belong
+to `internal/kmx/modelaccess`. Resident Run supports tool-free fake/Copilot,
+Ollama/Foundry Local, compatible/OpenAI and Anthropic Messages routes. Freeze exact
+endpoint/key-reference/capability/requirement identity in each generation; keys
+travel only in the worker credential pipe. Environment keys are startup snapshots;
+rotation needs a replacement generation; exact running reuse never requires the
+caller to export the key again. Credentialed endpoints require HTTPS, including
+loopback; HTTP is keyless-loopback only. Endpoint URLs are bounded to 4096 bytes,
+and the marshaled start record must fit the shared 32 KiB read/write budget before
+snapshot/start publication. Relative model profiles become absolute clean paths
+before no-symlink reads. Missing capability metadata is unknown,
+never guessed from model names.
+Endpoint readiness requires a bounded non-inference exact-model catalog read;
+failed replacement access preserves the old worker and sessions. Endpoint
+transports share connection pools with request-local credentials. Ollama metadata
+retains selected HTTPS origins/gateway prefixes and selected credential ownership.
+Profiles are operator declarations, Ollama show
+metadata is advertised, and neither is execution evidence. `modelRequirements`
+frontmatter is resident-only; Run flags may strengthen but never weaken it.
+One-shot previews and Test retain their existing provider/tool contracts.
+Resident-only flags have a distinct help section; no-FILE selection errors use
+ordinary failure exits, never live Run's pending-Task exit 2. Linux/macOS resident
+lifecycle tests run in shard zero of the required app-tests/hygiene dependency graph.
+
 New operations belong in an operation-owned package with explicit dependencies, not as new methods on `*app.App`. Keep CLI, MCP and UI parsing, presentation and invocation wiring in their adapters. Reuse an existing focused package when it owns the behavior; otherwise add one below `internal/kmx/`. Operation packages must not import `app`, `mcp` or command packages. Pass the capabilities the operation needs, not `*app.App` or a copy of it. Existing App methods may delegate during migration; do not move unrelated code to satisfy this rule.
 
 ## Independent review
@@ -51,7 +76,7 @@ invalid review as clean.
   Explicit `test FILE -o jsonl` uses checked App telemetry and final summaries;
   preserve legacy text/JSON, post-intake signals and all final acceptance vetoes.
   Native Windows remains embedded/model=fake only. See `docs/machine-output.md`.
-- Root help advertises exactly `create`, `run`, `test`, `chat`, `model`,
+- Root help advertises exactly `create`, `run`, `test`, `list`, `chat`, `model`,
   `package`, `cluster`, `version`, in that order. MCP, completion and Help
   remain callable but are not root help entries. Keep root ordering local;
   do not change Cobra's package-wide sorting switch.
@@ -64,6 +89,34 @@ invalid review as clean.
   privacy and evidence caveats. Retain native/package safety disclosures and
   legacy Eval/Lift help/errors. Canonical flag-parse errors include a safely
   quoted executable/topic `--help` hint; runtime and argument errors do not.
+- `run FILE` starts or reuses a resident local agent process bound to the
+  canonical snapshot and inference route; `--once` retains invocation-owned
+  preview. Resident agents serve multiple sessions through local Chat. Test stays
+  current-source based, including `kmx.yaml` commandTools. Root `list` is local
+  and config-free unless an explicit context selects existing Orka inventory.
+  Hidden `stop` ends the worker and all sessions.
+  Owner-only snapshot cache retains the exact authored agent/tests bytes and has
+  the same cleartext privacy boundary as preview journals. Lifecycle records
+  retain no credentials or tool processes; each turn acquires fresh inference
+  access. Native
+  Windows persistence/list/stop remain deferred.
+  Stable `md-...` identity follows the canonical source; each worker generation
+  has an explicit random `li-...` instance identity, unique active runtime name,
+  event socket and process-held lock. Exact snapshots reuse. Drift requires an
+  explicit or terminal-confirmed upgrade, which starts/readies/promotes before
+  canceling and closing old sessions (no drain guarantee), or `--new` for a parallel named generation. Stable IDs
+  refuse ambiguous routing; Chat/stop/session routing accepts runtime names and
+  instance IDs. Never silently replace an active generation.
+  Preconfirmed live Orka `run --agent` may compact its target disclosure, but
+  still names action, context, selection source, server, namespace and posture
+  on stderr and keeps the result-authority notice. For remote targets, missing
+  preconfirmation retains the full guard presentation and exact typed terminal
+  consent. Without preconfirmation, nonterminal use refuses; exact
+  preconfirmation permits it, while mismatched confirmation refuses before Task creation.
+  Run input is flag-only: `-p, --prompt TEXT` or `--prompt-file FILE|-`; a second
+  positional argument is removed. Either input flag selects only that ad-hoc input
+  unless `--case` explicitly adds a saved example. Native Windows keeps
+  `--prompt-file` deferred.
 
 - Infrastructure and Orka commands live under `kmx cluster`; native workspace
   Test, publication, Deploy, destination inventory and artifact operations live
@@ -332,7 +385,17 @@ invalid review as clean.
   declared run of each ordered case. Optional KMX YAML runs/minPasses defaults
   to one run/all passes, bounded to 100 runs plus the offline receipt budget.
   Each run receives its own case-timeout budget, including judging/attribution;
-  repeat preflight states the summed run-time budget excluding placement.
+  repeat preflight states the summed run-time budget excluding placement. Full
+  execution remains the default. Standalone native Orka Test alone accepts
+  `--fail-fast`: after a completed attributable run, stop only when
+  `passes + remaining < minPasses`; equality remains reachable and there is no
+  early success. This diagnostic termination still performs candidate cleanup,
+  exits nonzero and creates no standalone receipt or managed proof. Cleanup
+  uncertainty, cancellation or output-finalization failure supersedes the
+  threshold-stop classification while retaining run counts and cleanup result.
+  File Test,
+  kagent, AgentSessions and composed Deploy refuse the option before operational
+  effects; hidden `eval` retains canonical `package test` flag parity.
   Any unknown vetoes the threshold. Only
   completed attributable assertion failures are countable; execution errors
   still abort. Orka abort reports count executed runs from returned nonempty
@@ -553,8 +616,10 @@ It is last controller-observed admission, not live availability or qualification
 
 ## Agent-file preview boundary
 
-Canonical `run FILE` / `test FILE` accept explicit `--tool-bindings FILE` as
-host-only input; no discovery or inbound-MCP binding selection. The production
+Canonical one-shot `run FILE --once` / `test FILE` accept explicit
+`--tool-bindings FILE` as host-only input; no discovery or inbound-MCP binding
+selection. Native Windows treats `run FILE` as one-shot because resident workers
+are unavailable. The production
 runner installs localtools.NewMCPHost: explicit env snapshot, no constructor
 network, lazy read-owned Streamable-HTTP session and one fixed GitHub search.
 Require exact repository_url and explicit merged_at, complete search and <=20
@@ -577,8 +642,9 @@ The internal localtools stdio owner accepts only resolved host launch inputs and
 explicit mapped names, using checked bounded pipes, frozen explicit env and owned
 Unix process-group cleanup. Callers must check Close before accepting completion
 and use the outer invocation context, not a resolver context canceled by Run.
-Only file CLI Run/Test consumes frozen folder mcpServers/liveToolServers and
-repeatable --mcp-server selection; --no-mcp-servers clears both saved/explicit
+Only one-shot file CLI Run/Test consumes frozen folder
+mcpServers/liveToolServers and repeatable --mcp-server selection;
+--no-mcp-servers clears both saved/explicit
 names, fixed --tool-bindings retains precedence. The default CLI wrapper owns
 lazy checked launch/config/env resolution and Close before App acceptance/save;
 no private CLI intent means the app/MCP factory remains unchanged. Disabled,
@@ -588,7 +654,7 @@ ambient baseline. Destination readers structurally validate then discard these
 two subtrees, keeping other operational decoding strict. Native Windows tools
 remain deferred; process groups are not containment.
 
-File CLI Run/Test also resolves declared Enabled `commandTools` from that folder:
+One-shot file CLI Run/Test also resolves declared Enabled `commandTools` from that folder:
 fixed absolute executable/argv, empty-object tool input, folder-confined working
 directory and frozen named environment references. MCP selection does not disable
 commands. Disabled and populated recorded tools do not resolve launches. Keep the
@@ -598,8 +664,9 @@ second each; uncertain cleanup withholds completion. Native Windows commands
 remain deferred. Unselected command entries receive only the shared structural
 YAML checks; their launch semantics cannot block a selected command or MCP tool.
 
-Canonical `run FILE` / `test FILE` use the parser and `agentpreview.Runner`
-interface without cluster/workspace configuration. CLI/MCP fake/local and explicit
+Canonical one-shot `run FILE --once` / `test FILE` use the parser and
+`agentpreview.Runner` interface without cluster/workspace configuration. Native
+Windows `run FILE` takes this one-shot path. CLI/MCP fake/local and explicit
 Copilot routes use embedded Sessions: optional ad-hoc input first, selected ordered
 examples, one invocation-owned private journal, and one fresh Session per agent
 turn and per judge sample. Preserve the shared two-sample scorer and exact mixed
@@ -635,8 +702,9 @@ File Run/Test `--verbose` is content-free stderr diagnostics only, never implici
 only validated local origins and standard endpoint paths may be shown. Failed
 diagnostic writes stop later sends and refuse a full pass.
 See [file preview](docs/kmx.md#agent-file-local-preview-unreleased-integration).
-CLI `run FILE` requests answer-only execution: selected inputs/mocks keep their
-order and one journal, but assertions and judge routes/access are skipped.
+CLI one-shot `run FILE --once`, including implicit native Windows one-shot Run,
+requests answer-only execution: selected inputs/mocks keep their order and one
+journal, but assertions and judge routes/access are skipped.
 Completed rows are ANSWERED with unknown verdict and never fullPass; journal,
 credential/content, completion attribution and tool/capture guards still apply.
 Test and default App/MCP preview callers retain assertion evaluation. The internal
@@ -770,9 +838,56 @@ roster and enriched charter on each operation/restart; never persist kmx mapping
 Failed validation shows **not set up by kmx**, never origin guessing or canonical
 fallback. Valid mapping is not authenticated origin, restored draft or prior pass.
 Edit replaces only Preferred/Task Instructions/Examples with source/parent CAS.
-Native preview is revision-bound and tool-free; fake consumes task-only directives,
-real routes retain native+task instructions excluding Examples. No package digest,
-team runtime or native Squad canvas actions. See [native authoring](docs/agent-file.md#internal-native-cast-and-enrich).
+Preserve untouched section bytes and avoid accumulating boundary blank lines.
+Native preview is revision-bound and tool-free; fake consumes shared-brief/task
+directives, while real routes retain native+task instructions excluding Examples.
+The initial Squad canvas uses a native adapter over the same operations.
+New teams start with an
+empty user-authored goal and reviewed Copilot proposals; ship no static Squad
+scenario presets or example actions. Its aggregate kmx://squad
+resource reconstructs the roster; a separate .squad/kmx-brief.md stores only shared
+context with revision-checked writes. Aggregate reads share one checked inventory
+and registry per request, never across requests; charters retain individual checked
+reads. Brief-conflict preflight is inside the creator gate, before native effects.
+Whole-proposal Create also requires an empty registry, roster and member footprint
+under that gate. Validate the qualified native role title before casting using
+its JavaScript catalog casing, preserving international literal roles; canvas
+specialists use matching literal role/display titles. Reject known credential
+patterns in shared briefs before persistence and again before preview.
+Native previews include that saved context
+and report its revision separately from member source revision. Preserve partial
+Create/brief-publication outcomes and session-only results. The canvas supplies
+both expectedRevision and expectedBriefRevision to native Run/Test; validate the
+pair before preview and use those snapshots. Omitting both retains legacy reads.
+Background observation stales changed member/brief results without dropping drafts.
+Failed native reads invalidate current-pass status in both the adapter and editor;
+valid reads restore editing, while only a fresh preview restores current results.
+Unconfirmed pure Run/Test replies allow explicit reload and a fresh preview, never
+automatic replay. Create/Edit uncertainty stays fenced, including an attempted
+edit followed by an unconfirmed preview.
+Native empty-test members remain editable; Test requires a nonempty test set.
+Retire pending suggestions after creation effects and retain acknowledged brief
+saves even when readback fails. Optional native Test
+run IDs bind progress and connection-scoped cancellation through the existing
+Test tool's squad-preview-cancel target. Cancellation starts no inference and
+does not abort the Copilot session; final Test state remains authoritative.
+The native canvas keeps newer prompt drafts when typing stops an active preview.
+This includes edits back to the original baseline while a newer save is in flight.
+Generated proposals are offered for explicit review before replacing a draft.
+Native team and test suggestions use the host's transient no-tools query, never
+an ordinary chat turn. Native Run target squad-proposal only checks and prepares
+authored inputs; it calls no model and writes no files. Scan decoded draft JSON
+strings, including nested values and keys, before encoding host-query input.
+The query follows the current chat model and context, with reviewed member
+preferences initialized from the model catalog; proposals are not execution/model
+attestation. Unsupported hosts refuse without a chat fallback. Test proposals
+bind and recheck member/brief revisions
+and remain unsaved drafts. Native member views hide the unsupported Tools section.
+Native Squad remains opt-in development packaging, not normal marketplace setup;
+never download a launcher or edit trusted startup configuration automatically.
+The experimental
+upstream SquadBackend/HarnessAdapter runtime contract is separate follow-up work,
+not a name for this authoring adapter. See [native authoring](docs/agent-file.md#internal-native-cast-and-enrich).
 
 ## Explicit native file tests
 
@@ -807,7 +922,10 @@ See [copilotd file tests](docs/local-preview.md#copilotd-file-tests).
 The additive companion-reader foundation lives in `internal/kmx/agentfile`:
 `ParseTests`, `DefaultTestsPath`, `ComposePair` and checked `LoadPair`. Parsed
 `Tests` retain existing assertions/mocks semantics and whole-file limits for
-schemaVersion 1 frontmatter and per-case `yaml agent-test` fences. The combined
+schemaVersion 1 frontmatter and per-case `yaml agent-test` fences. Only separate
+test fences accept optional bounded plain-text `title`; preserve it through edits
+and credential-safe result/JSONL labels, never as execution identity or prompt
+content. Untitled output and inline/Squad formats stay unchanged. The combined
 revision binds both source paths and revisions; `Agent.Revision` remains
 agent-only. `SameSourceVersion` also checks handle-derived file/directory identity
 and version metadata; even unrelated directory timestamp changes can invalidate
@@ -935,7 +1053,8 @@ authority.
 Native Windows support is prerelease-only and operation-specific. Current `main`
 on amd64 permits inert version/help/completion, package-free fake `run FILE` /
 `test FILE`, offline `test explain ... --file FILE`, and read-only remote
-`cluster orka list/show` with explicit `--context` and `--namespace`. Hidden
+`cluster orka list/show` and existing `cluster task result` with explicit
+`--context` and `--namespace`. Hidden
 `eval explain` may remain only as the deprecated compatibility spelling. File
 Run/Test may use inline `--prompt`, but provider, endpoint, tool-binding,
 prompt-file and GitHub-summary modes stay deferred. Orka inspection requires an
@@ -946,7 +1065,16 @@ their existing Unix kubectl-native contract, while native Windows list is
 table-only. Show resolves
 cross-namespace references exactly and withholds credential-bearing Provider
 diagnostics from every output; it names Secret references but fetches no Secret
-object and reports presence unknown. Published v0.9.0 release candidates beginning with
+object and reports presence unknown. Task Result uses one bounded in-memory
+ServiceAccount token and owned loopback-only forward; pending inspection opens
+none, cleanup errors withhold answers, and recovery uses PowerShell syntax. The
+selected plaintext Orka Service/backend remains a trusted runtime boundary: v0.3.0
+provides no backend TLS identity or result-token audience, so loopback is not
+in-cluster attestation. Disclose that namespace workload administrators can
+substitute the backend, capture the temporary reader token and forge an answer.
+Request ten minutes and refuse a materially longer granted lifetime.
+Live Run/Chat remain refused because Orka's current name-only Task AgentRef has no
+create-time Agent UID/generation precondition. Published v0.9.0 release candidates beginning with
 `v0.9.0-rc.4` retain the older day-zero-only boundary until a later release
 contains this exception.
 
@@ -960,7 +1088,7 @@ existing WSL Copilot plugin.
 
 Hosted Windows amd64 must build/vet all packages and execute the checkout CLI
 through version/help/completion, package-free fake Run/failing Test/offline
-Explain and compiled-kubectl list/show journeys with no skips. The exact staged
+Explain and compiled-kubectl list/show/Task Result journeys with no skips. The exact staged
 release `.exe` must additionally reach the checksum-verified native kubectl
 inspection boundary without state. Windows
 arm64 is cross-built, vetted, metadata-checked and checksummed only; make no
@@ -1158,6 +1286,8 @@ or build effects. Loose build staging refuses modes without owner file-read or
 directory read/search permissions before creating output, preserving declared modes.
 
 Run checks appropriate to the changed paths as described in CONTRIBUTING.md.
+The app-shard launcher fixes its Unix child umask at 0022 for ordinary fixtures;
+permission-specific subprocess tests still choose their own masks and modes.
 App CI runs all four process-isolated shards on Linux and macOS; both platforms
 gate hygiene and artifact names include OS/shard. The App test harness resolves
 the macOS temporary root before fixtures; retain production symlink refusals.

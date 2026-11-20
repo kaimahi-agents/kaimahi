@@ -83,7 +83,11 @@ func (a *App) modelServingGateway(ctx context.Context, root modelOwnedResource) 
 		}
 	}()
 	for {
-		if current, exists, err := a.readModelObject(ctx, OrkaNamespace, root); err != nil || !exists || current.Terminating {
+		current, exists, err := a.readModelObject(ctx, OrkaNamespace, root)
+		if err != nil {
+			return nil, fmt.Errorf("model gateway ownership unavailable: %w", err)
+		}
+		if !exists || current.Terminating {
 			return nil, fmt.Errorf("model gateway ownership unavailable")
 		}
 		kids, err := a.modelChildren(ctx, OrkaNamespace, root)
@@ -122,6 +126,23 @@ func (a *App) modelServingGateway(ctx context.Context, root modelOwnedResource) 
 			return nil, err
 		}
 	}
+}
+
+// CRI UIDs stay local to comparison, never output or retained state. Kubelet's
+// static-Pod FNV128 UID overlaps the credential detector's bare-hex key shape.
+func modelCRIUID(value string) bool {
+	if verificationIdentity(value) {
+		return true
+	}
+	if len(value) != 32 {
+		return false
+	}
+	for _, c := range value {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 // API disappearance is not process death after node loss or a forced deletion.
@@ -163,7 +184,7 @@ func (a *App) modelGatewayStopped(ctx context.Context, root modelOwnedResource, 
 			c := modelMap(value)
 			labels := modelMap(c["labels"])
 			uid := modelText(labels["io.kubernetes.pod.uid"])
-			if !verificationIdentity(uid) || !modelResourceName(modelText(labels["io.kubernetes.pod.namespace"])) || scaffold.ValidateObjectName(modelText(labels["io.kubernetes.pod.name"])) != nil {
+			if !modelCRIUID(uid) || !modelResourceName(modelText(labels["io.kubernetes.pod.namespace"])) || scaffold.ValidateObjectName(modelText(labels["io.kubernetes.pod.name"])) != nil {
 				return fmt.Errorf("model process identity unavailable")
 			}
 			switch c["state"] {
@@ -197,11 +218,15 @@ func (a *App) modelCheckGateway(ctx context.Context, connection OrkaModelConnect
 	if err != nil {
 		return nil, err
 	}
-	if err := a.modelHealth(ctx, connection); err != nil {
+	if err := a.modelHealth(ctx, connection, kids...); err != nil {
 		return nil, err
 	}
 	for _, r := range roots {
-		if current, present, e := a.readModelObject(ctx, OrkaNamespace, r); e != nil || !present || current.Terminating {
+		current, present, e := a.readModelObject(ctx, OrkaNamespace, r)
+		if e != nil {
+			return nil, fmt.Errorf("model ownership changed during readiness: %w", e)
+		}
+		if !present || current.Terminating {
 			return nil, fmt.Errorf("model ownership changed during readiness")
 		}
 	}
@@ -212,40 +237,86 @@ func (a *App) modelCheckGateway(ctx context.Context, connection OrkaModelConnect
 	return kids, nil
 }
 
-func (a *App) modelHealth(ctx context.Context, connection OrkaModelConnection) error {
+func (a *App) modelHealth(ctx context.Context, connection OrkaModelConnection, children ...modelChild) error {
 	path := "/api/v1/namespaces/orka-system/services/http:" + connection.Provider + "-vekil:1337/proxy/"
 	raw, err := a.orkaCapture(ctx, nil, "get", "--raw", path+"readyz")
 	if err != nil {
+		if connection.Route == "key" {
+			return a.modelKeyReadinessFailure(ctx, connection, children)
+		}
 		return fmt.Errorf("model authenticated readiness unavailable")
 	}
 	var ready map[string]any
 	if modelJSON(raw, &ready) != nil || ready["status"] != "ready" {
 		return fmt.Errorf("model authenticated readiness unavailable")
 	}
-	raw, err = a.orkaCapture(ctx, nil, "get", "--raw", path+"v1/models")
-	if err != nil {
-		return fmt.Errorf("model catalog unavailable")
+	catalogPath := path + "v1/models"
+	if connection.Vendor == "anthropic" {
+		catalogPath += "?limit=1000"
 	}
+	raw, err = a.orkaCapture(ctx, nil, "get", "--raw", catalogPath)
+	if err != nil {
+		return modelFailure("dependency_unavailable", err)
+	}
+	choices, err := modelCatalogChoices(raw)
+	if err != nil {
+		return modelFailure("dependency_unavailable", err)
+	}
+	for _, choice := range choices {
+		if choice.ID == connection.Model && (choice.PickerEnabled == nil || *choice.PickerEnabled) && (choice.ChatSupported == nil || *choice.ChatSupported) {
+			return nil
+		}
+	}
+	return &OrkaModelError{code: "model_unavailable", modelChoices: &choices}
+}
+
+// Validate the whole bounded catalog before returning any choices. Unknown
+// metadata is discarded; it can never replace the independently retained identity.
+func modelCatalogChoices(raw []byte) ([]OrkaModelChoice, error) {
 	var catalog map[string]any
-	if offlineJSON(raw, &catalog, false) != nil {
-		return fmt.Errorf("model catalog unavailable")
+	if len(raw) > 1<<20 || unambiguousJSON(raw, &catalog, false, 4096) != nil {
+		return nil, fmt.Errorf("model catalog unavailable")
 	}
 	data, ok := catalog["data"].([]any)
-	if !ok || len(data) == 0 || len(data) > 4096 {
-		return fmt.Errorf("model catalog unavailable")
+	if !ok || len(data) > 4096 {
+		return nil, fmt.Errorf("model catalog unavailable")
 	}
-	found := 0
-	for _, model := range data {
-		id := modelText(modelMap(model)["id"])
-		if !verificationIdentity(id) {
-			return fmt.Errorf("model catalog unavailable")
+	choices := make([]OrkaModelChoice, 0, len(data))
+	seen := make(map[string]bool, len(data))
+	for _, value := range data {
+		row := modelMap(value)
+		id := modelText(row["id"])
+		if !verificationIdentity(id) || seen[id] {
+			return nil, fmt.Errorf("model catalog unavailable")
 		}
-		if id == connection.Model {
-			found++
+		seen[id] = true
+		choice := OrkaModelChoice{ID: id}
+		if flag := row["model_picker_enabled"]; flag != nil {
+			b, ok := flag.(bool)
+			if !ok {
+				return nil, fmt.Errorf("model catalog unavailable")
+			}
+			choice.PickerEnabled = &b
 		}
+		if endpoints := row["supported_endpoints"]; endpoints != nil {
+			list, ok := endpoints.([]any)
+			if !ok || len(list) > 64 {
+				return nil, fmt.Errorf("model catalog unavailable")
+			}
+			chat := false
+			for _, endpoint := range list {
+				s, ok := endpoint.(string)
+				if !ok || len(s) > 4096 {
+					return nil, fmt.Errorf("model catalog unavailable")
+				}
+				switch s {
+				case "/chat/completions", "/v1/chat/completions", "/responses", "/v1/responses", "/v1/messages":
+					chat = true
+				}
+			}
+			choice.ChatSupported = &chat
+		}
+		choices = append(choices, choice)
 	}
-	if found != 1 {
-		return fmt.Errorf("selected model is not advertised")
-	}
-	return nil
+	return choices, nil
 }

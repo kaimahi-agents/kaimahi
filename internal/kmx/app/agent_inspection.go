@@ -14,10 +14,10 @@ import (
 
 const orkaHumanFieldLimit = 256
 
-// preflightOrkaInspection keeps the local kubectl probe bounded, cancellable
-// and private. Native Windows requires an operator-provided kubectl; existing
-// Unix tool provisioning remains unchanged.
-func (a *App) preflightOrkaInspection() error {
+// preflightOrkaRemote keeps the local kubectl probe bounded, cancellable and
+// private. Native Windows requires an operator-provided kubectl; existing Unix
+// tool provisioning remains unchanged.
+func (a *App) preflightOrkaRemote() error {
 	ctx := a.operationContext()
 	if err := ctx.Err(); err != nil {
 		return orkaCancelledRequest(err)

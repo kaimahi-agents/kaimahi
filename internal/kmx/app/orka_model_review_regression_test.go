@@ -81,8 +81,8 @@ func TestOrkaModelAmbiguousChildOwners(t *testing.T) {
 }
 
 func TestOrkaModelOperationSelector(t *testing.T) {
-	first, _ := modelDocuments("copilot", "gpt-4.1", "11111111-1111-4111-8111-111111111111", "amd64")
-	second, _ := modelDocuments("copilot", "gpt-4.1", "33333333-3333-4333-8333-333333333333", "amd64")
+	first, _ := modelDocuments("copilot", "gpt-4.1", "11111111-1111-4111-8111-111111111111", "amd64", "")
+	second, _ := modelDocuments("copilot", "gpt-4.1", "33333333-3333-4333-8333-333333333333", "amd64", "")
 	one := modelMap(modelMap(first[1]["spec"])["selector"])["matchLabels"]
 	two := modelMap(modelMap(second[1]["spec"])["selector"])["matchLabels"]
 	rawOne, _ := json.Marshal(one)

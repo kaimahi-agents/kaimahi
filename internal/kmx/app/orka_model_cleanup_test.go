@@ -38,7 +38,7 @@ func TestOrkaModelDelete(t *testing.T) {
 					fmt.Fprint(cmd.Stdout, `{"kind":"Status","apiVersion":"v1","status":"Success"}`)
 					return nil
 				}
-				if strings.Contains(args, "--ignore-not-found=true") {
+				if strings.Contains(args, "jsonpath={.metadata.uid}") {
 					fmt.Fprint(cmd.Stdout, "owned")
 					return nil
 				}

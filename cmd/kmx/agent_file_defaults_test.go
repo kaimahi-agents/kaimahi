@@ -39,7 +39,7 @@ func TestFileRunAnswerOnStdout(t *testing.T) {
 				deps, loads := testDependencies(&out, &diag)
 				runner := &answerPreviewRunner{cliPreviewFake: cliPreviewFake{verdict: runtime.EvaluationPass}, answer: answer}
 				deps.fileRunner = runner
-				args := []string{"run", cliPreviewFile(t), "Ada", "-o", format}
+				args := []string{"run", cliPreviewFile(t), "-p", "Ada", "-o", format}
 				if noContent {
 					args = append(args, "--no-content")
 				}
@@ -194,7 +194,7 @@ func TestFileFullAnswerWithholdsUnsafeTail(t *testing.T) {
 		var out, diag bytes.Buffer
 		deps, _ := testDependencies(&out, &diag)
 		deps.fileRunner = &answerPreviewRunner{cliPreviewFake: cliPreviewFake{verdict: runtime.EvaluationPass}, answer: answer}
-		if err := execute([]string{"run", cliPreviewFile(t), "Ada", "-o", "json"}, deps); err != nil {
+		if err := execute([]string{"run", cliPreviewFile(t), "--prompt", "Ada", "-o", "json"}, deps); err != nil {
 			t.Fatal(err)
 		}
 		var result struct{ AdHoc struct{ Answer *string } }
@@ -245,12 +245,12 @@ func TestFileCouldNotRunExitTwo(t *testing.T) {
 	}
 }
 
-func TestFilePositionalInputHonorsExplicitCase(t *testing.T) {
+func TestFilePromptInputHonorsExplicitCase(t *testing.T) {
 	var out, diag bytes.Buffer
 	deps, _ := testDependencies(&out, &diag)
 	runner := &answerPreviewRunner{cliPreviewFake: cliPreviewFake{verdict: runtime.EvaluationPass}, answer: "Hello, Ada"}
 	deps.fileRunner = runner
-	if err := execute([]string{"run", cliPreviewFile(t), "Ada", "--case", "greeting"}, deps); err != nil {
+	if err := execute([]string{"run", cliPreviewFile(t), "-p", "Ada", "--case", "greeting"}, deps); err != nil {
 		t.Fatal(err)
 	}
 	if len(runner.request.Examples) != 1 || runner.request.Examples[0].ID != "greeting" || out.String() != "Hello, Ada\n" {

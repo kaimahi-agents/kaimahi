@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/portforward"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
@@ -373,6 +374,41 @@ func TestSuiteRepeatFailedNativeTaskStillAborts(t *testing.T) {
 	}
 }
 
+func TestSuiteRepeatCleanupFailureInvalidatesCountableFailure(t *testing.T) {
+	a, placement, _, f := nativeEvaluationFixture(t)
+	frames := repeatDriverFrames(t, "runs: 2\nminPasses: 1\n")
+	calls := 0
+	a.resultSessionCleanup = func() error {
+		if calls == 1 {
+			return errors.Join(errors.New(nativeCanary), portforward.ErrCleanupUnconfirmed)
+		}
+		return nil
+	}
+	var first suitePassingObservation
+	observations, err := evaluateSuiteRuns(t.Context(), frames, 30*time.Second, io.Discard, func(ctx context.Context, frame suitePassingInventoryCase) (suitePassingObservation, error) {
+		calls++
+		if calls == 1 {
+			f.answers[frame.Case.Input] = "wrong"
+		} else {
+			f.answers[frame.Case.Input] = "answer"
+		}
+		observed, runErr := a.evaluateSuiteNative(ctx, placement, frame, f.opt.ResultPort, nil)
+		if calls == 1 {
+			first = observed
+		}
+		return observed, runErr
+	})
+	if observations != nil || calls != 1 || !errors.Is(err, errSuiteNativeEvaluation) || !errors.Is(err, portforward.ErrCleanupUnconfirmed) || errors.Is(err, errSuiteNativeCaseFailed) {
+		t.Fatalf("cleanup uncertainty remained countable: observations=%+v calls=%d err=%v", observations, calls, err)
+	}
+	if first.Verdict != agentruntime.EvaluationUnknown || !first.Stop || first.AnswerSHA256 != "" || first.Assertions != nil {
+		t.Fatalf("cleanup uncertainty retained attributed evidence: %+v", first)
+	}
+	if strings.Contains(err.Error(), nativeCanary) {
+		t.Fatal("cleanup failure disclosed private detail")
+	}
+}
+
 // Fixed candidate answers isolate the threshold from both sampling and judging.
 func TestSuiteRepeatFiveRunThresholdPatterns(t *testing.T) {
 	for _, tc := range []struct {
@@ -405,6 +441,82 @@ func TestSuiteRepeatFiveRunThresholdPatterns(t *testing.T) {
 				}
 			} else if !errors.Is(err, errSuiteNativeCaseFailed) {
 				t.Fatalf("3/5 must fail threshold: %v", err)
+			}
+		})
+	}
+}
+
+func TestSuiteRunDriverFailFastThresholdUnreachable(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		failFast         bool
+		pattern          []agentruntime.EvaluationVerdict
+		wantCalls        int
+		wantPasses       int
+		wantUnreachable  bool
+		wantAbort        bool
+		wantErr          error
+		wantObservations int
+		cancelAt         int
+		wantCanceled     bool
+		operationalError int
+	}{
+		{name: "default completes", pattern: []agentruntime.EvaluationVerdict{agentruntime.EvaluationFail, agentruntime.EvaluationFail, agentruntime.EvaluationPass}, wantCalls: 3, wantPasses: 1, wantErr: errSuiteNativeCaseFailed},
+		{name: "unreachable stops", failFast: true, pattern: []agentruntime.EvaluationVerdict{agentruntime.EvaluationFail, agentruntime.EvaluationFail, agentruntime.EvaluationPass}, wantCalls: 2, wantUnreachable: true, wantErr: errSuiteNativeCaseFailed},
+		{name: "equality remains reachable", failFast: true, pattern: []agentruntime.EvaluationVerdict{agentruntime.EvaluationFail, agentruntime.EvaluationPass, agentruntime.EvaluationPass}, wantCalls: 3, wantPasses: 2, wantObservations: 3},
+		{name: "no early success", failFast: true, pattern: []agentruntime.EvaluationVerdict{agentruntime.EvaluationPass, agentruntime.EvaluationPass, agentruntime.EvaluationFail}, wantCalls: 3, wantPasses: 2, wantObservations: 3},
+		{name: "final run miss is complete", failFast: true, pattern: []agentruntime.EvaluationVerdict{agentruntime.EvaluationPass, agentruntime.EvaluationFail, agentruntime.EvaluationFail}, wantCalls: 3, wantPasses: 1, wantErr: errSuiteNativeCaseFailed},
+		{name: "unknown takes precedence", failFast: true, pattern: []agentruntime.EvaluationVerdict{agentruntime.EvaluationFail, agentruntime.EvaluationUnknown, agentruntime.EvaluationPass}, wantCalls: 2, wantAbort: true, wantErr: errSuiteNativeEvaluation},
+		{name: "operational error takes precedence", failFast: true, pattern: []agentruntime.EvaluationVerdict{agentruntime.EvaluationFail, agentruntime.EvaluationFail, agentruntime.EvaluationPass}, wantCalls: 2, wantAbort: true, wantErr: errSuiteNativeEvaluation, operationalError: 2},
+		{name: "cancellation takes precedence", failFast: true, pattern: []agentruntime.EvaluationVerdict{agentruntime.EvaluationFail, agentruntime.EvaluationFail, agentruntime.EvaluationPass}, wantCalls: 2, wantAbort: true, wantErr: errSuiteNativeEvaluation, cancelAt: 2, wantCanceled: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			frames := repeatDriverFrames(t, "runs: 3\nminPasses: 2\n")
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			calls := 0
+			var out bytes.Buffer
+			summary := suiteRunSummary{}
+			observations, err := evaluateSuiteRunsReportingMode(ctx, frames, time.Minute, &out, func(_ context.Context, frame suitePassingInventoryCase) (suitePassingObservation, error) {
+				verdict := tc.pattern[calls]
+				calls++
+				answer := "answer"
+				if verdict == agentruntime.EvaluationFail {
+					answer = "wrong"
+				}
+				assertions := agentruntime.EvaluateAssertions(frame.Case, agentruntime.EvaluationEvidence{Answer: answer, AnswerAvailable: true})
+				if verdict == agentruntime.EvaluationUnknown {
+					assertions[0].Verdict = agentruntime.EvaluationUnknown
+				}
+				observed := suitePassingObservation{EvaluationReceipt: agentruntime.EvaluationReceipt{CaseID: frame.Case.ID, TaskUID: fmt.Sprintf("task-%d", calls), AnswerSHA256: agentruntime.EvaluationAnswerDigest(answer), Assertions: assertions}}
+				if calls == tc.cancelAt {
+					cancel()
+				}
+				if calls == tc.operationalError {
+					return observed, errSuiteNativeEvaluation
+				}
+				if verdict == agentruntime.EvaluationFail {
+					return observed, errSuiteNativeCaseFailed
+				}
+				return observed, nil
+			}, &summary, tc.failFast)
+			if calls != tc.wantCalls || summary.Executed != tc.wantCalls || summary.NotExecuted != 3-tc.wantCalls || summary.Passed != tc.wantPasses || summary.ThresholdUnreachable != tc.wantUnreachable || summary.Aborted != tc.wantAbort {
+				t.Fatalf("calls=%d summary=%+v err=%v", calls, summary, err)
+			}
+			if tc.wantErr == nil && err != nil || tc.wantErr != nil && !errors.Is(err, tc.wantErr) {
+				t.Fatalf("error=%v, want %v", err, tc.wantErr)
+			}
+			if errors.Is(err, context.Canceled) != tc.wantCanceled {
+				t.Fatalf("cancellation classification=%v, want %t", err, tc.wantCanceled)
+			}
+			if len(observations) != tc.wantObservations {
+				t.Fatalf("observations=%d, want %d", len(observations), tc.wantObservations)
+			}
+			if tc.wantUnreachable && (!strings.Contains(summary.String(), "threshold is unreachable") || strings.Contains(summary.String(), "aborted")) {
+				t.Fatalf("misclassified fail-fast summary: %s", summary.String())
+			}
+			if tc.wantUnreachable && (!strings.Contains(out.String(), "first run 1/3: fail") || !strings.Contains(out.String(), "first run 2/3: fail") || strings.Contains(out.String(), "run 3/3")) {
+				t.Fatalf("fail-fast run output did not match execution: %q", out.String())
 			}
 		})
 	}

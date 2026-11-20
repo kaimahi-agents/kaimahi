@@ -202,7 +202,7 @@ func TestFolderTestSummaryPrivacyAndBound(t *testing.T) {
 	cmd := newAgentTestCommand(state)
 	cmd.SetContext(t.Context())
 	cmd.SetErr(&diag)
-	result, _ := previewFileCommand(cmd, state, file, fileCommandOptions{}, "", "", nil)
+	result, _ := previewFileCommand(cmd, state, file, nil, fileCommandOptions{}, "", "", nil)
 	markdown.Reset()
 	summary := folderSummaryWriter{out: &markdown}
 	if err := summary.start(); err != nil {

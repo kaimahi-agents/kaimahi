@@ -11,6 +11,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
 type MachineIdentity struct {
@@ -32,6 +33,7 @@ type MachineCalls struct {
 type MachineFileCase struct {
 	CaseIndex  int             `json:"caseIndex"`
 	CaseID     string          `json:"caseId,omitempty"`
+	Title      string          `json:"title,omitempty"`
 	State      string          `json:"state"`
 	Verdict    string          `json:"verdict"`
 	DurationMs *int64          `json:"durationMs"`
@@ -51,6 +53,7 @@ type MachineFileProgress struct {
 	Status    string           `json:"status,omitempty"`
 	CaseIndex int              `json:"caseIndex,omitempty"`
 	CaseID    string           `json:"caseId,omitempty"`
+	Title     string           `json:"title,omitempty"`
 	Session   *MachineIdentity `json:"session,omitempty"`
 	Chat      *MachineIdentity `json:"chat,omitempty"`
 	Turn      *MachineIdentity `json:"turn,omitempty"`
@@ -85,7 +88,7 @@ type MachineFileObserver struct {
 	emit                             func(MachineFileProgress) error
 	check                            func(...string) error
 	runner                           string
-	ids                              []string
+	ids, titles                      []string
 	revision, snapshot               string
 	route                            modelaccess.Route
 	cases                            []machineCaseState
@@ -102,6 +105,7 @@ func (m *MachineFileObserver) bind(selected []agentfile.Example, rev, snapshot s
 	m.revision, m.snapshot, m.route = rev, snapshot, route
 	for i, ex := range selected {
 		m.ids = append(m.ids, ex.ID)
+		m.titles = append(m.titles, ex.Title)
 		unavailable := MachineIdentity{Availability: "unavailable"}
 		m.cases = append(m.cases, machineCaseState{row: MachineFileCase{CaseIndex: i + 1, State: "not_started", Verdict: "unknown", Session: unavailable, Chat: unavailable, Turn: unavailable, Task: unavailable, Calls: MachineCalls{Availability: "unavailable", Reason: "not_reported"}, Usage: MachineUsage{Availability: "unavailable", Reason: "not_reported"}, JudgeUsage: MachineUsage{Availability: "unavailable", Reason: "not_reported"}}, calls: map[int]string{}})
 	}
@@ -132,6 +136,16 @@ func (m *MachineFileObserver) checkedIdentity(raw string, chat bool) MachineIden
 	}
 	return MachineIdentity{Availability: "available", ID: raw}
 }
+
+// Titles are authored labels, never runtime identities. Use the same frozen
+// credential checker, and never publish a title without its checked case id.
+func (m *MachineFileObserver) title(raw, id string) string {
+	if id == "" || m.check == nil || !agentfile.ValidTestTitle(raw) || secretshapes.Match(raw) != nil || m.check(raw) != nil {
+		return ""
+	}
+	return raw
+}
+
 func (m *MachineFileObserver) stage(stage, status string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -150,6 +164,7 @@ func (m *MachineFileObserver) publish(p MachineFileProgress) error {
 		return m.failure
 	}
 	p.CaseID = m.identity(p.CaseID).ID
+	p.Title = m.title(p.Title, p.CaseID)
 	for _, field := range []**MachineIdentity{&p.Session, &p.Turn} {
 		if *field != nil {
 			v := m.identity((*field).ID)
@@ -172,6 +187,7 @@ func (m *MachineFileObserver) ready(check func(...string) error) error {
 	m.prepared = true
 	for i := range m.cases {
 		m.cases[i].row.CaseID = m.identity(m.ids[i]).ID
+		m.cases[i].row.Title = m.title(m.titles[i], m.cases[i].row.CaseID)
 	}
 	if err := m.publish(MachineFileProgress{Event: "stage.finished", Stage: "preflight", Status: "complete"}); err != nil {
 		return err
@@ -203,7 +219,7 @@ func (m *MachineFileObserver) observed(o agentpreview.Observation) error {
 	} else if o.CaseIndex != m.current || c.finished {
 		return nil
 	}
-	p := MachineFileProgress{Event: o.Event, CaseIndex: o.CaseIndex, CaseID: c.row.CaseID}
+	p := MachineFileProgress{Event: o.Event, CaseIndex: o.CaseIndex, CaseID: c.row.CaseID, Title: c.row.Title}
 	switch o.Event {
 	case "case.started":
 	case "session.observed":
@@ -266,7 +282,7 @@ func (m *MachineFileObserver) finished(p FilePreviewCaseProgress) {
 	c := &m.cases[m.current-1]
 	c.finished = true
 	c.row.Verdict = string(p.Verdict)
-	_ = m.publish(MachineFileProgress{Event: "case.finished", CaseIndex: m.current, CaseID: c.row.CaseID}) // shared writer latches/cancels
+	_ = m.publish(MachineFileProgress{Event: "case.finished", CaseIndex: m.current, CaseID: c.row.CaseID, Title: c.row.Title}) // shared writer latches/cancels
 }
 
 // Sent is conservative even if a credential veto erased Native. Other fields
@@ -378,7 +394,7 @@ func (m *MachineFileObserver) Final(r FilePreviewResult) MachineFileProjection {
 			}
 		}
 		if redacted {
-			c.row.CaseID = ""
+			c.row.CaseID, c.row.Title = "", ""
 			c.row.Session = MachineIdentity{Availability: "unavailable"}
 			c.row.Chat = c.row.Session
 			c.row.Turn = c.row.Session
@@ -388,6 +404,7 @@ func (m *MachineFileObserver) Final(r FilePreviewResult) MachineFileProjection {
 			allTerminal = false
 		}
 		c.row.CaseID = m.identity(c.row.CaseID).ID
+		c.row.Title = m.title(c.row.Title, c.row.CaseID)
 		c.row.Session = m.identity(c.row.Session.ID)
 		c.row.Chat = m.chatIdentity(c.row.Chat.ID)
 		c.row.Turn = m.identity(c.row.Turn.ID)

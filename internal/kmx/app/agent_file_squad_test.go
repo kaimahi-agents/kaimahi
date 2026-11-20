@@ -59,6 +59,24 @@ func TestNativeSquadPreviewJournaledFakeTask(t *testing.T) {
 		t.Fatalf("production fake adapter did not consume native task: %+v %v", got, err)
 	}
 }
+
+func TestNativeSquadPreviewIncludesSharedBriefOnce(t *testing.T) {
+	d := nativePreviewFixture(t, "Hello")
+	runner := &scriptedPreview{verdict: runtime.EvaluationPass}
+	a := &App{FileRunner: runner}
+	brief := "Preserve every offline edit when reconnecting."
+	_, err := a.PreviewSquadSnapshot(t.Context(), d, FilePreviewOptions{File: ".squad/agents/leader/charter.md", Operation: "test", SquadBrief: brief})
+	if err != nil || runner.calls != 1 {
+		t.Fatal("preview failed", err)
+	}
+	got := runner.request.Agent
+	if strings.Count(got.Instructions, brief) != 1 || strings.Count(got.Instructions, d.TaskInstructions) != 1 || strings.Contains(got.Instructions, "## Examples") {
+		t.Fatal("shared context was omitted, duplicated, or mixed with tests")
+	}
+	if got.Revision != d.Revision {
+		t.Fatal("brief changed the member source revision")
+	}
+}
 func TestNativeSquadPreviewTaskOnlyFakeAndRevision(t *testing.T) {
 	a := &App{FileRunner: NewDirectFileRunner()}
 	for _, tc := range []struct {

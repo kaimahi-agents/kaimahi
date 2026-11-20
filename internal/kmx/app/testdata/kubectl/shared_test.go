@@ -44,7 +44,8 @@ func executableRequest(handler func(protocol.Request) error) {
 }
 
 func TestMain(m *testing.M) {
-	if os.Getenv("KMX_KUBECTL_FIXTURE_MODE") == "inspect" {
+	switch os.Getenv("KMX_KUBECTL_FIXTURE_MODE") {
+	case "inspect":
 		err := inspect(protocol.Request{Context: context.Background(), Args: os.Args[1:], Getenv: os.Getenv, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr})
 		if err != nil {
 			var status *protocol.ExitError
@@ -54,6 +55,10 @@ func TestMain(m *testing.M) {
 			os.Exit(2)
 		}
 		os.Exit(0)
+	case "evaluate":
+		os.Args = append([]string{os.Args[0], "--"}, os.Args[1:]...)
+		TestEvalKubectlHelper(nil)
+		os.Exit(2)
 	}
 	os.Exit(m.Run())
 }

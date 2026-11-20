@@ -176,6 +176,12 @@ func (m *machineOutput) finishSetup(err error) error {
 	var safe *app.MachineError
 	if err != nil {
 		safe = app.NewMachineError(code, m.setup.stage)
+		if code == "execution_unknown" && (m.operation == "cluster.orka.model.connect" || m.operation == "cluster.orka.model.disconnect") {
+			var classified interface{ DiagnosticReason() string }
+			if errors.As(err, &classified) {
+				safe = safe.WithReason(classified.DiagnosticReason())
+			}
+		}
 	}
 	if !m.setup.preflight {
 		if e := m.beginPreflight(); e != nil {
@@ -316,7 +322,7 @@ func provisioningJSONInvocation(argv []string) string {
 			continue
 		}
 		switch {
-		case name == "--namespace" || name == "-n" || name == "--connection" || name == "--credential-generation" || name == "--route" || name == "--credential-mount" || name == "--step" || name == "--offline-bundle" || name == "--provider" || name == "--model" || name == "--model-url":
+		case name == "--namespace" || name == "-n" || name == "--connection" || name == "--credential-generation" || name == "--route" || name == "--vendor" || name == "--credential-mount" || name == "--step" || name == "--offline-bundle" || name == "--provider" || name == "--model" || name == "--model-url":
 			if !inline {
 				i++
 			}

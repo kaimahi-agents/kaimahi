@@ -29,3 +29,18 @@ func TestFakeBoundToolFollowupCompletes(t *testing.T) {
 		t.Fatalf("unoffered name selected: %q %v", final.Message.Text(), err)
 	}
 }
+
+func TestFakeBoundToolFollowupUsesOriginalUserInput(t *testing.T) {
+	client := newModelClient(route{model: FakeModel, baseURL: "http://fake.invalid", transport: fakeTransport{}})
+	request := api.ModelRequest{Model: FakeModel, Tools: []api.ToolDefinition{localtools.Definition()}, Messages: []api.Message{*api.TextMessage("system", "Call the tool `github_list_merged_prs`. Reply with exactly `hello ` followed by the input."), *api.TextMessage("user", "Ada")}}
+	first, err := client.ToolModel(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := first.Message.Parts[0].ToolCall
+	request.Messages = append(request.Messages, first.Message, api.Message{Role: "tool", Parts: []api.Part{{ToolResult: &api.ToolResult{ID: call.ID, Output: map[string]any{"name": "wrong"}}}}})
+	final, err := client.ToolModel(context.Background(), request)
+	if err != nil || !strings.Contains(final.Message.Text(), "Ada") || strings.Contains(final.Message.Text(), "wrong") {
+		t.Fatalf("follow-up = %q, %v", final.Message.Text(), err)
+	}
+}

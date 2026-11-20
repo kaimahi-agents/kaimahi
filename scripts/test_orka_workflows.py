@@ -187,6 +187,7 @@ if name == 'helm' and 'get' in args:
         self.assertIn('Get-Partition -DriveLetter', windows_body)
         self.assertIn('windows-cli-day-zero.ps1', windows_body)
         self.assertIn('windows-orka-inspection.ps1', windows_body)
+        self.assertIn('windows-orka-task-result.ps1', windows_body)
         self.assertIn('kubectl.exe.sha256', windows_body)
         self.assertIn('ProtocolFixtureMode:$false', windows_body)
         inspection = (ROOT / 'scripts/ci/windows-orka-inspection.ps1').read_text()
@@ -202,7 +203,31 @@ if name == 'helm' and 'get' in args:
         remote_step = next(step for step in windows['steps']
                            if 'windows-orka-inspection.ps1' in step.get('run', ''))
         self.assertEqual(remote_step['env']['KUBECTL_SHA256'],
-                         '4721b614a67bb4932a0369e61f4a323d8c6ca00943d3a2ff14837c124da06f0e')
+                          '4721b614a67bb4932a0369e61f4a323d8c6ca00943d3a2ff14837c124da06f0e')
+        result_step = next(step for step in windows['steps']
+                           if 'windows-orka-task-result.ps1' in step.get('run', ''))
+        self.assertEqual(result_step['env']['KUBECTL_FIXTURE'],
+                         '${{ runner.temp }}/checked-release/kmx-windows-kubectl-fixture.exe')
+        self.assertNotIn('if', result_step)
+        self.assertNotIn('continue-on-error', result_step)
+        self.assertEqual(result_step['run'].strip(), """$ErrorActionPreference = 'Stop'
+$output = @(./scripts/ci/windows-orka-task-result.ps1 -Binary $env:WINDOWS_BINARY -Kubectl $env:KUBECTL_FIXTURE 2>&1)
+$output | Write-Output
+if (@($output | Where-Object { $_ -ceq 'Native Windows amd64 Orka Task Result qualification passed.' }).Count -ne 1) {
+  throw 'Task Result qualification did not emit its exact completion marker.'
+}""")
+        result_helper = (ROOT / 'scripts/ci/windows-orka-task-result.ps1').read_text()
+        for contract in ('ReadLineAsync()', 'Assert-ExactArgs -Call $tokenCalls[0]',
+                         'Assert-ExactArgs -Call $forwardCalls[0]',
+                         'Task Result created or resent a Kubernetes resource',
+                         'foreach ($name in $fixtureControls)'):
+            self.assertIn(contract, result_helper)
+        fixture_step = next(step for step in jobs['release']['steps']
+                            if step.get('name') == 'Build native Windows Task Result qualification fixture')
+        self.assertIn('GOOS=windows GOARCH=amd64', fixture_step['run'])
+        upload = next(step for step in jobs['release']['steps']
+                      if str(step.get('uses', '')).startswith('actions/upload-artifact@'))
+        self.assertIn('${{ runner.temp }}/kmx-windows-kubectl-fixture.exe', upload['with']['path'])
         self.assertIn("$ErrorActionPreference = 'Stop'", windows_body)
         helper_step = next(step for step in windows['steps']
                            if 'windows-cli-day-zero.ps1' in step.get('run', ''))
@@ -277,7 +302,7 @@ if name == 'helm' and 'get' in args:
                 notes_text = notes.read_text()
                 self.assertEqual(notes_text.count('Runtime qualification:'), 1 if expected == 0 else 0)
                 if expected == 0:
-                    self.assertIn('Native Windows qualification covers amd64 day-zero Run/Test/offline Explain', notes_text)
+                    self.assertIn('Native Windows qualification covers amd64 day-zero Run/Test/offline Explain plus explicit-target Orka inspection and existing Task Result', notes_text)
                     self.assertIn('Windows arm64 is checksum, metadata and cross-build evidence only', notes_text)
                 if expected:
                     self.assertIn('CHANGELOG.md has no section', result.stderr)

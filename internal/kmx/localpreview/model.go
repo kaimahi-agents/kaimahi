@@ -54,6 +54,38 @@ type chatMessage struct {
 	Content string `json:"content"`
 }
 
+// ConversationMessage is one retained text message for a resident local agent.
+// Credentials and provider continuation state are never represented here.
+type ConversationMessage struct {
+	Role, Content string
+}
+
+// SendConversation sends one bounded text-only turn through an already validated
+// provider-owned transport. It performs no retries and returns one assistant text.
+func SendConversation(ctx context.Context, provider, model, baseURL string, transport http.RoundTripper, instructions string, history []ConversationMessage, input string, check func(...string) error) (string, error) {
+	if provider == "fake" && model == FakeModel && transport == nil {
+		baseURL, transport = fakeBaseURL, fakeTransport{}
+	}
+	messages := []api.Message{*api.TextMessage("system", instructions)}
+	for _, message := range history {
+		if message.Role != "user" && message.Role != "assistant" {
+			return "", refuse(RefusedRequest, "conversation history has an unsupported role", "start a new local session")
+		}
+		messages = append(messages, *api.TextMessage(message.Role, message.Content))
+	}
+	messages = append(messages, *api.TextMessage("user", input))
+	client := newModelClient(route{model: model, baseURL: strings.TrimSuffix(baseURL, "/"), transport: transport, safeErrors: provider != "fake"})
+	client.check = check
+	reply, err := client.Model(ctx, api.ModelRequest{Model: model, Messages: messages})
+	if err != nil {
+		return "", err
+	}
+	if len(reply.Message.Parts) != 1 || reply.Message.Parts[0].Text == nil {
+		return "", refuse(RefusedMalformed, "the model returned non-text content", "start a new session or select another model")
+	}
+	return reply.Message.Parts[0].Text.Text, nil
+}
+
 type chatRequest struct {
 	Model    string        `json:"model"`
 	Messages []chatMessage `json:"messages"`

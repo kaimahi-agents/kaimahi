@@ -87,7 +87,8 @@ tests do not enable these model/provider routes in the narrow Windows CLI.
 On Windows, the install methods in this section are WSL routes for the full CLI;
 run them inside the Linux distribution. Current `main` separately supports a
 **prerelease-only, narrow** [native Windows CLI](windows.md): the day-zero
-commands plus amd64 read-only Orka list/show with explicit context and namespace.
+commands plus amd64 explicit-target Orka list/show and existing Task Result with
+explicit context and namespace.
 Published v0.9.0 release candidates beginning with `v0.9.0-rc.4` retain the
 day-zero-only boundary until a later containing release. Stable v0.8.1 and
 `@latest` have no Windows `.exe`. Do not use Homebrew,
@@ -155,7 +156,7 @@ cluster, so a silent switch can target the wrong one.
 
 ## Commands
 
-Root help leads with `create`, `run`, `test`, `chat`, `model`, then `package`,
+Root help leads with `create`, `run`, `test`, `list`, `chat`, `model`, then `package`,
 `cluster` and `version`. `kmx mcp`, `kmx completion` and `kmx help` still work;
 they are not root help entries. Command help uses concise descriptions and
 examples; file Run/Test/Explain link to the single
@@ -202,15 +203,38 @@ Failures exit 1; unknown or incomplete sets exit 2. It never falls back to nativ
 workspace evaluation (`kmx package test`).
 
 `kmx run FILE` and `kmx test FILE` select one canonical markdown agent file,
-without workspace discovery, cluster configuration, Docker or a daemon. The
+without workspace discovery, cluster configuration or Docker. Ordinary Run/Test
+use no cluster or Docker. By default Run starts/reuses a resident local process;
+its stable source ID is `md-...` and each worker generation has a random
+`li-...` instance ID and unique runtime name. Exact snapshots reuse without a
+prompt. Drift requires `--upgrade` (and `--yes` for noninteractive confirmation)
+or `--new --name NAME`; upgrade readies and promotes the replacement before
+closing old sessions. `list` reports agent ID, instance ID, generation and name.
+`--once` performs invocation-owned preview. Local Chat creates/resumes sessions,
+`kmx list` shows process/readiness/session state, an explicit global `--context`
+selects Orka inventory, and `kmx stop NAME_OR_ID` ends a resident worker. The
 shared [tests-file rule](agent-file.md#tests-in-a-separate-file-reader-only) selects
 the companion by default; `--tests FILE` overrides it for one agent. Missing or
 empty tests do not pass Test, and bare `--tests`/`--case` require an agent FILE.
-Without input, Run prints each saved example's answer in authored order;
-`kmx run FILE "input"` previews only that input. Test checks the file's saved
-examples in authored order and accepts no ad-hoc input. Legacy Run flags
-`--prompt TEXT` and `--prompt-file FILE|-` still run a separately attributed
-ad-hoc input followed by the saved examples.
+`kmx test FILE --check` validates the selected pair and emits metadata without
+provider, model, tool, journal or history access. Test never targets an instance;
+it always evaluates current checked source.
+
+Resident Run also supports discovered Ollama/Foundry Local models and explicit
+compatible, OpenAI, or Anthropic endpoints. `--provider-key-env NAME` references
+an environment credential; `--model-profile FILE` binds an exact route to declared
+capabilities. `modelRequirements` frontmatter and `--require-context`,
+`--require-output`, `--require-reasoning` selectors require a matching capability
+mapping. `kmx model match PROFILE` checks a mapping offline and emits JSON;
+unknown requirements refuse selection. See [resident model selection](resident-models.md)
+for profiles, protocol support, credential rotation and the preview boundary.
+
+Without input, resident Run starts/reuses the agent and sends no turn;
+`kmx run FILE --prompt "input"` creates a resident session and sends that input. Test checks
+the file's saved examples in authored order and accepts no ad-hoc input. Use
+`kmx run FILE --once` for one-shot behavior: no input runs saved examples, while
+`-p, --prompt` or `--prompt-file` runs only that input unless `--case` explicitly
+selects a saved example too.
 Input is bounded to 16 KiB. The five-minute preview execution deadline starts
 after prompt collection. Ctrl-C/SIGTERM retain their default behavior during
 intake, including when a pipe's writer stays open without EOF; no background
@@ -246,9 +270,10 @@ names to the joined session's actual MCP tools without a binding file; see
 declarations and [folder test settings](#folder-tool-settings) separately.
 The opt-in hosted smoke uses a scripted model, not real-LLM qualification.
 
-File mode uses embedded Sessions for fake/local and explicit Copilot routes,
-with one fresh Session per ad-hoc input, example and judge sample, and one private
-SQLite journal for the invocation.
+One-shot file mode (`run FILE --once`, all file Test, and native Windows Run) uses
+embedded Sessions for fake/local and explicit Copilot routes, with one fresh
+Session per ad-hoc input, example and judge sample, and one private SQLite journal
+for the invocation.
 Optional ad-hoc input runs first, followed by only the selected examples in order.
 Each turn has a two-minute deadline, including judging, within the five-minute
 overall budget. Execution errors stop later sends. Journal close failure prevents
@@ -295,7 +320,7 @@ cleartext, including reasoning. Neither previews nor replay produce native
 evaluation evidence.
 
 ```text
-kmx run ./greeter.agent.md "Ada"
+kmx run ./greeter.agent.md --prompt "Ada"
 kmx test ./greeter.agent.md --case greeting -o json
 kmx test ./greeter.agent.md
 ```
@@ -315,7 +340,7 @@ excerpts are shown by default; `--no-content` omits them and failure operands. A
 write stops later sends and cannot report a full pass.
 
 ```text
-kmx run ./greeter.agent.md "Ada" --provider ollama --provider-url http://127.0.0.1:11434/v1 --verbose
+kmx run ./greeter.agent.md --once --prompt "Ada" --provider ollama --provider-url http://127.0.0.1:11434/v1 --verbose
 ```
 
 For this Ollama example, first set `Model.Preferred` in your own copy of the
@@ -327,7 +352,7 @@ for users without gh:
 
 ```bash
 kmx model list --provider copilot
-kmx run ./greeter.agent.md "Ada"
+kmx run ./greeter.agent.md --prompt "Ada"
 kmx test ./greeter.agent.md
 ```
 
@@ -360,10 +385,11 @@ file Judge without `judgeModel` follows that route; conflicting authored pins st
 refuse rather than silently switching. `judgeVersion` stays authored and required.
 Strict workspace assertions and exported run profiles still require a model pin.
 
-Text `run FILE "input"` writes only the answer to stdout; the selected route/model
-and preview diagnostics go to stderr. Positional input runs only that input unless `--case ID` also explicitly selects
-a saved example to run. Without positional input, Run prints each saved example answer;
-legacy `--prompt`/`--prompt-file` still run their ad-hoc input plus saved examples.
+Text `run FILE --prompt "input"` writes only the answer to stdout; the selected
+route/model and preview diagnostics go to stderr. `--prompt` and `--prompt-file`
+run only that input unless `--case ID` also explicitly selects a saved example.
+These one-shot selection rules require `--once`; resident Run starts an agent
+without input or sends one temporary prompt turn.
 CLI Run does not evaluate checks or select/authenticate a judge. Completed example rows say ANSWERED and retain an unknown verdict with
 `fullPass: false`, never a test pass. Per-example tool modes, journal finalization
 and completion attribution still apply. Use `kmx test FILE` to evaluate checks;
@@ -455,8 +481,8 @@ journals, source history, workspace failures, passing proof or runtime history.
 Do not mix FILE with `--agent`, workspace, destination, evidence, native judge or
 cluster flags, including explicitly supplied defaults. Existing live
 `run --agent` and full-workspace Test contracts remain separate and unchanged.
-Those live/workspace modes are deferred on native Windows and refuse before
-effects; only separate read-only Orka list/show is admitted on Windows amd64.
+Live/workspace modes remain deferred on native Windows and refuse before effects;
+Windows amd64 separately admits explicit-target list/show and existing Task Result.
 
 ### Frozen run-profile export (unreleased)
 
@@ -1137,12 +1163,18 @@ See [digest deploy](suite-workspace.md#digest-lift) for gates and partial outcom
 
 ### Current Orka path and explicit version-qualified operations
 
+Standalone native Orka `kmx package test` additionally accepts `--fail-fast`.
+Full execution remains the default. The option stops only when a repeated case
+cannot reach `minPasses`, still performs candidate cleanup, exits nonzero and
+creates no partial receipt or managed proof. File Test, kagent, AgentSessions and
+composed Deploy refuse the option; hidden `kmx eval` has the same flag contract.
+
 | Command | Contract / reference |
 |---|---|
 | `kmx package ctx [--workspace <directory>] [--check] [-o table\|json]` | list named workspace destinations (name, cluster context, namespace, declared runtime, inference/bindings reference, registry/repository), offline by default. No current/default pointer or switching. Optional checks cover local context names and anonymous registry reachability only, not runtime/inference/Secret readiness. [Named destinations](suite-workspace.md#named-destinations) |
 | `kmx cluster targets [-o table\|json] [--detect] [--sessions <host:port>]` | offline compiled support by default; explicit read-only probes report present/absent/unreadable separately from qualified versions. No runtime selection, installation or deployment. [Target view and support matrix](runtime-adapters.md#read-only-target-view) |
 | `kmx cluster orka install` | verify the pinned v0.3.0 release chart; apply its CRDs; install harness-v2 with fullname `orka-api` on the selected context; keep the chart-generated snapshot key private; optionally create a keyless Provider. Refuses old v0.1.3 installs rather than upgrading. `--provider - --offline-bundle DIR` instead selects the fixed [local native profile](#native-orka-install), without downloads/model setup. [Orka](orka.md) |
-| `kmx cluster orka model connect` / `disconnect` | Configure or explicitly clean up an owned Copilot gateway and native Provider in the Linux guest, without runtime installation, sign-in or inference. Explicit namespace/provider/model and endpoint-issued generation for Connect; retained connection ID for Disconnect. Text or setup JSONL. [Guest model route](orka.md#connect-a-guest-model-route) |
+| `kmx cluster orka model connect` / `disconnect` | Configure or explicitly clean up an owned Copilot or API-key gateway and native Provider in the Linux guest, without runtime installation, sign-in or inference. Explicit namespace/provider/model and endpoint-issued generation for Connect; retained connection ID for Disconnect. Text or setup JSONL. [Guest model route](orka.md#connect-a-guest-model-route) |
 | `kmx cluster orka status` | Table-only Orka runtime report: running controller version, Deployments, CRDs and Providers; distinguish unreadable from absent and running version from pin. `-o table` only; `kmx package status` is separate destination inventory. |
 | `kmx create <name> [--path <directory>] [--description <text>]` | author one `NAME.agent.md` GitHub-frontmatter agent file (`name`, `description`, no model) with a generic greeting prompt, plus a paired `NAME.agent.test.md` (schemaVersion 1, one `greeting` case). Offline: no prompts, config or model calls; an existing file refuses with exit 2. [Create](#kmx-create) |
 | `kmx package create <name> [--model <model>] [--instructions <file>] [--workspace <directory>]` | default offline authoring of one tool-free native suite member; terminal prompts complete missing model/file inputs, scripts require both flags. Orka by default, or exact kagent v0.10.3 Go/linux-amd64 with `--runtime kagent`. `--runtime agentsessions` separately authors pinned chat offline only; ordinary push is supported; eval requires an explicit development host and `AgentSessionsBinding`; evaluated push consumes matching passing evidence offline; Deploy creates an immutable Agent at an AgentSessions destination, while `--harness-image --plan` keeps the offline render; destination status reads registration, and chat refuses. Private metadata only; authoring itself does not deploy/evaluate. Discover the nearest ancestor workspace, or select/initialize an exact root with `--workspace`. Optional `--description`; live-only flags and a second member refuse. No cluster configuration or image construction. [Workspace guide](suite-workspace.md) |
@@ -1640,6 +1672,10 @@ new exact hash. The additional
 [restricted-worker profile](../internal/kmx/app/offline_profiles/orka-7916cd1c-native-v1.json)
 `orka-7916cd1c-native/v1` has SHA-256
 `6ab8213cae9f1d58fe59f34b2402f93ed951752269decdf750fc2a170bddf223`.
+The additional
+[Task-cancel profile](../internal/kmx/app/offline_profiles/orka-3cb1f0df-native-v1.json)
+`orka-3cb1f0df-native/v1` has SHA-256
+`20647cab1e653394fe7466608a08dd816f05d1a44bc8a8598fa478f7e20fc8f5`.
 The manifest selects one of these compiled profiles; hashes and source identities
 cannot be mixed. No bundle input or environment variable can replace catalog pins.
 
@@ -1688,6 +1724,8 @@ exact live execution-setting comparison and a current-readiness wait for all
 three Deployments, then result-reader reconciliation. The full profile hash is a
 Helm value, not a label. Exact healthy reuse requires the complete custom values
 and live workload set, skips CRD/Helm writes and preserves chart keys/data.
+A model gateway Deployment that `kmx model connect` marked as its own is outside
+that set; every bundle Deployment is still compared, even when marked.
 
 Deployment status alone is not readiness: after a node restart it can still be
 the controller manager's record from the previous run. Install and reuse wait up
@@ -1745,9 +1783,11 @@ checkout containing this profile, extract the exact bytes without rebuilding:
 python3 - <<'PY'
 import base64, hashlib, json
 from pathlib import Path
-fixture = json.loads(Path('internal/kmx/app/testdata/offline-7916-install.json').read_text())
+key = '7916cd1c'  # or '3cb1f0df' for the Task-cancel profile below
+profile = json.loads(Path(f'internal/kmx/app/offline_profiles/orka-{key}-native-v1.json').read_text())
+fixture = json.loads(Path(f'internal/kmx/app/testdata/offline-{key[:4]}-install.json').read_text())
 chart = b''.join(base64.b64decode(chunk, validate=True) for chunk in fixture['chartChunks'])
-assert hashlib.sha256(chart).hexdigest() == '19c50cff36855b8792b4777c89c598cf33ea70180e677e1a4758fc0211f069ed'
+assert hashlib.sha256(chart).hexdigest() == profile['install']['chart']['sha256']
 Path('bundle').mkdir(exist_ok=True)
 with Path('bundle/chart.tgz').open('xb') as output:
     output.write(chart)
@@ -1765,6 +1805,39 @@ or claim live startup, denied-read, leakage or native guest qualification.
 Existing off/audit callers must satisfy their issuer grants before use. A release
 profile can replace this development pin after that release ships and is checked.
 
+#### Task-cancel source profile
+
+`orka-3cb1f0df-native/v1` adds Orka source
+`3cb1f0df36705af9ff81cb8b4e8a0f8d36ee6eea` without replacing either older
+profile or the online pin. Its exact source-package bindings are:
+
+- Chart source: `manifest_staging/charts/orka`, Git tree
+  `47daa71d98e45d833df5f741437dbe6aaf63c6cb`.
+- Retained chart `.tgz` SHA-256:
+  `11cc020b923dd5bc810a6f3b97f236a6e3123ce8ad80791d912c0af760abcca8`.
+- Published images: Orka [run 43169852275](https://github.com/orka-agents/orka/actions/runs/43169852275);
+  unchanged `images.json` SHA-256:
+  `6f620c97411465b1f1559b57f6d279313894dcf0006ae25f8121e35afbb66080`.
+
+The [retained install fixture](../internal/kmx/app/testdata/offline-3cb1-install.json)
+uses the same archive/metadata format and extraction example above; select
+`key = '3cb1f0df'`. The [published descriptor](../internal/kmx/app/testdata/offline-3cb1-images.json)
+is retained byte-for-byte. Both native image sets are source-bound; kind and the
+BusyBox session loader remain unchanged. Repackaging is not equivalent to
+restoring the retained archive.
+
+Restricted AI-worker RBAC and controller context-token enforcement remain enabled.
+The chart adds an isolated retained Task-webhook signing namespace and
+controller-only key grant, AI-worker identity admission protection, and the
+client's `tasks/cancel` update grant. No fixture-only private-connector-endpoint
+allowance is enabled. Both-platform OCI validation and real Helm rendering are
+covered by tests; these do not prove live admission, cancellation or guest startup.
+
+Connect, discovery, native suite recognition and public evidence export accept
+only complete same-architecture controller/AI-worker tuples from this profile or
+`7916cd1c`, with the matching chart identity. Cross-profile or cross-architecture
+image pairs refuse; recognition does not reverify a bundle or attest live RBAC.
+
 #### Manifest input
 
 `DIR/install.json` is a closed JSON object. Every field below is required.
@@ -1781,7 +1854,7 @@ URLs or special files. No image archives or layer graphs are read; install parse
 | `profile`, `profileSha256` | Catalog key and exact shipped profile-byte hash above |
 | `platform` | `{"os":"linux","architecture":"amd64"}` or `arm64`; must match the running guest |
 | `kmx` | `{"version":string,"revision":revision,"sha256":hash}`, equal to the running binary's resolved version, clean VCS revision and executable SHA-256; absent/unknown/modified build metadata refuses |
-| `orka` | `{"mode":"source","identity":revision}`, equal to the selected compiled profile: `59703d6eac1760aa2dc5fed4dee9dcb74c6e5186` or `7916cd1c8c083ade6b10df6ba408f854d930190c` |
+| `orka` | `{"mode":"source","identity":revision}`, equal to the selected compiled profile: `59703d6eac1760aa2dc5fed4dee9dcb74c6e5186`, `7916cd1c8c083ade6b10df6ba408f854d930190c` or `3cb1f0df36705af9ff81cb8b4e8a0f8d36ee6eea` |
 | `chart`, `artifacts` | Each `{"path":path,"sha256":hash}`; syntax-checked but unread in the cluster step; install requires exact catalog-authorized bytes |
 | `node` | Exactly `localRef`, `repository`, `indexPath`, `indexDigest`, `manifestPath`, `manifestDigest`, `configPath`, `configDigest` |
 | `components` | Complete boolean map below; no inferred enablement |
@@ -1945,7 +2018,8 @@ recorded monitoring, not agents/plane; unknown ownership is left alone. Read
   answer-only Task output bypass styling.
 - Chat is a session and has no one-shot form: a message after the Agent name
   is the first turn of that session, and there is no `--json` chat output.
-  `--json` and `--session` are refused before configuration loads. Use
+  `--json` is refused before configuration loads. Local resident Chat supports
+  `--session`; Orka Chat still has no resumable server-side session. Use
   `kmx run` for answer-only stdout.
 - Quickstart JSON has keys `ok`, `context`, `cluster`, `agent`, `manifest`,
   `question`, `answer`, `governed`, `tools`, `elapsed_seconds`, `next`. `tools` is
@@ -1976,7 +2050,7 @@ is written to the sibling `agent-tests` directory. It reads no config, prompts
 for nothing and calls no model; an existing target refuses with exit 2 and is
 never overwritten. File Test selects the generated companion by default;
 `--tests FILE` selects an explicit alternative for one agent.
-For a fake-model preview, use `kmx run NAME.agent.md "hi" --model fake`.
+For a fake-model preview, use `kmx run NAME.agent.md --prompt "hi" --model fake`.
 Without that override, Run uses the default Copilot model and requires an
 existing sign-in (`gh auth login`).
 Native workspace authoring is [`kmx package create`](#kmx-package-create).
@@ -2015,7 +2089,15 @@ submits one Task to a Ready live Orka Agent, including a suite-owned Agent place
 by Deploy. Select its context with `--context` and its namespace with `--namespace`
 (default `orka-system`); `--agent` names the live Agent. `--wait` defaults to 5m,
 maximum 9m. stdout contains only the answer; stderr retains Task identity and
-retrieval instructions. Bundle-directory selection is removed.
+retrieval instructions. When `KAIMAHI_CONFIRM` exactly names the selected
+context, live Run presents action, context, selection source, server, namespace
+and posture in one compact stderr line before any existing confirmation notice
+and the result-authority notice. Without preconfirmation, a remote terminal Run
+keeps the full guard presentation and requires the exact context to be typed;
+remote nonterminal use refuses before Task creation. Exact preconfirmation also
+permits nonterminal Run, while conflicting confirmation refuses before Task
+creation.
+Bundle-directory selection is removed.
 
 `kmx chat NAME --namespace NAMESPACE --context CONTEXT` opens the supported Orka
 chat path against a live Agent, including suite-owned Agents. Each native chat
@@ -2028,6 +2110,19 @@ update, copying or retirement of the Agent or its companion resources.
 once by default and opens a result session only for a readable terminal answer.
 `--wait` waits 10s–9m and reports phase changes. Pending/unreadable results exit 2;
 failed/cancelled Tasks exit 1. Preserve the Task's context and namespace.
+
+Native Windows amd64 requires explicit context and namespace for Task Result.
+Result tunnels are loopback-only, process-tree owned and must close cleanly
+before an answer is accepted; pending Task inspection starts no tunnel. It
+creates no Task, suite evidence, publication or Deploy authority. Live Run/Chat
+remain refused because Orka cannot bind a new Task to an expected Agent UID and
+generation at creation time.
+The selected Orka Service/backend is trusted to receive the short-lived reader
+token and supply the answer: v0.3.0 exposes plaintext HTTP without backend TLS
+identity or a result-specific token audience. Loopback does not prevent a
+namespace workload administrator from substituting that backend. Use only a
+runtime namespace whose workload administrators you trust; this is not
+cryptographic backend attestation.
 
 ## Native receipt diff
 

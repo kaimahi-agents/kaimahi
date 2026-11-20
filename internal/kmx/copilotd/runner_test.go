@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess/copilot"
@@ -55,6 +56,55 @@ func TestRunnerSetupFailureChecksFilename(t *testing.T) {
 	_, err = r.Run(t.Context(), req)
 	if !errors.Is(err, copilot.ErrAuthRevoked) {
 		t.Fatalf("setup failure lost: %v", err)
+	}
+}
+
+func TestRunnerChecksDecodedExampleTitlesBeforeEffects(t *testing.T) {
+	raw := "---\nschemaVersion: 1\n---\n```yaml agent-test\nid: titled\ntitle: \"\\u006fpaque-private-value\"\ninput: read\nassertions: [{id: check, type: contains, value: read}]\n```\n"
+	suite, err := agentfile.ParseTests("reader.agent.test.md", []byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"selected", "unselected", "source"} {
+		for _, setupErr := range []error{nil, copilot.ErrAuthRevoked} {
+			t.Run(fmt.Sprintf("%s/setup-error=%t", field, setupErr != nil), func(t *testing.T) {
+				req := wireRequest()
+				req.SourceText = []string{raw}
+				switch field {
+				case "selected":
+					req.Examples = suite.Examples
+				case "unselected":
+					req.Agent.Examples = suite.Examples
+				case "source":
+					req.SourceAgent = &agentfile.Agent{Examples: suite.Examples}
+				}
+				req.BeforeExecute = func() error {
+					t.Error("credential reached execution")
+					return errors.New("unexpected execution")
+				}
+				access := checkerAccess{check: func(fields ...string) error {
+					for _, value := range fields {
+						if strings.Contains(value, "opaque-private-value") {
+							return copilot.ErrCredentialContent
+						}
+					}
+					return nil
+				}}
+				r := NewRunner(Options{
+					Access: func(context.Context, func(ahptypes.ActionEnvelope) error) (copilot.HostAccess, error) {
+						return access, setupErr
+					},
+					Snapshot: func(context.Context, func(...string) error) (agentpreview.SourceSnapshot, error) {
+						t.Fatal("credential reached snapshot")
+						return agentpreview.SourceSnapshot{}, nil
+					},
+				})
+				out, err := r.Run(t.Context(), req)
+				if !errors.Is(err, copilot.ErrCredentialContent) || len(out.Examples) != 0 {
+					t.Fatalf("title not withheld: %+v %v", out, err)
+				}
+			})
+		}
 	}
 }
 

@@ -3,11 +3,14 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/portforward"
 )
 
 func quickstartSuiteApplyFixture(t *testing.T) (*App, *preparedQuickstartSuite, *evalFixture) {
@@ -47,6 +50,28 @@ func TestQuickstartSuiteApplyThenFreshAnswer(t *testing.T) {
 	}
 	if !strings.Contains(a.Err.(*bytes.Buffer).String(), "reused") {
 		t.Fatal("actual reuse outcomes were not reported")
+	}
+}
+
+func TestQuickstartFreshAnswerCleanupFailureWithholdsAnswerSafely(t *testing.T) {
+	const private = "private-cleanup-canary"
+	a, p, f := quickstartSuiteApplyFixture(t)
+	result, err := a.applyWorkspaceSuiteLift(t.Context(), p, p.Plan.Summary().PlanDigest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := f.taskCreates(t)
+	cleanupCalls := 0
+	a.resultSessionCleanup = func() error {
+		cleanupCalls++
+		return errors.Join(errors.New(private), portforward.ErrCleanupUnconfirmed)
+	}
+	answer, err := a.answerSuitePlacement(t.Context(), result, "A separate first question")
+	if answer != "" || cleanupCalls != 1 || !errors.Is(err, portforward.ErrCleanupUnconfirmed) || strings.Contains(err.Error(), private) || !strings.Contains(err.Error(), "answer withheld") {
+		t.Fatalf("unsafe fresh-answer cleanup: answer=%q calls=%d err=%v", answer, cleanupCalls, err)
+	}
+	if f.taskCreates(t) != before+1 {
+		t.Fatalf("cleanup failure changed Task execution: before=%d after=%d", before, f.taskCreates(t))
 	}
 }
 

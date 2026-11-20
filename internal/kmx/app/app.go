@@ -1,5 +1,10 @@
 // Package app orchestrates kmx operations using resolved configuration,
-// context guards, runtime adapters and external tools.
+// context guards, runtime adapters and external tools. A preconfirmed live Run
+// selects the compact target disclosure while retaining the same guard decision;
+// every other operation keeps the full target presentation.
+// Guest model connections route Copilot or OpenAI/Anthropic API keys through
+// pinned Vekil; credentials stay in guest memory and the gateway environment,
+// never native Provider Secrets. Readiness is catalog access, not inference.
 // ReadOrkaTools shares bounded GET-only native tool inventory with destination
 // consumers: runtime-qualified pinned builtins and observed HTTP Tool resources,
 // never credentials, execution proof or provisioning. Connect, discovery and
@@ -12,10 +17,13 @@
 // context-pinned namespace inventories without config/state acquisition.
 // Provisioning JSONL observes existing phase boundaries with operation-local
 // cancellation and conservative mutation projections, never readiness proof.
+// Orka transport cleanup reports only fixed, payload-free status;
+// suite errors preserve cleanup uncertainty without subprocess diagnostics.
 //
 // Offline cluster bring-up validates a closed manifest and clean binary identity
-// against an embedded catalog. The source-packaged 7916cd1c profile records chart
-// provenance and enables restricted AI workers; the 59703d6e profile is retained.
+// against an embedded catalog. The source-packaged 7916cd1c and 3cb1f0df profiles
+// record chart provenance and enable restricted AI workers; 3cb1f0df adds Task
+// cancel support. The 59703d6e profile is retained unchanged.
 // Cluster bring-up reads only pinned node evidence;
 // no-provider Orka install additionally verifies retained chart/image bytes,
 // generated values, local rendering and every schedulable node CRI reference.
@@ -44,8 +52,10 @@
 // Connect/Disconnect configure only the owned Linux guest gateway and Provider,
 // with exact reuse, no inference and UID/RV-conditioned cleanup. Active health
 // plus catalog membership is operational readiness, never model-answer proof.
-// Catalog decoding allows at most 1 MiB and 1,024 entries per JSON array or
-// object; private checkpoint decoding retains its 64 KiB limit.
+// Catalog decoding allows at most 1 MiB and 4,096 entries per JSON array or
+// object; private checkpoint decoding retains its 64 KiB limit. Missing or
+// explicitly disabled models return sanitized choices separately from diagnostics,
+// retaining the owned connection for cleanup even when its catalog is unavailable.
 // Host credential delivery and VM-stop recovery remain outside these methods.
 //
 // App coordinates consent, side effects and runtime-specific evidence.
@@ -54,13 +64,20 @@
 // workspace and completed non-pass file-Test failures use the checked private
 // filesystem on supported local filesystems; visible-but-unconfirmed records
 // remain diagnostics only and file records never become evaluation evidence.
+// Standalone managed Orka Test may stop repeated diagnostics when the pass
+// threshold is unreachable; incomplete run groups still clean their candidate
+// and never become passing evidence. Cancellation, cleanup uncertainty and output
+// finalization supersede threshold-only reporting. Other runtimes and composed
+// Deploy retain full execution and refuse that option.
 // File previews bind omitted judge models on execution copies and expose valid
 // two-sample scores and sanitized transient reasons only with content disclosure.
 // Tool availability notes derive from frozen settings and dispatch sources without
 // changing request-based assertions, recording data or the JSON result contract.
-// Live Orka list/show inspection uses bounded context-pinned kubectl reads,
-// private subprocess diagnostics and bounded terminal-safe human projections;
-// machine JSON/YAML retains the cluster's original values.
+// Live Orka list/show and explicit-target Task Result use bounded context-pinned
+// kubectl calls, owned subprocess trees and private diagnostics. Task reads reject
+// ambiguous identity aliases without imposing offline bundle entry limits.
+// Windows Result retains one connection per accepted answer and no suite evidence;
+// machine list/show output retains the Unix contract.
 package app
 
 import (
@@ -118,6 +135,10 @@ type App struct {
 	// commands retain it so a checkout binary cannot redirect to an older kmx
 	// earlier on PATH. Empty keeps the installed-command spelling "kmx".
 	Executable string
+	// CommandShell selects syntax for generated follow-up commands. Empty and
+	// "posix" preserve the existing Unix contract; "powershell" is used only by
+	// the guarded native Windows command adapter.
+	CommandShell string
 	// DeployPresentation selects current CLI stage labels only. Historical JSON,
 	// plan identities and consent-bound data remain unchanged; zero preserves Lift.
 	DeployPresentation bool
@@ -153,6 +174,9 @@ type App struct {
 	// waitTiming overrides retry pacing and phase deadlines in tests only.
 	// Nil preserves every production interval and timeout.
 	waitTiming *waitTiming
+	// resultSessionCleanup adds a post-close failure in tests only. Production
+	// always relies solely on the owned session's checked cleanup result.
+	resultSessionCleanup func() error
 	// progressUI replaces destination detection in tests only. Production uses
 	// cliui.New against Err so styling follows the actual output stream.
 	progressUI progressPresenter
@@ -308,6 +332,25 @@ func (a *App) Command(args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(a.orkaForwardContext, prepared.Path, prepared.Args[1:]...)
 	cmd.Env = prepared.Env
 	return cmd
+}
+
+// OwnedCommand prepares a forward without bypassing the platform process-tree
+// lifecycle. It also retains the invocation's frozen kubectl identity.
+func (a *App) OwnedCommand(args ...string) (*run.Command, error) {
+	ctx := a.orkaForwardContext
+	if ctx == nil {
+		ctx = a.operationContext()
+	}
+	runner := *a.Run
+	runner.Context = ctx
+	if a.inspectionKubectl != "" {
+		freezeOrkaInspectionEnvironment(&runner)
+	}
+	tool, err := a.orkaInspectionCommand(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return runner.Command(tool, a.kubectl(args...)...), nil
 }
 
 // kubeconfig reads the merged kubeconfig, saying plainly when the reason it

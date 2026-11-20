@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -430,6 +431,8 @@ func TestFileCommandsRefuseMixedModesBeforeConfig(t *testing.T) {
 		{"test", "FILE", "--out", "receipt.json"},
 		{"test", "FILE", "--inference", "provider:model"},
 		{"test", "FILE", "--case-timeout", "5m"},
+		{"test", "FILE", "--fail-fast"},
+		{"test", "FILE", "--fail-fast=false"},
 		{"test", "FILE", "--context", "kind-test"},
 		{"test", "FILE", "--container-engine", "docker"},
 		{"run", "FILE", "--github-summary"},
@@ -452,8 +455,12 @@ func TestFileCommandsRefuseMixedModesBeforeConfig(t *testing.T) {
 			deps, loads := testDependencies(&out, &diag)
 			f := &cliPreviewFake{verdict: runtime.EvaluationPass}
 			deps.fileRunner = f
-			if err := execute(args, deps); err == nil {
+			err := execute(args, deps)
+			if err == nil {
 				t.Fatal("mixed modes accepted")
+			}
+			if (slices.Contains(args, "--fail-fast") || slices.Contains(args, "--fail-fast=false")) && err.Error() != "unknown flag: --fail-fast\nRun kmx test --help for available flags" {
+				t.Fatalf("file Test did not refuse workspace fail-fast at the flag boundary: %v", err)
 			}
 			if *loads != 0 || f.calls != 0 || out.Len() != 0 {
 				t.Fatalf("refusal crossed argument boundary: config=%d calls=%d stdout=%q", *loads, f.calls, out.String())
@@ -542,7 +549,11 @@ func TestFilePreviewVerboseStderrOnly(t *testing.T) {
 					t.Fatalf("invalid result: %v / %s; config=%d", err, out.String(), *loads)
 				}
 				if verbose {
-					for _, want := range []string{"Completion greeting started", "Completion greeting finished", "elapsed=", "Total elapsed="} {
+					completion := "greeting"
+					if op == "run" {
+						completion = "ad-hoc"
+					}
+					for _, want := range []string{"Completion " + completion + " started", "Completion " + completion + " finished", "elapsed=", "Total elapsed="} {
 						if !strings.Contains(diag.String(), want) {
 							t.Fatalf("missing %q in diagnostics: %s", want, diag.String())
 						}
@@ -597,7 +608,7 @@ func TestFilePromptCollectionPrecedesPreviewBudget(t *testing.T) {
 	if err := execute([]string{"run", cliPreviewFile(t), "--prompt-file", "-", "-o", "json"}, deps); err != nil {
 		t.Fatal(err)
 	}
-	if fake.calls != 1 || *loads != 0 || fake.request.Input == nil || *fake.request.Input != "Ada" {
+	if fake.calls != 1 || *loads != 0 || fake.request.Input == nil || *fake.request.Input != "Ada" || len(fake.request.Examples) != 0 {
 		t.Fatalf("prompt not attributed: %+v / config=%d", fake.request, *loads)
 	}
 	if fake.deadline.Before((<-collected).Add(5 * time.Minute)) {

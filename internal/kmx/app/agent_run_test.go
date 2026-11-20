@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/portforward"
 )
 
 func runFixture(t *testing.T) *evalFixture {
@@ -339,6 +341,11 @@ func TestRunWaitErrorKeepsTerminalFailureAndRefusalAfterDeadline(t *testing.T) {
 	if got := a.runTaskWaitError(ctx, fmt.Errorf("waiting: %w", context.DeadlineExceeded), "task", "kind-test", "orka-system"); !errors.Is(got, ErrTaskPending) {
 		t.Fatalf("expired wait not pending: %v", got)
 	}
+	const private = "private-cleanup-canary"
+	got := a.runTaskWaitError(ctx, errors.Join(fmt.Errorf("waiting: %w", context.DeadlineExceeded), errors.New(private), portforward.ErrCleanupUnconfirmed), "task", "kind-test", "orka-system")
+	if !errors.Is(got, ErrTaskPending) || !errors.Is(got, portforward.ErrCleanupUnconfirmed) || strings.Contains(got.Error(), private) {
+		t.Fatalf("pending result lost or leaked cleanup status: %v", got)
+	}
 }
 
 func TestRunWaitErrorRecognizesOnlyExpiredOrkaPhases(t *testing.T) {
@@ -449,6 +456,56 @@ func TestRunAgentPromptIsRedactedFromRemoteGuard(t *testing.T) {
 	}
 }
 
+func TestRunAgentPreconfirmedRemoteUsesCompactTargetDisclosure(t *testing.T) {
+	f := runFixture(t)
+	t.Setenv("KMX_EVAL_REMOTE", "1")
+	f.app.Cfg.Confirm = f.app.Cfg.KubeContext
+	f.answers["private prompt"] = "remote answer"
+	if err := f.app.RunAgent(runOption(f)); err != nil {
+		t.Fatal(err)
+	}
+	if f.out.String() != "remote answer\n" || f.taskCreates(t) != 1 {
+		t.Fatalf("stdout=%q creates=%d", f.out, f.taskCreates(t))
+	}
+	diagnostics := f.app.Err.(*bytes.Buffer).String()
+	for _, want := range []string{
+		"Run target ·", `action="execute one AI Task against Agent sample in orka-system"`,
+		`context="kind-test"`, `source="--context"`, `server="managed.example.invalid"`,
+		`namespace="orka-system"`, `posture="REMOTE / non-kind"`,
+		"kube-guard: confirmed via KAIMAHI_CONFIRM.", "authority details:", "Task name:", "Recovery:",
+	} {
+		if !strings.Contains(diagnostics, want) {
+			t.Errorf("diagnostics missing %q: %s", want, diagnostics)
+		}
+	}
+	if strings.Contains(diagnostics, "Target confirmation") || strings.Contains(diagnostics, "----------------------------------------------------------------") || strings.Contains(diagnostics, "private prompt") || strings.Contains(diagnostics, "remote answer") {
+		t.Fatalf("compact diagnostics retained full banner or content: %q", diagnostics)
+	}
+}
+
+func TestRunAgentRemoteConfirmationRefusalKeepsFullTargetDisclosure(t *testing.T) {
+	for _, confirm := range []string{"", "different-context"} {
+		t.Run(map[bool]string{true: "missing", false: "conflicting"}[confirm == ""], func(t *testing.T) {
+			f := runFixture(t)
+			t.Setenv("KMX_EVAL_REMOTE", "1")
+			f.app.Cfg.Confirm = confirm
+			err := f.app.RunAgent(runOption(f))
+			if err == nil {
+				t.Fatal("remote guard accepted")
+			}
+			diagnostics := f.app.Err.(*bytes.Buffer).String()
+			for _, want := range []string{"about to:", "context:  kind-test", "chosen by: --context", "server:   managed.example.invalid", "namespace(s): orka-system", "posture:  REMOTE / non-kind"} {
+				if !strings.Contains(diagnostics, want) {
+					t.Errorf("full disclosure missing %q: %s", want, diagnostics)
+				}
+			}
+			if strings.Contains(diagnostics, "Run target ·") || f.out.Len() != 0 || f.taskCreates(t) != 0 {
+				t.Fatalf("refusal compacted or performed effects: stdout=%q creates=%d diagnostics=%q", f.out, f.taskCreates(t), diagnostics)
+			}
+		})
+	}
+}
+
 func TestRunAgentTaskNameIsNotOnStdout(t *testing.T) {
 	f := runFixture(t)
 	f.answers["private prompt"] = "answer"
@@ -462,6 +519,24 @@ func TestRunAgentTaskNameIsNotOnStdout(t *testing.T) {
 				t.Fatal("Task name leaked to stdout")
 			}
 		}
+	}
+}
+
+func TestRunAgentCleanupFailureWithholdsAnswerSafely(t *testing.T) {
+	const private = "private-cleanup-canary"
+	f := runFixture(t)
+	f.answers["private prompt"] = "answer"
+	cleanupCalls := 0
+	f.app.resultSessionCleanup = func() error {
+		cleanupCalls++
+		return errors.Join(errors.New(private), portforward.ErrCleanupUnconfirmed)
+	}
+	err := f.app.RunAgent(runOption(f))
+	if cleanupCalls != 1 || !errors.Is(err, portforward.ErrCleanupUnconfirmed) || strings.Contains(err.Error(), private) || !strings.Contains(err.Error(), "answer withheld") {
+		t.Fatalf("unsafe or incomplete cleanup result: calls=%d err=%v", cleanupCalls, err)
+	}
+	if f.out.Len() != 0 || f.taskCreates(t) != 1 {
+		t.Fatalf("cleanup failure exposed answer or changed execution: stdout=%q creates=%d", f.out, f.taskCreates(t))
 	}
 }
 
@@ -526,6 +601,15 @@ func TestTaskRecoveryQuotesContext(t *testing.T) {
 	want := "'./bin with space/kmx' cluster task result safe-task --context 'kind-prod;echo-danger' --namespace orka-system --wait 5m"
 	if got != want {
 		t.Fatalf("recovery command = %q, want %q", got, want)
+	}
+}
+
+func TestTaskRecoveryUsesPowerShellSyntax(t *testing.T) {
+	a := &App{Executable: `C:\Program Files\kmx.exe`, CommandShell: "powershell"}
+	got := a.taskRecovery("safe-task", "team's context", "orka-system")
+	want := `& 'C:\Program Files\kmx.exe' cluster task result 'safe-task' --context 'team''s context' --namespace 'orka-system' --wait 5m`
+	if got != want {
+		t.Fatalf("PowerShell recovery = %q, want %q", got, want)
 	}
 }
 

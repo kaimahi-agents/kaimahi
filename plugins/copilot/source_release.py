@@ -126,10 +126,18 @@ def validate_canonical(relative: str, canonical: bytes) -> None:
         b'handler: createOpenHandler({ getSession: () => session, extensionId: "' + PROVIDER + b'" }),',
         b'handler: createOpenCommand({ getSession: () => session, extensionId: "' + PROVIDER + b'" }),',
     )
+    if b"createSquadViewController" in active:
+        squad_import = b'import { SQUAD_CANVAS_ID, createSquadViewController } from "./squad-view.mjs";'
+        if active.count(b"createSquadViewController") != 2 or lines.count(squad_import) != 1:
+            raise ValueError(f"{relative}: canonical provider identity is missing or mixed")
+        handlers += (
+            b'const squadController = createSquadViewController({ getSession: () => session, extensionId: "' + PROVIDER + b'" });',
+            b'try { await session.rpc.canvas.open({ extensionId: "' + PROVIDER + b'", canvasId: SQUAD_CANVAS_ID, instanceId: "kmx-squad", input: {} }); }',
+        )
     import_line = b'import { OPEN_TOOL_NAME, OPEN_TOOL_PARAMETERS, createOpenHandler, createOpenCommand, readOpenView } from "./open.mjs";'
     provider_ids = re.findall(rb"plugin:[A-Za-z0-9._-]+:agent-view", active)
     identifiers = (active.count(b"createOpenHandler"), active.count(b"createOpenCommand"))
-    if (provider_ids != [PROVIDER, PROVIDER] or identifiers != (2, 2)
+    if (provider_ids != [PROVIDER] * len(handlers) or identifiers != (2, 2)
             or lines.count(import_line) != 1 or any(lines.count(handler) != 1 for handler in handlers)):
         raise ValueError(f"{relative}: canonical provider identity is missing or mixed")
 

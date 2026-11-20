@@ -111,13 +111,14 @@ test('Test is canonical while compatibility and current runtime limits stay expl
   assert.match(workflow, /kmx package push --workspace DIR --evaluation RECEIPT REF/)
 })
 
-test('native Windows documentation keeps the read-only remote exception narrow', async () => {
+test('native Windows documentation keeps the explicit remote exception narrow', async () => {
   const html = await readFile(path.join(dist, 'docs/windows.html'), 'utf8')
   const windows = plainText(html).replace(/\s+/g, ' ')
 
   for (const marker of [
     'prerelease-only and operation-specific',
     'v0.9.0-rc.4',
+    'v0.9.0-rc.5',
     'v0.9.0-rc.6',
     'Stable v0.8.1',
     'kmx-windows-amd64.exe',
@@ -127,10 +128,17 @@ test('native Windows documentation keeps the read-only remote exception narrow',
     'kmx test explain [failure-id] --file FILE',
     'cluster orka list',
     'cluster orka show',
+    'cluster task result TASK',
     'Both selectors are mandatory on native Windows',
     'operator-installed native kubectl.exe',
     'never runs az login',
     'Kubeconfig exec plugins are local operator-trusted code',
+    'loopback-only kubectl port-forward',
+    'never reconnects',
+    'plaintext HTTP',
+    'does not attest the in-cluster backend',
+    'workload administrators you trust',
+    'PowerShell syntax',
     '--github-summary',
     'local preview only',
     'publication authority',
@@ -165,15 +173,21 @@ test('native Windows documentation keeps the read-only remote exception narrow',
   for (const deferred of [
     'Docker', 'kind', 'local Kubernetes setup', 'cluster mutation', 'workspace', 'OCI', 'suite evidence',
     'provider routes', 'kmx mcp', 'native Copilot plugin', 'AgentKit', 'Buildx',
-    'managed tools', 'publication', 'Deploy'
+    'managed tools', 'live Agent Run/chat', 'publication', 'Deploy'
   ]) assert.ok(windows.includes(deferred), `Windows deferred operation: ${deferred}`)
 
   assert.match(windows, /Sigstore bundle signs the checksum manifest/i)
+  assert.match(windows, /Published rc\.4-rc\.6 Run accepts a second positional input/)
+  assert.match(windows, /Current main: kmx run FILE \[-p\|--prompt TEXT\]/)
+  assert.match(windows, /executes list\/show and existing Task Result against compiled native kubectl protocol fixtures/)
+  assert.match(windows, /remote-inspection boundary with a checksum-verified real kubectl\.exe[^.]*Task Result against a cross-built native protocol fixture/)
   assert.match(windows, /certificate-identity[^\n]*\$Version/i)
   assert.match(windows, /not evaluated[^.]*not[^.]*allowed/i)
   assert.doesNotMatch(windows, /future tagged release|future containing release/i)
   assert.match(windows, /install\.sh[^.]*Homebrew[^.]*Go @latest[^.]*Unix or WSL/i)
   assert.doesNotMatch(windows, /native Windows builds are not supported yet|Windows CLI remains guarded/i)
+  const development = plainText(await readFile(path.join(dist, 'docs/development.html'), 'utf8')).replace(/\s+/g, ' ')
+  assert.match(development, /inspection boundary through checksum-verified real kubectl[^.]*Task Result through a cross-built native protocol fixture/)
   for (const forbiddenAdvice of [
     /run Unblock-File/i,
     /disable (?:Microsoft )?Defender to/i,

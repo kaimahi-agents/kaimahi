@@ -33,7 +33,7 @@ func modelFixtureChildren(objects map[string]map[string]any) []map[string]any {
 	return nil
 }
 
-func modelConfigureFixture(t *testing.T) (*App, map[string]map[string]any, *[]string) {
+func modelConfigureFixture(t *testing.T, criBody ...string) (*App, map[string]map[string]any, *[]string) {
 	t.Helper()
 	if runtime.GOOS != "linux" {
 		t.Skip("model gateway is guest Linux only")
@@ -50,7 +50,7 @@ func modelConfigureFixture(t *testing.T) (*App, map[string]map[string]any, *[]st
 	script := `#!/bin/sh
 case "$0 $*" in
 */findmnt*) printf 'tmpfs rw,nosuid,nodev,noexec\n';;
-*/stat*copilot-github-token*) printf 'regular file:0:65532:640:1:12\n';;
+*/stat*copilot-github-token*|*/stat*model-api-key*) printf 'regular file:0:65532:640:1:12\n';;
 */stat*credentials*) printf 'directory:0:65532:750:1:2\n';;
 */stat*) printf 'directory:0:0:755:1:1\n';;
 *docker*'context inspect'*) printf '%s' "$OFFLINE_DOCKER_CONTEXT_JSON";;
@@ -62,6 +62,13 @@ case "$0 $*" in
 *docker*'container inspect'*) printf '[{"Name":"/test-control-plane","Image":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","Config":{"Labels":{"io.x-k8s.kind.cluster":"test"}},"State":{"Running":true},"Mounts":[{"Type":"bind","Source":"/run/bridge/credentials","Destination":"/run/bridge/credentials","RW":false,"Propagation":"rprivate"}]}]';;
 *) exit 7;; esac
 `
+	if len(criBody) > 0 {
+		updated := strings.Replace(script, `printf '{"containers":[]}'`, "printf '%s' '"+criBody[0]+"'", 1)
+		if updated == script {
+			t.Fatal("CRI fixture was not replaced")
+		}
+		script = updated
+	}
 	for _, name := range []string{"findmnt", "stat", "docker"} {
 		if err := os.WriteFile(filepath.Join(bin, name), []byte(script), 0700); err != nil {
 			t.Fatal(err)
@@ -108,7 +115,7 @@ case "$0 $*" in
 				fmt.Fprint(cmd.Stdout, `{"status":"ready"}`)
 				return nil
 			}
-			if strings.HasSuffix(path, "/v1/models") {
+			if strings.HasSuffix(path, "/v1/models") || strings.HasSuffix(path, "/v1/models?limit=1000") {
 				fmt.Fprint(cmd.Stdout, `{"data":[{"id":"gpt-4.1"}]}`)
 				return nil
 			}
@@ -143,21 +150,25 @@ case "$0 $*" in
 				qualified := "pods"
 				if child["kind"] == "ReplicaSet" {
 					qualified = "replicasets.apps"
+					if slices.Contains(cmd.Args, "json") {
+						qualified = "replicasets.v1.apps"
+					}
 				}
 				if resource == qualified && modelMap(child["metadata"])["name"] == name {
-					fmt.Fprint(cmd.Stdout, modelMap(child["metadata"])["uid"])
-					return nil
+					return modelFixtureObservation(cmd, child)
 				}
 			}
 			for path, obj := range objects {
 				api, _ := modelAPIFor(modelText(obj["kind"]))
 				qualified := api.plural
-				if group, _, grouped := strings.Cut(api.version, "/"); grouped {
+				if group, version, grouped := strings.Cut(api.version, "/"); grouped {
+					if slices.Contains(cmd.Args, "json") {
+						qualified += "." + version
+					}
 					qualified += "." + group
 				}
 				if resource == qualified && strings.HasSuffix(path, "/"+api.plural+"/"+name) {
-					fmt.Fprint(cmd.Stdout, modelMap(obj["metadata"])["uid"])
-					break
+					return modelFixtureObservation(cmd, obj)
 				}
 			}
 			return nil
@@ -165,4 +176,15 @@ case "$0 $*" in
 		return fmt.Errorf("unexpected fixture command")
 	}
 	return a, objects, &calls
+}
+
+func modelFixtureObservation(cmd *exec.Cmd, obj map[string]any) error {
+	if slices.Contains(cmd.Args, "jsonpath={.metadata.uid}") {
+		_, err := fmt.Fprint(cmd.Stdout, modelMap(obj["metadata"])["uid"])
+		return err
+	}
+	if slices.Contains(cmd.Args, "json") {
+		return json.NewEncoder(cmd.Stdout).Encode(obj)
+	}
+	return fmt.Errorf("unexpected fixture observation mode")
 }

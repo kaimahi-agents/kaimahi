@@ -78,8 +78,9 @@ error-framing guarantee. Unknown commands are not a root-wide JSON protocol.
 Help and completion remain human/inert output, even with an output flag.
 
 Machine errors contain fixed code/message/recovery fields and an optional
-allowlisted stage; they never serialize the original cause or an arbitrary
-provider details object. Error text and stderr omit reflected arguments,
+allowlisted stage. Guest model observation failures can additionally include a
+closed `reason` value, described below. They never serialize the original cause
+or an arbitrary provider details object. Error text and stderr omit reflected arguments,
 credentials, headers, URLs, payloads, tool inputs/results and provider bodies.
 Clients should use codes, not parse the message prose.
 
@@ -92,6 +93,9 @@ The shared safe-error vocabulary is:
 | `unsupported` | `check_inputs` |
 | `confirmation_required` | `confirm_target` |
 | `credential_unavailable` | `supply_credentials` |
+| `credential_rejected` | `supply_credentials` |
+| `provider_unreachable` | `check_configuration` |
+| `model_unavailable` | `check_configuration` |
 | `permission_denied` | `inspect_target` |
 | `dependency_unavailable` | `check_configuration` |
 | `operation_failed` | `inspect_target` |
@@ -104,8 +108,9 @@ Only `invalid_arguments` and `output_failed` are used by version. Other codes
 are shared vocabulary, not claims that additional command adapters exist.
 Recovery is guidance, never automatic retry authorization. Unknown internal
 classifications fall back to `operation_failed`; untyped causes are not
-classified by substring matching their text. The narrow discovery exception below
-classifies only fixed, version-pinned kubectl diagnostic-line prefixes; it never
+classified by substring matching their text. Guest model setup separately
+recognizes pinned Vekil readiness prefixes, as described below. The narrow
+discovery exception below classifies only fixed, version-pinned kubectl diagnostic-line prefixes; it never
 reflects diagnostic bodies or grants API evidence.
 
 ## Provisioning event streams
@@ -193,7 +198,8 @@ The model/catalog observation and local finalization never mark model installati
 as a possible remote mutation. Other setup adapters are unchanged.
 
 The terminal result can add `connection` (`id`, `route`, `provider`, `model`,
-`credentialGeneration`, `state`) and `remoteState`. An anchored failure retains
+`credentialGeneration`, `state`) and `remoteState`. API-key connections also
+include `vendor: openai|anthropic` with `route: key`; Copilot omits `vendor`. An anchored failure retains
 its connection ID with `state: unknown`; early preflight failure has no connection.
 Success states are `model_ready` for Connect and `gateway_stopped` for complete
 Disconnect. `remoteState` is `may_continue` for a connected gateway, `unknown`
@@ -201,9 +207,48 @@ when process state is uncertain, and `stopped` only after observed gateway/cache
 stop (even if later binding cleanup fails). It is not model-answer evidence.
 The optional proof field remains absent: no proof action is implemented here.
 
-Errors use the existing closed safe vocabulary, including `credential_unavailable`,
-`dependency_unavailable`, `permission_denied` and `execution_unknown`; raw causes,
-credentials, paths and response bodies are not emitted. A cancelled or broken
+Errors use the closed safe vocabulary, including `credential_unavailable`,
+`dependency_unavailable`, `permission_denied` and `execution_unknown`.
+For `execution_unknown` caused by a model resource observation refusal, the
+optional `error.reason` identifies the checked boundary without resource values:
+
+| Reason | Observation refused |
+|---|---|
+| `model_resource_identity_invalid` | Resource type, name or namespace did not match. |
+| `model_resource_ownership_changed` | UID or ownership marker did not match, or UID/resource version was invalid. |
+| `model_resource_generation_invalid` | A required generation was missing or malformed. |
+| `model_resource_spec_changed` | The execution projection did not match the retained resource. |
+| `model_resource_generation_changed` | Generation changed outside the native deletion transition. |
+
+Presence-query UID mismatches retain the ownership classification through model
+connection and readiness checks without including the UID.
+Unknown or untyped causes omit `reason`; arbitrary cause text is never copied.
+Cancellation, deadline and output failures take precedence and omit this detail.
+The code, stage, fixed message, recovery and exit semantics are unchanged.
+Readers ignore this optional schema version 1 field. It is not ownership evidence or
+permission to retry a mutation.
+
+API-key Connect adds `credential_rejected` for Vekil-reported upstream 401/403,
+`provider_unreachable` for its upstream transport-failure diagnostic, and
+`model_unavailable` when the selected catalog ID is missing or explicitly disabled.
+Copilot uses the same missing-model refusal. A valid catalog accompanies that
+refusal as optional `modelChoices`: rows contain `id` and optional boolean
+`pickerEnabled` and `chatSupported` fields, never raw metadata. Explicit false
+flags are retained. `[]` means a valid empty catalog; an omitted list means
+choices are unavailable, not empty. Duplicate IDs, malformed data, failed reads
+or responses above 1 MiB or 4,096 entries report `dependency_unavailable` without
+choices. Anthropic reads a bounded first page with `limit=1000`, not all pages.
+If choices would exceed the 64 KiB machine record limit, the entire list is
+omitted while the refusal and connection remain intact.
+Their recoveries are `supply_credentials`, `check_configuration` and
+`check_configuration`, respectively. Other statuses (including 429), malformed
+replies and local transport failures do not imply a rejected key or a company
+network failure. A failed key-readiness GET may open a bounded owned loopback
+forward to classify Vekil's HTTP 503 body; this can never establish readiness.
+Unconfirmed forward cleanup reports `execution_unknown` unless caller
+cancellation or deadline takes precedence; those codes also require inspecting
+execution. No raw causes,
+credentials, paths or response bodies are emitted. A cancelled or broken
 writer stops later sends and does not retry output. Missing/truncated output is
 incomplete delivery, never authority to replay a CREATE or old DELETE. Keep
 partial IDs and effects for explicit recovery; automatic sign-in or inference
@@ -220,7 +265,8 @@ This opt-in format keeps the existing runner choice, intake, model/tool/judge
 validation and timeout budgets. Embedded remains default; format selection does
 not require copilotd. Run and folder Test still support their existing formats,
 not JSONL. `--github-summary` still requires JSON and refuses JSONL before work.
-Text and the existing single-document `-o json` remain unchanged.
+Text and the existing single-document `-o json` retain their existing formats;
+separate-file test titles add an optional label/field as described below.
 
 The operation is `file.test`. After the full `test FILE` route, the four explicit
 selectors `-o jsonl`, `-ojsonl`, `--output jsonl` and `--output=jsonl` guarantee safe
@@ -243,7 +289,25 @@ Unsafe or over-1024-byte identities are omitted/unavailable, never clipped.
 
 Ordered `case.summary` events immediately precede the terminal result, one per
 selected case including not-started cases (maximum 128). `caseIndex` is one-based;
-`caseId` is optional. Each summary has `state`, `verdict`, nullable `durationMs`,
+`caseId` is optional. A test authored with `title` in its `.agent.test.md` file
+also supplies optional `title` beside `caseId`, on both case-related progress
+(including session/tool events) and summary rows. It is plain display text, never
+an identifier; use `caseId` for selection and correlation. For example, these
+fields in a summary identify a named test (envelope and other fields omitted):
+
+```json
+{"event":"case.summary","caseIndex":1,"caseId":"greeting","title":"Greets the person by name","state":"complete","verdict":"pass"}
+```
+
+A missing or unsafe title is omitted, never an empty string. Titles pass the
+frozen credential checks, are absent before readiness, and are withheld whenever
+case identity is withheld, including final unsafe-content redaction. Consumers
+may display `title` and fall back to `caseId`. Single-document JSON uses the same
+optional `title` on each `examples` row beside `id`. Early refusals omit titles
+until credential preflight approves them, even if a case id remains available.
+Untitled test output stays unchanged; schema version remains 1.
+
+Each summary has `state`, `verdict`, nullable `durationMs`,
 `session`, `chat`, `turn`, `task`, `calls`, `usage` and separate `judgeUsage`.
 Identity fields have `availability` and an optional checked `id`; Task remains
 unavailable because native file execution uses AHP Session/chat, not Orka Tasks.

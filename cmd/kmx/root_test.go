@@ -22,6 +22,7 @@ import (
 func testDependencies(out, errOut *bytes.Buffer) (dependencies, *int) {
 	loads := 0
 	deps := productionDependencies()
+	deps.residentAgents = false
 	deps.stdout, deps.stderr = out, errOut
 	deps.executable = "kmx"
 	deps.loadConfig = func(context, engine string) (*config.Config, error) {
@@ -99,7 +100,7 @@ func TestGuardedWindowsDeferredOperationsRefuseBeforeEffects(t *testing.T) {
 	}
 }
 
-func TestGuardedWindowsAmd64AdmitsOnlyExplicitOrkaInspection(t *testing.T) {
+func TestGuardedWindowsAmd64AdmitsExplicitOrkaRemoteOperations(t *testing.T) {
 	cases := []struct {
 		name string
 		args []string
@@ -107,6 +108,7 @@ func TestGuardedWindowsAmd64AdmitsOnlyExplicitOrkaInspection(t *testing.T) {
 		{"list table", []string{"--context", "remote", "cluster", "orka", "list", "--namespace", "team"}},
 		{"show table", []string{"--context", "remote", "cluster", "orka", "show", "assistant", "--namespace", "team"}},
 		{"show json", []string{"cluster", "orka", "show", "assistant", "--namespace", "team", "--tasks", "3", "-o", "json", "--context", "remote"}},
+		{"task result", []string{"--context", "remote", "cluster", "task", "result", "task-one", "--namespace", "team", "--wait", "5m"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -160,6 +162,11 @@ func TestGuardedWindowsRemoteInspectionRefusesIncompleteOrBroaderModesBeforeEffe
 		{"show invalid output", "amd64", []string{"--context", "remote", "cluster", "orka", "show", "one", "--namespace", "team", "-o", "yaml"}},
 		{"orka status stays closed", "amd64", []string{"--context", "remote", "cluster", "orka", "status"}},
 		{"orka install stays closed", "amd64", []string{"--context", "remote", "cluster", "orka", "install"}},
+		{"task missing context", "amd64", []string{"cluster", "task", "result", "task-one", "--namespace", "team"}},
+		{"task missing namespace", "amd64", []string{"--context", "remote", "cluster", "task", "result", "task-one"}},
+		{"run missing namespace", "amd64", []string{"--context", "remote", "run", "--agent", "assistant", "--prompt", "hello"}},
+		{"run prompt file stays closed", "amd64", []string{"--context", "remote", "run", "--agent", "assistant", "--namespace", "team", "--prompt-file", "prompt.txt"}},
+		{"run positional file stays closed with context", "amd64", []string{"--context", "remote", "run", "agent.md"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -188,7 +195,7 @@ func TestGuardedWindowsAllowsPackageFreeFileCommands(t *testing.T) {
 		args func(string) []string
 	}{
 		{"run", func(file string) []string { return []string{"run", file} }},
-		{"run positional input", func(file string) []string { return []string{"run", file, "Grace"} }},
+		{"run prompt input", func(file string) []string { return []string{"run", file, "-p", "Grace"} }},
 		{"run presentation", func(file string) []string {
 			return []string{"run", file, "--case", "greeting", "--output", "json", "--prompt", "hello", "--no-content", "--verbose"}
 		}},
@@ -489,12 +496,13 @@ func TestGuardedWindowsSupportedCommandFlagsAreExhaustivelyAllowlisted(t *testin
 		allFlags   []string
 		allowFlags []string
 	}{
-		{[]string{"run"}, []string{file}, []string{"agent", "case", "container-engine", "context", "mcp-server", "model", "namespace", "no-content", "no-mcp-servers", "output", "prompt", "prompt-file", "provider", "provider-url", "result-port", "tests", "tool-bindings", "verbose", "wait"}, []string{"case", "no-content", "output", "prompt", "tests", "verbose"}},
-		{[]string{"test"}, []string{file}, []string{"case", "container-engine", "context", "github-summary", "host", "mcp-server", "model", "no-content", "no-mcp-servers", "output", "provider", "provider-url", "runner", "tests", "tool-bindings", "verbose"}, []string{"case", "no-content", "output", "tests", "verbose"}},
-		{[]string{"test", "explain"}, nil, []string{"clear", "container-engine", "context", "file", "show-content", "tests", "workspace"}, []string{"clear", "file", "show-content", "tests"}},
-		{[]string{"eval", "explain"}, nil, []string{"clear", "container-engine", "context", "file", "show-content", "tests", "workspace"}, []string{"clear", "file", "show-content", "tests"}},
-		{[]string{"cluster", "orka", "list"}, nil, []string{"container-engine", "context", "namespace", "output"}, []string{"namespace", "output"}},
-		{[]string{"cluster", "orka", "show"}, []string{"assistant"}, []string{"container-engine", "context", "namespace", "output", "tasks"}, []string{"namespace", "output", "tasks"}},
+		{path: []string{"run"}, args: []string{file}, allFlags: []string{"agent", "case", "container-engine", "context", "mcp-server", "model", "model-profile", "name", "namespace", "new", "no-content", "no-mcp-servers", "once", "output", "prompt", "prompt-file", "provider", "provider-key-env", "provider-url", "require-context", "require-output", "require-reasoning", "result-port", "tests", "tool-bindings", "upgrade", "verbose", "wait", "yes"}, allowFlags: []string{"case", "no-content", "once", "output", "prompt", "tests", "verbose"}},
+		{path: []string{"test"}, args: []string{file}, allFlags: []string{"case", "check", "container-engine", "context", "github-summary", "host", "mcp-server", "model", "no-content", "no-mcp-servers", "output", "provider", "provider-url", "runner", "tests", "tool-bindings", "verbose"}, allowFlags: []string{"case", "check", "no-content", "output", "tests", "verbose"}},
+		{path: []string{"test", "explain"}, allFlags: []string{"clear", "container-engine", "context", "file", "show-content", "tests", "workspace"}, allowFlags: []string{"clear", "file", "show-content", "tests"}},
+		{path: []string{"eval", "explain"}, allFlags: []string{"clear", "container-engine", "context", "file", "show-content", "tests", "workspace"}, allowFlags: []string{"clear", "file", "show-content", "tests"}},
+		{path: []string{"cluster", "orka", "list"}, allFlags: []string{"container-engine", "context", "namespace", "output"}, allowFlags: []string{"namespace", "output"}},
+		{path: []string{"cluster", "orka", "show"}, args: []string{"assistant"}, allFlags: []string{"container-engine", "context", "namespace", "output", "tasks"}, allowFlags: []string{"namespace", "output", "tasks"}},
+		{path: []string{"cluster", "task", "result"}, args: []string{"task-one"}, allFlags: []string{"container-engine", "context", "namespace", "result-port", "wait"}, allowFlags: []string{"namespace", "result-port", "wait"}},
 	}
 	for _, tc := range cases {
 		var out, errOut bytes.Buffer
@@ -528,7 +536,7 @@ func TestGuardedWindowsSupportedCommandFlagsAreExhaustivelyAllowlisted(t *testin
 					t.Fatal(err)
 				}
 				_ = cmd.InheritedFlags()
-				if strings.HasPrefix(strings.Join(tc.path, " "), "cluster orka") {
+				if strings.HasPrefix(strings.Join(tc.path, " "), "cluster ") {
 					state.contextFlag = "remote"
 					if err := cmd.Flags().Set("namespace", "team"); err != nil {
 						t.Fatal(err)
@@ -545,6 +553,10 @@ func TestGuardedWindowsSupportedCommandFlagsAreExhaustivelyAllowlisted(t *testin
 					value = file
 				} else if name == "namespace" {
 					value = "team"
+				} else if name == "agent" {
+					value = "assistant"
+				} else if name == "prompt" {
+					value = "hello"
 				}
 				if err := cmd.Flags().Set(name, value); err != nil {
 					t.Fatal(err)
@@ -920,8 +932,8 @@ func commandPaths(root *cobra.Command) []string {
 // Adding or removing a subcommand fails this test until the list follows.
 func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 	want := []string{
-		"test", "test explain", "create", "chat", "run", "eval", "eval cleanup", "eval diff", "eval explain", "eval export", "eval from-sessions", "eval verify", "lift", "completion", "mcp",
-		"model", "model list", "model login", "model logout", "version",
+		"test", "test explain", "create", "chat", "run", "list", "stop", "eval", "eval cleanup", "eval diff", "eval explain", "eval export", "eval from-sessions", "eval verify", "lift", "completion", "mcp",
+		"model", "model list", "model login", "model logout", "model match", "version",
 		"cluster", "cluster discover", "cluster up", "cluster down", "cluster status", "cluster aks", "cluster aks up", "cluster aks down", "cluster context", "cluster context show", "cluster context use",
 		"cluster orka", "cluster orka model", "cluster orka model connect", "cluster orka model disconnect", "cluster orka install", "cluster orka status", "cluster orka tools", "cluster orka show", "cluster orka list", "cluster quickstart", "cluster quickstart-wizard", "cluster console", "cluster targets", "cluster task", "cluster task result",
 		"package", "package create", "package ctx", "package deploy", "package push", "package status", "package run-profile", "package run-profile export", "package suite", "package suite push", "package build", "package validate", "package policy", "package pull", "package push-image",

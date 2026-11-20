@@ -256,6 +256,17 @@ func shellArg(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
+func powerShellArg(value string) string {
+	return "'" + strings.NewReplacer("'", "''", "‘", "‘‘", "’", "’’", "‚", "‚‚", "‛", "‛‛").Replace(value) + "'"
+}
+
+func (a *App) commandArg(value string) string {
+	if a.CommandShell == "powershell" {
+		return powerShellArg(value)
+	}
+	return shellArg(value)
+}
+
 func (a *App) commandExecutable() string {
 	executable := a.Executable
 	if executable == "" {
@@ -267,12 +278,15 @@ func (a *App) commandExecutable() string {
 // operationCommand pins follow-up actions to the context this operation used.
 func (a *App) operationCommand(args ...string) string {
 	executable := a.commandExecutable()
-	parts := []string{shellArg(executable), "--context", shellArg(a.Cfg.KubeContext)}
+	parts := []string{a.commandArg(executable), "--context", a.commandArg(a.Cfg.KubeContext)}
+	if a.CommandShell == "powershell" {
+		parts = append([]string{"&"}, parts...)
+	}
 	if len(args) > 1 && args[0] == "cluster" && (args[1] == "up" || args[1] == "down") {
 		parts = append([]string{"KIND_CLUSTER=" + shellArg(a.Cfg.KindCluster), "CONTAINER_ENGINE=" + shellArg(a.Cfg.ContainerEngine)}, parts...)
 	}
 	for _, arg := range args {
-		parts = append(parts, shellArg(arg))
+		parts = append(parts, a.commandArg(arg))
 	}
 	return strings.Join(parts, " ")
 }

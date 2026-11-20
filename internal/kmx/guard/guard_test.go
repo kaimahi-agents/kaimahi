@@ -138,6 +138,71 @@ func TestRefusalStillPrintsTheBanner(t *testing.T) {
 	}
 }
 
+func TestCompactRunPresentationRequiresExactPreconfirmation(t *testing.T) {
+	cases := []struct {
+		name         string
+		context      string
+		confirm      string
+		source       string
+		presentation Presentation
+		wantCompact  bool
+		wantError    bool
+	}{
+		{"remote exact", "aks-remote", "aks-remote", config.SourceFlag, PresentationCompactPreconfirmedRun, true, false},
+		{"remote missing", "aks-remote", "", config.SourceFlag, PresentationCompactPreconfirmedRun, false, true},
+		{"remote conflicting", "aks-remote", "kind-real", config.SourceFlag, PresentationCompactPreconfirmedRun, false, true},
+		{"unchosen target", "aks-remote", "aks-remote", config.SourceDefault, PresentationCompactPreconfirmedRun, false, true},
+		{"local exact", "kind-real", "kind-real", config.SourceFlag, PresentationCompactPreconfirmedRun, true, false},
+		{"local missing", "kind-real", "", config.SourceFlag, PresentationCompactPreconfirmedRun, false, false},
+		{"local conflicting", "kind-real", "aks-remote", config.SourceFlag, PresentationCompactPreconfirmedRun, false, false},
+		{"ordinary guard", "aks-remote", "aks-remote", config.SourceFlag, PresentationDefault, false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var out bytes.Buffer
+			err := Check(load(t), Request{
+				Action: "execute one AI Task against Agent sample in orka-system", Context: tc.context,
+				Source: tc.source, Namespaces: "orka-system", Confirm: tc.confirm,
+				Command: "kmx run --agent sample --prompt-file -", Presentation: tc.presentation,
+			}, &out, nil)
+			if (err != nil) != tc.wantError {
+				t.Fatalf("error=%v", err)
+			}
+			compact := strings.Contains(out.String(), "Run target ·")
+			if compact != tc.wantCompact {
+				t.Fatalf("compact=%v output=%q", compact, out.String())
+			}
+			if tc.wantCompact {
+				lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+				wantLines := 2
+				if tc.context == "kind-real" {
+					wantLines = 1 // Local kind retains its confirmation-free decision.
+				}
+				if len(lines) != wantLines || wantLines == 2 && lines[1] != "kube-guard: confirmed via KAIMAHI_CONFIRM." {
+					t.Fatalf("compact disclosure or confirmation changed: %q", out.String())
+				}
+				for _, want := range []string{
+					`action="execute one AI Task against Agent sample in orka-system"`,
+					`context="` + tc.context + `"`, `source="--context"`,
+					`namespace="orka-system"`,
+				} {
+					if !strings.Contains(lines[0], want) {
+						t.Errorf("compact disclosure missing %q: %s", want, lines[0])
+					}
+				}
+				if tc.context == "aks-remote" && (!strings.Contains(lines[0], `server="example.invalid"`) || !strings.Contains(lines[0], `posture="REMOTE / non-kind"`)) {
+					t.Errorf("compact remote disclosure incomplete: %s", lines[0])
+				}
+				if tc.context == "kind-real" && (!strings.Contains(lines[0], `server="127.0.0.1"`) || !strings.Contains(lines[0], `posture="local kind"`)) {
+					t.Errorf("compact local disclosure incomplete: %s", lines[0])
+				}
+			} else if !strings.Contains(out.String(), "about to:") {
+				t.Fatalf("ordinary/refusal presentation was compacted: %q", out.String())
+			}
+		})
+	}
+}
+
 // The hint an operator is given has to be the command they typed, not a
 // generic one: `KAIMAHI_CONFIRM=<ctx> make <target>` was right for the
 // Makefile and is wrong here.

@@ -21,7 +21,8 @@ type Tests struct {
 }
 
 // ParseTests reads schemaVersion 1 Markdown with one yaml agent-test mapping per
-// fence. Prose and unrelated fences are source-only. It performs no filesystem IO.
+// fence, with an optional bounded plain-text title. Prose and unrelated fences
+// are source-only. It performs no filesystem IO.
 func ParseTests(filename string, data []byte) (*Tests, error) {
 	tests, _, err := parseTests(filename, data)
 	return tests, err
@@ -117,7 +118,7 @@ func parseTests(filename string, data []byte) (*Tests, *yaml.Node, error) {
 		}
 		i = close
 	}
-	examples, err := parseExamplesDocument(filename, root, location, true, nodes)
+	examples, err := parseExamplesDocument(filename, root, location, true, true, nodes)
 	if err != nil {
 		return nil, nil, err
 	}

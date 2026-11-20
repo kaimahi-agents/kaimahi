@@ -11,6 +11,11 @@ func (a *App) provisionOrkaInspection() error {
 	return a.provision([]dependency{depKubectl})
 }
 
+// Unix Task Result retains the ordinary kubectl path, including the operator's
+// kuberc credential-plugin policy. Windows uses the physically pinned remote
+// inspection path instead.
+func (a *App) preflightOrkaTaskResult() error { return a.preflight(depKubectl) }
+
 func inspectOrkaInspectionKubectl(context.Context, string) (string, error) { return "", nil }
 func recheckOrkaInspectionKubectl(context.Context, string, string) error   { return nil }
 

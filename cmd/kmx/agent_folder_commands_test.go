@@ -89,11 +89,11 @@ func TestFilePreviewExecutionSeam(t *testing.T) {
 	cmd.SetErr(&diag)
 	cmd.SetContext(t.Context())
 	veto := errors.New("summary intake veto")
-	result, err := previewFileCommand(cmd, state, file, fileCommandOptions{}, "", "", func() error { return veto })
+	result, err := previewFileCommand(cmd, state, file, nil, fileCommandOptions{}, "", "", func() error { return veto })
 	if !errors.Is(err, veto) || runner.calls != 0 || result.SchemaVersion != 0 || out.Len() != 0 {
 		t.Fatalf("pre-execution veto lost: %+v %v", result, err)
 	}
-	result, err = previewFileCommand(cmd, state, file, fileCommandOptions{}, "", "", nil)
+	result, err = previewFileCommand(cmd, state, file, nil, fileCommandOptions{}, "", "", nil)
 	if err != nil || runner.calls != 1 || !result.FullPass || result.SnapshotRevision == "" || out.Len() != 0 {
 		t.Fatalf("execution must return a pair result without rendering: %+v %v", result, err)
 	}

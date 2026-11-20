@@ -166,11 +166,12 @@ func TestValidateSquadMemberRefusals(t *testing.T) {
 	}
 }
 func TestValidateSquadMemberSafeRoles(t *testing.T) {
-	m := enrichMember()
-	m.Role = "Équipe / C++ & C# (v2)., : -"
-	m.DisplayRole = "架構師 / Lead"
-	if err := validateSquadMember(m); err != nil {
-		t.Fatal(err)
+	for _, role := range []string{"Équipe / C++ & C# (v2)., : -", "架構師 / Lead"} {
+		m := enrichMember()
+		m.Role, m.DisplayRole = role, role
+		if err := validateSquadMember(m); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
