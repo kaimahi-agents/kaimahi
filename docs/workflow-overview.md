@@ -57,6 +57,10 @@ it does not prove every promotion, creation or partial-outcome path.
 | **Publish** | `kmx package push --workspace DIR --evaluation RECEIPT REF` checks that evidence against the exact OCI manifest and publishes that graph. Plain `kmx package push REF` requires passing evidence; `--unevaluated` explicitly opts out. Neither form deploys. |
 | **Deploy** | `kmx package deploy REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME --promote` for candidate evidence or kagent `--bindings FILE` deploys the matching packaged runtime without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets. Orka candidate evidence requires `--promote`, even in the same environment. Inspect placement with `kmx package status --to NAME`; retirement remains unavailable. AgentSessions `--to NAME` creates an immutable Agent with the package/member and operator default model binding; exact acknowledged specs are GET-only no-ops. Registered is not live availability or target evaluation. Its separate offline render takes no destination selectors: `kmx package deploy REF@sha256:DIGEST --harness-image IMAGE@sha256:DIGEST --bindings FILE --evidence RECEIPT --plan` renders a substrate ActorTemplate and harness registration offline and applies nothing. |
 
+Use the [repeat-policy guidance](suite-workspace.md#choose-runs-and-minpasses) to
+choose `runs`/`minPasses`, estimate agent and judge calls, and distinguish fresh
+Test from historical exact-version proof reuse.
+
 Root test also keeps completed passing metadata in private KMX state, so `--out`
 is optional. With named `evalTarget`, `kmx package test` needs no selectors; then
 `kmx package push REPO:TAG` uses the latest completed exact-suite proof and preserves TAG.

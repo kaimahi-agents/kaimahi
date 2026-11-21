@@ -1,0 +1,4 @@
+id: capital-strict
+input: What is the capital of France?
+expectContains: [Paris]
+runs: 3
