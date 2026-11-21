@@ -108,7 +108,7 @@ jobs:
           # for every operation-specific selection below.
           & "$env:RUNNER_TEMP\kmx-windows-tests.exe" go test -race -count=1 -timeout=600s -v ./scripts/ci/windows-tests ./internal/kmx/fileaccess
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $directFileAccessTests = @('TestWindowsFilesystemQualification','TestWindowsTemporaryVolumeIsQualified','TestWindowsPrivateCreationUsesExplicitProtectedDescriptor')
+          $directFileAccessTests = @('TestWindowsFilesystemQualification','TestWindowsTemporaryVolumeIsQualified','TestWindowsPrivateCreationUsesExplicitProtectedDescriptor','TestWindowsRemovePrivateDirectory','TestWindowsRemovePrivateDirectoryRefusesNonemptyAndSubstitution')
           $output = go test -race -count=1 -timeout=600s -v `
             -run ('^(' + ($directFileAccessTests -join '|') + ')$') ./internal/kmx/fileaccess 2>&1
           $status = $LASTEXITCODE
@@ -149,7 +149,7 @@ jobs:
           foreach ($test in $previewTests) {
             if (-not ($output -match ("--- PASS: " + [regex]::Escape($test) + " \("))) { Write-Error "$test did not pass"; exit 1 }
           }
-          $appTests = @('TestLocalFileRunnerRunFailRetainExplainJourney','TestLocalFileRunnerJournaledAppSnapshot','TestSuiteFailureStorePublicationUncertainty','TestSuiteFailureStoreUnresolvedVisibilityKeepsDiagnosticID','TestSuiteFailureStoreOwnPairVisibleUntilWholeClear','TestSuiteFailureStoreAtomicErrors','TestFileFailureRetentionExplainRevisionAndIsolation','TestFileFailureRetentionDoesNotChangeOutcome','TestFileFailureRetentionKeepsFrozenSubjectAfterParentReplacement','TestFileFailureStoreUnresolvedVisibilityKeepsDiagnosticID','TestFileFailureStoreInterruptedWriteAndScopedClear','TestFileFailureStoreLeavesWorkspaceV1BytesCompatible','TestFileFailureStoreRejectsContradictoryRecords','TestWindowsSuiteFailureStoreLifecycle','TestWindowsSuiteFailureWorkspaceCaseAliasesSharePartition','TestWindowsFileFailureStoreLifecycleAndCaseAliases','TestOrkaAgentListSeparatesAbsentKindFromEmptyNamespace','TestOrkaAgentListCancelsActiveCompiledKubectl','TestAgentShowRendersTheWholeChainWhenHealthy','TestAgentShowHumanFieldsAreTerminalSafeAndBounded','TestAgentShowOversizedReadsAndErrorsStaySafe','TestAgentShowReadsBoundedTaskPages','TestTaskResultReadsTerminalAnswerOnlyOnStdout','TestTaskResultNoWaitReportsPendingWithoutOpeningResultSession')
+          $appTests = @('TestLocalFileRunnerRunFailRetainExplainJourney','TestLocalFileRunnerJournaledAppSnapshot','TestSuiteFailureStorePublicationUncertainty','TestSuiteFailureStoreUnresolvedVisibilityKeepsDiagnosticID','TestSuiteFailureStoreOwnPairVisibleUntilWholeClear','TestSuiteFailureStoreAtomicErrors','TestFileFailureRetentionExplainRevisionAndIsolation','TestFileFailureRetentionDoesNotChangeOutcome','TestFileFailureRetentionKeepsFrozenSubjectAfterParentReplacement','TestFileFailureStoreUnresolvedVisibilityKeepsDiagnosticID','TestFileFailureStoreInterruptedWriteAndScopedClear','TestFileFailureStoreLeavesWorkspaceV1BytesCompatible','TestFileFailureStoreRejectsContradictoryRecords','TestSuiteManagedEvaluationRechecksExplicitOutputParent','TestWindowsSuiteFailureStoreLifecycle','TestWindowsSuiteFailureWorkspaceCaseAliasesSharePartition','TestWindowsFileFailureStoreLifecycleAndCaseAliases','TestWindowsSuitePassingExportLifecycle','TestWindowsSuitePassingExportRechecksNamedParent','TestWindowsSuitePassStoreLifecycleAndLock','TestWindowsSuitePassStoreUnresolvedVisibilityReturnsInspectionOnly','TestWindowsSuitePassStoreRefusesUnsafeStateBeforeRecord','TestWindowsSuiteReceiptLexicalCrossVolumeIsOutside','TestWindowsSuiteStateAndOutputSupportSeparateQualifiedVolume','TestWindowsWorkspaceTestCandidateManagedProofJourney','TestSuiteNativeRefusesUnsupportedRuntimeBeforeOrkaEffects','TestOrkaAgentListSeparatesAbsentKindFromEmptyNamespace','TestOrkaAgentListCancelsActiveCompiledKubectl','TestAgentShowRendersTheWholeChainWhenHealthy','TestAgentShowHumanFieldsAreTerminalSafeAndBounded','TestAgentShowOversizedReadsAndErrorsStaySafe','TestAgentShowReadsBoundedTaskPages','TestTaskResultReadsTerminalAnswerOnlyOnStdout','TestTaskResultNoWaitReportsPendingWithoutOpeningResultSession')
           $output = & "$env:RUNNER_TEMP\kmx-windows-tests.exe" go test -race -count=1 -timeout=600s -v `
             -run ('^(' + ($appTests -join '|') + ')$') ./internal/kmx/app 2>&1
           $status = $LASTEXITCODE
@@ -158,6 +158,16 @@ jobs:
           if ($output -match '--- SKIP:') { Write-Error 'a selected App test skipped'; exit 1 }
           foreach ($test in $appTests) {
             if (-not ($output -match ("--- PASS: " + [regex]::Escape($test) + " \("))) { Write-Error "$test did not pass"; exit 1 }
+          }
+          $workspaceTestTests = @('TestFreezeOrkaCleansValidationStage','TestFreezeOrkaDetectsSourceReplacement','TestFreezeOrkaPreCancelledHasNoState','TestGeneratedTreeCleanupClosesRetainedDirectories','TestPreparedHasOneConcurrentWinner','TestPreparedZeroAndCopyCannotDuplicateAuthority')
+          $output = & "$env:RUNNER_TEMP\kmx-windows-tests.exe" go test -race -count=1 -timeout=600s -v `
+            -run ('^(' + ($workspaceTestTests -join '|') + ')$') ./internal/kmx/workspacetest 2>&1
+          $status = $LASTEXITCODE
+          $output | Write-Output
+          if ($status -ne 0) { exit $status }
+          if ($output -match '--- SKIP:') { throw 'a selected workspace-Test package test skipped' }
+          foreach ($test in $workspaceTestTests) {
+            if (-not ($output -match ("--- PASS: " + [regex]::Escape($test) + " \("))) { throw "$test did not pass" }
           }
       - name: Focused native cmd/kmx tests with no skips
         shell: pwsh
@@ -194,6 +204,20 @@ jobs:
           if ($metadata -notmatch '(?m)^\s*build\s+GOOS=windows\s*$' -or $metadata -notmatch '(?m)^\s*build\s+GOARCH=amd64\s*$') {
             throw 'native executable metadata is not windows/amd64'
           }
+      - name: Direct executable workspace-Test gate refusal journey
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $state = Join-Path $env:RUNNER_TEMP 'workspace-test-gate-state'
+          $env:KMX_HOME = $state
+          $ErrorActionPreference = 'Continue'
+          $output = @(& "$env:RUNNER_TEMP\kmx.exe" package test --workspace . 2>&1)
+          $status = $LASTEXITCODE
+          $ErrorActionPreference = 'Stop'
+          if ($status -eq 0) { throw 'incomplete Windows workspace Test selection succeeded.' }
+          if (Test-Path -LiteralPath $state) { throw 'refused Windows workspace Test created state.' }
+          $output | Write-Output
+          exit 0
       - name: Direct executable day-zero journey
         shell: pwsh
         run: ./scripts/ci/windows-cli-day-zero.ps1 -Binary "$env:RUNNER_TEMP\kmx.exe" -Fixture ./internal/kmx/agentfile/testdata/greeter.agent.md
@@ -254,6 +278,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go test -c -o "$env:RUNNER_TEMP\app-arm64.test.exe" ./internal/kmx/app
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go test -c -o "$env:RUNNER_TEMP\workspacetest-arm64.test.exe" ./internal/kmx/workspacetest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go test -c -o "$env:RUNNER_TEMP\windows-tests-arm64.test.exe" ./scripts/ci/windows-tests
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           foreach ($path in @(
@@ -263,6 +289,7 @@ jobs:
             "$env:RUNNER_TEMP\config-arm64.test.exe",
             "$env:RUNNER_TEMP\localpreview-arm64.test.exe",
             "$env:RUNNER_TEMP\app-arm64.test.exe",
+            "$env:RUNNER_TEMP\workspacetest-arm64.test.exe",
             "$env:RUNNER_TEMP\windows-tests-arm64.test.exe"
           )) {
             $metadataLines = @(go version -m $path 2>&1)

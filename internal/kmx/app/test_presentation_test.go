@@ -48,6 +48,16 @@ func TestTestCandidateRecoveryPreservesLegacySpelling(t *testing.T) {
 	}
 }
 
+func TestWindowsTestCandidateRecoveryUsesPowerShell(t *testing.T) {
+	a := &App{Executable: `C:\Program Files\kmx.exe`, CommandShell: "powershell", TestPresentation: true}
+	runID := "0123456789abcdef" + "fedcba9876543210"
+	command := a.workspaceTestCommand("cleanup", runID, "--to-context", "team's remote", "--to-namespace", "orka-system")
+	want := `& 'C:\Program Files\kmx.exe' package test 'cleanup' '` + runID + `' '--to-context' 'team''s remote' '--to-namespace' 'orka-system'`
+	if command != want {
+		t.Fatalf("PowerShell recovery = %q, want %q", command, want)
+	}
+}
+
 func TestTestTargetsTableKeepsMachineOperations(t *testing.T) {
 	var table, wire bytes.Buffer
 	a := &App{Out: &table}

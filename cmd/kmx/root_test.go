@@ -109,6 +109,10 @@ func TestGuardedWindowsAmd64AdmitsExplicitOrkaRemoteOperations(t *testing.T) {
 		{"show table", []string{"--context", "remote", "cluster", "orka", "show", "assistant", "--namespace", "team"}},
 		{"show json", []string{"cluster", "orka", "show", "assistant", "--namespace", "team", "--tasks", "3", "-o", "json", "--context", "remote"}},
 		{"task result", []string{"--context", "remote", "cluster", "task", "result", "task-one", "--namespace", "team", "--wait", "5m"}},
+		{"package test", []string{"package", "test", "--workspace", "workspace", "--to-context", "remote", "--to-namespace", "team", "--inference", "provider:model"}},
+		{"legacy eval", []string{"eval", "--workspace", "workspace", "--to-context", "remote", "--to-namespace", "team", "--inference", "provider:model", "--out", "receipt.json"}},
+		{"package test cleanup", []string{"package", "test", "cleanup", "--to-context", "remote", "--to-namespace", "team"}},
+		{"legacy eval cleanup", []string{"eval", "cleanup", strings.Repeat("a", 32), "--to-context", "remote", "--to-namespace", "team"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -132,7 +136,11 @@ func TestGuardedWindowsAmd64AdmitsExplicitOrkaRemoteOperations(t *testing.T) {
 			if err := cmd.Args(cmd, cmd.Flags().Args()); errors.Is(err, errWindowsOperationUnsupported) || err != nil {
 				t.Fatalf("%v was not admitted: %v", tc.args, err)
 			}
-			if *loads != 0 || out.Len() != 0 || errOut.Len() != 0 {
+			wantDiagnostics := ""
+			if strings.HasPrefix(tc.name, "legacy eval") {
+				wantDiagnostics = evalDeprecationNotice + "\n"
+			}
+			if *loads != 0 || out.Len() != 0 || errOut.String() != wantDiagnostics {
 				t.Fatalf("classification had effects: loads=%d stdout=%q stderr=%q", *loads, out.String(), errOut.String())
 			}
 		})
@@ -167,6 +175,22 @@ func TestGuardedWindowsRemoteInspectionRefusesIncompleteOrBroaderModesBeforeEffe
 		{"run missing namespace", "amd64", []string{"--context", "remote", "run", "--agent", "assistant", "--prompt", "hello"}},
 		{"run prompt file stays closed", "amd64", []string{"--context", "remote", "run", "--agent", "assistant", "--namespace", "team", "--prompt-file", "prompt.txt"}},
 		{"run positional file stays closed with context", "amd64", []string{"--context", "remote", "run", "agent.md"}},
+		{"test arm64 remains closed", "arm64", []string{"package", "test", "--workspace", "workspace", "--to-context", "remote", "--to-namespace", "team", "--inference", "provider:model"}},
+		{"test missing workspace", "amd64", []string{"package", "test", "--to-context", "remote", "--to-namespace", "team", "--inference", "provider:model"}},
+		{"test missing context", "amd64", []string{"package", "test", "--workspace", "workspace", "--to-namespace", "team", "--inference", "provider:model"}},
+		{"test missing namespace", "amd64", []string{"package", "test", "--workspace", "workspace", "--to-context", "remote", "--inference", "provider:model"}},
+		{"test invalid inference", "amd64", []string{"package", "test", "--workspace", "workspace", "--to-context", "remote", "--to-namespace", "team", "--inference", "model"}},
+		{"test named destination", "amd64", []string{"package", "test", "--workspace", "workspace", "--to", "dev", "--to-context", "remote", "--to-namespace", "team", "--inference", "provider:model"}},
+		{"test bindings", "amd64", []string{"package", "test", "--workspace", "workspace", "--to-context", "remote", "--to-namespace", "team", "--inference", "provider:model", "--bindings", "bindings.json"}},
+		{"test judge", "amd64", []string{"package", "test", "--workspace", "workspace", "--to-context", "remote", "--to-namespace", "team", "--inference", "provider:model", "--judge-base-url", "https://judge.example"}},
+		{"test result port", "amd64", []string{"package", "test", "--workspace", "workspace", "--to-context", "remote", "--to-namespace", "team", "--inference", "provider:model", "--result-port", "1234"}},
+		{"test JSON", "amd64", []string{"package", "test", "--workspace", "workspace", "--to-context", "remote", "--to-namespace", "team", "--inference", "provider:model", "-o", "json"}},
+		{"test fail fast", "amd64", []string{"package", "test", "--workspace", "workspace", "--to-context", "remote", "--to-namespace", "team", "--inference", "provider:model", "--fail-fast"}},
+		{"test root context", "amd64", []string{"--context", "remote", "package", "test", "--workspace", "workspace", "--to-context", "remote", "--to-namespace", "team", "--inference", "provider:model"}},
+		{"cleanup missing context", "amd64", []string{"package", "test", "cleanup", "--to-namespace", "team"}},
+		{"cleanup missing namespace", "amd64", []string{"package", "test", "cleanup", "--to-context", "remote"}},
+		{"cleanup named target", "amd64", []string{"package", "test", "cleanup", "--to", "dev", "--to-context", "remote", "--to-namespace", "team"}},
+		{"cleanup bad run", "amd64", []string{"package", "test", "cleanup", "short", "--to-context", "remote", "--to-namespace", "team"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -500,6 +524,8 @@ func TestGuardedWindowsSupportedCommandFlagsAreExhaustivelyAllowlisted(t *testin
 		{path: []string{"test"}, args: []string{file}, allFlags: []string{"case", "check", "container-engine", "context", "github-summary", "host", "mcp-server", "model", "no-content", "no-mcp-servers", "output", "provider", "provider-url", "runner", "tests", "tool-bindings", "verbose"}, allowFlags: []string{"case", "check", "no-content", "output", "tests", "verbose"}},
 		{path: []string{"test", "explain"}, allFlags: []string{"clear", "container-engine", "context", "file", "show-content", "tests", "workspace"}, allowFlags: []string{"clear", "file", "show-content", "tests"}},
 		{path: []string{"eval", "explain"}, allFlags: []string{"clear", "container-engine", "context", "file", "show-content", "tests", "workspace"}, allowFlags: []string{"clear", "file", "show-content", "tests"}},
+		{path: []string{"package", "test"}, allFlags: []string{"bindings", "case-timeout", "container-engine", "context", "development-host", "fail-fast", "inference", "judge-base-url", "judge-key-env", "out", "output", "result-port", "show-content", "to", "to-context", "to-namespace", "workspace"}, allowFlags: []string{"inference", "out", "to-context", "to-namespace", "workspace"}},
+		{path: []string{"package", "test", "cleanup"}, allFlags: []string{"container-engine", "context", "to", "to-context", "to-namespace", "workspace"}, allowFlags: []string{"to-context", "to-namespace"}},
 		{path: []string{"cluster", "orka", "list"}, allFlags: []string{"container-engine", "context", "namespace", "output"}, allowFlags: []string{"namespace", "output"}},
 		{path: []string{"cluster", "orka", "show"}, args: []string{"assistant"}, allFlags: []string{"container-engine", "context", "namespace", "output", "tasks"}, allowFlags: []string{"namespace", "output", "tasks"}},
 		{path: []string{"cluster", "task", "result"}, args: []string{"task-one"}, allFlags: []string{"container-engine", "context", "namespace", "result-port", "wait"}, allowFlags: []string{"namespace", "result-port", "wait"}},
@@ -542,6 +568,20 @@ func TestGuardedWindowsSupportedCommandFlagsAreExhaustivelyAllowlisted(t *testin
 						t.Fatal(err)
 					}
 				}
+				if strings.Join(tc.path, " ") == "package test" {
+					for key, value := range map[string]string{"workspace": "workspace", "to-context": "remote", "to-namespace": "team", "inference": "provider:model"} {
+						if err := cmd.Flags().Set(key, value); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+				if strings.Join(tc.path, " ") == "package test cleanup" {
+					for key, value := range map[string]string{"to-context": "remote", "to-namespace": "team"} {
+						if err := cmd.Flags().Set(key, value); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
 				if strings.HasSuffix(strings.Join(tc.path, " "), "explain") {
 					if err := cmd.Flags().Set("file", file); err != nil {
 						t.Fatal(err)
@@ -557,6 +597,16 @@ func TestGuardedWindowsSupportedCommandFlagsAreExhaustivelyAllowlisted(t *testin
 					value = "assistant"
 				} else if name == "prompt" {
 					value = "hello"
+				} else if name == "workspace" {
+					value = "workspace"
+				} else if name == "to-context" {
+					value = "remote"
+				} else if name == "to-namespace" {
+					value = "team"
+				} else if name == "inference" {
+					value = "provider:model"
+				} else if name == "out" {
+					value = "receipt.json"
 				}
 				if err := cmd.Flags().Set(name, value); err != nil {
 					t.Fatal(err)
@@ -790,6 +840,34 @@ func TestNativeCommandRecordsResolvedEngineInInvocation(t *testing.T) {
 	}
 	if !strings.Contains(invocation, "CONTAINER_ENGINE=podman") || !strings.Contains(invocation, "--container-engine podman") {
 		t.Fatalf("invocation lost selected engine: %s", invocation)
+	}
+}
+
+func TestWindowsOperationInvocationUsesPowerShellSyntax(t *testing.T) {
+	var out, errOut bytes.Buffer
+	deps, _ := testDependencies(&out, &errOut)
+	deps.goos, deps.goarch = "windows", "amd64"
+	deps.executable = `C:\Program Files\team's kmx.exe`
+	state := &commandState{deps: deps, argv: []string{"package", "test", "--workspace", `C:\team's workspace`, "--to-context", "remote", "--to-namespace", "team", "--inference", "provider:model"}}
+	root := newRootCommand(state)
+	command, _, err := root.Find([]string{"package", "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	command.RunE = func(cmd *cobra.Command, _ []string) error {
+		a, err := state.operationApplication(cmd)
+		if err != nil {
+			return err
+		}
+		want := `& 'C:\Program Files\team''s kmx.exe' 'package' 'test' '--workspace' 'C:\team''s workspace' '--to-context' 'remote' '--to-namespace' 'team' '--inference' 'provider:model'`
+		if a.InvocationCommand != want || strings.Contains(a.InvocationCommand, "KIND_CLUSTER=") || strings.Contains(a.InvocationCommand, "--context") {
+			t.Fatalf("PowerShell invocation = %q, want %q", a.InvocationCommand, want)
+		}
+		return nil
+	}
+	root.SetArgs(state.argv)
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
 	}
 }
 

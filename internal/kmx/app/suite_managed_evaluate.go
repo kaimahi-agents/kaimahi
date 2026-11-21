@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"io"
 	"time"
-
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 )
 
 // The evaluator may export an explicit receipt, but export alone cannot create
@@ -45,7 +43,15 @@ func (p *PreparedSuiteWorkspaceEvaluation) reportPassingReceipt(out io.Writer) e
 
 func (a *App) finishManagedEvaluation(ctx context.Context, p *PreparedSuiteWorkspaceEvaluation, evaluationErr error) (err error) {
 	// This is outside the evaluator call, after all of its deferred closes.
-	linked := p.output != nil && p.output.linked
+	var outputFenceErr error
+	if p.output != nil && p.output.linked {
+		if outputFenceErr = p.output.unchanged(); outputFenceErr != nil {
+			p.output.namedPathCurrent = false
+			outputFenceErr = errSuitePassingExport
+		}
+	}
+	linked := p.output != nil && p.output.linked && p.output.namedPathCurrent
+	linkedAtMovedParent := p.output != nil && p.output.linked && !p.output.namedPathCurrent
 	defer func() {
 		p.explicitReceiptMayExist = err != nil && p.options.Out != "" && linked
 	}()
@@ -54,9 +60,9 @@ func (a *App) finishManagedEvaluation(ctx context.Context, p *PreparedSuiteWorks
 	if p.outputFinalizationFailed {
 		p.runs.ThresholdUnreachable = false
 	}
-	err = errors.Join(evaluationErr, closeErr)
+	err = errors.Join(evaluationErr, outputFenceErr, closeErr)
 	if err == nil {
-		err = workspace.CheckCurrent(ctx, p.root, p.prepared)
+		err = p.checkCurrent(ctx)
 	}
 	if err == nil && p.bindings != nil {
 		err = p.bindings.recheck()
@@ -69,6 +75,9 @@ func (a *App) finishManagedEvaluation(ctx context.Context, p *PreparedSuiteWorks
 	}
 	if err != nil {
 		if p.options.Out != "" {
+			if linkedAtMovedParent {
+				return fmt.Errorf("evaluation not registered; explicit receipt parent changed after observed publication; inspect private state before retrying: %w", err)
+			}
 			return fmt.Errorf("evaluation not registered; explicit receipt output may exist at %q: %w", p.options.Out, err)
 		}
 		return err

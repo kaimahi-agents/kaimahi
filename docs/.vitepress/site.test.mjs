@@ -217,7 +217,7 @@ test('native Windows documentation keeps the explicit remote exception narrow', 
   ]) assert.ok(windows.includes(marker), `Windows boundary: ${marker}`)
 
   for (const deferred of [
-    'Docker', 'kind', 'local Kubernetes setup', 'cluster mutation', 'workspace', 'OCI', 'suite evidence',
+    'Docker', 'kind', 'local Kubernetes setup', 'cluster mutation', 'general workspace', 'OCI', 'portable evidence',
     'provider routes', 'kmx mcp', 'native Copilot plugin', 'AgentKit', 'Buildx',
     'managed tools', 'live Agent Run/chat', 'publication', 'Deploy'
   ]) assert.ok(windows.includes(deferred), `Windows deferred operation: ${deferred}`)
@@ -225,7 +225,7 @@ test('native Windows documentation keeps the explicit remote exception narrow', 
   assert.match(windows, /Sigstore bundle signs the checksum manifest/i)
   assert.match(windows, /Published rc\.4-rc\.6 Run accepts a second positional input/)
   assert.match(windows, /Current main: kmx run FILE \[-p\|--prompt TEXT\]/)
-  assert.match(windows, /executes list\/show and existing Task Result against compiled native kubectl protocol fixtures/)
+  assert.match(windows, /executes list\/show, existing Task Result and the workspace-Test storage\/package contract against compiled native fixtures/)
   assert.match(windows, /remote-inspection boundary with a checksum-verified real kubectl\.exe[^.]*Task Result against a cross-built native protocol fixture/)
   assert.match(windows, /certificate-identity[^\n]*\$Version/i)
   assert.match(windows, /not evaluated[^.]*not[^.]*allowed/i)

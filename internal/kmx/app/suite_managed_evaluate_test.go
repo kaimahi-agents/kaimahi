@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
 )
 
 func TestSuiteManagedEvaluationRegistersOnlyCompleteCandidate(t *testing.T) {
@@ -167,6 +169,40 @@ func TestSuiteManagedEvaluationPreflightAndFinalization(t *testing.T) {
 	}
 	if _, record, err := p.store.latest(t.Context(), p.suite); err != nil || record == "" {
 		t.Fatal("visible record revoked", err)
+	}
+}
+
+func TestSuiteManagedEvaluationRechecksExplicitOutputParent(t *testing.T) {
+	parent := filepath.Join(privateSuiteDir(t), "private")
+	directory, err := fileaccess.EnsurePrivateDirectory(t.Context(), parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := directory.Close(); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(parent, "explicit.json")
+	output, err := preflightSuitePrivateExport(t.Context(), destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := output.publishBytes(t.Context(), []byte("complete explicit receipt")); err != nil {
+		t.Fatal(err)
+	}
+	moved := parent + "-moved"
+	if err := os.Rename(parent, moved); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(parent, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	p := &PreparedSuiteWorkspaceEvaluation{output: output, options: SuiteWorkspaceEvaluationOptions{ManagedPass: true, Out: destination}}
+	err = (&App{Err: io.Discard}).finishManagedEvaluation(t.Context(), p, nil)
+	if err == nil || p.record != "" || !strings.Contains(err.Error(), "parent changed after observed publication") || strings.Contains(err.Error(), destination) {
+		t.Fatalf("moved explicit parent = record:%q err:%v", p.record, err)
+	}
+	if _, err := os.Stat(filepath.Join(moved, "explicit.json")); err != nil {
+		t.Fatalf("observed explicit receipt not retained: %v", err)
 	}
 }
 

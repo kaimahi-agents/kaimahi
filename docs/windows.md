@@ -1,8 +1,8 @@
 # Native Windows
 
 Native Windows support is **prerelease-only and operation-specific**. Current
-`main` adds explicit-target remote Orka inspection and existing Task Result on
-amd64 to the narrow day-zero CLI.
+`main` adds explicit-target remote Orka inspection, existing Task Result and
+explicit remote Orka workspace Test on amd64 to the narrow day-zero CLI.
 Published v0.9.0 release candidates beginning with `v0.9.0-rc.4` retain only the
 day-zero commands until a later release contains this exception. This is not the
 Kubernetes agent lifecycle on Windows. Stable v0.8.1, including the version
@@ -30,6 +30,7 @@ with `v0.9.0-rc.5`. Rows labeled current main require a later containing build.
 | Offline file diagnostics | `kmx test explain [failure-id] --file FILE [--tests FILE]`, including its file-scoped content and clear options. Explain compares retained failures with the current agent-and-tests selection. Hidden `kmx eval explain ... --file FILE` may remain callable only as the deprecated compatibility spelling. |
 | Read-only remote Orka inspection (current main, amd64) | `kmx --context CONTEXT cluster orka list --namespace NAMESPACE` and `kmx --context CONTEXT cluster orka show NAME --namespace NAMESPACE [-o table\|json] [--tasks N]`. Both selectors are mandatory on native Windows. List is table-only on native Windows; these commands perform bounded reads only and create no KMX state. |
 | Existing Task result (current main, amd64) | `kmx --context CONTEXT cluster task result TASK --namespace NAMESPACE [--wait DURATION] [--result-port PORT]`. It reads one exact AI Task without resending; pending exits 2 and opens no tunnel. Answer stdout is accepted only after the owned loopback forward exits cleanly. |
+| Remote Orka workspace Test (current main, amd64) | `kmx package test --workspace DIR --to-context CONTEXT --to-namespace NAMESPACE --inference provider:NAME [--out FILE]`. Every selector is mandatory. KMX freezes one exact policy-free, single-member Orka package in memory, executes every ordered case through fresh candidate resources and Tasks, verifies UID-bound cleanup, then registers managed passing proof. Optional `--out` is create-only in an existing private directory. `kmx package test cleanup [full-run-id] --to-context CONTEXT --to-namespace NAMESPACE` is the matching explicit recovery route. Hidden `kmx eval` retains the same behavior and one deprecation notice. |
 
 Flag-parsing errors label their help hint **PowerShell** on native Windows.
 The hint uses PowerShell's `&` call operator and quotes the executable path,
@@ -52,6 +53,7 @@ For example, after downloading a qualified amd64 artifact:
 .\kmx-windows-amd64.exe --context existing-orka cluster orka list --namespace orka-system
 .\kmx-windows-amd64.exe --context existing-orka cluster orka show greeter --namespace orka-system
 .\kmx-windows-amd64.exe --context existing-orka cluster task result task-name --namespace orka-system
+.\kmx-windows-amd64.exe package test --workspace .\workspace --to-context existing-orka --to-namespace orka-system --inference provider:inference
 ```
 
 The file must satisfy the [agent file contract](agent-file.md), including its
@@ -81,11 +83,14 @@ enters a kill-on-close Windows Job Object, so cancellation and abrupt KMX exit
 reap ordinary descendants. An arbitrary exec plugin may still perform side effects or use
 brokered process creation outside that cleanup boundary.
 
-Task Result additionally requires the selected namespace's Orka API
+Task Result and workspace Test additionally require the selected namespace's Orka API
 Service and result-reader ServiceAccount. KMX requests one bounded in-memory
 ServiceAccount token, opens an IPv4 loopback-only kubectl port-forward, pins one
 connection and never reconnects it. Tokens are never placed in argv, files or
 output. Task Result creates no Kubernetes resource and never resends work.
+Workspace Test creates only fresh run-scoped Provider, Agent and Task candidates
+after exact remote confirmation. It never adopts or updates existing resources
+and never retries an ambiguous create, result, cleanup or proof publication.
 
 The selected Orka Service and its backing controller are part of the trusted
 runtime boundary. Orka v0.3.0 serves this API as plaintext HTTP inside the
@@ -113,15 +118,20 @@ Every command or mode not listed above refuses before operational configuration,
 subprocess, network, cluster or ordinary output effects. Native Windows does not
 currently support:
 
-- Docker, Podman, kind, local Kubernetes setup, AKS or any cluster mutation;
-- workspace or OCI storage, AgentSuite build/load/test/push/pull, suite evidence,
-  registry access, publication, Deploy or retirement;
+- Docker, Podman, kind, local Kubernetes setup, AKS or cluster mutation outside
+  the exact remote Orka Test candidate lifecycle above;
+- general workspace or OCI storage, AgentSuite build/push/pull, portable evidence
+  export, registry access, publication, Deploy or retirement;
 - local or hosted model discovery, provider routes, credentials, model network
   calls, MCP tool bindings or any other network route;
 - `kmx mcp`, a native Copilot plugin, AgentKit, Buildx or native Squad setup;
 - managed tools, tool downloads, cluster records, remembered cluster preferences
   or context operations; or
 - live Agent Run/chat, runtime setup/status, package export, publication or deployment.
+
+Named destinations, implicit workspace discovery, kagent, AgentSessions,
+`llmJudge`, explicit result ports, JSON, `--fail-fast`, publication and Deploy
+remain closed for native Windows workspace Test.
 
 Run and Chat stay closed even with explicit selectors: Orka's current Task
 `agentRef` is name-only and has no create-time Agent UID/generation precondition,
@@ -273,12 +283,13 @@ approval process or use WSL if that route is approved.
 Windows amd64 is natively executed on hosted `windows-latest`. The native job
 builds and vets the CLI, verifies version/help/completion, executes a real
 Markdown file through package-free fake Run, a failing fake Test and offline
-file Explain, and executes list/show and existing Task Result against compiled
-native kubectl protocol fixtures. Release qualification repeats the day-zero
+file Explain, and executes list/show, existing Task Result and the workspace-Test
+storage/package contract against compiled native fixtures. Release qualification repeats the day-zero
 journey, reaches the remote-inspection boundary with a checksum-verified real
 `kubectl.exe`, and exercises Task Result against a cross-built native protocol
 fixture from the same commit, each using the exact staged
-`kmx-windows-amd64.exe`. It does not claim a live remote cluster or real Azure
+`kmx-windows-amd64.exe`. It does not yet execute a successful workspace Test
+through that exact staged executable, and does not claim a live remote cluster or real Azure
 authentication; those remain separate runtime qualification.
 
 Windows arm64 is cross-built, vetted and included in the checksum inventory. It
@@ -295,7 +306,7 @@ the exact release.
 ## Use WSL for broader workflows
 
 Use the Linux build inside WSL for quickstart, Docker/kind/local Kubernetes,
-workspace and OCI operations, model/provider access, MCP/Copilot integration,
+general workspace and OCI operations, model/provider access, MCP/Copilot integration,
 publication, Deploy and every other deferred native operation. Follow the ordinary
 [getting started](getting-started.md) and [release](releases.md) instructions
 inside the Linux distribution, and keep its writable state in the distro's Linux

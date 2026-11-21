@@ -149,14 +149,14 @@ func (a *App) evaluateSuiteSessionsWorkspace(ctx context.Context, p *PreparedSui
 			err = &suiteSessionsEvaluationError{cause: errors.Join(err, ctx.Err())}
 		}
 	}()
-	if p == nil || p.suite == nil || p.output == nil || p.started || p.sessions == nil || a.Out == nil || a.Err == nil {
+	if p == nil || p.suite == nil || p.output == nil || p.sessions == nil || a.Out == nil || a.Err == nil {
 		return errSuiteSessionsHost
 	}
 	recheck := func(checkCtx context.Context) error {
 		if err := checkCtx.Err(); err != nil {
 			return err
 		}
-		if err := workspace.CheckCurrent(checkCtx, p.root, p.prepared); err != nil {
+		if err := p.checkCurrent(checkCtx); err != nil {
 			return err
 		}
 		if err := p.sessions.recheck(p.suite); err != nil {
@@ -171,7 +171,9 @@ func (a *App) evaluateSuiteSessionsWorkspace(ctx context.Context, p *PreparedSui
 	if err != nil {
 		return err
 	}
-	p.started = true
+	if p.operation == nil || p.operation.Start(ctx) != nil {
+		return errSuiteSessionsHost
+	}
 	if _, err := fmt.Fprintln(a.Err, suiteSessionsDevelopmentWarning); err != nil {
 		return err
 	}

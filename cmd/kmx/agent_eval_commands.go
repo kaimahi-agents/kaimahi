@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
 )
 
 func newAgentTestCommand(state *commandState) *cobra.Command {
@@ -186,6 +188,9 @@ func newAgentEvaluationCommand(state *commandState, verb string) *cobra.Command 
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
+			if state.deps.goos == "windows" {
+				return runWindowsWorkspaceTest(cmd, state, verb, native, output, ctx)
+			}
 			if err := refuseMultiMemberWorkspace(native.Workspace); err != nil {
 				return err
 			}
@@ -309,6 +314,44 @@ func newAgentEvaluationCommand(state *commandState, verb string) *cobra.Command 
 	})
 	group.AddCommand(diff, from, newEvalCleanupCommand(state, commandPath), newSuiteEvalExportCommand(state), newSuiteEvalVerifyCommand(state), newEvalExplainCommand(state))
 	return group
+}
+
+func runWindowsWorkspaceTest(cmd *cobra.Command, state *commandState, verb string, native app.SuiteWorkspaceEvaluationOptions, output string, ctx context.Context) (err error) {
+	if state.deps.goarch != "amd64" || output != "text" || !cmd.Flags().Changed("workspace") || !cmd.Flags().Changed("to-context") || !cmd.Flags().Changed("to-namespace") || !cmd.Flags().Changed("inference") {
+		return errWindowsOperationUnsupported
+	}
+	if err := refuseMultiMemberWorkspace(native.Workspace); err != nil {
+		return err
+	}
+	prepared, err := app.PrepareSuiteWorkspaceEvaluation(ctx, native)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, prepared.Close()) }()
+	cfg := &config.Config{KubeContext: native.ToContext, ContextSource: config.SourceFlag, Confirm: os.Getenv("KAIMAHI_CONFIRM")}
+	a := state.deps.newApp(cfg)
+	if state.deps.buildInfo != nil {
+		info, ok := state.deps.buildInfo()
+		a.SetBuildIdentity(version.Resolve(info, ok))
+	}
+	a.Out, a.Err, a.Stdin = cmd.OutOrStdout(), cmd.ErrOrStderr(), state.deps.stdin
+	a.Executable = state.executable()
+	a.CommandShell = "powershell"
+	if a.Run == nil {
+		return errors.New("native Windows workspace Test requires subprocess ownership")
+	}
+	runner := *a.Run
+	runner.Context = ctx
+	runner.Stdout, runner.Stderr = state.deps.stdout, state.deps.stderr
+	runner.Unset = append(runner.Unset, "KIND_EXPERIMENTAL_PROVIDER", "KIND_CLUSTER", "CONTAINER_ENGINE", "MODEL")
+	a.Run = &runner
+	a.TestPresentation = verb == "test"
+	parts := []string{"&", powerShellQuote(state.executable())}
+	for _, arg := range state.argv {
+		parts = append(parts, powerShellQuote(arg))
+	}
+	a.InvocationCommand = strings.Join(parts, " ")
+	return a.EvaluateSuiteWorkspace(ctx, prepared)
 }
 
 const evalDeprecationNotice = "kmx eval is deprecated; use kmx package test (same arguments)."

@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/workspacetest"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -30,23 +33,40 @@ type nativeReadFixture struct {
 
 func nativeFixture(t *testing.T, profiles ...workspace.RuntimeProfile) (*App, *workspace.NativeSuite, *nativeReadFixture) {
 	t.Helper()
-	input := filepath.Join(t.TempDir(), "instructions.md")
-	writeFile(t, input, "  Answer briefly.\n\nKeep whitespace.\n\n")
-	root := filepath.Join(t.TempDir(), "workspace")
-	opt := workspace.CreateOptions{Name: "greeter", Model: "packaged-model", Description: "Public description", InstructionsFile: input}
-	if len(profiles) > 0 {
-		opt.Runtime = profiles[0]
-	}
-	if err := workspace.Create(t.Context(), root, opt); err != nil {
-		t.Fatal(err)
-	}
-	p, err := workspace.Prepare(t.Context(), root, filepath.Join(t.TempDir(), "cache"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	suite, err := workspace.Load(t.Context(), p)
-	if err != nil {
-		t.Fatal(err)
+	var suite *workspace.NativeSuite
+	if runtime.GOOS == "windows" {
+		if len(profiles) > 0 && profiles[0] != (workspace.RuntimeProfile{ID: "orka"}) {
+			t.Fatal("native Windows suite fixture is Orka-only")
+		}
+		root := windowsNativeWorkspaceFixture(t)
+		prepared, err := workspacetest.FreezeOrka(t.Context(), workspacetest.Summary{Workspace: root, Runtime: "orka", Context: "kind-test", Namespace: OrkaNamespace, Inference: "provider:inference"}, filepath.Join(privateSuiteDir(t), "validation"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = prepared.Close() })
+		suite, err = prepared.Suite(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		input := filepath.Join(t.TempDir(), "instructions.md")
+		writeFile(t, input, "  Answer briefly.\n\nKeep whitespace.\n\n")
+		root := filepath.Join(t.TempDir(), "workspace")
+		opt := workspace.CreateOptions{Name: "greeter", Model: "packaged-model", Description: "Public description", InstructionsFile: input}
+		if len(profiles) > 0 {
+			opt.Runtime = profiles[0]
+		}
+		if err := workspace.Create(t.Context(), root, opt); err != nil {
+			t.Fatal(err)
+		}
+		p, err := workspace.Prepare(t.Context(), root, filepath.Join(t.TempDir(), "cache"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		suite, err = workspace.Load(t.Context(), p)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	adapter, _ := reconcileFixtureMode(t, true)
 	a := adapter.app
@@ -121,10 +141,29 @@ func nativeFixture(t *testing.T, profiles ...workspace.RuntimeProfile) (*App, *w
 	return a, suite, f
 }
 
+func windowsNativeWorkspaceFixture(t *testing.T) string {
+	t.Helper()
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(base, "workspace")
+	writeFile(t, filepath.Join(root, "workspace.yaml"), "schemaVersion: 1\nname: greeter\nmember: agents/greeter/member.yaml\nbuildProfile: build-profiles/default.json\n")
+	writeFile(t, filepath.Join(root, "agents/greeter/member.yaml"), "id: greeter\ndescription: Public description\ninstructions: instructions.md\nmodel:\n  protocol: openai-compatible\n  model: packaged-model\nruntime:\n  id: orka\n")
+	writeFile(t, filepath.Join(root, "agents/greeter/instructions.md"), "  Answer briefly.\n\nKeep whitespace.\n\n")
+	profile, err := os.ReadFile(filepath.Join("..", "agentsuite", "workspace", "default-profile.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(root, "build-profiles/default.json"), string(profile))
+	writeFile(t, filepath.Join(root, "eval/example.yaml"), "id: example\ninput: private-content-canary-never-captured first\nexpectContains: [private-content-canary-never-captured]\n")
+	return root
+}
+
 func TestSuiteNativeRefusesUnsupportedRuntimeBeforeOrkaEffects(t *testing.T) {
 	for _, profile := range []workspace.RuntimeProfile{{ID: "kagent", Version: "v0.10.3", Engine: "go"}, {ID: "agentsessions", Version: workspace.AgentSessionsVersion, Engine: "chat"}, {}} {
 		t.Run(profile.ID, func(t *testing.T) {
-			a, suite, f := nativeFixture(t, workspace.RuntimeProfile{ID: "kagent", Version: "v0.10.3", Engine: "go"})
+			a, suite, f := nativeFixture(t)
 			suite.Runtime = profile
 			prepared, err := a.prepareSuiteNative(t.Context(), suite, OrkaNamespace, "inference")
 			if err == nil || !strings.Contains(err.Error(), "Orka") || prepared != nil || f.calls != 0 {

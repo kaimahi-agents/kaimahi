@@ -191,7 +191,7 @@ jobs:
             esac
           fi
           test -s "$NOTES"
-          printf '\nRuntime qualification: this release checks the inner loop; Orka and kagent are qualified nightly on main and on demand before runtime-related tags. Native Windows qualification covers amd64 day-zero Run/Test/offline Explain plus explicit-target Orka inspection and existing Task Result; Windows arm64 is checksum, metadata and cross-build evidence only.\n' >> "$NOTES"
+          printf '\nRuntime qualification: this release checks the inner loop; Orka and kagent are qualified nightly on main and on demand before runtime-related tags. Native Windows qualification covers amd64 day-zero Run/Test/offline Explain plus explicit-target Orka inspection and existing Task Result; the workspace-Test storage/command contract is qualified in native checkout CI but not yet by the exact staged executable. Windows arm64 is checksum, metadata and cross-build evidence only.\n' >> "$NOTES"
 
       # A release is a provenance claim. The tree it is built from must be
       # the tagged tree and nothing else — an untracked file here becomes

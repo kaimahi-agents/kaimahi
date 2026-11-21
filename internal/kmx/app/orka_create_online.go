@@ -163,6 +163,12 @@ func (a *App) guardOrkaMutationWithPresentation(ctx context.Context, opt CreateO
 	if err != nil {
 		return fmt.Errorf("cannot decode context metadata for the mutation guard")
 	}
+	if a.CommandShell == "powershell" {
+		posture, err := guard.Classify(cfg, a.Cfg.KubeContext)
+		if err != nil || posture.Local {
+			return fmt.Errorf("native Windows workspace Test requires an existing remote Orka context")
+		}
+	}
 	command := a.InvocationCommand
 	if command == "" {
 		command = a.operationCommand("create", "--live", opt.Name)
@@ -177,7 +183,7 @@ func (a *App) guardOrkaMutationWithPresentation(ctx context.Context, opt CreateO
 	if reconcileAction != "" {
 		action = reconcileAction
 	}
-	if err := guard.CheckContext(ctx, cfg, guard.Request{Action: action, Context: a.Cfg.KubeContext, Source: a.Cfg.ContextSource, Namespaces: opt.Namespace, Confirm: a.Cfg.Confirm, Command: command, Presentation: presentation}, a.Err, a.Stdin); err != nil {
+	if err := guard.CheckContext(ctx, cfg, guard.Request{Action: action, Context: a.Cfg.KubeContext, Source: a.Cfg.ContextSource, Namespaces: opt.Namespace, Confirm: a.Cfg.Confirm, Command: command, CommandShell: a.CommandShell, Presentation: presentation}, a.Err, a.Stdin); err != nil {
 		return err
 	}
 	a.guarded = true

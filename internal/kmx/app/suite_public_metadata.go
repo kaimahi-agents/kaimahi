@@ -20,6 +20,7 @@ import (
 
 	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
 )
 
 const maxSuitePublicMetadataBytes = 4096
@@ -227,6 +228,9 @@ func (s *suitePassStore) publishPublicMetadata(ctx context.Context, raw []byte, 
 	if s.unchanged() != nil {
 		return errSuitePublicCapacity
 	}
+	if s.directory != nil {
+		return s.publishPublicMetadataChecked(ctx, raw, m)
+	}
 	// All companion-looking entries count, including incomplete/orphaned writes.
 	root, _, _, err := openSessionReferenceDirectory(filepath.Join(s.partition, "entry"))
 	if err != nil {
@@ -272,6 +276,46 @@ func (s *suitePassStore) publishPublicMetadata(ctx context.Context, raw []byte, 
 	}
 	return nil
 }
+
+func (s *suitePassStore) publishPublicMetadataChecked(ctx context.Context, raw []byte, m *suitePublicMetadata) error {
+	directory, err := fileaccess.OpenPrivateDirectory(ctx, s.partition)
+	if err != nil {
+		return errSuitePublicCapacity
+	}
+	defer directory.Close()
+	entries, err := directory.ReadDir(513)
+	if err != nil || len(entries) >= 513 {
+		return errSuitePublicCapacity
+	}
+	count, total := 0, int64(0)
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), "public-") {
+			continue
+		}
+		count++
+		file, err := fileaccess.OpenPrivateFileAt(ctx, directory, entry.Name())
+		if err != nil {
+			return errSuitePublicCapacity
+		}
+		info, statErr := file.Stat()
+		closeErr := file.Close()
+		if statErr != nil || closeErr != nil || !info.Mode().IsRegular() || info.Size() < 0 || info.Size() > maxSuitePublicMetadataBytes {
+			return errSuitePublicCapacity
+		}
+		total += info.Size()
+	}
+	if count >= 256 || total+int64(len(raw)) > 1<<20 {
+		return errSuitePublicCapacity
+	}
+	out, err := preflightSuitePassingExport(ctx, filepath.Join(s.partition, m.filename()), s.workspace, s.cache)
+	if err != nil {
+		return errSuitePublicCapacity
+	}
+	if err := errors.Join(out.publishBytes(ctx, raw), out.Close()); err != nil {
+		return errSuitePublicCapacity
+	}
+	return nil
+}
 func (s *suitePassStore) readPublicMetadata(ctx context.Context, suite *workspace.NativeSuite) (_ *suitePublicMetadata, err error) {
 	scan, err := s.scan(ctx, suite)
 	if err != nil || scan.latest == nil {
@@ -282,6 +326,9 @@ func (s *suitePassStore) readPublicMetadata(ctx context.Context, suite *workspac
 		return nil, errSuitePublicMetadata
 	}
 	expected := suitePublicMetadata{Workspace: s.identity, SuiteDigest: s.suiteDigest, Sequence: scan.selectedSequence, ReceiptDigest: suitePublicHash(canonical)}
+	if s.directory != nil {
+		return s.readPublicMetadataChecked(ctx, expected)
+	}
 	root, name, parent, err := openSessionReferenceDirectory(filepath.Join(s.partition, expected.filename()))
 	if err != nil || parent.Mode().Perm()&0077 != 0 {
 		if root != nil {
@@ -335,6 +382,73 @@ func (s *suitePassStore) readPublicMetadata(ctx context.Context, suite *workspac
 		return nil, errSuitePublicMetadata
 	}
 	if fresh.Close() != nil || !os.SameFile(parent, now) || now.Mode().Perm()&0077 != 0 {
+		return nil, errSuitePublicMetadata
+	}
+	return &m, nil
+}
+
+func (s *suitePassStore) readPublicMetadataChecked(ctx context.Context, expected suitePublicMetadata) (_ *suitePublicMetadata, err error) {
+	directory, err := fileaccess.OpenPrivateDirectory(ctx, s.partition)
+	if err != nil {
+		return nil, errSuitePublicMetadata
+	}
+	defer func() {
+		if directory.Close() != nil {
+			err = errSuitePublicMetadata
+		}
+	}()
+	identity, err := fileaccess.PhysicalIdentity(ctx, directory)
+	if err != nil {
+		return nil, errSuitePublicMetadata
+	}
+	file, err := fileaccess.OpenPrivateFileAt(ctx, directory, expected.filename())
+	if err != nil {
+		return nil, errSuitePublicMetadata
+	}
+	before, statErr := file.Stat()
+	fileIdentity, identityErr := fileaccess.PhysicalIdentity(ctx, file)
+	if statErr != nil || identityErr != nil || !before.Mode().IsRegular() || before.Size() < 0 || before.Size() > maxSuitePublicMetadataBytes {
+		_ = file.Close()
+		return nil, errSuitePublicMetadata
+	}
+	raw, readErr := io.ReadAll(io.LimitReader(file, maxSuitePublicMetadataBytes+1))
+	after, afterErr := file.Stat()
+	closeErr := file.Close()
+	current, currentErr := fileaccess.OpenPrivateFileAt(ctx, directory, expected.filename())
+	var currentIdentity string
+	var currentInfo os.FileInfo
+	if currentErr == nil {
+		currentIdentity, currentErr = fileaccess.PhysicalIdentity(ctx, current)
+		if currentErr == nil {
+			currentInfo, currentErr = current.Stat()
+		}
+		currentErr = errors.Join(currentErr, current.Close())
+	}
+	if readErr != nil || afterErr != nil || closeErr != nil || currentErr != nil || currentInfo == nil || fileIdentity != currentIdentity || len(raw) > maxSuitePublicMetadataBytes || int64(len(raw)) != before.Size() || after.Size() != before.Size() || after.Mode() != before.Mode() || !after.ModTime().Equal(before.ModTime()) || currentInfo.Size() != before.Size() || currentInfo.Mode() != before.Mode() || !currentInfo.ModTime().Equal(before.ModTime()) {
+		return nil, errSuitePublicMetadata
+	}
+	var m suitePublicMetadata
+	if suitecore.Unmarshal(raw, &m) != nil || !m.valid() {
+		return nil, errSuitePublicMetadata
+	}
+	var value any
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if decoder.Decode(&value) != nil {
+		return nil, errSuitePublicMetadata
+	}
+	original, marshalErr := suitecore.Marshal(value)
+	typed, typedErr := suitecore.Marshal(m)
+	if marshalErr != nil || typedErr != nil || !bytes.Equal(original, typed) || m.Workspace != expected.Workspace || m.SuiteDigest != expected.SuiteDigest || m.Sequence != expected.Sequence || m.ReceiptDigest != expected.ReceiptDigest || s.unchanged() != nil {
+		return nil, errSuitePublicMetadata
+	}
+	fresh, err := fileaccess.OpenPrivateDirectory(ctx, s.partition)
+	if err != nil {
+		return nil, errSuitePublicMetadata
+	}
+	now, identityErr := fileaccess.PhysicalIdentity(ctx, fresh)
+	freshCloseErr := fresh.Close()
+	if identityErr != nil || freshCloseErr != nil || now != identity {
 		return nil, errSuitePublicMetadata
 	}
 	return &m, nil

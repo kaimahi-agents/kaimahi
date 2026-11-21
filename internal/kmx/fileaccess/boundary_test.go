@@ -28,13 +28,13 @@ func TestProductionSurfaceIsNarrowAndOpaque(t *testing.T) {
 		"Linkat":               {"publish_unix.go": true},
 		"LockFileEx":           {"lock_windows.go": true},
 		"Mkdirat":              {"create_unix.go": true},
-		"NtSetInformationFile": {"create_windows.go": true, "publish_windows.go": true},
+		"NtSetInformationFile": {"create_windows.go": true, "publish_windows.go": true, "remove_directory_windows.go": true},
 		"Sync":                 {"publish.go": true, "syncdir_unix.go": true, "sync_file.go": true},
 		"Unlinkat":             {"create_unix.go": true, "publish_unix.go": true, "remove_directory_unix.go": true},
 		"Write":                {"publish.go": true},
 	}
 	windowsAuthority := map[string]map[string]bool{
-		"DELETE":             {"create_windows.go": true},
+		"DELETE":             {"create_windows.go": true, "remove_directory_windows.go": true},
 		"FILE_CREATE":        {"create_windows.go": true},
 		"FILE_GENERIC_WRITE": {"create_windows.go": true, "syncdir_windows.go": true},
 	}
@@ -90,7 +90,7 @@ func TestProductionSurfaceIsNarrowAndOpaque(t *testing.T) {
 		names = append(names, name)
 	}
 	slices.Sort(names)
-	want := []string{"CheckPrivate", "CheckSafeDirectory", "CreatePrivateDirectoryAt", "CreatePrivateFileAt", "EnsurePrivateDirectory", "EnsurePrivateDirectoryAt", "EnsurePrivateFileAt", "LinkCount", "OpenDirectory", "OpenDirectoryAt", "OpenPrivateDirectory", "OpenPrivateFileAt", "OpenRegularAt", "PhysicalIdentity", "PublishPrivate", "PublishPrivateNamed", "RefuseWindowsDriveMount", "RemovePrivateDirectoryAt", "RemovePrivateFileAt", "SyncDirectory", "SyncFile", "TryLock", "TryLockOutcome"}
+	want := []string{"CheckPrivate", "CheckSafeDirectory", "CreatePrivateDirectoryAt", "CreatePrivateFileAt", "EnsurePrivateDirectory", "EnsurePrivateDirectoryAt", "EnsurePrivateFileAt", "LinkCount", "OpenDirectory", "OpenDirectoryAt", "OpenPrivateDirectory", "OpenPrivateFileAt", "OpenRegularAt", "PhysicalIdentity", "PhysicallyContains", "PublishPrivate", "PublishPrivateNamed", "RefuseWindowsDriveMount", "RemovePrivateDirectoryAt", "RemovePrivateFileAt", "SyncDirectory", "SyncFile", "TryLock", "TryLockOutcome"}
 	if !slices.Equal(names, want) {
 		t.Fatalf("exported functions = %v, want exactly %v", names, want)
 	}
@@ -147,6 +147,7 @@ func TestFoundationConsumersAreExplicit(t *testing.T) {
 					filepath.Join(root, "internal", "kmx", "app") + string(filepath.Separator),
 					filepath.Join(root, "internal", "kmx", "config") + string(filepath.Separator),
 					filepath.Join(root, "internal", "kmx", "localpreview") + string(filepath.Separator),
+					filepath.Join(root, "internal", "kmx", "workspacetest") + string(filepath.Separator),
 				}
 				// The folder settings reader is the sole localtools foundation consumer.
 				settingsReader := filepath.Join(root, "internal", "kmx", "localtools", "settings.go")

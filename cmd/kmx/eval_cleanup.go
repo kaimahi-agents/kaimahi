@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
 )
 
 func newEvalCleanupCommand(state *commandState, verb string) *cobra.Command {
@@ -55,6 +57,33 @@ func newEvalCleanupCommand(state *commandState, verb string) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
+			if state.deps.goos == "windows" {
+				cfg := &config.Config{KubeContext: target, ContextSource: config.SourceFlag, Confirm: os.Getenv("KAIMAHI_CONFIRM")}
+				a := state.deps.newApp(cfg)
+				if state.deps.buildInfo != nil {
+					info, ok := state.deps.buildInfo()
+					a.SetBuildIdentity(version.Resolve(info, ok))
+				}
+				a.Out, a.Err, a.Stdin = cmd.OutOrStdout(), cmd.ErrOrStderr(), state.deps.stdin
+				a.Executable, a.CommandShell, a.TestPresentation = state.executable(), "powershell", verb == "package test"
+				if a.Run == nil {
+					return errors.New("native Windows candidate cleanup requires subprocess ownership")
+				}
+				runner := *a.Run
+				runner.Context = ctx
+				runner.Unset = append(runner.Unset, "KIND_EXPERIMENTAL_PROVIDER", "KIND_CLUSTER", "CONTAINER_ENGINE", "MODEL")
+				a.Run = &runner
+				parts := []string{"&", powerShellQuote(state.executable())}
+				for _, arg := range state.argv {
+					parts = append(parts, powerShellQuote(arg))
+				}
+				a.InvocationCommand = strings.Join(parts, " ")
+				opt := app.SuiteCandidateCleanupOptions{Namespace: namespace}
+				if len(args) == 1 {
+					opt.RunID = args[0]
+				}
+				return a.CleanupSuiteCandidates(ctx, opt)
+			}
 			selectedContext, selectedNamespace, source := target, namespace, config.SourceFlag
 			if destination != "" {
 				_, doc, err := resolveDestinations(workspace)
