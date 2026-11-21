@@ -189,6 +189,47 @@ func TestWindowsSuiteReceiptLexicalCrossVolumeIsOutside(t *testing.T) {
 	}
 }
 
+func TestWindowsSuiteStateAndOutputSupportSeparateQualifiedVolume(t *testing.T) {
+	workspace, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	private := privateSuiteDir(t)
+	if strings.EqualFold(filepath.VolumeName(workspace), filepath.VolumeName(private)) {
+		if os.Getenv("GITHUB_ACTIONS") == "true" {
+			t.Fatal("hosted Windows qualification requires distinct checkout and private-state volumes")
+		}
+		t.Log("only one qualified local volume is available; cross-volume runtime check is hosted-CI-only")
+		return
+	}
+	state := filepath.Join(private, "state")
+	t.Setenv("KMX_HOME", state)
+	digest := "sha256:" + strings.Repeat("a", 64)
+	cache := filepath.Join(private, "cache")
+	store, err := openSuitePassStore(t.Context(), workspace, cache, digest)
+	if err != nil {
+		t.Fatalf("cross-volume managed state: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	parent := filepath.Join(private, "output")
+	directory, err := fileaccess.EnsurePrivateDirectory(t.Context(), parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := directory.Close(); err != nil {
+		t.Fatal(err)
+	}
+	output, err := preflightSuitePassingExport(t.Context(), filepath.Join(parent, "receipt.json"), workspace, cache)
+	if err != nil {
+		t.Fatalf("cross-volume explicit output: %v", err)
+	}
+	if err := output.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestWindowsSuitePassStoreRefusesUnsafeStateBeforeRecord(t *testing.T) {
 	home := privateSuiteDir(t)
 	workspace := filepath.Join(home, "workspace")

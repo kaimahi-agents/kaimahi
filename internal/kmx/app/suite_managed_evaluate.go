@@ -43,6 +43,13 @@ func (p *PreparedSuiteWorkspaceEvaluation) reportPassingReceipt(out io.Writer) e
 
 func (a *App) finishManagedEvaluation(ctx context.Context, p *PreparedSuiteWorkspaceEvaluation, evaluationErr error) (err error) {
 	// This is outside the evaluator call, after all of its deferred closes.
+	var outputFenceErr error
+	if p.output != nil && p.output.linked {
+		if outputFenceErr = p.output.unchanged(); outputFenceErr != nil {
+			p.output.namedPathCurrent = false
+			outputFenceErr = errSuitePassingExport
+		}
+	}
 	linked := p.output != nil && p.output.linked && p.output.namedPathCurrent
 	linkedAtMovedParent := p.output != nil && p.output.linked && !p.output.namedPathCurrent
 	defer func() {
@@ -53,7 +60,7 @@ func (a *App) finishManagedEvaluation(ctx context.Context, p *PreparedSuiteWorks
 	if p.outputFinalizationFailed {
 		p.runs.ThresholdUnreachable = false
 	}
-	err = errors.Join(evaluationErr, closeErr)
+	err = errors.Join(evaluationErr, outputFenceErr, closeErr)
 	if err == nil {
 		err = p.checkCurrent(ctx)
 	}
