@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/guard"
 )
 
 // Remote inspection trusts only the operator-installed kubectl and its normal
@@ -19,6 +20,26 @@ func (*App) provisionOrkaInspection() error { return nil }
 func (a *App) preflightOrkaTaskResult() error { return a.preflightOrkaRemote() }
 
 func (a *App) preflightSuiteWorkspaceKubectl() error { return a.preflightOrkaRemote() }
+
+func (a *App) requireRemoteSuiteWorkspaceContext(ctx context.Context) error {
+	raw, err := a.orkaCapture(ctx, nil, "config", "view", "-o", "json")
+	if err != nil {
+		return fmt.Errorf("native Windows workspace Test requires an existing remote Orka context")
+	}
+	cfg, err := guard.ParseKubeconfig(raw)
+	if err != nil {
+		return fmt.Errorf("native Windows workspace Test requires an existing remote Orka context")
+	}
+	return a.requireRemoteSuiteWorkspacePosture(cfg)
+}
+
+func (a *App) requireRemoteSuiteWorkspacePosture(cfg *guard.Kubeconfig) error {
+	posture, err := guard.Classify(cfg, a.Cfg.KubeContext)
+	if err != nil || posture.Local {
+		return fmt.Errorf("native Windows workspace Test requires an existing remote Orka context")
+	}
+	return nil
+}
 
 func inspectOrkaInspectionKubectl(ctx context.Context, path string) (identity string, err error) {
 	if !filepath.IsAbs(path) || !strings.EqualFold(filepath.Ext(path), ".exe") {

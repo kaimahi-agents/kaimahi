@@ -5,6 +5,8 @@ package app
 import (
 	"context"
 	"fmt"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/guard"
 )
 
 func (a *App) provisionOrkaInspection() error {
@@ -21,6 +23,9 @@ func (a *App) preflightSuiteWorkspaceKubectl() error {
 	kubectl.fetchable = false
 	return a.preflight(kubectl)
 }
+
+func (*App) requireRemoteSuiteWorkspaceContext(context.Context) error   { return nil }
+func (*App) requireRemoteSuiteWorkspacePosture(*guard.Kubeconfig) error { return nil }
 
 func inspectOrkaInspectionKubectl(context.Context, string) (string, error) { return "", nil }
 func recheckOrkaInspectionKubectl(context.Context, string, string) error   { return nil }

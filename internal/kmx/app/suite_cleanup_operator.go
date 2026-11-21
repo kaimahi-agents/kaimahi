@@ -210,6 +210,9 @@ func (a *App) CleanupSuiteCandidates(ctx context.Context, opt SuiteCandidateClea
 	if err := worker.preflightSuiteWorkspaceKubectl(); err != nil {
 		return err
 	}
+	if err := worker.requireRemoteSuiteWorkspaceContext(ctx); err != nil {
+		return err
+	}
 	target, err := worker.candidateCleanupTarget(ctx, opt.Namespace)
 	if err != nil {
 		return errSuiteCandidateCleanup
@@ -259,6 +262,9 @@ func (a *App) CleanupSuiteCandidates(ctx context.Context, opt SuiteCandidateClea
 	kube, err := guard.ParseKubeconfig(raw)
 	if err != nil {
 		return errSuiteCandidateCleanup
+	}
+	if err := worker.requireRemoteSuiteWorkspacePosture(kube); err != nil {
+		return err
 	}
 	command := worker.InvocationCommand
 	if command == "" {

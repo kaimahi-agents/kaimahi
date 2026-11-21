@@ -448,7 +448,7 @@ func (s *suitePassStore) commit(ctx context.Context, raw []byte, suite *workspac
 	if err != nil && output.linked {
 		return output.path, fmt.Errorf("completed managed proof may exist at %q; persistence uncertain: %w", output.path, err)
 	}
-	if err != nil && !output.visibilityKnown {
+	if err != nil && output.privateDirectory != nil && !output.visibilityKnown {
 		return output.path, fmt.Errorf("completed managed proof visibility is unresolved at %q; inspect before retrying: %w", output.path, err)
 	}
 	if err != nil {
