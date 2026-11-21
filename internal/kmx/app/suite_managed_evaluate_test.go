@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
 )
 
 func TestSuiteManagedEvaluationRegistersOnlyCompleteCandidate(t *testing.T) {
@@ -171,7 +173,14 @@ func TestSuiteManagedEvaluationPreflightAndFinalization(t *testing.T) {
 }
 
 func TestSuiteManagedEvaluationRechecksExplicitOutputParent(t *testing.T) {
-	parent := privateSuiteDir(t)
+	parent := filepath.Join(privateSuiteDir(t), "private")
+	directory, err := fileaccess.EnsurePrivateDirectory(t.Context(), parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := directory.Close(); err != nil {
+		t.Fatal(err)
+	}
 	destination := filepath.Join(parent, "explicit.json")
 	output, err := preflightSuitePrivateExport(t.Context(), destination)
 	if err != nil {
