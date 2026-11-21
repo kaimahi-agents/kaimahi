@@ -173,7 +173,7 @@ func TestSuiteManagedEvaluationPreflightAndFinalization(t *testing.T) {
 func TestSuiteManagedEvaluationRechecksExplicitOutputParent(t *testing.T) {
 	parent := privateSuiteDir(t)
 	destination := filepath.Join(parent, "explicit.json")
-	output, err := preflightSuitePassingExport(t.Context(), destination, t.TempDir(), t.TempDir())
+	output, err := preflightSuitePrivateExport(t.Context(), destination)
 	if err != nil {
 		t.Fatal(err)
 	}
