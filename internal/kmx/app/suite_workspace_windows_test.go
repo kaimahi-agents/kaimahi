@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/workspacetest"
 )
 
 func TestWindowsWorkspaceTestCandidateManagedProofJourney(t *testing.T) {
@@ -38,8 +40,46 @@ func TestWindowsWorkspaceTestCandidateManagedProofJourney(t *testing.T) {
 			t.Fatalf("malformed context reached candidate inventory: err=%v lists=%d deletes=%v", err, state.lists, state.deletes)
 		}
 	})
+	t.Run("cleanup refuses non-kind loopback before inventory", func(t *testing.T) {
+		a, _, _, state := publicNativeEvaluationFixture(t)
+		a.CommandShell = "powershell"
+		a.Cfg.KubeContext = "docker-desktop"
+		capture := a.captureCommand
+		a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
+			if slices.Contains(cmd.Args, "config") {
+				_, err := fmt.Fprint(cmd.Stdout, `{"current-context":"docker-desktop","clusters":[{"name":"local","cluster":{"server":"https://127.0.0.1:6443"}}],"contexts":[{"name":"docker-desktop","context":{"cluster":"local"}}]}`)
+				return err
+			}
+			return capture(ctx, cmd)
+		}
+		if err := a.CleanupSuiteCandidates(t.Context(), SuiteCandidateCleanupOptions{Namespace: OrkaNamespace}); err == nil || !strings.Contains(err.Error(), "requires an existing remote Orka context") || state.lists != 0 || len(state.deletes) != 0 {
+			t.Fatalf("non-kind loopback reached candidate inventory: err=%v lists=%d deletes=%v", err, state.lists, state.deletes)
+		}
+	})
 	t.Run("cleanup rechecks remote posture before consent", func(t *testing.T) {
-		a, run, state, _ := candidateCleanupSetup(t)
+		a, _, _, state := publicNativeEvaluationFixture(t)
+		state.externalTasks = false
+		root := windowsNativeWorkspaceFixture(t)
+		operation, err := workspacetest.FreezeOrka(t.Context(), workspacetest.Summary{Workspace: root, Runtime: "orka", Context: "kind-test", Namespace: OrkaNamespace, Inference: "provider:inference"}, filepath.Join(privateSuiteDir(t), "cleanup-validation"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer operation.Close()
+		suite, err := operation.Suite(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		native, err := a.prepareSuiteNativeCandidate(t.Context(), suite, OrkaNamespace, "inference", candidateRun)
+		if err != nil {
+			t.Fatal(err)
+		}
+		run, err := newSuiteCandidateRun(native, operation.CheckCurrent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := a.placeSuiteNativeCandidate(t.Context(), native, run); err != nil {
+			t.Fatal(err)
+		}
 		cleanupTask(t, run, state)
 		a.CommandShell = "powershell"
 		a.Cfg.Confirm = "kind-test"
@@ -57,7 +97,7 @@ func TestWindowsWorkspaceTestCandidateManagedProofJourney(t *testing.T) {
 			}
 			return capture(ctx, cmd)
 		}
-		err := a.CleanupSuiteCandidates(t.Context(), SuiteCandidateCleanupOptions{Namespace: OrkaNamespace, RunID: candidateRun})
+		err = a.CleanupSuiteCandidates(t.Context(), SuiteCandidateCleanupOptions{Namespace: OrkaNamespace, RunID: candidateRun})
 		if err == nil || !strings.Contains(err.Error(), "requires an existing remote Orka context") || configReads != 2 || state.lists < 6 || len(state.deletes) != 0 {
 			t.Fatalf("posture drift authorized cleanup: err=%v configReads=%d lists=%d deletes=%v", err, configReads, state.lists, state.deletes)
 		}

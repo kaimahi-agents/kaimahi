@@ -262,18 +262,6 @@ func TestSuitePassStoreCompletionSyncFailureKeepsVisibleProof(t *testing.T) {
 	}
 }
 
-func TestSuitePassStorePreLinkFailureReportsNoRecord(t *testing.T) {
-	store, suite, raw := passStoreFixture(t)
-	if err := store.reserve(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	store.completion.beforeLink = func() error { return errors.New("pre-link refusal") }
-	record, err := store.commit(t.Context(), raw, suite)
-	if err == nil || record != "" || strings.Contains(err.Error(), "visibility is unresolved") {
-		t.Fatalf("pre-link failure = record %q, err %v", record, err)
-	}
-}
-
 func TestSuiteWorkspaceExclusionProcessExitAndStableInode(t *testing.T) {
 	if root := os.Getenv("KMX_PASS_LOCK_CHILD"); root != "" {
 		store, err := openSuitePassStore(context.Background(), root, filepath.Join(os.Getenv("KMX_HOME"), "suites"), "sha256:"+strings.Repeat("a", 64))

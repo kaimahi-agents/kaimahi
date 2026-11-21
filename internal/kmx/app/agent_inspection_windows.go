@@ -5,6 +5,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"net"
 	"path/filepath"
 	"strings"
 
@@ -35,7 +36,9 @@ func (a *App) requireRemoteSuiteWorkspaceContext(ctx context.Context) error {
 
 func (a *App) requireRemoteSuiteWorkspacePosture(cfg *guard.Kubeconfig) error {
 	posture, err := guard.Classify(cfg, a.Cfg.KubeContext)
-	if err != nil || posture.Local {
+	host := strings.TrimSuffix(strings.ToLower(posture.Host), ".")
+	ip := net.ParseIP(host)
+	if err != nil || posture.Local || host == "" || host == "localhost" || ip != nil && (ip.IsLoopback() || ip.IsUnspecified()) {
 		return fmt.Errorf("native Windows workspace Test requires an existing remote Orka context")
 	}
 	return nil
