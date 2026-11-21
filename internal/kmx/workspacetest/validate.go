@@ -109,8 +109,12 @@ func (t *generatedTree) write(ctx context.Context, files map[string][]byte) erro
 	return nil
 }
 
-func (t *generatedTree) remove(ctx context.Context, parent *fileaccess.Directory, stageName string) error {
-	if t == nil || t.directories["."] == nil || t.uncertain {
+func (t *generatedTree) remove(ctx context.Context, parent *fileaccess.Directory, stageName string) (err error) {
+	if t == nil {
+		return errGeneratedValidation
+	}
+	defer func() { err = errors.Join(err, t.closeDirectories()) }()
+	if t.directories["."] == nil || t.uncertain {
 		return errGeneratedValidation
 	}
 	for _, name := range t.files {
@@ -147,6 +151,17 @@ func (t *generatedTree) remove(ctx context.Context, parent *fileaccess.Directory
 	}
 	delete(t.directories, ".")
 	return nil
+}
+
+func (t *generatedTree) closeDirectories() error {
+	var err error
+	for name, directory := range t.directories {
+		if directory != nil {
+			err = errors.Join(err, directory.Close())
+		}
+		delete(t.directories, name)
+	}
+	return err
 }
 
 func generatedDirectories(files map[string][]byte) []string {

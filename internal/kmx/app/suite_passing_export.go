@@ -21,17 +21,20 @@ var errSuitePassingFile = errors.New("native receipt requires a bounded private 
 type suitePassingExport struct {
 	// Public evidence and release records retain their existing safe-public-parent
 	// os.Root publisher. Private receipts use the checked cross-platform handle.
-	root             *os.Root
-	directory        io.Closer
-	legacyDirectory  *os.File
-	privateDirectory *fileaccess.Directory
-	path, name       string
-	parent           os.FileInfo
-	parentIdentity   string
-	linked           bool
-	visibilityKnown  bool
-	publicParent     bool
-	beforeLink       func() error
+	root               *os.Root
+	directory          io.Closer
+	legacyDirectory    *os.File
+	privateDirectory   *fileaccess.Directory
+	path, name         string
+	parent             os.FileInfo
+	parentIdentity     string
+	linked             bool
+	visibilityKnown    bool
+	visibilityReported bool
+	namedPathCurrent   bool
+	publicParent       bool
+	beforeLink         func() error
+	publishPrivate     func(context.Context, *fileaccess.Directory, string, []byte) (fileaccess.PublicationResult, error)
 }
 
 func preflightSuitePassingExport(ctx context.Context, destination, workspaceRoot, cacheRoot string) (*suitePassingExport, error) {
@@ -79,7 +82,7 @@ func preflightSuitePassingExportMode(ctx context.Context, destination, workspace
 		root.Close()
 		return nil, errSuitePassingFile
 	}
-	return &suitePassingExport{root: root, directory: directory, legacyDirectory: directory, path: destination, name: name, parent: parent, publicParent: publicParent}, nil
+	return &suitePassingExport{root: root, directory: directory, legacyDirectory: directory, path: destination, name: name, parent: parent, namedPathCurrent: true, publicParent: publicParent}, nil
 }
 
 func preflightSuitePrivateExport(ctx context.Context, destination string) (*suitePassingExport, error) {
@@ -106,6 +109,8 @@ func preflightSuitePrivateExport(ctx context.Context, destination string) (*suit
 		name:             filepath.Base(absolute),
 		parentIdentity:   identity,
 		visibilityKnown:  true,
+		namedPathCurrent: true,
+		publishPrivate:   fileaccess.PublishPrivate,
 	}
 	if err := output.absent(ctx); err != nil {
 		closeOnError()
@@ -207,6 +212,14 @@ func (e *suitePassingExport) publishBytes(ctx context.Context, raw []byte) (err 
 	if err := e.unchanged(); err != nil {
 		return err
 	}
+	defer func() {
+		if e.linked {
+			if currentErr := e.unchanged(); currentErr != nil {
+				e.namedPathCurrent = false
+				err = errors.Join(err, errSuitePassingExport)
+			}
+		}
+	}()
 	if e.privateDirectory != nil {
 		if e.beforeLink != nil {
 			if err := e.beforeLink(); err != nil {
@@ -216,9 +229,13 @@ func (e *suitePassingExport) publishBytes(ctx context.Context, raw []byte) (err 
 				return err
 			}
 		}
-		result, publishErr := fileaccess.PublishPrivate(ctx, e.privateDirectory, e.name, raw)
+		if e.publishPrivate == nil {
+			return errSuitePassingExport
+		}
+		result, publishErr := e.publishPrivate(ctx, e.privateDirectory, e.name, raw)
 		e.linked = result.Visible
 		e.visibilityKnown = result.VisibilityKnown
+		e.visibilityReported = true
 		if publishErr == nil {
 			return nil
 		}
@@ -442,7 +459,14 @@ func suiteReceiptInside(filename, tree string) bool {
 		return true
 	}
 	relative, err := filepath.Rel(root, absolute)
-	return err != nil || relative == "." || relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
+	if err != nil {
+		rootVolume, absoluteVolume := filepath.VolumeName(root), filepath.VolumeName(absolute)
+		if rootVolume != "" && absoluteVolume != "" && !strings.EqualFold(rootVolume, absoluteVolume) {
+			return false
+		}
+		return true
+	}
+	return relative == "." || relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
 
 func suiteReceiptPhysicallyInside(ctx context.Context, filename, tree string) bool {

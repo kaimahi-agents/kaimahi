@@ -43,7 +43,8 @@ func (p *PreparedSuiteWorkspaceEvaluation) reportPassingReceipt(out io.Writer) e
 
 func (a *App) finishManagedEvaluation(ctx context.Context, p *PreparedSuiteWorkspaceEvaluation, evaluationErr error) (err error) {
 	// This is outside the evaluator call, after all of its deferred closes.
-	linked := p.output != nil && p.output.linked
+	linked := p.output != nil && p.output.linked && p.output.namedPathCurrent
+	linkedAtMovedParent := p.output != nil && p.output.linked && !p.output.namedPathCurrent
 	defer func() {
 		p.explicitReceiptMayExist = err != nil && p.options.Out != "" && linked
 	}()
@@ -67,6 +68,9 @@ func (a *App) finishManagedEvaluation(ctx context.Context, p *PreparedSuiteWorks
 	}
 	if err != nil {
 		if p.options.Out != "" {
+			if linkedAtMovedParent {
+				return fmt.Errorf("evaluation not registered; explicit receipt parent changed after observed publication; inspect private state before retrying: %w", err)
+			}
 			return fmt.Errorf("evaluation not registered; explicit receipt output may exist at %q: %w", p.options.Out, err)
 		}
 		return err

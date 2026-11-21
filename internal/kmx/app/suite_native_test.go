@@ -163,7 +163,7 @@ func windowsNativeWorkspaceFixture(t *testing.T) string {
 func TestSuiteNativeRefusesUnsupportedRuntimeBeforeOrkaEffects(t *testing.T) {
 	for _, profile := range []workspace.RuntimeProfile{{ID: "kagent", Version: "v0.10.3", Engine: "go"}, {ID: "agentsessions", Version: workspace.AgentSessionsVersion, Engine: "chat"}, {}} {
 		t.Run(profile.ID, func(t *testing.T) {
-			a, suite, f := nativeFixture(t, workspace.RuntimeProfile{ID: "kagent", Version: "v0.10.3", Engine: "go"})
+			a, suite, f := nativeFixture(t)
 			suite.Runtime = profile
 			prepared, err := a.prepareSuiteNative(t.Context(), suite, OrkaNamespace, "inference")
 			if err == nil || !strings.Contains(err.Error(), "Orka") || prepared != nil || f.calls != 0 {

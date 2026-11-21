@@ -3,6 +3,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -87,6 +88,48 @@ func TestWindowsSuitePassingExportLifecycle(t *testing.T) {
 	}
 }
 
+func TestWindowsSuitePassingExportRechecksNamedParent(t *testing.T) {
+	root, cache, suite, receipt, _ := windowsPassingFixture(t)
+	parent := filepath.Join(privateSuiteDir(t), "private")
+	directory, err := fileaccess.EnsurePrivateDirectory(t.Context(), parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := directory.Close(); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(parent, "receipt.json")
+	output, err := preflightSuitePassingExport(t.Context(), destination, root, cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer output.Close()
+	moved := parent + "-moved"
+	realPublish := output.publishPrivate
+	output.publishPrivate = func(ctx context.Context, directory *fileaccess.Directory, name string, raw []byte) (fileaccess.PublicationResult, error) {
+		result, err := realPublish(ctx, directory, name, raw)
+		if err != nil {
+			return result, err
+		}
+		if err := os.Rename(parent, moved); err != nil {
+			return result, err
+		}
+		if err := os.Mkdir(parent, 0o700); err != nil {
+			return result, err
+		}
+		return result, errors.New("injected post-link persistence failure")
+	}
+	if err := output.publish(t.Context(), receipt, suite); err == nil || !output.linked || !output.visibilityKnown || output.namedPathCurrent {
+		t.Fatalf("moved parent publication = linked:%t known:%t current:%t err:%v", output.linked, output.visibilityKnown, output.namedPathCurrent, err)
+	}
+	if _, err := os.Stat(destination); !os.IsNotExist(err) {
+		t.Fatalf("receipt reported at replacement path: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(moved, "receipt.json")); err != nil {
+		t.Fatalf("observed receipt not retained at moved parent: %v", err)
+	}
+}
+
 func TestWindowsSuitePassStoreLifecycleAndLock(t *testing.T) {
 	root, cache, suite, _, raw := windowsPassingFixture(t)
 	t.Setenv("KMX_HOME", filepath.Join(privateSuiteDir(t), "state"))
@@ -113,6 +156,36 @@ func TestWindowsSuitePassStoreLifecycleAndLock(t *testing.T) {
 	defer reopened.Close()
 	if _, selected, err := reopened.latest(t.Context(), suite); err != nil || selected != record {
 		t.Fatalf("reopened latest = %q, %v", selected, err)
+	}
+}
+
+func TestWindowsSuitePassStoreUnresolvedVisibilityReturnsInspectionOnly(t *testing.T) {
+	root, cache, suite, _, raw := windowsPassingFixture(t)
+	t.Setenv("KMX_HOME", filepath.Join(privateSuiteDir(t), "state"))
+	store, err := openSuitePassStore(t.Context(), root, cache, suite.Digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.reserve(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	inspection := store.completion.path
+	store.completion.publishPrivate = func(context.Context, *fileaccess.Directory, string, []byte) (fileaccess.PublicationResult, error) {
+		return fileaccess.PublicationResult{}, errors.New("unresolved publication")
+	}
+	record, err := store.commit(t.Context(), raw, suite)
+	if err == nil || record != "" || !strings.Contains(err.Error(), inspection) || !strings.Contains(err.Error(), "visibility is unresolved") {
+		t.Fatalf("unresolved publication = record:%q err:%v", record, err)
+	}
+}
+
+func TestWindowsSuiteReceiptLexicalCrossVolumeIsOutside(t *testing.T) {
+	if suiteReceiptInside(`D:\private\receipt.json`, `C:\workspace`) {
+		t.Fatal("different Windows volumes classified as lexical containment")
+	}
+	if !suiteReceiptInside(`C:\workspace\private\receipt.json`, `C:\workspace`) {
+		t.Fatal("same-volume child was not classified as containment")
 	}
 }
 

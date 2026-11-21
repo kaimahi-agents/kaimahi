@@ -159,9 +159,9 @@ identity-bound clear, interrupted own-pair recovery and independent file/directo
 flush failure behavior. Windows defaults to machine-local `%LOCALAPPDATA%\kmx`.
 Windows amd64 now also builds, vets and natively executes the CLI on hosted
 `windows-latest`: version/help/completion, one real Markdown file through
-package-free fake Run/failing Test/offline Explain, read-only Orka list/show,
-Task Result and exact-package remote Orka workspace Test through compiled native
-kubectl fixtures. The exact staged
+package-free fake Run/failing Test/offline Explain, and read-only Orka list/show
+plus Task Result through compiled native kubectl fixtures. A separate native
+checkout App journey qualifies exact-package remote Orka workspace Test. The exact staged
 release `.exe` reaches the inspection boundary through checksum-verified real
 kubectl and exercises Task Result through a cross-built native protocol fixture
 from the same commit. Successful workspace Test through that exact staged

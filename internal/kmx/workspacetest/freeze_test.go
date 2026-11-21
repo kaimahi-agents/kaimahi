@@ -2,9 +2,12 @@ package workspacetest
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
 )
 
 func workspaceFixture(t *testing.T) string {
@@ -95,5 +98,51 @@ func TestFreezeOrkaPreCancelledHasNoState(t *testing.T) {
 	}
 	if _, err := os.Stat(validation); !os.IsNotExist(err) {
 		t.Fatalf("pre-cancelled freeze created state: %v", err)
+	}
+}
+
+func TestGeneratedTreeCleanupClosesRetainedDirectories(t *testing.T) {
+	for _, uncertain := range []bool{true, false} {
+		t.Run(map[bool]string{true: "uncertain publication", false: "partial cleanup failure"}[uncertain], func(t *testing.T) {
+			base, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(base, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			root := filepath.Join(base, "validation")
+			parent, err := fileaccess.EnsurePrivateDirectory(t.Context(), root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer parent.Close()
+			stage, err := fileaccess.CreatePrivateDirectoryAt(t.Context(), parent, ".workspace-test-stage")
+			if err != nil {
+				t.Fatal(err)
+			}
+			nested, err := fileaccess.CreatePrivateDirectoryAt(t.Context(), stage, "nested")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !uncertain {
+				file, err := fileaccess.CreatePrivateFileAt(t.Context(), nested, "entry")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := file.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			tree := &generatedTree{directories: map[string]*fileaccess.Directory{".": stage, "nested": nested}, uncertain: uncertain}
+			if err := tree.remove(t.Context(), parent, ".workspace-test-stage"); !errors.Is(err, errGeneratedValidation) {
+				t.Fatalf("cleanup = %v", err)
+			}
+			for name, directory := range map[string]*fileaccess.Directory{"stage": stage, "nested": nested} {
+				if _, err := fileaccess.PhysicalIdentity(t.Context(), directory); err == nil {
+					t.Fatalf("%s handle remains open", name)
+				}
+			}
+		})
 	}
 }

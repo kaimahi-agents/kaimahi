@@ -103,7 +103,8 @@ native Windows still requires an explicit file), offline `test explain ... --fil
 FILE` (with optional `--tests FILE`; plus the hidden legacy Explain spelling for
 compatibility), and Windows-amd64 read-only `cluster orka list/show` with explicit
 context and namespace plus existing `cluster task result` and explicit remote
-Orka `package test`. Every other route,
+Orka `package test` and matching explicit `package test cleanup [run-id]` candidate
+recovery with explicit context and namespace. Every other route,
 including live Run/Chat, refuses before effects. See the
 [native Windows command boundary](windows.md#supported-native-commands).
 

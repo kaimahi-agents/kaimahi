@@ -623,7 +623,7 @@ than the first.
    publish if: the version is not semantic, the changelog has no section,
    the built binary does not report the tag, the checksums do not verify, or
    the hermetic inner-loop contracts, either native plugin install check or the
-   exact Windows amd64 day-zero, remote-inspection, Task Result and workspace-Test contract checks
+   exact Windows amd64 day-zero, remote-inspection and Task Result contract checks
    fails. Windows arm64 remains
    cross-build/vet/checksum only. The
    release also carries `kmx.rb`, GoReleaser's rendered formula for those exact checksums

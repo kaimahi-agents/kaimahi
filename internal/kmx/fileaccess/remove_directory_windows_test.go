@@ -71,7 +71,15 @@ func TestWindowsRemovePrivateDirectoryRefusesNonemptyAndSubstitution(t *testing.
 		t.Fatal(err)
 	}
 	defer replacement.Close()
-	if err := RemovePrivateDirectoryAt(t.Context(), parent, "child", child); !errors.Is(err, ErrUnsafe) && !errors.Is(err, ErrUnreadable) {
+	other, err := CreatePrivateDirectoryAt(t.Context(), parent, "other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	if err := RemovePrivateDirectoryAt(t.Context(), parent, "child", other); !errors.Is(err, ErrUnsafe) {
 		t.Fatalf("substituted removal = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(path, "child")); err != nil {
+		t.Fatal("identity mismatch removed replacement", err)
 	}
 }
