@@ -175,7 +175,7 @@ func TestWindowsSuitePassStoreUnresolvedVisibilityReturnsInspectionOnly(t *testi
 		return fileaccess.PublicationResult{}, errors.New("unresolved publication")
 	}
 	record, err := store.commit(t.Context(), raw, suite)
-	if err == nil || record != "" || !strings.Contains(err.Error(), inspection) || !strings.Contains(err.Error(), "visibility is unresolved") {
+	if err == nil || record != "" || !strings.Contains(err.Error(), filepath.Base(inspection)) || !strings.Contains(err.Error(), "visibility is unresolved") {
 		t.Fatalf("unresolved publication = record:%q err:%v", record, err)
 	}
 }

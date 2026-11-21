@@ -73,14 +73,9 @@ func TestWindowsWorkspaceTestCandidateManagedProofJourney(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		run, err := newSuiteCandidateRun(native, operation.CheckCurrent)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := a.placeSuiteNativeCandidate(t.Context(), native, run); err != nil {
-			t.Fatal(err)
-		}
-		cleanupTask(t, run, state)
+		provider := nativeOwnedDoc(t, native, "Provider")
+		addOrkaMarker(provider, suiteNativeOwner(native.Subject).markers())
+		state.objects["Provider/"+native.Subject.PhysicalMember] = provider
 		a.CommandShell = "powershell"
 		a.Cfg.Confirm = "kind-test"
 		capture := a.captureCommand
