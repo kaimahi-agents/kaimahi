@@ -514,6 +514,8 @@ func (a *App) offlineCaptureWithin(ctx context.Context, tool string, args ...str
 		case strings.Contains(reason, "error from server (forbidden)"), strings.Contains(reason, "(unauthorized)"),
 			strings.Contains(reason, "must be logged in"):
 			return nil, fmt.Errorf("%s request failed: access forbidden", tool)
+		case strings.Contains(reason, "no such container"), strings.Contains(reason, "no such object"):
+			return nil, fmt.Errorf("%s request failed: no such container", tool)
 		}
 		return nil, fmt.Errorf("%s local inspection failed or timed out", tool)
 	}
@@ -538,10 +540,14 @@ func orkaServingDenial(what string, err error, proxied bool) error {
 
 // kindNodeStartedAt reads when the selected kind cluster's node container last
 // started. Kubelet and controller state written before that is from a previous
-// run of the node. A container that is not that cluster's node refuses.
+// run of the node. A container that is not that cluster's node, or that the
+// selected engine does not have, refuses: waiting cannot change either.
 func (a *App) kindNodeStartedAt(ctx context.Context, node string) (time.Time, error) {
 	raw, err := a.offlineCaptureWithin(ctx, a.Cfg.ContainerEngine, "container", "inspect", node)
 	if err != nil {
+		if strings.HasSuffix(err.Error(), "no such container") {
+			return time.Time{}, orkaRefusal{fmt.Errorf("%s has no container for node %s of kind cluster %s; if the cluster runs under another engine, set CONTAINER_ENGINE to it", a.Cfg.ContainerEngine, node, a.Cfg.KindCluster)}
+		}
 		return time.Time{}, err
 	}
 	var rows []struct {

@@ -721,8 +721,8 @@ func TestKindNodeStartedAt(t *testing.T) {
 		t.Skip("the fake container engine is a shell script")
 	}
 	for _, tc := range []struct {
-		name, output, want string
-		refusal, hang      bool
+		name, output, stderr, want string
+		refusal, hang              bool
 	}{
 		{name: "docker node", output: `[{"Name":"/kind-control-plane","Config":{"Labels":{"io.x-k8s.kind.cluster":"kind"}},"State":{"Running":true,"StartedAt":"2026-01-02T03:04:05.600000000Z"}}]`},
 		{name: "podman node", output: `[{"Name":"kind-control-plane","Config":{"Labels":{"io.x-k8s.kind.cluster":"kind"}},"State":{"Running":true,"StartedAt":"2026-01-02T04:04:05.6+01:00"}}]`},
@@ -730,11 +730,19 @@ func TestKindNodeStartedAt(t *testing.T) {
 		{name: "another container", output: `[{"Name":"/kind-worker","Config":{"Labels":{"io.x-k8s.kind.cluster":"kind"}},"State":{"Running":true,"StartedAt":"2026-01-02T03:04:05Z"}}]`, want: "not a docker node container", refusal: true},
 		{name: "stopped node", output: `[{"Name":"/kind-control-plane","Config":{"Labels":{"io.x-k8s.kind.cluster":"kind"}},"State":{"Running":false,"StartedAt":"2026-01-02T03:04:05Z"}}]`, want: "is not running"},
 		{name: "no start time", output: `[{"Name":"/kind-control-plane","Config":{"Labels":{"io.x-k8s.kind.cluster":"kind"}},"State":{"Running":true,"StartedAt":"0001-01-01T00:00:00Z"}}]`, want: "has no start time"},
+		// The cluster runs under another engine: waiting cannot fix it.
+		{name: "engine has no such container", stderr: "Error: No such container: kind-control-plane", want: "docker has no container for node kind-control-plane of kind cluster kind; if the cluster runs under another engine, set CONTAINER_ENGINE to it", refusal: true},
+		{name: "podman has no such container", stderr: "Error: no such container kind-control-plane", want: "set CONTAINER_ENGINE", refusal: true},
+		// A daemon that is not up yet may be soon.
+		{name: "engine daemon unreachable", stderr: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?", want: "docker local inspection failed or timed out"},
 		{name: "wedged engine", hang: true, want: "context deadline exceeded"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tools := t.TempDir()
 			body := "#!/bin/sh\nprintf '%s' \"$KMX_TEST_NODE_INSPECT\"\n"
+			if tc.stderr != "" {
+				body = "#!/bin/sh\nprintf '%s\\n' \"$KMX_TEST_NODE_STDERR\" >&2\nexit 1\n"
+			}
 			if tc.hang {
 				body = "#!/bin/sh\nexec sleep 30\n"
 			}
@@ -743,6 +751,7 @@ func TestKindNodeStartedAt(t *testing.T) {
 			}
 			t.Setenv("PATH", tools+string(os.PathListSeparator)+os.Getenv("PATH"))
 			t.Setenv("KMX_TEST_NODE_INSPECT", tc.output)
+			t.Setenv("KMX_TEST_NODE_STDERR", tc.stderr)
 			a := New(&config.Config{ContainerEngine: "docker", KindCluster: "kind"})
 			// Only the wedged engine is cut off; the others run to completion
 			// within the read's own bound, however loaded the machine is.

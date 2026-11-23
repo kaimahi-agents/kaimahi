@@ -1746,7 +1746,8 @@ that is foreign or belongs to a ReplicaSet the Deployment does not control (a
 foreign ReplicaSet with no selected pods is ignored), unsupported selectors,
 scaled-to-zero workloads, a missing or
 ambiguous API Service, the API server's own denial of a read (including `get`
-on `services/proxy`), a node container that is not the selected cluster's and
+on `services/proxy`), a node container that is not the selected cluster's or
+that the selected container engine does not have, and
 execution settings that change while waiting refuse as soon as kmx observes
 them; the checks run in order, so a later one is reached only once the earlier
 ones pass. Other gaps are retried and named if the bound expires. The wait only
