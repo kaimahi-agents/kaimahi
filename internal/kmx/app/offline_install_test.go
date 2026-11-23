@@ -580,7 +580,7 @@ func offlineInstallApp(t *testing.T) (*App, string, *offlineNodeBundle, string) 
 		writeOfflinePods(t, pods, name+".rs", offlineServingReplicaSets(obj, "owned-"+name))
 	}
 	t.Setenv("OFFLINE_PODS", pods)
-	t.Setenv("OFFLINE_SERVICES", `{"items":[{"metadata":{"name":"orka-api","labels":{"app.kubernetes.io/name":"orka"}},"spec":{"selector":{"app.kubernetes.io/name":"orka","app.kubernetes.io/component":"controller"},"ports":[{"name":"api","port":8080},{"name":"metrics","port":8081}]}}]}`)
+	t.Setenv("OFFLINE_SERVICES", `{"items":[{"metadata":{"name":"orka-api","labels":{"app.kubernetes.io/name":"orka"}},"spec":{"selector":{"app.kubernetes.io/name":"orka","app.kubernetes.io/component":"controller","kmx.test/workload":"orka-api-controller"},"ports":[{"name":"api","port":8080},{"name":"metrics","port":8081}]}}]}`)
 	t.Setenv("OFFLINE_READYZ", `{"checks":{"kubernetes":"ok","store":"ok"},"status":"ok"}`)
 	t.Setenv("OFFLINE_NODE_STARTED", offlineNodeStartedText)
 	// Success paths get a generous bound; tests expecting the wait to run
@@ -625,6 +625,8 @@ func offlineInstallApp(t *testing.T) (*App, string, *offlineNodeBundle, string) 
    rbac) printf 'Error from server (Forbidden): services "orka-api" is forbidden: User "kind-test-admin" cannot get resource "services/proxy" in API group "" in the namespace "orka-system"\n' >&2; exit 1;;
    proxied403) printf 'Error from server (Forbidden): target is not allowed\n' >&2; exit 1;;
   esac; printf '%s' "$answer";;
+ "--context kind-test -n orka-system get replicasets -o json") sep=; printf '{"items":['
+  for f in "$OFFLINE_PODS"/*.rs; do c=$(/bin/cat "$f"); c=${c#'{"items":['}; c=${c%']}'}; [ -z "$c" ] || { printf '%s%s' "$sep" "$c"; sep=,; }; done; printf ']}';;
  "--context kind-test -n orka-system get replicasets --selector=kmx.test/workload="*" -o json") w=${7#--selector=kmx.test/workload=}; /bin/cat "$OFFLINE_PODS/$w.rs";;
  "--context kind-test -n orka-system get pods --selector=kmx.test/workload="*" -o json") w=${7#--selector=kmx.test/workload=}
   n=$(($(/bin/cat "$OFFLINE_LOG.reads.$w" 2>/dev/null || echo 0) + 1)); echo "$n" > "$OFFLINE_LOG.reads.$w"

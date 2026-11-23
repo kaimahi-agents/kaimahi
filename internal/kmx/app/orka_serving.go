@@ -95,10 +95,12 @@ func orkaSameTemplate(deployment, replicaSet any) bool {
 
 // orkaServingReader separates the Kubernetes and container-engine reads from
 // the readiness rules, so offline and online installs share one check.
-// nodeStart is nil when the target has no node container to consult.
+// replicaSets lists every ReplicaSet in the namespace: a selected pod's owner
+// need not carry the Deployment's labels itself. nodeStart is nil when the
+// target has no node container to consult.
 type orkaServingReader struct {
 	pods        func(selector string) ([]byte, error)
-	replicaSets func(selector string) ([]byte, error)
+	replicaSets func() ([]byte, error)
 	services    func() ([]byte, error)
 	get         func(path string) ([]byte, error)
 	decode      func([]byte, any) error
@@ -185,14 +187,16 @@ func (a *App) awaitOrkaServing(what, retained string, observe func(context.Conte
 		if cancelled := parent.Err(); cancelled != nil {
 			return cancelled
 		}
+		// A complete observation without a gap is current readiness even if
+		// the bound passed just after its last read.
+		if pending == "" && err == nil {
+			return nil
+		}
 		// A read cut off by the bound says nothing new; keep the last
 		// complete observation as the reason.
 		if ctx.Err() == nil || last == "" {
 			if err != nil {
 				return err
-			}
-			if pending == "" {
-				return nil
 			}
 			if last == "" {
 				a.notef("Waiting up to %s for %s to show current readiness.", orkaServingTimeout, what)
@@ -251,7 +255,7 @@ func (r orkaServingReader) check(w orkaServingWorkload) (string, error) {
 		live = append(live, pod)
 	}
 	// Read after the pods: a pod's ReplicaSet exists before the pod does.
-	sets, pending, err := r.ownedReplicaSets(w, selector)
+	sets, pending, err := r.ownedReplicaSets(w)
 	if pending != "" || err != nil {
 		return pending, err
 	}
@@ -384,11 +388,11 @@ func orkaServingSelector(w orkaServingWorkload) (string, error) {
 // one at the Deployment's revision with the Deployment's pod template is
 // current; pods of an earlier one can share its images and still run older
 // arguments or environment.
-func (r orkaServingReader) ownedReplicaSets(w orkaServingWorkload, selector string) (map[string]string, string, error) {
+func (r orkaServingReader) ownedReplicaSets(w orkaServingWorkload) (map[string]string, string, error) {
 	if w.uid == "" {
 		return nil, "", fmt.Errorf("%s has no UID; refusing to guess its pods' owner", w.name)
 	}
-	raw, err := r.replicaSets(selector)
+	raw, err := r.replicaSets()
 	if errors.As(err, new(orkaRefusal)) {
 		return nil, "", err
 	}
@@ -444,8 +448,11 @@ func orkaLabelPart(s string, key bool) bool {
 // apiServing returns "" when Orka's API answers its own typed /readyz through
 // its Service, the route clients use. A Ready controller pod shows only that
 // its health port answered, and Service endpoints can still name a previous
-// run's pod address, where another workload may answer.
-func (r orkaServingReader) apiServing() (string, error) {
+// run's pod address, where another workload may answer. The Service must
+// select only pods of one of the checked Deployments (its selector contains
+// that Deployment's whole selector), so whatever answers is a pod the wait
+// has already held to current ownership and readiness.
+func (r orkaServingReader) apiServing(checked []map[string]string) (string, error) {
 	raw, err := r.services()
 	if errors.As(err, new(orkaRefusal)) {
 		return "", err
@@ -464,6 +471,9 @@ func (r orkaServingReader) apiServing() (string, error) {
 	if !orkaDNSName(name) || !orkaDNSName(port) {
 		return "", fmt.Errorf("Orka's API Service in %s has an unsupported name or port name", OrkaNamespace)
 	}
+	if !orkaServiceSelectsChecked(list, name, checked) {
+		return "", fmt.Errorf("Orka's API Service %s/%s can select pods outside the checked Deployments; refusing to judge readiness through it", OrkaNamespace, name)
+	}
 	answer, err := r.get(fmt.Sprintf("/api/v1/namespaces/%s/services/http:%s:%s/proxy/readyz", OrkaNamespace, name, port))
 	if errors.As(err, new(orkaRefusal)) {
 		return "", err
@@ -475,6 +485,29 @@ func (r orkaServingReader) apiServing() (string, error) {
 		return fmt.Sprintf("Orka's API /readyz through Service %s/%s did not report status ok", OrkaNamespace, name), nil
 	}
 	return "", nil
+}
+
+// orkaServiceSelectsChecked reports whether the named Service's selector
+// contains every label of one checked Deployment's selector, so every pod it
+// selects is one of that Deployment's pods.
+func orkaServiceSelectsChecked(list orkaServiceList, name string, checked []map[string]string) bool {
+	for _, service := range list.Items {
+		if service.Metadata.Name != name {
+			continue
+		}
+		for _, labels := range checked {
+			covered := len(labels) != 0
+			for key, value := range labels {
+				if got, ok := service.Spec.Selector[key]; !ok || got != value {
+					covered = false
+				}
+			}
+			if covered {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // orkaReadyzAnswer accepts only Orka's typed readiness document. A plain "ok",
@@ -606,6 +639,8 @@ func (a *App) orkaServingObserver(accepted orkaDeployment) func(context.Context)
 		if seen[0] != [2]string{accepted.Metadata.Name, accepted.Metadata.UID} || !slices.Equal(first, seen) {
 			return "", fmt.Errorf("Orka's %s was replaced while kmx waited for it; refusing to adopt the replacement. %s", accepted.Metadata.Name, a.orkaInstallRecovery())
 		}
+		// Every refusal this Deployment list shows comes before any rollout
+		// gap, so a pending rollout cannot hide a permanent condition.
 		for _, d := range required {
 			// A deletion held by a finalizer can keep the same UID, a complete
 			// rollout and Ready pods; the installation is still going away.
@@ -615,6 +650,8 @@ func (a *App) orkaServingObserver(accepted orkaDeployment) func(context.Context)
 			if d.Spec.Replicas <= 0 {
 				return "", a.orkaDeploymentReady(d)
 			}
+		}
+		for _, d := range required {
 			if err := a.orkaDeploymentReady(d); err != nil {
 				return err.Error(), nil
 			}
@@ -630,8 +667,8 @@ func (a *App) orkaServingObserver(accepted orkaDeployment) func(context.Context)
 			pods: func(selector string) ([]byte, error) {
 				return read("Orka pods", false, "-n", OrkaNamespace, "get", "pods", "--selector="+selector, "-o", "json")
 			},
-			replicaSets: func(selector string) ([]byte, error) {
-				return read("Orka ReplicaSets", false, "-n", OrkaNamespace, "get", "replicasets", "--selector="+selector, "-o", "json")
+			replicaSets: func() ([]byte, error) {
+				return read("Orka ReplicaSets", false, "-n", OrkaNamespace, "get", "replicasets", "-o", "json")
 			},
 			services: func() ([]byte, error) {
 				return read("Orka Services", false, "-n", OrkaNamespace, "get", "services", "-o", "json")
@@ -661,6 +698,10 @@ func (a *App) orkaServingObserver(accepted orkaDeployment) func(context.Context)
 				return pending, err
 			}
 		}
-		return reader.apiServing()
+		checked := make([]map[string]string, 0, len(required))
+		for _, d := range required {
+			checked = append(checked, d.Spec.Selector.MatchLabels)
+		}
+		return reader.apiServing(checked)
 	}
 }

@@ -308,6 +308,25 @@ func TestOfflineInstallReuseRefusesUnprovenReadiness(t *testing.T) {
 			raw, _ := json.Marshal(offlineServingReplicaSets(offlineLiveDeploy(t, "orka-api-controller"), "someone-else"))
 			os.WriteFile(filepath.Join(pods, "orka-api-controller.rs"), raw, 0o600)
 		}},
+		{"pod's ReplicaSet is outside the Deployment's selector", "belongs to a ReplicaSet that orka-api-controller does not control", false, func(t *testing.T, pods string) {
+			// The ReplicaSet the controller's pod names carries none of the
+			// Deployment's labels, so only the namespace's whole ReplicaSet
+			// list shows that another owner controls it.
+			stray := offlineServingReplicaSets(offlineLiveDeploy(t, "orka-api-controller"), "someone-else")
+			servingItem(stray)["spec"].(map[string]any)["template"].(map[string]any)["metadata"].(map[string]any)["labels"].(map[string]any)["kmx.test/workload"] = "stray"
+			writeOfflinePods(t, pods, "stray.rs", stray)
+			writeOfflinePods(t, pods, "orka-api-controller.rs", map[string]any{"items": []any{}})
+		}},
+		{"rollout in progress does not hide a scaled-to-zero workload", "orka-api-workspace-publisher is scaled to 0", false, func(t *testing.T, _ string) {
+			// The controller sorts first; its rollout gap must not keep
+			// the wait from refusing the publisher at once.
+			d := offlineLiveDeploy(t, "orka-api-controller")
+			d["status"].(map[string]any)["unavailableReplicas"] = 1
+			writeOfflineLive(t, "", d)
+			p := offlineLiveDeploy(t, "orka-api-workspace-publisher")
+			p["spec"].(map[string]any)["replicas"] = 0
+			writeOfflineLive(t, "", p)
+		}},
 		{"no API Service", "no Orka API Service in orka-system", false, func(t *testing.T, _ string) {
 			t.Setenv("OFFLINE_SERVICES", `{"items":[]}`)
 		}},
@@ -566,7 +585,7 @@ func TestOrkaServingCheck(t *testing.T) {
 					selector = s
 					return json.Marshal(map[string]any{"items": pods})
 				},
-				replicaSets: func(string) ([]byte, error) {
+				replicaSets: func() ([]byte, error) {
 					if tc.sets != nil {
 						return json.Marshal(tc.sets())
 					}
@@ -643,16 +662,27 @@ func TestOrkaServingAPIServing(t *testing.T) {
 		return map[string]any{"metadata": map[string]any{"name": name, "labels": map[string]any{"app.kubernetes.io/name": "orka"}}, "spec": map[string]any{"selector": selector, "ports": []any{map[string]any{"name": port, "port": 8080}}}}
 	}
 	controller := map[string]any{"app.kubernetes.io/name": "orka", "app.kubernetes.io/component": "controller"}
+	// The controller Deployment's selector, as the chart renders both.
+	checked := []map[string]string{{"app.kubernetes.io/name": "orka", "app.kubernetes.io/component": "controller"}}
+	instance := []map[string]string{{"app.kubernetes.io/name": "orka", "app.kubernetes.io/instance": "orka", "app.kubernetes.io/component": "controller"}}
+	narrower := map[string]any{"app.kubernetes.io/name": "orka", "app.kubernetes.io/instance": "orka", "app.kubernetes.io/component": "controller"}
 	typed := `{"status":"ok"}`
 	for _, tc := range []struct {
 		name     string
 		services []any
+		checked  []map[string]string
 		read     error
 		answer   string
 		get      error
 		pending  string
 		refused  string
 	}{
+		// A Service missing one of the Deployment's selector labels can
+		// select controller-labelled pods the wait never checked.
+		{name: "Service selects more than the checked Deployment", services: []any{service("orka-api", controller, "api")}, checked: instance, answer: typed, refused: "can select pods outside the checked Deployments"},
+		{name: "Service narrower than the checked Deployment", services: []any{service("orka-api", narrower, "api")}, checked: instance, answer: typed},
+		{name: "Service covers one of several checked Deployments", services: []any{service("orka-api", controller, "api")}, checked: append([]map[string]string{{"kmx.test/workload": "orka-api-publisher"}}, checked...), answer: typed},
+		{name: "no checked Deployment", services: []any{service("orka-api", controller, "api")}, checked: []map[string]string{}, answer: typed, refused: "can select pods outside the checked Deployments"},
 		{name: "typed answer through the API Service", services: []any{service("orka-api", controller, "api")}, answer: typed},
 		{name: "stale endpoint answers plain ok", services: []any{service("orka-api", controller, "api")}, answer: "ok", pending: "did not report status ok"},
 		{name: "Service proxy fails", services: []any{service("orka-api", controller, "api")}, get: errors.New("503"), pending: "did not answer /readyz through Service orka-system/orka-api"},
@@ -677,7 +707,10 @@ func TestOrkaServingAPIServing(t *testing.T) {
 				},
 				decode: func(raw []byte, out any) error { return offlineJSON(raw, out, false) },
 			}
-			pending, err := r.apiServing()
+			if tc.checked == nil {
+				tc.checked = checked
+			}
+			pending, err := r.apiServing(tc.checked)
 			switch {
 			case tc.refused != "":
 				if err == nil || !strings.Contains(err.Error(), tc.refused) {
@@ -688,8 +721,12 @@ func TestOrkaServingAPIServing(t *testing.T) {
 			case !strings.Contains(pending, tc.pending) || (tc.pending == "") != (pending == ""):
 				t.Fatalf("pending = %q, want %q", pending, tc.pending)
 			}
-			if tc.answer == typed && (len(paths) != 1 || paths[0] != "/api/v1/namespaces/orka-system/services/http:orka-api:api/proxy/readyz") {
+			if tc.answer == typed && tc.refused == "" && (len(paths) != 1 || paths[0] != "/api/v1/namespaces/orka-system/services/http:orka-api:api/proxy/readyz") {
 				t.Fatalf("readiness requested at %v", paths)
+			}
+			// A refusal from the Service list comes before any readiness request.
+			if tc.refused != "" && tc.get == nil && len(paths) != 0 {
+				t.Fatalf("refused Service was still asked for readiness: %v", paths)
 			}
 		})
 	}
@@ -827,5 +864,27 @@ func TestAwaitOrkaServingReportsLastCompleteObservation(t *testing.T) {
 	}
 	if !strings.Contains(a.Err.(*strings.Builder).String(), "Waiting up to 10m0s for Orka") {
 		t.Fatalf("wait not announced once: %q", a.Err)
+	}
+}
+
+// An observation that completes without a gap is current readiness even when
+// the bound passes just after its last read.
+func TestAwaitOrkaServingAcceptsReadinessShownAsTheBoundPasses(t *testing.T) {
+	var expire context.CancelFunc
+	a := &App{Run: run.Default(), Err: &strings.Builder{}, waitTiming: &waitTiming{pollInterval: time.Millisecond, timeout: func(ctx context.Context, _ string, _ time.Duration) (context.Context, context.CancelFunc) {
+		ctx, expire = context.WithTimeout(ctx, time.Minute)
+		return ctx, expire
+	}}}
+	calls := 0
+	err := a.awaitOrkaServing("Orka", "effects retained", func(context.Context) (string, error) {
+		calls++
+		if calls < 2 {
+			return "controller pod is not Ready", nil
+		}
+		expire()
+		return "", nil
+	})
+	if err != nil || calls != 2 {
+		t.Fatalf("readiness shown as the bound passed = %v after %d observations", err, calls)
 	}
 }

@@ -149,10 +149,14 @@ func (a *App) observeOfflineWorkloads(ctx context.Context, b *offlineInstallBund
 	slices.SortFunc(items, func(x, y offlineLiveDeployment) int {
 		return strings.Compare(x.Metadata.Name, y.Metadata.Name)
 	})
+	// Every refusal this Deployment list shows comes before any rollout gap,
+	// so a pending rollout cannot hide a scaled-to-zero workload.
 	for _, d := range items {
 		if d.Spec.Replicas <= 0 {
 			return "", fmt.Errorf("offline live workload %s is scaled to %d; effects retained, no reinstall attempted", d.Metadata.Name, d.Spec.Replicas)
 		}
+	}
+	for _, d := range items {
 		if d.Status.ObservedGeneration < d.Metadata.Generation || d.Status.UpdatedReplicas != d.Spec.Replicas || d.Status.AvailableReplicas != d.Spec.Replicas || d.Status.ReadyReplicas != d.Spec.Replicas || d.Status.UnavailableReplicas != 0 {
 			return fmt.Sprintf("Deployment %s status is not a completed rollout", d.Metadata.Name), nil
 		}
@@ -168,8 +172,8 @@ func (a *App) observeOfflineWorkloads(ctx context.Context, b *offlineInstallBund
 		pods: func(selector string) ([]byte, error) {
 			return read("Orka pods", false, "-n", OrkaNamespace, "get", "pods", "--selector="+selector, "-o", "json")
 		},
-		replicaSets: func(selector string) ([]byte, error) {
-			return read("Orka ReplicaSets", false, "-n", OrkaNamespace, "get", "replicasets", "--selector="+selector, "-o", "json")
+		replicaSets: func() ([]byte, error) {
+			return read("Orka ReplicaSets", false, "-n", OrkaNamespace, "get", "replicasets", "-o", "json")
 		},
 		services: func() ([]byte, error) {
 			return read("Orka Services", false, "-n", OrkaNamespace, "get", "services", "-o", "json")
@@ -194,5 +198,9 @@ func (a *App) observeOfflineWorkloads(ctx context.Context, b *offlineInstallBund
 			return pending, err
 		}
 	}
-	return reader.apiServing()
+	checked := make([]map[string]string, 0, len(items))
+	for _, d := range items {
+		checked = append(checked, d.Spec.Selector.MatchLabels)
+	}
+	return reader.apiServing(checked)
 }

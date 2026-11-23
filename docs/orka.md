@@ -140,8 +140,8 @@ Install and reuse then wait, up to 10 minutes, for readiness observed after the
 kind node's current start: every workload's pods Ready and created from its
 current ReplicaSet, with their containers started no earlier than the node
 container's start, and
-Orka's typed `/readyz` answering `status: ok` through its API Service. A
-Deployment status left over from before a restart does not count.
+Orka's typed `/readyz` answering `status: ok` through its API Service, whose
+selector must contain a checked workload's whole selector. A Deployment status left over from before a restart does not count.
 Foreign, online, changed, partial and orphan state refuse without repair.
 Bundle `--no-apply` is local-only and leaves target checks explicitly unchecked;
 bundle `--dry-run` validates only CRDs server-side after full preflight.
@@ -409,7 +409,8 @@ traffic. Configure its runtime and model access through the upstream interfaces.
   keeps its chart, key and data on rerun only when its image overrides match
   the pin and its controller is Ready. On rerun, Ready means the pinned
   controller's pod is Running and Ready now, Orka's typed `/readyz` answers
-  `status: ok` through its API Service and, when the context is
+  `status: ok` through its API Service, whose selector must contain the
+  controller Deployment's, and, when the context is
   `kind-<KIND_CLUSTER>`, the pod's containers started no earlier than that node
   container's current start; kmx waits up to 10 minutes for that, because a
   Deployment status can survive a node restart unchanged. If the selected

@@ -112,8 +112,10 @@ case "$*" in
       missing) printf 'Error from server (NotFound): the server could not find the requested resource (fixture-sensitive-token)\n' >&2; exit 1 ;;
     esac
     printf '%s' "$answer"; exit 0 ;;
-  *"get replicasets --selector="*" -o json")
+  *"get replicasets -o json")
     printf '%s' "$KMX_TEST_RS_JSON"; exit 0 ;;
+  *"get replicasets --selector="*" -o json")
+    printf '%s' "${KMX_TEST_RS_SELECTED_JSON:-$KMX_TEST_RS_JSON}"; exit 0 ;;
   *"get pods --selector="*" -o json")
     [ "$KMX_TEST_PODS_READ" != forbidden ] || { printf 'Error from server (Forbidden): pods is forbidden (fixture-sensitive-token)\n' >&2; exit 1; }
     if [ -n "$KMX_TEST_PODS_SEQ" ]; then
@@ -258,7 +260,7 @@ func newOrkaFixture(t *testing.T, body []byte) *orkaFixture {
 	t.Setenv("KMX_TEST_NODE_STARTED", offlineNodeStartedText)
 	t.Setenv("KMX_TEST_PODS_JSON", "")
 	t.Setenv("KMX_TEST_PODS_READ", "")
-	t.Setenv("KMX_TEST_SERVICES_JSON", `{"items":[{"metadata":{"name":"orka-api","labels":{"app.kubernetes.io/name":"orka"}},"spec":{"selector":{"app.kubernetes.io/name":"orka","app.kubernetes.io/component":"controller"},"ports":[{"name":"api","port":8080},{"name":"metrics","port":8081}]}}]}`)
+	t.Setenv("KMX_TEST_SERVICES_JSON", `{"items":[{"metadata":{"name":"orka-api","labels":{"app.kubernetes.io/name":"orka"}},"spec":{"selector":{"app.kubernetes.io/name":"orka","app.kubernetes.io/component":"controller","kmx.test/workload":"chart-controller"},"ports":[{"name":"api","port":8080},{"name":"metrics","port":8081}]}}]}`)
 	t.Setenv("KMX_TEST_READYZ", `{"checks":{"kubernetes":"ok","store":"ok"},"status":"ok"}`)
 	t.Setenv("KMX_TEST_READYZ_SEQ", "")
 	t.Setenv("KMX_TEST_PODS_SEQ", "")
@@ -672,7 +674,7 @@ func TestOrkaInstallRepeatRequiresReadinessAfterNodeRestart(t *testing.T) {
 		podsRead, readyz, first     string
 		scaled, rename, deleting    bool
 		rsOwner, replacedBefore     string
-		earlierRS                   bool
+		earlierRS, strayRS          bool
 		readySince                  time.Duration
 		waits, nodeRead             bool
 	}{
@@ -694,6 +696,9 @@ func TestOrkaInstallRepeatRequiresReadinessAfterNodeRestart(t *testing.T) {
 		{name: "scaled to zero", scaled: true, want: "nothing is running to verify"},
 		{name: "controller being deleted", started: 10 * time.Second, deleting: true, want: "Orka's chart-controller is being deleted; refusing to reuse it"},
 		{name: "pod's ReplicaSet belongs to another Deployment", started: 10 * time.Second, rsOwner: "someone-else", want: "belongs to a ReplicaSet that chart-controller does not control"},
+		// Only the namespace's whole ReplicaSet list shows a ReplicaSet that
+		// carries none of the Deployment's labels.
+		{name: "pod's ReplicaSet is outside the Deployment's selector", started: 10 * time.Second, strayRS: true, want: "belongs to a ReplicaSet that chart-controller does not control"},
 		{name: "replacement controller under another name while waiting", started: -10 * time.Minute, rename: true, want: "chart-controller was replaced while kmx waited", nodeRead: true},
 		// The release check accepts controller-1; a Ready, pinned replacement
 		// is all the wait ever sees.
@@ -745,6 +750,14 @@ func TestOrkaInstallRepeatRequiresReadinessAfterNodeRestart(t *testing.T) {
 			other := orkaDeployWithImage("other-controller", pinned)
 			other["metadata"].(map[string]any)["uid"] = "controller-2"
 			t.Setenv("KMX_TEST_RS_JSON", orkaRSJSON(t, rsOwner, other))
+			if tc.strayRS {
+				stray := orkaDeployWithImage("chart-controller", pinned)
+				stray["metadata"].(map[string]any)["uid"] = "someone-else"
+				stray["spec"].(map[string]any)["selector"] = map[string]any{"matchLabels": map[string]any{"kmx.test/workload": "stray"}}
+				stray["spec"].(map[string]any)["template"].(map[string]any)["metadata"] = map[string]any{"labels": map[string]any{"kmx.test/workload": "stray"}}
+				t.Setenv("KMX_TEST_RS_JSON", orkaRSJSON(t, stray, other))
+				t.Setenv("KMX_TEST_RS_SELECTED_JSON", `{"items":[]}`)
+			}
 			if tc.scaled {
 				controller["spec"].(map[string]any)["replicas"] = 0
 			}
@@ -843,6 +856,54 @@ func TestOrkaInstallRepeatRequiresReadinessAfterNodeRestart(t *testing.T) {
 			}
 			if got := strings.Contains(f.calls(t), "docker container inspect"); got != tc.nodeRead && (tc.want != "" || tc.context != "") {
 				t.Fatalf("node container consulted = %v, want %v: %s", got, tc.nodeRead, f.calls(t))
+			}
+		})
+	}
+}
+
+// Every refusal one Deployment list shows comes before any rollout gap: a
+// legacy controller still rolling out must not keep the wait from refusing
+// its wrapper's deletion at once.
+func TestOrkaInstallRepeatRefusesBeforeWaitingOnARollout(t *testing.T) {
+	for _, tc := range []struct {
+		name, want string
+		wrapper    func(meta, spec, status map[string]any)
+	}{
+		{"wrapper being deleted", "Orka's orka-agent-harness-wrapper is being deleted; refusing to reuse it", func(meta, _, _ map[string]any) {
+			meta["deletionTimestamp"] = "2026-01-02T03:04:06Z"
+		}},
+		{"wrapper scaled to zero", "Orka's orka-agent-harness-wrapper is scaled to 0", func(_, spec, _ map[string]any) {
+			spec["replicas"] = 0
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			chart := orkaChart(t)
+			f := newOrkaFixture(t, chart)
+			f.app.orkaInstallerDigest = digestOf(chart)
+			// Ended after three looks, the wait reports a timeout instead.
+			f.app.waitTiming = offlineServingTiming()
+			t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.3.0","app_version":"v0.3.0","status":"deployed"}]`)
+			t.Setenv("KMX_TEST_HELM_VALUES", pinnedOrkaHelmValues(t, nil))
+			controller := orkaDeploy(orkaController, func(meta, _, status map[string]any) {
+				meta["uid"] = "controller-1"
+				status["unavailableReplicas"] = 1
+			})
+			spec := controller["spec"].(map[string]any)["template"].(map[string]any)["spec"].(map[string]any)
+			spec["containers"].([]any)[0].(map[string]any)["image"] = "ghcr.io/orka-agents/orka@" + orkaControllerDigest
+			wrapper := orkaDeploy(orkaWrapper, func(meta, spec, status map[string]any) {
+				meta["uid"] = "wrapper-1"
+				tc.wrapper(meta, spec, status)
+			})
+			t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, controller, wrapper))
+			err := f.app.OrkaInstall(OrkaOptions{Provider: "-"})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("refusal behind a rollout gap = %v; want %q", err, tc.want)
+			}
+			if strings.Contains(err.Error(), "did not show current readiness") {
+				t.Fatalf("waited on the controller's rollout before refusing: %v", err)
+			}
+			if writes := f.writes(t); writes != "" || strings.Contains(f.applied(t), "kind: RoleBinding") {
+				t.Fatalf("refusal caused writes: %s", writes)
 			}
 		})
 	}

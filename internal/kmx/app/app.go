@@ -43,10 +43,12 @@
 // through their ReplicaSet's UID by the Deployment's current revision and pod
 // template, report kubelet readiness for containers started since their kind
 // node container's current start and Orka's typed /readyz answers through its
-// API Service. Online reuse waits on the controller it accepted from the
+// API Service, whose selector must contain a checked Deployment's whole
+// selector. Online reuse waits on the controller it accepted from the
 // release check, by name and UID. On a context other than kind-<KIND_CLUSTER>
 // it uses no restart reference. Every read in the wait is bounded, the API
-// server's own denials refuse, and nothing is written or repaired.
+// server's own denials refuse, refusals a Deployment list shows come before
+// its rollout gaps, and nothing is written or repaired.
 //
 // Model connection state retains nonsecret, acknowledged identities through
 // private immutable checkpoints and a process-held target lock. Partial effects
