@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -40,8 +41,24 @@ func servingTestTiming(bound time.Duration) *waitTiming {
 }
 
 // offlineServingTiming is for tests whose readiness wait is expected to run
-// out; tests that expect success keep a generous bound.
-func offlineServingTiming() *waitTiming { return servingTestTiming(2 * time.Second) }
+// out. The wait ends after three complete observations rather than at a clock
+// bound, so a loaded machine cannot cut the first observation short; the
+// minute bound only stops a broken test from hanging. Tests that expect
+// success use servingTestTiming with a generous bound.
+func offlineServingTiming() *waitTiming {
+	timing := servingTestTiming(time.Minute)
+	bounded := timing.timeout
+	timing.timeout = func(ctx context.Context, phase string, d time.Duration) (context.Context, context.CancelFunc) {
+		ctx, cancel := bounded(ctx, phase, d)
+		if phase == "orka-serving" {
+			pauses := new(atomic.Int32)
+			pauses.Store(2)
+			ctx = context.WithValue(ctx, waitPausesKey{}, pauses)
+		}
+		return ctx, cancel
+	}
+	return timing
+}
 
 // offlineServingReplicaSets is the ReplicaSet list for a Deployment's selector:
 // the one ReplicaSet its pods name, controlled by deploymentUID and carrying
@@ -727,8 +744,14 @@ func TestKindNodeStartedAt(t *testing.T) {
 			t.Setenv("PATH", tools+string(os.PathListSeparator)+os.Getenv("PATH"))
 			t.Setenv("KMX_TEST_NODE_INSPECT", tc.output)
 			a := New(&config.Config{ContainerEngine: "docker", KindCluster: "kind"})
-			ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
-			defer cancel()
+			// Only the wedged engine is cut off; the others run to completion
+			// within the read's own bound, however loaded the machine is.
+			ctx := context.Background()
+			if tc.hang {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, 300*time.Millisecond)
+				defer cancel()
+			}
 			began := time.Now()
 			at, err := a.kindNodeStartedAt(ctx, "kind-control-plane")
 			if tc.want == "" {
@@ -771,19 +794,24 @@ func TestAwaitOrkaServingStopsOnCancellation(t *testing.T) {
 // The bound can cut off the final observation's reads. The refusal names the
 // last complete observation, not the interrupted read.
 func TestAwaitOrkaServingReportsLastCompleteObservation(t *testing.T) {
+	// The phase bound is ended by the test during the third observation, as a
+	// deadline passing mid-read would, without depending on timing.
+	var expire context.CancelFunc
 	a := &App{Run: run.Default(), Err: &strings.Builder{}, waitTiming: &waitTiming{pollInterval: time.Millisecond, timeout: func(ctx context.Context, _ string, _ time.Duration) (context.Context, context.CancelFunc) {
-		return context.WithTimeout(ctx, 300*time.Millisecond)
+		ctx, expire = context.WithTimeout(ctx, time.Minute)
+		return ctx, expire
 	}}}
+	calls := 0
 	err := a.awaitOrkaServing("Orka", "effects retained", func(ctx context.Context) (string, error) {
 		if _, deadline := ctx.Deadline(); !deadline {
 			t.Fatal("observation is not bounded")
 		}
-		select {
-		case <-ctx.Done():
-			return "pods could not be read", nil
-		case <-time.After(20 * time.Millisecond):
+		calls++
+		if calls < 3 {
 			return "controller pod is not Ready", nil
 		}
+		expire()
+		return "pods could not be read", nil
 	})
 	if err == nil || !strings.Contains(err.Error(), "last: controller pod is not Ready") || !strings.HasSuffix(err.Error(), "; effects retained") {
 		t.Fatalf("timeout = %v", err)
