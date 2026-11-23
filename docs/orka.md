@@ -410,7 +410,7 @@ traffic. Configure its runtime and model access through the upstream interfaces.
   the pin and its controller is Ready. On rerun, Ready means the pinned
   controller's pod is Running and Ready now, Orka's typed `/readyz` answers
   `status: ok` through its API Service and, when the context is
-  `kind-<KIND_CLUSTER>`, the pod's containers started after that node
+  `kind-<KIND_CLUSTER>`, the pod's containers started no earlier than that node
   container's current start; kmx waits up to 10 minutes for that, because a
   Deployment status can survive a node restart unchanged. If the selected
   `CONTAINER_ENGINE` has no container for the pod's node, reuse refuses. On any
