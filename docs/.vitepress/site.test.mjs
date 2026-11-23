@@ -46,6 +46,52 @@ test('AgentSuite links retain their standalone destination and section fragment'
   assert.doesNotMatch(guide, /href="[^"]*(?:issues\/491|\/agentsuite\/spec)(?:["#])/)
 })
 
+test('repeat-policy guidance renders parser-validated examples and fail-closed boundaries', async () => {
+  const html = await readFile(path.join(dist, 'docs', 'suite-workspace.html'), 'utf8')
+  const guide = plainText(html).replace(/\s+/g, ' ')
+  const source = await readFile(path.join(root, 'docs', 'suite-workspace.md'), 'utf8')
+  assert.ok(html.includes('id="choose-runs-and-minpasses"'))
+
+  for (const fixture of [
+    'repeat-policy-1-of-1.yaml',
+    'repeat-policy-3-of-3.yaml',
+    'repeat-policy-2-of-3.yaml'
+  ]) {
+    const raw = await readFile(path.join(root, 'internal', 'kmx', 'runtime', 'testdata', fixture), 'utf8')
+    const marker = `<!-- repeat-policy-example: ${fixture} -->`
+    const at = source.indexOf(marker)
+    assert.ok(at >= 0, `source repeat fixture marker: ${fixture}`)
+    const snippet = source.slice(at + marker.length).match(/^\n\n```yaml\n([\s\S]*?)```\n/)?.[1]
+    assert.equal(snippet, raw, `source repeat fixture parity: ${fixture}`)
+    const rendered = raw.trim().split('\n').map((line) => line.trim()).join(' ')
+    assert.ok(guide.includes(rendered), `rendered repeat fixture: ${fixture}`)
+  }
+
+  for (const marker of [
+    'not a field for single-file kmx test FILE',
+    'completed, attributable failed run',
+    'Unknown is not a tolerated failure',
+    'Uncertain candidate cleanup prevents a new passing receipt',
+    'acknowledged explicit receipt or visible eligible managed record may still exist',
+    'R agent executions and up to 2*R*J judge requests',
+    '3 evaluated runs plus up to 6 judge requests',
+    'not a transport-call count, measured execution time or predicted wall-clock time',
+    'not a statistical reliability guarantee',
+    'always performs a fresh evaluation',
+    'historical pass, not current target health',
+    'not destination evaluation',
+    'update and rollback contract may consume retained exact-version release evidence'
+  ]) assert.ok(guide.includes(marker), `repeat guidance: ${marker}`)
+
+  assert.match(html, /<td>pass, pass, unknown<\/td><td>unknown; no passing proof/)
+  assert.match(html, /href="#managed-passing-proof"/)
+  assert.match(html, /href="#composed-workspace-deploy"/)
+  assert.match(html, /href="#update-and-rollback"/)
+
+  const workflow = await readFile(path.join(dist, 'docs', 'workflow-overview.html'), 'utf8')
+  assert.match(workflow, /href="\.\/suite-workspace#choose-runs-and-minpasses"/)
+})
+
 test('renamed headings retain legacy guide fragments', async () => {
   for (const [page, fragments] of [
     ['docs/suite-workspace.html', ['digest-lift', 'digest-deploy', 'composed-workspace-lift', 'composed-workspace-deploy']],

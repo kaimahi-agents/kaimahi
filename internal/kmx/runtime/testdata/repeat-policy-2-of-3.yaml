@@ -1,0 +1,5 @@
+id: capital-tolerant
+input: What is the capital of France?
+expectContains: [Paris]
+runs: 3
+minPasses: 2

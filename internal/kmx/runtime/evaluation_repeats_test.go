@@ -1,6 +1,10 @@
 package runtime
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestEvaluationMinPassesRequiresRuns(t *testing.T) {
 	_, err := ParseEvaluationCase([]byte("id: repeated\ninput: question\nexpectContains: [answer]\nminPasses: 1\n"))
@@ -30,5 +34,31 @@ func TestEvaluationRepeatedCaseFields(t *testing.T) {
 	}
 	if _, err := ParseSessionReferenceAssertions([]byte("id: reference\nexpectContains: [answer]\nruns: 2\n")); err == nil {
 		t.Fatal("reference extraction accepted execution policy")
+	}
+}
+
+func TestEvaluationRepeatPolicyGuideExamples(t *testing.T) {
+	for _, tc := range []struct {
+		file, id     string
+		runs, passes int
+	}{
+		{"repeat-policy-1-of-1.yaml", "capital-once", 1, 1},
+		{"repeat-policy-3-of-3.yaml", "capital-strict", 3, 3},
+		{"repeat-policy-2-of-3.yaml", "capital-tolerant", 3, 2},
+	} {
+		t.Run(tc.file, func(t *testing.T) {
+			raw, err := os.ReadFile(filepath.Join("testdata", tc.file))
+			if err != nil {
+				t.Fatal(err)
+			}
+			c, err := ParseEvaluationCase(raw)
+			if err != nil {
+				t.Fatalf("guide example is not a valid authored case: %v", err)
+			}
+			runs, passes := c.RunPolicy()
+			if c.ID != tc.id || runs != tc.runs || passes != tc.passes {
+				t.Fatalf("guide policy changed: id=%q policy=%d/%d", c.ID, runs, passes)
+			}
+		})
 	}
 }
