@@ -137,8 +137,9 @@ Both-platform metadata and Helm tests are not live cancellation or guest proof.
 Exact healthy reuse compares all custom values and live workload execution
 settings, preserves chart data/keys and reconciles only the result reader.
 Install and reuse then wait, up to 10 minutes, for readiness observed after the
-kind node's current start: every workload's pods Ready, with their Ready
-transition and container starts no older than the node container's start, and
+kind node's current start: every workload's pods Ready and created from its
+current ReplicaSet, with their containers started no earlier than the node
+container's start, and
 Orka's typed `/readyz` answering `status: ok` through its API Service. A
 Deployment status left over from before a restart does not count.
 Foreign, online, changed, partial and orphan state refuse without repair.

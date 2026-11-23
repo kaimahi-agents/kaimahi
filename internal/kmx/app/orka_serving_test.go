@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -43,18 +44,57 @@ func servingTestTiming(bound time.Duration) *waitTiming {
 func offlineServingTiming() *waitTiming { return servingTestTiming(2 * time.Second) }
 
 // offlineServingReplicaSets is the ReplicaSet list for a Deployment's selector:
-// the one ReplicaSet its pods name, controlled by the Deployment's UID.
-func offlineServingReplicaSets(name, deploymentUID string) map[string]any {
-	return map[string]any{"items": []any{map[string]any{"metadata": map[string]any{
-		"name": name + "-5d8f7c9b4", "uid": name + "-rs",
-		"ownerReferences": []any{map[string]any{"apiVersion": "apps/v1", "kind": "Deployment", "name": name, "uid": deploymentUID, "controller": true}},
-	}}}}
+// the one ReplicaSet its pods name, controlled by deploymentUID and carrying
+// the Deployment's revision and pod template as the Deployment controller
+// writes them.
+func offlineServingReplicaSets(deploy map[string]any, deploymentUID string) map[string]any {
+	meta := deploy["metadata"].(map[string]any)
+	name := meta["name"].(string)
+	revision := "1"
+	if annotations, ok := meta["annotations"].(map[string]any); ok && annotations[orkaRevisionAnnotation] != nil {
+		revision = annotations[orkaRevisionAnnotation].(string)
+	}
+	var template map[string]any
+	raw, _ := json.Marshal(deploy["spec"].(map[string]any)["template"])
+	json.Unmarshal(raw, &template)
+	templateMeta, _ := template["metadata"].(map[string]any)
+	if templateMeta == nil {
+		templateMeta = map[string]any{}
+		template["metadata"] = templateMeta
+	}
+	labels, _ := templateMeta["labels"].(map[string]any)
+	if labels == nil {
+		labels = map[string]any{}
+		templateMeta["labels"] = labels
+	}
+	labels["pod-template-hash"] = "5d8f7c9b4"
+	return map[string]any{"items": []any{map[string]any{
+		"metadata": map[string]any{
+			"name": name + "-5d8f7c9b4", "uid": name + "-rs",
+			"annotations":     map[string]any{orkaRevisionAnnotation: revision},
+			"ownerReferences": []any{map[string]any{"apiVersion": "apps/v1", "kind": "Deployment", "name": name, "uid": deploymentUID, "controller": true}},
+		},
+		"spec": map[string]any{"template": template},
+	}}}
+}
+
+// withServingRevision records the Deployment controller's rollout revision on
+// a Deployment fixture.
+func withServingRevision(deploy map[string]any, revision string) map[string]any {
+	meta := deploy["metadata"].(map[string]any)
+	annotations, _ := meta["annotations"].(map[string]any)
+	if annotations == nil {
+		annotations = map[string]any{}
+		meta["annotations"] = annotations
+	}
+	annotations[orkaRevisionAnnotation] = revision
+	return deploy
 }
 
 // offlineServingPod is the pod list a Deployment's selector returns: one
-// Running pod controlled by the Deployment's ReplicaSet, containers started at
-// started and the pod Ready since ready.
-func offlineServingPod(name string, deploy map[string]any, started, ready time.Time) map[string]any {
+// Running and Ready pod controlled by the Deployment's ReplicaSet, its
+// containers started at started.
+func offlineServingPod(name string, deploy map[string]any, started time.Time) map[string]any {
 	template := deploy["spec"].(map[string]any)["template"].(map[string]any)["spec"].(map[string]any)
 	var containers, statuses []any
 	for _, raw := range template["containers"].([]any) {
@@ -70,9 +110,11 @@ func offlineServingPod(name string, deploy map[string]any, started, ready time.T
 		},
 		"spec": map[string]any{"nodeName": "test-control-plane", "containers": containers},
 		"status": map[string]any{
-			"phase":             "Running",
-			"podIP":             "10.244.0.4",
-			"conditions":        []any{map[string]any{"type": "Ready", "status": "True", "lastTransitionTime": ready.UTC().Format(time.RFC3339)}},
+			"phase": "Running",
+			"podIP": "10.244.0.4",
+			// The transition time is the kubelet's but plays no part in
+			// freshness; see TestOrkaServingCheck.
+			"conditions":        []any{map[string]any{"type": "Ready", "status": "True", "lastTransitionTime": started.Add(10 * time.Second).UTC().Format(time.RFC3339)}},
 			"containerStatuses": statuses,
 		},
 	}
@@ -145,15 +187,14 @@ func writeOfflineLive(t *testing.T, suffix string, changed map[string]any) {
 // stalePods is what the API serves before the kubelet resyncs after a node
 // restart: the previous run's Ready pod, consistent with itself.
 func stalePods(t *testing.T, name string) map[string]any {
-	before := offlineNodeStart().Add(-10 * time.Minute)
-	return offlineServingPod(name, offlineLiveDeploy(t, name), before, before.Add(30*time.Second))
+	return offlineServingPod(name, offlineLiveDeploy(t, name), offlineNodeStart().Add(-10*time.Minute))
 }
 
 // crashingPodsFor is the kubelet's view after the restart while the controller
 // cannot reach the Service network yet: restarted, not Ready.
 func crashingPodsFor(deploy map[string]any) map[string]any {
 	name := deploy["metadata"].(map[string]any)["name"].(string)
-	pods := offlineServingPod(name, deploy, offlineNodeStart().Add(5*time.Second), offlineNodeStart().Add(5*time.Second))
+	pods := offlineServingPod(name, deploy, offlineNodeStart().Add(5*time.Second))
 	status := servingItem(pods)["status"].(map[string]any)
 	status["conditions"] = []any{map[string]any{"type": "Ready", "status": "False", "lastTransitionTime": offlineNodeStart().Add(5 * time.Second).UTC().Format(time.RFC3339)}}
 	for _, raw := range status["containerStatuses"].([]any) {
@@ -204,10 +245,20 @@ func TestOfflineInstallReuseRefusesUnprovenReadiness(t *testing.T) {
 			writeOfflinePods(t, pods, "orka-api-controller", stalePods(t, "orka-api-controller"))
 		}},
 		{"container started before the node", "pod status predates the current start of node test-control-plane", true, func(t *testing.T, pods string) {
-			// Ready after the node started, but the running container is the
-			// previous run's.
-			p := offlineServingPod("orka-api-controller", offlineLiveDeploy(t, "orka-api-controller"), offlineNodeStart().Add(-time.Minute), offlineNodeStart().Add(10*time.Second))
+			// Ready since after the node started, but the running container is
+			// the previous run's.
+			p := offlineServingPod("orka-api-controller", offlineLiveDeploy(t, "orka-api-controller"), offlineNodeStart().Add(-time.Minute))
+			servingItem(p)["status"].(map[string]any)["conditions"] = []any{map[string]any{"type": "Ready", "status": "True", "lastTransitionTime": offlineNodeStart().Add(10 * time.Second).UTC().Format(time.RFC3339)}}
 			writeOfflinePods(t, pods, "orka-api-controller", p)
+		}},
+		{"pod from an earlier ReplicaSet revision", "orka-api-controller pod is from a ReplicaSet that is not its current revision and pod template", true, func(t *testing.T, pods string) {
+			// The pod's ReplicaSet is the Deployment's own, with the pinned
+			// image, but its template still has an earlier environment.
+			earlier := withServingRevision(offlineLiveDeploy(t, "orka-api-controller"), "0")
+			c := earlier["spec"].(map[string]any)["template"].(map[string]any)["spec"].(map[string]any)["containers"].([]any)[0].(map[string]any)
+			c["env"] = []any{map[string]any{"name": "KMX_EARLIER", "value": "1"}}
+			raw, _ := json.Marshal(offlineServingReplicaSets(earlier, "owned-orka-api-controller"))
+			os.WriteFile(filepath.Join(pods, "orka-api-controller.rs"), raw, 0o600)
 		}},
 		{"controller restarted but not Ready", "orka-api-controller pod is not Ready", true, func(t *testing.T, pods string) {
 			writeOfflinePods(t, pods, "orka-api-controller", crashingPods(t, "orka-api-controller"))
@@ -237,7 +288,7 @@ func TestOfflineInstallReuseRefusesUnprovenReadiness(t *testing.T) {
 			t.Setenv("OFFLINE_READYZ", "rbac")
 		}},
 		{"pod's ReplicaSet belongs to another Deployment", "belongs to a ReplicaSet that orka-api-controller does not control", false, func(t *testing.T, pods string) {
-			raw, _ := json.Marshal(offlineServingReplicaSets("orka-api-controller", "someone-else"))
+			raw, _ := json.Marshal(offlineServingReplicaSets(offlineLiveDeploy(t, "orka-api-controller"), "someone-else"))
 			os.WriteFile(filepath.Join(pods, "orka-api-controller.rs"), raw, 0o600)
 		}},
 		{"no API Service", "no Orka API Service in orka-system", false, func(t *testing.T, _ string) {
@@ -246,15 +297,15 @@ func TestOfflineInstallReuseRefusesUnprovenReadiness(t *testing.T) {
 		{"extra foreign pod", "not controlled by its ReplicaSet", false, func(t *testing.T, pods string) {
 			// One correct pod and one foreign pod: refuse at once rather than
 			// waiting on the replica count.
-			p := offlineServingPod("orka-api-controller", offlineLiveDeploy(t, "orka-api-controller"), offlineNodeStart().Add(time.Second), offlineNodeStart().Add(2*time.Second))
-			foreign := servingItem(offlineServingPod("orka-api-controller", offlineLiveDeploy(t, "orka-api-controller"), offlineNodeStart().Add(time.Second), offlineNodeStart().Add(2*time.Second)))
+			p := offlineServingPod("orka-api-controller", offlineLiveDeploy(t, "orka-api-controller"), offlineNodeStart().Add(time.Second))
+			foreign := servingItem(offlineServingPod("orka-api-controller", offlineLiveDeploy(t, "orka-api-controller"), offlineNodeStart().Add(time.Second)))
 			foreign["metadata"].(map[string]any)["name"] = "intruder"
 			foreign["metadata"].(map[string]any)["ownerReferences"] = []any{}
 			p["items"] = append(p["items"].([]any), foreign)
 			writeOfflinePods(t, pods, "orka-api-controller", p)
 		}},
 		{"selected pod is foreign", "not controlled by its ReplicaSet", false, func(t *testing.T, pods string) {
-			p := offlineServingPod("orka-api-controller", offlineLiveDeploy(t, "orka-api-controller"), offlineNodeStart().Add(time.Second), offlineNodeStart().Add(2*time.Second))
+			p := offlineServingPod("orka-api-controller", offlineLiveDeploy(t, "orka-api-controller"), offlineNodeStart().Add(time.Second))
 			servingItem(p)["metadata"].(map[string]any)["ownerReferences"] = []any{}
 			writeOfflinePods(t, pods, "orka-api-controller", p)
 		}},
@@ -306,17 +357,34 @@ func TestOfflineInstallReuseRefusesUnprovenReadiness(t *testing.T) {
 
 func TestOrkaServingCheck(t *testing.T) {
 	boot := offlineNodeStart()
+	podLabels := map[string]any{"app.kubernetes.io/name": "orka", "app.kubernetes.io/component": "controller"}
+	deployment := func() map[string]any {
+		return withServingRevision(map[string]any{"metadata": map[string]any{"name": "orka-api-controller"}, "spec": map[string]any{"template": map[string]any{
+			"metadata": map[string]any{"labels": maps.Clone(podLabels)},
+			"spec":     map[string]any{"containers": []any{map[string]any{"name": "controller", "image": "registry.invalid/orka@sha256:1", "args": []any{"--leader-elect"}}}},
+		}}}, "3")
+	}
 	controller := func() orkaServingPod {
 		var pod orkaServingPod
-		deploy := map[string]any{"spec": map[string]any{"template": map[string]any{"spec": map[string]any{"containers": []any{map[string]any{"name": "controller", "image": "registry.invalid/orka@sha256:1"}}}}}}
-		raw, _ := json.Marshal(servingItem(offlineServingPod("orka-api-controller", deploy, boot.Add(time.Second), boot.Add(2*time.Second))))
+		raw, _ := json.Marshal(servingItem(offlineServingPod("orka-api-controller", deployment(), boot.Add(time.Second))))
 		if err := json.Unmarshal(raw, &pod); err != nil {
 			t.Fatal(err)
 		}
 		return pod
 	}
 	workload := func() orkaServingWorkload {
-		return orkaServingWorkload{name: "orka-api-controller", uid: "deploy-uid", matchLabels: map[string]string{"app.kubernetes.io/name": "orka", "app.kubernetes.io/component": "controller"}, replicas: 1, images: map[string]string{"controller": "registry.invalid/orka@sha256:1"}}
+		var template orkaTemplate[struct{}]
+		raw, _ := json.Marshal(deployment()["spec"].(map[string]any)["template"])
+		if err := json.Unmarshal(raw, &template); err != nil {
+			t.Fatal(err)
+		}
+		return orkaServingWorkload{name: "orka-api-controller", uid: "deploy-uid", revision: "3", template: template.whole, matchLabels: map[string]string{"app.kubernetes.io/name": "orka", "app.kubernetes.io/component": "controller"}, replicas: 1, images: map[string]string{"controller": "registry.invalid/orka@sha256:1"}}
+	}
+	// earlier is a ReplicaSet the Deployment owns from an earlier rollout.
+	earlier := func(edit func(map[string]any)) map[string]any {
+		d := deployment()
+		edit(d)
+		return offlineServingReplicaSets(d, "deploy-uid")
 	}
 	type outcome struct{ pending, refused string }
 	for _, tc := range []struct {
@@ -370,22 +438,25 @@ func TestOrkaServingCheck(t *testing.T) {
 			p.Status.ContainerStatuses[0].Ready = false
 			return []orkaServingPod{p}
 		}, want: outcome{pending: "container controller is not running and ready"}},
-		{name: "Ready transition before the node start", pods: func() []orkaServingPod {
+		{name: "Ready condition False", pods: func() []orkaServingPod {
 			p := controller()
-			before := boot.Add(-time.Second)
-			p.Status.Conditions[0].LastTransitionTime = &before
+			p.Status.Conditions[0].Status = "False"
 			return []orkaServingPod{p}
-		}, want: outcome{pending: "predates the current start"}},
+		}, want: outcome{pending: "pod is not Ready"}},
+		{name: "no Ready condition", pods: func() []orkaServingPod {
+			p := controller()
+			p.Status.Conditions = nil
+			return []orkaServingPod{p}
+		}, want: outcome{pending: "pod is not Ready"}},
 		{name: "container start before the node start", pods: func() []orkaServingPod {
 			p := controller()
 			before := boot.Add(-time.Minute)
 			p.Status.ContainerStatuses[0].State.Running.StartedAt = &before
 			return []orkaServingPod{p}
 		}, want: outcome{pending: "predates the current start"}},
-		{name: "Ready in the node's start second", pods: func() []orkaServingPod {
+		{name: "started in the node's start second", pods: func() []orkaServingPod {
 			p := controller()
 			same := boot.Truncate(time.Second)
-			p.Status.Conditions[0].LastTransitionTime = &same
 			p.Status.ContainerStatuses[0].State.Running.StartedAt = &same
 			return []orkaServingPod{p}
 		}},
@@ -396,7 +467,7 @@ func TestOrkaServingCheck(t *testing.T) {
 		{name: "without a node container only current readiness is required", noBoot: true, pods: func() []orkaServingPod {
 			p := controller()
 			before := boot.Add(-time.Hour)
-			p.Status.Conditions[0].LastTransitionTime = &before
+			p.Status.ContainerStatuses[0].State.Running.StartedAt = &before
 			return []orkaServingPod{p}
 		}},
 		{name: "two controlling owners", pods: func() []orkaServingPod {
@@ -405,15 +476,44 @@ func TestOrkaServingCheck(t *testing.T) {
 			return []orkaServingPod{p}
 		}, want: outcome{refused: "not controlled by its ReplicaSet"}},
 		{name: "ReplicaSet controlled by another Deployment", sets: func() map[string]any {
-			return offlineServingReplicaSets("orka-api-controller", "other-deploy-uid")
+			return offlineServingReplicaSets(deployment(), "other-deploy-uid")
 		}, want: outcome{refused: "belongs to a ReplicaSet that orka-api-controller does not control"}},
 		{name: "ReplicaSet with the expected name but no controller", sets: func() map[string]any {
-			s := offlineServingReplicaSets("orka-api-controller", "deploy-uid")
+			s := offlineServingReplicaSets(deployment(), "deploy-uid")
 			s["items"].([]any)[0].(map[string]any)["metadata"].(map[string]any)["ownerReferences"] = []any{}
 			return s
 		}, want: outcome{refused: "does not control"}},
+		{name: "owned ReplicaSet at an earlier revision", sets: func() map[string]any {
+			return earlier(func(d map[string]any) { withServingRevision(d, "2") })
+		}, want: outcome{pending: "not its current revision and pod template"}},
+		{name: "owned ReplicaSet at the revision with an earlier pod template", sets: func() map[string]any {
+			// Same image and revision, older arguments.
+			return earlier(func(d map[string]any) {
+				c := d["spec"].(map[string]any)["template"].(map[string]any)["spec"].(map[string]any)["containers"].([]any)[0].(map[string]any)
+				c["args"] = []any{"--leader-elect=false"}
+			})
+		}, want: outcome{pending: "not its current revision and pod template"}},
+		{name: "owned ReplicaSet without a revision", sets: func() map[string]any {
+			s := offlineServingReplicaSets(deployment(), "deploy-uid")
+			delete(s["items"].([]any)[0].(map[string]any)["metadata"].(map[string]any), "annotations")
+			return s
+		}, want: outcome{pending: "not its current revision and pod template"}},
+		{name: "Deployment without a revision", workload: func(w *orkaServingWorkload) { w.revision = "" }, want: outcome{pending: "has no rollout revision recorded yet"}},
+		{name: "a ReplicaSet without the pod-template-hash label is still current", sets: func() map[string]any {
+			s := offlineServingReplicaSets(deployment(), "deploy-uid")
+			labels := s["items"].([]any)[0].(map[string]any)["spec"].(map[string]any)["template"].(map[string]any)["metadata"].(map[string]any)["labels"].(map[string]any)
+			delete(labels, "pod-template-hash")
+			return s
+		}},
+		{name: "a foreign pod refuses even after a pod from an earlier ReplicaSet", sets: func() map[string]any {
+			return earlier(func(d map[string]any) { withServingRevision(d, "2") })
+		}, pods: func() []orkaServingPod {
+			foreign := controller()
+			foreign.Metadata.OwnerReferences = nil
+			return []orkaServingPod{controller(), foreign}
+		}, want: outcome{refused: "not controlled by its ReplicaSet"}},
 		{name: "ReplicaSet being deleted", sets: func() map[string]any {
-			s := offlineServingReplicaSets("orka-api-controller", "deploy-uid")
+			s := offlineServingReplicaSets(deployment(), "deploy-uid")
 			s["items"].([]any)[0].(map[string]any)["metadata"].(map[string]any)["deletionTimestamp"] = "2026-01-02T03:04:06Z"
 			return s
 		}, want: outcome{pending: "ReplicaSet is being deleted"}},
@@ -453,7 +553,7 @@ func TestOrkaServingCheck(t *testing.T) {
 					if tc.sets != nil {
 						return json.Marshal(tc.sets())
 					}
-					return json.Marshal(offlineServingReplicaSets("orka-api-controller", "deploy-uid"))
+					return json.Marshal(offlineServingReplicaSets(deployment(), "deploy-uid"))
 				},
 				decode: func(raw []byte, out any) error { return offlineJSON(raw, out, false) },
 				nodeStart: func(node string) (time.Time, error) {

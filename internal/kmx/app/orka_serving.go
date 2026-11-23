@@ -1,11 +1,14 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os/exec"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -26,12 +29,68 @@ type orkaRefusal struct{ error }
 func (r orkaRefusal) Unwrap() error { return r.error }
 
 // orkaServingWorkload is one Deployment whose own pods must be shown ready.
+// revision and template identify its current ReplicaSet.
 type orkaServingWorkload struct {
 	name, uid        string
+	revision         string
+	template         any
 	matchLabels      map[string]string
 	matchExpressions int
 	replicas         int
 	images           map[string]string
+}
+
+// orkaRevisionAnnotation is the rollout revision the Deployment controller
+// records on a Deployment and on each of its ReplicaSets.
+const orkaRevisionAnnotation = "deployment.kubernetes.io/revision"
+
+// orkaTemplate decodes a pod template's spec as S and also keeps the whole
+// template, so a ReplicaSet's template can be compared with its Deployment's.
+type orkaTemplate[S any] struct {
+	Spec  S `json:"spec"`
+	whole any
+}
+
+func (t *orkaTemplate[S]) UnmarshalJSON(raw []byte) error {
+	var typed struct {
+		Spec S `json:"spec"`
+	}
+	if err := json.Unmarshal(raw, &typed); err != nil {
+		return err
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var whole any
+	if err := dec.Decode(&whole); err != nil {
+		return err
+	}
+	t.Spec, t.whole = typed.Spec, whole
+	return nil
+}
+
+// orkaSameTemplate compares two pod templates as the Deployment controller
+// does, ignoring the pod-template-hash label it adds to its ReplicaSets.
+func orkaSameTemplate(deployment, replicaSet any) bool {
+	strip := func(template any) any {
+		object, ok := template.(map[string]any)
+		if !ok {
+			return template
+		}
+		meta, ok := object["metadata"].(map[string]any)
+		if !ok {
+			return template
+		}
+		labels, ok := meta["labels"].(map[string]any)
+		if !ok {
+			return template
+		}
+		labels = maps.Clone(labels)
+		delete(labels, "pod-template-hash")
+		meta, object = maps.Clone(meta), maps.Clone(object)
+		meta["labels"], object["metadata"] = labels, meta
+		return object
+	}
+	return deployment != nil && reflect.DeepEqual(strip(deployment), strip(replicaSet))
 }
 
 // orkaServingReader separates the Kubernetes and container-engine reads from
@@ -56,11 +115,15 @@ type orkaOwnerRef struct {
 
 type orkaServingReplicaSet struct {
 	Metadata struct {
-		Name              string         `json:"name"`
-		UID               string         `json:"uid"`
-		DeletionTimestamp *string        `json:"deletionTimestamp"`
-		OwnerReferences   []orkaOwnerRef `json:"ownerReferences"`
+		Name              string            `json:"name"`
+		UID               string            `json:"uid"`
+		Annotations       map[string]string `json:"annotations"`
+		DeletionTimestamp *string           `json:"deletionTimestamp"`
+		OwnerReferences   []orkaOwnerRef    `json:"ownerReferences"`
 	} `json:"metadata"`
+	Spec struct {
+		Template orkaTemplate[struct{}] `json:"template"`
+	} `json:"spec"`
 }
 
 // orkaControllerRef returns the single controller reference, if there is exactly one.
@@ -93,9 +156,8 @@ type orkaServingPod struct {
 	Status struct {
 		Phase      string `json:"phase"`
 		Conditions []struct {
-			Type               string     `json:"type"`
-			Status             string     `json:"status"`
-			LastTransitionTime *time.Time `json:"lastTransitionTime"`
+			Type   string `json:"type"`
+			Status string `json:"status"`
 		} `json:"conditions"`
 		ContainerStatuses []struct {
 			Name  string `json:"name"`
@@ -151,14 +213,18 @@ func (a *App) awaitOrkaServing(what, retained string, observe func(context.Conte
 }
 
 // check returns "" only when every pod of w reports kubelet readiness that is
-// current: Running, Ready and on the Deployment's images, with its Ready
-// transition and container starts no older than its node's current start.
+// current: Running, Ready and on the Deployment's images, created from its
+// current ReplicaSet, with its containers started no earlier than its node's
+// current start.
 //
 // Deployment status is written by the controller manager and pod status by
 // the kubelet; on a single-node cluster both restart with the node and keep
 // their pre-restart values until they resync. The node container's start time
-// is the reference neither can carry over. A pod Ready since then was probed
-// by its kubelet after the restart, through the pod's current address.
+// is the reference neither can carry over. A node restart stops every
+// container on it, so a container started since then was started by the
+// restarted kubelet, and the readiness that kubelet reports for it comes from
+// probing that container. The Ready condition's transition time is not
+// compared: it changes only when Ready changes, not on each probe.
 func (r orkaServingReader) check(w orkaServingWorkload) (string, error) {
 	selector, err := orkaServingSelector(w)
 	if err != nil {
@@ -189,20 +255,34 @@ func (r orkaServingReader) check(w orkaServingWorkload) (string, error) {
 	if pending != "" || err != nil {
 		return pending, err
 	}
+	// A foreign pod will not go away by waiting, so every pod's owner is
+	// checked before any of them is waited on.
+	gap := ""
 	for _, pod := range live {
-		// A foreign pod will not go away by waiting.
 		owner, ok := orkaControllerRef(pod.Metadata.OwnerReferences)
 		if !ok || owner.Kind != "ReplicaSet" || owner.UID == "" || !orkaDNSName(pod.Metadata.Name) {
 			return "", fmt.Errorf("a pod selected by %s is not controlled by its ReplicaSet; refusing to verify a foreign workload", w.name)
 		}
+		reason := ""
 		switch sets[owner.UID] {
-		case "":
-			return fmt.Sprintf("%s pod's ReplicaSet was not observed", w.name), nil
-		case "deleting":
-			return fmt.Sprintf("%s pod's ReplicaSet is being deleted", w.name), nil
 		case "foreign":
 			return "", fmt.Errorf("a pod selected by %s belongs to a ReplicaSet that %s does not control; refusing to verify a foreign workload", w.name, w.name)
+		case "":
+			reason = fmt.Sprintf("%s pod's ReplicaSet was not observed", w.name)
+		case "deleting":
+			reason = fmt.Sprintf("%s pod's ReplicaSet is being deleted", w.name)
+		case "earlier":
+			reason = fmt.Sprintf("%s pod is from a ReplicaSet that is not its current revision and pod template", w.name)
+			if w.revision == "" {
+				reason = fmt.Sprintf("%s has no rollout revision recorded yet", w.name)
+			}
 		}
+		if gap == "" {
+			gap = reason
+		}
+	}
+	if gap != "" {
+		return gap, nil
 	}
 	if len(live) != w.replicas {
 		return fmt.Sprintf("%s has %d current pods for %d replicas", w.name, len(live), w.replicas), nil
@@ -212,18 +292,18 @@ func (r orkaServingReader) check(w orkaServingWorkload) (string, error) {
 		if pod.Status.Phase != "Running" {
 			return fmt.Sprintf("%s pod is not running", w.name), nil
 		}
-		var readySince *time.Time
+		podReady := false
 		for _, c := range pod.Status.Conditions {
-			if c.Type == "Ready" && c.Status == "True" {
-				readySince = c.LastTransitionTime
+			if c.Type == "Ready" {
+				podReady = c.Status == "True"
 			}
 		}
-		if readySince == nil {
+		if !podReady {
 			return fmt.Sprintf("%s pod is not Ready", w.name), nil
 		}
 		// Pod readiness already covers containers an admission webhook added;
 		// the Deployment's own containers are matched here.
-		started := []time.Time{*readySince}
+		var started []time.Time
 		matched := 0
 		for _, c := range pod.Spec.Containers {
 			image, ok := w.images[c.Name]
@@ -298,9 +378,12 @@ func orkaServingSelector(w orkaServingWorkload) (string, error) {
 	return strings.Join(parts, ","), nil
 }
 
-// ownedReplicaSets maps each observed ReplicaSet UID to "owned", "deleting" or
-// "foreign" according to whether the Deployment w controls it, by UID: a
-// ReplicaSet name and template hash do not establish ownership.
+// ownedReplicaSets maps each observed ReplicaSet UID to "current", "earlier",
+// "deleting" or "foreign". Ownership is by the Deployment's UID: a ReplicaSet
+// name and template hash do not establish it. Of the ReplicaSets it owns, only
+// one at the Deployment's revision with the Deployment's pod template is
+// current; pods of an earlier one can share its images and still run older
+// arguments or environment.
 func (r orkaServingReader) ownedReplicaSets(w orkaServingWorkload, selector string) (map[string]string, string, error) {
 	if w.uid == "" {
 		return nil, "", fmt.Errorf("%s has no UID; refusing to guess its pods' owner", w.name)
@@ -329,8 +412,10 @@ func (r orkaServingReader) ownedReplicaSets(w orkaServingWorkload, selector stri
 			sets[set.Metadata.UID] = "foreign"
 		case set.Metadata.DeletionTimestamp != nil:
 			sets[set.Metadata.UID] = "deleting"
+		case w.revision == "" || set.Metadata.Annotations[orkaRevisionAnnotation] != w.revision || !orkaSameTemplate(w.template, set.Spec.Template.whole):
+			sets[set.Metadata.UID] = "earlier"
 		default:
-			sets[set.Metadata.UID] = "owned"
+			sets[set.Metadata.UID] = "current"
 		}
 	}
 	return sets, "", nil
@@ -480,12 +565,12 @@ func (a *App) kindNodeStartedAt(ctx context.Context, node string) (time.Time, er
 	return started, nil
 }
 
-// orkaServingObserver is the online install-reuse view: the same controller
-// set that was first observed, still the pinned controller kmx accepted, with
-// current pod readiness and Orka's typed /readyz through its API Service. On
-// the selected kind cluster pod readiness must also postdate the node
-// container's current start.
-func (a *App) orkaServingObserver() func(context.Context) (string, error) {
+// orkaServingObserver is the online install-reuse view: the controller kmx
+// accepted when it inspected the release, by name and UID, still the pinned
+// controller, with current pod readiness and Orka's typed /readyz through its
+// API Service. On the selected kind cluster pod readiness must also postdate
+// the node container's current start.
+func (a *App) orkaServingObserver(accepted orkaDeployment) func(context.Context) (string, error) {
 	var first [][2]string
 	return func(ctx context.Context) (string, error) {
 		deployments, err := a.orkaDeployments(ctx)
@@ -503,15 +588,17 @@ func (a *App) orkaServingObserver() func(context.Context) (string, error) {
 			return "", err
 		}
 		// Selection is by role, so a replacement under another name would be
-		// selected too; only the first observed names and UIDs are accepted.
+		// selected too. The controller must stay the one accepted before the
+		// wait; any other required Deployment must stay as first observed.
 		seen := make([][2]string, len(required))
 		for i, d := range required {
 			seen[i] = [2]string{d.Metadata.Name, d.Metadata.UID}
 		}
 		if first == nil {
 			first = seen
-		} else if !slices.Equal(first, seen) {
-			return "", fmt.Errorf("Orka's %s was replaced while kmx waited for it; refusing to adopt the replacement. %s", first[0][0], a.orkaInstallRecovery())
+		}
+		if seen[0] != [2]string{accepted.Metadata.Name, accepted.Metadata.UID} || !slices.Equal(first, seen) {
+			return "", fmt.Errorf("Orka's %s was replaced while kmx waited for it; refusing to adopt the replacement. %s", accepted.Metadata.Name, a.orkaInstallRecovery())
 		}
 		for _, d := range required {
 			// A deletion held by a finalizer can keep the same UID, a complete
@@ -560,7 +647,8 @@ func (a *App) orkaServingObserver() func(context.Context) (string, error) {
 				images[c.Name] = c.Image
 			}
 			pending, err := reader.check(orkaServingWorkload{
-				name: d.Metadata.Name, uid: d.Metadata.UID, matchLabels: d.Spec.Selector.MatchLabels,
+				name: d.Metadata.Name, uid: d.Metadata.UID, revision: d.Metadata.Annotations[orkaRevisionAnnotation],
+				template: d.Spec.Template.whole, matchLabels: d.Spec.Selector.MatchLabels,
 				matchExpressions: len(d.Spec.Selector.MatchExpressions), replicas: int(d.Spec.Replicas), images: images,
 			})
 			if pending != "" || err != nil {

@@ -1729,12 +1729,16 @@ that set; every bundle Deployment is still compared, even when marked.
 
 Deployment status alone is not readiness: after a node restart it can still be
 the controller manager's record from the previous run. Install and reuse wait up
-to 10 minutes until every Deployment's status is a completed rollout and each of
-its pods is Running, Ready and on the pinned images, with its Ready transition
-and container starts no older than the kind node container's current start (read
-from the selected container engine). A pod counts only when its controlling
-ReplicaSet's UID is controlled by that Deployment's UID. A pod Ready since the
-node started was probed by its kubelet after the restart. Orka's API must then
+to 10 minutes until every bundle Deployment's status is a completed rollout and
+each of its pods is Running, Ready and on the pinned images, with its containers
+started no earlier than the kind node container's current start (read from the
+selected container engine). A node restart stops every container on the node,
+so the readiness the kubelet reports for a container started since then comes
+from probing that container; the Ready condition's transition time, which
+changes only when Ready changes, is not used. A pod counts only when its
+controlling ReplicaSet's UID is controlled by that Deployment's UID and that
+ReplicaSet has the Deployment's current revision and pod template; a pod of an
+earlier ReplicaSet is waited on. Orka's API must then
 answer `/readyz` through its controller-selected API Service (the API server's
 Service proxy) with a JSON object whose `status` is `ok`; a 404 or another
 workload's plain `ok` from a stale endpoint does not count. A live selected pod

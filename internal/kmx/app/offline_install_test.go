@@ -569,12 +569,15 @@ func offlineInstallApp(t *testing.T) (*App, string, *offlineNodeBundle, string) 
 		meta := obj["metadata"].(map[string]any)
 		meta["uid"] = "owned-" + meta["name"].(string)
 		meta["generation"] = 1
+		withServingRevision(obj, "1")
 		obj["status"] = map[string]any{"observedGeneration": 1, "updatedReplicas": 1, "readyReplicas": 1, "availableReplicas": 1}
 		name := meta["name"].(string)
 		obj["spec"].(map[string]any)["selector"] = map[string]any{"matchLabels": map[string]any{"kmx.test/workload": name}}
+		// The API server requires pod template labels to match the selector.
+		obj["spec"].(map[string]any)["template"].(map[string]any)["metadata"] = map[string]any{"labels": map[string]any{"kmx.test/workload": name}}
 		items = append(items, obj)
-		writeOfflinePods(t, pods, name, offlineServingPod(name, obj, offlineNodeStart().Add(10*time.Second), offlineNodeStart().Add(20*time.Second)))
-		writeOfflinePods(t, pods, name+".rs", offlineServingReplicaSets(name, "owned-"+name))
+		writeOfflinePods(t, pods, name, offlineServingPod(name, obj, offlineNodeStart().Add(10*time.Second)))
+		writeOfflinePods(t, pods, name+".rs", offlineServingReplicaSets(obj, "owned-"+name))
 	}
 	t.Setenv("OFFLINE_PODS", pods)
 	t.Setenv("OFFLINE_SERVICES", `{"items":[{"metadata":{"name":"orka-api","labels":{"app.kubernetes.io/name":"orka"}},"spec":{"selector":{"app.kubernetes.io/name":"orka","app.kubernetes.io/component":"controller"},"ports":[{"name":"api","port":8080},{"name":"metrics","port":8081}]}}]}`)

@@ -28,7 +28,7 @@ type offlineLiveDeployment struct {
 			MatchLabels      map[string]string
 			MatchExpressions []any
 		}
-		Template struct{ Spec offlineWorkload }
+		Template orkaTemplate[offlineWorkload] `json:"template"`
 	}
 	Status struct {
 		ObservedGeneration                                                     int64
@@ -186,7 +186,8 @@ func (a *App) observeOfflineWorkloads(ctx context.Context, b *offlineInstallBund
 			images[c.Name] = c.Image
 		}
 		pending, err := reader.check(orkaServingWorkload{
-			name: d.Metadata.Name, uid: d.Metadata.UID, matchLabels: d.Spec.Selector.MatchLabels,
+			name: d.Metadata.Name, uid: d.Metadata.UID, revision: d.Metadata.Annotations[orkaRevisionAnnotation],
+			template: d.Spec.Template.whole, matchLabels: d.Spec.Selector.MatchLabels,
 			matchExpressions: len(d.Spec.Selector.MatchExpressions), replicas: d.Spec.Replicas, images: images,
 		})
 		if pending != "" || err != nil {

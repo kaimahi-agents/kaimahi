@@ -40,10 +40,12 @@
 // Installing or reusing Orka never trusts Deployment status alone: it can be the
 // controller manager's record from before a node restart. Offline install and
 // both install-reuse paths wait, bounded, until each workload's pods, owned
-// through their ReplicaSet's UID, report kubelet readiness no older than their
-// kind node container's current start and Orka's typed /readyz answers through
-// its API Service. Online reuse on a context other than kind-<KIND_CLUSTER>
-// uses no restart reference. Every read in the wait is bounded, the API
+// through their ReplicaSet's UID by the Deployment's current revision and pod
+// template, report kubelet readiness for containers started since their kind
+// node container's current start and Orka's typed /readyz answers through its
+// API Service. Online reuse waits on the controller it accepted from the
+// release check, by name and UID. On a context other than kind-<KIND_CLUSTER>
+// it uses no restart reference. Every read in the wait is bounded, the API
 // server's own denials refuse, and nothing is written or repaired.
 //
 // Model connection state retains nonsecret, acknowledged identities through

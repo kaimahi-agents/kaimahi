@@ -16,6 +16,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -630,14 +631,14 @@ func TestOrkaInstallRepeatRefusesUnreadyController(t *testing.T) {
 	}
 }
 
-// orkaRSJSON lists each Deployment's one ReplicaSet, controlled by its UID.
+// orkaRSJSON lists each Deployment's one ReplicaSet at its revision and pod
+// template, controlled by its UID.
 func orkaRSJSON(t *testing.T, deploys ...map[string]any) string {
 	t.Helper()
 	var items []any
 	for _, d := range deploys {
-		meta := d["metadata"].(map[string]any)
-		uid, _ := meta["uid"].(string)
-		items = append(items, offlineServingReplicaSets(meta["name"].(string), uid)["items"].([]any)...)
+		uid, _ := d["metadata"].(map[string]any)["uid"].(string)
+		items = append(items, offlineServingReplicaSets(d, uid)["items"].([]any)...)
 	}
 	body, err := json.Marshal(map[string]any{"items": items})
 	if err != nil {
@@ -646,10 +647,10 @@ func orkaRSJSON(t *testing.T, deploys ...map[string]any) string {
 	return string(body)
 }
 
-// orkaPodsJSON is the controller Deployment's one pod, Ready since started.
+// orkaPodsJSON is the controller Deployment's one Ready pod, started at started.
 func orkaPodsJSON(t *testing.T, deploy map[string]any, started time.Time) string {
 	t.Helper()
-	pods := offlineServingPod(deploy["metadata"].(map[string]any)["name"].(string), deploy, started, started.Add(10*time.Second))
+	pods := offlineServingPod(deploy["metadata"].(map[string]any)["name"].(string), deploy, started)
 	body, err := json.Marshal(pods)
 	if err != nil {
 		t.Fatal(err)
@@ -670,7 +671,9 @@ func TestOrkaInstallRepeatRequiresReadinessAfterNodeRestart(t *testing.T) {
 		later                       func(map[string]any)
 		podsRead, readyz, first     string
 		scaled, rename, deleting    bool
-		rsOwner                     string
+		rsOwner, replacedBefore     string
+		earlierRS                   bool
+		readySince                  time.Duration
 		waits, nodeRead             bool
 	}{
 		{name: "pod status from before the restart", started: -10 * time.Minute, want: "predates the current start of node test-control-plane", waits: true, nodeRead: true},
@@ -692,6 +695,14 @@ func TestOrkaInstallRepeatRequiresReadinessAfterNodeRestart(t *testing.T) {
 		{name: "controller being deleted", started: 10 * time.Second, deleting: true, want: "Orka's chart-controller is being deleted; refusing to reuse it"},
 		{name: "pod's ReplicaSet belongs to another Deployment", started: 10 * time.Second, rsOwner: "someone-else", want: "belongs to a ReplicaSet that chart-controller does not control"},
 		{name: "replacement controller under another name while waiting", started: -10 * time.Minute, rename: true, want: "chart-controller was replaced while kmx waited", nodeRead: true},
+		// The release check accepts controller-1; a Ready, pinned replacement
+		// is all the wait ever sees.
+		{name: "controller replaced before the wait's first look", started: 10 * time.Second, replacedBefore: "chart-controller", want: "chart-controller was replaced while kmx waited"},
+		{name: "controller replaced under another name before the wait's first look", started: 10 * time.Second, replacedBefore: "other-controller", want: "chart-controller was replaced while kmx waited"},
+		{name: "pod from an earlier ReplicaSet revision", started: 10 * time.Second, earlierRS: true, want: "chart-controller pod is from a ReplicaSet that is not its current revision and pod template", waits: true},
+		// The kubelet changes the Ready transition time only when Ready
+		// changes; a restarted container it reports ready is current.
+		{name: "Ready since before the restart, its container restarted since", started: 10 * time.Second, readySince: -10 * time.Minute},
 		{name: "another workload answers through the Service", started: 10 * time.Second, readyz: "ok", want: "Orka's API /readyz through Service orka-system/orka-api did not report status ok", waits: true, nodeRead: true},
 		{name: "API Service does not answer", started: 10 * time.Second, readyz: "missing", want: "Orka's API did not answer /readyz through Service orka-system/orka-api", waits: true, nodeRead: true},
 		{name: "API readiness forbidden", started: 10 * time.Second, readyz: "forbidden", want: "cannot read Orka's API readiness through its Service in orka-system: access to services/proxy forbidden", nodeRead: true},
@@ -719,11 +730,20 @@ func TestOrkaInstallRepeatRequiresReadinessAfterNodeRestart(t *testing.T) {
 			if tc.deleting {
 				controller["metadata"].(map[string]any)["deletionTimestamp"] = "2026-01-02T03:04:06Z"
 			}
-			rsOwner := map[string]any{"metadata": map[string]any{"name": "chart-controller", "uid": "controller-1"}}
+			rsOwner := orkaDeployWithImage("chart-controller", pinned)
+			rsOwner["metadata"].(map[string]any)["uid"] = "controller-1"
 			if tc.rsOwner != "" {
 				rsOwner["metadata"].(map[string]any)["uid"] = tc.rsOwner
 			}
-			other := map[string]any{"metadata": map[string]any{"name": "other-controller", "uid": "controller-2"}}
+			if tc.earlierRS {
+				// Owned by controller-1 with the same image, but an earlier
+				// revision whose arguments differ.
+				withServingRevision(rsOwner, "1")
+				c := rsOwner["spec"].(map[string]any)["template"].(map[string]any)["spec"].(map[string]any)["containers"].([]any)[0].(map[string]any)
+				c["args"] = []any{"--earlier"}
+			}
+			other := orkaDeployWithImage("other-controller", pinned)
+			other["metadata"].(map[string]any)["uid"] = "controller-2"
 			t.Setenv("KMX_TEST_RS_JSON", orkaRSJSON(t, rsOwner, other))
 			if tc.scaled {
 				controller["spec"].(map[string]any)["replicas"] = 0
@@ -733,6 +753,30 @@ func TestOrkaInstallRepeatRequiresReadinessAfterNodeRestart(t *testing.T) {
 				t.Setenv("KMX_TEST_PODS_JSON", tc.pods(t, controller))
 			} else {
 				t.Setenv("KMX_TEST_PODS_JSON", orkaPodsJSON(t, controller, offlineNodeStart().Add(tc.started)))
+			}
+			if tc.readySince != 0 {
+				pods := offlineServingPod("chart-controller", controller, offlineNodeStart().Add(tc.started))
+				servingItem(pods)["status"].(map[string]any)["conditions"] = []any{map[string]any{"type": "Ready", "status": "True", "lastTransitionTime": offlineNodeStart().Add(tc.readySince).UTC().Format(time.RFC3339)}}
+				body, err := json.Marshal(pods)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Setenv("KMX_TEST_PODS_JSON", string(body))
+			}
+			if tc.replacedBefore != "" {
+				// Read 1 is the release check, which accepts controller-1. From
+				// read 2 on, a replacement with the pinned image is Ready,
+				// owns its pods and serves.
+				seq := t.TempDir()
+				if err := os.WriteFile(filepath.Join(seq, "1"), []byte(orkaDeployJSON(t, controller)), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				replacement := orkaDeployWithImage(tc.replacedBefore, pinned)
+				replacement["metadata"].(map[string]any)["uid"] = "replacement"
+				t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, replacement))
+				t.Setenv("KMX_TEST_DEPLOY_SEQ", seq)
+				t.Setenv("KMX_TEST_RS_JSON", orkaRSJSON(t, replacement))
+				t.Setenv("KMX_TEST_PODS_JSON", orkaPodsJSON(t, replacement, offlineNodeStart().Add(tc.started)))
 			}
 			t.Setenv("KMX_TEST_PODS_READ", tc.podsRead)
 			if tc.readyz != "" {
@@ -1226,15 +1270,22 @@ func orkaDeploy(name string, edit func(meta, spec, status map[string]any)) map[s
 	if name != orkaController && name != orkaWrapper {
 		labels["app.kubernetes.io/component"] = "controller"
 	}
-	meta := map[string]any{"name": name, "generation": 2, "labels": labels}
+	meta := map[string]any{"name": name, "generation": 2, "labels": labels, "annotations": map[string]any{orkaRevisionAnnotation: "2"}}
 	spec := map[string]any{"replicas": 1, "selector": map[string]any{"matchLabels": map[string]any{"app.kubernetes.io/name": "orka", "kmx.test/workload": name}}}
 	status := map[string]any{"observedGeneration": 2, "updatedReplicas": 1,
 		"readyReplicas": 1, "availableReplicas": 1, "unavailableReplicas": 0}
 	if edit != nil {
 		edit(meta, spec, status)
 	}
-	// Legacy readiness checks must keep recognizing the v0.1.3 manifest.
-	spec["template"] = map[string]any{"spec": map[string]any{"containers": []any{map[string]any{"name": "controller", "image": "ghcr.io/orka-agents/orka:0.1.3"}}}}
+	// Legacy readiness checks must keep recognizing the v0.1.3 manifest. Pod
+	// template labels match the selector, as the API server requires.
+	templateLabels := map[string]any{}
+	if selector, ok := spec["selector"].(map[string]any); ok {
+		if match, ok := selector["matchLabels"].(map[string]any); ok {
+			maps.Copy(templateLabels, match)
+		}
+	}
+	spec["template"] = map[string]any{"metadata": map[string]any{"labels": templateLabels}, "spec": map[string]any{"containers": []any{map[string]any{"name": "controller", "image": "ghcr.io/orka-agents/orka:0.1.3"}}}}
 	return map[string]any{"metadata": meta, "spec": spec, "status": status}
 }
 
