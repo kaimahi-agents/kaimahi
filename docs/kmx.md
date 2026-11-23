@@ -1751,7 +1751,7 @@ Deployments, the API server's own denial of a read (including `get`
 on `services/proxy`), a node container that is not the selected cluster's or
 that the selected container engine does not have, and
 execution settings that change while waiting refuse as soon as kmx observes
-them. Refusals a Deployment list shows come before its rollout gaps; the other
+them. Scaled-to-zero workloads refuse before any rollout gap; the other
 checks run in order, so a later one is reached only once the earlier ones pass.
 An observation that completes without a gap ends the wait even if the bound
 passed during it. Other gaps are retried and named if the bound expires. The wait only

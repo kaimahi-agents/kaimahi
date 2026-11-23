@@ -627,7 +627,6 @@ func offlineInstallApp(t *testing.T) (*App, string, *offlineNodeBundle, string) 
   esac; printf '%s' "$answer";;
  "--context kind-test -n orka-system get replicasets -o json") sep=; printf '{"items":['
   for f in "$OFFLINE_PODS"/*.rs; do c=$(/bin/cat "$f"); c=${c#'{"items":['}; c=${c%']}'}; [ -z "$c" ] || { printf '%s%s' "$sep" "$c"; sep=,; }; done; printf ']}';;
- "--context kind-test -n orka-system get replicasets --selector=kmx.test/workload="*" -o json") w=${7#--selector=kmx.test/workload=}; /bin/cat "$OFFLINE_PODS/$w.rs";;
  "--context kind-test -n orka-system get pods --selector=kmx.test/workload="*" -o json") w=${7#--selector=kmx.test/workload=}
   n=$(($(/bin/cat "$OFFLINE_LOG.reads.$w" 2>/dev/null || echo 0) + 1)); echo "$n" > "$OFFLINE_LOG.reads.$w"
   if [ -f "$OFFLINE_PODS/$w.$n" ]; then /bin/cat "$OFFLINE_PODS/$w.$n"; else /bin/cat "$OFFLINE_PODS/$w"; fi;;

@@ -114,8 +114,6 @@ case "$*" in
     printf '%s' "$answer"; exit 0 ;;
   *"get replicasets -o json")
     printf '%s' "$KMX_TEST_RS_JSON"; exit 0 ;;
-  *"get replicasets --selector="*" -o json")
-    printf '%s' "${KMX_TEST_RS_SELECTED_JSON:-$KMX_TEST_RS_JSON}"; exit 0 ;;
   *"get pods --selector="*" -o json")
     [ "$KMX_TEST_PODS_READ" != forbidden ] || { printf 'Error from server (Forbidden): pods is forbidden (fixture-sensitive-token)\n' >&2; exit 1; }
     if [ -n "$KMX_TEST_PODS_SEQ" ]; then
@@ -756,7 +754,6 @@ func TestOrkaInstallRepeatRequiresReadinessAfterNodeRestart(t *testing.T) {
 				stray["spec"].(map[string]any)["selector"] = map[string]any{"matchLabels": map[string]any{"kmx.test/workload": "stray"}}
 				stray["spec"].(map[string]any)["template"].(map[string]any)["metadata"] = map[string]any{"labels": map[string]any{"kmx.test/workload": "stray"}}
 				t.Setenv("KMX_TEST_RS_JSON", orkaRSJSON(t, stray, other))
-				t.Setenv("KMX_TEST_RS_SELECTED_JSON", `{"items":[]}`)
 			}
 			if tc.scaled {
 				controller["spec"].(map[string]any)["replicas"] = 0

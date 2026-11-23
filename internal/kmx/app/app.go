@@ -47,8 +47,8 @@
 // selector. Online reuse waits on the controller it accepted from the
 // release check, by name and UID. On a context other than kind-<KIND_CLUSTER>
 // it uses no restart reference. Every read in the wait is bounded, the API
-// server's own denials refuse, refusals a Deployment list shows come before
-// its rollout gaps, and nothing is written or repaired.
+// server's own denials refuse, deletion and scale-to-zero refusals come
+// before rollout gaps, and nothing is written or repaired.
 //
 // Model connection state retains nonsecret, acknowledged identities through
 // private immutable checkpoints and a process-held target lock. Partial effects

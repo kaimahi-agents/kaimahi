@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
@@ -246,6 +247,14 @@ func TestOfflineInstallReuseWaitsForReadinessAfterNodeStart(t *testing.T) {
 	if strings.TrimSpace(string(reads)) != "7" || strings.TrimSpace(string(readyz)) != "4" {
 		t.Fatalf("reuse accepted readiness before the fresh Ready pod and Orka's typed answer: %s controller reads, %s API reads", reads, readyz)
 	}
+	// Read 1 of the Deployments is the install-state check; each look after
+	// it lists the namespace's ReplicaSets once, however many workloads it
+	// checks.
+	commands, _ := os.ReadFile(log)
+	deployReads, _ := os.ReadFile(log + ".deploy-reads")
+	if looks := strings.Count(string(commands), "get deploy -o json") - 1; looks < 2 || strings.TrimSpace(string(deployReads)) != fmt.Sprint(looks+1) || strings.Count(string(commands), "get replicasets -o json") != looks {
+		t.Fatalf("%d ReplicaSet list reads over %s Deployment reads; want one per look", strings.Count(string(commands), "get replicasets -o json"), deployReads)
+	}
 	out := a.Err.(interface{ String() string }).String()
 	if !strings.Contains(out, "Waiting up to 10m0s for offline Orka workloads to show current readiness.") || !strings.Contains(out, "COMPLETE") {
 		t.Fatalf("the wait was not announced or did not finish: %s", out)
@@ -329,6 +338,11 @@ func TestOfflineInstallReuseRefusesUnprovenReadiness(t *testing.T) {
 		}},
 		{"no API Service", "no Orka API Service in orka-system", false, func(t *testing.T, _ string) {
 			t.Setenv("OFFLINE_SERVICES", `{"items":[]}`)
+		}},
+		{"API Service can select unchecked pods", "can select pods outside the checked Deployments", false, func(t *testing.T, _ string) {
+			// Without the controller Deployment's own selector label, the
+			// Service can route /readyz to any controller-labelled pod.
+			t.Setenv("OFFLINE_SERVICES", `{"items":[{"metadata":{"name":"orka-api","labels":{"app.kubernetes.io/name":"orka"}},"spec":{"selector":{"app.kubernetes.io/name":"orka","app.kubernetes.io/component":"controller"},"ports":[{"name":"api","port":8080}]}}]}`)
 		}},
 		{"extra foreign pod", "not controlled by its ReplicaSet", false, func(t *testing.T, pods string) {
 			// One correct pod and one foreign pod: refuse at once rather than
@@ -661,11 +675,12 @@ func TestOrkaServingAPIServing(t *testing.T) {
 	service := func(name string, selector map[string]any, port string) map[string]any {
 		return map[string]any{"metadata": map[string]any{"name": name, "labels": map[string]any{"app.kubernetes.io/name": "orka"}}, "spec": map[string]any{"selector": selector, "ports": []any{map[string]any{"name": port, "port": 8080}}}}
 	}
-	controller := map[string]any{"app.kubernetes.io/name": "orka", "app.kubernetes.io/component": "controller"}
-	// The controller Deployment's selector, as the chart renders both.
-	checked := []map[string]string{{"app.kubernetes.io/name": "orka", "app.kubernetes.io/component": "controller"}}
-	instance := []map[string]string{{"app.kubernetes.io/name": "orka", "app.kubernetes.io/instance": "orka", "app.kubernetes.io/component": "controller"}}
-	narrower := map[string]any{"app.kubernetes.io/name": "orka", "app.kubernetes.io/instance": "orka", "app.kubernetes.io/component": "controller"}
+	// The Orka v0.3.0 chart renders the API Service's selector and the
+	// controller Deployment's selector the same.
+	controller := map[string]any{"app.kubernetes.io/name": "orka", "app.kubernetes.io/instance": "orka", "app.kubernetes.io/component": "controller"}
+	checked := []map[string]string{{"app.kubernetes.io/name": "orka", "app.kubernetes.io/instance": "orka", "app.kubernetes.io/component": "controller"}}
+	broader := map[string]any{"app.kubernetes.io/name": "orka", "app.kubernetes.io/component": "controller"}
+	narrower := map[string]any{"app.kubernetes.io/name": "orka", "app.kubernetes.io/instance": "orka", "app.kubernetes.io/component": "controller", "kmx.test/shard": "a"}
 	typed := `{"status":"ok"}`
 	for _, tc := range []struct {
 		name     string
@@ -679,8 +694,8 @@ func TestOrkaServingAPIServing(t *testing.T) {
 	}{
 		// A Service missing one of the Deployment's selector labels can
 		// select controller-labelled pods the wait never checked.
-		{name: "Service selects more than the checked Deployment", services: []any{service("orka-api", controller, "api")}, checked: instance, answer: typed, refused: "can select pods outside the checked Deployments"},
-		{name: "Service narrower than the checked Deployment", services: []any{service("orka-api", narrower, "api")}, checked: instance, answer: typed},
+		{name: "Service selects more than the checked Deployment", services: []any{service("orka-api", broader, "api")}, answer: typed, refused: "can select pods outside the checked Deployments"},
+		{name: "Service narrower than the checked Deployment", services: []any{service("orka-api", narrower, "api")}, answer: typed},
 		{name: "Service covers one of several checked Deployments", services: []any{service("orka-api", controller, "api")}, checked: append([]map[string]string{{"kmx.test/workload": "orka-api-publisher"}}, checked...), answer: typed},
 		{name: "no checked Deployment", services: []any{service("orka-api", controller, "api")}, checked: []map[string]string{}, answer: typed, refused: "can select pods outside the checked Deployments"},
 		{name: "typed answer through the API Service", services: []any{service("orka-api", controller, "api")}, answer: typed},
