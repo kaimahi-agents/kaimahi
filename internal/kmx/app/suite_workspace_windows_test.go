@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -157,43 +156,6 @@ func TestWindowsWorkspaceTestCandidateManagedProofJourney(t *testing.T) {
 		}
 		if _, err := os.Stat(filepath.Join(os.Getenv("KMX_HOME"), "suites")); !os.IsNotExist(err) {
 			t.Fatalf("Windows workspace Test created an OCI cache: %v", err)
-		}
-	})
-	t.Run("managed unresolved visibility stays uncertain", func(t *testing.T) {
-		root, _, suite, _, raw := windowsPassingFixture(t)
-		t.Setenv("KMX_HOME", privateSuiteDir(t))
-		parent := filepath.Join(privateSuiteDir(t), "explicit")
-		directory, err := fileaccess.EnsurePrivateDirectory(t.Context(), parent)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := directory.Close(); err != nil {
-			t.Fatal(err)
-		}
-		destination := filepath.Join(parent, "receipt.json")
-		opt := SuiteWorkspaceEvaluationOptions{Workspace: root, ToContext: "remote", ToNamespace: OrkaNamespace, Inference: "provider:inference", Out: destination, ManagedPass: true, CaseTimeout: 5 * time.Minute}
-		p, err := PrepareSuiteWorkspaceEvaluation(t.Context(), opt)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer p.Close()
-		if p.suite.Digest != suite.Digest {
-			t.Fatal("fixture suite changed during preparation")
-		}
-		if err := p.output.publishBytes(t.Context(), raw); err != nil {
-			t.Fatal(err)
-		}
-		p.completed = raw
-		p.store.completion.publishPrivate = func(context.Context, *fileaccess.Directory, string, []byte) (fileaccess.PublicationResult, error) {
-			return fileaccess.PublicationResult{}, errors.New("unresolved publication")
-		}
-		err = (&App{Err: io.Discard}).finishManagedEvaluation(t.Context(), p, nil)
-		var uncertain *suitePassRegistrationUncertain
-		if err == nil || p.record != "" || !errors.As(err, &uncertain) || !strings.Contains(err.Error(), "registration is uncertain") || strings.Contains(err.Error(), "not registered") {
-			t.Fatalf("unresolved managed registration = record:%q err:%v", p.record, err)
-		}
-		if _, readErr := readSuitePassingReceipt(t.Context(), destination); readErr != nil {
-			t.Fatalf("complete explicit receipt was lost: %v", readErr)
 		}
 	})
 }

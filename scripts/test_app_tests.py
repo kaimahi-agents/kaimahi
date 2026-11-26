@@ -214,6 +214,7 @@ class AppShardWorkflowTests(unittest.TestCase):
         self.assertIn("TestWindowsSuiteReceiptLexicalCrossVolumeIsOutside", windows_body)
         self.assertIn("TestWindowsSuiteStateAndOutputSupportSeparateQualifiedVolume", windows_body)
         self.assertIn("TestSuiteManagedEvaluationRechecksExplicitOutputParent", windows_body)
+        self.assertIn("TestManagedProofCommitErrorDistinguishesUncertainty", windows_body)
         self.assertIn("TestSuiteNativeRefusesUnsupportedRuntimeBeforeOrkaEffects", windows_body)
         self.assertIn("TestGeneratedTreeCleanupClosesRetainedDirectories", windows_body)
         self.assertIn("TestFreezeOrkaNamesValidationScratchRecovery", windows_body)
