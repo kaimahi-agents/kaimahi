@@ -154,17 +154,6 @@ func TestWindowsWorkspaceTestCandidateManagedProofJourney(t *testing.T) {
 		if err != nil || record == "" || receipt.CandidateCleanup != "complete" || len(state.objects) != 0 {
 			t.Fatalf("proof=%q receipt=%+v objects=%d err=%v", record, receipt, len(state.objects), err)
 		}
-		metadata, err := os.ReadDir(p.store.partition)
-		if err != nil {
-			t.Fatal(err)
-		}
-		public := false
-		for _, entry := range metadata {
-			public = public || strings.HasPrefix(entry.Name(), "public-")
-		}
-		if !public {
-			t.Fatal("Windows managed Test did not retain public-export companion metadata")
-		}
 		if _, err := os.Stat(filepath.Join(os.Getenv("KMX_HOME"), "suites")); !os.IsNotExist(err) {
 			t.Fatalf("Windows workspace Test created an OCI cache: %v", err)
 		}

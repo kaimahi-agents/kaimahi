@@ -66,20 +66,6 @@ func (a *App) preflightOrkaRemote() error {
 	return nil
 }
 
-// preflightSuiteWorkspaceEvaluation verifies the local kubectl boundary and the
-// selected platform posture before an adapter freezes workspace source or opens
-// private evaluation state.
-func (a *App) preflightSuiteWorkspaceEvaluation(ctx context.Context) error {
-	if a == nil || a.Cfg == nil || a.Run == nil {
-		return fmt.Errorf("native workspace Test prerequisites are unavailable")
-	}
-	worker := a.withRunContext(ctx)
-	if err := worker.preflightSuiteWorkspaceKubectl(); err != nil {
-		return err
-	}
-	return worker.requireRemoteSuiteWorkspaceContext(ctx)
-}
-
 func freezeOrkaInspectionEnvironment(runner *run.Runner) {
 	runner.Unset = append(runner.Unset, "KUBERC", "KUBECTL_KUBERC")
 	runner.Env = append(runner.Env, "KUBERC=off", "KUBECTL_KUBERC=false")

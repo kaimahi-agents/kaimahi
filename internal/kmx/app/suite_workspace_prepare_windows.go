@@ -14,7 +14,14 @@ import (
 // PrepareWindowsSuiteWorkspaceEvaluation verifies the native remote-only
 // kubectl boundary before the CLI freezes source or opens private Test state.
 func (a *App) PrepareWindowsSuiteWorkspaceEvaluation(ctx context.Context) error {
-	return a.preflightSuiteWorkspaceEvaluation(ctx)
+	if a == nil || a.Cfg == nil || a.Run == nil {
+		return errors.New("native workspace Test prerequisites are unavailable")
+	}
+	worker := a.withRunContext(ctx)
+	if err := worker.preflightSuiteWorkspaceKubectl(); err != nil {
+		return err
+	}
+	return worker.requireRemoteSuiteWorkspaceContext(ctx)
 }
 
 func unsupportedSuiteWorkspaceRuntimeError() error {
