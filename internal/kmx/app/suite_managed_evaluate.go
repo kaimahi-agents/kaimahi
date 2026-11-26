@@ -102,10 +102,7 @@ func (a *App) finishManagedEvaluation(ctx context.Context, p *PreparedSuiteWorks
 	p.completed = nil
 	err = errors.Join(err, warningErr)
 	if err != nil {
-		if p.record == "" && p.options.Out != "" {
-			return fmt.Errorf("managed proof not registered; complete explicit receipt exists at %q: %w", p.options.Out, err)
-		}
-		return err
+		return managedProofCommitError(p, err)
 	}
 	diagnostics := a.Err
 	if diagnostics == nil {
@@ -115,4 +112,15 @@ func (a *App) finishManagedEvaluation(ctx context.Context, p *PreparedSuiteWorks
 		return fmt.Errorf("completed managed proof saved at %q; reporting failed: %w", p.record, err)
 	}
 	return nil
+}
+
+func managedProofCommitError(p *PreparedSuiteWorkspaceEvaluation, err error) error {
+	if p.record == "" && p.options.Out != "" {
+		var uncertain *suitePassRegistrationUncertain
+		if errors.As(err, &uncertain) {
+			return fmt.Errorf("managed proof registration is uncertain; complete explicit receipt exists at %q; inspect private state before retrying: %w", p.options.Out, err)
+		}
+		return fmt.Errorf("managed proof not registered; complete explicit receipt exists at %q: %w", p.options.Out, err)
+	}
+	return err
 }

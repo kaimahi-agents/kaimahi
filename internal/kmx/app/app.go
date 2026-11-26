@@ -52,6 +52,8 @@
 // workspace and completed non-pass file-Test failures use the checked private
 // filesystem on supported local filesystems; visible-but-unconfirmed records
 // remain diagnostics only and file records never become evaluation evidence.
+// Managed proof finalization distinguishes definite non-publication, known
+// visible records with persistence errors, and unresolved registration visibility.
 // Standalone managed Orka Test may stop repeated diagnostics when the pass
 // threshold is unreachable; incomplete run groups still clean their candidate
 // and never become passing evidence. Cancellation, cleanup uncertainty and output

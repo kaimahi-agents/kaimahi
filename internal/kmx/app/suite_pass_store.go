@@ -43,6 +43,11 @@ type suitePassRecord struct {
 	Receipt       json.RawMessage `json:"receipt"`
 }
 
+type suitePassRegistrationUncertain struct{ cause error }
+
+func (e *suitePassRegistrationUncertain) Error() string { return e.cause.Error() }
+func (e *suitePassRegistrationUncertain) Unwrap() error { return e.cause }
+
 type suitePassStore struct {
 	workspace, cache, path, partition, identity, suiteDigest string
 	lock                                                     *os.File
@@ -447,12 +452,12 @@ func (s *suitePassStore) commit(ctx context.Context, raw []byte, suite *workspac
 	err = errors.Join(err, output.Close())
 	if err != nil && output.linked {
 		if !output.namedPathCurrent {
-			return "", fmt.Errorf("completed managed proof was published through the retained parent, but its named path changed; inspect private state before retrying: %w", err)
+			return "", &suitePassRegistrationUncertain{cause: fmt.Errorf("completed managed proof was published through the retained parent, but its named path changed; inspect private state before retrying: %w", err)}
 		}
 		return output.path, fmt.Errorf("completed managed proof may exist at %q; persistence uncertain: %w", output.path, err)
 	}
 	if err != nil && output.visibilityReported && !output.visibilityKnown {
-		return "", fmt.Errorf("completed managed proof visibility is unresolved at %q; inspect before retrying: %w", output.path, err)
+		return "", &suitePassRegistrationUncertain{cause: fmt.Errorf("completed managed proof visibility is unresolved at %q; inspect before retrying: %w", output.path, err)}
 	}
 	if err != nil {
 		return "", err

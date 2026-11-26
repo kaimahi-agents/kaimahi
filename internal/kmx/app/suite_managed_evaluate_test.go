@@ -259,3 +259,17 @@ func TestSuiteManagedEvaluationNoCommitAfterEvaluatorError(t *testing.T) {
 		})
 	}
 }
+
+func TestManagedProofCommitErrorDistinguishesUncertainty(t *testing.T) {
+	cause := errors.New("commit cause")
+	p := &PreparedSuiteWorkspaceEvaluation{options: SuiteWorkspaceEvaluationOptions{Out: "explicit.json"}}
+	uncertain := errors.Join(&suitePassRegistrationUncertain{cause: cause}, io.ErrClosedPipe)
+	err := managedProofCommitError(p, uncertain)
+	if !errors.Is(err, cause) || !strings.Contains(err.Error(), "registration is uncertain") || strings.Contains(err.Error(), "not registered") {
+		t.Fatalf("uncertain registration = %v", err)
+	}
+	err = managedProofCommitError(p, cause)
+	if !errors.Is(err, cause) || !strings.Contains(err.Error(), "not registered") || strings.Contains(err.Error(), "registration is uncertain") {
+		t.Fatalf("definite registration failure = %v", err)
+	}
+}
