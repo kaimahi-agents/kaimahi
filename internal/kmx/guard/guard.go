@@ -331,7 +331,7 @@ func CheckContext(ctx context.Context, cfg *Kubeconfig, req Request, out io.Writ
 	proceed := fmt.Sprintf("  to proceed:  KAIMAHI_CONFIRM=%s %s", confirm, req.Command)
 	if req.CommandShell == "powershell" {
 		quoted := "'" + strings.NewReplacer("'", "''", "‘", "‘‘", "’", "’’", "‚", "‚‚", "‛", "‛‛").Replace(req.Context) + "'"
-		proceed = fmt.Sprintf("  to proceed:  $env:KAIMAHI_CONFIRM = %s; %s", quoted, req.Command)
+		proceed = fmt.Sprintf("  to proceed:  try { $env:KAIMAHI_CONFIRM = %s; %s } finally { Remove-Item Env:KAIMAHI_CONFIRM -ErrorAction SilentlyContinue }", quoted, req.Command)
 	}
 
 	// Remote: explicit confirmation naming the context, or nothing happens.

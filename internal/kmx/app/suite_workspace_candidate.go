@@ -112,6 +112,9 @@ func (a *App) evaluateSuiteWorkspaceCandidate(ctx context.Context, p *PreparedSu
 	if err := worker.preflightSuiteWorkspaceKubectl(); err != nil {
 		return err
 	}
+	if err := worker.requireRemoteSuiteWorkspaceContext(ctx); err != nil {
+		return err
+	}
 	checkSource := p.checkCurrent
 	if err := checkSource(ctx); err != nil {
 		return err

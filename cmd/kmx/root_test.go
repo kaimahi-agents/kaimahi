@@ -179,6 +179,9 @@ func TestGuardedWindowsRemoteInspectionRefusesIncompleteOrBroaderModesBeforeEffe
 		{"test missing workspace", "amd64", []string{"package", "test", "--to-context", "remote", "--to-namespace", "team", "--inference", "provider:model"}},
 		{"test missing context", "amd64", []string{"package", "test", "--workspace", "workspace", "--to-namespace", "team", "--inference", "provider:model"}},
 		{"test missing namespace", "amd64", []string{"package", "test", "--workspace", "workspace", "--to-context", "remote", "--inference", "provider:model"}},
+		{"test padded namespace", "amd64", []string{"package", "test", "--workspace", "workspace", "--to-context", "remote", "--to-namespace", " team", "--inference", "provider:model"}},
+		{"test padded context", "amd64", []string{"package", "test", "--workspace", "workspace", "--to-context", " remote", "--to-namespace", "team", "--inference", "provider:model"}},
+		{"test padded inference", "amd64", []string{"package", "test", "--workspace", "workspace", "--to-context", "remote", "--to-namespace", "team", "--inference", " provider:model"}},
 		{"test invalid inference", "amd64", []string{"package", "test", "--workspace", "workspace", "--to-context", "remote", "--to-namespace", "team", "--inference", "model"}},
 		{"test named destination", "amd64", []string{"package", "test", "--workspace", "workspace", "--to", "dev", "--to-context", "remote", "--to-namespace", "team", "--inference", "provider:model"}},
 		{"test bindings", "amd64", []string{"package", "test", "--workspace", "workspace", "--to-context", "remote", "--to-namespace", "team", "--inference", "provider:model", "--bindings", "bindings.json"}},
@@ -189,6 +192,8 @@ func TestGuardedWindowsRemoteInspectionRefusesIncompleteOrBroaderModesBeforeEffe
 		{"test root context", "amd64", []string{"--context", "remote", "package", "test", "--workspace", "workspace", "--to-context", "remote", "--to-namespace", "team", "--inference", "provider:model"}},
 		{"cleanup missing context", "amd64", []string{"package", "test", "cleanup", "--to-namespace", "team"}},
 		{"cleanup missing namespace", "amd64", []string{"package", "test", "cleanup", "--to-context", "remote"}},
+		{"cleanup padded context", "amd64", []string{"package", "test", "cleanup", "--to-context", " remote", "--to-namespace", "team"}},
+		{"cleanup padded namespace", "amd64", []string{"package", "test", "cleanup", "--to-context", "remote", "--to-namespace", " team"}},
 		{"cleanup named target", "amd64", []string{"package", "test", "cleanup", "--to", "dev", "--to-context", "remote", "--to-namespace", "team"}},
 		{"cleanup bad run", "amd64", []string{"package", "test", "cleanup", "short", "--to-context", "remote", "--to-namespace", "team"}},
 	}

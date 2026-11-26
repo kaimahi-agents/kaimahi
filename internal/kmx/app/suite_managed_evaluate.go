@@ -43,6 +43,8 @@ func (p *PreparedSuiteWorkspaceEvaluation) reportPassingReceipt(out io.Writer) e
 
 func (a *App) finishManagedEvaluation(ctx context.Context, p *PreparedSuiteWorkspaceEvaluation, evaluationErr error) (err error) {
 	// This is outside the evaluator call, after all of its deferred closes.
+	// Keep this fence for both publishers: registration must not name a moved
+	// explicit receipt even when legacy Unix linking itself completed.
 	var outputFenceErr error
 	if p.output != nil && p.output.linked {
 		if outputFenceErr = p.output.unchanged(); outputFenceErr != nil {

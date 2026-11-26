@@ -65,7 +65,9 @@
 // kubectl calls, owned subprocess trees and private diagnostics. Task reads reject
 // ambiguous identity aliases without imposing offline bundle entry limits.
 // Windows Result retains one connection per accepted answer and no suite evidence;
-// machine list/show output retains the Unix contract.
+// machine list/show output retains the Unix contract. Native Windows workspace
+// Test verifies remote-only posture before source freeze/private state, then
+// rechecks it before candidate reads and effects.
 package app
 
 import (

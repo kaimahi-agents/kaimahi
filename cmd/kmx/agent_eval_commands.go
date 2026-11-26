@@ -323,11 +323,6 @@ func runWindowsWorkspaceTest(cmd *cobra.Command, state *commandState, verb strin
 	if err := refuseMultiMemberWorkspace(native.Workspace); err != nil {
 		return err
 	}
-	prepared, err := app.PrepareSuiteWorkspaceEvaluation(ctx, native)
-	if err != nil {
-		return err
-	}
-	defer func() { err = errors.Join(err, prepared.Close()) }()
 	cfg := &config.Config{KubeContext: native.ToContext, ContextSource: config.SourceFlag, Confirm: os.Getenv("KAIMAHI_CONFIRM")}
 	a := state.deps.newApp(cfg)
 	if state.deps.buildInfo != nil {
@@ -351,6 +346,14 @@ func runWindowsWorkspaceTest(cmd *cobra.Command, state *commandState, verb strin
 		parts = append(parts, powerShellQuote(arg))
 	}
 	a.InvocationCommand = strings.Join(parts, " ")
+	if err := a.PrepareWindowsSuiteWorkspaceEvaluation(ctx); err != nil {
+		return err
+	}
+	prepared, err := app.PrepareSuiteWorkspaceEvaluation(ctx, native)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, prepared.Close()) }()
 	return a.EvaluateSuiteWorkspace(ctx, prepared)
 }
 

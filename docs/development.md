@@ -166,6 +166,11 @@ release `.exe` reaches the inspection boundary through checksum-verified real
 kubectl and exercises Task Result through a cross-built native protocol fixture
 from the same commit. Successful workspace Test through that exact staged
 executable remains separate qualification. Windows arm64 is cross-built and vetted, not executed.
+The native command preflights remote-only endpoint posture before freezing source
+or opening Test state, then rechecks it before candidate reads and effects.
+Interrupted or visibility-uncertain generated validation scratch is retained and
+requires an explicit private whole-directory move-aside; it is never adopted or
+deleted automatically.
 These checks qualify only the
 [narrow Windows command boundary](windows.md), local-NTFS private state and exact
 tested artifact; live cluster/exec-auth proof remains separate. General workspace

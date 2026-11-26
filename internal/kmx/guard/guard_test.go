@@ -228,7 +228,7 @@ func TestPowerShellRefusalHintNamesTheCommand(t *testing.T) {
 		cfg := load(t)
 		cfg.Contexts[1].Name = contextName
 		err := Check(cfg, Request{Source: config.SourceFlag, Action: "evaluate a workspace", Context: contextName, Command: "& 'C:\\Program Files\\kmx.exe' 'package' 'test'", CommandShell: "powershell"}, &out, nil)
-		if err == nil || !strings.Contains(err.Error(), "$env:KAIMAHI_CONFIRM = '") || !strings.Contains(err.Error(), "; & 'C:\\Program Files\\kmx.exe' 'package' 'test'") || strings.Contains(err.Error(), "KAIMAHI_CONFIRM="+contextName) {
+		if err == nil || !strings.Contains(err.Error(), "try { $env:KAIMAHI_CONFIRM = '") || !strings.Contains(err.Error(), "; & 'C:\\Program Files\\kmx.exe' 'package' 'test' } finally { Remove-Item Env:KAIMAHI_CONFIRM -ErrorAction SilentlyContinue }") || strings.Contains(err.Error(), "KAIMAHI_CONFIRM="+contextName) {
 			t.Fatalf("PowerShell hint for %q does not name the command safely: %v", contextName, err)
 		}
 	}

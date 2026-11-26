@@ -191,7 +191,10 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 	prepared, suite, operation, err := prepareSuiteWorkspacePackage(ctx, root, cache, state, opt, failFastSelected)
 	if err != nil {
 		if errors.Is(err, workspace.ErrRuntimeMismatch) {
-			return nil, errors.New("--fail-fast supports only standalone native Orka package test")
+			if failFastSelected {
+				return nil, errors.New("--fail-fast supports only standalone native Orka package test")
+			}
+			return nil, unsupportedSuiteWorkspaceRuntimeError()
 		}
 		return nil, suiteEvaluationError(ctx, err, false)
 	}

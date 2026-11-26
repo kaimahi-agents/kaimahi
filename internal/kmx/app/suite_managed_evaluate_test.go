@@ -206,6 +206,36 @@ func TestSuiteManagedEvaluationRechecksExplicitOutputParent(t *testing.T) {
 	}
 }
 
+func TestSuiteManagedEvaluationLegacyOutputParentFence(t *testing.T) {
+	if checkedPrivateSuiteExport {
+		t.Skip("legacy publisher is Unix-only")
+	}
+	parent := privateSuiteDir(t)
+	destination := filepath.Join(parent, "explicit.json")
+	output, err := preflightSuitePassingExport(t.Context(), destination, privateSuiteDir(t), privateSuiteDir(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := output.publishBytes(t.Context(), []byte("complete explicit receipt")); err != nil {
+		t.Fatal(err)
+	}
+	moved := parent + "-moved"
+	if err := os.Rename(parent, moved); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(parent, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	p := &PreparedSuiteWorkspaceEvaluation{output: output, options: SuiteWorkspaceEvaluationOptions{ManagedPass: true, Out: destination}}
+	err = (&App{Err: io.Discard}).finishManagedEvaluation(t.Context(), p, nil)
+	if err == nil || p.record != "" || !strings.Contains(err.Error(), "parent changed after observed publication") || strings.Contains(err.Error(), destination) {
+		t.Fatalf("legacy moved explicit parent = record:%q err:%v", p.record, err)
+	}
+	if _, err := os.Stat(filepath.Join(moved, "explicit.json")); err != nil {
+		t.Fatalf("observed explicit receipt not retained: %v", err)
+	}
+}
+
 func TestSuiteManagedEvaluationNoCommitAfterEvaluatorError(t *testing.T) {
 	// Exercise finalization independently of a runtime: deferred client/output
 	// errors are passed into the same finish boundary, never an export hook.

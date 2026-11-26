@@ -207,6 +207,8 @@ class AppShardWorkflowTests(unittest.TestCase):
         self.assertIn("TestAgentShowHumanFieldsAreTerminalSafeAndBounded", windows_body)
         self.assertIn("TestTaskResultReadsTerminalAnswerOnlyOnStdout", windows_body)
         self.assertIn("TestWindowsWorkspaceTestCandidateManagedProofJourney", windows_body)
+        self.assertIn("TestWindowsWorkspaceTestRefusesAlternateRuntimeClearly", windows_body)
+        self.assertIn("TestWindowsWorkspaceTestValidationResidueNamesRecovery", windows_body)
         self.assertIn("TestWindowsSuitePassingExportRechecksNamedParent", windows_body)
         self.assertIn("TestWindowsSuitePassStoreUnresolvedVisibilityReturnsInspectionOnly", windows_body)
         self.assertIn("TestWindowsSuiteReceiptLexicalCrossVolumeIsOutside", windows_body)
@@ -214,6 +216,7 @@ class AppShardWorkflowTests(unittest.TestCase):
         self.assertIn("TestSuiteManagedEvaluationRechecksExplicitOutputParent", windows_body)
         self.assertIn("TestSuiteNativeRefusesUnsupportedRuntimeBeforeOrkaEffects", windows_body)
         self.assertIn("TestGeneratedTreeCleanupClosesRetainedDirectories", windows_body)
+        self.assertIn("TestFreezeOrkaNamesValidationScratchRecovery", windows_body)
         self.assertIn("--- SKIP:", windows_body)
         self.assertEqual(windows_body.count("did not pass"), 7)
         cross = self.jobs["windows-arm64-cross"]

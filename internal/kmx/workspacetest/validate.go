@@ -17,6 +17,11 @@ import (
 
 var errGeneratedValidation = errors.New("generated workspace package validation unavailable")
 
+// ErrValidationStateRecovery is a payload-free recovery instruction for
+// scratch state left by an interrupted or visibility-uncertain validation. KMX
+// never removes or adopts that ambiguous state automatically.
+var ErrValidationStateRecovery = errors.New("workspace Test validation scratch state requires recovery; stop all kmx processes using this KMX state directory, move aside its workspace-test directory within private local state, then retry")
+
 type generatedTree struct {
 	directories map[string]*fileaccess.Directory
 	files       []string
@@ -48,8 +53,11 @@ func stateGeneratedValidator(root string) func(context.Context, map[string][]byt
 			return errGeneratedValidation
 		}
 		entries, readErr := parent.ReadDir(3)
-		if readErr != nil || len(entries) != 1 || entries[0].Name() != "lock" {
+		if readErr != nil {
 			return errGeneratedValidation
+		}
+		if len(entries) != 1 || entries[0].Name() != "lock" {
+			return errors.Join(errGeneratedValidation, ErrValidationStateRecovery)
 		}
 		stageName, err := randomValidationName()
 		if err != nil {
@@ -62,7 +70,7 @@ func stateGeneratedValidator(root string) func(context.Context, map[string][]byt
 		tree := &generatedTree{directories: map[string]*fileaccess.Directory{".": stage}}
 		defer func() {
 			if cleanupErr := tree.remove(context.WithoutCancel(ctx), parent, stageName); cleanupErr != nil {
-				err = errors.Join(err, errGeneratedValidation)
+				err = errors.Join(err, errGeneratedValidation, ErrValidationStateRecovery)
 			}
 		}()
 		if err := tree.write(ctx, files); err != nil {

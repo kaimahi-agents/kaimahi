@@ -32,6 +32,22 @@ with `v0.9.0-rc.5`. Rows labeled current main require a later containing build.
 | Existing Task result (current main, amd64) | `kmx --context CONTEXT cluster task result TASK --namespace NAMESPACE [--wait DURATION] [--result-port PORT]`. It reads one exact AI Task without resending; pending exits 2 and opens no tunnel. Answer stdout is accepted only after the owned loopback forward exits cleanly. |
 | Remote Orka workspace Test (current main, amd64) | `kmx package test --workspace DIR --to-context CONTEXT --to-namespace NAMESPACE --inference provider:NAME [--out FILE]`. Every selector is mandatory. KMX freezes one exact policy-free, single-member Orka package in memory, executes every ordered case through fresh candidate resources and Tasks, verifies UID-bound cleanup, then registers managed passing proof. Optional `--out` is create-only in an existing private directory. `kmx package test cleanup [full-run-id] --to-context CONTEXT --to-namespace NAMESPACE` is the matching explicit recovery route. Hidden `kmx eval` retains the same behavior and one deprecation notice. |
 
+Before a native Windows workspace Test:
+
+- author the policy-free, single-member Orka workspace in a supported Unix or
+  WSL environment, then copy it to an ordinary local Windows path. The source is
+  read-only during Test; `\\wsl.localhost`, UNC/network, junction and symlink
+  paths are outside this native boundary;
+- install Orka in the remote cluster and create a Ready `Provider` named by
+  `provider:NAME` in the selected namespace, serving the exact packaged model;
+- use explicit remote `CONTEXT` and `NAMESPACE`. In noninteractive PowerShell,
+  set `$env:KAIMAHI_CONFIRM` to the exact context only for that invocation. A
+  refusal prints a `try`/`finally` form that removes it afterward; and
+- if `--out` is used, select an existing current-user-owned local-NTFS directory
+  whose DACL is protected and contains only explicit allow entries for that
+  user. KMX checks it and never creates or repairs the parent ACL. Omitting
+  `--out` still registers managed passing proof under qualified KMX state.
+
 Flag-parsing errors label their help hint **PowerShell** on native Windows.
 The hint uses PowerShell's `&` call operator and quotes the executable path,
 including doubled apostrophes inside the quoted path. Run that hint in
@@ -156,6 +172,12 @@ unsafe owner, inherited or broader DACL, unsupported ACE, unreadable security
 descriptor or ambiguous object is refused and is **never repaired**, adopted or
 permission-widened by KMX. Select a new empty qualified state root rather than
 asking KMX to change an existing ACL.
+
+If an interrupted workspace Test leaves validation scratch, KMX refuses to
+adopt or delete it. Stop all KMX processes using that state root, move the whole
+`workspace-test` directory aside within private local state, and retry. The
+moved bytes may contain authored instructions and cases; they are scratch, not
+passing evidence or publication authority.
 
 The writable-state contract excludes all of the following:
 

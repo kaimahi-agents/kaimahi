@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,10 +14,35 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/workspacetest"
 )
 
 func TestWindowsWorkspaceTestCandidateManagedProofJourney(t *testing.T) {
+	t.Run("Test refuses non-kind loopback before source freeze", func(t *testing.T) {
+		home := privateSuiteDir(t)
+		t.Setenv("KMX_HOME", home)
+		a, _, _, state := publicNativeEvaluationFixture(t)
+		t.Setenv("KMX_HOME", home)
+		a.CommandShell = "powershell"
+		a.Cfg.KubeContext = "docker-desktop"
+		a.Cfg.Confirm = "docker-desktop"
+		capture := a.captureCommand
+		a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
+			if slices.Contains(cmd.Args, "config") {
+				_, err := fmt.Fprint(cmd.Stdout, `{"current-context":"docker-desktop","clusters":[{"name":"local","cluster":{"server":"https://127.0.0.1:6443"}}],"contexts":[{"name":"docker-desktop","context":{"cluster":"local"}}]}`)
+				return err
+			}
+			return capture(ctx, cmd)
+		}
+		if err := a.PrepareWindowsSuiteWorkspaceEvaluation(t.Context()); err == nil || !strings.Contains(err.Error(), "requires an existing remote Orka context") || state.lists != 0 || len(state.deletes) != 0 {
+			t.Fatalf("local Test preflight reached cluster inventory: err=%v lists=%d deletes=%v", err, state.lists, state.deletes)
+		}
+		if _, err := os.Stat(filepath.Join(home, "workspace-test")); !os.IsNotExist(err) {
+			t.Fatalf("local Test preflight created validation state: %v", err)
+		}
+	})
 	t.Run("cleanup refuses local context before inventory", func(t *testing.T) {
 		a, _, _, state := publicNativeEvaluationFixture(t)
 		a.CommandShell = "powershell"
@@ -128,8 +154,79 @@ func TestWindowsWorkspaceTestCandidateManagedProofJourney(t *testing.T) {
 		if err != nil || record == "" || receipt.CandidateCleanup != "complete" || len(state.objects) != 0 {
 			t.Fatalf("proof=%q receipt=%+v objects=%d err=%v", record, receipt, len(state.objects), err)
 		}
+		metadata, err := os.ReadDir(p.store.partition)
+		if err != nil {
+			t.Fatal(err)
+		}
+		public := false
+		for _, entry := range metadata {
+			public = public || strings.HasPrefix(entry.Name(), "public-")
+		}
+		if !public {
+			t.Fatal("Windows managed Test did not retain public-export companion metadata")
+		}
 		if _, err := os.Stat(filepath.Join(os.Getenv("KMX_HOME"), "suites")); !os.IsNotExist(err) {
 			t.Fatalf("Windows workspace Test created an OCI cache: %v", err)
 		}
 	})
+}
+
+func TestWindowsWorkspaceTestRefusesAlternateRuntimeClearly(t *testing.T) {
+	for _, profile := range []struct {
+		name, declaration string
+	}{
+		{"kagent", "runtime:\n  id: kagent\n  version: v0.10.3\n  engine: go\n"},
+		{"agentsessions", "runtime:\n  id: agentsessions\n  version: " + workspace.AgentSessionsVersion + "\n  engine: chat\n"},
+	} {
+		t.Run(profile.name, func(t *testing.T) {
+			root := windowsNativeWorkspaceFixture(t)
+			member := filepath.Join(root, "agents", "greeter", "member.yaml")
+			raw, err := os.ReadFile(member)
+			if err != nil {
+				t.Fatal(err)
+			}
+			before, _, _ := strings.Cut(string(raw), "runtime:\n")
+			if err := os.WriteFile(member, []byte(before+profile.declaration), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			opt := SuiteWorkspaceEvaluationOptions{Workspace: root, ToContext: "remote", ToNamespace: OrkaNamespace, Inference: "provider:inference", ManagedPass: true, CaseTimeout: 5 * time.Minute}
+			prepared, err := PrepareSuiteWorkspaceEvaluation(t.Context(), opt)
+			if prepared != nil || err == nil || err.Error() != "native Windows workspace Test supports only explicit remote Orka evaluation" || strings.Contains(err.Error(), "fail-fast") {
+				t.Fatalf("alternate runtime = prepared:%v err:%v", prepared, err)
+			}
+		})
+	}
+}
+
+func TestWindowsWorkspaceTestValidationResidueNamesRecovery(t *testing.T) {
+	home := privateSuiteDir(t)
+	t.Setenv("KMX_HOME", home)
+	validation := filepath.Join(home, "workspace-test")
+	parent, err := fileaccess.EnsurePrivateDirectory(t.Context(), validation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock, err := fileaccess.EnsurePrivateFileAt(t.Context(), parent, "lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := lock.Close(); err != nil {
+		t.Fatal(err)
+	}
+	residue, err := fileaccess.CreatePrivateDirectoryAt(t.Context(), parent, ".workspace-test-private-canary")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := errors.Join(residue.Close(), parent.Close()); err != nil {
+		t.Fatal(err)
+	}
+	root := windowsNativeWorkspaceFixture(t)
+	opt := SuiteWorkspaceEvaluationOptions{Workspace: root, ToContext: "remote", ToNamespace: OrkaNamespace, Inference: "provider:inference", ManagedPass: true, CaseTimeout: 5 * time.Minute}
+	prepared, err := PrepareSuiteWorkspaceEvaluation(t.Context(), opt)
+	if prepared != nil || !errors.Is(err, workspacetest.ErrValidationStateRecovery) || strings.Contains(err.Error(), home) || strings.Contains(err.Error(), "private-canary") {
+		t.Fatalf("validation residue = prepared:%v err:%v", prepared, err)
+	}
+	if _, statErr := os.Stat(filepath.Join(home, "passing")); !os.IsNotExist(statErr) {
+		t.Fatalf("validation residue reached managed proof state: %v", statErr)
+	}
 }

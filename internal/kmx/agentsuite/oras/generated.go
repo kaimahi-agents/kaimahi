@@ -130,15 +130,7 @@ func writeGeneratedArchive(ctx context.Context, files map[string][]byte, names [
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		header := &tar.Header{
-			Name:       name,
-			Uid:        0,
-			Gid:        0,
-			ModTime:    time.Unix(0, 0).UTC(),
-			AccessTime: time.Time{},
-			ChangeTime: time.Time{},
-			Format:     tar.FormatPAX,
-		}
+		header := contentArchiveHeader(name)
 		data, regular := files[name]
 		if regular {
 			header.Typeflag = tar.TypeReg

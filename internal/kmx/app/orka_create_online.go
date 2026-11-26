@@ -164,9 +164,8 @@ func (a *App) guardOrkaMutationWithPresentation(ctx context.Context, opt CreateO
 		return fmt.Errorf("cannot decode context metadata for the mutation guard")
 	}
 	if a.CommandShell == "powershell" {
-		posture, err := guard.Classify(cfg, a.Cfg.KubeContext)
-		if err != nil || posture.Local {
-			return fmt.Errorf("native Windows workspace Test requires an existing remote Orka context")
+		if err := a.requireRemoteSuiteWorkspacePosture(cfg); err != nil {
+			return err
 		}
 	}
 	command := a.InvocationCommand

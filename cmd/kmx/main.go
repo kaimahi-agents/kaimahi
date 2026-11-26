@@ -10,8 +10,9 @@
 // overwrites; package create retains native workspace authoring.
 // The guarded Windows tree additionally classifies deferred operations before
 // their argument or operational hooks can run. Native Windows amd64 admits the
-// explicit-context, explicit-namespace Orka list/show and existing Task Result
-// slice; other cluster and workspace modes remain closed.
+// explicit-context, explicit-namespace Orka list/show, existing Task Result and
+// remote-only Orka workspace Test slice; other cluster and workspace modes
+// remain closed.
 package main
 
 import (

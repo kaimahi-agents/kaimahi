@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
@@ -101,6 +102,44 @@ func TestFreezeOrkaPreCancelledHasNoState(t *testing.T) {
 	}
 }
 
+func TestFreezeOrkaNamesValidationScratchRecovery(t *testing.T) {
+	root := workspaceFixture(t)
+	validation := filepath.Join(filepath.Dir(root), "validation")
+	parent, err := fileaccess.EnsurePrivateDirectory(t.Context(), validation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock, err := fileaccess.EnsurePrivateFileAt(t.Context(), parent, "lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := lock.Close(); err != nil {
+		t.Fatal(err)
+	}
+	residueName := ".workspace-test-private-canary"
+	residue, err := fileaccess.CreatePrivateDirectoryAt(t.Context(), parent, residueName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := residue.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := parent.Close(); err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := FreezeOrka(t.Context(), Summary{Workspace: root, Runtime: "orka", Context: "remote", Namespace: "orka-system", Inference: "provider:model"}, validation)
+	if prepared != nil || !errors.Is(err, ErrValidationStateRecovery) {
+		t.Fatalf("validation residue = prepared:%v err:%v", prepared, err)
+	}
+	if strings.Contains(err.Error(), validation) || strings.Contains(err.Error(), residueName) {
+		t.Fatalf("validation recovery exposed private state: %v", err)
+	}
+	entries, readErr := os.ReadDir(validation)
+	if readErr != nil || len(entries) != 2 {
+		t.Fatalf("validation residue changed: %v, %v", entries, readErr)
+	}
+}
+
 func TestGeneratedTreeCleanupClosesRetainedDirectories(t *testing.T) {
 	for _, uncertain := range []bool{true, false} {
 		t.Run(map[bool]string{true: "uncertain publication", false: "partial cleanup failure"}[uncertain], func(t *testing.T) {
@@ -135,8 +174,12 @@ func TestGeneratedTreeCleanupClosesRetainedDirectories(t *testing.T) {
 				}
 			}
 			tree := &generatedTree{directories: map[string]*fileaccess.Directory{".": stage, "nested": nested}, uncertain: uncertain}
-			if err := tree.remove(t.Context(), parent, ".workspace-test-stage"); !errors.Is(err, errGeneratedValidation) {
-				t.Fatalf("cleanup = %v", err)
+			cleanupErr := tree.remove(t.Context(), parent, ".workspace-test-stage")
+			if !errors.Is(cleanupErr, errGeneratedValidation) {
+				t.Fatalf("cleanup = %v", cleanupErr)
+			}
+			if errors.Is(cleanupErr, ErrValidationStateRecovery) {
+				t.Fatalf("low-level cleanup manufactured operator recovery: %v", cleanupErr)
 			}
 			for name, directory := range map[string]*fileaccess.Directory{"stage": stage, "nested": nested} {
 				if _, err := fileaccess.PhysicalIdentity(t.Context(), directory); err == nil {

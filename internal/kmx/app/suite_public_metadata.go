@@ -327,7 +327,8 @@ func (s *suitePassStore) readPublicMetadata(ctx context.Context, suite *workspac
 	}
 	expected := suitePublicMetadata{Workspace: s.identity, SuiteDigest: s.suiteDigest, Sequence: scan.selectedSequence, ReceiptDigest: suitePublicHash(canonical)}
 	if s.directory != nil {
-		return s.readPublicMetadataChecked(ctx, expected)
+		// Portable public evidence export remains closed on native Windows.
+		return nil, errSuitePublicMetadata
 	}
 	root, name, parent, err := openSessionReferenceDirectory(filepath.Join(s.partition, expected.filename()))
 	if err != nil || parent.Mode().Perm()&0077 != 0 {
@@ -382,73 +383,6 @@ func (s *suitePassStore) readPublicMetadata(ctx context.Context, suite *workspac
 		return nil, errSuitePublicMetadata
 	}
 	if fresh.Close() != nil || !os.SameFile(parent, now) || now.Mode().Perm()&0077 != 0 {
-		return nil, errSuitePublicMetadata
-	}
-	return &m, nil
-}
-
-func (s *suitePassStore) readPublicMetadataChecked(ctx context.Context, expected suitePublicMetadata) (_ *suitePublicMetadata, err error) {
-	directory, err := fileaccess.OpenPrivateDirectory(ctx, s.partition)
-	if err != nil {
-		return nil, errSuitePublicMetadata
-	}
-	defer func() {
-		if directory.Close() != nil {
-			err = errSuitePublicMetadata
-		}
-	}()
-	identity, err := fileaccess.PhysicalIdentity(ctx, directory)
-	if err != nil {
-		return nil, errSuitePublicMetadata
-	}
-	file, err := fileaccess.OpenPrivateFileAt(ctx, directory, expected.filename())
-	if err != nil {
-		return nil, errSuitePublicMetadata
-	}
-	before, statErr := file.Stat()
-	fileIdentity, identityErr := fileaccess.PhysicalIdentity(ctx, file)
-	if statErr != nil || identityErr != nil || !before.Mode().IsRegular() || before.Size() < 0 || before.Size() > maxSuitePublicMetadataBytes {
-		_ = file.Close()
-		return nil, errSuitePublicMetadata
-	}
-	raw, readErr := io.ReadAll(io.LimitReader(file, maxSuitePublicMetadataBytes+1))
-	after, afterErr := file.Stat()
-	closeErr := file.Close()
-	current, currentErr := fileaccess.OpenPrivateFileAt(ctx, directory, expected.filename())
-	var currentIdentity string
-	var currentInfo os.FileInfo
-	if currentErr == nil {
-		currentIdentity, currentErr = fileaccess.PhysicalIdentity(ctx, current)
-		if currentErr == nil {
-			currentInfo, currentErr = current.Stat()
-		}
-		currentErr = errors.Join(currentErr, current.Close())
-	}
-	if readErr != nil || afterErr != nil || closeErr != nil || currentErr != nil || currentInfo == nil || fileIdentity != currentIdentity || len(raw) > maxSuitePublicMetadataBytes || int64(len(raw)) != before.Size() || after.Size() != before.Size() || after.Mode() != before.Mode() || !after.ModTime().Equal(before.ModTime()) || currentInfo.Size() != before.Size() || currentInfo.Mode() != before.Mode() || !currentInfo.ModTime().Equal(before.ModTime()) {
-		return nil, errSuitePublicMetadata
-	}
-	var m suitePublicMetadata
-	if suitecore.Unmarshal(raw, &m) != nil || !m.valid() {
-		return nil, errSuitePublicMetadata
-	}
-	var value any
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	if decoder.Decode(&value) != nil {
-		return nil, errSuitePublicMetadata
-	}
-	original, marshalErr := suitecore.Marshal(value)
-	typed, typedErr := suitecore.Marshal(m)
-	if marshalErr != nil || typedErr != nil || !bytes.Equal(original, typed) || m.Workspace != expected.Workspace || m.SuiteDigest != expected.SuiteDigest || m.Sequence != expected.Sequence || m.ReceiptDigest != expected.ReceiptDigest || s.unchanged() != nil {
-		return nil, errSuitePublicMetadata
-	}
-	fresh, err := fileaccess.OpenPrivateDirectory(ctx, s.partition)
-	if err != nil {
-		return nil, errSuitePublicMetadata
-	}
-	now, identityErr := fileaccess.PhysicalIdentity(ctx, fresh)
-	freshCloseErr := fresh.Close()
-	if identityErr != nil || freshCloseErr != nil || now != identity {
 		return nil, errSuitePublicMetadata
 	}
 	return &m, nil
