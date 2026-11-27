@@ -78,10 +78,11 @@ source-evidence `--promote`, partial outcomes, and fresh-evaluation requirements
 This first-answer path creates a cluster, so Windows users run it inside a Linux
 WSL distribution. Current `main` has a separate **prerelease-only**
 [native Windows CLI](windows.md): the day-zero commands plus amd64 explicit-target
-Orka list/show and existing Task Result. Published v0.9.0 release
+Orka list/show, existing Task Result and remote Orka workspace Test. Published v0.9.0 release
 candidates beginning with `v0.9.0-rc.4` retain the day-zero-only boundary until a
-later containing release. Native remote execution creates no suite evidence and cannot
-perform the setup, workspace, model, publication or Deploy stages on this page.
+later containing release. The narrow Test path can create private passing evidence,
+but cannot perform setup, authoring, general workspace storage, model setup,
+publication or Deploy stages on this page.
 Stable v0.8.1 and `@latest` have no Windows `.exe`; use WSL below.
 
 Install Docker or Podman (`CONTAINER_ENGINE=podman` selects Podman), then choose

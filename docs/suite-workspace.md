@@ -1902,9 +1902,10 @@ rerun `kmx package test` before evaluated `kmx package push`, and obtain fresh a
 where required. An explicit mismatched `--evaluation` refuses without falling
 back; managed lookup considers only the new exact-S partition. Source-free digest
 Lift still consumes the original artifact and its matching receipt, without
-repreparing a workspace. This packaging change does not enable native Windows
-workspace or OCI operations; only the separate
-[fake single-file day-zero path](windows.md) is supported there.
+repreparing a workspace. Native Windows does not use this retained preparation
+cache: its narrow remote Orka Test builds the same exact S in memory and closes
+that package with the invocation. General Windows workspace/OCI operations remain
+unsupported; see [native Windows](windows.md).
 
 ### Managed passing proof
 

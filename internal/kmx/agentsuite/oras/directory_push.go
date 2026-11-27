@@ -338,15 +338,7 @@ func writeArchive(
 		if err != nil {
 			return fmt.Errorf("stat AgentSuite content %s: %w", name, err)
 		}
-		header := &tar.Header{
-			Name:       filepath.ToSlash(name),
-			Uid:        0,
-			Gid:        0,
-			ModTime:    time.Unix(0, 0).UTC(),
-			AccessTime: time.Time{},
-			ChangeTime: time.Time{},
-			Format:     tar.FormatPAX,
-		}
+		header := contentArchiveHeader(name)
 		switch mode := info.Mode(); {
 		case mode.IsDir():
 			header.Name += "/"
@@ -401,6 +393,18 @@ func writeArchive(
 		}
 	}
 	return nil
+}
+
+func contentArchiveHeader(name string) *tar.Header {
+	return &tar.Header{
+		Name:       filepath.ToSlash(name),
+		Uid:        0,
+		Gid:        0,
+		ModTime:    time.Unix(0, 0).UTC(),
+		AccessTime: time.Time{},
+		ChangeTime: time.Time{},
+		Format:     tar.FormatPAX,
+	}
 }
 
 // declaredMode applies an authored payload mode, including zero, or the

@@ -5,6 +5,8 @@ package app
 import (
 	"context"
 	"fmt"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/guard"
 )
 
 func (a *App) provisionOrkaInspection() error {
@@ -15,6 +17,15 @@ func (a *App) provisionOrkaInspection() error {
 // kuberc credential-plugin policy. Windows uses the physically pinned remote
 // inspection path instead.
 func (a *App) preflightOrkaTaskResult() error { return a.preflight(depKubectl) }
+
+func (a *App) preflightSuiteWorkspaceKubectl() error {
+	kubectl := depKubectl
+	kubectl.fetchable = false
+	return a.preflight(kubectl)
+}
+
+func (*App) requireRemoteSuiteWorkspaceContext(context.Context) error   { return nil }
+func (*App) requireRemoteSuiteWorkspacePosture(*guard.Kubeconfig) error { return nil }
 
 func inspectOrkaInspectionKubectl(context.Context, string) (string, error) { return "", nil }
 func recheckOrkaInspectionKubectl(context.Context, string, string) error   { return nil }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/workspacetest"
 )
 
 // SuiteWorkspaceEvaluationOptions selects a full native workspace invocation.
@@ -49,7 +51,7 @@ type PreparedSuiteWorkspaceEvaluation struct {
 	output         *suitePassingExport
 	root           string
 	options        SuiteWorkspaceEvaluationOptions
-	started        bool
+	operation      *workspacetest.Prepared
 	bindings       *suiteKagentBindingSnapshot
 	sessions       *suiteSessionsHostSnapshot
 	judge          agentruntime.EvaluationJudge
@@ -69,11 +71,54 @@ type PreparedSuiteWorkspaceEvaluation struct {
 	diagnosticKey string
 }
 
+func (p *PreparedSuiteWorkspaceEvaluation) checkCurrent(ctx context.Context) error {
+	if p == nil {
+		return errSuiteNativeEvaluation
+	}
+	if p.prepared != nil {
+		return workspace.CheckCurrent(ctx, p.root, p.prepared)
+	}
+	if p.operation != nil {
+		return p.operation.CheckCurrent(ctx)
+	}
+	return errSuiteNativeEvaluation
+}
+
+func (p *PreparedSuiteWorkspaceEvaluation) sourceFingerprint() string {
+	if p == nil {
+		return ""
+	}
+	if p.prepared != nil {
+		return p.prepared.Fingerprint
+	}
+	if p.operation != nil {
+		return p.operation.Summary().SourceFingerprint
+	}
+	return ""
+}
+
+func (p *PreparedSuiteWorkspaceEvaluation) suiteDigest() string {
+	if p == nil {
+		return ""
+	}
+	if p.prepared != nil {
+		return p.prepared.Descriptor.Digest.String()
+	}
+	if p.operation != nil {
+		return p.operation.Summary().SuiteDigest
+	}
+	return ""
+}
+
 func (p *PreparedSuiteWorkspaceEvaluation) Close() error {
 	if p == nil {
 		return nil
 	}
 	err := p.closeOutput()
+	if p.operation != nil {
+		err = errors.Join(err, p.operation.Close())
+		p.operation = nil
+	}
 	if p.store != nil {
 		err = errors.Join(err, p.store.Close())
 		p.store = nil
@@ -132,25 +177,33 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 	if opt.Out != "" && suiteReceiptInside(opt.Out, filepath.Join(state, "passing")) {
 		return nil, fmt.Errorf("receipt output must stay outside managed passing state: %w", errSuitePassingFile)
 	}
+	if opt.Out != "" && checkedPrivateSuiteExport {
+		passing := filepath.Join(state, "passing")
+		if _, statErr := os.Stat(passing); statErr == nil && suiteReceiptPhysicallyInside(ctx, opt.Out, passing) {
+			return nil, fmt.Errorf("receipt output must stay outside managed passing state: %w", errSuitePassingFile)
+		} else if statErr != nil && !os.IsNotExist(statErr) {
+			return nil, errSuitePassingFile
+		}
+	}
 	if opt.ManagedPass && suiteReceiptInside(filepath.Join(state, "passing"), root) {
 		return nil, errSuitePassStore
 	}
-	var prepared *workspace.Prepared
-	if failFastSelected {
-		prepared, err = workspace.PrepareExactRuntime(ctx, root, cache, workspace.RuntimeProfile{ID: "orka"})
-	} else {
-		prepared, err = workspace.Prepare(ctx, root, cache)
-	}
+	prepared, suite, operation, err := prepareSuiteWorkspacePackage(ctx, root, cache, state, opt, failFastSelected)
 	if err != nil {
 		if errors.Is(err, workspace.ErrRuntimeMismatch) {
-			return nil, errors.New("--fail-fast supports only standalone native Orka package test")
+			if failFastSelected {
+				return nil, errors.New("--fail-fast supports only standalone native Orka package test")
+			}
+			return nil, unsupportedSuiteWorkspaceRuntimeError()
 		}
 		return nil, suiteEvaluationError(ctx, err, false)
 	}
-	suite, err := workspace.Load(ctx, prepared)
-	if err != nil {
-		return nil, suiteEvaluationError(ctx, err, false)
-	}
+	closeOperation := true
+	defer func() {
+		if closeOperation {
+			_ = operation.Close()
+		}
+	}()
 	if opt.JSON && suite.Runtime.ID != "orka" {
 		return nil, errors.New("native eval JSON output supports only Orka")
 	}
@@ -218,7 +271,7 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 	if err != nil {
 		return nil, err
 	}
-	p := &PreparedSuiteWorkspaceEvaluation{prepared: prepared, suite: suite, inventory: inventory, root: root, options: opt, bindings: bindings, sessions: sessions, judge: judge, diagnosticKey: diagnosticKey, runs: suiteRunSummary{Total: len(inventory), SuiteRunExecutionSummary: SuiteRunExecutionSummary{NotExecuted: len(inventory)}}, cleanup: "candidate cleanup not required"}
+	p := &PreparedSuiteWorkspaceEvaluation{prepared: prepared, suite: suite, inventory: inventory, root: root, options: opt, bindings: bindings, sessions: sessions, judge: judge, diagnosticKey: diagnosticKey, operation: operation, runs: suiteRunSummary{Total: len(inventory), SuiteRunExecutionSummary: SuiteRunExecutionSummary{NotExecuted: len(inventory)}}, cleanup: "candidate cleanup not required"}
 	if opt.ManagedPass {
 		p.store, err = openSuitePassStore(ctx, root, cache, suite.Digest)
 		if err == nil {
@@ -238,6 +291,7 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 	if err != nil {
 		return nil, errors.Join(err, p.Close())
 	}
+	closeOperation = false
 	return p, nil
 }
 
@@ -358,10 +412,12 @@ func (a *App) evaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 			}
 		}
 	}()
-	if p == nil || p.suite == nil || (p.suite.Runtime.ID != "orka" && p.suite.Runtime.ID != "kagent") || p.output == nil || p.started || a.Cfg == nil || a.Run == nil || a.Cfg.KubeContext != p.options.ToContext {
+	if p == nil || p.suite == nil || (p.suite.Runtime.ID != "orka" && p.suite.Runtime.ID != "kagent") || p.output == nil || a.Cfg == nil || a.Run == nil || a.Cfg.KubeContext != p.options.ToContext {
 		return errSuiteNativeEvaluation
 	}
-	p.started = true
+	if p.operation == nil || p.operation.Start(ctx) != nil {
+		return errSuiteNativeEvaluation
+	}
 	for _, frame := range p.inventory {
 		if frame.Metadata.Runs > 1 {
 			if _, err := fmt.Fprintf(a.Err, "Run preflight: %d fresh Tasks, %s per run, %s total execution budget (upper bound; excludes placement; cancellation can stop earlier).\n", len(p.inventory), p.options.CaseTimeout, time.Duration(len(p.inventory))*p.options.CaseTimeout); err != nil {
@@ -388,12 +444,10 @@ func (a *App) evaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 	if p.suite.Runtime.ID == "kagent" {
 		return worker.evaluateSuiteKagentWorkspace(ctx, p, &mayHaveChanged, &guardRefusal)
 	}
-	kubectl := depKubectl
-	kubectl.fetchable = false
-	if err := worker.preflight(kubectl); err != nil {
+	if err := worker.preflightSuiteWorkspaceKubectl(); err != nil {
 		return err
 	}
-	if err := workspace.CheckCurrent(ctx, p.root, p.prepared); err != nil {
+	if err := p.checkCurrent(ctx); err != nil {
 		return err
 	}
 	native, err := worker.prepareSuiteNative(ctx, p.suite, p.options.ToNamespace, strings.TrimPrefix(p.options.Inference, "provider:"))
@@ -420,7 +474,7 @@ func (a *App) evaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 		guardRefusal = true
 		return err
 	}
-	if err := workspace.CheckCurrent(ctx, p.root, p.prepared); err != nil {
+	if err := p.checkCurrent(ctx); err != nil {
 		return err
 	}
 	if err := worker.verifySuiteNativeInputs(ctx, native.Subject); err != nil {
@@ -429,7 +483,7 @@ func (a *App) evaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 	if _, err := fmt.Fprintln(worker.Err, "Task execution uses the selected ServiceAccount's full effective authority. v0.3.0 Task-read enforcement is unverified; v0.1.3 only authenticates result reads. Retain the namespaced Task-get grant. Discarding the token is not revocation."); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(worker.Out, "Workspace: %q; AgentSuite: %s\n", p.root, p.prepared.Descriptor.Digest); err != nil {
+	if _, err := fmt.Fprintf(worker.Out, "Workspace: %q; AgentSuite: %s\n", p.root, p.suiteDigest()); err != nil {
 		return err
 	}
 	mayHaveChanged = true
@@ -438,7 +492,7 @@ func (a *App) evaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 		return err
 	}
 	observations, err := evaluateSuiteRuns(ctx, p.inventory, p.options.CaseTimeout, worker.Out, func(caseCtx context.Context, frame suitePassingInventoryCase) (suitePassingObservation, error) {
-		if err := workspace.CheckCurrent(caseCtx, p.root, p.prepared); err != nil {
+		if err := p.checkCurrent(caseCtx); err != nil {
 			return suitePassingObservation{}, err
 		}
 		return worker.evaluateSuiteNative(caseCtx, placement, frame, p.options.ResultPort, p.judge)
@@ -446,13 +500,13 @@ func (a *App) evaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 	if err != nil {
 		return err
 	}
-	if err := workspace.CheckCurrent(ctx, p.root, p.prepared); err != nil {
+	if err := p.checkCurrent(ctx); err != nil {
 		return err
 	}
 	if err := worker.verifySuiteNative(ctx, placement); err != nil {
 		return err
 	}
-	receipt, err := newSuitePassingReceipt(ctx, p.prepared, placement, observations)
+	receipt, err := newSuitePassingReceiptFrozen(ctx, p.suite, p.sourceFingerprint(), placement, observations)
 	if err != nil {
 		return err
 	}

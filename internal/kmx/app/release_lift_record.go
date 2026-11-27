@@ -288,7 +288,7 @@ func preflightReleaseLiftRecord(ctx context.Context, id string, summary ReleaseL
 			root.Close()
 			return nil, releaseLiftRecordError("unsafe attempt directory")
 		}
-		w.outputs = append(w.outputs, &suitePassingExport{root: root, directory: dir, parent: parent, path: path, name: leaf})
+		w.outputs = append(w.outputs, &suitePassingExport{root: root, directory: dir, legacyDirectory: dir, parent: parent, path: path, name: leaf})
 	}
 	if len(w.outputs) == 5 {
 		if _, err := w.outputs[4].root.Lstat(releaseCommitMarker); !os.IsNotExist(err) {

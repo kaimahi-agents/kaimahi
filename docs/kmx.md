@@ -88,7 +88,7 @@ On Windows, the install methods in this section are WSL routes for the full CLI;
 run them inside the Linux distribution. Current `main` separately supports a
 **prerelease-only, narrow** [native Windows CLI](windows.md): the day-zero
 commands plus amd64 explicit-target Orka list/show and existing Task Result with
-explicit context and namespace.
+explicit context and namespace, plus explicit remote Orka workspace Test.
 Published v0.9.0 release candidates beginning with `v0.9.0-rc.4` retain the
 day-zero-only boundary until a later containing release. Stable v0.8.1 and
 `@latest` have no Windows `.exe`. Do not use Homebrew,
@@ -481,8 +481,9 @@ journals, source history, workspace failures, passing proof or runtime history.
 Do not mix FILE with `--agent`, workspace, destination, evidence, native judge or
 cluster flags, including explicitly supplied defaults. Existing live
 `run --agent` and full-workspace Test contracts remain separate and unchanged.
-Live/workspace modes remain deferred on native Windows and refuse before effects;
-Windows amd64 separately admits explicit-target list/show and existing Task Result.
+Live modes remain deferred on native Windows. Windows amd64 separately admits
+explicit-target list/show, existing Task Result and the narrow explicit remote
+Orka workspace Test described in [native Windows](windows.md#supported-native-commands).
 
 ### Frozen run-profile export (unreleased)
 
@@ -1131,6 +1132,11 @@ AgentSessions chat through explicit `--development-host FILE`, and retains offli
 before passing export; private Quickstart/console remain canonical. `kmx package test cleanup`
 lists possible leftovers; a full run ID selects confirmed, identity-safe deletion.
 See [candidate cleanup](suite-workspace.md#inspect-and-clean-candidate-leftovers).
+Native Windows amd64 supports only explicit remote Orka Test with mandatory
+`--workspace`, `--to-context`, `--to-namespace` and `--inference provider:NAME`.
+It freezes the exact package in memory and retains no OCI cache. Named destinations,
+kagent, AgentSessions, judging, explicit result ports, JSON, fail-fast, Publish and
+Deploy remain unavailable; see [native Windows](windows.md).
 Standalone packaged evaluation remains unimplemented.
 `kmx package deploy <ref>@<digest>` deploys an evaluated native suite from a registry or
 `--from-layout`, with a destination context (explicit `--to-context` or named

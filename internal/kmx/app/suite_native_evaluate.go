@@ -11,6 +11,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/workspacetest"
 )
 
 var errSuiteNativeEvaluation = errors.New("native evaluation outcome unknown; resources may remain; no retry or cleanup")
@@ -81,6 +82,9 @@ func suiteEvaluationError(ctx context.Context, err error, mayHaveChanged bool) e
 	}
 	if !mayHaveChanged && errors.Is(err, workspace.ErrCacheMigration) {
 		return cleanupStatus(errors.Join(workspace.ErrCacheMigration, cause))
+	}
+	if !mayHaveChanged && errors.Is(err, workspacetest.ErrValidationStateRecovery) {
+		return cleanupStatus(errors.Join(workspacetest.ErrValidationStateRecovery, cause))
 	}
 	if errors.Is(err, workspace.ErrMultiMemberUnsupported) {
 		return cleanupStatus(errors.Join(workspace.ErrMultiMemberUnsupported, cause))

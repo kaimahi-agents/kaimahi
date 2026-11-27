@@ -372,8 +372,9 @@ recovery or teardown behavior. Ready/answered/evaluated are distinct evidence.
   Deploy does not transfer live state,
   sessions or memory, delete source, perform cutover or grant teardown authority.
 - Native Windows amd64 Orka list/show and existing Task Result require explicit
-  context and namespace. They do not enable live Run/Chat, workspace Test,
-  publication or Deploy.
+  context and namespace. The separately admitted workspace Test also requires an
+  exact workspace, context, namespace and Provider and remains Orka-only. None of
+  these enable live Run/Chat, publication or Deploy.
 
 ## Audit and existing work
 

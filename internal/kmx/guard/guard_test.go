@@ -222,6 +222,18 @@ func TestRefusalHintNamesTheCommand(t *testing.T) {
 	}
 }
 
+func TestPowerShellRefusalHintNamesTheCommand(t *testing.T) {
+	for _, contextName := range []string{"aks-remote", "team's remote", "team‘one", "team’one", "team‚one", "team‛one"} {
+		var out bytes.Buffer
+		cfg := load(t)
+		cfg.Contexts[1].Name = contextName
+		err := Check(cfg, Request{Source: config.SourceFlag, Action: "evaluate a workspace", Context: contextName, Command: "& 'C:\\Program Files\\kmx.exe' 'package' 'test'", CommandShell: "powershell"}, &out, nil)
+		if err == nil || !strings.Contains(err.Error(), "try { $env:KAIMAHI_CONFIRM = '") || !strings.Contains(err.Error(), "; & 'C:\\Program Files\\kmx.exe' 'package' 'test' } finally { Remove-Item Env:KAIMAHI_CONFIRM -ErrorAction SilentlyContinue }") || strings.Contains(err.Error(), "KAIMAHI_CONFIRM="+contextName) {
+			t.Fatalf("PowerShell hint for %q does not name the command safely: %v", contextName, err)
+		}
+	}
+}
+
 // A context name is cosmetic; the address is the substantive check. Both
 // directions matter, so assert the classification itself as well as the
 // decision it produces.

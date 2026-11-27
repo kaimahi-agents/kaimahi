@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	suitecore "github.com/agent-primitives/suite/core"
 	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
@@ -42,6 +43,13 @@ func TestPushDirectoryIgnoresHostExecuteBits(t *testing.T) {
 	}
 	if after := pushDirectoryForTest(t, source, memory.New()); !content.Equal(before, after) {
 		t.Fatalf("host chmod changed archive: %s != %s", before.Digest, after.Digest)
+	}
+}
+
+func TestContentArchiveHeaderIsCanonical(t *testing.T) {
+	header := contentArchiveHeader(filepath.Join("nested", "entry"))
+	if header.Name != "nested/entry" || header.Uid != 0 || header.Gid != 0 || !header.ModTime.Equal(time.Unix(0, 0).UTC()) || !header.AccessTime.IsZero() || !header.ChangeTime.IsZero() || header.Format != tar.FormatPAX {
+		t.Fatalf("content archive header = %+v", header)
 	}
 }
 

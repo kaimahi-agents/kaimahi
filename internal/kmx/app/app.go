@@ -54,6 +54,8 @@
 // workspace and completed non-pass file-Test failures use the checked private
 // filesystem on supported local filesystems; visible-but-unconfirmed records
 // remain diagnostics only and file records never become evaluation evidence.
+// Managed proof finalization distinguishes definite non-publication, known
+// visible records with persistence errors, and unresolved registration visibility.
 // Standalone managed Orka Test may stop repeated diagnostics when the pass
 // threshold is unreachable; incomplete run groups still clean their candidate
 // and never become passing evidence. Cancellation, cleanup uncertainty and output
@@ -67,7 +69,9 @@
 // kubectl calls, owned subprocess trees and private diagnostics. Task reads reject
 // ambiguous identity aliases without imposing offline bundle entry limits.
 // Windows Result retains one connection per accepted answer and no suite evidence;
-// machine list/show output retains the Unix contract.
+// machine list/show output retains the Unix contract. Native Windows workspace
+// Test verifies remote-only posture before source freeze/private state, then
+// rechecks it before candidate reads and effects.
 package app
 
 import (
@@ -414,6 +418,7 @@ func (a *App) guardWith(action, command, namespaces string, mustBeKnown, creates
 		Namespaces:     namespaces,
 		Confirm:        a.Cfg.Confirm,
 		Command:        command,
+		CommandShell:   a.CommandShell,
 		MustBeKnown:    mustBeKnown,
 		CreatesContext: createsContext,
 	}, a.Err, a.Stdin); err != nil {

@@ -1,0 +1,248 @@
+//go:build windows
+
+package app
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
+	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/workspacetest"
+)
+
+func windowsPassingFixture(t *testing.T) (string, string, *workspace.NativeSuite, *suitePassingReceipt, []byte) {
+	t.Helper()
+	root := windowsNativeWorkspaceFixture(t)
+	operation, err := workspacetest.FreezeOrka(t.Context(), workspacetest.Summary{Workspace: root, Runtime: "orka", Context: "kind-test", Namespace: OrkaNamespace, Inference: "provider:inference"}, filepath.Join(privateSuiteDir(t), "validation"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer operation.Close()
+	suite, err := operation.Suite(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, _, _ := nativeFixture(t)
+	native, err := a.prepareSuiteNative(t.Context(), suite, OrkaNamespace, "inference")
+	if err != nil {
+		t.Fatal(err)
+	}
+	placement := &suiteNativePlacement{Subject: native.Subject, Provider: suiteNativeOwnedResource{"owned-provider", 1, agentruntime.EvaluationAnswerDigest("admitted provider spec")}, Agent: suiteNativeOwnedResource{"owned-agent", 1, agentruntime.EvaluationAnswerDigest("admitted agent spec")}}
+	observations := make([]suitePassingObservation, 0, len(suite.Cases))
+	for _, file := range suite.Cases {
+		c, err := workspace.DecodePackagedCase(file.Bytes)
+		if err != nil {
+			t.Fatal(err)
+		}
+		answer := nativeCanary + " answer"
+		rows := agentruntime.EvaluateAssertions(c, agentruntime.EvaluationEvidence{AnswerAvailable: true, Answer: answer})
+		observations = append(observations, suitePassingObservation{CaseDigest: agentruntime.EvaluationCaseDigest(file.Bytes), InputDigest: agentruntime.EvaluationInputDigest(c.Input), EvaluationReceipt: agentruntime.EvaluationReceipt{CaseID: c.ID, Verdict: agentruntime.EvaluationPass, TaskName: "task-" + c.ID, TaskUID: "uid-" + c.ID, AnswerSHA256: agentruntime.EvaluationAnswerDigest(answer), Assertions: rows}})
+	}
+	receipt, err := newSuitePassingReceiptFrozen(t.Context(), suite, operation.Summary().SourceFingerprint, placement, observations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := canonicalSuitePassingReceipt(t.Context(), receipt, suite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root, filepath.Join(privateSuiteDir(t), "cache"), suite, receipt, raw
+}
+
+func TestWindowsSuitePassingExportLifecycle(t *testing.T) {
+	root, cache, suite, receipt, _ := windowsPassingFixture(t)
+	parent := filepath.Join(privateSuiteDir(t), "private")
+	directory, err := fileaccess.EnsurePrivateDirectory(t.Context(), parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := directory.Close(); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(parent, "receipt.json")
+	output, err := preflightSuitePassingExport(t.Context(), destination, root, cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := output.publish(t.Context(), receipt, suite); err != nil {
+		t.Fatal(err)
+	}
+	if !output.linked || !output.visibilityKnown {
+		t.Fatalf("publication state = linked:%t known:%t", output.linked, output.visibilityKnown)
+	}
+	if err := output.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readSuitePassingReceipt(t.Context(), destination); err != nil {
+		t.Fatal(err)
+	}
+	if second, err := preflightSuitePassingExport(t.Context(), destination, root, cache); err == nil {
+		_ = second.Close()
+		t.Fatal("existing receipt accepted")
+	}
+}
+
+func TestWindowsSuitePassingExportRechecksNamedParent(t *testing.T) {
+	root, cache, suite, receipt, _ := windowsPassingFixture(t)
+	parent := filepath.Join(privateSuiteDir(t), "private")
+	directory, err := fileaccess.EnsurePrivateDirectory(t.Context(), parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := directory.Close(); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(parent, "receipt.json")
+	output, err := preflightSuitePassingExport(t.Context(), destination, root, cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer output.Close()
+	moved := parent + "-moved"
+	realPublish := output.publishPrivate
+	output.publishPrivate = func(ctx context.Context, directory *fileaccess.Directory, name string, raw []byte) (fileaccess.PublicationResult, error) {
+		result, err := realPublish(ctx, directory, name, raw)
+		if err != nil {
+			return result, err
+		}
+		if err := os.Rename(parent, moved); err != nil {
+			return result, err
+		}
+		if err := os.Mkdir(parent, 0o700); err != nil {
+			return result, err
+		}
+		return result, errors.New("injected post-link persistence failure")
+	}
+	if err := output.publish(t.Context(), receipt, suite); err == nil || !output.linked || !output.visibilityKnown || output.namedPathCurrent {
+		t.Fatalf("moved parent publication = linked:%t known:%t current:%t err:%v", output.linked, output.visibilityKnown, output.namedPathCurrent, err)
+	}
+	if _, err := os.Stat(destination); !os.IsNotExist(err) {
+		t.Fatalf("receipt reported at replacement path: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(moved, "receipt.json")); err != nil {
+		t.Fatalf("observed receipt not retained at moved parent: %v", err)
+	}
+}
+
+func TestWindowsSuitePassStoreLifecycleAndLock(t *testing.T) {
+	root, cache, suite, _, raw := windowsPassingFixture(t)
+	t.Setenv("KMX_HOME", filepath.Join(privateSuiteDir(t), "state"))
+	store, err := openSuitePassStore(t.Context(), root, cache, suite.Digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if competing, err := openSuitePassStore(t.Context(), store.workspace, store.cache, suite.Digest); err == nil {
+		_ = competing.Close()
+		t.Fatal("competing workspace store acquired the lock")
+	}
+	record := commitStoreReceipt(t, store, suite, raw)
+	if _, selected, err := store.latest(t.Context(), suite); err != nil || selected != record {
+		t.Fatalf("latest = %q, %v", selected, err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := openSuitePassStore(t.Context(), root, cache, suite.Digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if _, selected, err := reopened.latest(t.Context(), suite); err != nil || selected != record {
+		t.Fatalf("reopened latest = %q, %v", selected, err)
+	}
+}
+
+func TestWindowsSuitePassStoreUnresolvedVisibilityReturnsInspectionOnly(t *testing.T) {
+	root, cache, suite, _, raw := windowsPassingFixture(t)
+	t.Setenv("KMX_HOME", filepath.Join(privateSuiteDir(t), "state"))
+	store, err := openSuitePassStore(t.Context(), root, cache, suite.Digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.reserve(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	inspection := store.completion.path
+	store.completion.publishPrivate = func(context.Context, *fileaccess.Directory, string, []byte) (fileaccess.PublicationResult, error) {
+		return fileaccess.PublicationResult{}, errors.New("unresolved publication")
+	}
+	record, err := store.commit(t.Context(), raw, suite)
+	var uncertain *suitePassRegistrationUncertain
+	if err == nil || record != "" || !errors.As(err, &uncertain) || !strings.Contains(err.Error(), filepath.Base(inspection)) || !strings.Contains(err.Error(), "visibility is unresolved") {
+		t.Fatalf("unresolved publication = record:%q err:%v", record, err)
+	}
+}
+
+func TestWindowsSuiteReceiptLexicalCrossVolumeIsOutside(t *testing.T) {
+	if suiteReceiptInside(`D:\private\receipt.json`, `C:\workspace`) {
+		t.Fatal("different Windows volumes classified as lexical containment")
+	}
+	if !suiteReceiptInside(`C:\workspace\private\receipt.json`, `C:\workspace`) {
+		t.Fatal("same-volume child was not classified as containment")
+	}
+}
+
+func TestWindowsSuiteStateAndOutputSupportSeparateQualifiedVolume(t *testing.T) {
+	workspace, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	private := privateSuiteDir(t)
+	if strings.EqualFold(filepath.VolumeName(workspace), filepath.VolumeName(private)) {
+		if os.Getenv("GITHUB_ACTIONS") == "true" {
+			t.Fatal("hosted Windows qualification requires distinct checkout and private-state volumes")
+		}
+		t.Log("only one qualified local volume is available; cross-volume runtime check is hosted-CI-only")
+		return
+	}
+	state := filepath.Join(private, "state")
+	t.Setenv("KMX_HOME", state)
+	digest := "sha256:" + strings.Repeat("a", 64)
+	cache := filepath.Join(private, "cache")
+	store, err := openSuitePassStore(t.Context(), workspace, cache, digest)
+	if err != nil {
+		t.Fatalf("cross-volume managed state: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	parent := filepath.Join(private, "output")
+	directory, err := fileaccess.EnsurePrivateDirectory(t.Context(), parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := directory.Close(); err != nil {
+		t.Fatal(err)
+	}
+	output, err := preflightSuitePassingExport(t.Context(), filepath.Join(parent, "receipt.json"), workspace, cache)
+	if err != nil {
+		t.Fatalf("cross-volume explicit output: %v", err)
+	}
+	if err := output.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWindowsSuitePassStoreRefusesUnsafeStateBeforeRecord(t *testing.T) {
+	home := privateSuiteDir(t)
+	workspace := filepath.Join(home, "workspace")
+	if err := os.Mkdir(workspace, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	state := filepath.Join(workspace, "state")
+	t.Setenv("KMX_HOME", state)
+	if _, err := openSuitePassStore(t.Context(), workspace, filepath.Join(home, "cache"), "sha256:"+strings.Repeat("a", 64)); !errors.Is(err, errSuitePassStore) {
+		t.Fatalf("state inside workspace = %v", err)
+	}
+	if _, err := os.Stat(state); !os.IsNotExist(err) {
+		t.Fatalf("refusal created state: %v", err)
+	}
+}

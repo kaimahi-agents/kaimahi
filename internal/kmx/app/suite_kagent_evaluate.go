@@ -10,8 +10,6 @@ import (
 
 	"os"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
-
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
@@ -101,7 +99,7 @@ func (a *App) evaluateSuiteKagentWorkspace(ctx context.Context, p *PreparedSuite
 		if err := checkCtx.Err(); err != nil {
 			return err
 		}
-		if err := workspace.CheckCurrent(checkCtx, p.root, p.prepared); err != nil {
+		if err := p.checkCurrent(checkCtx); err != nil {
 			return err
 		}
 		if p.bindings == nil {
@@ -144,7 +142,7 @@ func (a *App) evaluateSuiteKagentWorkspace(ctx context.Context, p *PreparedSuite
 	if err := native.worker.verifySuiteKagentInputs(ctx, native); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(a.Out, "Workspace: %q; AgentSuite: %s\n", p.root, p.prepared.Descriptor.Digest); err != nil {
+	if _, err := fmt.Fprintf(a.Out, "Workspace: %q; AgentSuite: %s\n", p.root, p.suiteDigest()); err != nil {
 		return err
 	}
 	*changed = true

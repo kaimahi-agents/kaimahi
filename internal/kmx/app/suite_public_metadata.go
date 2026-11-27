@@ -20,6 +20,7 @@ import (
 
 	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
 )
 
 const maxSuitePublicMetadataBytes = 4096
@@ -227,6 +228,9 @@ func (s *suitePassStore) publishPublicMetadata(ctx context.Context, raw []byte, 
 	if s.unchanged() != nil {
 		return errSuitePublicCapacity
 	}
+	if s.directory != nil {
+		return s.publishPublicMetadataChecked(ctx, raw, m)
+	}
 	// All companion-looking entries count, including incomplete/orphaned writes.
 	root, _, _, err := openSessionReferenceDirectory(filepath.Join(s.partition, "entry"))
 	if err != nil {
@@ -272,6 +276,46 @@ func (s *suitePassStore) publishPublicMetadata(ctx context.Context, raw []byte, 
 	}
 	return nil
 }
+
+func (s *suitePassStore) publishPublicMetadataChecked(ctx context.Context, raw []byte, m *suitePublicMetadata) error {
+	directory, err := fileaccess.OpenPrivateDirectory(ctx, s.partition)
+	if err != nil {
+		return errSuitePublicCapacity
+	}
+	defer directory.Close()
+	entries, err := directory.ReadDir(513)
+	if err != nil || len(entries) >= 513 {
+		return errSuitePublicCapacity
+	}
+	count, total := 0, int64(0)
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), "public-") {
+			continue
+		}
+		count++
+		file, err := fileaccess.OpenPrivateFileAt(ctx, directory, entry.Name())
+		if err != nil {
+			return errSuitePublicCapacity
+		}
+		info, statErr := file.Stat()
+		closeErr := file.Close()
+		if statErr != nil || closeErr != nil || !info.Mode().IsRegular() || info.Size() < 0 || info.Size() > maxSuitePublicMetadataBytes {
+			return errSuitePublicCapacity
+		}
+		total += info.Size()
+	}
+	if count >= 256 || total+int64(len(raw)) > 1<<20 {
+		return errSuitePublicCapacity
+	}
+	out, err := preflightSuitePassingExport(ctx, filepath.Join(s.partition, m.filename()), s.workspace, s.cache)
+	if err != nil {
+		return errSuitePublicCapacity
+	}
+	if err := errors.Join(out.publishBytes(ctx, raw), out.Close()); err != nil {
+		return errSuitePublicCapacity
+	}
+	return nil
+}
 func (s *suitePassStore) readPublicMetadata(ctx context.Context, suite *workspace.NativeSuite) (_ *suitePublicMetadata, err error) {
 	scan, err := s.scan(ctx, suite)
 	if err != nil || scan.latest == nil {
@@ -282,6 +326,10 @@ func (s *suitePassStore) readPublicMetadata(ctx context.Context, suite *workspac
 		return nil, errSuitePublicMetadata
 	}
 	expected := suitePublicMetadata{Workspace: s.identity, SuiteDigest: s.suiteDigest, Sequence: scan.selectedSequence, ReceiptDigest: suitePublicHash(canonical)}
+	if s.directory != nil {
+		// Portable public evidence export remains closed on native Windows.
+		return nil, errSuitePublicMetadata
+	}
 	root, name, parent, err := openSessionReferenceDirectory(filepath.Join(s.partition, expected.filename()))
 	if err != nil || parent.Mode().Perm()&0077 != 0 {
 		if root != nil {

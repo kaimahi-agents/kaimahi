@@ -19,6 +19,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/guard"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/workspacetest"
 	"golang.org/x/term"
 	"oras.land/oras-go/v2/registry"
 )
@@ -524,7 +525,12 @@ func (a *App) LiftWorkspace(ctx context.Context, p *PreparedWorkspaceLift) (r Wo
 			output.Close()
 			return r, e
 		}
-		ep := &PreparedSuiteWorkspaceEvaluation{prepared: p.review.prepared, suite: p.review.suite, inventory: p.review.inventory, root: p.review.root, options: p.options.Evaluation, output: output, store: p.store, judge: judge, diagnosticKey: diagnosticKey, candidateRun: runID, runs: suiteRunSummary{Total: len(p.review.inventory), SuiteRunExecutionSummary: SuiteRunExecutionSummary{NotExecuted: len(p.review.inventory)}}, cleanup: "candidate cleanup not required", failureWriter: diagnostics}
+		operation, e := workspacetest.New(workspacetest.Summary{Workspace: p.review.root, SuiteDigest: p.review.suite.Digest, SourceFingerprint: p.review.prepared.Fingerprint, Runtime: p.review.suite.Runtime.ID, Context: p.options.Evaluation.ToContext, Namespace: p.options.Evaluation.ToNamespace, Inference: p.options.Evaluation.Inference})
+		if e != nil {
+			output.Close()
+			return r, e
+		}
+		ep := &PreparedSuiteWorkspaceEvaluation{prepared: p.review.prepared, suite: p.review.suite, inventory: p.review.inventory, root: p.review.root, options: p.options.Evaluation, output: output, store: p.store, judge: judge, diagnosticKey: diagnosticKey, operation: operation, candidateRun: runID, runs: suiteRunSummary{Total: len(p.review.inventory), SuiteRunExecutionSummary: SuiteRunExecutionSummary{NotExecuted: len(p.review.inventory)}}, cleanup: "candidate cleanup not required", failureWriter: diagnostics}
 		err = eval.EvaluateSuiteWorkspace(ctx, ep)
 		p.failures = ep.failures
 		r.Eval.Failures = suiteFailureSummaries(ep.failures)

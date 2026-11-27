@@ -148,7 +148,8 @@ is the repository's explicit cross-platform isolation contract.
 
 `internal/kmx/fileaccess` has native Linux and Windows amd64 package tests for
 checked reads, security/identity inspection, protected private first creation,
-process-held locks and no-replace file/directory-flush publication. The package
+physical-containment checks, process-held locks, identity-bound empty-directory
+removal and no-replace file/directory-flush publication. The package
 keeps opaque handles, repairs/adopts nothing and reports unresolved publication
 visibility separately from observed absence. `internal/kmx/config` exposes
 explicit creating and non-creating private state-root resolution; `StateDir`
@@ -159,14 +160,21 @@ flush failure behavior. Windows defaults to machine-local `%LOCALAPPDATA%\kmx`.
 Windows amd64 now also builds, vets and natively executes the CLI on hosted
 `windows-latest`: version/help/completion, one real Markdown file through
 package-free fake Run/failing Test/offline Explain, and read-only Orka list/show
-plus Task Result through a compiled native kubectl fixture. The exact staged
+plus Task Result through compiled native kubectl fixtures. A separate native
+checkout App journey qualifies exact-package remote Orka workspace Test. The exact staged
 release `.exe` reaches the inspection boundary through checksum-verified real
 kubectl and exercises Task Result through a cross-built native protocol fixture
-from the same commit. Windows arm64 is cross-built and vetted, not executed.
+from the same commit. Successful workspace Test through that exact staged
+executable remains separate qualification. Windows arm64 is cross-built and vetted, not executed.
+The native command preflights remote-only endpoint posture before freezing source
+or opening Test state, then rechecks it before candidate reads and effects.
+Interrupted or visibility-uncertain generated validation scratch is retained and
+requires an explicit private whole-directory move-aside; it is never adopted or
+deleted automatically.
 These checks qualify only the
 [narrow Windows command boundary](windows.md), local-NTFS private state and exact
-tested artifact; live cluster/exec-auth proof remains separate, and workspace,
-suite evidence, publication and Deploy stay deferred. Stable v0.8.1 remains
+tested artifact; live cluster/exec-auth proof remains separate. General workspace
+storage, portable evidence, publication and Deploy stay deferred. Stable v0.8.1 remains
 without a Windows `.exe`.
 
 The hosted Windows test context is established by the test-only

@@ -21,6 +21,7 @@ import (
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/workspacetest"
 )
 
 // Overlay Task admission only; native reads/placement and result transport retain
@@ -180,6 +181,18 @@ func TestSuiteEvaluationPlaceholderAfterEffectsKeepsNoRetryClassification(t *tes
 	}
 }
 
+func TestSuiteEvaluationValidationRecoveryStaysSafeAndPreEffectOnly(t *testing.T) {
+	private := "private-validation-cause"
+	preEffect := suiteEvaluationError(t.Context(), errors.Join(workspacetest.ErrValidationStateRecovery, errors.New(private)), false)
+	if !errors.Is(preEffect, workspacetest.ErrValidationStateRecovery) || strings.Contains(preEffect.Error(), private) || !strings.Contains(preEffect.Error(), "move aside") {
+		t.Fatalf("validation recovery projection = %v", preEffect)
+	}
+	afterEffects := suiteEvaluationError(t.Context(), workspacetest.ErrValidationStateRecovery, true)
+	if errors.Is(afterEffects, workspacetest.ErrValidationStateRecovery) || strings.Contains(afterEffects.Error(), "move aside") {
+		t.Fatalf("post-effect recovery advice escaped: %v", afterEffects)
+	}
+}
+
 func TestCandidatePlaceholderBeforeEffectsNamesRemediation(t *testing.T) {
 	err := (&suiteCandidateOutcome{phase: "preflight", cause: scaffold.ErrUnresolvedPlaceholder}).Error()
 	if !strings.Contains(err, "set concrete values, then rerun eval") || !strings.Contains(err, "candidate cleanup not required") {
@@ -215,7 +228,7 @@ func TestAgentSessionsEvaluationRefusesBeforeOutputAndOrkaPreflight(t *testing.T
 	p.suite.Runtime = workspace.RuntimeProfile{ID: "agentsessions", Version: workspace.AgentSessionsVersion, Engine: "chat"}
 	a.captureCommand = func(context.Context, *exec.Cmd) error { t.Fatal("unsupported runtime reached subprocess"); return nil }
 	a.Cfg.KubeContext = p.options.ToContext
-	if err := a.EvaluateSuiteWorkspace(t.Context(), p); err == nil || p.started {
+	if err := a.EvaluateSuiteWorkspace(t.Context(), p); err == nil || p.operation.Start(t.Context()) != nil {
 		t.Fatalf("runtime consumed evaluation authority: %v", err)
 	}
 	if _, err := os.Stat(good.Out); !os.IsNotExist(err) {
