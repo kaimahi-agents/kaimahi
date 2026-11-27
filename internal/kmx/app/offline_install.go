@@ -301,7 +301,7 @@ func (a *App) installOfflineOrka(opt OrkaOptions) error {
 		return err
 	}
 	if opt.DryRun {
-		if _, err := a.orkaInstallStateFor(b.install); err != nil {
+		if _, err := a.orkaInstallStateFor(b.install, nil); err != nil {
 			return err
 		}
 		crds, _, err := orkaChartCRDs(b.install.chart)

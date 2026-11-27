@@ -8,6 +8,18 @@ import (
 	"strings"
 )
 
+// orkaDeploymentPodSpec is the part of an Orka Deployment's pod template that
+// kmx reads by field; the whole template is kept beside it.
+type orkaDeploymentPodSpec struct {
+	ServiceAccountName string `json:"serviceAccountName"`
+	Containers         []struct {
+		Name    string   `json:"name"`
+		Image   string   `json:"image"`
+		Command []string `json:"command"`
+		Args    []string `json:"args"`
+	} `json:"containers"`
+}
+
 // Both manifests identify the controller by role, not by Deployment name.
 // The v0.1.3 kustomize manifest uses control-plane=controller-manager and
 // app.kubernetes.io/name=orka; v0.3.0's chart uses component=controller.
@@ -19,21 +31,16 @@ type orkaDeployment struct {
 		UID               string            `json:"uid"`
 		DeletionTimestamp *string           `json:"deletionTimestamp"`
 		Labels            map[string]string `json:"labels"`
+		Annotations       map[string]string `json:"annotations"`
 		Generation        int64             `json:"generation"`
 	} `json:"metadata"`
 	Spec struct {
 		Replicas int32 `json:"replicas"`
-		Template struct {
-			Spec struct {
-				ServiceAccountName string `json:"serviceAccountName"`
-				Containers         []struct {
-					Name    string   `json:"name"`
-					Image   string   `json:"image"`
-					Command []string `json:"command"`
-					Args    []string `json:"args"`
-				} `json:"containers"`
-			} `json:"spec"`
-		} `json:"template"`
+		Selector struct {
+			MatchLabels      map[string]string `json:"matchLabels"`
+			MatchExpressions []any             `json:"matchExpressions"`
+		} `json:"selector"`
+		Template orkaTemplate[orkaDeploymentPodSpec] `json:"template"`
 	} `json:"spec"`
 	Status struct {
 		ObservedGeneration  int64 `json:"observedGeneration"`

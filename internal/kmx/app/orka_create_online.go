@@ -92,6 +92,10 @@ func (a *App) orkaCaptureInto(ctx context.Context, stdin []byte, out orkaCapture
 		case strings.Contains(reason, "doesn't have a resource type"),
 			strings.Contains(reason, "could not find the requested resource"):
 			return fmt.Errorf("kubectl request failed: requested Kubernetes resource type is unavailable")
+		case strings.Contains(reason, `cannot get resource "services/proxy"`):
+			// Only the API server's own RBAC denial names the subresource;
+			// a workload answering 403 through a Service proxy does not.
+			return fmt.Errorf("kubectl request failed: access to services/proxy forbidden")
 		case strings.Contains(reason, "forbidden"), strings.Contains(reason, "unauthorized"),
 			strings.Contains(reason, "provide credentials"), strings.Contains(reason, "must be logged in"):
 			return fmt.Errorf("kubectl request failed: access forbidden")

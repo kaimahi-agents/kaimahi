@@ -152,8 +152,10 @@ func (a *App) applyOrkaCRDsFor(crds []byte, dryRun, offline bool) error {
 
 // A tag alone does not prove kmx owns a release. Only its chart version,
 // release status, explicit harness mode and marker together allow a repeat.
-func (a *App) orkaInstallState() (bool, error) { return a.orkaInstallStateFor(nil) }
-func (a *App) orkaInstallStateFor(offline *offlineInstallBundle) (bool, error) {
+// For an online repeat, accepted (when not nil) receives the live controller
+// that was checked, so a later wait holds to that controller.
+func (a *App) orkaInstallState() (bool, error) { return a.orkaInstallStateFor(nil, nil) }
+func (a *App) orkaInstallStateFor(offline *offlineInstallBundle, accepted *orkaDeployment) (bool, error) {
 	capture := a.Run.Capture
 	if offline != nil {
 		capture = func(tool string, args ...string) (string, error) {
@@ -234,18 +236,11 @@ func (a *App) orkaInstallStateFor(offline *offlineInstallBundle) (bool, error) {
 				if err != nil {
 					return false, fmt.Errorf("cannot verify the live Orka controller image: %w", err)
 				}
-				matches := 0
-				for _, container := range controller.Spec.Template.Spec.Containers {
-					if container.Name != "controller" {
-						continue
-					}
-					matches++
-					if container.Image != "ghcr.io/orka-agents/orka@"+orkaControllerDigest {
-						return false, fmt.Errorf("live Orka controller image differs from kmx's pinned digest; refusing to adopt the release. %s", a.orkaInstallRecovery())
-					}
+				if err := a.orkaPinnedController(controller); err != nil {
+					return false, err
 				}
-				if matches != 1 {
-					return false, fmt.Errorf("live Orka controller image cannot be identified; refusing to adopt the release. %s", a.orkaInstallRecovery())
+				if accepted != nil {
+					*accepted = controller
 				}
 				return true, nil
 			}
@@ -303,8 +298,29 @@ func (a *App) orkaInstallStateFor(offline *offlineInstallBundle) (bool, error) {
 }
 
 func (a *App) applyOrkaChart(chart []byte) error { return a.applyOrkaChartFor(chart, nil) }
+
+// orkaPinnedController refuses a live controller that is not exactly kmx's
+// pinned image, on first inspection and on every later look while reusing it.
+func (a *App) orkaPinnedController(controller orkaDeployment) error {
+	matches := 0
+	for _, container := range controller.Spec.Template.Spec.Containers {
+		if container.Name != "controller" {
+			continue
+		}
+		matches++
+		if container.Image != "ghcr.io/orka-agents/orka@"+orkaControllerDigest {
+			return fmt.Errorf("live Orka controller image differs from kmx's pinned digest; refusing to adopt the release. %s", a.orkaInstallRecovery())
+		}
+	}
+	if matches != 1 {
+		return fmt.Errorf("live Orka controller image cannot be identified; refusing to adopt the release. %s", a.orkaInstallRecovery())
+	}
+	return nil
+}
+
 func (a *App) applyOrkaChartFor(chart []byte, offline *offlineInstallBundle) error {
-	known, err := a.orkaInstallStateFor(offline)
+	var accepted orkaDeployment
+	known, err := a.orkaInstallStateFor(offline, &accepted)
 	if err != nil {
 		return err
 	}
@@ -312,7 +328,9 @@ func (a *App) applyOrkaChartFor(chart []byte, offline *offlineInstallBundle) err
 		if offline != nil {
 			return a.verifyOfflineWorkloads(offline, true)
 		}
-		if err := a.OrkaReady(); err != nil {
+		// Deployment status can predate a node restart, so reuse waits for
+		// current pod readiness of the controller it just accepted.
+		if err := a.awaitOrkaServing("the Orka controller", "", a.orkaServingObserver(accepted)); err != nil {
 			return fmt.Errorf("kmx-owned Orka %s is not ready; no reinstall attempted: %w", OrkaVersion, err)
 		}
 		a.notef("Orka %s harness-v2 is already installed by kmx; keeping its chart, data and snapshot key.", OrkaVersion)

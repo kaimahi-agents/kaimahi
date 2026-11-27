@@ -1726,12 +1726,42 @@ non-forcing CRD server-side dry run; no Helm install/dry run, Established wait,
 rollouts or result-reader reconciliation. The flags are mutually exclusive.
 
 Normal install uses non-forcing CRD SSA, Established wait, Helm `--wait`,
-exact live execution-setting comparison and explicit rollouts of all three
-Deployments, then result-reader reconciliation. The full profile hash is a
+exact live execution-setting comparison and a current-readiness wait for all
+three Deployments, then result-reader reconciliation. The full profile hash is a
 Helm value, not a label. Exact healthy reuse requires the complete custom values
 and live workload set, skips CRD/Helm writes and preserves chart keys/data.
 A model gateway Deployment that `kmx model connect` marked as its own is outside
 that set; every bundle Deployment is still compared, even when marked.
+
+Deployment status alone is not readiness: after a node restart it can still be
+the controller manager's record from the previous run. Install and reuse wait up
+to 10 minutes until every bundle Deployment's status is a completed rollout and
+each of its pods is Running, Ready and on the pinned images, with its containers
+started no earlier than the kind node container's current start (read from the
+selected container engine). A node restart stops every container on the node,
+so the readiness the kubelet reports for a container started since then comes
+from probing that container; the Ready condition's transition time, which
+changes only when Ready changes, is not used. A pod counts only when its
+controlling ReplicaSet, found in the namespace's whole ReplicaSet list, is
+controlled by that Deployment's UID and has the Deployment's current revision and pod template; a pod of an
+earlier ReplicaSet is waited on. Orka's API must then
+answer `/readyz` through its API Service (the API server's Service proxy),
+whose selector must contain one checked Deployment's whole selector, with a
+JSON object whose `status` is `ok`; a 404 or another
+workload's plain `ok` from a stale endpoint does not count. A live selected pod
+that is foreign or belongs to a ReplicaSet the Deployment does not control (a
+foreign ReplicaSet with no selected pods is ignored), unsupported selectors,
+scaled-to-zero workloads, a missing or
+ambiguous API Service, one whose selector can reach pods outside the checked
+Deployments, the API server's own denial of a read (including `get`
+on `services/proxy`), a node container that is not the selected cluster's or
+that the selected container engine does not have, and
+execution settings that change while waiting refuse as soon as kmx observes
+them. Scaled-to-zero workloads refuse before any rollout gap; the other
+checks run in order, so a later one is reached only once the earlier ones pass.
+An observation that completes without a gap ends the wait even if the bound
+passed during it. Other gaps are retried and named if the bound expires. The wait only
+reads.
 Online, foreign, changed, partial or orphan installs refuse; no adoption,
 upgrade, repair, retry or automatic cleanup occurs. Failures stop later phases;
 inspect retained effects privately. Cache checks are invocation-time evidence,
