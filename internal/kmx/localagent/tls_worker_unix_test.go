@@ -60,7 +60,7 @@ func TestResidentTLSWorker(t *testing.T) {
 	if err != nil {
 		t.Fatal("fixture credential pipe invalid")
 	}
-	if err := runLocalAgentWorker(t.Context(), os.Getenv("KMX_LOCAL_AGENT_ID"), os.Getenv("KMX_LOCAL_AGENT_EVENT"), credential, os.NewFile(3, "readiness")); err != nil {
+	if err := runLocalAgentWorker(t.Context(), os.Getenv("KMX_LOCAL_AGENT_ID"), os.Getenv("KMX_LOCAL_AGENT_EVENT"), credential, os.NewFile(3, "readiness"), nil); err != nil {
 		t.Fatal(err)
 	}
 }

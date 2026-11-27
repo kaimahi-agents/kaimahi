@@ -56,7 +56,7 @@ jobs:
         run: |
           set -euo pipefail
           umask 022
-          go test -race -count=1 -v ./internal/kmx/localagent | tee resident-tests.log
+          go test -race -count=1 -v ./internal/kmx/localagent ./internal/kmx/residenttools ./internal/kmx/localtools -skip '^TestHostedMCPWithScriptedModelJournal$' | tee resident-tests.log
           grep -q -- '--- PASS: TestLocalAgentResidentSessionInvokeStop ' resident-tests.log
           ! grep -q -- '--- SKIP:' resident-tests.log
       - name: App test timings (no test output)
@@ -671,6 +671,8 @@ jobs:
       # runs. Mocked HTTP only — no live Kubernetes API is reached.
       - name: Orka k8s-tool self-test (read-only allowlist, secrets and mutation refused)
         run: python3 scripts/test_orka_k8s_tool.py -v
+      - name: Offline project-maintenance demo (disposable Git only)
+        run: python3 scripts/test_demo_project_maintenance.py -v
       # Quickstart proves the default native Orka journey. Legacy bring-up
       # or retired commands would invalidate that runtime-isolation claim.
       # Keep the guarded shard list explicit; the namespace tripwire must

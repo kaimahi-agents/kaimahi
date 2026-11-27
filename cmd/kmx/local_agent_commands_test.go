@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"strings"
@@ -36,6 +37,29 @@ func TestLocalAgentListIsConfigFreeAndContextRoutesToOrka(t *testing.T) {
 	}
 	if err := execute([]string{"--context", "dev", "list"}, deps); err == nil || !strings.Contains(err.Error(), "remote selected") || *loads != 1 {
 		t.Fatalf("remote route: err=%v loads=%d", err, *loads)
+	}
+}
+
+func TestLocalAgentInventoryRetainsToolBindingWithoutPrivateLaunchInputs(t *testing.T) {
+	var out, diagnostics bytes.Buffer
+	deps, loads := testDependencies(&out, &diagnostics)
+	want := localagent.Instance{ID: "md-test", ToolConfigRevision: "config", ToolPlanRevision: "plan", ToolContractDigest: "contract", ToolBindingDigest: "binding", AgentBackend: "resident-process", ToolBackend: "bounded-process", CachedAgent: "/private/snapshot"}
+	deps.readLocalAgents = func(bool) ([]localagent.Instance, error) { return []localagent.Instance{want}, nil }
+	if err := execute([]string{"list", "-o", "json"}, deps); err != nil {
+		t.Fatal(err)
+	}
+	var inventory struct {
+		Agents []localagent.Instance `json:"agents"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &inventory); err != nil {
+		t.Fatal(err)
+	}
+	if *loads != 0 || len(inventory.Agents) != 1 {
+		t.Fatalf("loads=%d inventory=%+v", *loads, inventory)
+	}
+	got := inventory.Agents[0]
+	if got.ToolConfigRevision != want.ToolConfigRevision || got.ToolPlanRevision != want.ToolPlanRevision || got.ToolContractDigest != want.ToolContractDigest || got.ToolBindingDigest != want.ToolBindingDigest || got.AgentBackend != want.AgentBackend || got.ToolBackend != want.ToolBackend || strings.Contains(out.String(), "/private/") {
+		t.Fatalf("inventory=%s", &out)
 	}
 }
 

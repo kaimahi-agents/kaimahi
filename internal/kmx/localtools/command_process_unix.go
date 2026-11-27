@@ -24,6 +24,11 @@ type commandCapture struct {
 	stderr    bytes.Buffer
 }
 
+type stdioExitObserver struct {
+	observe func() (bool, error)
+	close   func() error
+}
+
 func newCommandCapture() *commandCapture {
 	return &commandCapture{remaining: commandOutputLimit, overflow: make(chan struct{})}
 }
@@ -61,9 +66,19 @@ func runCommandAfterStart(ctx context.Context, cfg CommandConfig, check func(...
 	checkIdentity := func() bool {
 		commandInfo, commandErr := os.Stat(cfg.Command)
 		dirInfo, dirErr := os.Stat(cfg.Dir)
-		return commandErr == nil && dirErr == nil && cfg.commandInfo != nil && cfg.dirInfo != nil && os.SameFile(cfg.commandInfo, commandInfo) && os.SameFile(cfg.dirInfo, dirInfo) && commandInfo.Mode().IsRegular() && commandInfo.Mode().Perm()&0111 != 0 && dirInfo.IsDir()
+		if commandErr != nil || dirErr != nil || cfg.commandInfo == nil || cfg.dirInfo == nil || !os.SameFile(cfg.commandInfo, commandInfo) || !os.SameFile(cfg.dirInfo, dirInfo) || !commandInfo.Mode().IsRegular() || commandInfo.Mode().Perm()&0111 == 0 || !dirInfo.IsDir() {
+			return false
+		}
+		if cfg.ExecutableDigest != "" {
+			digest, err := commandExecutableDigestContext(ctx, cfg.Command)
+			return err == nil && digest == cfg.ExecutableDigest
+		}
+		return true
 	}
 	if !checkIdentity() {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		return nil, ErrCommand
 	}
 	cmd := exec.Command(cfg.Command, cfg.Args...)
@@ -102,24 +117,36 @@ func runCommandAfterStart(ctx context.Context, cfg CommandConfig, check func(...
 		_ = childErr.Close()
 		return nil, ErrCommand
 	}
+	observer, observerErr := newStdioLeaderObserver(cmd.Process.Pid)
+	if observerErr != nil {
+		_ = killCommandGroup(cmd.Process.Pid)
+		_ = stdout.Close()
+		_ = childOut.Close()
+		_ = stderr.Close()
+		_ = childErr.Close()
+		if errors.Is(waitCommandExit(cmd.Wait), ErrCommandCleanup) {
+			return nil, ErrCommandCleanup
+		}
+		return nil, ErrCommand
+	}
 	_ = childOut.Close()
 	_ = childErr.Close()
 	if afterStart != nil {
 		if err := afterStart(cmd.Process.Pid); err != nil {
-			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			_ = killCommandGroup(cmd.Process.Pid)
 			_ = stdout.Close()
 			_ = stderr.Close()
-			if errors.Is(waitCommandExit(cmd.Wait), ErrCommandCleanup) {
+			if errors.Is(finishCommandWait(cmd.Wait, observer), ErrCommandCleanup) {
 				return nil, ErrCommandCleanup
 			}
 			return nil, err
 		}
 	}
 	if !checkIdentity() {
-		killErr := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		killErr := killCommandGroup(cmd.Process.Pid)
 		_ = stdout.Close()
 		_ = stderr.Close()
-		waitErr := waitCommandExit(cmd.Wait)
+		waitErr := finishCommandWait(cmd.Wait, observer)
 		if errors.Is(waitErr, ErrCommandCleanup) || killErr != nil && !errors.Is(killErr, syscall.ESRCH) {
 			return nil, ErrCommandCleanup
 		}
@@ -143,7 +170,7 @@ func runCommandAfterStart(ctx context.Context, cfg CommandConfig, check func(...
 		case <-capture.overflow:
 			completed = true
 		case <-ticker.C:
-			exited, observeErr := stdioLeaderExited(cmd.Process.Pid)
+			exited, observeErr := observer.observe()
 			if observeErr != nil {
 				cleanupFailure = true
 				completed = true
@@ -153,7 +180,7 @@ func runCommandAfterStart(ctx context.Context, cfg CommandConfig, check func(...
 			}
 		}
 	}
-	killErr := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	killErr := killCommandGroup(cmd.Process.Pid)
 	if killErr != nil && !errors.Is(killErr, syscall.ESRCH) {
 		cleanupFailure = true
 	}
@@ -168,7 +195,7 @@ func runCommandAfterStart(ctx context.Context, cfg CommandConfig, check func(...
 	}
 	_ = stdout.Close()
 	_ = stderr.Close()
-	waitErr := waitCommandExit(cmd.Wait)
+	waitErr := finishCommandWait(cmd.Wait, observer)
 	if cleanupFailure || errors.Is(waitErr, ErrCommandCleanup) {
 		return nil, ErrCommandCleanup
 	}
@@ -205,6 +232,15 @@ func runCommandAfterStart(ctx context.Context, cfg CommandConfig, check func(...
 	out, diagnostic := slices.Clone(capture.stdout.Bytes()), slices.Clone(capture.stderr.Bytes())
 	capture.mu.Unlock()
 	return commandResult(exitCode, out, diagnostic, check)
+}
+
+func finishCommandWait(wait func() error, observer *stdioExitObserver) error {
+	waitErr := waitCommandExit(wait)
+	// Close even when waiting failed; on Darwin this owns a kqueue descriptor.
+	if observer.close() != nil {
+		return ErrCommandCleanup
+	}
+	return waitErr
 }
 
 // waitCommandExit bounds reaping independently of the already-expired invocation
